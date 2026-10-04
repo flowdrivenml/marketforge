@@ -177,3 +177,317 @@ def add_instrument_arguments(
         default=None,
         help="Filter returned symbols.",
     )
+
+
+def add_metadata_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    """Add instrument-metadata synchronization arguments."""
+
+    parser.add_argument(
+        "--exchange",
+        choices=[
+            "bybit",
+            "binance",
+            "okx",
+            "bitget",
+            "gateio",
+        ],
+        help=(
+            "Synchronize only one exchange. " "If omitted, synchronize all exchanges."
+        ),
+    )
+
+
+def add_metadata_sync_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    """Add metadata synchronization arguments."""
+
+    parser.add_argument(
+        "--exchange",
+        choices=[
+            "bybit",
+            "binance",
+            "okx",
+            "bitget",
+            "gateio",
+        ],
+        help=(
+            "Synchronize only one exchange. " "If omitted, synchronize all exchanges."
+        ),
+    )
+
+
+def add_metadata_list_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    """Add metadata listing arguments."""
+
+    parser.add_argument(
+        "--exchange",
+        choices=[
+            "bybit",
+            "binance",
+            "okx",
+            "bitget",
+            "gateio",
+        ],
+        help="Filter by exchange.",
+    )
+
+    parser.add_argument(
+        "--type",
+        dest="instrument_type",
+        choices=[
+            "spot",
+            "perpetual",
+            "future",
+            "option",
+        ],
+        help="Filter by instrument type.",
+    )
+
+    parser.add_argument(
+        "--category",
+        choices=[
+            "spot",
+            "linear",
+            "inverse",
+            "option",
+        ],
+        help="Filter by market category.",
+    )
+
+    parser.add_argument(
+        "--symbol",
+        help="Filter by exact exchange symbol.",
+    )
+
+    parser.add_argument(
+        "--base",
+        dest="base_asset",
+        help="Filter by base asset.",
+    )
+
+    parser.add_argument(
+        "--quote",
+        dest="quote_asset",
+        help="Filter by quote asset.",
+    )
+
+    parser.add_argument(
+        "--settlement",
+        dest="settlement_asset",
+        help="Filter by settlement asset.",
+    )
+
+    parser.add_argument(
+        "--status",
+        help="Filter by exchange instrument status.",
+    )
+
+    parser.add_argument(
+        "--quantity-type",
+        choices=[
+            "base",
+            "quote",
+            "contracts",
+        ],
+        help="Filter by canonical quantity type.",
+    )
+
+    parser.add_argument(
+        "--contract-value-asset",
+        help="Filter by contract-value asset.",
+    )
+
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help="Maximum number of instruments to display.",
+    )
+
+
+def add_metadata_formats_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    """Add raw-format listing arguments."""
+
+    parser.add_argument(
+        "--exchange",
+        choices=[
+            "bybit",
+            "binance",
+            "okx",
+            "bitget",
+            "gateio",
+        ],
+        help="Filter by exchange.",
+    )
+
+    parser.add_argument(
+        "--format",
+        dest="format_code",
+        help="Filter by raw-format code.",
+    )
+
+    parser.add_argument(
+        "--dataset",
+        choices=[
+            "trade",
+            "l2",
+        ],
+        help="Filter by dataset.",
+    )
+
+    parser.add_argument(
+        "--type",
+        dest="instrument_type",
+        choices=[
+            "spot",
+            "perpetual",
+            "future",
+            "option",
+        ],
+        help="Filter by instrument type.",
+    )
+
+    parser.add_argument(
+        "--category",
+        choices=[
+            "spot",
+            "linear",
+            "inverse",
+            "option",
+        ],
+        help="Filter by market category.",
+    )
+
+    def add_metadata_formats_arguments(
+        parser: argparse.ArgumentParser,
+    ) -> None:
+        """Add raw-format listing arguments."""
+
+        parser.add_argument(
+            "--exchange",
+            choices=[
+                "bybit",
+                "binance",
+                "okx",
+                "bitget",
+                "gateio",
+            ],
+            help="Filter by exchange.",
+        )
+
+        parser.add_argument(
+            "--format",
+            dest="format_code",
+            help="Filter by raw-format code.",
+        )
+
+        parser.add_argument(
+            "--dataset",
+            choices=[
+                "trade",
+                "l2",
+            ],
+            help="Filter by dataset.",
+        )
+
+        parser.add_argument(
+            "--type",
+            dest="instrument_type",
+            choices=[
+                "spot",
+                "perpetual",
+                "future",
+                "option",
+            ],
+            help="Filter by instrument type.",
+        )
+
+        parser.add_argument(
+            "--category",
+            choices=[
+                "spot",
+                "linear",
+                "inverse",
+                "option",
+            ],
+            help="Filter by market category.",
+        )
+
+
+def add_metadata_rules_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    """Add normalization-rule listing arguments."""
+
+    parser.add_argument(
+        "--exchange",
+        choices=[
+            "bybit",
+            "binance",
+            "okx",
+            "bitget",
+            "gateio",
+        ],
+        help="Filter by exchange.",
+    )
+
+    parser.add_argument(
+        "--format",
+        dest="format_code",
+        help="Filter by raw-format code.",
+    )
+
+    parser.add_argument(
+        "--dataset",
+        choices=[
+            "trade",
+            "l2",
+        ],
+        help="Filter by dataset.",
+    )
+
+    parser.add_argument(
+        "--type",
+        dest="instrument_type",
+        choices=[
+            "spot",
+            "perpetual",
+            "future",
+            "option",
+        ],
+        help="Filter by instrument type.",
+    )
+
+    parser.add_argument(
+        "--category",
+        choices=[
+            "spot",
+            "linear",
+            "inverse",
+            "option",
+        ],
+        help="Filter by market category.",
+    )
+
+    parser.add_argument(
+        "--target",
+        dest="target_schema",
+        choices=[
+            "trade",
+            "l2_snapshot",
+            "l2_update",
+        ],
+        help="Filter by canonical target schema.",
+    )
+
+    parser.add_argument(
+        "--show-json",
+        action="store_true",
+        help="Display normalization rules JSON.",
+    )

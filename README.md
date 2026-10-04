@@ -1,189 +1,190 @@
-# Bybit Historical Market Data Downloader
+# MarketForge
 
-[![PyPI version](https://img.shields.io/pypi/v/bybit-history-downloader.svg)](https://pypi.org/project/bybit-history-downloader/0.1.0/)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](#requirements)
-[![Platform](https://img.shields.io/badge/platform-Linux-informational.svg)](#requirements)
-[![Browser](https://img.shields.io/badge/browser-Firefox-orange.svg)](#requirements)
-
-
-> [!IMPORTANT]
-> **🚧 Currently in active development.**
+> **🚧 Active development**
 >
-> MarketForge is not yet ready for general use. The initial release is expected to be completed within the next few days.
+> MarketForge is currently under development. The acquisition layer is usable, while normalization, processing, merging, and live-data components are still being built.
 
+**Historical market microstructure data without manually hunting through exchange archives.**
 
-**Historical market data, without the repetitive clicks.**
+MarketForge is a Python CLI for discovering and downloading free historical market data from multiple cryptocurrency exchanges.
 
-Python CLI and library for downloading public Bybit historical market data.
-
-It automates symbol selection, date ranges, downloads, chunking, and extraction for longer research datasets.
-
-> **Current support:** Linux + Firefox.
-
----
+Select an exchange, instrument, dataset, and date range; MarketForge handles availability discovery, planning, and downloads.
 
 ## Quick Navigation
 
+- [Supported Exchanges](#supported-exchanges)
 - [Features](#features)
 - [Installation](#installation)
-- [Usage](#usage)
-- [Python API](#python-api)
-- [Output](#output)
-- [Limitations](#limitations)
+- [Quick Start](#quick-start)
+- [Typical Workflow](#typical-workflow)
+- [Development Status](#development-status)
+
+## Supported Exchanges
+
+Current acquisition support targets:
+
+```text
+Bybit
+Binance
+OKX
+Bitget
+Gate.io
+```
+
+Depending on exchange availability, MarketForge can acquire:
+
+```text
+tick trades
+L2 / order-book data
+spot
+perpetuals
+futures
+options where publicly available
+```
+
+Only publicly available/free historical data is targeted.
 
 ## Features
 
-- Spot and Contract markets
-- Historical trades
-- L2 order-book data
-- Automatic date-range chunking
-- Symbol discovery
-- Automatic `.zip` and `.gz` extraction
-- Headless execution
-- CLI and Python API
-- No API key required
-- Available on PyPI
+- multi-exchange historical-data acquisition
+- instrument discovery
+- historical availability discovery
+- acquisition planning before downloading
+- automatic archive downloading
+- immutable raw-data storage
+- Spot, Perpetual, Futures, and supported Options markets
+- tick trades and L2 depth where available
+- no paid data providers required
+- CLI-first workflow
 
 ## Installation
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-
-python -m pip install --upgrade pip
-python -m pip install bybit-history-downloader
-python -m playwright install firefox
-```
-
-If Firefox dependencies are missing:
+The project is currently intended to be installed from source:
 
 ```bash
-python -m playwright install-deps firefox
+git clone https://github.com/flowdrivenml/MarketForge.git
+cd MarketForge
+
+python -m pip install -e .
 ```
 
-Check the installation:
+Check the CLI:
 
 ```bash
-bybit-history --help
+marketforge --help
 ```
 
-## Usage
-
-### List symbols
-
-Contract:
-
-```bash
-bybit-history symbols contract
-```
-
-Spot:
-
-```bash
-bybit-history symbols spot
-```
-
-![Available Bybit symbols](https://raw.githubusercontent.com/flowdrivenml/bybit-history-downloader/main/images/symbols.png)
-
-The CLI scans Bybit's symbol list and prints the available instruments in a compact terminal view.
-
-### Download historical data
-
-Trades:
-
-```bash
-bybit-history download contract trades \
-  --symbol BTCUSDT \
-  --start 2026-08-01 \
-  --end 2026-08-05 \
-  --out ./data/trades \
-  --chunk-days 5
-```
-
-L2 order-book data:
-
-```bash
-bybit-history download contract l2book \
-  --symbol BTCUSDT \
-  --start 2026-08-01 \
-  --end 2026-08-05 \
-  --out ./data/l2book \
-  --chunk-days 5
-```
-
-![Bybit historical-data download](https://raw.githubusercontent.com/flowdrivenml/bybit-history-downloader/main/images/data.png)
-
-The terminal shows the selected market, dataset, symbol, date range, progress, produced files, file sizes, and output directory.
-
-Long date ranges are automatically divided into smaller chunks.
-
-For debugging, run with a visible browser:
-
-```bash
-bybit-history --no-headless symbols contract
-```
-
-## Python API
-
-The downloader can also be used directly from Python:
-
-```python
-import asyncio
-from pathlib import Path
-
-from bybit_history import BybitHistoryClient
-
-
-async def main() -> None:
-    async with BybitHistoryClient(
-        browser_name="firefox",
-        headless=True,
-    ) as client:
-        files: list[Path] = await client.download_data(
-            margin="Contract",
-            data_type="Trades",
-            symbol="BTCUSDT",
-            start_date="2026-08-01",
-            end_date="2026-08-05",
-            final_path="./data/trades",
-            chunk_days=5,
-        )
-
-    for file in files:
-        print(file)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-## Output
-
-Downloaded archives are extracted automatically.
-
-| Dataset | Output |
-|---|---|
-| Trades | `.csv` |
-| L2 order book | `.jsonl` |
-
-Example:
+Available command groups include:
 
 ```text
-data/
-└── trades/
-    ├── BTCUSDT2026-08-01.csv
-    └── BTCUSDT2026-08-02.csv
+database
+plan
+download
+instruments
+availability
+metadata
 ```
 
-## Limitations
+## Quick Start
 
-- Linux only
-- Firefox only
-- `chunk-days` must be below `6`
-- Symbol discovery can take some time
-- L2 datasets can be very large
-- Website changes may require selector updates
+### Discover instruments
 
-This project is not affiliated with or endorsed by Bybit.
+Use the instrument command to discover instruments available from an exchange:
 
-This project is not affiliated with or endorsed by Bybit.
+```bash
+marketforge instruments --help
+```
+
+### Check historical availability
+
+Before downloading large datasets:
+
+```bash
+marketforge availability --help
+```
+
+This determines which historical files or periods are actually available from the selected exchange.
+
+### Plan a download
+
+```bash
+marketforge plan --help
+```
+
+Planning resolves the requested instruments, dates, datasets, and available remote files before acquisition begins.
+
+### Download
+
+```bash
+marketforge download --help
+```
+
+MarketForge downloads the planned exchange archives into structured immutable raw storage.
+
+## Typical Workflow
+
+```text
+Discover instruments
+        ↓
+Check availability
+        ↓
+Create acquisition plan
+        ↓
+Download
+        ↓
+Raw historical archives
+```
+
+In practice:
+
+```bash
+marketforge instruments --help
+marketforge availability --help
+marketforge plan --help
+marketforge download --help
+```
+
+Exchange-specific options and supported datasets are documented directly by each command:
+
+```bash
+marketforge <command> --help
+```
+
+## Development Status
+
+The current focus is expanding MarketForge from acquisition into a complete market-microstructure data engine:
+
+```text
+Exchange Archives
+      ↓
+Acquire
+      ↓
+Normalize
+      ↓
+Validate
+      ↓
+Trades + L2
+      ↓
+Merge / Synchronize
+      ↓
+Partitioned Parquet
+```
+
+Planned processing capabilities include:
+
+```text
+canonical Trade / L2 schemas
+order-book reconstruction
+data-integrity validation
+chronological trades + depth datasets
+cross-exchange synchronization
+high-performance Rust processing
+Parquet output
+live market-data ingestion
+```
+
+These components are still under active development and should not yet be considered stable.
+
+## Disclaimer
+
+MarketForge is an independent open-source project and is not affiliated with or endorsed by Bybit, Binance, OKX, Bitget, Gate.io, or other supported exchanges.

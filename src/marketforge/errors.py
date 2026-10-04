@@ -1,17 +1,3 @@
-# MarketForgeError
-# │
-# ├── AcquisitionError
-# │   ├── InstrumentNotFoundError
-# │   ├── HistoricalDataNotFoundError
-# │   ├── RateLimitError
-# │   └── DownloadError
-# │
-# ├── ProcessingError
-# ├── StorageError
-# ├── ValidationError
-# └── EngineError
-
-
 class MarketForgeError(Exception):
     """Base exception for all MarketForge errors."""
 

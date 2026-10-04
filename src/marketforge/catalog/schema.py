@@ -80,15 +80,36 @@ CREATE TABLE IF NOT EXISTS instrument_api_raw (
         ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS raw_formats (
-    id              TEXT PRIMARY KEY,
-    exchange_id     INTEGER NOT NULL,
+CREATE TABLE IF NOT EXISTS catalog.raw_formats (
+    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
-    data_type       TEXT NOT NULL,
-    description     TEXT,
+    exchange_id         BIGINT NOT NULL
+                            REFERENCES catalog.exchanges(id),
 
-    FOREIGN KEY (exchange_id)
-        REFERENCES exchanges(id)
+    format_code         TEXT NOT NULL,
+
+    dataset             TEXT NOT NULL,
+    instrument_type     TEXT NOT NULL,
+    market_category     TEXT NOT NULL,
+
+    container_format    TEXT NOT NULL,
+    compression         TEXT,
+    record_format       TEXT NOT NULL,
+
+    schema_json         JSONB NOT NULL,
+
+    notes               TEXT,
+
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    UNIQUE (
+        exchange_id,
+        format_code,
+        dataset,
+        instrument_type,
+        market_category
+    )
 );
 
 CREATE TABLE IF NOT EXISTS normalization_rules (

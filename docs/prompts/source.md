@@ -1,4 +1,4 @@
-````markdown
+```markdown
 ## MarketForge Exchange Source Implementation Prompt
 
 Implement the MarketForge acquisition source for **{EXCHANGE}**, using `BybitSource` as the reference architecture.

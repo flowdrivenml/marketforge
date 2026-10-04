@@ -1,1 +1,0 @@
-Command to list which symbols available for what margin and amount of data is available.
