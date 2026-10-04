@@ -19,6 +19,42 @@ Select an exchange, instrument, dataset, and date range; MarketForge handles ava
 - [Typical Workflow](#typical-workflow)
 - [Development Status](#development-status)
 
+## Installation
+
+MarketForge is currently under active development and should be installed directly from GitHub.
+
+```bash
+git clone https://github.com/flowdrivenml/MarketForge.git
+cd MarketForge
+```
+
+Create and activate a virtual environment:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+Install MarketForge:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -e .
+```
+
+Verify the installation:
+
+```bash
+marketforge --help
+```
+
+To update to the latest development version later:
+
+```bash
+git pull
+python -m pip install -e .
+```
+
 ## Supported Exchanges
 
 Current acquisition support targets:
