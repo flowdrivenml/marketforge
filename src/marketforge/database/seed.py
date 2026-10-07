@@ -5,6 +5,7 @@ from psycopg import Connection
 from marketforge.catalog.repository import CatalogRepository
 from marketforge.catalog.specs.normalization import NORMALIZATION_RULES
 from marketforge.catalog.specs.raw_formats import RAW_FORMATS
+from marketforge.config import ensure_default_processing_profiles
 
 EXCHANGES = (
     ("bybit", "Bybit"),
@@ -117,3 +118,5 @@ def seed_database(
 
     seed_raw_formats(repo)
     seed_normalization_rules(repo)
+
+    ensure_default_processing_profiles(conn)

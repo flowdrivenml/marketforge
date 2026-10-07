@@ -4,14 +4,29 @@ import argparse
 from typing import Sequence
 
 from marketforge.cli.arguments import (
+    add_archives_arguments,
+    add_datasets_arguments,
     add_instrument_arguments,
+    add_merge_arguments,
     add_metadata_formats_arguments,
     add_metadata_list_arguments,
     add_metadata_rules_arguments,
     add_metadata_sync_arguments,
+    add_process_arguments,
     add_request_arguments,
 )
-from marketforge.cli.commands import availability, download, instruments, metadata, plan
+from marketforge.cli.commands import (
+    archives,
+    availability,
+    config,
+    datasets,
+    download,
+    instruments,
+    merge,
+    metadata,
+    plan,
+    process,
+)
 from marketforge.cli.database import add_database_parser
 
 
@@ -43,6 +58,21 @@ def main(
 
     if args.command == "metadata":
         return metadata.run(args)
+
+    if args.command == "archives":
+        return archives.run(args)
+
+    if args.command == "process":
+        return process.run(args)
+
+    if args.command == "datasets":
+        return datasets.run(args)
+
+    if args.command == "merge":
+        return merge.run(args)
+
+    if args.command == "config":
+        return config.run(args)
 
     parser.error(f"Unknown command: {args.command}")
 
@@ -149,5 +179,75 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     add_metadata_rules_arguments(metadata_rules_parser)
+
+    # Archives
+
+    archives_parser = subparsers.add_parser(
+        "archives",
+        help="Inspect downloaded raw archives.",
+    )
+
+    add_archives_arguments(
+        archives_parser,
+    )
+
+    # Process
+
+    process_parser = subparsers.add_parser(
+        "process",
+        help="Generate an offline processing job.",
+    )
+
+    add_process_arguments(
+        process_parser,
+    )
+
+    # Datasets
+
+    datasets_parser = subparsers.add_parser(
+        "datasets",
+        help="Inspect canonical datasets.",
+    )
+
+    add_datasets_arguments(
+        datasets_parser,
+    )
+
+    # Merge
+
+    merge_parser = subparsers.add_parser(
+        "merge",
+        help="Generate a canonical dataset merge job.",
+    )
+
+    add_merge_arguments(
+        merge_parser,
+    )
+
+    # Config
+
+    config_parser = subparsers.add_parser(
+        "config",
+        help="Manage processing configuration.",
+    )
+
+    config_subparsers = config_parser.add_subparsers(
+        dest="config_command",
+        required=True,
+    )
+
+    config_subparsers.add_parser(
+        "profiles",
+        help="List processing profiles.",
+    )
+
+    profile_parser = config_subparsers.add_parser(
+        "profile",
+        help="Show one processing profile.",
+    )
+
+    profile_parser.add_argument(
+        "profile_name",
+    )
 
     return parser

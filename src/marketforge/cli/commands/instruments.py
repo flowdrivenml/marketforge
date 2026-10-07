@@ -2,59 +2,40 @@ from __future__ import annotations
 
 import argparse
 
-from marketforge.acquisition.client import MarketForgeClient
 from marketforge.cli.ui.instruments import print_instruments
-from marketforge.models import DataType, Exchange, InstrumentType, MarketCategory
+from marketforge.database import connect
+from marketforge.market_metrics import MarketMetricsService
 
 
 def run(
     args: argparse.Namespace,
 ) -> int:
-    """Discover instruments available from an exchange."""
+    """Inspect catalog instruments and current market activity."""
 
-    exchange = Exchange(args.exchange)
+    with connect() as conn:
+        service = MarketMetricsService(conn)
 
-    instrument_type = InstrumentType(args.instrument_type)
-
-    market_category = MarketCategory(args.category)
-
-    data_type = DataType(args.data_type)
-
-    with MarketForgeClient() as client:
-        instruments = client.instruments(
-            exchange=exchange,
-            instrument_type=instrument_type,
-            market_category=market_category,
-            data_type=data_type,
-        )
-
-    if args.search:
-        needle = args.search.casefold()
-
-        instruments = [
-            instrument
-            for instrument in instruments
-            if (
-                needle in instrument.symbol.casefold()
-                or (
-                    instrument.family is not None
-                    and needle in instrument.family.casefold()
-                )
+        if args.refresh:
+            result = service.refresh(
+                exchange=args.exchange,
             )
-        ]
 
-    instruments = sorted(
-        instruments,
-        key=lambda instrument: (instrument.symbol),
-    )
+            conn.commit()
+
+            for exchange, count in result.items():
+                print(f"{exchange}: " f"{count:,} metric row(s)")
+
+        instruments = service.list_instruments(
+            exchange=args.exchange,
+            instrument_type=args.instrument_type,
+            market_category=args.market_category,
+            symbol=args.symbol,
+            sort=args.sort,
+        )
 
     print_instruments(
         instruments,
-        exchange=exchange,
-        instrument_type=instrument_type,
-        market_category=market_category,
-        data_type=data_type,
-        search=args.search,
+        details=args.details,
     )
 
     return 0

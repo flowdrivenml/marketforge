@@ -1,0 +1,40 @@
+[package]
+name = "marketforge-engine"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+
+process = [
+    "dep:flate2",
+    "dep:csv",
+    "dep:zip",
+    "dep:tar",
+]
+
+live = []
+monitor-tui = []
+
+
+[dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
+rust_decimal = "1.43.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.21"
+flate2 = { version = "1", optional = true }
+csv = { version = "1", optional = true }
+zip = { version = "5", optional = true }
+tar = { version = "0.4", optional = true }
+
+
+[[bin]]
+name = "marketforge-process"
+path = "src/bin/marketforge-process.rs"
+required-features = ["process"]
+
+[[bin]]
+name = "marketforge-live"
+path = "src/bin/marketforge-live.rs"
+required-features = ["live"]

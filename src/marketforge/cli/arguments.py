@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from marketforge.models import (
@@ -13,6 +13,223 @@ from marketforge.models import (
     InstrumentType,
     MarketCategory,
 )
+
+
+def parse_date(
+    value: str,
+) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"Invalid date: {value}") from exc
+
+
+def add_archives_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    parser.add_argument(
+        "archives_command",
+        nargs="?",
+        choices=[
+            "delete",
+        ],
+        help="Optional archive operation.",
+    )
+
+    parser.add_argument("--exchange")
+
+    parser.add_argument(
+        "--type",
+        dest="instrument_type",
+    )
+
+    parser.add_argument(
+        "--category",
+    )
+
+    parser.add_argument(
+        "--data",
+        dest="data_type",
+    )
+
+    parser.add_argument("--symbol")
+
+    parser.add_argument(
+        "--start",
+        type=parse_date,
+    )
+
+    parser.add_argument(
+        "--end",
+        type=parse_date,
+    )
+
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=Path("data"),
+    )
+
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Delete selected archives without confirmation.",
+    )
+
+
+def add_archive_delete_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    """
+    Add selectors for deleting downloaded raw archives.
+    """
+
+    add_archives_arguments(parser)
+
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Delete selected archives without confirmation.",
+    )
+
+
+def add_datasets_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    parser.add_argument("--exchange")
+    parser.add_argument("--symbol")
+
+    parser.add_argument(
+        "--data",
+        dest="data_type",
+        choices=[
+            "trade",
+            "l2",
+            "trade_l2",
+        ],
+    )
+
+    parser.add_argument(
+        "--status",
+        choices=[
+            "pending",
+            "processing",
+            "complete",
+            "failed",
+        ],
+    )
+
+
+def add_process_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    parser.add_argument(
+        "--exchange",
+        required=True,
+    )
+
+    parser.add_argument(
+        "--type",
+        dest="instrument_type",
+        required=True,
+    )
+
+    parser.add_argument(
+        "--category",
+        required=True,
+    )
+
+    parser.add_argument(
+        "--symbol",
+        required=True,
+    )
+
+    parser.add_argument(
+        "--data",
+        dest="data_type",
+        required=True,
+        choices=[
+            "trade_ticks",
+            "order_book_l2",
+        ],
+    )
+
+    parser.add_argument(
+        "--dataset",
+        required=True,
+        choices=[
+            "trade",
+            "l2",
+        ],
+    )
+
+    parser.add_argument(
+        "--start",
+        type=parse_date,
+    )
+
+    parser.add_argument(
+        "--end",
+        type=parse_date,
+    )
+
+    parser.add_argument(
+        "--profile",
+        default="default",
+    )
+
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=Path("data"),
+    )
+
+
+def date_to_ns(
+    value: date | None,
+) -> int | None:
+    if value is None:
+        return None
+
+    timestamp = datetime(
+        value.year,
+        value.month,
+        value.day,
+        tzinfo=timezone.utc,
+    )
+
+    return int(timestamp.timestamp() * 1_000_000_000)
+
+
+def add_merge_arguments(
+    parser: argparse.ArgumentParser,
+) -> None:
+    parser.add_argument(
+        "dataset_ids",
+        nargs="+",
+        type=int,
+    )
+
+    parser.add_argument(
+        "--start",
+        type=parse_date,
+    )
+
+    parser.add_argument(
+        "--end",
+        type=parse_date,
+    )
+
+    parser.add_argument(
+        "--profile",
+        default="default",
+    )
+
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=Path("data"),
+    )
 
 
 def add_request_arguments(
@@ -144,38 +361,68 @@ def parse_datetime(
 def add_instrument_arguments(
     parser: argparse.ArgumentParser,
 ) -> None:
-    """Add arguments used for instrument discovery."""
+    """Add arguments for catalog market discovery."""
 
     parser.add_argument(
         "--exchange",
-        required=True,
-        choices=[exchange.value for exchange in Exchange],
+        choices=[
+            "bybit",
+            "binance",
+            "okx",
+            "bitget",
+            "gateio",
+        ],
+        help="Filter by exchange.",
     )
 
     parser.add_argument(
         "--type",
         dest="instrument_type",
-        required=True,
-        choices=[instrument_type.value for instrument_type in InstrumentType],
+        choices=[
+            "spot",
+            "perpetual",
+            "future",
+        ],
+        help="Filter by instrument type.",
     )
 
     parser.add_argument(
-        "--category",
-        required=True,
-        choices=[category.value for category in MarketCategory],
+        "--market",
+        dest="market_category",
+        choices=[
+            "spot",
+            "linear",
+            "inverse",
+        ],
+        help="Filter by market category.",
     )
 
     parser.add_argument(
-        "--data",
-        dest="data_type",
-        required=True,
-        choices=[data_type.value for data_type in DataType],
+        "--symbol",
+        help="Filter instruments by symbol.",
     )
 
     parser.add_argument(
-        "--search",
-        default=None,
-        help="Filter returned symbols.",
+        "--sort",
+        choices=[
+            "turnover",
+            "open_interest",
+            "symbol",
+        ],
+        default="turnover",
+        help="Sort returned instruments.",
+    )
+
+    parser.add_argument(
+        "--details",
+        action="store_true",
+        help="Display detailed market metrics.",
+    )
+
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Refresh current market metrics before displaying instruments.",
     )
 
 
@@ -363,61 +610,6 @@ def add_metadata_formats_arguments(
         ],
         help="Filter by market category.",
     )
-
-    def add_metadata_formats_arguments(
-        parser: argparse.ArgumentParser,
-    ) -> None:
-        """Add raw-format listing arguments."""
-
-        parser.add_argument(
-            "--exchange",
-            choices=[
-                "bybit",
-                "binance",
-                "okx",
-                "bitget",
-                "gateio",
-            ],
-            help="Filter by exchange.",
-        )
-
-        parser.add_argument(
-            "--format",
-            dest="format_code",
-            help="Filter by raw-format code.",
-        )
-
-        parser.add_argument(
-            "--dataset",
-            choices=[
-                "trade",
-                "l2",
-            ],
-            help="Filter by dataset.",
-        )
-
-        parser.add_argument(
-            "--type",
-            dest="instrument_type",
-            choices=[
-                "spot",
-                "perpetual",
-                "future",
-                "option",
-            ],
-            help="Filter by instrument type.",
-        )
-
-        parser.add_argument(
-            "--category",
-            choices=[
-                "spot",
-                "linear",
-                "inverse",
-                "option",
-            ],
-            help="Filter by market category.",
-        )
 
 
 def add_metadata_rules_arguments(

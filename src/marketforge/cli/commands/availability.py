@@ -31,23 +31,10 @@ def run(
     print(f"Category : {request.target.market_category.value}")
     print(f"Data     : {request.data_type.value}")
 
-    print(
-        f"Requested: "
-        f"{request.start.isoformat()} "
-        f"-> "
-        f"{request.end.isoformat()} "
-        f"[exclusive]"
-    )
-
-    print()
-
     if availability.file_count == 0:
         print("Available : no")
         print("Files     : 0")
         return 0
-
-    print("Available : yes")
-    print(f"Files     : {availability.file_count}")
 
     print("Available : yes")
     print(f"Files     : {availability.file_count}")

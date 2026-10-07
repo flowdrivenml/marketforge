@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from psycopg import Connection
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 9
 
 
 DDL = """
 CREATE SCHEMA IF NOT EXISTS catalog;
+CREATE SCHEMA IF NOT EXISTS config;
 CREATE SCHEMA IF NOT EXISTS live;
 
 
@@ -395,13 +396,21 @@ CREATE TABLE IF NOT EXISTS catalog.datasets (
 
     status                  TEXT NOT NULL,
 
+    failure_message         TEXT,
+
     created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at            TIMESTAMPTZ,
+
+    CHECK (
+        completed_at IS NULL
+        OR status = 'complete'
+    ),
 
     CHECK (
         data_type IN (
             'trade',
-            'l2_snapshot',
-            'l2_update',
+            'l2',
             'trade_l2'
         )
     ),
@@ -438,6 +447,180 @@ CREATE TABLE IF NOT EXISTS catalog.dataset_inputs (
         dataset_id <> input_dataset_id
     )
 );
+
+
+CREATE TABLE IF NOT EXISTS config.processing (
+    id                              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    name                            TEXT NOT NULL UNIQUE,
+
+    workers                         INTEGER NOT NULL,
+
+    memory_budget_bytes             BIGINT NOT NULL,
+
+    scratch_path                    TEXT NOT NULL,
+    scratch_budget_bytes            BIGINT NOT NULL,
+
+    parquet_row_group_target_bytes  BIGINT NOT NULL,
+    parquet_file_target_bytes       BIGINT NOT NULL,
+
+    integrity_profile               TEXT NOT NULL,
+
+    created_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CHECK (
+        BTRIM(name) <> ''
+    ),
+
+    CHECK (
+        workers > 0
+    ),
+
+    CHECK (
+        memory_budget_bytes > 0
+    ),
+
+    CHECK (
+        scratch_budget_bytes > 0
+    ),
+
+    CHECK (
+        parquet_row_group_target_bytes > 0
+    ),
+
+    CHECK (
+        parquet_file_target_bytes > 0
+    ),
+
+    CHECK (
+        parquet_row_group_target_bytes
+        <= parquet_file_target_bytes
+    ),
+
+    CHECK (
+        integrity_profile IN (
+            'standard',
+            'strict'
+        )
+    )
+);
+
+
+CREATE TABLE IF NOT EXISTS catalog.instrument_metrics (
+    instrument_id               BIGINT PRIMARY KEY
+                                    REFERENCES catalog.instruments(id)
+                                    ON DELETE CASCADE,
+
+    last_price                  NUMERIC,
+
+    high_24h                    NUMERIC,
+    low_24h                     NUMERIC,
+    price_change_pct_24h        NUMERIC,
+
+    volume_24h_native           NUMERIC,
+    volume_24h_base             NUMERIC,
+    volume_24h_quote            NUMERIC,
+    volume_24h_contracts        NUMERIC,
+
+    turnover_24h                NUMERIC,
+    turnover_denomination       TEXT,
+
+    open_interest               NUMERIC,
+    open_interest_value         NUMERIC,
+
+    funding_rate                NUMERIC,
+
+    measured_at                 TIMESTAMPTZ NOT NULL,
+    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CHECK (
+        last_price IS NULL
+        OR last_price >= 0
+    ),
+
+    CHECK (
+        high_24h IS NULL
+        OR high_24h >= 0
+    ),
+
+    CHECK (
+        low_24h IS NULL
+        OR low_24h >= 0
+    ),
+
+    CHECK (
+        volume_24h_native IS NULL
+        OR volume_24h_native >= 0
+    ),
+
+    CHECK (
+        volume_24h_base IS NULL
+        OR volume_24h_base >= 0
+    ),
+
+    CHECK (
+        volume_24h_quote IS NULL
+        OR volume_24h_quote >= 0
+    ),
+
+    CHECK (
+        volume_24h_contracts IS NULL
+        OR volume_24h_contracts >= 0
+    ),
+
+    CHECK (
+        turnover_24h IS NULL
+        OR turnover_24h >= 0
+    ),
+
+    CHECK (
+        open_interest IS NULL
+        OR open_interest >= 0
+    ),
+
+    CHECK (
+        open_interest_value IS NULL
+        OR open_interest_value >= 0
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_instrument_metrics_turnover
+    ON catalog.instrument_metrics(
+        turnover_24h DESC
+    );
+
+
+CREATE INDEX IF NOT EXISTS idx_instrument_metrics_measured
+    ON catalog.instrument_metrics(
+        measured_at DESC
+    );
+
+
+CREATE INDEX IF NOT EXISTS idx_instrument_metrics_open_interest_value
+    ON catalog.instrument_metrics(
+        open_interest_value DESC
+    );
+
+
+CREATE INDEX IF NOT EXISTS idx_datasets_status
+    ON catalog.datasets(status);
+
+
+CREATE INDEX IF NOT EXISTS idx_datasets_exchange
+    ON catalog.datasets(exchange_id);
+
+
+CREATE INDEX IF NOT EXISTS idx_datasets_instrument
+    ON catalog.datasets(instrument_id);
+
+
+CREATE INDEX IF NOT EXISTS idx_datasets_created
+    ON catalog.datasets(created_at DESC);
+
+
+CREATE INDEX IF NOT EXISTS idx_processing_name
+    ON config.processing(name);
 """
 
 
@@ -447,6 +630,7 @@ def initialize_schema(conn: Connection) -> None:
 
     The current schema version is recorded in catalog.schema_meta.
     """
+
     with conn.cursor() as cursor:
         cursor.execute(DDL)
 
@@ -454,7 +638,7 @@ def initialize_schema(conn: Connection) -> None:
             SELECT value
             FROM catalog.schema_meta
             WHERE key = 'schema_version'
-            """)
+        """)
 
         row = cursor.fetchone()
 
