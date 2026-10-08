@@ -222,6 +222,72 @@ RAW_FORMATS = [
         ),
     },
     {
+        "format_code": "OKX-T1",
+        "dataset": "trade",
+        "instrument_type": "future",
+        "market_category": "linear",
+        "container_format": "csv",
+        "compression": "zip",
+        "record_format": "rows",
+        "schema": {
+            **TRADE_SCHEMA,
+            "ordering": "chronological",
+        },
+        "notes": (
+            "Daily UTC+8 ZIP containing headered CSV. "
+            "Physical parser is shared by all inspected OKX trade "
+            "datasets. For Linear Future, size represents contracts."
+        ),
+    },
+    {
+        "format_code": "OKX-T1",
+        "dataset": "trade",
+        "instrument_type": "future",
+        "market_category": "inverse",
+        "container_format": "csv",
+        "compression": "zip",
+        "record_format": "rows",
+        "schema": {
+            **TRADE_SCHEMA,
+            "ordering": "chronological",
+        },
+        "notes": (
+            "Daily UTC+8 ZIP containing headered CSV. "
+            "Physical parser is shared by all inspected OKX trade "
+            "datasets. For Inverse Future, size represents contracts."
+        ),
+    },
+    {
+        "format_code": "OKX-B1",
+        "dataset": "l2",
+        "instrument_type": "future",
+        "market_category": "linear",
+        "container_format": "jsonl",
+        "compression": "tar.gz",
+        "record_format": "events",
+        "schema": STANDARD_L2_SCHEMA,
+        "notes": (
+            "Same physical L2 parser and reconstruction model as OKX "
+            "Spot and Perpetual. Level quantity represents linear "
+            "future contract quantity."
+        ),
+    },
+    {
+        "format_code": "OKX-B1",
+        "dataset": "l2",
+        "instrument_type": "future",
+        "market_category": "inverse",
+        "container_format": "jsonl",
+        "compression": "tar.gz",
+        "record_format": "events",
+        "schema": STANDARD_L2_SCHEMA,
+        "notes": (
+            "Same physical L2 parser and reconstruction model as OKX "
+            "Spot and Perpetual. Level quantity represents inverse "
+            "future contract quantity."
+        ),
+    },
+    {
         "format_code": "OKX-B2",
         "dataset": "l2",
         "instrument_type": "option",

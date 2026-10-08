@@ -66,7 +66,7 @@ class NormalizationMetadata:
 class ProcessingMetadata:
     instrument: InstrumentMetadata
     raw_format: RawFormatMetadata
-    normalization: NormalizationMetadata
+    normalizations: tuple[NormalizationMetadata, ...]
     profile: ProcessingProfile
 
 
@@ -110,14 +110,16 @@ class ProcessingMetadataResolver:
             dataset=dataset,
         )
 
-        normalization = self.resolve_normalization(raw_format_id=raw_format.id)
+        normalizations = self.resolve_normalizations(
+            raw_format_id=raw_format.id,
+        )
 
         processing_profile = self.resolve_profile(profile)
 
         return ProcessingMetadata(
             instrument=instrument,
             raw_format=raw_format,
-            normalization=normalization,
+            normalizations=normalizations,
             profile=processing_profile,
         )
 
@@ -299,11 +301,11 @@ class ProcessingMetadataResolver:
             schema=row["schema_json"],
         )
 
-    def resolve_normalization(
+    def resolve_normalizations(
         self,
         *,
         raw_format_id: int,
-    ) -> NormalizationMetadata:
+    ) -> tuple[NormalizationMetadata, ...]:
         with self.conn.cursor() as cursor:
             cursor.execute(
                 """
@@ -316,6 +318,10 @@ class ProcessingMetadataResolver:
                 FROM catalog.normalization_rules
 
                 WHERE raw_format_id = %s
+
+                ORDER BY
+                    target_schema,
+                    id
                 """,
                 (raw_format_id,),
             )
@@ -324,25 +330,17 @@ class ProcessingMetadataResolver:
 
         if not rows:
             raise LookupError(
-                "Normalization rule not found for " f"raw_format_id={raw_format_id}"
+                "Normalization rules not found for " f"raw_format_id={raw_format_id}"
             )
 
-        if len(rows) > 1:
-            targets = ", ".join(row["target_schema"] for row in rows)
-
-            raise RuntimeError(
-                "Normalization rule is ambiguous for "
-                f"raw_format_id={raw_format_id}: "
-                f"targets=[{targets}]"
+        return tuple(
+            NormalizationMetadata(
+                id=row["id"],
+                raw_format_id=row["raw_format_id"],
+                target_schema=row["target_schema"],
+                rules=row["rules_json"],
             )
-
-        row = rows[0]
-
-        return NormalizationMetadata(
-            id=row["id"],
-            raw_format_id=row["raw_format_id"],
-            target_schema=row["target_schema"],
-            rules=row["rules_json"],
+            for row in rows
         )
 
     def resolve_profile(

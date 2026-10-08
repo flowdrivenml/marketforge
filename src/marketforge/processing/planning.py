@@ -6,7 +6,7 @@ from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
 from marketforge.processing.archives import RawArchive
-from marketforge.processing.metadata import ProcessingMetadata
+from marketforge.processing.metadata import NormalizationMetadata, ProcessingMetadata
 from marketforge.processing.models import (
     ContentType,
     ContractKind,
@@ -151,7 +151,7 @@ def _build_task(
         symbol=(metadata.instrument.symbol),
         raw_schema=_build_raw_schema(metadata),
         instrument=_build_instrument_spec(metadata),
-        normalization=_build_normalization(metadata),
+        normalizations=_build_normalizations(metadata),
         source_ordering=_source_ordering(metadata),
         source_compression=_source_container(metadata),
         archive_member=None,
@@ -182,19 +182,28 @@ def _build_instrument_spec(
     )
 
 
-def _build_normalization(
+def _build_normalizations(
     metadata: ProcessingMetadata,
-) -> NormalizationConfig:
-    return NormalizationConfig(
-        timestamp_encoding=(_timestamp_encoding(metadata)),
-        quantity_encoding=(_quantity_encoding(metadata)),
-        target_schema=(metadata.normalization.target_schema),
-        rules=(metadata.normalization.rules),
+) -> tuple[NormalizationConfig, ...]:
+    return tuple(
+        NormalizationConfig(
+            timestamp_encoding=(
+                _timestamp_encoding(
+                    metadata,
+                    normalization,
+                )
+            ),
+            quantity_encoding=(_quantity_encoding(metadata)),
+            target_schema=(normalization.target_schema),
+            rules=normalization.rules,
+        )
+        for normalization in metadata.normalizations
     )
 
 
 def _timestamp_encoding(
     metadata: ProcessingMetadata,
+    normalization: NormalizationMetadata,
 ) -> TimestampEncoding:
     """
     Resolve timestamp encoding from raw-format schema metadata.
@@ -202,7 +211,7 @@ def _timestamp_encoding(
 
     fields = metadata.raw_format.schema.get("fields", [])
 
-    timestamp_source = metadata.normalization.rules.get(
+    timestamp_source = normalization.rules.get(
         "event_timestamp",
         {},
     ).get("source")
@@ -267,13 +276,12 @@ def _source_container(
     metadata: ProcessingMetadata,
 ) -> SourceContainer:
     container = metadata.raw_format.container_format
-
     compression = metadata.raw_format.compression
 
-    if container == "tar" and compression == "gzip":
+    if compression in {"tar.gz", "tgz"}:
         return SourceContainer.TAR_GZIP
 
-    if container == "zip":
+    if compression == "zip":
         return SourceContainer.ZIP
 
     if compression == "gzip":
@@ -390,19 +398,19 @@ def _build_output(
 def _content_type(
     metadata: ProcessingMetadata,
 ) -> ContentType:
-    target = metadata.normalization.target_schema
+    targets = {normalization.target_schema for normalization in metadata.normalizations}
 
-    if target == "trade":
+    if targets == {"trade"}:
         return ContentType.TRADES
 
-    if target in {
+    if targets and targets <= {
         "l2",
         "l2_snapshot",
         "l2_update",
     }:
         return ContentType.DEPTH
 
-    raise ValueError("Unsupported canonical target schema: " f"{target!r}")
+    raise ValueError("Unsupported canonical target schemas: " f"{sorted(targets)!r}")
 
 
 def _stream_id(
@@ -499,7 +507,13 @@ def write_process_job(
         data_root=data_root,
     )
 
-    job_path = data_root / ".jobs" / "process.json"
+    filename = _process_job_filename(
+        dataset_id=dataset_id,
+        archives=archives,
+        metadata=metadata,
+    )
+
+    job_path = data_root / ".jobs" / "process" / filename
 
     return write_processing_job(
         job,
@@ -581,19 +595,19 @@ def plan_process_dataset(
 def _dataset_data_type(
     metadata: ProcessingMetadata,
 ) -> str:
-    target = metadata.normalization.target_schema
+    targets = {normalization.target_schema for normalization in metadata.normalizations}
 
-    if target == "trade":
+    if targets == {"trade"}:
         return "trade"
 
-    if target in {
+    if targets and targets <= {
         "l2",
         "l2_snapshot",
         "l2_update",
     }:
         return "l2"
 
-    raise ValueError("Unsupported canonical target schema: " f"{target!r}")
+    raise ValueError("Unsupported canonical target schemas: " f"{sorted(targets)!r}")
 
 
 def _datetime_to_ns(
@@ -617,4 +631,52 @@ def _datetime_to_ns(
         delta.days * 86_400_000_000_000
         + delta.seconds * 1_000_000_000
         + delta.microseconds * 1_000
+    )
+
+
+def _process_job_filename(
+    *,
+    dataset_id: int,
+    archives: Sequence[RawArchive],
+    metadata: ProcessingMetadata,
+) -> str:
+    """
+    Build a deterministic, human-readable process-job filename.
+
+    Format:
+
+        {exchange}-{instrument_type}-{market_category}-{symbol}
+        -{data_type}-{start}-{end}-d{dataset_id}.json
+
+    Dates represent the canonical half-open dataset interval [start, end).
+    """
+
+    plan = plan_process_dataset(
+        archives=archives,
+        metadata=metadata,
+    )
+
+    start = _ns_to_date(plan.start_timestamp_ns)
+    end = _ns_to_date(plan.end_timestamp_ns)
+
+    instrument = metadata.instrument
+
+    return (
+        f"{instrument.exchange}-"
+        f"{instrument.instrument_type}-"
+        f"{instrument.market_category}-"
+        f"{instrument.symbol}-"
+        f"{plan.data_type}-"
+        f"{start:%Y%m%d}-"
+        f"{end:%Y%m%d}-"
+        f"d{dataset_id}.json"
+    )
+
+
+def _ns_to_date(
+    value: int,
+) -> datetime:
+    return datetime.fromtimestamp(
+        value / 1_000_000_000,
+        tz=timezone.utc,
     )

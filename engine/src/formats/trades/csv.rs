@@ -9,13 +9,13 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CsvTradeSpec {
-    pub timestamp: &'static str,
-    pub price: &'static str,
-    pub quantity: &'static str,
+    pub timestamp: String,
+    pub price: String,
+    pub quantity: String,
 
-    pub side: Option<&'static str>,
-    pub trade_id: Option<&'static str>,
-    pub sequence: Option<&'static str>,
+    pub side: Option<String>,
+    pub trade_id: Option<String>,
+    pub sequence: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,17 +46,13 @@ pub struct GenericCsvTradeProcessor {
 impl CsvTradeSpec {
     pub fn resolve(&self, headers: &ByteRecord) -> Result<ResolvedCsvTradeSpec> {
         Ok(ResolvedCsvTradeSpec {
-            timestamp_idx: resolve_required(headers, self.timestamp)?,
+            timestamp_idx: resolve_required(headers, &self.timestamp)?,
+            price_idx: resolve_required(headers, &self.price)?,
+            quantity_idx: resolve_required(headers, &self.quantity)?,
 
-            price_idx: resolve_required(headers, self.price)?,
-
-            quantity_idx: resolve_required(headers, self.quantity)?,
-
-            side_idx: resolve_optional(headers, self.side)?,
-
-            trade_id_idx: resolve_optional(headers, self.trade_id)?,
-
-            sequence_idx: resolve_optional(headers, self.sequence)?,
+            side_idx: resolve_optional(headers, self.side.as_deref())?,
+            trade_id_idx: resolve_optional(headers, self.trade_id.as_deref())?,
+            sequence_idx: resolve_optional(headers, self.sequence.as_deref())?,
         })
     }
 }
@@ -235,17 +231,17 @@ mod tests {
     use rust_decimal::Decimal;
 
     use super::*;
-    use crate::{canonical::TradeSide, job::TimestampEncoding};
+    use crate::{canonical::TradeSide, job::TargetSchema, job::TimestampEncoding};
 
     fn test_spec() -> CsvTradeSpec {
         CsvTradeSpec {
-            timestamp: "timestamp",
-            price: "price",
-            quantity: "size",
+            timestamp: "timestamp".to_owned(),
+            price: "price".to_owned(),
+            quantity: "size".to_owned(),
 
-            side: Some("side"),
-            trade_id: Some("trade_id"),
-            sequence: Some("sequence"),
+            side: Some("side".to_owned()),
+            trade_id: Some("trade_id".to_owned()),
+            sequence: Some("sequence".to_owned()),
         }
     }
 
@@ -279,9 +275,9 @@ mod tests {
         let headers = ByteRecord::from(vec!["timestamp", "size"]);
 
         let spec = CsvTradeSpec {
-            timestamp: "timestamp",
-            price: "price",
-            quantity: "size",
+            timestamp: "timestamp".to_owned(),
+            price: "price".to_owned(),
+            quantity: "size".to_owned(),
 
             side: None,
             trade_id: None,
@@ -296,11 +292,11 @@ mod tests {
         let headers = ByteRecord::from(vec!["timestamp", "price", "size"]);
 
         let spec = CsvTradeSpec {
-            timestamp: "timestamp",
-            price: "price",
-            quantity: "size",
+            timestamp: "timestamp".to_owned(),
+            price: "price".to_owned(),
+            quantity: "size".to_owned(),
 
-            side: Some("side"),
+            side: Some("side".to_owned()),
             trade_id: None,
             sequence: None,
         };
@@ -328,8 +324,9 @@ mod tests {
             resolved,
             NormalizationConfig {
                 timestamp_encoding: TimestampEncoding::Milliseconds,
-
                 quantity_encoding: QuantityEncoding::Base,
+                target_schema: TargetSchema::Trade,
+                rules: serde_json::Value::Null,
             },
             TradeContext {
                 exchange: Exchange::Bybit,

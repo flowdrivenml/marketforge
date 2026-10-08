@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -17,8 +18,18 @@ pub enum QuantityEncoding {
     Contracts,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TargetSchema {
+    Trade,
+    L2Snapshot,
+    L2Update,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NormalizationConfig {
     pub timestamp_encoding: TimestampEncoding,
     pub quantity_encoding: QuantityEncoding,
+    pub target_schema: TargetSchema,
+    pub rules: Value,
 }

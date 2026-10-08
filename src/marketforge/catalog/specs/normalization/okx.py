@@ -265,6 +265,123 @@ NORMALIZATION_RULES = [
         ),
     },
     # ------------------------------------------------------------------
+    # Futures Trades
+    # ------------------------------------------------------------------
+    {
+        "format_code": "OKX-T1",
+        "dataset": "trade",
+        "instrument_type": "future",
+        "market_category": "linear",
+        "target_schema": "trade",
+        "rules": {
+            **TRADE_COMMON,
+        },
+        "notes": (
+            "Linear future size is contract quantity and is normalized "
+            "using instrument_specs. source=1 is retained as is_rpi."
+        ),
+    },
+    {
+        "format_code": "OKX-T1",
+        "dataset": "trade",
+        "instrument_type": "future",
+        "market_category": "inverse",
+        "target_schema": "trade",
+        "rules": {
+            **TRADE_COMMON,
+        },
+        "notes": (
+            "Inverse future size is contract quantity and is normalized "
+            "using instrument_specs. source=1 is retained as is_rpi."
+        ),
+    },
+    # ------------------------------------------------------------------
+    # Linear Future L2
+    # ------------------------------------------------------------------
+    {
+        "format_code": "OKX-B1",
+        "dataset": "l2",
+        "instrument_type": "future",
+        "market_category": "linear",
+        "target_schema": "l2_snapshot",
+        "rules": {
+            **L2_COMMON,
+            "event_filter": {
+                "source": "action",
+                "equals": "snapshot",
+            },
+            "snapshot": {
+                "type": "single_event",
+            },
+        },
+        "notes": (
+            "Snapshot level quantities represent linear future contracts "
+            "and are normalized using instrument_specs."
+        ),
+    },
+    {
+        "format_code": "OKX-B1",
+        "dataset": "l2",
+        "instrument_type": "future",
+        "market_category": "linear",
+        "target_schema": "l2_update",
+        "rules": {
+            **L2_COMMON,
+            "event_filter": {
+                "source": "action",
+                "equals": "update",
+            },
+            "update_semantics": ABSOLUTE_L2_UPDATE,
+        },
+        "notes": (
+            "Update quantities are absolute linear future contract quantities. "
+            "Zero quantity deletes the level; non-zero quantity sets it."
+        ),
+    },
+    # ------------------------------------------------------------------
+    # Inverse Future L2
+    # ------------------------------------------------------------------
+    {
+        "format_code": "OKX-B1",
+        "dataset": "l2",
+        "instrument_type": "future",
+        "market_category": "inverse",
+        "target_schema": "l2_snapshot",
+        "rules": {
+            **L2_COMMON,
+            "event_filter": {
+                "source": "action",
+                "equals": "snapshot",
+            },
+            "snapshot": {
+                "type": "single_event",
+            },
+        },
+        "notes": (
+            "Snapshot level quantities represent inverse future contracts "
+            "and are normalized using instrument_specs."
+        ),
+    },
+    {
+        "format_code": "OKX-B1",
+        "dataset": "l2",
+        "instrument_type": "future",
+        "market_category": "inverse",
+        "target_schema": "l2_update",
+        "rules": {
+            **L2_COMMON,
+            "event_filter": {
+                "source": "action",
+                "equals": "update",
+            },
+            "update_semantics": ABSOLUTE_L2_UPDATE,
+        },
+        "notes": (
+            "Update quantities are absolute inverse future contract quantities. "
+            "Zero quantity deletes the level; non-zero quantity sets it."
+        ),
+    },
+    # ------------------------------------------------------------------
     # Option L2
     # ------------------------------------------------------------------
     {

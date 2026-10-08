@@ -1,173 +1,339 @@
-MarketForge validates dataset compatibility **before creating a `MergeJob`**.
 
-Compatibility is determined from structured instrument metadata in PostgreSQL rather than exchange-specific symbol names.
+MarketForge validates datasets before creating a `MergeJob`.
 
-### Spot Markets
+A merge does **not** require instruments to share the same underlying asset, quote asset, market category, or price scale. MarketForge does not rescale, align, or economically normalize prices during merging.
 
-Spot datasets may only be merged with other **spot datasets**.
+The purpose of a merge is narrower:
 
-All selected spot datasets must share the same quote/common denominator.
+> **Combine canonical market-event streams into one deterministic chronological stream while preserving the identity and original canonical values of every event.**
 
-Compatible:
+### Canonical Dataset Requirements
 
-```text
-BTC/USDT
-ETH/USDT
-SOL/USDT
-    ↓
-✓ merge
+Every merge input must already be a valid canonical MarketForge dataset.
+
+Inputs must:
+
+- have status `complete`
+    
+- use Parquet storage
+    
+- have a published storage path
+    
+- use a supported canonical data type
+    
+- overlap the requested merge time range
+    
+
+Supported canonical data types are:
+
+```
+trade
+l2
+trade_l2
 ```
 
-Incompatible:
+Raw archives cannot participate directly in a merge. They must first be processed into canonical datasets.
 
-```text
-BTC/USDT
-ETH/BTC
-SOL/USDC
-    ↓
-✗ reject
+### Instrument Compatibility
+
+Canonical datasets from different instruments may be merged freely.
+
+For example:
+
+```
+BTCUSDT spot
+BTCUSDT perpetual
+BTCUSD inverse perpetual
+BTC dated future
+ETHUSDT spot
+ETHBTC spot
+SOLUSDC spot
 ```
 
-The base assets may differ:
+may all participate in the same chronological merge.
 
-```text
-BTC/USDT
-ETH/USDT
-SOL/USDT
+MarketForge does not require:
+
+```
+same base asset
+same quote asset
+same settlement asset
+same exchange
+same instrument type
+same market category
+same contract type
+same price scale
 ```
 
-because all prices share the same `USDT` denominator.
+These differences remain part of the market information preserved by the merged dataset.
 
-Exchange-specific symbol notation does not matter:
+### Spot and Contract Markets
 
-```text
+Spot, perpetual, and futures datasets may be merged together.
+
+For example:
+
+```
+BTCUSDT spot
+        +
+BTCUSDT linear perpetual
+        +
+BTCUSD inverse perpetual
+        +
+BTC dated future
+        ↓
+✓ chronological merge
+```
+
+MarketForge does not attempt to remove the price differences between these instruments.
+
+A spot price, perpetual premium, futures basis, cross-exchange spread, or other price difference is preserved exactly as represented in the canonical source streams.
+
+These relationships can later be used by downstream software for features such as:
+
+```
+spot ↔ perpetual basis
+spot ↔ future basis
+perpetual ↔ future spread
+cross-exchange spread
+price discovery
+lead/lag
+relative-value signals
+```
+
+### Different Underlying Assets
+
+Different underlying assets may also participate in the same merge.
+
+For example:
+
+```
 BTCUSDT
-BTC-USDT
-BTC_USDT
+ETHUSDT
+SOLBTC
+ETHBTC
 ```
 
-MarketForge uses structured metadata such as:
+may be merged chronologically.
 
-```text
-base_asset
-quote_asset
-settlement_asset
-instrument_type
-market_category
+MarketForge does not claim that their absolute prices are directly comparable. It only preserves when their events occurred and which stream produced each event.
+
+This allows downstream systems to derive cross-asset relationships such as:
+
+```
+returns
+relative returns
+lead/lag
+correlation
+beta
+relative momentum
+cross-asset order flow
+liquidity response
+volatility transmission
 ```
 
-rather than comparing symbol strings directly. `catalog.instruments` already stores these fields. :chatgpt-content-reference{index="0"}
+### Trades and Depth
 
-### Contract Markets
+Trade and L2 datasets may be merged together.
 
-Contract datasets may be merged together.
-
-This includes different:
-
-```text
-underlying assets
-exchanges
-linear contracts
-inverse contracts
-perpetual contracts
-futures contracts
+```
+trades ─┐
+        ├── chronological event stream
+depth  ─┘
 ```
 
 For example:
 
-```text
-Bybit BTCUSDT linear perpetual
-Binance ETHUSDT linear perpetual
-OKX SOL-USDT-SWAP
-Bybit BTCUSD inverse perpetual
+```
+09:00:00.050  BTC spot        L2 update
+09:00:00.100  BTC perpetual   trade
+09:00:00.300  ETH spot        L2 snapshot
+09:00:00.450  BTC spot        trade
+09:00:00.900  BTC future      L2 update
 ```
 
-may participate in the same merged contract dataset.
+No resampling, forward filling, aggregation, or price adjustment occurs.
+
+Output data type is inferred from the selected canonical datasets:
+
+```
+trade + trade       → trade
+
+l2 + l2             → l2
+
+trade + l2          → trade_l2
+
+trade_l2 + anything → trade_l2
+```
+
+### Stream Identity
+
+Different instruments remain distinguishable after merging.
+
+Each input dataset receives a stable stream identity:
+
+```
+dataset:<dataset_id>
+```
+
+and a deterministic `stream_rank`.
+
+The merge job orders events primarily by:
+
+```
+event_timestamp_ns
+```
+
+with:
+
+```
+stream_rank
+```
+
+used as the deterministic tie-break when events share the same timestamp.
 
 Conceptually:
 
-```text
-contract dataset A ─┐
-contract dataset B ─┤
-contract dataset C ─┼→ chronological merge
-contract dataset D ─┘
-                         ↓
-                  ONE canonical dataset
+```
+dataset 12 ─┐
+dataset 19 ─┤
+dataset 27 ─┼── sort by event_timestamp_ns
+dataset 41 ─┘             │
+                           ↓
+                    timestamp tie?
+                           │
+                           ↓
+                      stream_rank
+                           │
+                           ↓
+                ONE deterministic stream
 ```
 
-Each canonical event retains its own exchange, instrument, and stream identity, so different contracts remain distinguishable after merging.
+### Prices and Quantities
 
-### Spot and Contracts
+MarketForge preserves canonical prices and quantities rather than converting all instruments onto a common price scale during merge.
 
-Spot and contract datasets are separate market families and must not be mixed.
+For example:
 
-```text
-BTCUSDT spot
-        +
-BTCUSDT perpetual
-        ↓
-        ✗
+```
+BTC spot       85,000
+BTC perpetual  85,025
+BTC future     86,100
 ```
 
-Even when the symbols or underlying assets are related:
+remain:
 
-```text
-SPOT + SPOT           → allowed if common denominator
-
-CONTRACT + CONTRACT   → allowed
-
-SPOT + CONTRACT       → rejected
 ```
+85,000
+85,025
+86,100
+```
+
+in their respective streams.
+
+MarketForge does not replace these values with an internal index or artificially remove their differences.
+
+Downstream systems may derive:
+
+```
+spread
+basis
+basis in bps
+implied cross-price
+relative return
+cross-market divergence
+synthetic index
+```
+
+without losing the original observations.
+
+### Time Compatibility
+
+Selected datasets must currently share a common time interval.
+
+For example:
+
+```
+Dataset A:  Sep 1 ───────────── Sep 10
+Dataset B:        Sep 3 ───────────── Sep 12
+Dataset C:              Sep 5 ─ Sep 8
+```
+
+produces the available merge interval:
+
+```
+                        Sep 5 ─ Sep 8
+```
+
+Explicit `--start` and `--end` values may narrow this interval but cannot extend beyond it.
+
+This ensures every selected stream has coverage throughout the merged interval.
 
 ### Options
 
-Options processing and merging are postponed.
+Options processing and merging remain postponed.
 
-Option metadata and architectural extensibility may remain in MarketForge, but option-specific processing, BookStore handling, archive-member orchestration, and merging are outside the initial implementation scope.
+Option metadata and architectural extensibility may remain in MarketForge, but option-specific processing, archive-member orchestration, BookStore handling, and merge semantics are outside the initial implementation scope.
 
-```text
+```
 Spot        → supported
 
 Contracts
-├── linear  → supported
-└── inverse → supported
+├── linear perpetual → supported
+├── inverse perpetual → supported
+├── linear futures    → supported
+└── inverse futures   → supported
 
-Options     → postponed
+Cross-market combinations → supported
+
+Trades + L2 → supported
+
+Options → postponed
 ```
 
 ### Validation Flow
 
-Python performs compatibility validation before Rust is invoked:
+Python performs structural validation before Rust is invoked:
 
-```text
+```
 selected datasets
         ↓
-load catalog metadata
+resolve datasets
         ↓
-classify market family
+all IDs found?
         ↓
-┌─────────────────────────────────────┐
-│ all spot?                           │
-│   require common quote denominator │
-│                                     │
-│ all contracts?                      │
-│   allow                             │
-│                                     │
-│ spot + contracts?                   │
-│   reject                            │
-│                                     │
-│ options?                            │
-│   unsupported for now               │
-└─────────────────────────────────────┘
+status = complete?
         ↓
-compatible?
-   │         │
-  yes        no
-   │         │
-   ↓         ↓
-MergeJob    CLI validation error
-   ↓
-Rust
+storage = Parquet?
+        ↓
+published storage path?
+        ↓
+supported canonical data type?
+        ↓
+common time range?
+        ↓
+resolve output type
+        ↓
+assign deterministic stream ranks
+        ↓
+MergeJob
+        ↓
+Rust chronological merge
 ```
 
-> **Merge rule:** Spot datasets may only be merged with spot datasets sharing a common quote denominator. Contract datasets may be merged together. Spot and contract datasets cannot be mixed. Options are postponed.
+Python does **not** reject a merge merely because instruments have different:
+
+```
+base assets
+quote assets
+settlement assets
+instrument types
+market categories
+contract kinds
+exchanges
+price levels
+```
+
+Those distinctions are intentionally preserved for downstream analysis.
+
+> **Merge rule:** Any supported canonical MarketForge datasets with a common time interval may be chronologically merged. MarketForge preserves their original canonical events and stream identities rather than forcing economic equivalence between the instruments.

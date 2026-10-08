@@ -159,4 +159,101 @@ RAW_FORMATS = [
             "must not be assumed universal and belongs to instrument metadata."
         ),
     },
+    {
+        "format_code": "BINANCE-T2",
+        "dataset": "trade",
+        "instrument_type": "future",
+        "market_category": "linear",
+        "container_format": "csv",
+        "compression": "zip",
+        "record_format": "rows",
+        "schema": {
+            "header": True,
+            "granularity": "daily",
+            "ordering": "chronological",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "integer",
+                },
+                {
+                    "name": "price",
+                    "type": "decimal",
+                },
+                {
+                    "name": "qty",
+                    "type": "decimal",
+                },
+                {
+                    "name": "quote_qty",
+                    "type": "decimal",
+                },
+                {
+                    "name": "time",
+                    "type": "integer",
+                    "representation": "unix_epoch",
+                    "unit": "milliseconds",
+                    "precision": "millisecond",
+                },
+                {
+                    "name": "is_buyer_maker",
+                    "type": "boolean",
+                },
+            ],
+        },
+        "notes": (
+            "Daily ZIP/deflate archive containing headered CSV. "
+            "Linear dated futures use the same physical trade format "
+            "as linear perpetual contracts."
+        ),
+    },
+    {
+        "format_code": "BINANCE-T3",
+        "dataset": "trade",
+        "instrument_type": "future",
+        "market_category": "inverse",
+        "container_format": "csv",
+        "compression": "zip",
+        "record_format": "rows",
+        "schema": {
+            "header": True,
+            "granularity": "daily",
+            "ordering": "chronological",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "integer",
+                },
+                {
+                    "name": "price",
+                    "type": "decimal",
+                },
+                {
+                    "name": "qty",
+                    "type": "decimal",
+                },
+                {
+                    "name": "base_qty",
+                    "type": "decimal",
+                },
+                {
+                    "name": "time",
+                    "type": "integer",
+                    "representation": "unix_epoch",
+                    "unit": "milliseconds",
+                    "precision": "millisecond",
+                },
+                {
+                    "name": "is_buyer_maker",
+                    "type": "boolean",
+                },
+            ],
+        },
+        "notes": (
+            "Daily ZIP/deflate archive containing headered CSV. "
+            "Inverse dated futures use the same physical trade format "
+            "as inverse perpetual contracts. Contract value belongs "
+            "to instrument metadata."
+        ),
+    },
 ]

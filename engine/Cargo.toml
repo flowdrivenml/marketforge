@@ -11,6 +11,10 @@ process = [
     "dep:csv",
     "dep:zip",
     "dep:tar",
+    "dep:arrow-array",
+    "dep:arrow-schema",
+    "dep:arrow-buffer",
+    "dep:parquet",
 ]
 
 live = []
@@ -27,7 +31,10 @@ flate2 = { version = "1", optional = true }
 csv = { version = "1", optional = true }
 zip = { version = "5", optional = true }
 tar = { version = "0.4", optional = true }
-
+arrow-array = { version = "56", optional = true }
+arrow-schema = { version = "56", optional = true }
+parquet = { version = "56", features = ["arrow", "zstd"], optional = true }
+arrow-buffer = { version = "56", optional = true }
 
 [[bin]]
 name = "marketforge-process"

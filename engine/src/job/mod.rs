@@ -2,6 +2,7 @@ mod ids;
 mod instrument;
 mod integrity;
 mod load;
+mod merge;
 mod model;
 mod normalization;
 mod operation;
@@ -26,7 +27,7 @@ pub use stream::StreamConfig;
 
 pub use task::{FormatCode, SourceContainer, SourceOrdering, StreamId, TaskId, WorkTask};
 
-pub use validate::validate_processing_job;
+pub use validate::{validate_processing_job, validate_processing_job_structure};
 
 pub use resources::{ParquetResourceConfig, ResourceConfig};
 
@@ -36,4 +37,6 @@ pub use output::{ContentType, OutputConfig};
 
 pub use instrument::{ContractKind, InstrumentKind, InstrumentSpec};
 
-pub use normalization::{NormalizationConfig, QuantityEncoding, TimestampEncoding};
+pub use normalization::{NormalizationConfig, QuantityEncoding, TargetSchema, TimestampEncoding};
+
+pub use merge::{DatasetType, MergeInput, TimeRange};

@@ -18,13 +18,23 @@ _ARCHIVE_SUFFIXES = (
 )
 
 
-_DATE_PATTERN = re.compile(
+_SEPARATED_DATE_PATTERN = re.compile(
     r"(?<!\d)"
     r"(?P<year>\d{4})"
     r"[-_]"
     r"(?P<month>\d{2})"
     r"(?:[-_](?P<day>\d{2}))?"
     r"(?!\d)"
+)
+
+
+_COMPACT_DATE_PATTERN = re.compile(
+    r"(?<!\d)" r"(?P<year>\d{4})" r"(?P<month>\d{2})" r"(?P<day>\d{2})"
+)
+
+
+_COMPACT_MONTH_PATTERN = re.compile(
+    r"(?<!\d)" r"(?P<year>\d{4})" r"(?P<month>\d{2})" r"(?!\d)"
 )
 
 
@@ -219,7 +229,13 @@ def _extract_date_range(
     the archive.
     """
 
-    match = _DATE_PATTERN.search(filename)
+    match = _SEPARATED_DATE_PATTERN.search(filename)
+
+    if match is None:
+        match = _COMPACT_DATE_PATTERN.search(filename)
+
+    if match is None:
+        match = _COMPACT_MONTH_PATTERN.search(filename)
 
     if match is None:
         return None, None
@@ -228,7 +244,7 @@ def _extract_date_range(
 
     month = int(match.group("month"))
 
-    day_value = match.group("day")
+    day_value = match.groupdict().get("day")
 
     if day_value is not None:
         value = date(

@@ -117,7 +117,10 @@ CREATE TABLE IF NOT EXISTS catalog.raw_formats (
 
     UNIQUE (
         exchange_id,
-        format_code
+        format_code,
+        dataset,
+        instrument_type,
+        market_category
     )
 );
 

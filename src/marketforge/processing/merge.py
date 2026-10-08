@@ -98,16 +98,12 @@ class MergePlanner:
 
         datasets = self.datasets.get_resolved_many(ids)
 
-        leaves = self.datasets.resolve_leaf_datasets(ids)
-
         self._validate_all_found(
             requested_ids=ids,
             datasets=datasets,
         )
 
         self._validate_dataset_state(datasets)
-
-        self._validate_instruments(leaves)
 
         data_type = self._resolve_data_type(datasets)
 
@@ -195,71 +191,6 @@ class MergePlanner:
                     f"Dataset {dataset.id} has "
                     "unsupported canonical data type "
                     f"{dataset.data_type!r}"
-                )
-
-    @staticmethod
-    def _validate_instruments(
-        datasets: list[ResolvedDataset],
-    ) -> None:
-        """
-        Validate economic compatibility using recursively resolved
-        leaf datasets.
-        """
-
-        if not datasets:
-            raise ValueError("Merge contains no underlying " "instrument datasets")
-
-        for dataset in datasets:
-            if dataset.instrument_id is None:
-                raise RuntimeError(
-                    "Resolved leaf dataset has no " f"instrument: {dataset.id}"
-                )
-
-            if dataset.instrument_type is None:
-                raise RuntimeError(
-                    "Resolved leaf dataset has no " f"instrument type: {dataset.id}"
-                )
-
-            if dataset.market_category is None:
-                raise RuntimeError(
-                    "Resolved leaf dataset has no " f"market category: {dataset.id}"
-                )
-
-        instrument_types = {dataset.instrument_type for dataset in datasets}
-
-        market_categories = {dataset.market_category for dataset in datasets}
-
-        if "option" in instrument_types or "option" in market_categories:
-            raise ValueError("Options merging is postponed")
-
-        has_spot = "spot" in market_categories
-
-        has_contract = bool(
-            market_categories
-            & {
-                "linear",
-                "inverse",
-            }
-        )
-
-        if has_spot and has_contract:
-            raise ValueError("Spot and contract datasets " "cannot be merged together")
-
-        if has_spot:
-            quote_assets = {dataset.quote_asset for dataset in datasets}
-
-            if None in quote_assets:
-                raise ValueError(
-                    "Spot merge contains an " "instrument without quote asset"
-                )
-
-            if len(quote_assets) != 1:
-                values = ", ".join(sorted(str(value) for value in quote_assets))
-
-                raise ValueError(
-                    "Spot datasets require a common "
-                    "quote denominator; received: "
-                    f"{values}"
                 )
 
     @staticmethod
@@ -616,7 +547,7 @@ def write_merge_job(
         data_root=data_root,
     )
 
-    job_path = data_root / ".jobs" / "merge.json"
+    job_path = data_root / ".jobs" / "merge" / f"merge-d{dataset_id}.json"
 
     return write_processing_job(
         job,

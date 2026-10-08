@@ -8,8 +8,14 @@ pub struct CsvDecoder<R: Read> {
 
 impl<R: Read> CsvDecoder<R> {
     pub fn new(reader: R) -> Self {
+        Self::with_headers(reader, true)
+    }
+
+    pub fn with_headers(reader: R, has_headers: bool) -> Self {
         Self {
-            reader: ReaderBuilder::new().has_headers(true).from_reader(reader),
+            reader: ReaderBuilder::new()
+                .has_headers(has_headers)
+                .from_reader(reader),
         }
     }
 
@@ -38,7 +44,7 @@ mod tests {
 
         assert_eq!(
             headers,
-            ByteRecord::from(vec!["timestamp", "price", "size",]),
+            ByteRecord::from(vec!["timestamp", "price", "size"]),
         );
 
         let records = decoder
@@ -47,11 +53,21 @@ mod tests {
             .expect("read records");
 
         assert_eq!(records.len(), 2);
+    }
 
-        assert_eq!(records[0].get(0), Some(b"1".as_slice()),);
+    #[test]
+    fn reads_headerless_csv_without_losing_first_record() {
+        let data = b"1,100.5,2\n2,101.0,3\n";
 
-        assert_eq!(records[0].get(1), Some(b"100.5".as_slice()),);
+        let mut decoder = CsvDecoder::with_headers(Cursor::new(data), false);
 
-        assert_eq!(records[0].get(2), Some(b"2".as_slice()),);
+        let records = decoder
+            .records()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("read records");
+
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].get(0), Some(b"1".as_slice()));
+        assert_eq!(records[1].get(0), Some(b"2".as_slice()));
     }
 }

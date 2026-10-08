@@ -7,6 +7,7 @@ pub enum Exchange {
     Binance,
     Okx,
     Bitget,
+    #[serde(rename = "gateio")]
     GateIo,
 }
 

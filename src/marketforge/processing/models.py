@@ -169,13 +169,22 @@ class WorkTask(BaseModel):
 
     instrument: InstrumentSpec
 
-    normalization: NormalizationConfig
+    normalizations: tuple[NormalizationConfig, ...]
 
     source_ordering: SourceOrdering
 
     source_compression: SourceContainer
 
     archive_member: str | None = None
+
+    @model_validator(mode="after")
+    def validate_normalizations(
+        self,
+    ) -> WorkTask:
+        if not self.normalizations:
+            raise ValueError("Work task contains no normalization rules")
+
+        return self
 
 
 class StreamConfig(BaseModel):
@@ -365,13 +374,8 @@ class ProcessingJob(BaseModel):
         if len(stream_ranks) != len(set(stream_ranks)):
             raise ValueError("Processing job contains " "duplicate stream ranks")
 
-        if (
-            self.operation == ProcessingOperation.MERGE
-            and self.time_range is None
-        ):
-            raise ValueError(
-                "Merge job requires a resolved time range"
-            )
+        if self.operation == ProcessingOperation.MERGE and self.time_range is None:
+            raise ValueError("Merge job requires a resolved time range")
         if (
             self.operation == ProcessingOperation.PROCESS
             and self.time_range is not None
