@@ -41,15 +41,15 @@ Historical market microstructure processing engine.
 
 **Verified:**
 
-| Test | Result |
-|---|---|
-| Trade configurations | 18/18 passed |
-| Complete-archive normalization | 37,330,201 trades |
-| Multi-task executor | 3 OKX archives |
-| Instrument filtering | 22,511 records skipped |
-| Committed Parquet dataset | 162 trades |
-| Manifest verification | Passed |
-| Decimal256 round trips | Passed |
+| Test                           | Result                 |
+| ------------------------------ | ---------------------- |
+| Trade configurations           | 18/18 passed           |
+| Complete-archive normalization | 37,330,201 trades      |
+| Multi-task executor            | 3 OKX archives         |
+| Instrument filtering           | 22,511 records skipped |
+| Committed Parquet dataset      | 162 trades             |
+| Manifest verification          | Passed                 |
+| Decimal256 round trips         | Passed                 |
 
 ### Current Limitations
 

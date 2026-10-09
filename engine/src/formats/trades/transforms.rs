@@ -4,6 +4,7 @@ use serde_json::Value;
 use crate::{
     canonical::TradeSide,
     error::{MarketForgeError, Result},
+    job::IntegrityCategory,
     normalize::{parse_buy_sell, parse_decimal},
 };
 
@@ -18,11 +19,13 @@ pub fn transform_side(raw: &[u8], spec: &SideSpec) -> Result<TradeSide> {
         SideTransform::Map => {
             let key = parse_utf8(raw, "side")?.to_ascii_lowercase();
 
-            let mapped = spec.values.get(&key).ok_or_else(|| {
-                MarketForgeError::InvalidCanonical(format!(
-                    "side mapping does not contain value: {key}"
-                ))
-            })?;
+            let mapped =
+                spec.values
+                    .get(&key)
+                    .ok_or_else(|| MarketForgeError::RecordIntegrity {
+                        category: IntegrityCategory::InvalidRecord,
+                        message: format!("side mapping does not contain value: {key}"),
+                    })?;
 
             parse_buy_sell(mapped.as_bytes())
         }
@@ -35,7 +38,7 @@ pub fn transform_side(raw: &[u8], spec: &SideSpec) -> Result<TradeSide> {
             } else if quantity < Decimal::ZERO {
                 spec.negative.as_deref()
             } else {
-                return invalid("cannot determine trade side from zero quantity");
+                return invalid_record("cannot determine trade side from zero quantity");
             };
 
             let mapped = mapped.ok_or_else(|| {
@@ -68,7 +71,7 @@ pub fn transform_bool(raw: &[u8], spec: &BoolSpec) -> Result<bool> {
                 "true" | "1" => Ok(true),
                 "false" | "0" => Ok(false),
 
-                _ => invalid(format!("invalid boolean value: {value}")),
+                _ => invalid_record(format!("invalid boolean value: {value}")),
             }
         }
 
@@ -111,13 +114,17 @@ fn value_equals(actual: &str, expected: &Value) -> bool {
 }
 
 fn parse_utf8<'a>(raw: &'a [u8], field: &str) -> Result<&'a str> {
-    std::str::from_utf8(raw).map_err(|error| {
-        MarketForgeError::InvalidCanonical(format!("invalid UTF-8 in {field}: {error}"))
+    std::str::from_utf8(raw).map_err(|error| MarketForgeError::RecordIntegrity {
+        category: IntegrityCategory::InvalidRecord,
+        message: format!("invalid UTF-8 in {field}: {error}"),
     })
 }
 
-fn invalid<T>(message: impl Into<String>) -> Result<T> {
-    Err(MarketForgeError::InvalidCanonical(message.into()))
+fn invalid_record<T>(message: impl Into<String>) -> Result<T> {
+    Err(MarketForgeError::RecordIntegrity {
+        category: IntegrityCategory::InvalidRecord,
+        message: message.into(),
+    })
 }
 
 #[cfg(test)]

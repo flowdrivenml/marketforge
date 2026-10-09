@@ -35,6 +35,7 @@ arrow-array = { version = "56", optional = true }
 arrow-schema = { version = "56", optional = true }
 parquet = { version = "56", features = ["arrow", "zstd"], optional = true }
 arrow-buffer = { version = "56", optional = true }
+sha2 = "0.10"
 
 [[bin]]
 name = "marketforge-process"
@@ -45,3 +46,8 @@ required-features = ["process"]
 name = "marketforge-live"
 path = "src/bin/marketforge-live.rs"
 required-features = ["live"]
+
+[[bin]]
+name = "marketforge-benchmark"
+path = "src/bin/marketforge-benchmark.rs"
+required-features = ["process"]

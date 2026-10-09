@@ -7,12 +7,12 @@ use std::{
 };
 
 use marketforge_engine::process::manifest::DatasetManifest;
+use marketforge_engine::process::manifest::inspect_parquet_files;
 use marketforge_engine::{
     job::load_processing_job,
     process::{ProcessingStatus, execute_processing_job, load_processing_config},
 };
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-
 static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
 
 const JOB_FILE: &str = "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json";
@@ -158,22 +158,46 @@ fn processes_multiple_trade_tasks_into_staging() {
     // Discover generated Parquet files
     // -----------------------------------------------------------------
 
-    let trades_dir = dataset.join("trades");
+    // -----------------------------------------------------------------
+    // Discover generated Parquet files
+    // -----------------------------------------------------------------
 
-    assert!(trades_dir.is_dir());
-
-    let mut parquet_files: Vec<PathBuf> = fs::read_dir(&trades_dir)
-        .expect("read Parquet directory")
-        .map(|entry| entry.expect("directory entry").path())
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("parquet"))
-        .collect();
-
-    parquet_files.sort();
+    // Parallel workers write into isolated task directories.
+    let tasks_dir = dataset.join("tasks");
 
     assert!(
-        !parquet_files.is_empty(),
+        tasks_dir.is_dir(),
+        "parallel task output directory does not exist"
+    );
+
+    // Discover all Parquet files across task directories.
+    let discovered_files = inspect_parquet_files(&dataset).expect("discover Parquet files");
+
+    assert!(
+        !discovered_files.is_empty(),
         "executor produced no Parquet files"
     );
+
+    // Convert manifest-relative paths into absolute filesystem paths.
+    let parquet_files: Vec<PathBuf> = discovered_files
+        .iter()
+        .map(|file| dataset.join(&file.path))
+        .collect();
+
+    // Verify that every file belongs to the parallel output layout.
+    for file in &discovered_files {
+        assert!(
+            file.path.starts_with("tasks/"),
+            "unexpected Parquet output path: {}",
+            file.path,
+        );
+
+        assert!(
+            dataset.join(&file.path).is_file(),
+            "Parquet file does not exist: {}",
+            file.path,
+        );
+    }
 
     // -----------------------------------------------------------------
     // Read Parquet output and verify statistics
@@ -277,6 +301,23 @@ fn processes_multiple_trade_tasks_into_staging() {
     assert_eq!(manifest.end_timestamp_ns, result.end_timestamp_ns,);
 
     assert_eq!(manifest.source_tasks.len(), job.tasks.len(),);
+
+    assert_eq!(
+        manifest.files.len(),
+        parquet_files.len(),
+        "manifest does not contain every generated Parquet file"
+    );
+
+    assert_eq!(
+        manifest.processing_metrics.counters.events_written, total_rows,
+        "processing metrics disagree with Parquet rows"
+    );
+
+    assert_eq!(
+        manifest.processing_metrics.tasks.len(),
+        job.tasks.len(),
+        "manifest does not contain all task reports"
+    );
 
     assert_eq!(
         result.manifest_path.as_deref(),

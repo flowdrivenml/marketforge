@@ -1,5 +1,6 @@
 use std::{fs, path::Path};
 
+use super::failure::ProcessingFailureReport;
 use crate::{
     error::{MarketForgeError, Result},
     job::{
@@ -12,13 +13,23 @@ use super::{
     ProcessingErrorCode, ProcessingResult,
     config::{ProcessingConfig, validate_resources},
     manifest::{DATASET_MANIFEST_FILENAME, DatasetManifest},
-    parquet::ParquetTradeWriter,
-    worker::{TradeSink, process_trade_task},
+    metrics::{IntegrityEvaluation, ProcessingMetricsReport, evaluate_integrity_policy},
+};
+use super::{
+    scheduler::execute_parallel,
+    task::{TaskExecution, execute_task},
 };
 
 // -----------------------------------------------------------------------------
 // Processing job execution
 // -----------------------------------------------------------------------------
+
+#[derive(Debug, Default)]
+pub(crate) struct ExecutionContext {
+    pub(crate) report: ProcessingMetricsReport,
+    pub(crate) failed_task_id: Option<u64>,
+    pub(crate) integrity_evaluation: Option<IntegrityEvaluation>,
+}
 
 pub fn execute_processing_job(
     job: &ProcessingJob,
@@ -74,7 +85,6 @@ fn execute_process(job: &ProcessingJob, config: &ProcessingConfig) -> Result<Pro
         }
     }
 
-    // Never overwrite an existing dataset.
     if job.output.dataset_path.exists() {
         return Err(MarketForgeError::InvalidConfiguration(format!(
             "final dataset path already exists: {}",
@@ -84,100 +94,196 @@ fn execute_process(job: &ProcessingJob, config: &ProcessingConfig) -> Result<Pro
 
     prepare_staging(job)?;
 
-    // Processing failures preserve staging for debugging.
-    let result = process_trade_tasks(job, config);
+    let mut context = ExecutionContext::default();
+
+    let result = process_trade_tasks(job, config, &mut context);
 
     match result {
         Ok(result) => Ok(result),
-
-        Err(error) => Ok(ProcessingResult::failed(
-            job.job_id,
-            job.dataset_id,
-            ProcessingErrorCode::ProcessingFailure,
-            error.to_string(),
-        )),
+        Err(error) => persist_processing_failure(job, context, error),
     }
+}
+
+// -----------------------------------------------------------------------------
+// Failure persistence
+// -----------------------------------------------------------------------------
+
+pub(crate) fn persist_processing_failure(
+    job: &ProcessingJob,
+    context: ExecutionContext,
+    error: MarketForgeError,
+) -> Result<ProcessingResult> {
+    let error_message = error.to_string();
+
+    let failure = ProcessingFailureReport::new(
+        job,
+        context.failed_task_id,
+        ProcessingErrorCode::ProcessingFailure,
+        &error_message,
+        context.report,
+        context.integrity_evaluation,
+    );
+
+    let failure_path = failure
+        .write_to(&job.output.staging_path)
+        .map_err(|report_error| {
+            MarketForgeError::InvalidConfiguration(format!(
+                "processing failed: {error_message}; \
+                 additionally failed to persist failure report: {report_error}"
+            ))
+        })?;
+
+    eprintln!(
+        "Processing failed: job={}, task={:?}, report={}",
+        job.job_id.0,
+        context.failed_task_id,
+        failure_path.display(),
+    );
+
+    Ok(ProcessingResult::failed(
+        job.job_id,
+        job.dataset_id,
+        ProcessingErrorCode::ProcessingFailure,
+        error_message,
+    ))
 }
 
 // -----------------------------------------------------------------------------
 // Multi-task processing and commit
 // -----------------------------------------------------------------------------
 
-fn process_trade_tasks(job: &ProcessingJob, config: &ProcessingConfig) -> Result<ProcessingResult> {
+// -----------------------------------------------------------------------------
+// Task scheduling
+// -----------------------------------------------------------------------------
+
+fn process_trade_tasks(
+    job: &ProcessingJob,
+    config: &ProcessingConfig,
+    context: &mut ExecutionContext,
+) -> Result<ProcessingResult> {
     let staging = &job.output.staging_path;
-    let output_dir = staging.join("trades");
 
-    let mut writer = ParquetTradeWriter::new(&output_dir, config.resources.parquet.clone())?;
+    let executions = execute_parallel(
+        job.tasks.iter().collect::<Vec<_>>(),
+        config.resources.workers as usize,
+        |task| Ok(execute_task(task, config, staging)),
+    )?;
 
-    let mut records_read = 0u64;
-    let mut records_matched = 0u64;
-    let mut records_skipped_instrument = 0u64;
+    let executions = executions
+        .into_iter()
+        .collect::<Result<Vec<TaskExecution>>>()?;
 
-    // -------------------------------------------------------------
-    // Process every source archive
-    // -------------------------------------------------------------
+    finalize_processing_job(job, config, executions, context)
+}
 
-    for task in &job.tasks {
-        let metrics = process_trade_task(task, &mut writer)?;
+// -----------------------------------------------------------------------------
+// Generic job finalization
+// -----------------------------------------------------------------------------
 
-        records_read = records_read
-            .checked_add(metrics.records_read)
-            .ok_or_else(|| {
-                MarketForgeError::InvalidConfiguration("records_read counter overflow".to_owned())
-            })?;
+pub(crate) fn finalize_processing_job(
+    job: &ProcessingJob,
+    config: &ProcessingConfig,
+    executions: Vec<TaskExecution>,
+    context: &mut ExecutionContext,
+) -> Result<ProcessingResult> {
+    let staging = &job.output.staging_path;
 
-        records_matched = records_matched
-            .checked_add(metrics.records_matched)
-            .ok_or_else(|| {
-                MarketForgeError::InvalidConfiguration(
-                    "records_matched counter overflow".to_owned(),
-                )
-            })?;
+    // -------------------------------------------------------------------------
+    // Validate task execution count
+    // -------------------------------------------------------------------------
 
-        records_skipped_instrument = records_skipped_instrument
-            .checked_add(metrics.records_skipped_instrument)
-            .ok_or_else(|| {
-                MarketForgeError::InvalidConfiguration(
-                    "records_skipped_instrument counter overflow".to_owned(),
-                )
-            })?;
-    }
-
-    // -------------------------------------------------------------
-    // Finalize Parquet output
-    // -------------------------------------------------------------
-
-    writer.finish()?;
-
-    if writer.is_failed() || !writer.is_finished() {
-        return Err(MarketForgeError::InvalidConfiguration(
-            "Parquet writer did not finalize successfully".to_owned(),
-        ));
-    }
-
-    let writer_metrics = writer.metrics().clone();
-
-    if writer_metrics.trades_written != records_matched {
+    if executions.len() != job.tasks.len() {
         return Err(MarketForgeError::InvalidConfiguration(format!(
-            "trade count mismatch: matched={}, written={}",
-            records_matched, writer_metrics.trades_written,
+            "job {} task execution count mismatch: expected={}, actual={}",
+            job.job_id.0,
+            job.tasks.len(),
+            executions.len(),
         )));
     }
 
-    // Release file handles before verification and commit.
-    drop(writer);
+    // -------------------------------------------------------------------------
+    // Aggregate all task metrics
+    // -------------------------------------------------------------------------
 
-    // -------------------------------------------------------------
-    // Inspect output and build dataset manifest
-    // -------------------------------------------------------------
+    let mut first_error = None;
 
-    let manifest = DatasetManifest::from_processing_job(job, staging)?;
+    for (task, execution) in job.tasks.iter().zip(executions) {
+        context.failed_task_id = Some(task.task_id.0);
 
-    verify_manifest(&manifest, &writer_metrics)?;
+        if execution.task_id != task.task_id.0 {
+            return Err(MarketForgeError::InvalidConfiguration(format!(
+                "job {} task execution mismatch: expected={}, actual={}",
+                job.job_id.0, task.task_id.0, execution.task_id,
+            )));
+        }
 
-    // -------------------------------------------------------------
-    // Write manifest into staging
-    // -------------------------------------------------------------
+        context
+            .report
+            .add_task(execution.metrics.into_report(task))?;
+
+        if let Some(error) = execution.error {
+            if first_error.is_none() {
+                first_error = Some((task.task_id.0, error));
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Reject failed tasks after preserving all metrics
+    // -------------------------------------------------------------------------
+
+    if let Some((task_id, error)) = first_error {
+        context.failed_task_id = Some(task_id);
+        return Err(error);
+    }
+
+    context.failed_task_id = None;
+
+    // -------------------------------------------------------------------------
+    // Validate completed-task accounting
+    // -------------------------------------------------------------------------
+
+    context.report.counters.validate()?;
+
+    // -------------------------------------------------------------------------
+    // Final integrity evaluation
+    // -------------------------------------------------------------------------
+
+    let integrity =
+        evaluate_integrity_policy(&config.integrity_policy, &context.report.scoped_integrity)?;
+
+    context.integrity_evaluation = Some(integrity.clone());
+
+    if integrity.is_failed() {
+        return Err(MarketForgeError::InvalidCanonical(format!(
+            "final integrity policy failed: {} threshold violations",
+            integrity.total_policy_violations,
+        )));
+    }
+
+    // -------------------------------------------------------------------------
+    // Construct dataset manifest
+    // -------------------------------------------------------------------------
+
+    let manifest =
+        DatasetManifest::from_processing_job(job, staging, context.report.clone(), integrity)?;
+
+    // -------------------------------------------------------------------------
+    // Verify parallel output layout
+    // -------------------------------------------------------------------------
+
+    for file in &manifest.files {
+        if !file.path.starts_with("tasks/") {
+            return Err(MarketForgeError::InvalidConfiguration(format!(
+                "unexpected Parquet output path in parallel dataset: {}",
+                file.path,
+            )));
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Write manifest
+    // -------------------------------------------------------------------------
 
     manifest.write_to(staging)?;
 
@@ -189,17 +295,17 @@ fn process_trade_tasks(job: &ProcessingJob, config: &ProcessingConfig) -> Result
         ));
     }
 
-    // -------------------------------------------------------------
-    // Commit dataset
-    // -------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // Transactional dataset commit
+    // -------------------------------------------------------------------------
 
     commit_dataset(staging, &job.output.dataset_path)?;
 
     let committed_manifest = job.output.dataset_path.join(DATASET_MANIFEST_FILENAME);
 
-    // -------------------------------------------------------------
-    // Construct successful result
-    // -------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // Construct processing result
+    // -------------------------------------------------------------------------
 
     let mut result = ProcessingResult::complete(job.job_id, job.dataset_id);
 
@@ -212,12 +318,17 @@ fn process_trade_tasks(job: &ProcessingJob, config: &ProcessingConfig) -> Result
     result.end_timestamp_ns = manifest.end_timestamp_ns;
 
     eprintln!(
-        "Processing committed: records_read={}, matched={}, skipped={}, written={}, files={}, dataset={}",
-        records_read,
-        records_matched,
-        records_skipped_instrument,
+        "Processing committed: records_read={}, matched={}, skipped={}, rejected={}, written={}, files={}, integrity={:?}, dataset={}",
+        manifest.processing_metrics.counters.records_read,
+        manifest.processing_metrics.counters.records_matched,
+        manifest
+            .processing_metrics
+            .counters
+            .records_skipped_instrument,
+        manifest.processing_metrics.counters.records_rejected,
         result.events_written,
         result.files_written,
+        manifest.integrity_status,
         job.output.dataset_path.display(),
     );
 
@@ -225,55 +336,10 @@ fn process_trade_tasks(job: &ProcessingJob, config: &ProcessingConfig) -> Result
 }
 
 // -----------------------------------------------------------------------------
-// Manifest verification
-// -----------------------------------------------------------------------------
-
-fn verify_manifest(
-    manifest: &DatasetManifest,
-    writer_metrics: &super::parquet::ParquetWriterMetrics,
-) -> Result<()> {
-    if manifest.events_written != writer_metrics.trades_written {
-        return Err(MarketForgeError::InvalidConfiguration(format!(
-            "manifest trade count mismatch: manifest={}, writer={}",
-            manifest.events_written, writer_metrics.trades_written,
-        )));
-    }
-
-    if manifest.files_written != writer_metrics.files_written {
-        return Err(MarketForgeError::InvalidConfiguration(format!(
-            "manifest file count mismatch: manifest={}, writer={}",
-            manifest.files_written, writer_metrics.files_written,
-        )));
-    }
-
-    if manifest.start_timestamp_ns != writer_metrics.start_timestamp_ns {
-        return Err(MarketForgeError::InvalidConfiguration(format!(
-            "manifest minimum timestamp mismatch: manifest={:?}, writer={:?}",
-            manifest.start_timestamp_ns, writer_metrics.start_timestamp_ns,
-        )));
-    }
-
-    if manifest.end_timestamp_ns != writer_metrics.end_timestamp_ns {
-        return Err(MarketForgeError::InvalidConfiguration(format!(
-            "manifest maximum timestamp mismatch: manifest={:?}, writer={:?}",
-            manifest.end_timestamp_ns, writer_metrics.end_timestamp_ns,
-        )));
-    }
-
-    if manifest.files_written == 0 {
-        return Err(MarketForgeError::InvalidConfiguration(
-            "cannot commit dataset without Parquet files".to_owned(),
-        ));
-    }
-
-    Ok(())
-}
-
-// -----------------------------------------------------------------------------
 // Transactional dataset commit
 // -----------------------------------------------------------------------------
 
-fn commit_dataset(staging: &Path, dataset_path: &Path) -> Result<()> {
+pub(crate) fn commit_dataset(staging: &Path, dataset_path: &Path) -> Result<()> {
     if !staging.is_dir() {
         return Err(MarketForgeError::InvalidConfiguration(format!(
             "staging directory does not exist: {}",
@@ -321,7 +387,7 @@ fn commit_dataset(staging: &Path, dataset_path: &Path) -> Result<()> {
 // Staging preparation
 // -----------------------------------------------------------------------------
 
-fn prepare_staging(job: &ProcessingJob) -> Result<()> {
+pub(crate) fn prepare_staging(job: &ProcessingJob) -> Result<()> {
     let path = &job.output.staging_path;
 
     if path.exists() {

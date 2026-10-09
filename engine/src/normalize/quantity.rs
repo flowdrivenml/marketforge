@@ -3,7 +3,7 @@ use rust_decimal::Decimal;
 use crate::{
     canonical::Quantity,
     error::{MarketForgeError, Result},
-    job::{ContractKind, InstrumentSpec, QuantityEncoding},
+    job::{ContractKind, InstrumentSpec, IntegrityCategory, QuantityEncoding},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,11 +34,11 @@ pub fn normalize_quantity(
     instrument: &InstrumentSpec,
 ) -> Result<NormalizedQuantity> {
     if raw_quantity <= Decimal::ZERO {
-        return invalid("raw quantity must be greater than zero");
+        return invalid_record("raw quantity must be greater than zero");
     }
 
     if price <= Decimal::ZERO {
-        return invalid("price must be greater than zero");
+        return invalid_record("price must be greater than zero");
     }
 
     match encoding {
@@ -72,15 +72,19 @@ fn normalize_contracts(
     instrument: &InstrumentSpec,
 ) -> Result<NormalizedQuantity> {
     let contract_kind = instrument.contract_kind.ok_or_else(|| {
-        MarketForgeError::InvalidCanonical("contract quantity requires contract_kind".to_owned())
+        MarketForgeError::InvalidConfiguration(
+            "contract quantity requires contract_kind".to_owned(),
+        )
     })?;
 
     let contract_value = instrument.contract_value.ok_or_else(|| {
-        MarketForgeError::InvalidCanonical("contract quantity requires contract_value".to_owned())
+        MarketForgeError::InvalidConfiguration(
+            "contract quantity requires contract_value".to_owned(),
+        )
     })?;
 
     if contract_value <= Decimal::ZERO {
-        return invalid("contract_value must be greater than zero");
+        return invalid_configuration("contract_value must be greater than zero");
     }
 
     if instrument
@@ -88,7 +92,7 @@ fn normalize_contracts(
         .as_deref()
         .is_none_or(str::is_empty)
     {
-        return invalid("contract quantity requires contract_value_asset");
+        return invalid_configuration("contract quantity requires contract_value_asset");
     }
 
     match contract_kind {
@@ -117,23 +121,30 @@ fn normalize_contracts(
 }
 
 fn checked_mul(left: Decimal, right: Decimal) -> Result<Decimal> {
-    left.checked_mul(right).ok_or_else(|| {
-        MarketForgeError::InvalidCanonical(
-            "decimal multiplication overflow during quantity normalization".to_owned(),
-        )
-    })
+    left.checked_mul(right)
+        .ok_or_else(|| MarketForgeError::RecordIntegrity {
+            category: IntegrityCategory::TransformationFailure,
+            message: "decimal multiplication overflow during quantity normalization".to_owned(),
+        })
 }
 
 fn checked_div(left: Decimal, right: Decimal) -> Result<Decimal> {
-    left.checked_div(right).ok_or_else(|| {
-        MarketForgeError::InvalidCanonical(
-            "decimal division failed during quantity normalization".to_owned(),
-        )
+    left.checked_div(right)
+        .ok_or_else(|| MarketForgeError::RecordIntegrity {
+            category: IntegrityCategory::TransformationFailure,
+            message: "decimal division failed during quantity normalization".to_owned(),
+        })
+}
+
+fn invalid_record<T>(message: impl Into<String>) -> Result<T> {
+    Err(MarketForgeError::RecordIntegrity {
+        category: IntegrityCategory::InvalidRecord,
+        message: message.into(),
     })
 }
 
-fn invalid<T>(message: impl Into<String>) -> Result<T> {
-    Err(MarketForgeError::InvalidCanonical(message.into()))
+fn invalid_configuration<T>(message: impl Into<String>) -> Result<T> {
+    Err(MarketForgeError::InvalidConfiguration(message.into()))
 }
 
 #[cfg(test)]

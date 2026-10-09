@@ -22,8 +22,7 @@ pub enum QuantityEncoding {
 #[serde(rename_all = "snake_case")]
 pub enum TargetSchema {
     Trade,
-    L2Snapshot,
-    L2Update,
+    Depth,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

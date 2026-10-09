@@ -1,3 +1,4 @@
+use crate::job::IntegrityCategory;
 use crate::{
     canonical::TradeSide,
     error::{MarketForgeError, Result},
@@ -12,9 +13,10 @@ pub fn parse_buy_sell(value: &[u8]) -> Result<TradeSide> {
         _ => {
             let value = String::from_utf8_lossy(value);
 
-            Err(MarketForgeError::InvalidCanonical(format!(
-                "invalid trade side: {value}",
-            )))
+            Err(MarketForgeError::RecordIntegrity {
+                category: IntegrityCategory::InvalidRecord,
+                message: format!("invalid trade side: {value}"),
+            })
         }
     }
 }

@@ -11,6 +11,7 @@ use marketforge_engine::{
     job::{ParquetResourceConfig, load_processing_job},
     process::{
         manifest::{DATASET_MANIFEST_FILENAME, DATASET_MANIFEST_VERSION, DatasetManifest},
+        metrics::{IntegrityEvaluation, IntegrityStatus, ProcessingMetricsReport},
         parquet::ParquetTradeWriter,
         worker::TradeSink,
     },
@@ -74,6 +75,17 @@ fn sample_trade(index: i64) -> Trade {
     }
 }
 
+fn sample_metrics(events_written: u64) -> ProcessingMetricsReport {
+    let mut metrics = ProcessingMetricsReport::default();
+
+    metrics.counters.records_read = events_written;
+    metrics.counters.records_matched = events_written;
+    metrics.counters.events_normalized = events_written;
+    metrics.counters.events_written = events_written;
+
+    metrics
+}
+
 #[test]
 fn creates_valid_dataset_manifest() {
     let directory = test_directory();
@@ -95,10 +107,20 @@ fn creates_valid_dataset_manifest() {
 
     let job = load_processing_job(job_path()).unwrap();
 
-    let manifest =
-        DatasetManifest::from_processing_job(&job, &directory).expect("build dataset manifest");
+    let manifest = DatasetManifest::from_processing_job(
+        &job,
+        &directory,
+        sample_metrics(100),
+        IntegrityEvaluation::default(),
+    )
+    .expect("build dataset manifest");
 
     assert_eq!(manifest.protocol_version, DATASET_MANIFEST_VERSION);
+    assert_eq!(manifest.integrity_status, IntegrityStatus::Clean);
+
+    assert_eq!(manifest.processing_metrics.counters.events_written, 100);
+
+    assert_eq!(manifest.integrity_evaluation.status, IntegrityStatus::Clean);
     assert_eq!(manifest.job_id, job.job_id.0);
     assert_eq!(manifest.dataset_id, job.dataset_id.0);
 
@@ -173,7 +195,13 @@ fn rejects_duplicate_manifest() {
 
     let job = load_processing_job(job_path()).unwrap();
 
-    let manifest = DatasetManifest::from_processing_job(&job, &directory).unwrap();
+    let manifest = DatasetManifest::from_processing_job(
+        &job,
+        &directory,
+        sample_metrics(1),
+        IntegrityEvaluation::default(),
+    )
+    .unwrap();
 
     manifest.write_to(&directory).unwrap();
 
@@ -188,7 +216,72 @@ fn rejects_missing_parquet_directory() {
 
     let job = load_processing_job(job_path()).unwrap();
 
-    let result = DatasetManifest::from_processing_job(&job, &directory);
+    let result = DatasetManifest::from_processing_job(
+        &job,
+        &directory,
+        sample_metrics(0),
+        IntegrityEvaluation::default(),
+    );
+
+    assert!(result.is_err());
+
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn rejects_failed_integrity_evaluation() {
+    let directory = test_directory();
+
+    let trades_dir = directory.join("trades");
+
+    let resources = ParquetResourceConfig {
+        row_group_target_bytes: 1024,
+        file_target_bytes: 4096,
+    };
+
+    let mut writer = ParquetTradeWriter::new(&trades_dir, resources).unwrap();
+
+    writer.write_trade(sample_trade(0)).unwrap();
+    writer.finish().unwrap();
+
+    let job = load_processing_job(job_path()).unwrap();
+
+    let mut evaluation = IntegrityEvaluation::default();
+    evaluation.status = IntegrityStatus::Failed;
+
+    let result =
+        DatasetManifest::from_processing_job(&job, &directory, sample_metrics(1), evaluation);
+
+    assert!(result.is_err());
+
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn rejects_metrics_parquet_row_mismatch() {
+    let directory = test_directory();
+
+    let trades_dir = directory.join("trades");
+
+    let resources = ParquetResourceConfig {
+        row_group_target_bytes: 1024,
+        file_target_bytes: 4096,
+    };
+
+    let mut writer = ParquetTradeWriter::new(&trades_dir, resources).unwrap();
+
+    writer.write_trade(sample_trade(0)).unwrap();
+    writer.finish().unwrap();
+
+    let job = load_processing_job(job_path()).unwrap();
+
+    // Parquet contains one trade, but metrics claim two.
+    let result = DatasetManifest::from_processing_job(
+        &job,
+        &directory,
+        sample_metrics(2),
+        IntegrityEvaluation::default(),
+    );
 
     assert!(result.is_err());
 

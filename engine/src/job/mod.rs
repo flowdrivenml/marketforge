@@ -31,8 +31,6 @@ pub use validate::{validate_processing_job, validate_processing_job_structure};
 
 pub use resources::{ParquetResourceConfig, ResourceConfig};
 
-pub use integrity::{IntegrityAction, IntegrityPolicy, IntegrityProfile, IntegrityRule};
-
 pub use output::{ContentType, OutputConfig};
 
 pub use instrument::{ContractKind, InstrumentKind, InstrumentSpec};
@@ -40,3 +38,8 @@ pub use instrument::{ContractKind, InstrumentKind, InstrumentSpec};
 pub use normalization::{NormalizationConfig, QuantityEncoding, TargetSchema, TimestampEncoding};
 
 pub use merge::{DatasetType, MergeInput, TimeRange};
+
+pub use integrity::{
+    IntegrityAction, IntegrityCategory, IntegrityPolicy, IntegrityRule, IntegrityWindowRule,
+    IntegrityWindows,
+};

@@ -1,3 +1,4 @@
+use crate::job::IntegrityCategory;
 use crate::{
     canonical::TimestampNs,
     error::{MarketForgeError, Result},
@@ -35,7 +36,12 @@ fn parse_seconds(value: &str) -> Result<TimestampNs> {
         MarketForgeError::InvalidCanonical(format!("invalid seconds timestamp {value}: {error}",))
     })?;
 
-    let nanoseconds = seconds * rust_decimal::Decimal::from(1_000_000_000_i64);
+    let nanoseconds = seconds
+        .checked_mul(rust_decimal::Decimal::from(1_000_000_000_i64))
+        .ok_or_else(|| MarketForgeError::RecordIntegrity {
+            category: IntegrityCategory::InvalidRecord,
+            message: format!("timestamp overflow: {value}"),
+        })?;
 
     nanoseconds
         .trunc()

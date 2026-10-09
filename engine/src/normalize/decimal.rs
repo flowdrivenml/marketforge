@@ -2,15 +2,20 @@ use std::str::FromStr;
 
 use rust_decimal::Decimal;
 
-use crate::error::{MarketForgeError, Result};
+use crate::{
+    error::{MarketForgeError, Result},
+    job::IntegrityCategory,
+};
 
 pub fn parse_decimal(value: &[u8], field: &str) -> Result<Decimal> {
-    let value = std::str::from_utf8(value).map_err(|error| {
-        MarketForgeError::InvalidCanonical(format!("invalid UTF-8 in {field}: {error}",))
+    let value = std::str::from_utf8(value).map_err(|error| MarketForgeError::RecordIntegrity {
+        category: IntegrityCategory::InvalidRecord,
+        message: format!("invalid UTF-8 in {field}: {error}"),
     })?;
 
-    Decimal::from_str(value).map_err(|error| {
-        MarketForgeError::InvalidCanonical(format!("invalid decimal in {field}: {value}: {error}",))
+    Decimal::from_str(value).map_err(|error| MarketForgeError::RecordIntegrity {
+        category: IntegrityCategory::InvalidRecord,
+        message: format!("invalid decimal in {field}: {value}: {error}"),
     })
 }
 

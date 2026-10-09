@@ -17,14 +17,8 @@ pub enum TradeSide {
     Sell,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BookSide {
     Bid,
     Ask,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum L2Action {
-    Set,
-    Delete,
 }

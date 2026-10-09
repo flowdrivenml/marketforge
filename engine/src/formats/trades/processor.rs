@@ -3,7 +3,7 @@ use csv::ByteRecord;
 use crate::{
     canonical::{EventEnvelope, Exchange, Trade},
     error::{MarketForgeError, Result},
-    job::{InstrumentSpec, NormalizationConfig, TargetSchema},
+    job::{InstrumentSpec, IntegrityCategory, NormalizationConfig, TargetSchema},
     normalize::{normalize_quantity, parse_decimal, parse_timestamp_ns},
     validate::validate_trade,
 };
@@ -197,8 +197,9 @@ fn required<'a>(record: &'a ByteRecord, field: ResolvedField, name: &str) -> Res
     record
         .get(field.index)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            MarketForgeError::InvalidCanonical(format!("missing required trade field: {name}"))
+        .ok_or_else(|| MarketForgeError::RecordIntegrity {
+            category: IntegrityCategory::InvalidRecord,
+            message: format!("missing required trade field: {name}"),
         })
 }
 
@@ -215,8 +216,9 @@ fn optional_string(record: &ByteRecord, field: Option<ResolvedField>) -> Result<
         return Ok(None);
     }
 
-    let value = std::str::from_utf8(value).map_err(|error| {
-        MarketForgeError::InvalidCanonical(format!("invalid UTF-8 in trade identifier: {error}"))
+    let value = std::str::from_utf8(value).map_err(|error| MarketForgeError::RecordIntegrity {
+        category: IntegrityCategory::InvalidRecord,
+        message: format!("invalid UTF-8 in trade identifier: {error}"),
     })?;
 
     Ok(Some(value.to_owned()))
@@ -231,11 +233,16 @@ fn optional_u64(record: &ByteRecord, field: Option<ResolvedField>) -> Result<Opt
         return Ok(None);
     }
 
-    let value = std::str::from_utf8(value).map_err(|error| {
-        MarketForgeError::InvalidCanonical(format!("invalid UTF-8 in trade sequence: {error}"))
+    let value = std::str::from_utf8(value).map_err(|error| MarketForgeError::RecordIntegrity {
+        category: IntegrityCategory::InvalidRecord,
+        message: format!("invalid UTF-8 in trade sequence: {error}"),
     })?;
 
-    value.parse::<u64>().map(Some).map_err(|error| {
-        MarketForgeError::InvalidCanonical(format!("invalid trade sequence: {value}: {error}"))
-    })
+    value
+        .parse::<u64>()
+        .map(Some)
+        .map_err(|error| MarketForgeError::RecordIntegrity {
+            category: IntegrityCategory::InvalidRecord,
+            message: format!("invalid trade sequence: {value}: {error}"),
+        })
 }

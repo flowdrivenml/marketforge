@@ -13,9 +13,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error::{MarketForgeError, Result},
     job::{ContentType, ProcessingJob},
+    process::metrics::{IntegrityEvaluation, IntegrityStatus, ProcessingMetricsReport},
 };
 
-pub const DATASET_MANIFEST_VERSION: u32 = 1;
+pub const DATASET_MANIFEST_VERSION: u32 = 2;
 pub const DATASET_MANIFEST_FILENAME: &str = "manifest.json";
 
 // -----------------------------------------------------------------------------
@@ -51,6 +52,11 @@ pub struct DatasetManifest {
 
     pub source_tasks: Vec<u64>,
     pub files: Vec<DatasetFile>,
+
+    // Processing and integrity reporting.
+    pub integrity_status: IntegrityStatus,
+    pub integrity_evaluation: IntegrityEvaluation,
+    pub processing_metrics: ProcessingMetricsReport,
 }
 
 // -----------------------------------------------------------------------------
@@ -58,7 +64,12 @@ pub struct DatasetManifest {
 // -----------------------------------------------------------------------------
 
 impl DatasetManifest {
-    pub fn from_processing_job(job: &ProcessingJob, dataset_root: &Path) -> Result<Self> {
+    pub fn from_processing_job(
+        job: &ProcessingJob,
+        dataset_root: &Path,
+        processing_metrics: ProcessingMetricsReport,
+        integrity_evaluation: IntegrityEvaluation,
+    ) -> Result<Self> {
         let files = inspect_parquet_files(dataset_root)?;
 
         let events_written = files.iter().try_fold(0u64, |total, file| {
@@ -75,6 +86,19 @@ impl DatasetManifest {
             .min();
 
         let end_timestamp_ns = files.iter().filter_map(|file| file.end_timestamp_ns).max();
+
+        if integrity_evaluation.status == IntegrityStatus::Failed {
+            return Err(MarketForgeError::InvalidConfiguration(
+                "cannot construct committed dataset manifest with failed integrity".to_owned(),
+            ));
+        }
+
+        if processing_metrics.counters.events_written != events_written {
+            return Err(MarketForgeError::InvalidConfiguration(format!(
+                "processing metrics/Parquet row mismatch: metrics={}, parquet={}",
+                processing_metrics.counters.events_written, events_written,
+            )));
+        }
 
         Ok(Self {
             protocol_version: DATASET_MANIFEST_VERSION,
@@ -93,6 +117,10 @@ impl DatasetManifest {
             source_tasks: job.tasks.iter().map(|task| task.task_id.0).collect(),
 
             files,
+
+            integrity_status: integrity_evaluation.status,
+            integrity_evaluation,
+            processing_metrics,
         })
     }
 
@@ -128,50 +156,100 @@ impl DatasetManifest {
 // -----------------------------------------------------------------------------
 
 pub fn inspect_parquet_files(dataset_root: &Path) -> Result<Vec<DatasetFile>> {
+    let mut paths = Vec::<PathBuf>::new();
+
+    // ---------------------------------------------------------
+    // Sequential output
+    // ---------------------------------------------------------
+
     let trades_dir = dataset_root.join("trades");
 
-    if !trades_dir.is_dir() {
-        return Err(MarketForgeError::InvalidConfiguration(format!(
-            "dataset trades directory does not exist: {}",
-            trades_dir.display()
-        )));
+    if trades_dir.is_dir() {
+        collect_parquet_files(&trades_dir, &mut paths)?;
     }
 
-    let mut paths: Vec<PathBuf> = fs::read_dir(&trades_dir)
-        .map_err(|error| {
-            MarketForgeError::InvalidConfiguration(format!(
-                "failed to read Parquet directory {}: {error}",
-                trades_dir.display()
-            ))
-        })?
-        .map(|entry| {
-            entry.map(|entry| entry.path()).map_err(|error| {
+    // ---------------------------------------------------------
+    // Parallel task output
+    // ---------------------------------------------------------
+
+    let tasks_dir = dataset_root.join("tasks");
+
+    if tasks_dir.is_dir() {
+        let mut task_dirs = fs::read_dir(&tasks_dir)
+            .map_err(|error| {
                 MarketForgeError::InvalidConfiguration(format!(
-                    "failed to read Parquet directory entry: {error}"
+                    "failed to read task directory {}: {error}",
+                    tasks_dir.display(),
                 ))
+            })?
+            .map(|entry| {
+                entry.map(|entry| entry.path()).map_err(|error| {
+                    MarketForgeError::InvalidConfiguration(format!(
+                        "failed to read task directory entry: {error}",
+                    ))
+                })
             })
-        })
-        .collect::<Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>>>()?;
+
+        task_dirs.sort();
+
+        for task_dir in task_dirs {
+            if !task_dir.is_dir() {
+                continue;
+            }
+
+            let task_trades_dir = task_dir.join("trades");
+
+            if task_trades_dir.is_dir() {
+                collect_parquet_files(&task_trades_dir, &mut paths)?;
+            }
+        }
+    }
+
+    // ---------------------------------------------------------
+    // Inspect discovered Parquet files
+    // ---------------------------------------------------------
 
     paths.sort();
 
-    let mut files = Vec::new();
-
-    for path in paths {
-        if path.extension().and_then(|ext| ext.to_str()) != Some("parquet") {
-            continue;
-        }
-
-        files.push(inspect_parquet_file(dataset_root, &path)?);
-    }
-
-    if files.is_empty() {
+    if paths.is_empty() {
         return Err(MarketForgeError::InvalidConfiguration(
             "dataset contains no Parquet files".to_owned(),
         ));
     }
 
+    let mut files = Vec::with_capacity(paths.len());
+
+    for path in paths {
+        files.push(inspect_parquet_file(dataset_root, &path)?);
+    }
+
     Ok(files)
+}
+
+fn collect_parquet_files(directory: &Path, paths: &mut Vec<PathBuf>) -> Result<()> {
+    let entries = fs::read_dir(directory).map_err(|error| {
+        MarketForgeError::InvalidConfiguration(format!(
+            "failed to read Parquet directory {}: {error}",
+            directory.display(),
+        ))
+    })?;
+
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            MarketForgeError::InvalidConfiguration(format!(
+                "failed to read Parquet directory entry: {error}",
+            ))
+        })?;
+
+        let path = entry.path();
+
+        if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("parquet") {
+            paths.push(path);
+        }
+    }
+
+    Ok(())
 }
 
 fn inspect_parquet_file(dataset_root: &Path, path: &Path) -> Result<DatasetFile> {

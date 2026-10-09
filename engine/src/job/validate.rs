@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
-use crate::error::{MarketForgeError, Result};
-
+use super::{ContentType, TargetSchema};
 use super::{PROCESSING_PROTOCOL_VERSION, ProcessingJob, ProcessingOperation};
+use crate::error::{MarketForgeError, Result};
 
 pub fn validate_processing_job(job: &ProcessingJob) -> Result<()> {
     validate_processing_job_inner(job, true)
@@ -141,9 +141,49 @@ fn validate_processing_job_inner(
     let mut task_ids = HashSet::new();
 
     for task in &job.tasks {
+        // Reject duplicate task IDs.
         if !task_ids.insert(task.task_id) {
             return Err(MarketForgeError::InvalidConfiguration(format!(
                 "duplicate task ID: {}",
+                task.task_id.0
+            )));
+        }
+
+        // Determine expected canonical target.
+        let expected_target = match job.output.content_type {
+            ContentType::Trades => TargetSchema::Trade,
+            ContentType::Depth => TargetSchema::Depth,
+
+            ContentType::Combined => {
+                return Err(MarketForgeError::InvalidConfiguration(
+                    "combined output is not supported for raw processing jobs".to_owned(),
+                ));
+            }
+        }; // Every task requires at least one normalization.
+        if task.normalizations.is_empty() {
+            return Err(MarketForgeError::InvalidConfiguration(format!(
+                "task {} requires at least one normalization",
+                task.task_id.0
+            )));
+        }
+
+        // All normalizations must target the same canonical schema.
+        if task
+            .normalizations
+            .iter()
+            .any(|normalization| normalization.target_schema != expected_target)
+        {
+            return Err(MarketForgeError::InvalidConfiguration(format!(
+                "task {} has normalization targets incompatible with {:?}",
+                task.task_id.0, job.output.content_type
+            )));
+        }
+
+        // Trades require exactly one normalization.
+        // Depth may have multiple rules for snapshots and updates.
+        if expected_target == TargetSchema::Trade && task.normalizations.len() != 1 {
+            return Err(MarketForgeError::InvalidConfiguration(format!(
+                "trade task {} requires exactly one normalization",
                 task.task_id.0
             )));
         }
