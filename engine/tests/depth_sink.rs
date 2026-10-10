@@ -8,8 +8,8 @@ use marketforge_engine::{
     process::worker::DepthSink,
 };
 
+use marketforge_engine::process::boundary::DepthBoundaryManifest;
 use rust_decimal::Decimal;
-
 // -----------------------------------------------------------------------------
 // In-memory depth sink
 // -----------------------------------------------------------------------------
@@ -99,7 +99,9 @@ impl DepthSink for TestDepthSink {
 
         Ok(())
     }
-
+    fn write_boundary(&mut self, _boundary: DepthBoundaryManifest) -> Result<()> {
+        Ok(())
+    }
     fn finish(&mut self) -> Result<()> {
         if self.failed {
             return Err(MarketForgeError::InvalidConfiguration(

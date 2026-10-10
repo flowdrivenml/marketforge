@@ -1,9 +1,12 @@
 use std::path::{Path, PathBuf};
 
+use marketforge_engine::formats::depth::{
+    DepthEventBoundary, DepthProcessingOutcome, DepthSourceOperation,
+};
 use marketforge_engine::{
     book::SequencePolicy,
     canonical::Exchange,
-    formats::depth::{DepthContext, DepthEventBoundary, DepthProcessor},
+    formats::depth::{DepthContext, DepthProcessor},
     job::load_processing_job,
 };
 
@@ -123,4 +126,34 @@ fn recovery_snapshot_starts_new_segment() {
     assert_eq!(outcome.boundary, DepthEventBoundary::Initialization);
 
     assert_eq!(outcome.events.len(), 2);
+}
+
+#[test]
+fn source_operation_is_independent_of_reconstruction_boundary() {
+    // First authoritative snapshot.
+    let initialization = DepthProcessingOutcome::initialization(vec![]);
+
+    assert_eq!(initialization.boundary, DepthEventBoundary::Initialization);
+
+    assert_eq!(initialization.operation, DepthSourceOperation::Snapshot);
+
+    // Ordinary absolute update.
+    let update = DepthProcessingOutcome::changes(vec![]);
+
+    assert_eq!(update.boundary, DepthEventBoundary::Changes);
+
+    assert_eq!(update.operation, DepthSourceOperation::AbsoluteUpdate);
+
+    // Subsequent authoritative snapshot that does not
+    // establish a new reconstruction segment.
+    let mut subsequent_snapshot = DepthProcessingOutcome::changes(vec![]);
+
+    subsequent_snapshot.operation = DepthSourceOperation::Snapshot;
+
+    assert_eq!(subsequent_snapshot.boundary, DepthEventBoundary::Changes);
+
+    assert_eq!(
+        subsequent_snapshot.operation,
+        DepthSourceOperation::Snapshot
+    );
 }

@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use marketforge_engine::process::boundary::DepthBoundaryManifest;
 use marketforge_engine::{
     book::SegmentTracker,
     formats::depth::{DepthEventBoundary, DepthProcessingOutcome},
@@ -17,7 +18,6 @@ use marketforge_engine::{
         worker::{DepthSink, process_depth_task_with_metrics},
     },
 };
-
 // -----------------------------------------------------------------------------
 // Test configuration
 // -----------------------------------------------------------------------------
@@ -140,6 +140,9 @@ impl DepthSink for CountingDepthSink {
             self.last_timestamp_ns = Some(timestamp);
         }
 
+        Ok(())
+    }
+    fn write_boundary(&mut self, _boundary: DepthBoundaryManifest) -> Result<()> {
         Ok(())
     }
 

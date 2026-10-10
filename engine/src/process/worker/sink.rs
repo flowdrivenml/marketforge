@@ -1,4 +1,7 @@
-use crate::{canonical::Trade, error::Result, formats::depth::DepthProcessingOutcome};
+use crate::{
+    canonical::Trade, error::Result, formats::depth::DepthProcessingOutcome,
+    process::boundary::DepthBoundaryManifest,
+};
 
 pub trait TradeSink {
     fn write_trade(&mut self, trade: Trade) -> Result<()>;
@@ -8,13 +11,12 @@ pub trait TradeSink {
 
 pub trait DepthSink {
     /// Accept one complete source-event outcome.
-    ///
-    /// All levels belong to the same source message.
-    /// The boundary identifies whether they initialize a new book segment.
-    ///
-    /// A successful return means the sink accepted the entire outcome.
-    /// It does not necessarily mean the data has been persisted to disk.
     fn write_outcome(&mut self, outcome: DepthProcessingOutcome) -> Result<()>;
+
+    /// Accept completed boundary metadata.
+    ///
+    /// Every implementation must explicitly handle this operation.
+    fn write_boundary(&mut self, boundary: DepthBoundaryManifest) -> Result<()>;
 
     fn finish(&mut self) -> Result<()>;
 }

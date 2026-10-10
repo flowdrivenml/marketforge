@@ -1,4 +1,9 @@
+use super::{
+    integrity::{enforce_integrity, record_integrity_error},
+    sink::DepthSink,
+};
 use crate::formats::depth::DepthEventBoundary;
+use crate::process::boundary::{BoundaryBookState, DepthBoundaryTracker};
 use crate::{
     book::SequencePolicy,
     error::{MarketForgeError, Result},
@@ -7,11 +12,6 @@ use crate::{
     process::metrics::{IntegrityCategory, IntegrityScope, ScopedIntegrityMetrics, TaskMetrics},
     source::JsonlDecoder,
     source::with_source_reader,
-};
-
-use super::{
-    integrity::{enforce_integrity, record_integrity_error},
-    sink::DepthSink,
 };
 
 // -----------------------------------------------------------------------------
@@ -76,6 +76,39 @@ pub fn process_depth_task_with_metrics<S: DepthSink>(
                 sequence_policy,
             )?;
 
+            let snapshot_depth = task
+                .raw_schema
+                .get("order_book")
+                .and_then(|value| value.get("snapshot_depth"));
+
+            let bid_depth = snapshot_depth
+                .and_then(|value| value.get("bids"))
+                .and_then(|value| value.as_u64());
+
+            let ask_depth = snapshot_depth
+                .and_then(|value| value.get("asks"))
+                .and_then(|value| value.as_u64());
+
+            let depth_per_side = match (bid_depth, ask_depth) {
+                (Some(bids), Some(asks)) if bids == asks => {
+                    Some(u32::try_from(bids).map_err(|_| {
+                        MarketForgeError::InvalidConfiguration(
+                            "snapshot depth exceeds u32".to_owned(),
+                        )
+                    })?)
+                }
+                _ => None,
+            };
+
+            let mut boundary_tracker = DepthBoundaryTracker::new(
+                task.exchange,
+                task.instrument_id,
+                task.symbol.clone(),
+                task.stream_id.0.clone(),
+                sequence_policy,
+                depth_per_side,
+            );
+
             let mut source_record = 0u64;
 
             // -----------------------------------------------------------------
@@ -99,6 +132,7 @@ pub fn process_depth_task_with_metrics<S: DepthSink>(
                         // A corrupted message may contain missing book updates.
                         // Reconstruction is unsafe until another snapshot.
                         processor.invalidate_synchronization();
+                        boundary_tracker.invalidate();
 
                         record_integrity_error(
                             task.task_id.0,
@@ -140,7 +174,7 @@ pub fn process_depth_task_with_metrics<S: DepthSink>(
                 // Normalize and reconstruct depth
                 // -------------------------------------------------------------
 
-                let outcome = match processor.process_record_with_boundary(&record) {
+                let mut outcome = match processor.process_record_with_boundary(&record) {
                     Ok(outcome) => outcome,
 
                     // ---------------------------------------------------------
@@ -169,6 +203,7 @@ pub fn process_depth_task_with_metrics<S: DepthSink>(
                         // might have contained state-changing information.
                         // Require a new authoritative snapshot.
                         processor.invalidate_synchronization();
+                        boundary_tracker.invalidate();
 
                         enforce_integrity(
                             policy,
@@ -183,6 +218,7 @@ pub fn process_depth_task_with_metrics<S: DepthSink>(
 
                     Err(error) => return Err(error),
                 };
+                outcome.source.source_event_ordinal = Some(source_record);
 
                 // -------------------------------------------------------------
                 // Validate complete canonical outcome
@@ -264,7 +300,22 @@ pub fn process_depth_task_with_metrics<S: DepthSink>(
                 //
                 // Successful return means the entire outcome was accepted.
                 // Disk persistence is finalized separately.
+                // Preserve source metadata before transferring ownership to the sink.
+                let source_metadata = outcome.source.clone();
+                let event_boundary = outcome.boundary;
+
+                // Capture the complete book only when initializing a segment.
+                let initial_state = if event_boundary == DepthEventBoundary::Initialization {
+                    BoundaryBookState::from_book(processor.book())
+                } else {
+                    None
+                };
+
+                // Commit the complete source event.
                 sink.write_outcome(outcome)?;
+
+                // Update boundary metadata only after successful sink acceptance.
+                boundary_tracker.record_accepted(&source_metadata, event_boundary, initial_state);
 
                 // -------------------------------------------------------------
                 // Commit metrics after successful sink acceptance
@@ -284,6 +335,14 @@ pub fn process_depth_task_with_metrics<S: DepthSink>(
                     metrics.record_timestamp(timestamp);
                 }
             }
+
+            // Capture the final valid reconstructed book once.
+            boundary_tracker.set_final_state(BoundaryBookState::from_book(processor.book()));
+
+            // Finalize boundary metadata.
+            let boundary_manifest = boundary_tracker.finish();
+
+            sink.write_boundary(boundary_manifest)?;
 
             Ok(())
         },

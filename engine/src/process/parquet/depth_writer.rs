@@ -1,12 +1,13 @@
-use std::{
-    fs::{self, File},
-    path::{Path, PathBuf},
-};
-
+use super::{DepthEventBatchBuilder, IndexedDepthEvent, depth_event_schema};
+use crate::process::boundary::DepthBoundaryManifest;
 use parquet::{
     arrow::ArrowWriter,
     basic::{Compression, ZstdLevel},
     file::properties::WriterProperties,
+};
+use std::{
+    fs::{self, File},
+    path::{Path, PathBuf},
 };
 
 use crate::{
@@ -53,6 +54,11 @@ pub struct ParquetDepthWriter {
 
     finished: bool,
     failed: bool,
+    event_batch: DepthEventBatchBuilder,
+    event_writer: Option<ArrowWriter<File>>,
+    events_written: u64,
+    last_event_ordinal: Option<u64>,
+    boundary_manifest: Option<DepthBoundaryManifest>,
 }
 
 impl ParquetDepthWriter {
@@ -89,11 +95,18 @@ impl ParquetDepthWriter {
             current_file_bytes: 0,
             next_file_index: 0,
 
+            // Source-event index
+            event_batch: DepthEventBatchBuilder::with_capacity(8192),
+            event_writer: None,
+            events_written: 0,
+            last_event_ordinal: None,
+
             segments: SegmentTracker::new(),
             metrics: ParquetDepthWriterMetrics::default(),
 
             finished: false,
             failed: false,
+            boundary_manifest: None,
         })
     }
 
@@ -111,6 +124,9 @@ impl ParquetDepthWriter {
 
     pub fn is_finished(&self) -> bool {
         self.finished
+    }
+    pub fn events_indexed(&self) -> u64 {
+        self.events_written
     }
 
     pub fn is_failed(&self) -> bool {
@@ -192,6 +208,88 @@ impl ParquetDepthWriter {
         self.next_file_index = self.next_file_index.checked_add(1).ok_or_else(|| {
             MarketForgeError::InvalidConfiguration("depth Parquet file index overflow".to_owned())
         })?;
+
+        Ok(())
+    }
+
+    fn open_event_writer(&mut self) -> Result<()> {
+        if self.event_writer.is_some() {
+            return Ok(());
+        }
+
+        let path = self.output_dir.join("events.parquet");
+
+        if path.exists() {
+            return Err(MarketForgeError::InvalidConfiguration(format!(
+                "depth event index already exists: {}",
+                path.display()
+            )));
+        }
+
+        let file = File::create(&path).map_err(|error| {
+            MarketForgeError::InvalidConfiguration(format!(
+                "failed to create depth event index: {error}"
+            ))
+        })?;
+
+        let properties = WriterProperties::builder()
+            .set_compression(Compression::ZSTD(ZstdLevel::try_new(3).map_err(
+                |error| {
+                    MarketForgeError::InvalidConfiguration(format!(
+                        "invalid event-index compression level: {error}"
+                    ))
+                },
+            )?))
+            .build();
+
+        self.event_writer = Some(
+            ArrowWriter::try_new(file, depth_event_schema(), Some(properties)).map_err(
+                |error| {
+                    MarketForgeError::InvalidConfiguration(format!(
+                        "failed to initialize event-index writer: {error}"
+                    ))
+                },
+            )?,
+        );
+
+        Ok(())
+    }
+
+    fn flush_event_batch(&mut self) -> Result<()> {
+        if self.event_batch.is_empty() {
+            return Ok(());
+        }
+
+        self.open_event_writer()?;
+
+        let batch = self
+            .event_batch
+            .finish()?
+            .expect("nonempty event-index batch");
+
+        self.event_writer
+            .as_mut()
+            .expect("event writer initialized")
+            .write(&batch)
+            .map_err(|error| {
+                MarketForgeError::InvalidConfiguration(format!(
+                    "failed to write depth event-index batch: {error}"
+                ))
+            })?;
+
+        Ok(())
+    }
+
+    fn close_event_writer(&mut self) -> Result<()> {
+        self.flush_event_batch()?;
+
+        if let Some(writer) = self.event_writer.take() {
+            writer.close().map_err(|error| {
+                MarketForgeError::InvalidConfiguration(format!(
+                    "failed to finalize depth event index: {error}"
+                ))
+            })?;
+        }
 
         Ok(())
     }
@@ -380,8 +478,33 @@ impl ParquetDepthWriter {
                 )
             })?;
 
+        // -------------------------------------------------------------------------
+        // Prepare source-event index
+        // -------------------------------------------------------------------------
+
+        let indexed_event = IndexedDepthEvent::from_outcome(&outcome, self.metrics.levels_written)?;
+
+        if let Some(previous) = self.last_event_ordinal {
+            if indexed_event.event_ordinal <= previous {
+                return Err(MarketForgeError::InvalidConfiguration(format!(
+                    "non-increasing depth source ordinal: previous={previous}, current={}",
+                    indexed_event.event_ordinal,
+                )));
+            }
+        }
+
+        let next_events_written = self.events_written.checked_add(1).ok_or_else(|| {
+            MarketForgeError::InvalidConfiguration("depth source-event counter overflow".to_owned())
+        })?;
+
+        let event_ordinal = indexed_event.event_ordinal;
+
         // Commit accepted canonical levels in source order.
         self.batch.extend(outcome.events);
+        self.event_batch.push(indexed_event);
+
+        self.events_written = next_events_written;
+        self.last_event_ordinal = Some(event_ordinal);
 
         self.batch_bytes = next_batch_bytes;
         self.segments = next_segments;
@@ -406,6 +529,9 @@ impl ParquetDepthWriter {
         if self.batch_bytes >= self.resources.row_group_target_bytes {
             self.flush_batch()?;
         }
+        if self.event_batch.len() >= 8192 {
+            self.flush_event_batch()?;
+        }
 
         Ok(())
     }
@@ -421,6 +547,7 @@ impl ParquetDepthWriter {
 
         self.flush_batch()?;
         self.close_file()?;
+        self.close_event_writer()?;
 
         // -------------------------------------------------------------------------
         // Validate canonical row accounting
@@ -448,6 +575,31 @@ impl ParquetDepthWriter {
         // -------------------------------------------------------------------------
 
         write_depth_segments(&self.output_dir, &manifest)?;
+
+        let boundary = self.boundary_manifest.as_ref().ok_or_else(|| {
+            MarketForgeError::InvalidConfiguration("depth boundary metadata missing".to_owned())
+        })?;
+
+        let path = self.output_dir.join("boundary.json");
+
+        if path.exists() {
+            return Err(MarketForgeError::InvalidConfiguration(format!(
+                "depth boundary metadata already exists: {}",
+                path.display()
+            )));
+        }
+
+        let file = File::create(&path).map_err(|error| {
+            MarketForgeError::InvalidConfiguration(format!(
+                "failed to create depth boundary metadata: {error}"
+            ))
+        })?;
+
+        serde_json::to_writer_pretty(file, boundary).map_err(|error| {
+            MarketForgeError::InvalidConfiguration(format!(
+                "failed to serialize depth boundary metadata: {error}"
+            ))
+        })?;
 
         self.finished = true;
 
@@ -480,6 +632,19 @@ impl DepthSink for ParquetDepthWriter {
         if let Err(error) = self.finalize() {
             return self.fail(error);
         }
+
+        Ok(())
+    }
+    fn write_boundary(&mut self, boundary: DepthBoundaryManifest) -> Result<()> {
+        self.ensure_writable()?;
+
+        if self.boundary_manifest.is_some() {
+            return self.fail(MarketForgeError::InvalidConfiguration(
+                "depth boundary metadata already provided".to_owned(),
+            ));
+        }
+
+        self.boundary_manifest = Some(boundary);
 
         Ok(())
     }

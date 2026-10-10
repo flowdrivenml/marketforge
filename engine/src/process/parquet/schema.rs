@@ -28,6 +28,20 @@ pub fn trade_schema() -> SchemaRef {
     ]))
 }
 
+pub fn depth_event_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("event_ordinal", DataType::UInt64, false),
+        Field::new("canonical_row_offset", DataType::UInt64, false),
+        Field::new("canonical_row_count", DataType::UInt64, false),
+        Field::new("event_timestamp_ns", DataType::Int64, false),
+        Field::new("system_timestamp_ns", DataType::Int64, true),
+        Field::new("sequence_start", DataType::UInt64, true),
+        Field::new("sequence_end", DataType::UInt64, true),
+        Field::new("event_boundary", DataType::UInt8, false),
+        Field::new("source_operation", DataType::UInt8, false),
+    ]))
+}
+
 fn decimal_field(name: &str, nullable: bool) -> Field {
     Field::new(
         name,

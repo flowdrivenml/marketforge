@@ -11,7 +11,9 @@ use arrow_array::{Array, Decimal256Array, Int64Array, RecordBatch, StringArray};
 use marketforge_engine::{
     canonical::{BookSide, EventEnvelope, Exchange, L2LevelUpdate},
     formats::depth::DepthProcessingOutcome,
+    formats::depth::DepthSourceEventMetadata,
     job::ParquetResourceConfig,
+    process::boundary::DepthBoundaryManifest,
     process::{
         parquet::{ParquetDepthWriter, i256_to_decimal},
         worker::DepthSink,
@@ -99,7 +101,13 @@ fn initialization(timestamp_ns: i64, count: usize) -> DepthProcessingOutcome {
         })
         .collect();
 
-    DepthProcessingOutcome::initialization(levels)
+    DepthProcessingOutcome::initialization(levels).with_source(DepthSourceEventMetadata {
+        source_event_ordinal: Some(timestamp_ns as u64),
+        event_timestamp_ns: timestamp_ns,
+        system_timestamp_ns: None,
+        sequence_start: None,
+        sequence_end: None,
+    })
 }
 
 fn changes(timestamp_ns: i64, count: usize) -> DepthProcessingOutcome {
@@ -114,7 +122,13 @@ fn changes(timestamp_ns: i64, count: usize) -> DepthProcessingOutcome {
         })
         .collect();
 
-    DepthProcessingOutcome::changes(levels)
+    DepthProcessingOutcome::changes(levels).with_source(DepthSourceEventMetadata {
+        source_event_ordinal: Some(timestamp_ns as u64),
+        event_timestamp_ns: timestamp_ns,
+        system_timestamp_ns: None,
+        sequence_start: None,
+        sequence_end: None,
+    })
 }
 
 // -----------------------------------------------------------------------------
@@ -125,10 +139,15 @@ fn parquet_files(directory: &Path) -> Vec<PathBuf> {
     let mut files = fs::read_dir(directory)
         .unwrap()
         .map(|entry| entry.unwrap().path())
-        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("parquet"))
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("part-") && name.ends_with(".parquet"))
+        })
         .collect::<Vec<_>>();
 
     files.sort();
+
     files
 }
 
@@ -154,6 +173,30 @@ fn read_batches(directory: &Path) -> Vec<RecordBatch> {
 fn total_rows(batches: &[RecordBatch]) -> usize {
     batches.iter().map(RecordBatch::num_rows).sum()
 }
+fn attach_test_boundary(writer: &mut ParquetDepthWriter) {
+    let boundary = DepthBoundaryManifest::new(
+        Exchange::Bybit,
+        1,
+        "BTCUSDT".to_owned(),
+        "test-depth-stream".to_owned(),
+    );
+
+    writer.write_boundary(boundary).unwrap();
+}
+
+fn with_test_source(
+    outcome: DepthProcessingOutcome,
+    ordinal: u64,
+    timestamp_ns: i64,
+) -> DepthProcessingOutcome {
+    outcome.with_source(DepthSourceEventMetadata {
+        source_event_ordinal: Some(ordinal),
+        event_timestamp_ns: timestamp_ns,
+        system_timestamp_ns: Some(timestamp_ns + 100),
+        sequence_start: None,
+        sequence_end: None,
+    })
+}
 
 // -----------------------------------------------------------------------------
 // Decimal256 round-trip
@@ -168,15 +211,15 @@ fn preserves_exact_decimal_values() {
     let price = Decimal::new(784313, 1);
     let quantity = Decimal::new(162, 5);
 
-    writer
-        .write_outcome(DepthProcessingOutcome::initialization(vec![level(
-            1000,
-            BookSide::Bid,
-            price,
-            quantity,
-        )]))
-        .unwrap();
+    let outcome = with_test_source(
+        DepthProcessingOutcome::initialization(vec![level(1000, BookSide::Bid, price, quantity)]),
+        1,
+        1000,
+    );
 
+    writer.write_outcome(outcome).unwrap();
+
+    attach_test_boundary(&mut writer);
     writer.finish().unwrap();
 
     let batches = read_batches(&directory.path);
@@ -220,6 +263,7 @@ fn rotates_parquet_files() {
         writer.write_outcome(changes(1001 + index, 20)).unwrap();
     }
 
+    attach_test_boundary(&mut writer);
     writer.finish().unwrap();
 
     let files = parquet_files(&directory.path);
@@ -248,20 +292,29 @@ fn preserves_canonical_event_order() {
 
     let mut writer = ParquetDepthWriter::new(&directory.path, resources()).unwrap();
 
-    writer
-        .write_outcome(DepthProcessingOutcome::initialization(vec![
+    let initial = with_test_source(
+        DepthProcessingOutcome::initialization(vec![
             level(1000, BookSide::Bid, Decimal::from(100), Decimal::ONE),
             level(1000, BookSide::Ask, Decimal::from(101), Decimal::ONE),
-        ]))
-        .unwrap();
+        ]),
+        1,
+        1000,
+    );
 
-    writer
-        .write_outcome(DepthProcessingOutcome::changes(vec![
+    writer.write_outcome(initial).unwrap();
+
+    let update = with_test_source(
+        DepthProcessingOutcome::changes(vec![
             level(1001, BookSide::Bid, Decimal::from(99), Decimal::ONE),
             level(1001, BookSide::Ask, Decimal::from(102), Decimal::ONE),
-        ]))
-        .unwrap();
+        ]),
+        2,
+        1001,
+    );
 
+    writer.write_outcome(update).unwrap();
+
+    attach_test_boundary(&mut writer);
     writer.finish().unwrap();
 
     let batches = read_batches(&directory.path);
@@ -311,6 +364,7 @@ fn preserves_segment_offsets_across_files() {
     writer.write_outcome(initialization(2000, 400)).unwrap();
     writer.write_outcome(changes(2001, 50)).unwrap();
 
+    attach_test_boundary(&mut writer);
     writer.finish().unwrap();
 
     assert_eq!(writer.segments().len(), 2);
@@ -364,6 +418,7 @@ fn rejects_writes_after_finish() {
 
     writer.write_outcome(initialization(1000, 10)).unwrap();
 
+    attach_test_boundary(&mut writer);
     writer.finish().unwrap();
 
     assert!(writer.is_finished());
@@ -385,6 +440,7 @@ fn reports_correct_metrics() {
     writer.write_outcome(initialization(1000, 10)).unwrap();
     writer.write_outcome(changes(1001, 5)).unwrap();
 
+    attach_test_boundary(&mut writer);
     writer.finish().unwrap();
 
     let metrics = writer.metrics();

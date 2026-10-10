@@ -8,6 +8,9 @@ use crate::{
     validate::validate_l2_level_update,
 };
 
+use super::outcome::{
+    DepthEventBoundary, DepthProcessingOutcome, DepthSourceEventMetadata, DepthSourceOperation,
+};
 use super::{
     json::{matches_event_filter, required_json_field},
     snapshot::apply_snapshot,
@@ -15,8 +18,6 @@ use super::{
     transforms::{extract_level_array, extract_optional_sequence, extract_timestamp_ns},
     update::apply_absolute_update,
 };
-
-use super::outcome::{DepthEventBoundary, DepthProcessingOutcome};
 use crate::book::{SequencePolicy, SequenceTracker};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -226,7 +227,28 @@ impl DepthProcessor {
             _ => DepthEventBoundary::Changes,
         };
 
-        Ok(DepthProcessingOutcome { boundary, events })
+        let operation = match &spec.operation {
+            DepthOperation::Snapshot(_) => DepthSourceOperation::Snapshot,
+            DepthOperation::AbsoluteUpdate => DepthSourceOperation::AbsoluteUpdate,
+            DepthOperation::RelativeUpdate(_) => DepthSourceOperation::RelativeUpdate,
+        };
+
+        let source = DepthSourceEventMetadata {
+            source_event_ordinal: None,
+
+            event_timestamp_ns,
+            system_timestamp_ns,
+
+            sequence_start: source_sequence,
+            sequence_end: source_sequence,
+        };
+
+        Ok(DepthProcessingOutcome {
+            boundary,
+            operation,
+            events,
+            source,
+        })
     }
     /// Invalidate reconstructed book state.
     ///

@@ -1,7 +1,8 @@
-mod config;
+pub mod config;
 mod executor;
 mod result;
 
+pub mod boundary;
 pub mod failure;
 pub mod manifest;
 pub mod metrics;

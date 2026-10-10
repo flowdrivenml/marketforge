@@ -8,7 +8,9 @@ use std::{
 };
 
 use arrow_array::{Array, Decimal256Array, Int64Array, StringArray, UInt64Array};
-
+use marketforge_engine::process::boundary::{
+    BoundaryBookState, DepthBoundaryManifest, fingerprint_book,
+};
 use marketforge_engine::{
     book::{BookLevel, BookStore, SequencePolicy},
     canonical::{BookSide, L2LevelUpdate},
@@ -147,6 +149,9 @@ impl DepthSink for ReferenceSink {
     fn finish(&mut self) -> Result<()> {
         self.writer.finish()
     }
+    fn write_boundary(&mut self, boundary: DepthBoundaryManifest) -> Result<()> {
+        self.writer.write_boundary(boundary)
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -157,7 +162,11 @@ fn parquet_files(directory: &Path) -> Vec<PathBuf> {
     let mut files = fs::read_dir(directory)
         .unwrap()
         .map(|entry| entry.unwrap().path())
-        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("parquet"))
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("part-") && name.ends_with(".parquet"))
+        })
         .collect::<Vec<_>>();
 
     files.sort();
@@ -354,7 +363,98 @@ fn replay_parquet(directory: &Path) -> (BookStore, u64) {
 
     (book, row_offset)
 }
+fn verify_boundary_replay(directory: &Path, replayed_book: &BookStore, reference_book: &BookStore) {
+    // -------------------------------------------------------------------------
+    // Load persisted boundary metadata
+    // -------------------------------------------------------------------------
 
+    let path = directory.join("boundary.json");
+
+    assert!(
+        path.is_file(),
+        "missing boundary metadata: {}",
+        path.display()
+    );
+
+    let file = fs::File::open(&path).unwrap();
+
+    let manifest: DepthBoundaryManifest =
+        serde_json::from_reader(file).expect("deserialize boundary metadata");
+
+    let final_boundary = manifest
+        .final_state
+        .as_ref()
+        .expect("missing final boundary state");
+
+    // -------------------------------------------------------------------------
+    // Extract reconstructed book states
+    // -------------------------------------------------------------------------
+
+    let replayed_state =
+        BoundaryBookState::from_book(replayed_book).expect("replayed book must be initialized");
+
+    let reference_state =
+        BoundaryBookState::from_book(reference_book).expect("reference book must be initialized");
+
+    // -------------------------------------------------------------------------
+    // Exact book-state equivalence
+    // -------------------------------------------------------------------------
+
+    assert_eq!(
+        reference_state, replayed_state,
+        "raw reconstruction differs from Parquet replay"
+    );
+
+    assert_eq!(
+        replayed_state, final_boundary.state,
+        "Parquet replay differs from persisted boundary state"
+    );
+
+    // -------------------------------------------------------------------------
+    // Fingerprint equivalence
+    // -------------------------------------------------------------------------
+
+    let reference_hash = fingerprint_book(&reference_state);
+    let replayed_hash = fingerprint_book(&replayed_state);
+
+    assert_eq!(
+        reference_hash, replayed_hash,
+        "reference and replay fingerprints differ"
+    );
+
+    assert_eq!(
+        replayed_hash, final_boundary.fingerprint,
+        "replayed book fingerprint differs from boundary metadata"
+    );
+
+    // -------------------------------------------------------------------------
+    // Print verification
+    // -------------------------------------------------------------------------
+
+    println!("\n{}", "=".repeat(90));
+    println!("MARKETFORGE — BOUNDARY REPLAY EQUIVALENCE");
+    println!("{}", "=".repeat(90));
+
+    println!("\nBOOK STATES");
+    println!("  Reference bids     : {}", reference_state.bids.len());
+    println!("  Reference asks     : {}", reference_state.asks.len());
+    println!("  Replayed bids      : {}", replayed_state.bids.len());
+    println!("  Replayed asks      : {}", replayed_state.asks.len());
+    println!("  Boundary bids      : {}", final_boundary.state.bids.len());
+    println!("  Boundary asks      : {}", final_boundary.state.asks.len());
+
+    println!("\nFINGERPRINTS");
+    println!("  Reference          : {reference_hash}");
+    println!("  Replay             : {replayed_hash}");
+    println!("  Boundary           : {}", final_boundary.fingerprint);
+
+    println!("\nEQUIVALENCE");
+    println!("  Raw ↔ Parquet      : MATCH");
+    println!("  Parquet ↔ Boundary : MATCH");
+    println!("  SHA-256            : MATCH");
+
+    println!("\nBOUNDARY REPLAY RESULT: PASS");
+}
 // -----------------------------------------------------------------------------
 // Real archive equivalence test
 // -----------------------------------------------------------------------------
@@ -463,6 +563,8 @@ fn parquet_replay_matches_reference_book() {
         &reference_asks,
         "replayed asks differ from reference"
     );
+
+    verify_boundary_replay(&directory.path, &replayed, &sink.book);
 
     // -------------------------------------------------------------------------
     // Results
