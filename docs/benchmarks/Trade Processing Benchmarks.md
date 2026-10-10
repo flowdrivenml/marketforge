@@ -97,9 +97,3 @@ Global scheduling distributes independent trade-processing tasks across exchange
 For the tested trade workload, **16 workers provided the best performance**, with throughput decreasing slightly at 24 and 32 workers.
 
 Benchmarks measure end-to-end processing using real historical exchange archives.
-
-## Note
-
-**Gate.io was excluded from the parallel scaling benchmark** because it provides an entire month of historical trades in a single archive file. Each archive is processed as one task, preventing multiple workers from processing that archive concurrently. Including these large, single-task workloads would obscure the scaling benefits of global task scheduling across independent archives.
-
-Gate.io remains supported by MarketForge and was successfully validated in the full five-exchange trade-processing test.

@@ -310,6 +310,8 @@ pub fn process_trade_task_with_metrics<S: TradeSink>(
 
                 increment(&mut metrics.counters.events_normalized, "events_normalized")?;
 
+                increment(&mut metrics.counters.records_processed, "records_processed")?;
+
                 let timestamp = trade.envelope.event_timestamp_ns;
 
                 metrics.record_timestamp(timestamp);

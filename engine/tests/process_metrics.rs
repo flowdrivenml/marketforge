@@ -16,6 +16,7 @@ fn processing_counters_validate() {
         tasks_completed: 1,
         tasks_failed: 0,
         records_rejected_unmatched: 0,
+        records_processed: 75,
     };
 
     counters.validate().unwrap();
@@ -33,6 +34,7 @@ fn processing_counters_reject_inconsistent_accounting() {
         tasks_completed: 1,
         tasks_failed: 0,
         records_rejected_unmatched: 0,
+        records_processed: 0,
     };
 
     assert!(counters.validate().is_err());

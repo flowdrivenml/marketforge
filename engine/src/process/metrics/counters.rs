@@ -15,6 +15,7 @@ pub struct ProcessingCounters {
     pub tasks_completed: u64,
     pub tasks_failed: u64,
     pub records_rejected_unmatched: u64,
+    pub records_processed: u64,
 }
 
 impl ProcessingCounters {
@@ -43,6 +44,7 @@ impl ProcessingCounters {
         add!(tasks_completed);
         add!(tasks_failed);
         add!(records_rejected_unmatched);
+        add!(records_processed);
 
         *self = merged;
 
@@ -83,7 +85,7 @@ impl ProcessingCounters {
         }
 
         let matched_accounted = matched_rejected
-            .checked_add(self.events_normalized)
+            .checked_add(self.records_processed)
             .ok_or_else(|| {
                 MarketForgeError::InvalidConfiguration(
                     "matched-record accounting overflow".to_owned(),
@@ -116,8 +118,54 @@ fn validates_unmatched_parse_failures() {
         records_skipped_instrument: 4,
         records_rejected: 2,
         records_rejected_unmatched: 1,
+
+        records_processed: 4,
+
         events_normalized: 4,
         events_written: 4,
+
+        tasks_completed: 1,
+        tasks_failed: 0,
+    };
+
+    counters.validate().unwrap();
+}
+
+#[test]
+fn validates_one_to_many_depth_processing() {
+    let counters = ProcessingCounters {
+        records_read: 100,
+        records_matched: 100,
+        records_skipped_instrument: 0,
+        records_rejected: 0,
+        records_rejected_unmatched: 0,
+
+        records_processed: 100,
+
+        events_normalized: 1500,
+        events_written: 1500,
+
+        tasks_completed: 1,
+        tasks_failed: 0,
+    };
+
+    counters.validate().unwrap();
+}
+
+#[test]
+fn validates_depth_records_without_emitted_changes() {
+    let counters = ProcessingCounters {
+        records_read: 100,
+        records_matched: 100,
+        records_skipped_instrument: 0,
+        records_rejected: 0,
+        records_rejected_unmatched: 0,
+
+        records_processed: 100,
+
+        events_normalized: 0,
+        events_written: 0,
+
         tasks_completed: 1,
         tasks_failed: 0,
     };

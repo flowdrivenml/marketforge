@@ -16,6 +16,7 @@ use super::{
     update::apply_absolute_update,
 };
 
+use super::outcome::{DepthEventBoundary, DepthProcessingOutcome};
 use crate::book::{SequencePolicy, SequenceTracker};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,7 +70,10 @@ impl DepthProcessor {
         &self.sequence
     }
 
-    pub fn process_record(&mut self, record: &Value) -> Result<Vec<L2LevelUpdate>> {
+    pub fn process_record_with_boundary(
+        &mut self,
+        record: &Value,
+    ) -> Result<DepthProcessingOutcome> {
         // Resolve exactly one matching normalization rule.
         let mut matched = None;
 
@@ -113,7 +117,6 @@ impl DepthProcessor {
             &spec.event_timestamp.source,
             spec.timestamp_encoding,
         )?;
-
         // -------------------------------------------------------------------------
         // Extract source sequence
         // -------------------------------------------------------------------------
@@ -143,6 +146,8 @@ impl DepthProcessor {
 
         let bids = extract_level_array(record, bids_spec)?;
         let asks = extract_level_array(record, asks_spec)?;
+
+        let requires_initialization = !self.book.is_initialized();
 
         let changes = match &spec.operation {
             DepthOperation::Snapshot(_) => {
@@ -213,7 +218,27 @@ impl DepthProcessor {
             validate_l2_level_update(event)?;
         }
 
-        Ok(events)
+        let boundary = match &spec.operation {
+            DepthOperation::Snapshot(_) if requires_initialization => {
+                DepthEventBoundary::Initialization
+            }
+
+            _ => DepthEventBoundary::Changes,
+        };
+
+        Ok(DepthProcessingOutcome { boundary, events })
+    }
+    /// Invalidate reconstructed book state.
+    ///
+    /// Called when a source record may have been lost or corrupted.
+    ///
+    /// Processing may resume only after an authoritative snapshot.
+    pub fn invalidate_synchronization(&mut self) {
+        self.sequence.invalidate();
+        self.book.clear();
+    }
+    pub fn process_record(&mut self, record: &Value) -> Result<Vec<L2LevelUpdate>> {
+        Ok(self.process_record_with_boundary(record)?.events)
     }
 }
 

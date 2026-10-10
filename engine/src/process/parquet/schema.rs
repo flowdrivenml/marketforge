@@ -130,3 +130,20 @@ mod tests {
         }
     }
 }
+
+pub fn depth_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("event_timestamp_ns", DataType::Int64, false),
+        Field::new("system_timestamp_ns", DataType::Int64, true),
+        Field::new("exchange", DataType::Utf8, false),
+        Field::new("instrument_id", DataType::Int64, false),
+        Field::new("symbol", DataType::Utf8, false),
+        Field::new("stream_id", DataType::Utf8, false),
+        Field::new("side", DataType::Utf8, false),
+        decimal_field("price", false),
+        decimal_field("quantity_base", true),
+        decimal_field("quantity_quote", true),
+        decimal_field("quantity_contracts", true),
+        Field::new("order_count", DataType::UInt64, true),
+    ]))
+}

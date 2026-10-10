@@ -1,4 +1,5 @@
 mod gzip;
+mod jsonl;
 mod plain;
 mod tar_gzip;
 mod zip;
@@ -6,6 +7,7 @@ mod zip;
 use std::{io::Read, path::Path};
 
 use crate::{error::Result, job::SourceContainer};
+pub use jsonl::JsonlDecoder;
 
 pub use gzip::{open_gzip, with_gzip_reader};
 

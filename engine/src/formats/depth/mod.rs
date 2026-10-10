@@ -1,4 +1,5 @@
 mod json;
+mod outcome;
 mod processor;
 mod snapshot;
 mod spec;
@@ -11,6 +12,7 @@ pub use spec::{
 };
 
 pub use json::{json_scalar, matches_event_filter, required_json_field, resolve_json_path};
+pub use outcome::{DepthEventBoundary, DepthProcessingOutcome};
 pub use processor::{DepthContext, DepthProcessor};
 pub use transforms::{
     ExtractedLevel, extract_decimal, extract_level_array, extract_optional_sequence,

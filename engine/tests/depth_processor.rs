@@ -6,6 +6,7 @@ use marketforge_engine::{
     job::load_processing_job,
 };
 
+use marketforge_engine::book::SequencePolicy;
 use rust_decimal::Decimal;
 use serde_json::json;
 
@@ -32,6 +33,7 @@ fn processor() -> DepthProcessor {
             symbol: task.symbol.clone(),
             stream_id: task.stream_id.0.clone(),
         },
+        SequencePolicy::Consecutive,
     )
     .expect("construct depth processor")
 }
@@ -159,4 +161,63 @@ fn rejects_invalid_batch_without_modifying_book() {
 
     assert_eq!(processor.book().bids(), &previous_bids);
     assert_eq!(processor.book().asks(), &previous_asks);
+}
+
+#[test]
+fn invalidation_requires_new_snapshot() {
+    let mut processor = processor();
+
+    let snapshot = json!({
+        "type": "snapshot",
+        "ts": 1788220800001_i64,
+        "cts": 1788220800000_i64,
+        "data": {
+            "s": "BTCUSDT",
+            "u": 100,
+            "b": [["85000", "2"]],
+            "a": [["85001", "4"]]
+        }
+    });
+
+    processor.process_record(&snapshot).unwrap();
+
+    assert!(processor.book().is_initialized());
+    assert!(processor.sequence().is_synchronized());
+
+    processor.invalidate_synchronization();
+
+    assert!(!processor.book().is_initialized());
+    assert!(!processor.sequence().is_synchronized());
+
+    let delta = json!({
+        "type": "delta",
+        "ts": 1788220800002_i64,
+        "cts": 1788220800001_i64,
+        "data": {
+            "s": "BTCUSDT",
+            "u": 101,
+            "b": [["85000", "5"]],
+            "a": []
+        }
+    });
+
+    assert!(processor.process_record(&delta).is_err());
+
+    let recovery = json!({
+        "type": "snapshot",
+        "ts": 1788220800003_i64,
+        "cts": 1788220800002_i64,
+        "data": {
+            "s": "BTCUSDT",
+            "u": 200,
+            "b": [["85000", "8"]],
+            "a": [["85001", "6"]]
+        }
+    });
+
+    let events = processor.process_record(&recovery).unwrap();
+
+    assert_eq!(events.len(), 2);
+    assert!(processor.book().is_initialized());
+    assert!(processor.sequence().is_synchronized());
 }
