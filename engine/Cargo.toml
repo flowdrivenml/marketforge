@@ -15,6 +15,7 @@ process = [
     "dep:arrow-schema",
     "dep:arrow-buffer",
     "dep:parquet",
+    "dep:quick-xml",
 ]
 
 live = []
@@ -25,7 +26,7 @@ monitor-tui = []
 clap = { version = "4.6.7", features = ["derive"] }
 rust_decimal = "1.43.0"
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
+serde_json = { version = "1.0.151", features = ["arbitrary_precision"] }
 thiserror = "2.0.21"
 flate2 = { version = "1", optional = true }
 csv = { version = "1", optional = true }
@@ -36,6 +37,7 @@ arrow-schema = { version = "56", optional = true }
 parquet = { version = "56", features = ["arrow", "zstd"], optional = true }
 arrow-buffer = { version = "56", optional = true }
 sha2 = "0.10"
+quick-xml = { version = "0.38", optional = true }
 
 [[bin]]
 name = "marketforge-process"

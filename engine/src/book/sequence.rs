@@ -10,6 +10,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SequencePolicy {
     Consecutive,
+    Ranged,
     Unsequenced,
 }
 
@@ -44,8 +45,13 @@ impl SequenceTracker {
     /// Establish synchronization from an authoritative snapshot.
     ///
     /// A snapshot may reset the source sequence.
+    /// Establish synchronization from an authoritative snapshot.
     pub fn initialize(&mut self, sequence: Option<u64>) -> Result<()> {
-        if self.policy == SequencePolicy::Consecutive && sequence.is_none() {
+        if matches!(
+            self.policy,
+            SequencePolicy::Consecutive | SequencePolicy::Ranged
+        ) && sequence.is_none()
+        {
             return invalid("sequenced snapshot requires an update ID");
         }
 
@@ -57,6 +63,13 @@ impl SequenceTracker {
 
     /// Validate an incremental update without modifying tracker state.
     pub fn validate_update(&self, sequence: Option<u64>) -> Result<()> {
+        self.validate_update_range(sequence, None)
+    }
+
+    /// Validate a sequence range without modifying tracker state.
+    ///
+    /// `count` is the number of consecutive source sequence IDs covered.
+    pub fn validate_update_range(&self, sequence: Option<u64>, count: Option<u64>) -> Result<()> {
         if !self.synchronized {
             return invalid_category(
                 IntegrityCategory::MissingSnapshot,
@@ -67,7 +80,7 @@ impl SequenceTracker {
         match self.policy {
             SequencePolicy::Unsequenced => Ok(()),
 
-            SequencePolicy::Consecutive => {
+            SequencePolicy::Consecutive | SequencePolicy::Ranged => {
                 let previous = self.last_sequence.ok_or_else(|| {
                     integrity_error(
                         IntegrityCategory::SequenceGap,
@@ -82,6 +95,18 @@ impl SequenceTracker {
                     )
                 })?;
 
+                if self.policy == SequencePolicy::Ranged {
+                    match count {
+                        Some(0) | None => {
+                            return invalid_category(
+                                IntegrityCategory::InvalidRecord,
+                                "ranged depth update requires positive sequence count",
+                            );
+                        }
+                        Some(_) => {}
+                    }
+                }
+
                 let expected = previous.checked_add(1).ok_or_else(|| {
                     integrity_error(IntegrityCategory::SequenceGap, "depth sequence overflow")
                 })?;
@@ -95,16 +120,36 @@ impl SequenceTracker {
                     );
                 }
 
+                if self.policy == SequencePolicy::Ranged {
+                    let count = count.unwrap();
+
+                    current.checked_add(count - 1).ok_or_else(|| {
+                        integrity_error(
+                            IntegrityCategory::SequenceGap,
+                            "depth sequence range overflow",
+                        )
+                    })?;
+                }
+
                 Ok(())
             }
         }
     }
 
     /// Commit a previously validated update.
-    ///
-    /// Call only after BookStore successfully applies the update.
     pub fn commit_update(&mut self, sequence: Option<u64>) {
-        self.last_sequence = sequence;
+        self.commit_update_range(sequence, None);
+    }
+
+    /// Commit a previously validated sequence range.
+    pub fn commit_update_range(&mut self, sequence: Option<u64>, count: Option<u64>) {
+        self.last_sequence = match (self.policy, sequence, count) {
+            (SequencePolicy::Ranged, Some(start), Some(count)) if count > 0 => {
+                start.checked_add(count - 1)
+            }
+
+            _ => sequence,
+        };
     }
 
     /// Invalidate synchronization after an unrecoverable sequence gap.

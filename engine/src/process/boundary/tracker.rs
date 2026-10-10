@@ -86,13 +86,18 @@ impl DepthBoundaryTracker {
     }
 
     pub fn finish(mut self) -> DepthBoundaryManifest {
+        let sequence_verifiable = matches!(
+            self.sequence_policy,
+            SequencePolicy::Consecutive | SequencePolicy::Ranged
+        );
+
         self.manifest.continuity = if self.discontinuity_detected {
             if self.manifest.final_state.is_some() {
                 BoundaryContinuity::RecoveredFromSnapshot
             } else {
                 BoundaryContinuity::GapDetected
             }
-        } else if self.sequence_policy == SequencePolicy::Consecutive
+        } else if sequence_verifiable
             && self.manifest.initial.is_some()
             && self.manifest.final_state.is_some()
             && self.manifest.first_sequence.is_some()
