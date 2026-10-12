@@ -1,8 +1,4 @@
-use std::{
-    fs::OpenOptions,
-    io::BufWriter,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use crate::{
     error::{MarketForgeError, Result},
@@ -10,12 +6,14 @@ use crate::{
 };
 
 use super::{
-    MergeCommitPaths, MergeInputDataset, UnifiedMergeManifest, UnifiedMergeMode,
-    build_depth_inventory, build_merge_checkpoints, build_trade_inventory,
-    build_unified_merge_manifest, depth_task_intervals, execute_unified_partitions_parallel,
-    plan_merge_partitions, plan_unified_partition_inputs, reconcile_depth_boundaries,
-    resolve_initial_checkpoints, resolve_merge_inputs, resolve_unified_merge_streams,
-    trade_task_intervals, validate_unified_merge_output,
+    MergeBoundaryRecord, MergeCommitPaths, MergeInputDataset, PhysicalMergeManifest,
+    UnifiedMergeMode, UnifiedMergeStreamKind, build_depth_inventory, build_materialization_plans,
+    build_merge_checkpoints, build_physical_checkpoints, build_trade_inventory,
+    depth_task_intervals, execute_parallel_materialization, execute_unified_partitions_parallel,
+    plan_merge_partitions, plan_unified_partition_inputs, prepare_physical_publication,
+    reconcile_depth_boundaries, resolve_initial_checkpoints, resolve_merge_inputs,
+    resolve_physical_initial_reconstruction, resolve_unified_merge_streams, trade_task_intervals,
+    validate_physical_dataset, validate_unified_merge_output,
 };
 
 // -----------------------------------------------------------------------------
@@ -113,6 +111,10 @@ pub fn execute_unified_merge_job(
         )?
     };
 
+    // Initial reconstruction availability must be preserved in the
+    // physical manifest before publication is enabled.
+    let _ = &initial_checkpoints;
+
     // -------------------------------------------------------------------------
     // Plan unified partitions
     // -------------------------------------------------------------------------
@@ -125,6 +127,9 @@ pub fn execute_unified_merge_job(
 
     let plans = plan_unified_partition_inputs(&partition_plan.partitions, &intervals)?;
 
+    // Preserve plans because logical execution consumes them.
+    let materialization_input_plans = plans.clone();
+
     // -------------------------------------------------------------------------
     // Prepare transactional staging
     // -------------------------------------------------------------------------
@@ -134,7 +139,20 @@ pub fn execute_unified_merge_job(
     commit.prepare()?;
 
     // -------------------------------------------------------------------------
-    // Execute parallel partitions
+    // Isolate logical and physical staging
+    // -------------------------------------------------------------------------
+
+    let logical_staging = commit.staging_path.join("logical");
+    let physical_staging = commit.staging_path.join("physical");
+
+    std::fs::create_dir_all(&logical_staging)
+        .map_err(|error| invalid_error(format!("cannot create logical merge staging: {error}")))?;
+
+    std::fs::create_dir_all(&physical_staging)
+        .map_err(|error| invalid_error(format!("cannot create physical merge staging: {error}")))?;
+
+    // -------------------------------------------------------------------------
+    // Execute logical merge partitions
     // -------------------------------------------------------------------------
 
     let results = execute_unified_partitions_parallel(
@@ -143,32 +161,147 @@ pub fn execute_unified_merge_job(
         &trade_inventory,
         &depth_inventory,
         &boundaries,
-        &commit.staging_path,
+        &logical_staging,
     )?;
 
     // -------------------------------------------------------------------------
-    // Validate physical output
+    // Validate logical timeline references
     // -------------------------------------------------------------------------
 
     let validated = validate_unified_merge_output(
-        &commit.staging_path,
+        &logical_staging,
         &results,
         &streams,
         &trade_inventory,
         &depth_inventory,
     )?;
-    let expected_trade_events: u64 = results.iter().map(|result| result.trade_events).sum();
 
-    let expected_depth_events: u64 = results.iter().map(|result| result.depth_events).sum();
+    let expected_trade_events = results.iter().try_fold(0_u64, |total, result| {
+        total
+            .checked_add(result.trade_events)
+            .ok_or_else(|| invalid_error("logical trade event count overflow"))
+    })?;
+
+    let expected_depth_events = results.iter().try_fold(0_u64, |total, result| {
+        total
+            .checked_add(result.depth_events)
+            .ok_or_else(|| invalid_error("logical depth event count overflow"))
+    })?;
 
     if validated.trade_events != expected_trade_events
         || validated.depth_events != expected_depth_events
     {
-        return invalid("unified physical trade/depth event count mismatch");
+        return invalid("logical trade/depth event count mismatch");
     }
 
     // -------------------------------------------------------------------------
-    // Construct input manifest metadata
+    // Construct physical materialization plans
+    // -------------------------------------------------------------------------
+
+    let materialization_plans =
+        build_materialization_plans(&logical_staging, &materialization_input_plans, &results)?;
+
+    // -------------------------------------------------------------------------
+    // Determine physical output mode
+    // -------------------------------------------------------------------------
+
+    let has_trades = streams
+        .iter()
+        .any(|stream| stream.kind == UnifiedMergeStreamKind::Trade);
+
+    let has_depth = streams
+        .iter()
+        .any(|stream| stream.kind == UnifiedMergeStreamKind::Depth);
+
+    let mode = match (has_trades, has_depth) {
+        (true, true) => UnifiedMergeMode::Combined,
+        (true, false) => UnifiedMergeMode::Trades,
+        (false, true) => UnifiedMergeMode::Depth,
+
+        (false, false) => {
+            return invalid("materialization requires at least one market stream");
+        }
+    };
+
+    // -------------------------------------------------------------------------
+    // Execute parallel physical materialization
+    // -------------------------------------------------------------------------
+
+    let physical_results = execute_parallel_materialization(
+        materialization_plans,
+        &trade_inventory,
+        &depth_inventory,
+        &streams,
+        mode,
+        job,
+        &physical_staging,
+    )?;
+
+    // -------------------------------------------------------------------------
+    // Validate physical Parquet dataset
+    // -------------------------------------------------------------------------
+
+    let physical_validated = validate_physical_dataset(&physical_staging, mode, &physical_results)?;
+
+    // -------------------------------------------------------------------------
+    // Verify logical and physical event counts
+    // -------------------------------------------------------------------------
+
+    if physical_validated.events != validated.output.events_written
+        || physical_validated.trade_events != validated.trade_events
+        || physical_validated.depth_events != validated.depth_events
+    {
+        return invalid(format!(
+            "logical/physical event mismatch: \
+             logical={}, physical={}",
+            validated.output.events_written, physical_validated.events,
+        ));
+    }
+
+    // -------------------------------------------------------------------------
+    // Collect skipped depth initializations
+    // -------------------------------------------------------------------------
+
+    let mut skipped_initializations = results
+        .iter()
+        .flat_map(|partition| partition.skipped_initializations.iter().cloned())
+        .collect::<Vec<_>>();
+
+    skipped_initializations.sort_by_key(|entry| {
+        (
+            entry.timestamp_ns,
+            entry.dataset_id,
+            entry.task_id,
+            entry.event_ordinal,
+        )
+    });
+
+    // -------------------------------------------------------------------------
+    // Resolve physical reconstruction checkpoints
+    // -------------------------------------------------------------------------
+
+    let physical_checkpoints = build_physical_checkpoints(
+        &physical_staging,
+        mode,
+        &physical_validated,
+        &checkpoints,
+        &skipped_initializations,
+        job.time_range,
+    )?;
+
+    // -------------------------------------------------------------------------
+    // Resolve independent physical reconstruction availability
+    // -------------------------------------------------------------------------
+
+    let initial_reconstruction = resolve_physical_initial_reconstruction(
+        &initial_checkpoints,
+        &physical_checkpoints,
+        job.time_range.start_ns,
+        job.time_range.end_ns,
+    )?;
+
+    // -------------------------------------------------------------------------
+    // Construct input dataset metadata
     // -------------------------------------------------------------------------
 
     let inputs = resolved
@@ -178,28 +311,36 @@ pub fn execute_unified_merge_job(
             dataset_path: input.dataset_path.to_string_lossy().into_owned(),
             manifest_version: input.manifest.protocol_version,
         })
-        .collect();
+        .collect::<Vec<_>>();
 
     // -------------------------------------------------------------------------
-    // Build unified manifest
+    // Construct physical dataset manifest
     // -------------------------------------------------------------------------
 
-    let manifest = build_unified_merge_manifest(
-        job,
+    let physical_manifest = PhysicalMergeManifest::new(
+        job.job_id,
+        mode,
         inputs,
+        job.time_range,
         streams,
-        &boundaries,
-        &results,
-        validated.output,
-        checkpoints,
-        initial_checkpoints,
+        physical_validated,
+        boundaries.iter().map(MergeBoundaryRecord::from).collect(),
+        skipped_initializations,
+        physical_checkpoints,
+        initial_reconstruction,
     )?;
 
     // -------------------------------------------------------------------------
-    // Persist manifest
+    // Validate physical manifest
     // -------------------------------------------------------------------------
 
-    write_unified_manifest(&commit.staging_path, &manifest)?;
+    physical_manifest.validate()?;
+
+    // -------------------------------------------------------------------------
+    // Prepare physical-only publication layout
+    // -------------------------------------------------------------------------
+
+    prepare_physical_publication(&commit.staging_path, &physical_manifest)?;
 
     // -------------------------------------------------------------------------
     // Transactional publication
@@ -214,51 +355,24 @@ pub fn execute_unified_merge_job(
     Ok(UnifiedMergeExecutionResult {
         job_id: job.job_id,
 
-        mode: manifest.mode,
+        mode: physical_manifest.mode,
 
         dataset_path: commit.dataset_path.clone(),
-
         manifest_path: commit.dataset_path.join("manifest.json"),
 
-        partitions_completed: results.len(),
+        partitions_completed: physical_results.len(),
 
-        events_written: manifest.events_written,
-        trade_events: manifest.trade_events,
-        depth_events: manifest.depth_events,
+        events_written: physical_manifest.events_written,
+        trade_events: physical_manifest.trade_events,
+        depth_events: physical_manifest.depth_events,
 
-        files_written: manifest.files_written,
+        files_written: physical_manifest.files_written,
 
-        skipped_initializations: manifest.skipped_initializations.len() as u64,
+        skipped_initializations: physical_manifest.skipped_initializations.len() as u64,
 
-        start_timestamp_ns: manifest.start_timestamp_ns,
-        end_timestamp_ns: manifest.end_timestamp_ns,
+        start_timestamp_ns: physical_manifest.start_timestamp_ns,
+        end_timestamp_ns: physical_manifest.end_timestamp_ns,
     })
-}
-
-// -----------------------------------------------------------------------------
-// Manifest persistence
-// -----------------------------------------------------------------------------
-
-fn write_unified_manifest(directory: &Path, manifest: &UnifiedMergeManifest) -> Result<()> {
-    manifest.validate()?;
-
-    let path = directory.join("manifest.json");
-
-    let file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&path)
-        .map_err(|error| {
-            invalid_error(format!(
-                "failed to create unified manifest {}: {error}",
-                path.display()
-            ))
-        })?;
-
-    serde_json::to_writer_pretty(BufWriter::new(file), manifest)
-        .map_err(|error| invalid_error(format!("failed to write unified manifest: {error}")))?;
-
-    Ok(())
 }
 
 // -----------------------------------------------------------------------------

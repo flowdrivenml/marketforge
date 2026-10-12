@@ -78,3 +78,43 @@ fn rejects_existing_staging_directory() {
 
     assert!(paths.prepare().is_err());
 }
+
+#[test]
+fn rejects_destination_created_after_prepare() {
+    let directory = TestDirectory::new();
+
+    let destination = directory.path.join("merged-300");
+
+    let paths = MergeCommitPaths::new(&destination, 300).unwrap();
+
+    paths.prepare().unwrap();
+
+    fs::write(paths.staging_path.join("manifest.json"), b"staged").unwrap();
+
+    // Simulate another process creating the destination.
+    fs::create_dir_all(&destination).unwrap();
+
+    fs::write(destination.join("existing.txt"), b"original").unwrap();
+
+    assert!(paths.commit().is_err());
+
+    assert_eq!(
+        fs::read(destination.join("existing.txt")).unwrap(),
+        b"original"
+    );
+
+    assert!(paths.staging_path.exists());
+}
+
+#[test]
+fn rejects_missing_staging_during_commit() {
+    let directory = TestDirectory::new();
+
+    let destination = directory.path.join("merged-400");
+
+    let paths = MergeCommitPaths::new(&destination, 400).unwrap();
+
+    assert!(paths.commit().is_err());
+
+    assert!(!destination.exists());
+}

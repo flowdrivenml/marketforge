@@ -1,5 +1,6 @@
 #![cfg(feature = "process")]
 
+use std::collections::HashSet;
 use std::{
     collections::HashMap,
     fs::{self, File},
@@ -7,12 +8,15 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+
+use marketforge_engine::process::merge::{physical_combined_schema, physical_trade_schema};
 use marketforge_engine::{
     job::{
         MergeJob, MergeOperation, MergeOutput, MergeParquetConfig, MergePartitioning,
         MergeResources, MergeTimeRange,
     },
-    process::merge::{UnifiedMergeManifest, UnifiedMergeMode, execute_unified_merge_job},
+    process::merge::{PhysicalMergeManifest, UnifiedMergeMode, execute_unified_merge_job},
 };
 
 #[path = "../../common/mod.rs"]
@@ -160,6 +164,21 @@ fn assert_transactional_commit(
 
     assert!(!staging.exists(), "staging directory should be committed");
 
+    assert!(!dataset_path.join("logical").exists());
+    assert!(!dataset_path.join("physical").exists());
+
+    assert!(dataset_path.join("timeline").is_dir());
+
+    let entries = fs::read_dir(&dataset_path)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect::<HashSet<_>>();
+
+    assert_eq!(
+        entries,
+        HashSet::from(["manifest.json".to_owned(), "timeline".to_owned(),]),
+    );
+
     // -------------------------------------------------------------------------
     // Manifest persistence
     // -------------------------------------------------------------------------
@@ -168,11 +187,11 @@ fn assert_transactional_commit(
 
     assert!(manifest_path.is_file());
 
-    let manifest: UnifiedMergeManifest =
+    let manifest: PhysicalMergeManifest =
         serde_json::from_reader(File::open(&manifest_path).unwrap())
-            .expect("deserialize unified manifest");
+            .expect("deserialize physical manifest");
 
-    manifest.validate().expect("validate unified manifest");
+    manifest.validate().expect("validate physical manifest");
 
     assert_eq!(manifest.mode, expected_mode);
 
@@ -197,7 +216,20 @@ fn assert_transactional_commit(
         );
 
         assert_eq!(fs::metadata(&path).unwrap().len(), file.size_bytes);
+        let reader = ParquetRecordBatchReaderBuilder::try_new(File::open(&path).unwrap())
+            .expect("open committed physical Parquet");
 
+        let expected_schema = match expected_mode {
+            UnifiedMergeMode::Trades => physical_trade_schema(),
+            UnifiedMergeMode::Combined => physical_combined_schema(),
+            UnifiedMergeMode::Depth => unreachable!(),
+        };
+
+        assert_eq!(
+            reader.schema().as_ref(),
+            expected_schema.as_ref(),
+            "committed file has incorrect physical schema"
+        );
         assert!(
             file.rows.unwrap_or(0) > 0,
             "committed file has no validated rows"

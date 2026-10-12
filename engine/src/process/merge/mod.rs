@@ -26,6 +26,56 @@ mod kway_event;
 mod manifest;
 #[path = "output/manifest_builder.rs"]
 mod manifest_builder;
+#[path = "materialize/cache.rs"]
+mod materialize_cache;
+#[path = "materialize/checkpoints.rs"]
+mod materialize_checkpoints;
+#[path = "materialize/combined_builder.rs"]
+mod materialize_combined_builder;
+#[path = "materialize/decoder.rs"]
+mod materialize_decoder;
+#[path = "materialize/depth_builder.rs"]
+mod materialize_depth_builder;
+#[path = "materialize/depth_metadata.rs"]
+mod materialize_depth_metadata;
+#[path = "materialize/global_validate.rs"]
+mod materialize_global_validate;
+#[path = "materialize/inventory.rs"]
+mod materialize_inventory;
+#[path = "materialize/manifest.rs"]
+mod materialize_manifest;
+#[path = "materialize/parallel.rs"]
+mod materialize_parallel;
+#[path = "materialize/partition.rs"]
+mod materialize_partition;
+#[path = "materialize/plan.rs"]
+mod materialize_plan;
+#[path = "materialize/planner.rs"]
+mod materialize_planner;
+#[path = "materialize/publish.rs"]
+mod materialize_publish;
+#[path = "materialize/reader.rs"]
+mod materialize_reader;
+#[path = "materialize/reconstruction.rs"]
+mod materialize_reconstruction;
+#[path = "materialize/resolver.rs"]
+mod materialize_resolver;
+#[path = "materialize/resources.rs"]
+mod materialize_resources;
+#[path = "materialize/row_groups.rs"]
+mod materialize_row_groups;
+#[path = "materialize/schema.rs"]
+mod materialize_schema;
+#[path = "materialize/timeline_reader.rs"]
+mod materialize_timeline_reader;
+#[path = "materialize/trade_builder.rs"]
+mod materialize_trade_builder;
+#[path = "materialize/validate.rs"]
+mod materialize_validate;
+#[path = "materialize/window.rs"]
+mod materialize_window;
+#[path = "materialize/writer.rs"]
+mod materialize_writer;
 #[path = "core/ordering.rs"]
 mod ordering;
 #[path = "output/output_validation.rs"]
@@ -140,3 +190,49 @@ pub use unified_timeline::{
 };
 pub use unified_writer::{UnifiedTimelineWriter, UnifiedTimelineWriterMetrics};
 pub use writer::{TimelineWriter, TimelineWriterMetrics};
+
+pub use materialize_cache::{CanonicalCacheMetrics, CanonicalRowGroupCache};
+pub use materialize_checkpoints::{PhysicalMergeCheckpoint, build_physical_checkpoints};
+pub use materialize_combined_builder::{PhysicalCombinedBatchBuilder, PhysicalCombinedEvent};
+pub use materialize_decoder::GroupedCanonicalDecoder;
+pub use materialize_depth_builder::{PhysicalDepthBatchBuilder, PhysicalDepthEvent};
+pub use materialize_depth_metadata::{DepthMetadataResolver, ResolvedDepthMetadata};
+pub use materialize_global_validate::{ValidatedPhysicalDataset, validate_physical_dataset};
+pub use materialize_inventory::{CanonicalFileRange, CanonicalFileSlice, CanonicalRowIndex};
+pub use materialize_manifest::{
+    PHYSICAL_MERGE_MANIFEST_VERSION, PHYSICAL_MERGE_SCHEMA_VERSION, PhysicalMergeManifest,
+    write_physical_merge_manifest,
+};
+pub use materialize_parallel::{MaterializationPartitionPlan, execute_parallel_materialization};
+pub use materialize_partition::{
+    MaterializationPartitionInput, MaterializationPartitionResult, MaterializationPartitionWorker,
+};
+pub use materialize_plan::build_materialization_plans;
+pub use materialize_planner::{
+    CanonicalReadPlanner, GroupedReadPlan, PlannedCanonicalRead, PlannedRowGroupKey,
+};
+pub use materialize_publish::prepare_physical_publication;
+pub use materialize_reader::CanonicalParquetReader;
+pub use materialize_reconstruction::{
+    PhysicalInitialReconstruction, PhysicalReconstructionAvailability,
+    resolve_physical_initial_reconstruction,
+};
+pub use materialize_resolver::{CanonicalReferenceResolver, CanonicalTaskKey, ResolvedMarketEvent};
+pub use materialize_resources::{
+    MaterializationResourcePlan, MaterializationWorkerLimits, estimate_materialization_resources,
+};
+pub use materialize_row_groups::{
+    CanonicalRowGroup, CanonicalRowGroupIndex, CanonicalRowGroupSlice,
+};
+pub use materialize_schema::{
+    physical_combined_schema, physical_depth_schema, physical_trade_schema,
+};
+pub use materialize_timeline_reader::MaterializationTimelineReader;
+pub use materialize_trade_builder::PhysicalTradeBatchBuilder;
+pub use materialize_validate::{
+    PhysicalFileValidation, PhysicalPartitionValidation, validate_physical_partition,
+};
+pub use materialize_window::{
+    MaterializationBatchLimits, MaterializationWindow, MaterializationWindowBuilder,
+};
+pub use materialize_writer::{PhysicalParquetWriter, PhysicalWriterMetrics};

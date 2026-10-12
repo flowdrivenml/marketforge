@@ -1,18 +1,21 @@
 #![cfg(feature = "process")]
 
-use std::{
-    collections::HashMap,
-    fs::{self, File},
-    path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
-};
-
 use marketforge_engine::{
     job::{
         MergeJob, MergeOperation, MergeOutput, MergeParquetConfig, MergePartitioning,
         MergeResources, MergeTimeRange,
     },
-    process::merge::{UnifiedMergeManifest, UnifiedMergeMode, execute_unified_merge_job},
+    process::merge::{
+        PhysicalMergeManifest, UnifiedMergeMode, execute_unified_merge_job,
+        physical_combined_schema,
+    },
+};
+use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use std::{
+    collections::HashMap,
+    fs::{self, File},
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 #[path = "../../common/mod.rs"]
@@ -146,9 +149,9 @@ fn validates_real_combined_rotation() {
     // Validate committed manifest
     // -------------------------------------------------------------------------
 
-    let manifest: UnifiedMergeManifest =
+    let manifest: PhysicalMergeManifest =
         serde_json::from_reader(File::open(&result.manifest_path).unwrap())
-            .expect("parse unified manifest");
+            .expect("parse physical manifest");
 
     manifest.validate().unwrap();
 
@@ -167,6 +170,27 @@ fn validates_real_combined_rotation() {
     let mut total_rows = 0_u64;
 
     for (index, file) in manifest.files.iter().enumerate() {
+        let mut next_file_index = std::collections::HashMap::<u32, u32>::new();
+
+        for file in &manifest.files {
+            let partition_id = file
+                .partition_id
+                .expect("physical file must have partition ID");
+
+            let index = next_file_index.entry(partition_id).or_insert(0);
+
+            let expected_name = format!("part-{:06}.parquet", *index);
+
+            assert!(
+                file.path.ends_with(&expected_name),
+                "unexpected rotated file name: {}",
+                file.path
+            );
+
+            *index += 1;
+
+            // Keep the remaining file validation code here.
+        }
         let expected_name = format!("part-{index:06}.parquet");
 
         assert!(
@@ -178,6 +202,15 @@ fn validates_real_combined_rotation() {
         let path = result.dataset_path.join(&file.path);
 
         assert!(path.is_file());
+
+        let reader = ParquetRecordBatchReaderBuilder::try_new(File::open(&path).unwrap())
+            .expect("open rotated physical Parquet");
+
+        assert_eq!(
+            reader.schema().as_ref(),
+            physical_combined_schema().as_ref(),
+            "rotated file has incorrect physical schema"
+        );
 
         assert_eq!(fs::metadata(&path).unwrap().len(), file.size_bytes);
 

@@ -16,10 +16,12 @@ process = [
     "dep:arrow-buffer",
     "dep:parquet",
     "dep:quick-xml",
+    "dep:arrow-select",
 ]
 
 live = []
 monitor-tui = []
+arrow-select = ["dep:arrow-select"]
 
 
 [dependencies]
@@ -38,6 +40,10 @@ parquet = { version = "56", features = ["arrow", "zstd"], optional = true }
 arrow-buffer = { version = "56", optional = true }
 sha2 = "0.10"
 quick-xml = { version = "0.38", optional = true }
+arrow-select = { version = "56", optional = true }
+
+[dev-dependencies]
+tempfile = "3.27.0"
 
 [[bin]]
 name = "marketforge-process"
@@ -487,4 +493,99 @@ required-features = ["process"]
 [[test]]
 name = "merge_unified_production_rotation"
 path = "tests/merge/output/merge_unified_production_rotation.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_reader"
+path = "tests/merge/materialize/reader.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_cache"
+path = "tests/merge/materialize/cache.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_cached_reader"
+path = "tests/merge/materialize/cached_reader.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_resolver"
+path = "tests/merge/materialize/resolver.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_row_groups"
+path = "tests/merge/materialize/row_groups.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_planner"
+path = "tests/merge/materialize/planner.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_window"
+path = "tests/merge/materialize/window.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_trade_builder"
+path = "tests/merge/materialize/trade_builder.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_depth_metadata"
+path = "tests/merge/materialize/depth_metadata.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_depth_builder"
+path = "tests/merge/materialize/depth_builder.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_combined_builder"
+path = "tests/merge/materialize/combined_builder.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_writer"
+path = "tests/merge/materialize/writer.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_resources"
+path = "tests/merge/materialize/resources.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_timeline_reader"
+path = "tests/merge/materialize/timeline_reader.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_partition"
+path = "tests/merge/materialize/partition.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_manifest"
+path = "tests/merge/materialize/manifest.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_checkpoints"
+path = "tests/merge/materialize/checkpoints.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_reconstruction"
+path = "tests/merge/materialize/reconstruction.rs"
+required-features = ["process"]
+
+[[test]]
+name = "materialize_publish"
+path = "tests/merge/materialize/publish.rs"
 required-features = ["process"]
