@@ -1,9 +1,8 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{MarketForgeError, Result};
-
 // -----------------------------------------------------------------------------
 // Merge job
 // -----------------------------------------------------------------------------
@@ -15,6 +14,10 @@ pub struct MergeJob {
     pub operation: MergeOperation,
 
     pub inputs: Vec<u64>,
+
+    #[serde(default)]
+    pub input_paths: HashMap<u64, PathBuf>,
+
     pub time_range: MergeTimeRange,
 
     pub resources: MergeResources,
@@ -100,6 +103,23 @@ impl MergeJob {
         for dataset_id in &self.inputs {
             if !unique.insert(dataset_id) {
                 return invalid(format!("duplicate merge input dataset ID: {dataset_id}"));
+            }
+        }
+
+        // -------------------------------------------------------------------------
+        // Validate explicit input dataset paths
+        // -------------------------------------------------------------------------
+
+        for (&dataset_id, path) in &self.input_paths {
+            if !unique.contains(&dataset_id) {
+                return invalid(format!(
+                    "input_paths contains dataset {dataset_id}, \
+             which is not present in merge inputs"
+                ));
+            }
+
+            if path.as_os_str().is_empty() {
+                return invalid(format!("dataset {dataset_id}: empty input path"));
             }
         }
 

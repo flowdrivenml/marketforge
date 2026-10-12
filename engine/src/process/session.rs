@@ -1,14 +1,15 @@
 use std::{collections::HashSet, path::PathBuf};
 
+use super::{
+    config::{ProcessingConfig, validate_resources},
+    resources::{ResourceBudget, estimate_task_resources},
+    scheduler::execute_parallel_budgeted,
+    task::{TaskExecution, execute_task},
+};
+use crate::job::{ContentType, TargetSchema};
 use crate::{
     error::{MarketForgeError, Result},
     job::{ProcessingJob, WorkTask, validate_processing_job_structure},
-};
-
-use super::{
-    config::{ProcessingConfig, validate_resources},
-    scheduler::execute_parallel,
-    task::{TaskExecution, execute_task},
 };
 
 use super::{
@@ -144,11 +145,22 @@ pub fn execute_session_tasks(
 
     let total_tasks = scheduled.len();
 
-    let executions = execute_parallel(scheduled, config.resources.workers as usize, |scheduled| {
-        let execution = execute_task(scheduled.task, config, scheduled.staging_path);
+    let budget = ResourceBudget::new(
+        config.resources.memory_budget_bytes,
+        config.resources.scratch_budget_bytes,
+    )?;
 
-        Ok((scheduled.job_index, scheduled.task_index, execution))
-    })?;
+    let executions = execute_parallel_budgeted(
+        scheduled,
+        config.resources.workers,
+        &budget,
+        |scheduled| estimate_task_resources(scheduled.task, &config.resources.parquet),
+        |scheduled| {
+            let execution = execute_task(scheduled.task, config, scheduled.staging_path);
+
+            Ok((scheduled.job_index, scheduled.task_index, execution))
+        },
+    )?;
 
     // -------------------------------------------------------------------------
     // Group results by their originating jobs
@@ -230,9 +242,46 @@ fn validate_session(jobs: &[ProcessingJob]) -> Result<()> {
                 )));
             }
 
-            if task.normalizations.len() != 1 {
+            // -------------------------------------------------------------------------
+            // Validate normalization targets
+            // -------------------------------------------------------------------------
+
+            if task.normalizations.is_empty() {
                 return Err(MarketForgeError::InvalidConfiguration(format!(
-                    "task {} requires exactly one normalization target",
+                    "task {} contains no normalization configurations",
+                    task.task_id.0,
+                )));
+            }
+
+            let expected_target = match job.output.content_type {
+                ContentType::Trades => TargetSchema::Trade,
+                ContentType::Depth => TargetSchema::Depth,
+
+                ContentType::Combined => {
+                    return Err(MarketForgeError::InvalidConfiguration(format!(
+                        "job {} uses unsupported combined output",
+                        job.job_id.0,
+                    )));
+                }
+            };
+
+            // All normalizations must match the job's declared output type.
+            if task
+                .normalizations
+                .iter()
+                .any(|normalization| normalization.target_schema != expected_target)
+            {
+                return Err(MarketForgeError::InvalidConfiguration(format!(
+                    "task {} normalization target does not match job {} content type",
+                    task.task_id.0, job.job_id.0,
+                )));
+            }
+
+            // Trades require exactly one normalization.
+            // Depth may contain multiple snapshot/update normalizations.
+            if expected_target == TargetSchema::Trade && task.normalizations.len() != 1 {
+                return Err(MarketForgeError::InvalidConfiguration(format!(
+                    "task {} requires exactly one trade normalization",
                     task.task_id.0,
                 )));
             }

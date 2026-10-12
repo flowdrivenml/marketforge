@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, sync::Mutex, thread};
 
+use super::resources::{ResourceBudget, ResourceRequirements};
 use crate::error::{MarketForgeError, Result};
-
 /// Executes independent tasks using a bounded number of threads.
 ///
 /// Results are returned in the same order as the input tasks,
@@ -86,4 +86,65 @@ where
             })
         })
         .collect()
+}
+
+// -----------------------------------------------------------------------------
+// Resource-aware parallel execution
+// -----------------------------------------------------------------------------
+
+/// Executes independent tasks with bounded concurrency and resource admission.
+///
+/// Each task reserves its estimated memory and scratch requirements before
+/// execution. Reservations are released automatically when processing ends.
+///
+/// Results preserve input ordering regardless of completion order.
+///
+/// Resource estimates are scheduling limits, not hard OS-level memory limits.
+pub fn execute_parallel_budgeted<T, O, E, F>(
+    tasks: Vec<T>,
+    workers: usize,
+    budget: &ResourceBudget,
+    estimate: E,
+    execute: F,
+) -> Result<Vec<Result<O>>>
+where
+    T: Send,
+    O: Send,
+    E: Fn(&T) -> Result<ResourceRequirements> + Sync,
+    F: Fn(T) -> Result<O> + Sync,
+{
+    if workers == 0 {
+        return Err(MarketForgeError::InvalidConfiguration(
+            "parallel scheduler requires at least one worker".to_owned(),
+        ));
+    }
+
+    if tasks.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // -------------------------------------------------------------------------
+    // Estimate resources before launching workers
+    // -------------------------------------------------------------------------
+
+    let scheduled = tasks
+        .into_iter()
+        .map(|task| {
+            let requirements = estimate(&task)?;
+
+            Ok((task, requirements))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    // -------------------------------------------------------------------------
+    // Execute through existing worker pool
+    // -------------------------------------------------------------------------
+
+    execute_parallel(scheduled, workers, |(task, requirements)| {
+        // Wait for available resources.
+        let _reservation = budget.acquire(requirements)?;
+
+        // Process while reservation is held.
+        execute(task)
+    })
 }

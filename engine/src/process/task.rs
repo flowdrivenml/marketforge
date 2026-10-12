@@ -1,19 +1,20 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
+    book::SequencePolicy,
     error::{MarketForgeError, Result},
-    job::{ParquetResourceConfig, WorkTask},
+    job::{IntegrityPolicy, ParquetResourceConfig, TargetSchema, WorkTask},
 };
 
-use super::config::ProcessingConfig;
-use super::metrics::ScopedIntegrityMetrics;
 use super::{
-    metrics::TaskMetrics,
-    parquet::ParquetTradeWriter,
-    worker::{TradeSink, process_trade_task_with_metrics},
+    config::ProcessingConfig,
+    metrics::{ScopedIntegrityMetrics, TaskMetrics},
+    parquet::{ParquetDepthWriter, ParquetTradeWriter},
+    sequence_policy::resolve_sequence_policy,
+    worker::{
+        DepthSink, TradeSink, process_depth_task_with_metrics, process_trade_task_with_metrics,
+    },
 };
-use crate::job::IntegrityPolicy;
-use crate::job::TargetSchema;
 
 // -----------------------------------------------------------------------------
 // Task execution result
@@ -108,21 +109,7 @@ fn execute_trade_task_inner(
     // Here, the worker receives an empty previous-task context.
     let previous = ScopedIntegrityMetrics::default();
 
-    // Parallel workers enforce fatal categories immediately.
-    // Job-wide count and rate thresholds are evaluated by the executor.
-    let mut worker_policy = policy.clone();
-
-    for rule in [
-        &mut worker_policy.parse_failure,
-        &mut worker_policy.invalid_record,
-        &mut worker_policy.sequence_gap,
-        &mut worker_policy.timestamp_regression,
-        &mut worker_policy.missing_snapshot,
-        &mut worker_policy.invalid_book,
-        &mut worker_policy.transformation_failure,
-    ] {
-        rule.max_count = None;
-    }
+    let worker_policy = worker_integrity_policy(policy);
 
     process_trade_task_with_metrics(task, &mut writer, metrics, &worker_policy, &previous)?;
     writer.finish()?;
@@ -144,6 +131,101 @@ fn execute_trade_task_inner(
 
     Ok(())
 }
+// -----------------------------------------------------------------------------
+// Isolated depth task execution
+// -----------------------------------------------------------------------------
+
+pub fn execute_depth_task(
+    task: &WorkTask,
+    config: &ProcessingConfig,
+    staging: &Path,
+) -> TaskExecution {
+    let output_path = staging
+        .join("tasks")
+        .join(format!("task-{:06}", task.task_id.0))
+        .join("depth");
+
+    let mut metrics = TaskMetrics::default();
+
+    let result = execute_depth_task_inner(task, config, &output_path, &mut metrics);
+
+    TaskExecution {
+        task_id: task.task_id.0,
+        output_paths: vec![output_path],
+        metrics,
+        error: result.err(),
+    }
+}
+
+fn execute_depth_task_inner(
+    task: &WorkTask,
+    config: &ProcessingConfig,
+    output_path: &Path,
+    metrics: &mut TaskMetrics,
+) -> Result<()> {
+    // -------------------------------------------------------------------------
+    // Resolve source sequence semantics
+    // -------------------------------------------------------------------------
+
+    let sequence_policy: SequencePolicy = resolve_sequence_policy(task)?;
+
+    // -------------------------------------------------------------------------
+    // Initialize isolated Parquet writer
+    // -------------------------------------------------------------------------
+
+    let mut writer = ParquetDepthWriter::new(output_path, config.resources.parquet.clone())?;
+
+    // -------------------------------------------------------------------------
+    // Prepare integrity policy
+    // -------------------------------------------------------------------------
+
+    let previous = ScopedIntegrityMetrics::default();
+
+    let worker_policy = worker_integrity_policy(&config.integrity_policy);
+
+    // -------------------------------------------------------------------------
+    // Process depth archive
+    // -------------------------------------------------------------------------
+
+    process_depth_task_with_metrics(
+        task,
+        &mut writer,
+        metrics,
+        &worker_policy,
+        &previous,
+        sequence_policy,
+    )?;
+
+    // -------------------------------------------------------------------------
+    // Finalize canonical data and reconstruction metadata
+    // -------------------------------------------------------------------------
+
+    writer.finish()?;
+
+    if writer.is_failed() || !writer.is_finished() {
+        return Err(MarketForgeError::InvalidConfiguration(
+            "depth Parquet writer did not finalize successfully".to_owned(),
+        ));
+    }
+
+    // -------------------------------------------------------------------------
+    // Verify canonical row accounting
+    // -------------------------------------------------------------------------
+
+    let writer_metrics = writer.metrics();
+
+    if writer_metrics.levels_written != metrics.counters.events_written {
+        return Err(MarketForgeError::InvalidConfiguration(format!(
+            "task {} depth level count mismatch: metrics={}, writer={}",
+            task.task_id.0, metrics.counters.events_written, writer_metrics.levels_written,
+        )));
+    }
+
+    Ok(())
+}
+// -----------------------------------------------------------------------------
+// Generic task dispatcher
+// -----------------------------------------------------------------------------
 
 // -----------------------------------------------------------------------------
 // Generic task dispatcher
@@ -157,27 +239,78 @@ pub fn execute_task(task: &WorkTask, config: &ProcessingConfig, staging: &Path) 
         error: Some(MarketForgeError::InvalidConfiguration(message)),
     };
 
-    // Each task must declare exactly one normalization target.
-    if task.normalizations.len() != 1 {
+    // -------------------------------------------------------------------------
+    // Validate normalization configuration
+    // -------------------------------------------------------------------------
+
+    if task.normalizations.is_empty() {
         return unsupported(format!(
-            "task {} requires exactly one normalization target, found {}",
+            "task {} contains no normalization configurations",
             task.task_id.0,
-            task.normalizations.len(),
         ));
     }
 
-    match task.normalizations[0].target_schema {
-        TargetSchema::Trade => execute_trade_task(
-            task,
-            &config.integrity_policy,
-            &config.resources.parquet,
-            staging,
-        )
-        .into(),
+    let target = task.normalizations[0].target_schema;
 
-        _ => unsupported(format!(
-            "unsupported normalization target for task {}",
+    // Every normalization must target the same canonical data type.
+    if task
+        .normalizations
+        .iter()
+        .any(|normalization| normalization.target_schema != target)
+    {
+        return unsupported(format!(
+            "task {} mixes trade and depth normalization targets",
             task.task_id.0,
-        )),
+        ));
     }
+
+    // -------------------------------------------------------------------------
+    // Dispatch task
+    // -------------------------------------------------------------------------
+
+    match target {
+        TargetSchema::Trade => {
+            // Trade tasks currently require exactly one normalization.
+            if task.normalizations.len() != 1 {
+                return unsupported(format!(
+                    "task {} requires exactly one trade normalization",
+                    task.task_id.0,
+                ));
+            }
+
+            execute_trade_task(
+                task,
+                &config.integrity_policy,
+                &config.resources.parquet,
+                staging,
+            )
+            .into()
+        }
+
+        TargetSchema::Depth => {
+            // Depth tasks may contain multiple normalization rules.
+            execute_depth_task(task, config, staging)
+        }
+    }
+}
+
+fn worker_integrity_policy(policy: &IntegrityPolicy) -> IntegrityPolicy {
+    let mut worker_policy = policy.clone();
+
+    for rule in [
+        &mut worker_policy.parse_failure,
+        &mut worker_policy.invalid_record,
+        &mut worker_policy.sequence_gap,
+        &mut worker_policy.timestamp_regression,
+        &mut worker_policy.missing_snapshot,
+        &mut worker_policy.invalid_book,
+        &mut worker_policy.transformation_failure,
+    ] {
+        rule.max_count = None;
+        rule.max_rate = None;
+        rule.windows.daily = None;
+        rule.windows.hourly = None;
+    }
+
+    worker_policy
 }

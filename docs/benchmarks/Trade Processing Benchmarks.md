@@ -43,13 +43,13 @@ Gate.io was excluded from the scaling benchmark because its monthly trade archiv
 
 ## Global Scheduler Performance
 
-| Workers | Average time | Throughput | Speedup vs. 4 workers |
-|---|---:|---:|---:|
-| 4 | 19.914 s | 2.40M records/s | 1.00× |
-| 8 | 13.514 s | 3.53M records/s | 1.47× |
-| **16** | **10.557 s** | **4.52M records/s** | **1.89×** |
-| 24 | 10.984 s | 4.35M records/s | 1.81× |
-| 32 | 11.371 s | 4.20M records/s | 1.75× |
+| Workers | Average time |          Throughput | Speedup vs. 4 workers |
+| ------- | -----------: | ------------------: | --------------------: |
+| 4       |     19.914 s |     2.40M records/s |                 1.00× |
+| 8       |     13.514 s |     3.53M records/s |                 1.47× |
+| **16**  | **10.557 s** | **4.52M records/s** |             **1.89×** |
+| 24      |     10.984 s |     4.35M records/s |                 1.81× |
+| 32      |     11.371 s |     4.20M records/s |                 1.75× |
 
 Results represent two repetitions per configuration. The 16-worker configuration achieved the highest measured throughput.
 
