@@ -1,14 +1,20 @@
 <div align="center">
 
-![MarketForge](images/logo.png)
+  <img src="images/logo.png" alt="MarketForge" width="100%">
 
-**High-performance market data infrastructure powered by Python & Rust.**
+  <br><br>
 
-![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white)
-![Rust](https://img.shields.io/badge/Rust-DEA584?logo=rust&logoColor=black)
-![Status](https://img.shields.io/badge/Status-Active_Development-blue)
+  <strong>High-performance market data infrastructure powered by Python & Rust.</strong>
 
-*From historical archives to real-time market data — one unified pipeline.*
+  <br><br>
+
+  <img src="https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/Rust-DEA584?logo=rust&logoColor=black" alt="Rust">
+  <img src="https://img.shields.io/badge/Status-Active_Development-blue" alt="Development Status">
+
+  <br><br>
+
+  <em>From historical archives to real-time market data — one unified pipeline.</em>
 
 </div>
 
