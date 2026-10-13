@@ -1,226 +1,75 @@
-# MarketForge
+#<div align="center">
 
-> **🚧 Active development**
->
-> MarketForge is currently under development. The acquisition layer is usable, while normalization, processing, merging, and live-data components are still being built.
+![MarketForge](images/logo)
 
-**Historical market microstructure data without manually hunting through exchange archives.**
+**High-performance market data infrastructure powered by Python & Rust.**
 
-MarketForge is a Python CLI for discovering and downloading free historical market data from multiple cryptocurrency exchanges.
+![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-DEA584?logo=rust&logoColor=black)
+![Status](https://img.shields.io/badge/Status-Active_Development-blue)
 
-Select an exchange, instrument, dataset, and date range; MarketForge handles availability discovery, planning, and downloads.
+*From historical archives to real-time market data — one unified pipeline.*
 
-## Quick Navigation
+</div>
 
-- [Supported Exchanges](#supported-exchanges)
-- [Features](#features)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Typical Workflow](#typical-workflow)
-- [Development Status](#development-status)
+---
 
-## Installation
+MarketForge simplifies the acquisition, processing, and merging of cryptocurrency market microstructure data across multiple exchanges.
 
-MarketForge is currently under active development and should be installed directly from GitHub.
-
-```bash
-git clone https://github.com/flowdrivenml/MarketForge.git
-cd MarketForge
-```
-
-Create and activate a virtual environment:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
-
-Install MarketForge:
-
-```bash
-python -m pip install --upgrade pip
-python -m pip install -e .
-```
-
-Verify the installation:
-
-```bash
-marketforge --help
-```
-
-To update to the latest development version later:
-
-```bash
-git pull
-python -m pip install -e .
-```
+Discover instruments, download decades of historical tick data, and transform trades and order books into analysis-ready datasets — all through a simple CLI.
 
 ## Supported Exchanges
 
-Current acquisition support targets:
+**Binance · Bybit · OKX · Bitget · Gate.io**
 
-```text
-Bybit
-Binance
-OKX
-Bitget
-Gate.io
-```
-
-Depending on exchange availability, MarketForge can acquire:
-
-```text
-tick trades
-L2 / order-book data
-spot
-perpetuals
-futures
-options where publicly available
-```
-
-Only publicly available/free historical data is targeted.
-
-## Features
-
-- multi-exchange historical-data acquisition
-- instrument discovery
-- historical availability discovery
-- acquisition planning before downloading
-- automatic archive downloading
-- immutable raw-data storage
-- Spot, Perpetual, Futures, and supported Options markets
-- tick trades and L2 depth where available
-- no paid data providers required
-- CLI-first workflow
+- **Markets:** Spot, perpetuals, linear & inverse futures
+- **Data:** Tick trades & L2 order books
+- **Storage:** Parquet, PostgreSQL & shared memory
+- **Scale:** Thousands of instruments across multiple exchanges
 
 ## Installation
-
-The project is currently intended to be installed from source:
 
 ```bash
 git clone https://github.com/flowdrivenml/MarketForge.git
 cd MarketForge
-
 python -m pip install -e .
 ```
 
-Check the CLI:
-
 ```bash
 marketforge --help
-```
-
-Available command groups include:
-
-```text
-database
-plan
-download
-instruments
-availability
-metadata
 ```
 
 ## Quick Start
 
-### Discover instruments
-
-Use the instrument command to discover instruments available from an exchange:
-
-```bash
-marketforge instruments --help
-```
-
-### Check historical availability
-
-Before downloading large datasets:
-
-```bash
-marketforge availability --help
-```
-
-This determines which historical files or periods are actually available from the selected exchange.
-
-### Plan a download
-
-```bash
-marketforge plan --help
-```
-
-Planning resolves the requested instruments, dates, datasets, and available remote files before acquisition begins.
-
-### Download
-
-```bash
-marketforge download --help
-```
-
-MarketForge downloads the planned exchange archives into structured immutable raw storage.
-
-## Typical Workflow
-
-```text
-Discover instruments
-        ↓
-Check availability
-        ↓
-Create acquisition plan
-        ↓
-Download
-        ↓
-Raw historical archives
-```
-
-In practice:
+Explore the available commands:
 
 ```bash
 marketforge instruments --help
 marketforge availability --help
 marketforge plan --help
 marketforge download --help
-```
-
-Exchange-specific options and supported datasets are documented directly by each command:
-
-```bash
-marketforge <command> --help
 ```
 
 ## Development Status
 
-The current focus is expanding MarketForge from acquisition into a complete market-microstructure data engine:
+🚧 **Active development**
 
-```text
-Exchange Archives
-      ↓
-Acquire
-      ↓
-Normalize
-      ↓
-Validate
-      ↓
-Trades + L2
-      ↓
-Merge / Synchronize
-      ↓
-Partitioned Parquet
-```
+| Component | Status |
+|-----------|--------|
+| Multi-exchange downloads | ✅ Complete |
+| Acquisition planning & discovery | ✅ Complete |
+| Data processing & normalization | ✅ Complete |
+| High-performance Rust merging | ✅ Complete |
+| Cross-instrument quantity conversion | 🔨 In progress |
+| Algorithm bootstrapping | 📋 Planned |
+| Real-time market streaming | 📋 Planned |
 
-Planned processing capabilities include:
+### What's Next?
 
-```text
-canonical Trade / L2 schemas
-order-book reconstruction
-data-integrity validation
-chronological trades + depth datasets
-cross-exchange synchronization
-high-performance Rust processing
-Parquet output
-live market-data ingestion
-```
+Seamlessly bridge historical and live market data, enabling trading algorithms to bootstrap from historical records and transition into real-time streaming.
 
-These components are still under active development and should not yet be considered stable.
+**The goal:** From raw exchange data to research-ready and live-ready infrastructure in just a few commands.
 
-## Disclaimer
+---
 
-MarketForge is an independent open-source project and is not affiliated with or endorsed by Bybit, Binance, OKX, Bitget, Gate.io, or other supported exchanges.
+<sub>MarketForge is an independent open-source project and is not affiliated with the supported exchanges.</sub>
