@@ -1,21 +1,13 @@
 <div align="center">
-
-  <img src="images/logo.png" alt="MarketForge" width="100%">
-
+  <img src="images/logo.png" alt="MarketForge" width="1100">
   <br><br>
-
   <strong>High-performance market data infrastructure powered by Python & Rust.</strong>
-
   <br><br>
-
   <img src="https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/Rust-DEA584?logo=rust&logoColor=black" alt="Rust">
   <img src="https://img.shields.io/badge/Status-Active_Development-blue" alt="Development Status">
-
   <br><br>
-
   <em>From historical archives to real-time market data — one unified pipeline.</em>
-
 </div>
 
 ---
