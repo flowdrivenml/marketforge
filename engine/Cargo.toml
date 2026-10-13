@@ -633,3 +633,8 @@ required-features = ["process"]
 name = "convert_decimal"
 path = "tests/convert/decimal.rs"
 required-features = ["process"]
+
+[[test]]
+name = "convert_reference_evaluation"
+path = "tests/convert/reference_evaluation.rs"
+required-features = ["process"]

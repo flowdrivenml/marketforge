@@ -1,12 +1,9 @@
 use num_bigint::BigInt;
 use num_traits::{One, Zero};
 
-use crate::{
-    error::{MarketForgeError, Result},
-    process::convert::{ConversionDecimal, ConversionDirection, ConversionPath},
-};
+use crate::process::convert::{ConversionDecimal, ConversionDirection, ConversionPath};
 
-use super::state::{ReferenceKey, ReferenceObservation, ReferenceState, ReferenceUnavailable};
+use super::state::{ReferenceKey, ReferenceState, ReferenceUnavailable};
 
 // -----------------------------------------------------------------------------
 // Evaluation results
@@ -32,6 +29,8 @@ pub enum ConversionUnavailable {
     MissingReference(String),
     FutureReference(String),
     StaleReference(String),
+    ReferenceIdentityMismatch(String),
+    ArithmeticFailure(String),
 }
 
 // -----------------------------------------------------------------------------
@@ -66,6 +65,15 @@ pub fn evaluate_conversion_path(
                 }
             })?;
 
+        if observation.dataset_id != edge.reference_dataset_id
+            || observation.stream_id != edge.reference_stream_id
+            || observation.key.stream_rank != edge.reference_stream_rank
+        {
+            return Err(ConversionUnavailable::ReferenceIdentityMismatch(
+                edge.reference_stream_id.clone(),
+            ));
+        }
+
         let mantissa = BigInt::from_signed_bytes_be(&observation.price.mantissa().to_be_bytes());
 
         let scale = BigInt::from(10u8).pow(28);
@@ -97,9 +105,8 @@ pub fn evaluate_conversion_path(
         });
     }
 
-    let rate = ConversionDecimal::from_ratio(numerator, denominator).map_err(|_| {
-        ConversionUnavailable::MissingReference("conversion arithmetic overflow".to_owned())
-    })?;
+    let rate = ConversionDecimal::from_ratio(numerator, denominator)
+        .map_err(|error| ConversionUnavailable::ArithmeticFailure(error.to_string()))?;
 
     Ok(EvaluatedConversion { rate, references })
 }
