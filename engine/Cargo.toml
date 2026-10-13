@@ -17,6 +17,8 @@ process = [
     "dep:parquet",
     "dep:quick-xml",
     "dep:arrow-select",
+    "dep:num-bigint",
+    "dep:num-traits",
 ]
 
 live = []
@@ -41,6 +43,8 @@ arrow-buffer = { version = "56", optional = true }
 sha2 = "0.10"
 quick-xml = { version = "0.38", optional = true }
 arrow-select = { version = "56", optional = true }
+num-bigint = { version = "0.4", optional = true }
+num-traits = { version = "0.2", optional = true }
 
 [dev-dependencies]
 tempfile = "3.27.0"
@@ -618,4 +622,14 @@ required-features = ["process"]
 [[test]]
 name = "convert_planner"
 path = "tests/convert/planner.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_reference_state"
+path = "tests/convert/reference_state.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_decimal"
+path = "tests/convert/decimal.rs"
 required-features = ["process"]

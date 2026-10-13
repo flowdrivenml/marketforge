@@ -915,6 +915,8 @@ dependencies = [
  "clap",
  "csv",
  "flate2",
+ "num-bigint",
+ "num-traits",
  "parquet",
  "quick-xml",
  "rust_decimal",
