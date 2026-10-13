@@ -1,4 +1,4 @@
-#<div align="center">
+<div align="center">
 
 ![MarketForge](images/logo.png)
 
