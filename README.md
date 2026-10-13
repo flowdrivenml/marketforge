@@ -1,6 +1,6 @@
 #<div align="center">
 
-![MarketForge](images/logo)
+![MarketForge](images/logo.png)
 
 **High-performance market data infrastructure powered by Python & Rust.**
 
