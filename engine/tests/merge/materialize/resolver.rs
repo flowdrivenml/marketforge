@@ -242,9 +242,10 @@ fn resolves_mixed_events_in_chronological_order() {
 // Grouped decoder fixtures
 // -----------------------------------------------------------------------------
 
-fn grouped_components(
+fn grouped_components_with_limit(
     trade_path: &Path,
     depth_path: &Path,
+    max_open_cursors: usize,
 ) -> (CanonicalReadPlanner, GroupedCanonicalDecoder) {
     let mut planner = CanonicalReadPlanner::new();
 
@@ -274,11 +275,8 @@ fn grouped_components(
 
     let depth_groups = CanonicalRowGroupIndex::open(depth_path).unwrap();
 
-    let mut decoder = GroupedCanonicalDecoder::new(
-        CanonicalParquetReader::new(2).unwrap(),
-        CanonicalRowGroupCache::new(1024 * 1024).unwrap(),
-    );
-
+    let mut decoder =
+        GroupedCanonicalDecoder::new(CanonicalParquetReader::new(2).unwrap(), max_open_cursors);
     planner.register_row_groups(trade_groups.clone()).unwrap();
     planner.register_row_groups(depth_groups.clone()).unwrap();
 
@@ -287,7 +285,12 @@ fn grouped_components(
 
     (planner, decoder)
 }
-
+fn grouped_components(
+    trade_path: &Path,
+    depth_path: &Path,
+) -> (CanonicalReadPlanner, GroupedCanonicalDecoder) {
+    grouped_components_with_limit(trade_path, depth_path, 32)
+}
 // -----------------------------------------------------------------------------
 // Grouped decoding correctness
 // -----------------------------------------------------------------------------
@@ -368,7 +371,7 @@ fn grouped_decoder_preserves_zero_level_events() {
 }
 
 #[test]
-fn grouped_decoder_reuses_cached_row_groups() {
+fn grouped_decoder_preserves_forward_progress_across_windows() {
     let dir = tempfile::tempdir().unwrap();
 
     let trades = dir.path().join("trades.parquet");
@@ -379,29 +382,54 @@ fn grouped_decoder_reuses_cached_row_groups() {
 
     let (planner, mut decoder) = grouped_components(&trades, &depth);
 
+    // First materialization window.
     let first = vec![
         reference(100, 0, 10, 0, 0, 1),
         reference(200, 1, 20, 0, 0, 2),
     ];
 
+    // Second window continues from the previous canonical positions.
     let second = vec![
         reference(300, 0, 10, 1, 1, 1),
         reference(400, 1, 20, 1, 2, 1),
     ];
 
     let first_plan = planner.plan(&first).unwrap();
-    decoder.decode(&first_plan).unwrap();
-
-    let before = *decoder.cache_metrics();
+    let first_events = decoder.decode(&first_plan).unwrap();
 
     let second_plan = planner.plan(&second).unwrap();
-    decoder.decode(&second_plan).unwrap();
+    let second_events = decoder.decode(&second_plan).unwrap();
 
-    let after = *decoder.cache_metrics();
+    assert_eq!(first_events.len(), 2);
+    assert_eq!(second_events.len(), 2);
 
-    assert_eq!(before.misses, 2);
-    assert_eq!(after.misses, before.misses);
-    assert_eq!(after.hits, before.hits + 2);
+    // Preserve original chronological event references.
+    assert_eq!(first_events[0].reference, first[0]);
+    assert_eq!(first_events[1].reference, first[1]);
+
+    assert_eq!(second_events[0].reference, second[0]);
+    assert_eq!(second_events[1].reference, second[1]);
+
+    // Preserve exact canonical row counts.
+    assert_eq!(first_events[0].canonical_rows(), 1);
+    assert_eq!(first_events[1].canonical_rows(), 2);
+
+    assert_eq!(second_events[0].canonical_rows(), 1);
+    assert_eq!(second_events[1].canonical_rows(), 1);
+
+    // Verify actual canonical data against the independent resolver.
+    let mut sequential = resolver(&trades, &depth);
+
+    let expected_first = sequential.resolve_batch(&first).unwrap();
+    let expected_second = sequential.resolve_batch(&second).unwrap();
+
+    for (actual, expected) in first_events.iter().zip(expected_first.iter()) {
+        assert_eq!(actual.canonical_batches, expected.canonical_batches);
+    }
+
+    for (actual, expected) in second_events.iter().zip(expected_second.iter()) {
+        assert_eq!(actual.canonical_batches, expected.canonical_batches);
+    }
 }
 
 #[test]
@@ -613,10 +641,7 @@ fn grouped_decoder_preserves_depth_across_row_groups() {
     planner.register_task(key, index).unwrap();
     planner.register_row_groups(row_groups.clone()).unwrap();
 
-    let mut decoder = GroupedCanonicalDecoder::new(
-        CanonicalParquetReader::new(2).unwrap(),
-        CanonicalRowGroupCache::new(1024 * 1024).unwrap(),
-    );
+    let mut decoder = GroupedCanonicalDecoder::new(CanonicalParquetReader::new(2).unwrap(), 32);
 
     decoder.register_row_groups(row_groups).unwrap();
 
@@ -656,4 +681,105 @@ fn grouped_decoder_preserves_depth_across_row_groups() {
         .collect();
 
     assert_eq!(prices, expected);
+}
+#[test]
+fn forward_decoder_reopens_evicted_cursors() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let trades = dir.path().join("trades.parquet");
+    let depth = dir.path().join("depth.parquet");
+
+    write_trades(&trades);
+    write_depth(&depth);
+
+    // Only one canonical reader may remain open.
+    let (planner, mut decoder) = grouped_components_with_limit(&trades, &depth, 1);
+
+    let windows = [
+        vec![reference(100, 0, 10, 0, 0, 1)],
+        vec![reference(200, 1, 20, 0, 0, 2)],
+        vec![reference(300, 0, 10, 1, 1, 1)],
+        vec![reference(400, 1, 20, 1, 2, 1)],
+        vec![reference(500, 0, 10, 2, 2, 1)],
+    ];
+
+    let mut sequential = resolver(&trades, &depth);
+
+    for references in windows {
+        let expected = sequential.resolve_batch(&references).unwrap();
+
+        let plan = planner.plan(&references).unwrap();
+        let actual = decoder.decode(&plan).unwrap();
+
+        assert_eq!(actual.len(), expected.len());
+
+        for (actual, expected) in actual.iter().zip(expected.iter()) {
+            assert_eq!(actual.reference, expected.reference);
+            assert_eq!(actual.canonical_batches, expected.canonical_batches);
+        }
+    }
+}
+#[test]
+fn forward_decoder_rejects_backward_read_after_eviction() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let trades = dir.path().join("trades.parquet");
+    let depth = dir.path().join("depth.parquet");
+
+    write_trades(&trades);
+    write_depth(&depth);
+
+    let (planner, mut decoder) = grouped_components_with_limit(&trades, &depth, 1);
+
+    // Read trade row 0.
+    decoder
+        .decode(&planner.plan(&[reference(100, 0, 10, 0, 0, 1)]).unwrap())
+        .unwrap();
+
+    // Reading depth evicts the trade cursor.
+    decoder
+        .decode(&planner.plan(&[reference(200, 1, 20, 0, 0, 2)]).unwrap())
+        .unwrap();
+
+    // Reopening the trade file at row 0 must be rejected.
+    let backward = planner.plan(&[reference(100, 0, 10, 0, 0, 1)]).unwrap();
+
+    assert!(decoder.decode(&backward).is_err());
+}
+#[test]
+fn forward_decoder_continues_within_same_row_group_after_eviction() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let trades = dir.path().join("trades.parquet");
+    let depth = dir.path().join("depth.parquet");
+
+    write_trades(&trades);
+    write_depth(&depth);
+
+    let (planner, mut decoder) = grouped_components_with_limit(&trades, &depth, 1);
+
+    let first = vec![reference(100, 0, 10, 0, 0, 1)];
+    let intervening = vec![reference(200, 1, 20, 0, 0, 2)];
+    let continuation = vec![reference(300, 0, 10, 1, 1, 1)];
+
+    // Read the first trade.
+    decoder.decode(&planner.plan(&first).unwrap()).unwrap();
+
+    // Read depth, forcing eviction of the trade cursor.
+    decoder
+        .decode(&planner.plan(&intervening).unwrap())
+        .unwrap();
+
+    // Reopen the trade cursor and continue forward.
+    let actual = decoder
+        .decode(&planner.plan(&continuation).unwrap())
+        .unwrap();
+
+    // Compare with the independent sequential resolver.
+    let mut sequential = resolver(&trades, &depth);
+    let expected = sequential.resolve_batch(&continuation).unwrap();
+
+    assert_eq!(actual.len(), 1);
+
+    assert_eq!(actual[0].canonical_batches, expected[0].canonical_batches);
 }

@@ -169,29 +169,20 @@ fn validates_real_combined_rotation() {
 
     let mut total_rows = 0_u64;
 
-    for (index, file) in manifest.files.iter().enumerate() {
-        let mut next_file_index = std::collections::HashMap::<u32, u32>::new();
+    let mut next_file_index = HashMap::<u32, u32>::new();
 
-        for file in &manifest.files {
-            let partition_id = file
-                .partition_id
-                .expect("physical file must have partition ID");
+    for file in &manifest.files {
+        // ---------------------------------------------------------------------
+        // Validate partition-local file numbering
+        // ---------------------------------------------------------------------
 
-            let index = next_file_index.entry(partition_id).or_insert(0);
+        let partition_id = file
+            .partition_id
+            .expect("physical file must have partition ID");
 
-            let expected_name = format!("part-{:06}.parquet", *index);
+        let index = next_file_index.entry(partition_id).or_insert(0);
 
-            assert!(
-                file.path.ends_with(&expected_name),
-                "unexpected rotated file name: {}",
-                file.path
-            );
-
-            *index += 1;
-
-            // Keep the remaining file validation code here.
-        }
-        let expected_name = format!("part-{index:06}.parquet");
+        let expected_name = format!("part-{:06}.parquet", *index);
 
         assert!(
             file.path.ends_with(&expected_name),
@@ -199,9 +190,19 @@ fn validates_real_combined_rotation() {
             file.path
         );
 
+        *index += 1;
+
+        // ---------------------------------------------------------------------
+        // Validate committed physical file
+        // ---------------------------------------------------------------------
+
         let path = result.dataset_path.join(&file.path);
 
-        assert!(path.is_file());
+        assert!(
+            path.is_file(),
+            "missing committed physical file: {}",
+            path.display()
+        );
 
         let reader = ParquetRecordBatchReaderBuilder::try_new(File::open(&path).unwrap())
             .expect("open rotated physical Parquet");
@@ -212,11 +213,26 @@ fn validates_real_combined_rotation() {
             "rotated file has incorrect physical schema"
         );
 
-        assert_eq!(fs::metadata(&path).unwrap().len(), file.size_bytes);
+        // ---------------------------------------------------------------------
+        // Validate file metadata
+        // ---------------------------------------------------------------------
 
-        total_rows += file.rows.expect("validated row count");
+        assert_eq!(fs::metadata(&path).unwrap().len(), file.size_bytes,);
+
+        let expected_rows = file.rows.expect("validated row count");
+
+        let actual_rows = reader.metadata().file_metadata().num_rows() as u64;
+
+        assert_eq!(
+            actual_rows, expected_rows,
+            "physical Parquet row count mismatch: {}",
+            file.path
+        );
+
+        total_rows += actual_rows;
     }
 
+    assert_eq!(total_rows, manifest.events_written);
     assert_eq!(total_rows, manifest.events_written);
 
     // -------------------------------------------------------------------------

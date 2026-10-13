@@ -589,3 +589,8 @@ required-features = ["process"]
 name = "materialize_publish"
 path = "tests/merge/materialize/publish.rs"
 required-features = ["process"]
+
+[[test]]
+name = "merge_boundary_summary"
+path = "tests/merge/depth/boundary_summary.rs"
+required-features = ["process"]

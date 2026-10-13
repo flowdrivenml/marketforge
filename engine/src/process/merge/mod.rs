@@ -4,6 +4,8 @@ mod boundary;
 mod checkpoint;
 #[path = "execution/commit.rs"]
 mod commit;
+#[path = "depth/boundary_summary.rs"]
+mod depth_boundary_summary;
 #[path = "depth/depth_cursor.rs"]
 mod depth_cursor;
 #[path = "depth/depth_stream.rs"]
@@ -191,6 +193,7 @@ pub use unified_timeline::{
 pub use unified_writer::{UnifiedTimelineWriter, UnifiedTimelineWriterMetrics};
 pub use writer::{TimelineWriter, TimelineWriterMetrics};
 
+pub use depth_boundary_summary::{MergeBoundarySnapshot, MergeBoundarySummary};
 pub use materialize_cache::{CanonicalCacheMetrics, CanonicalRowGroupCache};
 pub use materialize_checkpoints::{PhysicalMergeCheckpoint, build_physical_checkpoints};
 pub use materialize_combined_builder::{PhysicalCombinedBatchBuilder, PhysicalCombinedEvent};
@@ -212,7 +215,7 @@ pub use materialize_planner::{
     CanonicalReadPlanner, GroupedReadPlan, PlannedCanonicalRead, PlannedRowGroupKey,
 };
 pub use materialize_publish::prepare_physical_publication;
-pub use materialize_reader::CanonicalParquetReader;
+pub use materialize_reader::{CanonicalForwardCursor, CanonicalParquetReader};
 pub use materialize_reconstruction::{
     PhysicalInitialReconstruction, PhysicalReconstructionAvailability,
     resolve_physical_initial_reconstruction,

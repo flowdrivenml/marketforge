@@ -51,12 +51,15 @@ pub fn execute_unified_merge_job(
     project_root: &Path,
 ) -> Result<UnifiedMergeExecutionResult> {
     job.validate()?;
+    let execution_started = std::time::Instant::now();
 
     // -------------------------------------------------------------------------
     // Resolve and classify input datasets
     // -------------------------------------------------------------------------
 
-    let resolved = resolve_merge_inputs(job, project_root)?;
+    let resolved = profile_stage("input_resolution", || {
+        resolve_merge_inputs(job, project_root)
+    })?;
 
     let streams = resolve_unified_merge_streams(&resolved, project_root)?;
 
@@ -88,17 +91,23 @@ pub fn execute_unified_merge_job(
     // Build source inventories
     // -------------------------------------------------------------------------
 
-    let trade_inventory = build_trade_inventory(&trade_inputs)?;
+    let trade_inventory =
+        profile_stage("trade_inventory", || build_trade_inventory(&trade_inputs))?;
 
-    let depth_inventory = build_depth_inventory(&depth_inputs)?;
+    let depth_inventory =
+        profile_stage("depth_inventory", || build_depth_inventory(&depth_inputs))?;
 
-    let boundaries = reconcile_depth_boundaries(&depth_inventory)?;
+    let boundaries = profile_stage("depth_boundaries", || {
+        reconcile_depth_boundaries(&depth_inventory)
+    })?;
 
     // -------------------------------------------------------------------------
     // Build depth reconstruction checkpoints
     // -------------------------------------------------------------------------
 
-    let checkpoints = build_merge_checkpoints(&depth_inventory)?;
+    let checkpoints = profile_stage("canonical_checkpoints", || {
+        build_merge_checkpoints(&depth_inventory)
+    })?;
 
     let initial_checkpoints = if depth_dataset_ids.is_empty() {
         Vec::new()
@@ -155,26 +164,30 @@ pub fn execute_unified_merge_job(
     // Execute logical merge partitions
     // -------------------------------------------------------------------------
 
-    let results = execute_unified_partitions_parallel(
-        job,
-        plans,
-        &trade_inventory,
-        &depth_inventory,
-        &boundaries,
-        &logical_staging,
-    )?;
+    let results = profile_stage("logical_merge", || {
+        execute_unified_partitions_parallel(
+            job,
+            plans,
+            &trade_inventory,
+            &depth_inventory,
+            &boundaries,
+            &logical_staging,
+        )
+    })?;
 
     // -------------------------------------------------------------------------
     // Validate logical timeline references
     // -------------------------------------------------------------------------
 
-    let validated = validate_unified_merge_output(
-        &logical_staging,
-        &results,
-        &streams,
-        &trade_inventory,
-        &depth_inventory,
-    )?;
+    let validated = profile_stage("logical_validation", || {
+        validate_unified_merge_output(
+            &logical_staging,
+            &results,
+            &streams,
+            &trade_inventory,
+            &depth_inventory,
+        )
+    })?;
 
     let expected_trade_events = results.iter().try_fold(0_u64, |total, result| {
         total
@@ -198,8 +211,9 @@ pub fn execute_unified_merge_job(
     // Construct physical materialization plans
     // -------------------------------------------------------------------------
 
-    let materialization_plans =
-        build_materialization_plans(&logical_staging, &materialization_input_plans, &results)?;
+    let materialization_plans = profile_stage("materialization_planning", || {
+        build_materialization_plans(&logical_staging, &materialization_input_plans, &results)
+    })?;
 
     // -------------------------------------------------------------------------
     // Determine physical output mode
@@ -227,22 +241,25 @@ pub fn execute_unified_merge_job(
     // Execute parallel physical materialization
     // -------------------------------------------------------------------------
 
-    let physical_results = execute_parallel_materialization(
-        materialization_plans,
-        &trade_inventory,
-        &depth_inventory,
-        &streams,
-        mode,
-        job,
-        &physical_staging,
-    )?;
+    let physical_results = profile_stage("physical_materialization", || {
+        execute_parallel_materialization(
+            materialization_plans,
+            &trade_inventory,
+            &depth_inventory,
+            &streams,
+            mode,
+            job,
+            &physical_staging,
+        )
+    })?;
 
     // -------------------------------------------------------------------------
     // Validate physical Parquet dataset
     // -------------------------------------------------------------------------
 
-    let physical_validated = validate_physical_dataset(&physical_staging, mode, &physical_results)?;
-
+    let physical_validated = profile_stage("physical_validation", || {
+        validate_physical_dataset(&physical_staging, mode, &physical_results)
+    })?;
     // -------------------------------------------------------------------------
     // Verify logical and physical event counts
     // -------------------------------------------------------------------------
@@ -280,14 +297,16 @@ pub fn execute_unified_merge_job(
     // Resolve physical reconstruction checkpoints
     // -------------------------------------------------------------------------
 
-    let physical_checkpoints = build_physical_checkpoints(
-        &physical_staging,
-        mode,
-        &physical_validated,
-        &checkpoints,
-        &skipped_initializations,
-        job.time_range,
-    )?;
+    let physical_checkpoints = profile_stage("physical_checkpoints", || {
+        build_physical_checkpoints(
+            &physical_staging,
+            mode,
+            &physical_validated,
+            &checkpoints,
+            &skipped_initializations,
+            job.time_range,
+        )
+    })?;
 
     // -------------------------------------------------------------------------
     // Resolve independent physical reconstruction availability
@@ -340,13 +359,26 @@ pub fn execute_unified_merge_job(
     // Prepare physical-only publication layout
     // -------------------------------------------------------------------------
 
-    prepare_physical_publication(&commit.staging_path, &physical_manifest)?;
+    profile_stage("publication_preparation", || {
+        prepare_physical_publication(&commit.staging_path, &physical_manifest)
+    })?;
 
     // -------------------------------------------------------------------------
     // Transactional publication
     // -------------------------------------------------------------------------
 
-    commit.commit()?;
+    profile_stage("transactional_commit", || commit.commit())?;
+
+    // -------------------------------------------------------------------------
+    // Transactional publication
+    // -------------------------------------------------------------------------
+
+    if std::env::var_os("MARKETFORGE_PROFILE").is_some() {
+        eprintln!(
+            "[marketforge-profile] total_executor: {:.3}s",
+            execution_started.elapsed().as_secs_f64(),
+        );
+    }
 
     // -------------------------------------------------------------------------
     // Return execution result
@@ -385,4 +417,19 @@ fn invalid_error(message: impl Into<String>) -> MarketForgeError {
 
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(invalid_error(message))
+}
+
+fn profile_stage<T>(name: &str, operation: impl FnOnce() -> Result<T>) -> Result<T> {
+    let started = std::time::Instant::now();
+
+    let result = operation();
+
+    if std::env::var_os("MARKETFORGE_PROFILE").is_some() {
+        eprintln!(
+            "[marketforge-profile] {name}: {:.3}s",
+            started.elapsed().as_secs_f64(),
+        );
+    }
+
+    result
 }

@@ -1,19 +1,14 @@
 use std::{
     collections::{BTreeMap, HashSet},
-    fs::File,
-    io::BufReader,
     path::PathBuf,
 };
 
+use super::depth_boundary_summary::MergeBoundarySummary;
+use super::resolver::ResolvedMergeInput;
 use crate::{
     error::{MarketForgeError, Result},
-    process::{
-        boundary::DepthBoundaryManifest,
-        parquet::{DepthSegmentManifest, read_depth_segments},
-    },
+    process::parquet::{DepthSegmentManifest, read_depth_segments},
 };
-
-use super::resolver::ResolvedMergeInput;
 
 // -----------------------------------------------------------------------------
 // Depth task inventory
@@ -33,7 +28,7 @@ pub struct DepthTaskInventory {
     pub canonical_rows: u64,
 
     pub segments: DepthSegmentManifest,
-    pub boundary: DepthBoundaryManifest,
+    pub boundary: MergeBoundarySummary,
 }
 
 // -----------------------------------------------------------------------------
@@ -41,6 +36,8 @@ pub struct DepthTaskInventory {
 // -----------------------------------------------------------------------------
 
 pub fn build_depth_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<DepthTaskInventory>> {
+    let profile = std::env::var_os("MARKETFORGE_PROFILE").is_some();
+
     let mut inventory = Vec::new();
 
     for input in inputs {
@@ -122,6 +119,7 @@ pub fn build_depth_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<DepthT
         }
 
         for (task_id, mut files) in tasks {
+            let task_started = std::time::Instant::now();
             files.canonical_files.sort_by(|a, b| a.0.cmp(&b.0));
 
             let canonical_rows = files
@@ -164,7 +162,18 @@ pub fn build_depth_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<DepthT
                 MarketForgeError::InvalidConfiguration("invalid depth segment directory".to_owned())
             })?;
 
+            let started = std::time::Instant::now();
+
             let segments = read_depth_segments(depth_directory)?;
+
+            if profile {
+                eprintln!(
+                    "[depth-inventory] dataset={} task={} segments={:.6}s",
+                    input.dataset_id,
+                    task_id,
+                    started.elapsed().as_secs_f64(),
+                );
+            }
 
             if segments.total_levels != canonical_rows {
                 return invalid(format!(
@@ -177,20 +186,35 @@ pub fn build_depth_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<DepthT
             // Read boundary metadata
             // -----------------------------------------------------------------
 
-            let file = File::open(&boundary_path).map_err(|error| {
+            let boundary_started = std::time::Instant::now();
+
+            let bytes = std::fs::read(&boundary_path).map_err(|error| {
                 MarketForgeError::InvalidConfiguration(format!(
-                    "failed to open {}: {error}",
+                    "failed to read depth boundary manifest {}: {error}",
                     boundary_path.display()
                 ))
             })?;
 
-            let boundary: DepthBoundaryManifest = serde_json::from_reader(BufReader::new(file))
-                .map_err(|error| {
+            let read_elapsed = boundary_started.elapsed();
+
+            let boundary: MergeBoundarySummary =
+                serde_json::from_slice(&bytes).map_err(|error| {
                     MarketForgeError::InvalidConfiguration(format!(
                         "invalid depth boundary manifest {}: {error}",
                         boundary_path.display()
                     ))
                 })?;
+
+            if std::env::var_os("MARKETFORGE_PROFILE").is_some() {
+                eprintln!(
+                    "[depth-boundary] dataset={} task={} bytes={} read={:.6}s parse={:.6}s",
+                    input.dataset_id,
+                    task_id,
+                    bytes.len(),
+                    read_elapsed.as_secs_f64(),
+                    (boundary_started.elapsed() - read_elapsed).as_secs_f64(),
+                );
+            }
 
             // -----------------------------------------------------------------
             // Store task inventory
@@ -214,6 +238,14 @@ pub fn build_depth_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<DepthT
                 segments,
                 boundary,
             });
+            if profile {
+                eprintln!(
+                    "[depth-inventory] dataset={} task={} total={:.6}s",
+                    input.dataset_id,
+                    task_id,
+                    task_started.elapsed().as_secs_f64(),
+                );
+            }
         }
     }
 

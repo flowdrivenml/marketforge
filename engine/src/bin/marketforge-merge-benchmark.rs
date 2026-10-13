@@ -10,7 +10,7 @@ use marketforge_engine::{
         ContentType, MergeJob, MergeOperation, MergeOutput, MergeParquetConfig, MergePartitioning,
         MergeResources, MergeTimeRange,
     },
-    process::merge::{execute_parallel_merge_job, execute_unified_merge_job},
+    process::merge::{PhysicalMergeManifest, execute_unified_merge_job},
 };
 
 use serde::{Deserialize, Serialize};
@@ -54,6 +54,8 @@ struct BenchmarkConfig {
     workers: Vec<usize>,
     repetitions: usize,
     output: PathBuf,
+    duration_hours: u64,
+    partitions: Option<usize>,
 }
 
 fn parse_args() -> Result<BenchmarkConfig, String> {
@@ -61,6 +63,8 @@ fn parse_args() -> Result<BenchmarkConfig, String> {
     let mut workers = vec![4, 8, 16, 24, 32];
     let mut repetitions = 2;
     let mut output = None;
+    let mut duration_hours = 1_u64;
+    let mut partitions = None;
 
     let mut args = env::args().skip(1);
 
@@ -103,7 +107,29 @@ fn parse_args() -> Result<BenchmarkConfig, String> {
                 }
             }
 
+            "--hours" => {
+                duration_hours = value
+                    .parse()
+                    .map_err(|_| "invalid benchmark duration".to_owned())?;
+
+                if duration_hours == 0 || duration_hours > 72 {
+                    return Err("benchmark duration must be between 1 and 72 hours".to_owned());
+                }
+            }
+
             "--output" => output = Some(PathBuf::from(value)),
+
+            "--partitions" => {
+                let count = value
+                    .parse::<usize>()
+                    .map_err(|_| "invalid partition count")?;
+
+                if count == 0 {
+                    return Err("partition count must be positive".to_owned());
+                }
+
+                partitions = Some(count);
+            }
 
             _ => return Err(format!("unknown argument: {argument}")),
         }
@@ -117,6 +143,8 @@ fn parse_args() -> Result<BenchmarkConfig, String> {
         workers,
         repetitions,
         output,
+        duration_hours,
+        partitions,
     })
 }
 
@@ -242,6 +270,7 @@ struct BenchmarkReport {
     workers: Vec<usize>,
     repetitions: usize,
     results: Vec<BenchmarkRun>,
+    partitions: Option<usize>,
 }
 
 // -----------------------------------------------------------------------------
@@ -254,6 +283,8 @@ fn benchmark_job(
     workers: usize,
     repetition: usize,
     output: &Path,
+    duration_hours: u64,
+    partitions: Option<usize>,
 ) -> Result<MergeJob, String> {
     let job_id = 9_200_000_u64
         .checked_add((repetition as u64) * 100)
@@ -266,8 +297,30 @@ fn benchmark_job(
         .collect::<HashMap<_, _>>();
 
     let start_ns = 1_788_220_800_000_000_000_i64;
-    let end_ns = 1_788_480_000_000_000_000_i64;
 
+    let duration_ns = i64::try_from(duration_hours)
+        .map_err(|_| "benchmark duration overflow")?
+        .checked_mul(3_600_000_000_000)
+        .ok_or("benchmark duration overflow")?;
+
+    let end_ns = start_ns
+        .checked_add(duration_ns)
+        .ok_or("benchmark interval overflow")?;
+    let partitions_per_worker = match partitions {
+        Some(total) => {
+            if total < workers {
+                return Err("fixed partition count cannot be smaller than worker count".to_owned());
+            }
+
+            if total % workers != 0 {
+                return Err("fixed partition count must be divisible by worker count".to_owned());
+            }
+
+            total / workers
+        }
+
+        None => 4,
+    };
     let job = MergeJob {
         job_id,
         operation: MergeOperation::Merge,
@@ -284,7 +337,7 @@ fn benchmark_job(
         },
 
         partitioning: MergePartitioning {
-            partitions_per_worker: 4,
+            partitions_per_worker: partitions_per_worker as _,
         },
 
         parquet: MergeParquetConfig {
@@ -317,25 +370,25 @@ fn verify_manifest(
 ) -> Result<u64, String> {
     let path = dataset_path.join("manifest.json");
 
-    let manifest: serde_json::Value =
+    let manifest: PhysicalMergeManifest =
         serde_json::from_slice(&fs::read(&path).map_err(|error| error.to_string())?)
             .map_err(|error| error.to_string())?;
 
-    if manifest["job_id"].as_u64() != Some(expected_job_id) {
+    manifest.validate().map_err(|error| error.to_string())?;
+
+    if manifest.job_id != expected_job_id {
         return Err("manifest job identity mismatch".to_owned());
     }
 
-    if manifest["events_written"].as_u64() != Some(expected_events) {
+    if manifest.events_written != expected_events {
         return Err("manifest event count mismatch".to_owned());
     }
 
-    if manifest["files_written"].as_u64() != Some(expected_files) {
+    if manifest.files_written != expected_files {
         return Err("manifest file count mismatch".to_owned());
     }
 
-    let files = manifest["files"]
-        .as_array()
-        .ok_or("manifest files missing")?;
+    let files = &manifest.files;
 
     if files.len() as u64 != expected_files {
         return Err("manifest file inventory mismatch".to_owned());
@@ -345,9 +398,7 @@ fn verify_manifest(
     let mut total_rows = 0_u64;
 
     for file in files {
-        let relative = file["path"].as_str().ok_or("invalid manifest file path")?;
-
-        let relative = Path::new(relative);
+        let relative = Path::new(&file.path);
 
         if relative.is_absolute()
             || relative
@@ -361,7 +412,7 @@ fn verify_manifest(
 
         let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
 
-        let expected_size = file["size_bytes"].as_u64().ok_or("missing file size")?;
+        let expected_size = file.size_bytes;
 
         if metadata.len() != expected_size {
             return Err(format!("Parquet size mismatch: {}", path.display()));
@@ -369,7 +420,13 @@ fn verify_manifest(
 
         output_bytes += metadata.len();
 
-        total_rows += file["rows"].as_u64().ok_or("missing file row count")?;
+        total_rows += file.rows.ok_or("missing file row count")?;
+    }
+
+    if total_rows != expected_events {
+        return Err(format!(
+            "Parquet row count mismatch: expected={expected_events}, actual={total_rows}"
+        ));
     }
 
     if total_rows != expected_events {
@@ -444,7 +501,15 @@ fn run_benchmark(config: BenchmarkConfig) -> Result<(), String> {
 
             let dataset_path = run_directory.join("dataset");
 
-            let job = benchmark_job(&root, &selected, workers, repetition, &dataset_path)?;
+            let job = benchmark_job(
+                &root,
+                &selected,
+                workers,
+                repetition,
+                &dataset_path,
+                config.duration_hours,
+                config.partitions,
+            )?;
 
             println!("\n{}", "-".repeat(90));
             println!(
@@ -455,29 +520,15 @@ fn run_benchmark(config: BenchmarkConfig) -> Result<(), String> {
 
             let started = Instant::now();
 
-            let execution = match config.dataset {
-                BenchmarkDataset::Depth => execute_parallel_merge_job(&job, &root).map(|result| {
-                    (
-                        result.events_written,
-                        None,
-                        None,
-                        result.files_written,
-                        result.partitions_completed,
-                    )
-                }),
-
-                BenchmarkDataset::Trades | BenchmarkDataset::Combined => {
-                    execute_unified_merge_job(&job, &root).map(|result| {
-                        (
-                            result.events_written,
-                            Some(result.trade_events),
-                            Some(result.depth_events),
-                            result.files_written,
-                            result.partitions_completed,
-                        )
-                    })
-                }
-            };
+            let execution = execute_unified_merge_job(&job, &root).map(|result| {
+                (
+                    result.events_written,
+                    Some(result.trade_events),
+                    Some(result.depth_events),
+                    result.files_written,
+                    result.partitions_completed,
+                )
+            });
 
             let elapsed = started.elapsed().as_secs_f64();
 
@@ -556,6 +607,7 @@ fn run_benchmark(config: BenchmarkConfig) -> Result<(), String> {
         workers: config.workers,
         repetitions: config.repetitions,
         results,
+        partitions: config.partitions,
     };
 
     let report_path = output.join("benchmark.json");
@@ -570,6 +622,7 @@ fn run_benchmark(config: BenchmarkConfig) -> Result<(), String> {
     println!("MARKETFORGE — BENCHMARK COMPLETE");
     println!("{}", "=".repeat(90));
     println!("Report: {}", report_path.display());
+    println!("Partitions  : {:?}", config.partitions);
 
     Ok(())
 }

@@ -1,10 +1,9 @@
 use std::collections::BTreeMap;
 
-use crate::{
-    error::{MarketForgeError, Result},
-    process::boundary::{BoundaryContinuity, BoundarySnapshot},
-};
+use crate::error::{MarketForgeError, Result};
+use crate::process::boundary::BoundaryContinuity;
 
+use super::depth_boundary_summary::MergeBoundarySnapshot;
 use super::inventory::DepthTaskInventory;
 
 // -----------------------------------------------------------------------------
@@ -194,6 +193,6 @@ fn classify_boundary(
 // Snapshot comparability
 // -----------------------------------------------------------------------------
 
-fn comparable_snapshots(previous: &BoundarySnapshot, next: &BoundarySnapshot) -> bool {
+fn comparable_snapshots(previous: &MergeBoundarySnapshot, next: &MergeBoundarySnapshot) -> bool {
     previous.coverage == next.coverage
 }

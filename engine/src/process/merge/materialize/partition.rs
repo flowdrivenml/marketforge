@@ -3,14 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeParquetConfig,
-};
-
 use super::DepthTaskInventory;
 use super::{
-    materialize_cache::CanonicalRowGroupCache,
     materialize_combined_builder::{PhysicalCombinedBatchBuilder, PhysicalCombinedEvent},
     materialize_decoder::GroupedCanonicalDecoder,
     materialize_depth_builder::{PhysicalDepthBatchBuilder, PhysicalDepthEvent},
@@ -29,6 +23,11 @@ use super::{
     unified_manifest::UnifiedMergeStreamKind,
     unified_manifest::{UnifiedMergeMode, UnifiedMergeStream},
 };
+use crate::{
+    error::{MarketForgeError, Result},
+    job::MergeParquetConfig,
+};
+use std::time::{Duration, Instant};
 
 // -----------------------------------------------------------------------------
 // Partition input
@@ -52,6 +51,7 @@ pub struct MaterializationPartitionInput<'a> {
 
     pub staging: &'a Path,
 }
+
 #[derive(Debug, Clone)]
 pub struct MaterializationPartitionResult {
     pub partition_id: u32,
@@ -74,6 +74,10 @@ pub struct MaterializationPartitionWorker {
     depth_metadata: DepthMetadataResolver,
 
     streams: HashMap<(u64, u32), UnifiedMergeStream>,
+    profile_planning: Duration,
+    profile_decoding: Duration,
+    profile_building: Duration,
+    profile_writing: Duration,
 }
 
 impl MaterializationPartitionWorker {
@@ -84,15 +88,17 @@ impl MaterializationPartitionWorker {
 
         let reader = CanonicalParquetReader::new(input.limits.reader_batch_size)?;
 
-        let cache = CanonicalRowGroupCache::new(input.limits.cache_bytes)?;
-
-        let decoder = GroupedCanonicalDecoder::new(reader, cache);
+        let decoder = GroupedCanonicalDecoder::new(reader, input.limits.max_open_cursors);
 
         let mut worker = Self {
             planner: CanonicalReadPlanner::new(),
             decoder,
             depth_metadata: DepthMetadataResolver::new(),
             streams: HashMap::new(),
+            profile_planning: Duration::ZERO,
+            profile_decoding: Duration::ZERO,
+            profile_building: Duration::ZERO,
+            profile_writing: Duration::ZERO,
         };
 
         worker.register_streams(input.streams)?;
@@ -285,6 +291,28 @@ impl MaterializationPartitionWorker {
 
         writer.finish()?;
 
+        if std::env::var_os("MARKETFORGE_PROFILE").is_some() {
+            eprintln!(
+                "[materialize-profile] partition={} windows={} \
+         planning={:.3}s decoding={:.3}s \
+         building={:.3}s writing={:.3}s \
+         group_requests={} unique_groups={} repeated_groups={}
+                cursor_openings={} cursor_evictions={} peak_open_cursors={}",
+                input.partition_id,
+                windows_processed,
+                self.profile_planning.as_secs_f64(),
+                self.profile_decoding.as_secs_f64(),
+                self.profile_building.as_secs_f64(),
+                self.profile_writing.as_secs_f64(),
+                self.decoder.profile_row_group_requests(),
+                self.decoder.profile_unique_row_groups(),
+                self.decoder.profile_repeated_row_groups(),
+                self.decoder.cursor_openings(),
+                self.decoder.cursor_evictions(),
+                self.decoder.peak_open_cursors(),
+            );
+        }
+
         Ok(MaterializationPartitionResult {
             partition_id: input.partition_id,
             start_ns: input.start_ns,
@@ -304,7 +332,11 @@ impl MaterializationPartitionWorker {
             return Ok(());
         }
 
+        let started = Instant::now();
+
         let plan = self.planner.plan(&window.references)?;
+
+        self.profile_planning += started.elapsed();
 
         if plan.canonical_rows != window.canonical_rows {
             return invalid(format!(
@@ -314,11 +346,17 @@ impl MaterializationPartitionWorker {
             ));
         }
 
+        let started = Instant::now();
+
         let resolved = self.decoder.decode(&plan)?;
+
+        self.profile_decoding += started.elapsed();
 
         if resolved.len() != window.event_count() {
             return invalid("materialization event-count mismatch");
         }
+
+        let building_started = Instant::now();
 
         let batch = match mode {
             UnifiedMergeMode::Trades => PhysicalTradeBatchBuilder::new().build(&resolved)?,
@@ -407,8 +445,14 @@ impl MaterializationPartitionWorker {
             }
         };
 
+        self.profile_building += building_started.elapsed();
+
         if let Some(batch) = batch {
+            let started = Instant::now();
+
             writer.write_batch(&batch)?;
+
+            self.profile_writing += started.elapsed();
         }
 
         Ok(())

@@ -1,7 +1,10 @@
-use std::{fs::File, path::Path};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+};
 
 use arrow_array::RecordBatch;
-use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
 
 use crate::error::{MarketForgeError, Result};
 
@@ -36,6 +39,10 @@ impl CanonicalParquetReader {
         }
 
         Ok(Self { batch_size })
+    }
+
+    pub fn batch_size(&self) -> usize {
+        self.batch_size
     }
 
     /// Read one file-local canonical row range.
@@ -427,6 +434,225 @@ impl CanonicalParquetReader {
         }
 
         Ok(result)
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Persistent forward-only canonical reader
+// -----------------------------------------------------------------------------
+
+pub struct CanonicalForwardCursor {
+    path: PathBuf,
+    reader: ParquetRecordBatchReader,
+
+    current_batch: Option<RecordBatch>,
+    batch_offset: usize,
+
+    position: u64,
+    total_rows: u64,
+}
+
+impl CanonicalForwardCursor {
+    pub fn new(path: &Path, start_offset: u64, batch_size: usize) -> Result<Self> {
+        if batch_size == 0 {
+            return invalid("forward reader batch size must be positive");
+        }
+
+        let file = File::open(path).map_err(|error| {
+            invalid_error(format!(
+                "cannot open canonical Parquet {}: {error}",
+                path.display()
+            ))
+        })?;
+
+        let builder = ParquetRecordBatchReaderBuilder::try_new(file).map_err(|error| {
+            invalid_error(format!(
+                "cannot inspect canonical Parquet {}: {error}",
+                path.display()
+            ))
+        })?;
+
+        let total_rows = u64::try_from(builder.metadata().file_metadata().num_rows())
+            .map_err(|_| invalid_error("invalid Parquet row count"))?;
+
+        if start_offset > total_rows {
+            return invalid("forward reader start exceeds file rows");
+        }
+
+        // Select only row groups at or after the requested position.
+        let mut groups = Vec::new();
+        let mut group_start = 0_u64;
+        let mut reader_start = total_rows;
+
+        for (index, group) in builder.metadata().row_groups().iter().enumerate() {
+            let rows = u64::try_from(group.num_rows())
+                .map_err(|_| invalid_error("invalid row-group size"))?;
+
+            let group_end = group_start
+                .checked_add(rows)
+                .ok_or_else(|| invalid_error("row-group offset overflow"))?;
+
+            if group_end > start_offset {
+                if groups.is_empty() {
+                    reader_start = group_start;
+                }
+
+                groups.push(index);
+            }
+
+            group_start = group_end;
+        }
+
+        let reader = builder
+            .with_row_groups(groups)
+            .with_batch_size(batch_size)
+            .build()
+            .map_err(|error| invalid_error(format!("cannot initialize forward reader: {error}")))?;
+
+        let mut cursor = Self {
+            path: path.to_path_buf(),
+            reader,
+            current_batch: None,
+            batch_offset: 0,
+            position: reader_start,
+            total_rows,
+        };
+
+        cursor.advance_to(start_offset)?;
+
+        Ok(cursor)
+    }
+
+    pub fn position(&self) -> u64 {
+        self.position
+    }
+
+    pub fn total_rows(&self) -> u64 {
+        self.total_rows
+    }
+
+    // -------------------------------------------------------------------------
+    // Load the next Arrow batch
+    // -------------------------------------------------------------------------
+
+    fn load_next_batch(&mut self) -> Result<bool> {
+        match self.reader.next() {
+            Some(Ok(batch)) => {
+                if batch.num_rows() == 0 {
+                    return invalid("empty canonical Arrow batch");
+                }
+
+                self.current_batch = Some(batch);
+                self.batch_offset = 0;
+
+                Ok(true)
+            }
+
+            Some(Err(error)) => invalid(format!(
+                "canonical decoding failed in {}: {error}",
+                self.path.display()
+            )),
+
+            None => {
+                self.current_batch = None;
+                self.batch_offset = 0;
+
+                Ok(false)
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Advance without retaining skipped rows
+    // -------------------------------------------------------------------------
+
+    pub fn advance_to(&mut self, target: u64) -> Result<()> {
+        if target < self.position {
+            return invalid(format!(
+                "backward canonical read: current={}, requested={}",
+                self.position, target
+            ));
+        }
+
+        if target > self.total_rows {
+            return invalid("canonical cursor exceeds file rows");
+        }
+
+        while self.position < target {
+            if self.current_batch.is_none() && !self.load_next_batch()? {
+                return invalid("unexpected end of canonical Parquet");
+            }
+
+            let batch = self.current_batch.as_ref().unwrap();
+
+            let available = batch.num_rows() - self.batch_offset;
+
+            let remaining = target - self.position;
+
+            let step = available.min(usize::try_from(remaining).unwrap_or(usize::MAX));
+
+            self.batch_offset += step;
+
+            self.position = self
+                .position
+                .checked_add(step as u64)
+                .ok_or_else(|| invalid_error("cursor position overflow"))?;
+
+            if self.batch_offset == batch.num_rows() {
+                self.current_batch = None;
+                self.batch_offset = 0;
+            }
+        }
+
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
+    // Read exact forward range
+    // -------------------------------------------------------------------------
+
+    pub fn read_range(&mut self, row_offset: u64, row_count: u64) -> Result<Vec<RecordBatch>> {
+        let end = row_offset
+            .checked_add(row_count)
+            .ok_or_else(|| invalid_error("canonical range overflow"))?;
+
+        if end > self.total_rows {
+            return invalid("canonical range exceeds file rows");
+        }
+
+        self.advance_to(row_offset)?;
+
+        let mut output = Vec::new();
+        let mut remaining = row_count;
+
+        while remaining > 0 {
+            if self.current_batch.is_none() && !self.load_next_batch()? {
+                return invalid("incomplete forward canonical read");
+            }
+
+            let batch = self.current_batch.as_ref().unwrap();
+
+            let available = batch.num_rows() - self.batch_offset;
+
+            let count = available.min(usize::try_from(remaining).unwrap_or(usize::MAX));
+
+            output.push(batch.slice(self.batch_offset, count));
+
+            self.batch_offset += count;
+            self.position = self
+                .position
+                .checked_add(count as u64)
+                .ok_or_else(|| invalid_error("cursor position overflow"))?;
+
+            remaining -= count as u64;
+
+            if self.batch_offset == batch.num_rows() {
+                self.current_batch = None;
+                self.batch_offset = 0;
+            }
+        }
+
+        Ok(output)
     }
 }
 

@@ -2,7 +2,7 @@ use marketforge_engine::{
     job::{MergeParquetConfig, MergeResources},
     process::merge::estimate_materialization_resources,
 };
-
+const NON_CURSOR_ALLOWANCE_TEST: u64 = 5;
 const MIB: u64 = 1024 * 1024;
 
 fn parquet() -> MergeParquetConfig {
@@ -27,7 +27,10 @@ fn estimates_single_task() {
 
     assert!(plan.requirements.memory_bytes > 0);
     assert!(plan.requirements.memory_bytes <= resources().memory_limit_mb * MIB);
-    assert_eq!(plan.requirements.open_files, 4);
+    assert_eq!(
+        plan.requirements.open_files,
+        plan.limits.max_open_cursors as u64 + NON_CURSOR_ALLOWANCE_TEST,
+    );
     assert_eq!(plan.requirements.scratch_bytes, 0);
 }
 
@@ -39,15 +42,17 @@ fn estimates_multiple_tasks() {
 
     assert!(four.requirements.memory_bytes > one.requirements.memory_bytes);
 
-    assert!(four.requirements.open_files > one.requirements.open_files);
+    assert!(four.requirements.open_files <= resources().max_open_files as u64);
 }
 
 #[test]
-fn allocates_bounded_cache() {
+fn allocates_bounded_forward_cursors() {
     let plan = estimate_materialization_resources(2, &parquet(), &resources()).unwrap();
 
-    assert!(plan.limits.cache_bytes >= 64 * MIB);
-    assert!(plan.limits.cache_bytes <= 512 * MIB);
+    assert!(plan.limits.max_open_cursors >= 1);
+    assert!(plan.limits.max_open_cursors <= 64);
+
+    assert!(plan.requirements.open_files <= resources().max_open_files as u64);
 }
 
 #[test]

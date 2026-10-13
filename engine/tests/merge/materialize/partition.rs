@@ -5,7 +5,11 @@ use arrow_array::{
     ArrayRef, Decimal256Array, Int64Array, RecordBatch, StringArray, UInt64Array, new_null_array,
 };
 use arrow_buffer::i256;
+use marketforge_engine::process::merge::MergeBoundarySummary;
 use marketforge_engine::process::merge::validate_physical_partition;
+use marketforge_engine::process::merge::{
+    MaterializationPartitionResult, validate_physical_dataset,
+};
 use marketforge_engine::{
     book::BookSegment,
     canonical::Exchange,
@@ -19,11 +23,6 @@ use marketforge_engine::{
         },
         parquet::trade_schema,
     },
-};
-use parquet::arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder};
-
-use marketforge_engine::process::merge::{
-    MaterializationPartitionResult, validate_physical_dataset,
 };
 use marketforge_engine::{
     formats::depth::{DepthEventBoundary, DepthSourceOperation},
@@ -39,8 +38,7 @@ use marketforge_engine::{
     },
     process::merge::{MaterializationPartitionPlan, execute_parallel_materialization},
 };
-
-const MIB: u64 = 1024 * 1024;
+use parquet::arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder};
 
 // -----------------------------------------------------------------------------
 // Fixtures
@@ -56,9 +54,9 @@ fn parquet_config() -> MergeParquetConfig {
 
 fn worker_limits() -> MaterializationWorkerLimits {
     MaterializationWorkerLimits {
-        cache_bytes: 64 * MIB,
         batch_limits: MaterializationBatchLimits::new(2, 10).unwrap(),
         reader_batch_size: 2,
+        max_open_cursors: 32,
     }
 }
 
@@ -213,12 +211,12 @@ fn create_depth_fixture(directory: &Path) -> (DepthTaskInventory, Vec<UnifiedTim
         boundary_path: directory.join("boundary.json"),
         canonical_rows: 3,
         segments,
-        boundary: DepthBoundaryManifest::new(
+        boundary: MergeBoundarySummary::from(&DepthBoundaryManifest::new(
             Exchange::Bybit,
             688,
             "BTCUSDT".into(),
             "bybit:perpetual:linear:BTCUSDT:l2".into(),
-        ),
+        )),
     };
 
     let references = events.iter().map(depth_reference).collect();
