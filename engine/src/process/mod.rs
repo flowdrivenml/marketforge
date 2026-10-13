@@ -13,6 +13,7 @@ pub mod session;
 pub mod task;
 pub mod worker;
 pub use executor::execute_processing_job;
+pub mod convert;
 pub mod merge;
 
 pub use result::{ProcessingErrorCode, ProcessingFailure, ProcessingResult, ProcessingStatus};

@@ -7,7 +7,7 @@ use std::{
 
 use marketforge_engine::{
     job::{ContentType, load_merge_job},
-    process::merge::{execute_parallel_merge_job, execute_unified_merge_job, resolve_merge_inputs},
+    process::merge::{execute_unified_merge_job, resolve_merge_inputs},
 };
 
 // -----------------------------------------------------------------------------
@@ -182,36 +182,23 @@ fn run() -> Result<(), String> {
     // -------------------------------------------------------------------------
 
     let result = match (has_trades, has_depth) {
-        (false, true) => {
-            let result = execute_parallel_merge_job(&job, &project_root)
-                .map_err(|error| error.to_string())?;
-
-            MergeCliResult {
-                job_id: result.job_id,
-                mode: "depth",
-
-                dataset_path: result.dataset_path,
-                manifest_path: result.manifest_path,
-
-                partitions_completed: result.partitions_completed,
-
-                events_written: result.events_written,
-                trade_events: None,
-                depth_events: None,
-
-                files_written: result.files_written,
-                skipped_initializations: result.skipped_initializations,
-            }
+        (false, false) => {
+            return Err("merge contains no supported input datasets".to_owned());
         }
 
-        (true, false) | (true, true) => {
+        _ => {
             let result = execute_unified_merge_job(&job, &project_root)
                 .map_err(|error| error.to_string())?;
 
             MergeCliResult {
                 job_id: result.job_id,
 
-                mode: if has_depth { "combined" } else { "trades" },
+                mode: match (has_trades, has_depth) {
+                    (true, false) => "trades",
+                    (false, true) => "depth",
+                    (true, true) => "combined",
+                    (false, false) => unreachable!(),
+                },
 
                 dataset_path: result.dataset_path,
                 manifest_path: result.manifest_path,
@@ -225,10 +212,6 @@ fn run() -> Result<(), String> {
                 files_written: result.files_written,
                 skipped_initializations: result.skipped_initializations,
             }
-        }
-
-        (false, false) => {
-            return Err("merge contains no supported input datasets".to_owned());
         }
     };
 

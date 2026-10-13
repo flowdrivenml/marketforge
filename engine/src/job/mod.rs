@@ -1,3 +1,5 @@
+mod convert;
+mod convert_load;
 mod ids;
 mod instrument;
 mod integrity;
@@ -14,6 +16,12 @@ mod stream;
 mod task;
 mod validate;
 
+pub use convert::{
+    ConversionConfig, ConversionPathPolicy, ConversionPriceSource, ConvertJob, ConvertOperation,
+    ConvertOutput,
+};
+
+pub use convert_load::load_convert_job;
 pub use merge::{
     MergeJob, MergeOperation, MergeOutput, MergeParquetConfig, MergePartitioning, MergeResources,
     MergeTimeRange,

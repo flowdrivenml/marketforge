@@ -1,6 +1,7 @@
 pub mod book;
 pub mod canonical;
 pub mod error;
+pub mod instrument;
 pub mod job;
 pub mod normalize;
 pub mod validate;

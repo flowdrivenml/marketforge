@@ -594,3 +594,28 @@ required-features = ["process"]
 name = "merge_boundary_summary"
 path = "tests/merge/depth/boundary_summary.rs"
 required-features = ["process"]
+
+[[test]]
+name = "instrument_catalog"
+path = "tests/instrument/catalog.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_job"
+path = "tests/convert/job.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_catalog"
+path = "tests/convert/catalog.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_graph"
+path = "tests/convert/graph.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_planner"
+path = "tests/convert/planner.rs"
+required-features = ["process"]
