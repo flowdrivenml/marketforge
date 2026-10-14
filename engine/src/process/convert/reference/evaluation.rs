@@ -1,9 +1,8 @@
-use num_bigint::BigInt;
-use num_traits::{One, Zero};
-
-use crate::process::convert::{ConversionDecimal, ConversionDirection, ConversionPath};
-
 use super::state::{ReferenceKey, ReferenceState, ReferenceUnavailable};
+use crate::process::convert::{ConversionDecimal, ConversionDirection, ConversionPath};
+use num_bigint::BigInt;
+use num_integer::Integer;
+use num_traits::{One, Zero};
 
 // -----------------------------------------------------------------------------
 // Evaluation results
@@ -105,6 +104,23 @@ pub fn evaluate_conversion_path(
             direction: edge.direction,
             price: observation.price,
         });
+    }
+
+    // -------------------------------------------------------------------------
+    // Reduce the exact conversion ratio before applying it to depth levels.
+    // -------------------------------------------------------------------------
+
+    let gcd = numerator.gcd(&denominator);
+
+    if gcd > BigInt::one() {
+        numerator /= &gcd;
+        denominator /= &gcd;
+    }
+
+    // Keep the denominator positive for canonical rational representation.
+    if denominator < BigInt::zero() {
+        numerator = -numerator;
+        denominator = -denominator;
     }
 
     let rate = ConversionDecimal::from_ratio(numerator.clone(), denominator.clone())

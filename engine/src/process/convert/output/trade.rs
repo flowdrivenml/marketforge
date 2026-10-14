@@ -12,8 +12,8 @@ use crate::{
 use super::{
     provenance::{build_conversion_paths, build_conversion_references},
     schema::{
-        CONVERSION_STATUS_CONVERTED, CONVERSION_STATUS_IDENTITY, CONVERSION_STATUS_UNAVAILABLE,
-        converted_trade_schema,
+        CONVERSION_STATUS_CONVERTED, CONVERSION_STATUS_IDENTITY, CONVERSION_STATUS_SKIPPED,
+        CONVERSION_STATUS_UNAVAILABLE, converted_trade_schema,
     },
 };
 
@@ -34,6 +34,24 @@ pub struct TradeConversionRow {
 
     pub path: Option<Vec<String>>,
     pub references: Vec<EvaluatedReference>,
+}
+
+impl TradeConversionRow {
+    pub fn skipped(target_quote: &str) -> Self {
+        Self {
+            target_quote: target_quote.to_owned(),
+
+            status: super::schema::CONVERSION_STATUS_SKIPPED,
+            failure: None,
+
+            rate: None,
+            price_target: None,
+            quantity_quote_target: None,
+
+            path: None,
+            references: Vec::new(),
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -117,6 +135,17 @@ impl ConvertedTradeBatchBuilder {
                         || !row.references.is_empty()
                     {
                         return invalid("invalid unavailable conversion");
+                    }
+                }
+                CONVERSION_STATUS_SKIPPED => {
+                    if row.rate.is_some()
+                        || row.price_target.is_some()
+                        || row.quantity_quote_target.is_some()
+                        || row.failure.is_some()
+                        || row.path.is_some()
+                        || !row.references.is_empty()
+                    {
+                        return invalid("invalid skipped trade conversion");
                     }
                 }
 

@@ -26,7 +26,7 @@ pub use combined_validation::{
     validate_converted_combined,
 };
 pub use combined_writer::ConvertedCombinedBatchBuilder;
-pub use depth::{ConvertedDepthBatchBuilder, DepthConversionRow};
+pub use depth::{ConvertedDepthBatchBuilder, DepthConversionBuffers, DepthConversionRow};
 pub use depth_numeric::{DepthNumericValidationMetrics, validate_depth_numeric_batch};
 pub use depth_parallel_validation::validate_converted_depth_parallel;
 pub use depth_validation::{

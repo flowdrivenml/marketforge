@@ -1,8 +1,8 @@
 use super::{
     provenance::{build_conversion_paths, build_conversion_references},
     schema::{
-        CONVERSION_STATUS_CONVERTED, CONVERSION_STATUS_IDENTITY, CONVERSION_STATUS_UNAVAILABLE,
-        converted_combined_schema,
+        CONVERSION_STATUS_CONVERTED, CONVERSION_STATUS_IDENTITY, CONVERSION_STATUS_SKIPPED,
+        CONVERSION_STATUS_UNAVAILABLE, converted_combined_schema,
     },
     trade::TradeConversionRow,
 };
@@ -136,13 +136,23 @@ impl ConvertedCombinedBatchBuilder {
                             }
                         }
 
-                        CONVERSION_STATUS_UNAVAILABLE => {
+                        CONVERSION_STATUS_UNAVAILABLE | CONVERSION_STATUS_SKIPPED => {
                             if depth.levels.is_some() {
-                                return invalid("unavailable depth conversion contains levels");
+                                return invalid(
+                                    "unavailable or skipped depth conversion contains levels",
+                                );
+                            }
+
+                            if depth.metadata.status == CONVERSION_STATUS_SKIPPED
+                                && (depth.metadata.failure.is_some()
+                                    || depth.metadata.rate.is_some()
+                                    || depth.metadata.path.is_some()
+                                    || !depth.metadata.references.is_empty())
+                            {
+                                return invalid("invalid skipped combined depth metadata");
                             }
 
                             depth_prices.extend(std::iter::repeat_n(None, original_levels));
-
                             depth_quantities.extend(std::iter::repeat_n(None, original_levels));
                         }
 

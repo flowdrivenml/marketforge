@@ -23,6 +23,9 @@ pub struct ConversionDepthStatistics {
     pub levels_read: u64,
     pub levels_converted: u64,
     pub levels_unavailable: u64,
+
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub levels_skipped: u64,
 }
 
 impl ConversionDepthStatistics {
@@ -30,10 +33,19 @@ impl ConversionDepthStatistics {
         let accounted = self
             .levels_converted
             .checked_add(self.levels_unavailable)
+            .and_then(|value| value.checked_add(self.levels_skipped))
             .ok_or_else(|| invalid_error("depth receipt level counter overflow"))?;
 
         if accounted != self.levels_read {
-            return invalid("depth receipt level accounting mismatch");
+            return invalid(format!(
+                "depth receipt level accounting mismatch: \
+                 read={}, converted={}, unavailable={}, skipped={}, accounted={}",
+                self.levels_read,
+                self.levels_converted,
+                self.levels_unavailable,
+                self.levels_skipped,
+                accounted,
+            ));
         }
 
         Ok(())
@@ -52,7 +64,8 @@ pub struct ConversionExecutionReceipt {
     pub identity_events: u64,
     pub converted_events: u64,
     pub unavailable_events: u64,
-
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub skipped_events: u64,
     pub reference_updates: u64,
 
     pub files_written: u64,
@@ -80,6 +93,7 @@ impl ConversionExecutionReceipt {
             files_written: metrics.files_written,
             row_groups_written: metrics.row_groups_written,
             depth: None,
+            skipped_events: 0,
         };
 
         receipt.validate()?;
@@ -91,7 +105,7 @@ impl ConversionExecutionReceipt {
         let receipt = Self {
             version: CONVERSION_RECEIPT_VERSION,
             job_id,
-
+            skipped_events: 0,
             events_read: metrics.events_read,
             events_written: metrics.events_written,
 
@@ -108,6 +122,7 @@ impl ConversionExecutionReceipt {
                 levels_read: metrics.levels_read,
                 levels_converted: metrics.levels_converted,
                 levels_unavailable: metrics.levels_unavailable,
+                levels_skipped: 0,
             }),
         };
 
@@ -129,6 +144,7 @@ impl ConversionExecutionReceipt {
             .identity_events
             .checked_add(self.converted_events)
             .and_then(|value| value.checked_add(self.unavailable_events))
+            .and_then(|value| value.checked_add(self.skipped_events))
             .ok_or_else(|| invalid_error("conversion receipt counter overflow"))?;
 
         if accounted != self.events_written {
@@ -202,7 +218,9 @@ impl ConversionExecutionReceipt {
         {
             return invalid("conversion receipt does not match validated Parquet output");
         }
-
+        if self.skipped_events != 0 {
+            return invalid("unexpected skipped events in unfiltered conversion");
+        }
         Ok(())
     }
     pub fn reconcile_depth(
@@ -233,7 +251,9 @@ impl ConversionExecutionReceipt {
         {
             return invalid("depth receipt does not match validated Parquet output");
         }
-
+        if depth.levels_skipped != 0 {
+            return invalid("unexpected skipped depth levels");
+        }
         Ok(())
     }
     pub fn new_combined(job_id: u64, metrics: &PhysicalCombinedConversionMetrics) -> Result<Self> {
@@ -252,7 +272,7 @@ impl ConversionExecutionReceipt {
                 .internal_reference_updates
                 .checked_add(metrics.external_reference_updates)
                 .ok_or_else(|| invalid_error("combined reference counter overflow"))?,
-
+            skipped_events: metrics.skipped_events,
             files_written: metrics.files_written,
             row_groups_written: metrics.row_groups_written,
 
@@ -260,6 +280,7 @@ impl ConversionExecutionReceipt {
                 levels_read: metrics.depth_levels_read,
                 levels_converted: metrics.depth_levels_converted,
                 levels_unavailable: metrics.depth_levels_unavailable,
+                levels_skipped: metrics.depth_levels_skipped,
             }),
         };
 
@@ -292,6 +313,8 @@ impl ConversionExecutionReceipt {
             || depth.levels_read != validation.depth_levels
             || depth.levels_converted != validation.depth_levels_converted
             || depth.levels_unavailable != validation.depth_levels_unavailable
+            || self.skipped_events != validation.skipped
+            || depth.levels_skipped != validation.depth_levels_skipped
         {
             return invalid("combined receipt does not match validated Parquet output");
         }
@@ -306,4 +329,8 @@ fn invalid_error(message: impl Into<String>) -> MarketForgeError {
 
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(invalid_error(message))
+}
+
+fn is_zero(value: &u64) -> bool {
+    *value == 0
 }

@@ -14,6 +14,7 @@ pub const CONVERSION_DECIMAL_SCALE: i8 = 28;
 pub const CONVERSION_STATUS_IDENTITY: u8 = 0;
 pub const CONVERSION_STATUS_CONVERTED: u8 = 1;
 pub const CONVERSION_STATUS_UNAVAILABLE: u8 = 2;
+pub const CONVERSION_STATUS_SKIPPED: u8 = 3;
 
 // -----------------------------------------------------------------------------
 // Conversion failure codes

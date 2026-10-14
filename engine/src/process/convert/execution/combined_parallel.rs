@@ -252,10 +252,12 @@ pub fn execute_parallel_combined_conversion(
         accumulate!(identity_events);
         accumulate!(converted_events);
         accumulate!(unavailable_events);
+        accumulate!(skipped_events);
 
         accumulate!(depth_levels_read);
         accumulate!(depth_levels_converted);
         accumulate!(depth_levels_unavailable);
+        accumulate!(depth_levels_skipped);
 
         accumulate!(internal_reference_updates);
         accumulate!(external_reference_updates);
@@ -285,19 +287,37 @@ pub fn execute_parallel_combined_conversion(
         .identity_events
         .checked_add(metrics.converted_events)
         .and_then(|value| value.checked_add(metrics.unavailable_events))
+        .and_then(|value| value.checked_add(metrics.skipped_events))
         .ok_or_else(|| invalid_error("parallel combined status overflow"))?;
 
     if accounted != metrics.events_written {
-        return invalid("parallel combined status accounting mismatch");
+        return invalid(format!(
+            "parallel combined status accounting mismatch: \
+         events={}, identity={}, converted={}, unavailable={}, skipped={}, accounted={}",
+            metrics.events_written,
+            metrics.identity_events,
+            metrics.converted_events,
+            metrics.unavailable_events,
+            metrics.skipped_events,
+            accounted,
+        ));
     }
 
     let accounted_levels = metrics
         .depth_levels_converted
         .checked_add(metrics.depth_levels_unavailable)
+        .and_then(|value| value.checked_add(metrics.depth_levels_skipped))
         .ok_or_else(|| invalid_error("parallel combined level overflow"))?;
 
     if accounted_levels != metrics.depth_levels_read {
-        return invalid("parallel combined depth-level accounting mismatch");
+        return invalid(format!(
+            "parallel combined depth-level accounting mismatch: \
+         read={}, converted={}, unavailable={}, skipped={}",
+            metrics.depth_levels_read,
+            metrics.depth_levels_converted,
+            metrics.depth_levels_unavailable,
+            metrics.depth_levels_skipped,
+        ));
     }
 
     if metrics.files_written == 0 || metrics.row_groups_written == 0 {

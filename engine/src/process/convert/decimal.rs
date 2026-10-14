@@ -1,11 +1,22 @@
+use crate::error::{MarketForgeError, Result};
 use arrow_buffer::i256;
 use num_bigint::{BigInt, Sign};
 use num_traits::{One, Signed, Zero};
-
-use crate::error::{MarketForgeError, Result};
+use std::sync::LazyLock;
 
 pub const CONVERSION_DECIMAL_PRECISION: u32 = 76;
 pub const CONVERSION_DECIMAL_SCALE: u32 = 28;
+static DECIMAL_PRECISION_LIMIT: LazyLock<i256> = LazyLock::new(|| {
+    let limit = BigInt::from(10u8).pow(CONVERSION_DECIMAL_PRECISION);
+
+    let bytes = limit.to_signed_bytes_be();
+
+    let mut buffer = [0u8; 32];
+
+    buffer[32 - bytes.len()..].copy_from_slice(&bytes);
+
+    i256::from_be_bytes(buffer)
+});
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConversionDecimal {
@@ -99,8 +110,20 @@ impl ConversionDecimal {
             return invalid("conversion ratio denominator is zero");
         }
 
-        // The input mantissa already has scale 28.
-        // Multiplying by a dimensionless rational preserves that scale.
+        // Fast path: perform exact arithmetic using checked i128 operations.
+        if let (Some(value), Some(num), Some(den)) = (
+            i256_to_i128(self.mantissa),
+            i128::try_from(numerator).ok(),
+            i128::try_from(denominator).ok(),
+        ) {
+            if let Some(product) = value.checked_mul(num) {
+                if let Some(rounded) = round_half_even_i128(product, den) {
+                    return Self::new(i256::from_i128(rounded));
+                }
+            }
+        }
+
+        // Fallback: preserve full arbitrary-precision arithmetic.
         let product = self.to_bigint() * numerator;
 
         Self::from_bigint(round_half_even(product, denominator.clone())?)
@@ -112,17 +135,55 @@ fn scale_factor() -> BigInt {
 }
 
 fn validate_mantissa(value: i256) -> Result<()> {
-    let integer = BigInt::from_signed_bytes_be(&value.to_be_bytes());
+    let limit = *DECIMAL_PRECISION_LIMIT;
 
-    let limit = BigInt::from(10u8).pow(CONVERSION_DECIMAL_PRECISION);
-
-    if integer.abs() >= limit {
+    if value <= -limit || value >= limit {
         return invalid("Decimal256 precision exceeds 76 digits");
     }
 
     Ok(())
 }
+fn round_half_even_i128(numerator: i128, denominator: i128) -> Option<i128> {
+    if denominator == 0 {
+        return None;
+    }
 
+    let quotient = numerator.checked_div(denominator)?;
+    let remainder = numerator.checked_rem(denominator)?;
+
+    if remainder == 0 {
+        return Some(quotient);
+    }
+
+    let remainder_abs = remainder.unsigned_abs();
+    let denominator_abs = denominator.unsigned_abs();
+
+    let halfway = denominator_abs / 2;
+
+    let round_up = if remainder_abs > halfway {
+        true
+    } else if remainder_abs < halfway {
+        false
+    } else if denominator_abs % 2 != 0 {
+        // Odd denominators cannot produce an exact halfway remainder.
+        false
+    } else {
+        // Exact halfway: round to even.
+        quotient % 2 != 0
+    };
+
+    if !round_up {
+        return Some(quotient);
+    }
+
+    let negative = (numerator < 0) != (denominator < 0);
+
+    if negative {
+        quotient.checked_sub(1)
+    } else {
+        quotient.checked_add(1)
+    }
+}
 fn round_half_even(numerator: BigInt, denominator: BigInt) -> Result<BigInt> {
     if denominator.is_zero() {
         return invalid("Decimal256 division by zero");
@@ -133,22 +194,38 @@ fn round_half_even(numerator: BigInt, denominator: BigInt) -> Result<BigInt> {
     let numerator = numerator.abs();
     let denominator = denominator.abs();
 
-    let quotient = &numerator / &denominator;
-    let remainder = &numerator % &denominator;
+    // Compute quotient and remainder together.
+    let (mut quotient, remainder) = num_integer::Integer::div_rem(&numerator, &denominator);
 
-    let twice_remainder = &remainder * 2u8;
+    // Compare remainder against the halfway point.
+    let twice_remainder = &remainder << 1;
 
-    let rounded = if twice_remainder > denominator
-        || (twice_remainder == denominator && (&quotient % 2u8) == BigInt::one())
+    if twice_remainder > denominator
+        || (twice_remainder == denominator && (&quotient & BigInt::one()) == BigInt::one())
     {
-        quotient + 1u8
-    } else {
-        quotient
-    };
+        quotient += 1u8;
+    }
 
-    Ok(if negative { -rounded } else { rounded })
+    Ok(if negative { -quotient } else { quotient })
 }
 
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(MarketForgeError::InvalidConfiguration(message.into()))
+}
+fn i256_to_i128(value: i256) -> Option<i128> {
+    let bytes = value.to_be_bytes();
+
+    let mut lower = [0u8; 16];
+    lower.copy_from_slice(&bytes[16..]);
+
+    let result = i128::from_be_bytes(lower);
+
+    // Verify that the upper 128 bits correctly sign-extend the result.
+    let expected = if result < 0 { 0xFF } else { 0x00 };
+
+    if bytes[..16].iter().all(|&byte| byte == expected) {
+        Some(result)
+    } else {
+        None
+    }
 }

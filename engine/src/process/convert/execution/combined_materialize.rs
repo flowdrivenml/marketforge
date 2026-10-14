@@ -33,11 +33,11 @@ pub struct PhysicalCombinedConversionMetrics {
     pub identity_events: u64,
     pub converted_events: u64,
     pub unavailable_events: u64,
-
+    pub skipped_events: u64,
     pub depth_levels_read: u64,
     pub depth_levels_converted: u64,
     pub depth_levels_unavailable: u64,
-
+    pub depth_levels_skipped: u64,
     pub internal_reference_updates: u64,
     pub external_reference_updates: u64,
     pub external_observations_read: u64,
@@ -204,7 +204,11 @@ pub fn materialize_combined_conversion(
         unavailable_events: conversion_metrics.trade.unavailable_events
             + conversion_metrics.depth.unavailable_events,
 
-        depth_levels_read: conversion_metrics.depth.levels_read,
+        depth_levels_read: conversion_metrics
+            .depth
+            .levels_read
+            .checked_add(conversion_metrics.skipped_depth_levels)
+            .ok_or_else(|| invalid_error("combined depth level counter overflow"))?,
         depth_levels_converted: conversion_metrics.depth.levels_converted,
         depth_levels_unavailable: conversion_metrics.depth.levels_unavailable,
 
@@ -214,6 +218,12 @@ pub fn materialize_combined_conversion(
 
         files_written: physical.files_written,
         row_groups_written: physical.row_groups_written,
+        skipped_events: conversion_metrics
+            .skipped_trade_events
+            .checked_add(conversion_metrics.skipped_depth_events)
+            .ok_or_else(|| invalid_error("skipped event counter overflow"))?,
+
+        depth_levels_skipped: conversion_metrics.skipped_depth_levels,
     };
 
     // -------------------------------------------------------------------------
@@ -235,13 +245,24 @@ pub fn materialize_combined_conversion(
         return invalid("combined trade/depth event accounting mismatch");
     }
 
-    if metrics.identity_events + metrics.converted_events + metrics.unavailable_events != expected {
+    let accounted = metrics
+        .identity_events
+        .checked_add(metrics.converted_events)
+        .and_then(|value| value.checked_add(metrics.unavailable_events))
+        .and_then(|value| value.checked_add(metrics.skipped_events))
+        .ok_or_else(|| invalid_error("combined status counter overflow"))?;
+
+    if accounted != expected {
         return invalid("combined conversion status accounting mismatch");
     }
 
-    if metrics.depth_levels_converted + metrics.depth_levels_unavailable
-        != metrics.depth_levels_read
-    {
+    let accounted_levels = metrics
+        .depth_levels_converted
+        .checked_add(metrics.depth_levels_unavailable)
+        .and_then(|value| value.checked_add(metrics.depth_levels_skipped))
+        .ok_or_else(|| invalid_error("combined depth level counter overflow"))?;
+
+    if accounted_levels != metrics.depth_levels_read {
         return invalid("combined depth level accounting mismatch");
     }
 

@@ -2,12 +2,12 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use super::MergeResources;
+use super::instrument::InstrumentKind;
 use crate::{
     error::{MarketForgeError, Result},
     instrument::InstrumentIdentity,
 };
-
-use super::MergeResources;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -32,18 +32,23 @@ pub struct ConversionConfig {
     pub target_quote: String,
     pub price_source: ConversionPriceSource,
     pub max_staleness_ns: u64,
-
+    #[serde(default)]
+    pub instrument_kinds: Option<Vec<InstrumentKind>>,
     #[serde(default)]
     pub references: Vec<InstrumentIdentity>,
-
     #[serde(default)]
     pub reference_merge: Option<PathBuf>,
-
     #[serde(default)]
     pub path_policy: ConversionPathPolicy,
-
     #[serde(default = "default_max_hops")]
     pub max_hops: usize,
+}
+impl ConversionConfig {
+    pub fn selects_instrument_kind(&self, kind: InstrumentKind) -> bool {
+        self.instrument_kinds
+            .as_ref()
+            .is_none_or(|kinds| kinds.contains(&kind))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,6 +132,19 @@ impl ConvertJob {
 
             if reference_merge == &self.output.dataset_path {
                 return invalid("conversion reference merge and output paths must differ");
+            }
+        }
+        if let Some(kinds) = &self.conversion.instrument_kinds {
+            if kinds.is_empty() {
+                return invalid("conversion instrument_kinds must not be empty");
+            }
+
+            let mut unique = std::collections::HashSet::new();
+
+            for kind in kinds {
+                if !unique.insert(kind) {
+                    return invalid("duplicate conversion instrument kind");
+                }
             }
         }
 

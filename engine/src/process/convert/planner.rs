@@ -18,6 +18,7 @@ pub struct PlannedConversionStream {
     pub source: ResolvedConversionInstrument,
     pub paths: Vec<ConversionPath>,
     pub identity_conversion: bool,
+    pub selected_for_conversion: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +31,7 @@ pub struct ConversionPlan {
     pub convertible_streams: usize,
     pub identity_streams: usize,
     pub unresolved_streams: usize,
+    pub skipped_streams: usize,
 }
 
 pub fn plan_conversion(
@@ -47,6 +49,7 @@ pub fn plan_conversion(
     let mut convertible = 0;
     let mut identity = 0;
     let mut unresolved = 0;
+    let mut skipped = 0;
 
     let mut seen_streams = HashSet::new();
 
@@ -58,9 +61,17 @@ pub fn plan_conversion(
             ));
         }
 
-        let is_identity = source.quote_currency == target;
+        let selected_for_conversion = job
+            .conversion
+            .selects_instrument_kind(source.identity.instrument_kind);
 
-        let paths = graph.find_paths(&source.quote_currency, &target, job.conversion.max_hops)?;
+        let is_identity = selected_for_conversion && source.quote_currency == target;
+
+        let paths = if selected_for_conversion {
+            graph.find_paths(&source.quote_currency, &target, job.conversion.max_hops)?
+        } else {
+            Vec::new()
+        };
 
         if paths.len() > DEFAULT_MAX_PATHS {
             return invalid(format!(
@@ -71,7 +82,9 @@ pub fn plan_conversion(
             ));
         }
 
-        if is_identity {
+        if !selected_for_conversion {
+            skipped += 1;
+        } else if is_identity {
             identity += 1;
         } else if paths.is_empty() {
             unresolved += 1;
@@ -83,7 +96,12 @@ pub fn plan_conversion(
             source: source.clone(),
             paths,
             identity_conversion: is_identity,
+            selected_for_conversion,
         });
+    }
+
+    if convertible + identity + unresolved + skipped != streams.len() {
+        return invalid("conversion planner stream accounting mismatch");
     }
 
     Ok(ConversionPlan {
@@ -94,6 +112,7 @@ pub fn plan_conversion(
         identity_streams: identity,
         unresolved_streams: unresolved,
         streams,
+        skipped_streams: skipped,
     })
 }
 

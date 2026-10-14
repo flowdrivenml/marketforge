@@ -62,6 +62,8 @@ pub struct ConversionManifestStatistics {
     pub reference_updates: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth: Option<ConversionDepthStatistics>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub skipped: u64,
 }
 
 // -----------------------------------------------------------------------------
@@ -157,6 +159,7 @@ impl ConversionManifest {
                 unavailable: validation.unavailable,
                 reference_updates,
                 depth: None,
+                skipped: 0,
             },
 
             output: ConversionManifestOutput {
@@ -222,6 +225,7 @@ impl ConversionManifest {
             .identity
             .checked_add(self.statistics.converted)
             .and_then(|value| value.checked_add(self.statistics.unavailable))
+            .and_then(|value| value.checked_add(self.statistics.skipped))
             .ok_or_else(|| invalid_error("conversion status counter overflow"))?;
 
         if accounted != self.statistics.events_written {
@@ -374,11 +378,13 @@ impl ConversionManifest {
                 converted: validation.converted,
                 unavailable: validation.unavailable,
                 reference_updates,
+                skipped: 0,
 
                 depth: Some(ConversionDepthStatistics {
                     levels_read: validation.levels,
                     levels_converted: validation.levels_converted,
                     levels_unavailable: validation.levels_unavailable,
+                    levels_skipped: 0,
                 }),
             },
 
@@ -476,11 +482,13 @@ impl ConversionManifest {
                 converted: validation.converted,
                 unavailable: validation.unavailable,
                 reference_updates,
+                skipped: validation.skipped,
 
                 depth: Some(ConversionDepthStatistics {
                     levels_read: validation.depth_levels,
                     levels_converted: validation.depth_levels_converted,
                     levels_unavailable: validation.depth_levels_unavailable,
+                    levels_skipped: validation.depth_levels_skipped,
                 }),
             },
 
@@ -555,4 +563,7 @@ fn invalid_error(message: impl Into<String>) -> MarketForgeError {
 
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(invalid_error(message))
+}
+fn is_zero(value: &u64) -> bool {
+    *value == 0
 }

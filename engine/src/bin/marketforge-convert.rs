@@ -568,7 +568,7 @@ fn parse_args() -> Result<Args, String> {
     Ok(Args {
         project_root,
         job: job.ok_or("missing required --job argument")?,
-        mode: mode.unwrap_or(ExecutionMode::Materialize),
+        mode: mode.unwrap_or(ExecutionMode::Run),
         workers,
     })
 }
@@ -755,7 +755,8 @@ fn materialize_combined(
     println!("Workers used      : {}", result.workers_used);
     println!("Files             : {}", metrics.files_written);
     println!("Row groups        : {}", metrics.row_groups_written);
-
+    println!("Skipped           : {}", metrics.skipped_events);
+    println!("Skipped levels    : {}", metrics.depth_levels_skipped);
     println!("Elapsed           : {:.3} s", elapsed);
 
     if elapsed > 0.0 {

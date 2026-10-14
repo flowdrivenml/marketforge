@@ -14,8 +14,8 @@ use crate::{
             CONVERSION_FAILURE_ARITHMETIC, CONVERSION_FAILURE_FUTURE,
             CONVERSION_FAILURE_IDENTITY_MISMATCH, CONVERSION_FAILURE_MISSING,
             CONVERSION_FAILURE_NO_PATH, CONVERSION_FAILURE_STALE, CONVERSION_STATUS_CONVERTED,
-            CONVERSION_STATUS_IDENTITY, CONVERSION_STATUS_UNAVAILABLE, DepthConversionRow,
-            TradeConversionRow,
+            CONVERSION_STATUS_IDENTITY, CONVERSION_STATUS_UNAVAILABLE, DepthConversionBuffers,
+            DepthConversionRow, TradeConversionRow,
         },
         reference::{
             ConversionUnavailable, ReferenceKey, ReferenceState, evaluate_conversion_path,
@@ -38,7 +38,50 @@ pub struct DepthConversionMetrics {
     pub levels_converted: u64,
     pub levels_unavailable: u64,
 }
+pub(super) struct DepthBatchView<'a> {
+    pub(super) timestamps: &'a Int64Array,
+    ranks: &'a UInt32Array,
+    datasets: &'a UInt64Array,
+    tasks: &'a UInt64Array,
+    ordinals: &'a UInt64Array,
 
+    pub(super) changes: &'a ListArray,
+    prices: &'a Decimal256Array,
+    quantities: &'a Decimal256Array,
+}
+
+impl<'a> DepthBatchView<'a> {
+    pub(super) fn new(batch: &'a RecordBatch) -> Result<Self> {
+        let changes = column::<ListArray>(batch, "changes")?;
+
+        let levels = changes
+            .values()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .ok_or_else(|| invalid_error("depth changes must contain structs"))?;
+
+        let prices = levels
+            .column_by_name("price")
+            .and_then(|array| array.as_any().downcast_ref::<Decimal256Array>())
+            .ok_or_else(|| invalid_error("missing depth level prices"))?;
+
+        let quantities = levels
+            .column_by_name("quantity_quote")
+            .and_then(|array| array.as_any().downcast_ref::<Decimal256Array>())
+            .ok_or_else(|| invalid_error("missing depth quote quantities"))?;
+
+        Ok(Self {
+            timestamps: column::<Int64Array>(batch, "event_timestamp_ns")?,
+            ranks: column::<UInt32Array>(batch, "stream_rank")?,
+            datasets: column::<UInt64Array>(batch, "dataset_id")?,
+            tasks: column::<UInt64Array>(batch, "task_id")?,
+            ordinals: column::<UInt64Array>(batch, "event_ordinal")?,
+            changes,
+            prices,
+            quantities,
+        })
+    }
+}
 // -----------------------------------------------------------------------------
 // Depth conversion kernel
 // -----------------------------------------------------------------------------
@@ -79,10 +122,12 @@ impl<'a> DepthConversionKernel<'a> {
         state: &ReferenceState,
         metrics: &mut DepthConversionMetrics,
     ) -> Result<Vec<DepthConversionRow>> {
+        let view = DepthBatchView::new(batch)?;
+
         let mut results = Vec::with_capacity(batch.num_rows());
 
         for row in 0..batch.num_rows() {
-            results.push(self.convert_event(batch, row, state, metrics)?);
+            results.push(self.convert_event_view(&view, row, state, metrics)?);
         }
 
         Ok(results)
@@ -91,7 +136,6 @@ impl<'a> DepthConversionKernel<'a> {
     // -----------------------------------------------------------------------------
     // Convert one depth event without slicing the Arrow batch
     // -----------------------------------------------------------------------------
-
     pub fn convert_event(
         &self,
         batch: &RecordBatch,
@@ -103,17 +147,31 @@ impl<'a> DepthConversionKernel<'a> {
             return invalid("depth conversion row index out of bounds");
         }
 
-        let timestamps = column::<Int64Array>(batch, "event_timestamp_ns")?;
+        let view = DepthBatchView::new(batch)?;
 
-        let ranks = column::<UInt32Array>(batch, "stream_rank")?;
+        self.convert_event_view(&view, row, state, metrics)
+    }
 
-        let datasets = column::<UInt64Array>(batch, "dataset_id")?;
+    pub(super) fn convert_event_view(
+        &self,
+        view: &DepthBatchView<'_>,
+        row: usize,
+        state: &ReferenceState,
+        metrics: &mut DepthConversionMetrics,
+    ) -> Result<DepthConversionRow> {
+        if row >= view.changes.len() {
+            return invalid("depth conversion row index out of bounds");
+        }
 
-        let tasks = column::<UInt64Array>(batch, "task_id")?;
+        let timestamps = view.timestamps;
+        let ranks = view.ranks;
+        let datasets = view.datasets;
+        let tasks = view.tasks;
+        let ordinals = view.ordinals;
 
-        let ordinals = column::<UInt64Array>(batch, "event_ordinal")?;
-
-        let changes = column::<ListArray>(batch, "changes")?;
+        let changes = view.changes;
+        let prices = view.prices;
+        let quantities = view.quantities;
 
         // -------------------------------------------------------------------------
         // Validate event identity
@@ -153,22 +211,6 @@ impl<'a> DepthConversionKernel<'a> {
         // -------------------------------------------------------------------------
         // Resolve nested depth levels
         // -------------------------------------------------------------------------
-
-        let levels = changes
-            .values()
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .ok_or_else(|| invalid_error("depth changes must contain structs"))?;
-
-        let prices = levels
-            .column_by_name("price")
-            .and_then(|array| array.as_any().downcast_ref::<Decimal256Array>())
-            .ok_or_else(|| invalid_error("missing depth level prices"))?;
-
-        let quantities = levels
-            .column_by_name("quantity_quote")
-            .and_then(|array| array.as_any().downcast_ref::<Decimal256Array>())
-            .ok_or_else(|| invalid_error("missing depth quote quantities"))?;
 
         let offsets = changes.value_offsets();
 
@@ -399,6 +441,230 @@ impl<'a> DepthConversionKernel<'a> {
             invalid_error(format!("cannot construct combined depth adapter: {error}"))
         })
     }
+    pub(super) fn convert_event_into_buffers(
+        &self,
+        view: &DepthBatchView<'_>,
+        row: usize,
+        state: &ReferenceState,
+        metrics: &mut DepthConversionMetrics,
+        buffers: &mut DepthConversionBuffers,
+    ) -> Result<TradeConversionRow> {
+        if row >= view.changes.len() {
+            return invalid("depth conversion row index out of bounds");
+        }
+
+        let timestamps = view.timestamps;
+        let ranks = view.ranks;
+        let datasets = view.datasets;
+        let tasks = view.tasks;
+        let ordinals = view.ordinals;
+        let changes = view.changes;
+        let prices = view.prices;
+        let quantities = view.quantities;
+
+        // ---------------------------------------------------------------------
+        // Validate event identity
+        // ---------------------------------------------------------------------
+
+        if timestamps.is_null(row)
+            || ranks.is_null(row)
+            || datasets.is_null(row)
+            || tasks.is_null(row)
+            || ordinals.is_null(row)
+            || changes.is_null(row)
+        {
+            return invalid("null required depth event field");
+        }
+
+        let rank = ranks.value(row);
+        let dataset_id = datasets.value(row);
+
+        let stream_index = self
+            .streams
+            .get(&rank)
+            .ok_or_else(|| invalid_error(format!("unknown depth conversion stream rank {rank}")))?;
+
+        let stream = &self.plan.streams[*stream_index];
+
+        if stream.source.dataset_id != dataset_id {
+            return invalid("depth conversion dataset identity mismatch");
+        }
+
+        let key = ReferenceKey::new(
+            timestamps.value(row),
+            rank,
+            tasks.value(row),
+            ordinals.value(row),
+        );
+
+        // ---------------------------------------------------------------------
+        // Resolve depth-level boundaries
+        // ---------------------------------------------------------------------
+
+        let offsets = changes.value_offsets();
+
+        let start = usize::try_from(offsets[row])
+            .map_err(|_| invalid_error("negative depth list offset"))?;
+
+        let end = usize::try_from(offsets[row + 1])
+            .map_err(|_| invalid_error("negative depth list offset"))?;
+
+        if end < start || end > prices.len() || end > quantities.len() {
+            return invalid("invalid depth level offsets");
+        }
+
+        let level_count = end - start;
+
+        for index in start..end {
+            if prices.is_null(index) {
+                return invalid(format!(
+                    "null depth price at event {row}, level {}",
+                    index - start,
+                ));
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // Preserve buffer boundaries
+        // ---------------------------------------------------------------------
+
+        let checkpoint = buffers.prices.len();
+
+        if checkpoint != buffers.quantities.len() {
+            return invalid("depth conversion buffer length mismatch");
+        }
+
+        let target_quote = self.plan.target_quote.as_str().to_owned();
+
+        // ---------------------------------------------------------------------
+        // Identity conversion
+        // ---------------------------------------------------------------------
+
+        let result = if stream.identity_conversion {
+            buffers.append_identity(prices, quantities, start, end)?;
+
+            TradeConversionRow {
+                target_quote,
+                status: CONVERSION_STATUS_IDENTITY,
+                failure: None,
+                rate: Some(ConversionDecimal::one()),
+                price_target: None,
+                quantity_quote_target: None,
+                path: Some(vec![self.plan.target_quote.as_str().to_owned()]),
+                references: Vec::new(),
+            }
+        } else if stream.paths.is_empty() {
+            buffers.append_unavailable(level_count);
+
+            unavailable_row(target_quote, CONVERSION_FAILURE_NO_PATH).metadata
+        } else {
+            let mut converted = None;
+            let mut failure = CONVERSION_FAILURE_MISSING;
+
+            for path in &stream.paths {
+                match evaluate_conversion_path(
+                    path,
+                    state,
+                    key,
+                    self.job.conversion.max_staleness_ns,
+                ) {
+                    Ok(evaluation) => {
+                        match convert_levels_into_buffers(
+                            prices,
+                            quantities,
+                            start,
+                            end,
+                            &evaluation,
+                            buffers,
+                        ) {
+                            Ok(()) => {
+                                converted = Some(TradeConversionRow {
+                                    target_quote: target_quote.clone(),
+                                    status: CONVERSION_STATUS_CONVERTED,
+                                    failure: None,
+                                    rate: Some(evaluation.rate),
+                                    price_target: None,
+                                    quantity_quote_target: None,
+                                    path: Some(
+                                        path.currencies
+                                            .iter()
+                                            .map(|currency| currency.as_str().to_owned())
+                                            .collect(),
+                                    ),
+                                    references: evaluation.references,
+                                });
+
+                                break;
+                            }
+
+                            Err(_) => {
+                                failure = CONVERSION_FAILURE_ARITHMETIC;
+                            }
+                        }
+                    }
+
+                    Err(reason) => {
+                        failure = failure_code(&reason);
+                    }
+                }
+            }
+
+            match converted {
+                Some(metadata) => metadata,
+
+                None => {
+                    buffers.rollback(checkpoint);
+                    buffers.append_unavailable(level_count);
+
+                    unavailable_row(target_quote, failure).metadata
+                }
+            }
+        };
+
+        // ---------------------------------------------------------------------
+        // Verify event-level buffer accounting
+        // ---------------------------------------------------------------------
+
+        if buffers.prices.len() != checkpoint + level_count
+            || buffers.quantities.len() != checkpoint + level_count
+        {
+            return invalid("depth conversion event buffer mismatch");
+        }
+
+        buffers.finish_event()?;
+
+        // ---------------------------------------------------------------------
+        // Update metrics
+        // ---------------------------------------------------------------------
+
+        metrics.levels_read = metrics
+            .levels_read
+            .checked_add(level_count as u64)
+            .ok_or_else(|| invalid_error("depth level counter overflow"))?;
+
+        match result.status {
+            CONVERSION_STATUS_IDENTITY => {
+                metrics.identity_events += 1;
+                metrics.levels_converted += level_count as u64;
+            }
+
+            CONVERSION_STATUS_CONVERTED => {
+                metrics.converted_events += 1;
+                metrics.levels_converted += level_count as u64;
+            }
+
+            CONVERSION_STATUS_UNAVAILABLE => {
+                metrics.unavailable_events += 1;
+                metrics.levels_unavailable += level_count as u64;
+            }
+
+            _ => return invalid("invalid depth conversion status"),
+        }
+
+        metrics.events_read += 1;
+
+        Ok(result)
+    }
 }
 // -----------------------------------------------------------------------------
 // Identity conversion
@@ -513,4 +779,50 @@ fn invalid_error(message: impl Into<String>) -> MarketForgeError {
 
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(invalid_error(message))
+}
+
+// -----------------------------------------------------------------------------
+// Convert depth levels directly into batch buffers
+// -----------------------------------------------------------------------------
+
+fn convert_levels_into_buffers(
+    prices: &Decimal256Array,
+    quantities: &Decimal256Array,
+    start: usize,
+    end: usize,
+    evaluation: &crate::process::convert::reference::EvaluatedConversion,
+    buffers: &mut DepthConversionBuffers,
+) -> Result<()> {
+    let checkpoint = buffers.prices.len();
+
+    for index in start..end {
+        let result = (|| {
+            let price = ConversionDecimal::new(prices.value(index))?;
+
+            let quantity = if quantities.is_null(index) {
+                None
+            } else {
+                Some(ConversionDecimal::new(quantities.value(index))?)
+            };
+
+            convert_depth_level(price, quantity, evaluation)
+        })();
+
+        match result {
+            Ok(level) => {
+                buffers.append_level(
+                    Some(level.price_target.mantissa()),
+                    level.quantity_quote_target.map(|value| value.mantissa()),
+                );
+            }
+
+            Err(error) => {
+                // Preserve event-level atomicity.
+                buffers.rollback(checkpoint);
+                return Err(error);
+            }
+        }
+    }
+
+    Ok(())
 }

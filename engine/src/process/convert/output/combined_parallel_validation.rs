@@ -166,6 +166,7 @@ pub fn validate_converted_combined_parallel(
         .identity
         .checked_add(metrics.converted)
         .and_then(|value| value.checked_add(metrics.unavailable))
+        .and_then(|value| value.checked_add(metrics.skipped))
         .ok_or_else(|| invalid_error("combined status counter overflow"))?;
 
     if accounted != metrics.events {
@@ -179,6 +180,7 @@ pub fn validate_converted_combined_parallel(
     let accounted_levels = metrics
         .depth_levels_converted
         .checked_add(metrics.depth_levels_unavailable)
+        .and_then(|value| value.checked_add(metrics.depth_levels_skipped))
         .ok_or_else(|| invalid_error("parallel combined depth counter overflow"))?;
 
     if accounted_levels != metrics.depth_levels {

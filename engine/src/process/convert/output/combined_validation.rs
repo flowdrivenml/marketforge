@@ -19,7 +19,7 @@ use super::{
         CONVERSION_FAILURE_ARITHMETIC, CONVERSION_FAILURE_FUTURE,
         CONVERSION_FAILURE_IDENTITY_MISMATCH, CONVERSION_FAILURE_MISSING,
         CONVERSION_FAILURE_NO_PATH, CONVERSION_FAILURE_STALE, CONVERSION_STATUS_CONVERTED,
-        CONVERSION_STATUS_IDENTITY, CONVERSION_STATUS_UNAVAILABLE,
+        CONVERSION_STATUS_IDENTITY, CONVERSION_STATUS_SKIPPED, CONVERSION_STATUS_UNAVAILABLE,
     },
 };
 
@@ -32,10 +32,12 @@ pub struct CombinedValidationMetrics {
     pub identity: u64,
     pub converted: u64,
     pub unavailable: u64,
+    pub skipped: u64,
 
     pub depth_levels: u64,
     pub depth_levels_converted: u64,
     pub depth_levels_unavailable: u64,
+    pub depth_levels_skipped: u64,
 
     pub numerical_trade_values: u64,
     pub numerical_depth_levels: u64,
@@ -73,7 +75,8 @@ impl CombinedValidationMetrics {
         add!(identity);
         add!(converted);
         add!(unavailable);
-
+        add!(skipped);
+        add!(depth_levels_skipped);
         add!(depth_levels);
         add!(depth_levels_converted);
         add!(depth_levels_unavailable);
@@ -278,6 +281,10 @@ fn validate_combined_batch(
                         metrics.depth_levels_unavailable += levels;
                     }
 
+                    CONVERSION_STATUS_SKIPPED => {
+                        metrics.depth_levels_skipped += levels;
+                    }
+
                     _ => return invalid("invalid combined depth conversion status"),
                 }
             }
@@ -335,6 +342,18 @@ fn validate_combined_batch(
                         | CONVERSION_FAILURE_NO_PATH
                 ) {
                     return invalid("unknown combined conversion failure");
+                }
+            }
+
+            CONVERSION_STATUS_SKIPPED => {
+                metrics.skipped += 1;
+
+                if !rates.is_null(row)
+                    || !failures.is_null(row)
+                    || !paths.is_null(row)
+                    || reference_start != reference_end
+                {
+                    return invalid("invalid skipped combined conversion metadata");
                 }
             }
 
@@ -417,11 +436,26 @@ pub fn validate_converted_combined(
         metrics.accumulate(&result.metrics)?;
     }
 
+    // -------------------------------------------------------------------------
+    // Event-kind accounting
+    // -------------------------------------------------------------------------
+
     if metrics.events != metrics.trade_events + metrics.depth_events {
         return invalid("combined event-kind accounting mismatch");
     }
 
-    if metrics.events != metrics.identity + metrics.converted + metrics.unavailable {
+    // -------------------------------------------------------------------------
+    // Conversion status accounting (including SKIPPED)
+    // -------------------------------------------------------------------------
+
+    let accounted = metrics
+        .identity
+        .checked_add(metrics.converted)
+        .and_then(|value| value.checked_add(metrics.unavailable))
+        .and_then(|value| value.checked_add(metrics.skipped))
+        .ok_or_else(|| invalid_error("combined status counter overflow"))?;
+
+    if accounted != metrics.events {
         return invalid("combined conversion status accounting mismatch");
     }
 
@@ -429,14 +463,23 @@ pub fn validate_converted_combined(
         return invalid("empty converted combined dataset");
     }
 
+    // -------------------------------------------------------------------------
+    // Depth-level accounting (including SKIPPED)
+    // -------------------------------------------------------------------------
+
     let accounted_levels = metrics
         .depth_levels_converted
         .checked_add(metrics.depth_levels_unavailable)
+        .and_then(|value| value.checked_add(metrics.depth_levels_skipped))
         .ok_or_else(|| invalid_error("combined depth level counter overflow"))?;
 
     if accounted_levels != metrics.depth_levels {
         return invalid("combined depth level accounting mismatch");
     }
+
+    // -------------------------------------------------------------------------
+    // Numerical validation
+    // -------------------------------------------------------------------------
 
     if metrics.numerical_depth_levels != metrics.depth_levels_converted {
         return invalid("combined numerical depth level accounting mismatch");

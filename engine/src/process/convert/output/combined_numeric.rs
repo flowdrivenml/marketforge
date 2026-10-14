@@ -10,7 +10,8 @@ use crate::{
 use super::{
     depth_numeric::reconstruct_conversion_ratio,
     schema::{
-        CONVERSION_STATUS_CONVERTED, CONVERSION_STATUS_IDENTITY, CONVERSION_STATUS_UNAVAILABLE,
+        CONVERSION_STATUS_CONVERTED, CONVERSION_STATUS_IDENTITY, CONVERSION_STATUS_SKIPPED,
+        CONVERSION_STATUS_UNAVAILABLE,
     },
 };
 
@@ -92,7 +93,7 @@ pub fn validate_combined_numeric_batch(
         // Unavailable conversions
         // -----------------------------------------------------------------
 
-        if status == CONVERSION_STATUS_UNAVAILABLE {
+        if status == CONVERSION_STATUS_UNAVAILABLE || status == CONVERSION_STATUS_SKIPPED {
             if !rates.is_null(row) || references.is_null(row) || references.value_length(row) != 0 {
                 return invalid("unavailable combined event contains conversion provenance");
             }

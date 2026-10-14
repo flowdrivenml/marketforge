@@ -184,7 +184,6 @@ pub fn execute_combined_partition(
         unavailable_events: conversion_metrics.trade.unavailable_events
             + conversion_metrics.depth.unavailable_events,
 
-        depth_levels_read: conversion_metrics.depth.levels_read,
         depth_levels_converted: conversion_metrics.depth.levels_converted,
         depth_levels_unavailable: conversion_metrics.depth.levels_unavailable,
 
@@ -194,6 +193,18 @@ pub fn execute_combined_partition(
 
         files_written: physical.files_written,
         row_groups_written: physical.row_groups_written,
+        skipped_events: conversion_metrics
+            .skipped_trade_events
+            .checked_add(conversion_metrics.skipped_depth_events)
+            .ok_or_else(|| invalid_error("skipped event counter overflow"))?,
+
+        depth_levels_read: conversion_metrics
+            .depth
+            .levels_read
+            .checked_add(conversion_metrics.skipped_depth_levels)
+            .ok_or_else(|| invalid_error("combined depth level counter overflow"))?,
+
+        depth_levels_skipped: conversion_metrics.skipped_depth_levels,
     };
 
     // -------------------------------------------------------------
@@ -214,16 +225,43 @@ pub fn execute_combined_partition(
         return invalid("combined partition event-kind accounting mismatch");
     }
 
-    if metrics.identity_events + metrics.converted_events + metrics.unavailable_events
-        != partition.rows
-    {
-        return invalid("combined partition conversion status mismatch");
+    let accounted = metrics
+        .identity_events
+        .checked_add(metrics.converted_events)
+        .and_then(|value| value.checked_add(metrics.unavailable_events))
+        .and_then(|value| value.checked_add(metrics.skipped_events))
+        .ok_or_else(|| invalid_error("combined partition status counter overflow"))?;
+
+    if accounted != partition.rows {
+        return invalid(format!(
+            "combined partition conversion status mismatch: \
+         partition={}, expected={}, identity={}, converted={}, unavailable={}, skipped={}, accounted={}",
+            partition.partition_id,
+            partition.rows,
+            metrics.identity_events,
+            metrics.converted_events,
+            metrics.unavailable_events,
+            metrics.skipped_events,
+            accounted,
+        ));
     }
 
-    if metrics.depth_levels_converted + metrics.depth_levels_unavailable
-        != metrics.depth_levels_read
-    {
-        return invalid("combined partition depth-level accounting mismatch");
+    let accounted_levels = metrics
+        .depth_levels_converted
+        .checked_add(metrics.depth_levels_unavailable)
+        .and_then(|value| value.checked_add(metrics.depth_levels_skipped))
+        .ok_or_else(|| invalid_error("combined partition depth counter overflow"))?;
+
+    if accounted_levels != metrics.depth_levels_read {
+        return invalid(format!(
+            "combined partition depth-level accounting mismatch: \
+         partition={}, read={}, converted={}, unavailable={}, skipped={}",
+            partition.partition_id,
+            metrics.depth_levels_read,
+            metrics.depth_levels_converted,
+            metrics.depth_levels_unavailable,
+            metrics.depth_levels_skipped,
+        ));
     }
 
     if physical.trade_events != metrics.trade_events

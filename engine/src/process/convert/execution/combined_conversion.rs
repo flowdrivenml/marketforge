@@ -1,8 +1,7 @@
-use arrow_array::{
-    Array, Decimal256Array, Int64Array, RecordBatch, StructArray, UInt8Array, UInt32Array,
-    UInt64Array,
+use super::{
+    CombinedReferenceAlignment, DepthConversionKernel, DepthConversionMetrics,
+    PhysicalConversionMetrics, TradeConversionKernel,
 };
-
 use crate::{
     error::{MarketForgeError, Result},
     job::ConvertJob,
@@ -12,11 +11,11 @@ use crate::{
         reference::{ReferenceKey, ReferenceObservation},
     },
 };
-
-use super::{
-    CombinedReferenceAlignment, DepthConversionKernel, DepthConversionMetrics,
-    PhysicalConversionMetrics, TradeConversionKernel,
+use arrow_array::{
+    Array, Decimal256Array, Int64Array, RecordBatch, StructArray, UInt8Array, UInt32Array,
+    UInt64Array,
 };
+use std::collections::HashMap;
 
 // -----------------------------------------------------------------------------
 // Combined conversion result
@@ -40,6 +39,10 @@ pub struct CombinedConversionMetrics {
     pub events_read: u64,
     pub trade_events: u64,
     pub depth_events: u64,
+
+    pub skipped_trade_events: u64,
+    pub skipped_depth_events: u64,
+    pub skipped_depth_levels: u64,
 }
 
 // -----------------------------------------------------------------------------
@@ -49,16 +52,48 @@ pub struct CombinedConversionMetrics {
 pub struct CombinedConversionKernel<'a> {
     trade: TradeConversionKernel<'a>,
     depth: DepthConversionKernel<'a>,
+
+    target_quote: String,
+    selected_streams: HashMap<u32, bool>,
 }
 
 impl<'a> CombinedConversionKernel<'a> {
     pub fn new(job: &'a ConvertJob, plan: &'a ConversionPlan) -> Result<Self> {
+        let selected_streams = plan
+            .streams
+            .iter()
+            .map(|stream| (stream.source.stream_rank, stream.selected_for_conversion))
+            .collect::<HashMap<_, _>>();
+
+        if selected_streams.len() != plan.streams.len() {
+            return invalid("duplicate combined conversion stream rank");
+        }
+
         Ok(Self {
             trade: TradeConversionKernel::new(job, plan)?,
             depth: DepthConversionKernel::new(job, plan)?,
+
+            target_quote: job.conversion.target_quote.clone(),
+            selected_streams,
         })
     }
+    fn selected_for_conversion(&self, batch: &RecordBatch, row: usize) -> Result<bool> {
+        let ranks = column::<UInt32Array>(batch, "stream_rank")?;
 
+        if row >= ranks.len() || ranks.is_null(row) {
+            return invalid("invalid combined conversion stream rank");
+        }
+
+        self.selected_streams
+            .get(&ranks.value(row))
+            .copied()
+            .ok_or_else(|| {
+                invalid_error(format!(
+                    "combined conversion stream rank not planned: {}",
+                    ranks.value(row)
+                ))
+            })
+    }
     pub fn convert_event(
         &self,
         batch: &RecordBatch,
@@ -79,6 +114,7 @@ impl<'a> CombinedConversionKernel<'a> {
         }
 
         let timestamp_ns = timestamps.value(row);
+        let selected = self.selected_for_conversion(batch, row)?;
 
         // -------------------------------------------------------------
         // Advance external references strictly before current event.
@@ -92,13 +128,21 @@ impl<'a> CombinedConversionKernel<'a> {
 
         let result = match kinds.value(row) {
             0 => {
-                // Evaluate trade without automatic reference update.
-                let converted = self.trade.evaluate_combined_event(
-                    batch,
-                    row,
-                    alignment.state_mut(),
-                    &mut metrics.trade,
-                )?;
+                let converted = if selected {
+                    self.trade.evaluate_combined_event(
+                        batch,
+                        row,
+                        alignment.state_mut(),
+                        &mut metrics.trade,
+                    )?
+                } else {
+                    metrics.skipped_trade_events = metrics
+                        .skipped_trade_events
+                        .checked_add(1)
+                        .ok_or_else(|| invalid_error("skipped trade counter overflow"))?;
+
+                    TradeConversionRow::skipped(&self.target_quote)
+                };
 
                 // Incorporate selected internal reference only after
                 // evaluating the current trade.
@@ -117,12 +161,16 @@ impl<'a> CombinedConversionKernel<'a> {
             }
 
             1 => {
-                let converted = self.depth.convert_combined_event(
-                    batch,
-                    row,
-                    alignment.state(),
-                    &mut metrics.depth,
-                )?;
+                let converted = if selected {
+                    self.depth.convert_combined_event(
+                        batch,
+                        row,
+                        alignment.state(),
+                        &mut metrics.depth,
+                    )?
+                } else {
+                    DepthConversionRow::skipped(&self.target_quote)
+                };
 
                 metrics.depth_events += 1;
 
@@ -153,6 +201,7 @@ impl<'a> CombinedConversionKernel<'a> {
         let mut results = Vec::with_capacity(batch.num_rows());
 
         for row in 0..batch.num_rows() {
+            let selected = self.selected_for_conversion(batch, row)?;
             let timestamps = column::<Int64Array>(batch, "event_timestamp_ns")?;
 
             if timestamps.is_null(row) || kinds.is_null(row) {
@@ -163,12 +212,21 @@ impl<'a> CombinedConversionKernel<'a> {
 
             let result = match kinds.value(row) {
                 0 => {
-                    let converted = self.trade.evaluate_adapted_event(
-                        &trade_batch,
-                        row,
-                        alignment.state_mut(),
-                        &mut metrics.trade,
-                    )?;
+                    let converted = if selected {
+                        self.trade.evaluate_adapted_event(
+                            &trade_batch,
+                            row,
+                            alignment.state_mut(),
+                            &mut metrics.trade,
+                        )?
+                    } else {
+                        metrics.skipped_trade_events = metrics
+                            .skipped_trade_events
+                            .checked_add(1)
+                            .ok_or_else(|| invalid_error("skipped trade counter overflow"))?;
+
+                        TradeConversionRow::skipped(&self.target_quote)
+                    };
 
                     let streams = column::<arrow_array::StringArray>(batch, "stream_id")?;
 
@@ -180,14 +238,29 @@ impl<'a> CombinedConversionKernel<'a> {
 
                     CombinedConversionRow::Trade(converted)
                 }
-
                 1 => {
-                    let converted = self.depth.convert_event(
-                        &depth_batch,
-                        row,
-                        alignment.state(),
-                        &mut metrics.depth,
-                    )?;
+                    let converted = if selected {
+                        self.depth.convert_event(
+                            &depth_batch,
+                            row,
+                            alignment.state(),
+                            &mut metrics.depth,
+                        )?
+                    } else {
+                        let levels = combined_depth_level_count(batch, row)?;
+
+                        metrics.skipped_depth_events = metrics
+                            .skipped_depth_events
+                            .checked_add(1)
+                            .ok_or_else(|| invalid_error("skipped depth counter overflow"))?;
+
+                        metrics.skipped_depth_levels = metrics
+                            .skipped_depth_levels
+                            .checked_add(levels)
+                            .ok_or_else(|| invalid_error("skipped depth level counter overflow"))?;
+
+                        DepthConversionRow::skipped(&self.target_quote)
+                    };
 
                     metrics.depth_events += 1;
 
@@ -206,7 +279,24 @@ impl<'a> CombinedConversionKernel<'a> {
         Ok(results)
     }
 }
+fn combined_depth_level_count(batch: &RecordBatch, row: usize) -> Result<u64> {
+    let depths = column::<StructArray>(batch, "depth")?;
 
+    if row >= batch.num_rows() || depths.is_null(row) {
+        return invalid("invalid skipped combined depth payload");
+    }
+
+    let changes = depths
+        .column_by_name("changes")
+        .and_then(|array| array.as_any().downcast_ref::<arrow_array::ListArray>())
+        .ok_or_else(|| invalid_error("missing combined depth changes"))?;
+
+    if changes.is_null(row) {
+        return invalid("null skipped combined depth changes");
+    }
+
+    Ok(changes.value_length(row) as u64)
+}
 // -----------------------------------------------------------------------------
 // Extract internal trade-reference observation
 // -----------------------------------------------------------------------------

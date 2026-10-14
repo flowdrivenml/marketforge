@@ -1,14 +1,13 @@
-use arrow_array::{Array, Int64Array, RecordBatch};
-
+use super::depth_conversion::DepthBatchView;
+use super::{DepthConversionKernel, DepthConversionMetrics};
 use crate::{
     error::{MarketForgeError, Result},
     process::convert::{
-        output::{ConvertedDepthBatchBuilder, DepthConversionRow},
+        output::{ConvertedDepthBatchBuilder, DepthConversionBuffers, TradeConversionRow},
         reference::{ExternalReferenceCursor, ReferenceState},
     },
 };
-
-use super::{DepthConversionKernel, DepthConversionMetrics};
+use arrow_array::{Array, RecordBatch};
 
 // -----------------------------------------------------------------------------
 // Depth conversion alignment
@@ -34,27 +33,42 @@ impl<'a> DepthConversionAlignment<'a> {
     // -------------------------------------------------------------------------
 
     pub fn convert_batch(&mut self, batch: &RecordBatch) -> Result<RecordBatch> {
-        let timestamps = batch
-            .column_by_name("event_timestamp_ns")
-            .and_then(|column| column.as_any().downcast_ref::<Int64Array>())
-            .ok_or_else(|| invalid_error("missing depth event timestamps"))?;
+        let view = DepthBatchView::new(batch)?;
 
         if self.builder.is_none() {
             self.builder = Some(ConvertedDepthBatchBuilder::new(batch.schema())?);
         }
 
-        let mut rows = Vec::<DepthConversionRow>::with_capacity(batch.num_rows());
+        // ---------------------------------------------------------------------
+        // Allocate direct conversion buffers
+        // ---------------------------------------------------------------------
 
-        // -------------------------------------------------------------
-        // Align references independently for each depth event
-        // -------------------------------------------------------------
+        let offsets = view.changes.value_offsets();
+
+        let first =
+            usize::try_from(offsets[0]).map_err(|_| invalid_error("invalid depth offset"))?;
+
+        let last = usize::try_from(offsets[offsets.len() - 1])
+            .map_err(|_| invalid_error("invalid depth offset"))?;
+
+        let total_levels = last
+            .checked_sub(first)
+            .ok_or_else(|| invalid_error("invalid depth offset range"))?;
+
+        let mut buffers = DepthConversionBuffers::with_capacity(batch.num_rows(), total_levels);
+
+        let mut metadata = Vec::<TradeConversionRow>::with_capacity(batch.num_rows());
+
+        // ---------------------------------------------------------------------
+        // Align references and convert each event
+        // ---------------------------------------------------------------------
 
         for row in 0..batch.num_rows() {
-            if timestamps.is_null(row) {
+            if view.timestamps.is_null(row) {
                 return invalid("null depth event timestamp");
             }
 
-            let timestamp_ns = timestamps.value(row);
+            let timestamp_ns = view.timestamps.value(row);
 
             let updates = self.cursor.advance_before(timestamp_ns, &mut self.state)?;
 
@@ -63,25 +77,25 @@ impl<'a> DepthConversionAlignment<'a> {
                 .checked_add(updates)
                 .ok_or_else(|| invalid_error("depth reference update overflow"))?;
 
-            // ---------------------------------------------------------
-            // Convert exactly one event using its historical state
-            // ---------------------------------------------------------
+            let converted = self.kernel.convert_event_into_buffers(
+                &view,
+                row,
+                &self.state,
+                &mut self.metrics,
+                &mut buffers,
+            )?;
 
-            let converted =
-                self.kernel
-                    .convert_event(batch, row, &self.state, &mut self.metrics)?;
-
-            rows.push(converted);
+            metadata.push(converted);
         }
 
-        // -------------------------------------------------------------
-        // Build converted Arrow batch
-        // -------------------------------------------------------------
+        // ---------------------------------------------------------------------
+        // Construct Arrow output directly from buffers
+        // ---------------------------------------------------------------------
 
         self.builder
             .as_ref()
             .expect("depth builder initialized")
-            .build(batch, &rows)
+            .build_from_buffers(batch, &metadata, buffers)
     }
 
     // -------------------------------------------------------------------------

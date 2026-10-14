@@ -20,10 +20,11 @@ process = [
     "dep:num-bigint",
     "dep:num-traits",
     "dep:rustix",
+    "dep:num-integer",
 ]
 
 live = []
-monitor-tui = []
+monitor-tui = ["dep:ratatui", "dep:crossterm"]
 arrow-select = ["dep:arrow-select"]
 
 
@@ -47,6 +48,9 @@ arrow-select = { version = "56", optional = true }
 num-bigint = { version = "0.4", optional = true }
 num-traits = { version = "0.2", optional = true }
 rustix = { version = "1", features = ["fs"], optional = true }
+num-integer = { version = "0.1", optional = true }
+ratatui = { version = "0.29", optional = true }
+crossterm = { version = "0.28", optional = true }
 
 [dev-dependencies]
 tempfile = "3.27.0"
@@ -80,6 +84,16 @@ required-features = ["process"]
 name = "marketforge-convert"
 path = "src/bin/marketforge-convert.rs"
 required-features = ["process"]
+
+[[bin]]
+name = "marketforge-convert-benchmark"
+path = "src/bin/marketforge-convert-benchmark.rs"
+required-features = ["process"]
+
+[[bin]]
+name = "marketforge-process-tui-demo"
+path = "src/bin/marketforge-process-tui-demo.rs"
+required-features = ["monitor-tui"]
 
 # Organized integration tests
 
