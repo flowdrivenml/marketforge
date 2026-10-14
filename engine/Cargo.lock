@@ -920,6 +920,7 @@ dependencies = [
  "parquet",
  "quick-xml",
  "rust_decimal",
+ "rustix",
  "serde",
  "serde_json",
  "sha2",

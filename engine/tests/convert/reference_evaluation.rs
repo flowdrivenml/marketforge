@@ -11,8 +11,6 @@ use marketforge_engine::{
     },
 };
 
-const SCALE: i128 = 10_i128.pow(28);
-
 fn currency(value: &str) -> Currency {
     Currency::new(value).unwrap()
 }

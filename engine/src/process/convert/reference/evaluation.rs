@@ -9,7 +9,7 @@ use super::state::{ReferenceKey, ReferenceState, ReferenceUnavailable};
 // Evaluation results
 // -----------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct EvaluatedReference {
     pub dataset_id: u64,
     pub stream_id: String,
@@ -21,6 +21,8 @@ pub struct EvaluatedReference {
 #[derive(Debug, Clone)]
 pub struct EvaluatedConversion {
     pub rate: ConversionDecimal,
+    pub numerator: BigInt,
+    pub denominator: BigInt,
     pub references: Vec<EvaluatedReference>,
 }
 
@@ -105,8 +107,13 @@ pub fn evaluate_conversion_path(
         });
     }
 
-    let rate = ConversionDecimal::from_ratio(numerator, denominator)
+    let rate = ConversionDecimal::from_ratio(numerator.clone(), denominator.clone())
         .map_err(|error| ConversionUnavailable::ArithmeticFailure(error.to_string()))?;
 
-    Ok(EvaluatedConversion { rate, references })
+    Ok(EvaluatedConversion {
+        rate,
+        numerator,
+        denominator,
+        references,
+    })
 }

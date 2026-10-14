@@ -105,6 +105,13 @@ impl ReferenceState {
     pub fn is_empty(&self) -> bool {
         self.latest.is_empty()
     }
+    pub fn snapshot(&self) -> Self {
+        self.clone()
+    }
+
+    pub fn observations(&self) -> impl Iterator<Item = &ReferenceObservation> {
+        self.latest.values()
+    }
 }
 
 impl Default for ReferenceState {

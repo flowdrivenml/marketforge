@@ -76,6 +76,21 @@ impl PhysicalParquetWriter {
         mode: UnifiedMergeMode,
         config: &MergeParquetConfig,
     ) -> Result<Self> {
+        let schema = match mode {
+            UnifiedMergeMode::Trades => physical_trade_schema(),
+            UnifiedMergeMode::Depth => physical_depth_schema(),
+            UnifiedMergeMode::Combined => physical_combined_schema(),
+        };
+
+        Self::with_schema(output_dir, mode, schema, config)
+    }
+
+    pub fn with_schema(
+        output_dir: impl AsRef<Path>,
+        mode: UnifiedMergeMode,
+        schema: SchemaRef,
+        config: &MergeParquetConfig,
+    ) -> Result<Self> {
         let row_group_target_bytes = config
             .row_group_target_mb
             .checked_mul(1024 * 1024)
@@ -96,12 +111,6 @@ impl PhysicalParquetWriter {
 
         ZstdLevel::try_new(config.compression_level)
             .map_err(|error| invalid_error(format!("invalid ZSTD compression level: {error}")))?;
-
-        let schema = match mode {
-            UnifiedMergeMode::Trades => physical_trade_schema(),
-            UnifiedMergeMode::Depth => physical_depth_schema(),
-            UnifiedMergeMode::Combined => physical_combined_schema(),
-        };
 
         let output_dir = output_dir.as_ref().to_path_buf();
 

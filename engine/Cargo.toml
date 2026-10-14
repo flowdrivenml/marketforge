@@ -19,6 +19,7 @@ process = [
     "dep:arrow-select",
     "dep:num-bigint",
     "dep:num-traits",
+    "dep:rustix",
 ]
 
 live = []
@@ -45,6 +46,7 @@ quick-xml = { version = "0.38", optional = true }
 arrow-select = { version = "56", optional = true }
 num-bigint = { version = "0.4", optional = true }
 num-traits = { version = "0.2", optional = true }
+rustix = { version = "1", features = ["fs"], optional = true }
 
 [dev-dependencies]
 tempfile = "3.27.0"
@@ -72,6 +74,11 @@ required-features = ["process"]
 [[bin]]
 name = "marketforge-merge-benchmark"
 path = "src/bin/marketforge-merge-benchmark.rs"
+required-features = ["process"]
+
+[[bin]]
+name = "marketforge-convert"
+path = "src/bin/marketforge-convert.rs"
 required-features = ["process"]
 
 # Organized integration tests
@@ -637,4 +644,274 @@ required-features = ["process"]
 [[test]]
 name = "convert_reference_evaluation"
 path = "tests/convert/reference_evaluation.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_reference_reader"
+path = "tests/convert/reference_reader.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_executor"
+path = "tests/convert/executor.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_output_schema"
+path = "tests/convert/output_schema.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_trade"
+path = "tests/convert/trade.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_output_trade"
+path = "tests/convert/output_trade.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_output_writer"
+path = "tests/convert/output_writer.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_execution_reader"
+path = "tests/convert/execution_reader.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_materialize"
+path = "tests/convert/materialize.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_materialize_multihop"
+path = "tests/convert/materialize_multihop.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_persistent_fixture"
+path = "tests/convert/persistent_fixture.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_reference_selection"
+path = "tests/convert/reference_selection.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_output_validation"
+path = "tests/convert/output_validation.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_source_preservation"
+path = "tests/convert/source_preservation.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_output_manifest"
+path = "tests/convert/output_manifest.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_atomic_publication"
+path = "tests/convert/atomic_publication.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_publication"
+path = "tests/convert/publication.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_receipt"
+path = "tests/convert/receipt.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_checkpoints"
+path = "tests/convert/checkpoints.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_partitions"
+path = "tests/convert/partitions.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_prepass"
+path = "tests/convert/prepass.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_partition_reader"
+path = "tests/convert/partition_reader.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_worker"
+path = "tests/convert/worker.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_parallel"
+path = "tests/convert/parallel.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_parallel_validation"
+path = "tests/convert/parallel_validation.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_parallel_publication"
+path = "tests/convert/parallel_publication.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_depth_schema"
+path = "tests/convert/depth_schema.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_depth_arithmetic"
+path = "tests/convert/depth_arithmetic.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_depth_builder"
+path = "tests/convert/depth_builder.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_external_reference"
+path = "tests/convert/external_reference.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_depth_planner"
+path = "tests/convert/depth_planner.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_depth_alignment"
+path = "tests/convert/depth_alignment.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_depth_materialize"
+path = "tests/convert/depth_materialize.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_depth_validation"
+path = "tests/convert/depth_validation.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_depth_preservation"
+path = "tests/convert/depth_preservation.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_reference_seek"
+path = "tests/convert/reference_seek.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_depth_checkpoints"
+path = "tests/convert/depth_checkpoints.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_depth_parallel"
+path = "tests/convert/depth_parallel.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_depth_equivalence"
+path = "tests/convert/depth_equivalence.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_depth_publication"
+path = "tests/convert/depth_publication.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_combined_schema"
+path = "tests/convert/combined_schema.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_combined_references"
+path = "tests/convert/combined_references.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_combined_alignment"
+path = "tests/convert/combined_alignment.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_combined_depth_adapter"
+path = "tests/convert/combined_depth_adapter.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_combined_conversion"
+path = "tests/convert/combined_conversion.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_combined_equivalence"
+path = "tests/convert/combined_equivalence.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_combined_writer"
+path = "tests/convert/combined_writer.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_combined_materialize"
+path = "tests/convert/combined_materialize.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_combined_checkpoints"
+path = "tests/convert/combined_checkpoints.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_combined_restoration"
+path = "tests/convert/combined_restoration.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_combined_checkpoint_ordering"
+path = "tests/convert/combined_checkpoint_ordering.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_combined_worker"
+path = "tests/convert/combined_worker.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_combined_parallel"
+path = "tests/convert/combined_parallel.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_combined_validation"
+path = "tests/convert/combined_validation.rs"
+required-features = ["process"]
+
+[[test]]
+name = "convert_combined_publication"
+path = "tests/convert/combined_publication.rs"
 required-features = ["process"]

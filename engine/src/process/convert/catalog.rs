@@ -8,7 +8,7 @@ use crate::{
     error::{MarketForgeError, Result},
     instrument::{Currency, InstrumentCatalog, InstrumentIdentity},
     job::{ConvertJob, load_processing_job},
-    process::merge::PhysicalMergeManifest,
+    process::merge::{PhysicalMergeManifest, UnifiedMergeMode, UnifiedMergeStreamKind},
 };
 
 // -----------------------------------------------------------------------------
@@ -36,16 +36,12 @@ pub struct ResolvedConversionCatalog {
 // -----------------------------------------------------------------------------
 // Resolver
 // -----------------------------------------------------------------------------
-
-pub fn resolve_conversion_catalog(
-    job: &ConvertJob,
+fn resolve_manifest_instruments(
     manifest: &PhysicalMergeManifest,
     catalog: &InstrumentCatalog,
-    project_root: &Path,
-) -> Result<ResolvedConversionCatalog> {
-    let processing_jobs = discover_processing_jobs(&project_root.join("data/.jobs/process"))?;
-
-    let mut sources = Vec::with_capacity(manifest.streams.len());
+    processing_jobs: &HashMap<u64, PathBuf>,
+) -> Result<Vec<ResolvedConversionInstrument>> {
+    let mut instruments = Vec::with_capacity(manifest.streams.len());
 
     for stream in &manifest.streams {
         let job_path = processing_jobs.get(&stream.dataset_id).ok_or_else(|| {
@@ -88,44 +84,147 @@ pub fn resolve_conversion_catalog(
             ));
         }
 
-        sources.push(ResolvedConversionInstrument {
+        instruments.push(ResolvedConversionInstrument {
             dataset_id: stream.dataset_id,
             stream_rank: stream.stream_rank,
             stream_id: stream.stream_id.clone(),
-
             identity,
             base_currency: metadata.base_currency.clone(),
             quote_currency: metadata.quote_currency.clone(),
         });
     }
 
+    Ok(instruments)
+}
+
+pub fn resolve_conversion_catalog(
+    job: &ConvertJob,
+    manifest: &PhysicalMergeManifest,
+    catalog: &InstrumentCatalog,
+    project_root: &Path,
+) -> Result<ResolvedConversionCatalog> {
+    job.validate()?;
+    manifest.validate()?;
+
+    let processing_jobs = discover_processing_jobs(&project_root.join("data/.jobs/process"))?;
+
     // -------------------------------------------------------------------------
-    // Resolve configured references
+    // Resolve conversion sources
     // -------------------------------------------------------------------------
 
+    let sources = resolve_manifest_instruments(manifest, catalog, &processing_jobs)?;
+
+    // -------------------------------------------------------------------------
+    // Resolve reference manifest
+    // -------------------------------------------------------------------------
+
+    let reference_manifest = if let Some(reference_path) = &job.conversion.reference_merge {
+        let path = reference_path.join("manifest.json");
+
+        let bytes = fs::read(&path).map_err(|error| {
+            invalid_error(format!(
+                "failed to read reference merge manifest {}: {error}",
+                path.display()
+            ))
+        })?;
+
+        let reference_manifest: PhysicalMergeManifest = serde_json::from_slice(&bytes)
+            .map_err(|error| invalid_error(format!("invalid reference merge manifest: {error}")))?;
+
+        reference_manifest.validate()?;
+        if job.conversion.reference_merge.is_some()
+            && !reference_manifest
+                .streams
+                .iter()
+                .any(|stream| stream.kind == UnifiedMergeStreamKind::Trade)
+        {
+            return invalid("external conversion reference merge contains no trade streams");
+        }
+
+        reference_manifest
+    } else {
+        manifest.clone()
+    };
+
+    // -------------------------------------------------------------------------
+    // Resolve available reference instruments
+    // -------------------------------------------------------------------------
+
+    let available_references =
+        resolve_manifest_instruments(&reference_manifest, catalog, &processing_jobs)?;
+
+    let combined = manifest.mode == UnifiedMergeMode::Combined;
+
     let mut references = Vec::new();
-    let mut matched = HashSet::new();
 
     for requested in &job.conversion.references {
         let mut found = false;
 
-        for source in &sources {
-            if &source.identity == requested {
-                references.push(source.clone());
+        // -------------------------------------------------------------
+        // Combined mode: prefer internal trade references
+        // -------------------------------------------------------------
+
+        if combined {
+            for (stream, resolved) in manifest.streams.iter().zip(&sources) {
+                if &resolved.identity != requested {
+                    continue;
+                }
+
+                if stream.kind != UnifiedMergeStreamKind::Trade {
+                    return invalid(format!(
+                        "conversion reference must be a trade stream: {}",
+                        resolved.stream_id
+                    ));
+                }
+
+                references.push(resolved.clone());
                 found = true;
             }
         }
 
         if found {
-            matched.insert(requested.clone());
+            continue;
+        }
+
+        // -------------------------------------------------------------
+        // Resolve missing references from external merge
+        // -------------------------------------------------------------
+
+        for (stream, resolved) in reference_manifest.streams.iter().zip(&available_references) {
+            if &resolved.identity != requested {
+                continue;
+            }
+
+            if stream.kind != UnifiedMergeStreamKind::Trade {
+                return invalid(format!(
+                    "conversion reference must be a trade stream: {}",
+                    resolved.stream_id
+                ));
+            }
+
+            references.push(resolved.clone());
+            found = true;
+        }
+
+        if !found {
+            return invalid(format!(
+                "reference instrument not present in internal or external merge: {} {}",
+                requested.exchange, requested.symbol,
+            ));
         }
     }
 
-    for requested in &job.conversion.references {
-        if !matched.contains(requested) {
+    // -------------------------------------------------------------------------
+    // Reject duplicate reference streams
+    // -------------------------------------------------------------------------
+
+    let mut seen = HashSet::new();
+
+    for reference in &references {
+        if !seen.insert((reference.dataset_id, reference.stream_id.clone())) {
             return invalid(format!(
-                "reference instrument not present in source merge: {} {}",
-                requested.exchange, requested.symbol
+                "duplicate conversion reference stream: {}",
+                reference.stream_id
             ));
         }
     }
@@ -135,7 +234,6 @@ pub fn resolve_conversion_catalog(
         references,
     })
 }
-
 // -----------------------------------------------------------------------------
 // Processing job discovery
 // -----------------------------------------------------------------------------

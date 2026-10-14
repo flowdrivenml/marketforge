@@ -94,6 +94,17 @@ impl ConversionDecimal {
 
         Self::from_bigint(round_half_even(scaled, denominator)?)
     }
+    pub fn checked_mul_ratio(&self, numerator: &BigInt, denominator: &BigInt) -> Result<Self> {
+        if denominator.is_zero() {
+            return invalid("conversion ratio denominator is zero");
+        }
+
+        // The input mantissa already has scale 28.
+        // Multiplying by a dimensionless rational preserves that scale.
+        let product = self.to_bigint() * numerator;
+
+        Self::from_bigint(round_half_even(product, denominator.clone())?)
+    }
 }
 
 fn scale_factor() -> BigInt {

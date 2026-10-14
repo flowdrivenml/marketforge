@@ -1,18 +1,16 @@
+use super::state::{ReferenceKey, ReferenceObservation};
+use crate::{
+    error::{MarketForgeError, Result},
+    process::{convert::ConversionDecimal, merge::PhysicalMergeManifest},
+};
+use arrow_array::{Array, Decimal256Array, Int64Array, RecordBatch, UInt32Array, UInt64Array};
+use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
+use parquet::file::reader::{FileReader, SerializedFileReader};
 use std::{
     collections::HashMap,
     fs::File,
     path::{Path, PathBuf},
 };
-
-use arrow_array::{Array, Decimal256Array, Int64Array, RecordBatch, UInt32Array, UInt64Array};
-use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
-
-use crate::{
-    error::{MarketForgeError, Result},
-    process::{convert::ConversionDecimal, merge::PhysicalMergeManifest},
-};
-
-use super::state::{ReferenceKey, ReferenceObservation};
 
 pub const REFERENCE_READ_BATCH_SIZE: usize = 65_536;
 
@@ -30,6 +28,8 @@ pub struct PhysicalReferenceReader {
 
     records_read: u64,
     batch_size: usize,
+    next_row_group: Option<usize>,
+    initial_rows_to_skip: usize,
 }
 
 impl PhysicalReferenceReader {
@@ -79,7 +79,79 @@ impl PhysicalReferenceReader {
             last_key: None,
 
             records_read: 0,
+            batch_size,
+            next_row_group: None,
+            initial_rows_to_skip: 0,
         })
+    }
+
+    pub fn new_at(
+        dataset_path: &Path,
+        manifest: &PhysicalMergeManifest,
+        batch_size: usize,
+        observation_index: u64,
+    ) -> Result<Self> {
+        let mut reader = Self::new(dataset_path, manifest, batch_size)?;
+
+        if observation_index > manifest.events_written {
+            return invalid(format!(
+                "reference seek position exceeds dataset: \
+             position={}, events={}",
+                observation_index, manifest.events_written,
+            ));
+        }
+
+        // EOF is a valid position.
+        if observation_index == manifest.events_written {
+            reader.file_index = reader.files.len();
+            reader.records_read = observation_index;
+            return Ok(reader);
+        }
+
+        let mut global_offset = 0_u64;
+
+        for (file_index, path) in reader.files.iter().enumerate() {
+            let file = File::open(path).map_err(|error| {
+                invalid_error(format!(
+                    "cannot open reference file {}: {error}",
+                    path.display()
+                ))
+            })?;
+
+            let metadata_reader = SerializedFileReader::new(file).map_err(|error| {
+                invalid_error(format!("cannot inspect reference file: {error}"))
+            })?;
+
+            let metadata = metadata_reader.metadata();
+
+            for row_group_index in 0..metadata.num_row_groups() {
+                let row_group = metadata.row_group(row_group_index);
+
+                let rows = u64::try_from(row_group.num_rows())
+                    .map_err(|_| invalid_error("negative reference row-group count"))?;
+
+                let end = global_offset
+                    .checked_add(rows)
+                    .ok_or_else(|| invalid_error("reference row offset overflow"))?;
+
+                if observation_index < end {
+                    reader.file_index = file_index;
+                    reader.next_row_group = Some(row_group_index);
+
+                    reader.initial_rows_to_skip =
+                        usize::try_from(observation_index - global_offset)
+                            .map_err(|_| invalid_error("reference local offset overflow"))?;
+
+                    reader.records_read = observation_index;
+
+                    return Ok(reader);
+                }
+
+                global_offset = end;
+            }
+        }
+
+        return invalid("reference seek position not found");
     }
 
     pub fn next_observation(&mut self) -> Result<Option<ReferenceObservation>> {
@@ -107,8 +179,13 @@ impl PhysicalReferenceReader {
             if let Some(reader) = &mut self.reader {
                 match reader.next() {
                     Some(Ok(batch)) => {
+                        let skip = self.initial_rows_to_skip.min(batch.num_rows());
+
+                        self.initial_rows_to_skip -= skip;
+
                         self.batch = Some(batch);
-                        self.batch_offset = 0;
+                        self.batch_offset = skip;
+
                         continue;
                     }
 
@@ -137,11 +214,18 @@ impl PhysicalReferenceReader {
                 ))
             })?;
 
-            let reader = ParquetRecordBatchReaderBuilder::try_new(file)
-                .map_err(|error| {
-                    invalid_error(format!("failed to inspect reference Parquet: {error}"))
-                })?
-                .with_batch_size(REFERENCE_READ_BATCH_SIZE)
+            let mut builder = ParquetRecordBatchReaderBuilder::try_new(file).map_err(|error| {
+                invalid_error(format!("failed to inspect reference Parquet: {error}"))
+            })?;
+
+            if let Some(first_group) = self.next_row_group.take() {
+                let groups = (first_group..builder.metadata().num_row_groups()).collect::<Vec<_>>();
+
+                builder = builder.with_row_groups(groups);
+            }
+
+            let reader = builder
+                .with_batch_size(self.batch_size)
                 .build()
                 .map_err(|error| {
                     invalid_error(format!("failed to create reference reader: {error}"))

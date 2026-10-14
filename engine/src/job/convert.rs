@@ -37,6 +37,9 @@ pub struct ConversionConfig {
     pub references: Vec<InstrumentIdentity>,
 
     #[serde(default)]
+    pub reference_merge: Option<PathBuf>,
+
+    #[serde(default)]
     pub path_policy: ConversionPathPolicy,
 
     #[serde(default = "default_max_hops")]
@@ -115,6 +118,15 @@ impl ConvertJob {
 
             if !unique.insert(reference) {
                 return invalid("duplicate conversion reference instrument");
+            }
+        }
+        if let Some(reference_merge) = &self.conversion.reference_merge {
+            if !reference_merge.is_absolute() {
+                return invalid("conversion reference_merge must be absolute");
+            }
+
+            if reference_merge == &self.output.dataset_path {
+                return invalid("conversion reference merge and output paths must differ");
             }
         }
 

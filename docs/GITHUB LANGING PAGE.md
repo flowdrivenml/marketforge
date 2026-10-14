@@ -23,3 +23,11 @@ ADD release with assets
 Make documentation simmilar to pollars
 
 perhabs its would be better to do make file so instalation and compiling and everythign because its kinda heavy to make it --> or compile before and reuse ???  interesting 
+
+### My recommendation
+
+Since you're building MarketForge as a recognizable open-source product, I'd create a dedicated **MarketForge GitHub organization** and use the new M icon as its avatar.
+
+You can remain the organization owner and maintain the project through your existing personal account.
+
+That gives MarketForge its own visual identity without changing your personal GitHub profile.
