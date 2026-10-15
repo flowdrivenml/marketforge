@@ -1,14 +1,7 @@
-use std::{fs, path::Path};
-
+use super::ProcessingStatus;
 use super::failure::ProcessingFailureReport;
-use crate::{
-    error::{MarketForgeError, Result},
-    job::{
-        ContentType, ProcessingJob, ProcessingOperation, TargetSchema,
-        validate_processing_job_structure,
-    },
-};
-
+use super::progress::ProgressReporter;
+use super::progress::ProgressTaskId;
 use super::{
     ProcessingErrorCode, ProcessingResult,
     config::{ProcessingConfig, validate_resources},
@@ -18,8 +11,16 @@ use super::{
 use super::{
     resources::{ResourceBudget, estimate_task_resources},
     scheduler::execute_parallel_budgeted,
-    task::{TaskExecution, execute_task},
+    task::{TaskExecution, execute_task_with_progress},
 };
+use crate::{
+    error::{MarketForgeError, Result},
+    job::{
+        ContentType, ProcessingJob, ProcessingOperation, TargetSchema,
+        validate_processing_job_structure,
+    },
+};
+use std::{fs, path::Path};
 
 // -----------------------------------------------------------------------------
 // Processing job execution
@@ -36,19 +37,40 @@ pub fn execute_processing_job(
     job: &ProcessingJob,
     config: &ProcessingConfig,
 ) -> Result<ProcessingResult> {
+    execute_processing_job_with_progress(job, config, &ProgressReporter::disabled())
+}
+
+pub fn execute_processing_job_with_progress(
+    job: &ProcessingJob,
+    config: &ProcessingConfig,
+    reporter: &ProgressReporter,
+) -> Result<ProcessingResult> {
     validate_processing_job_structure(job)?;
     validate_resources(&config.resources)?;
 
-    match job.operation {
-        ProcessingOperation::Process => execute_process(job, config),
+    let result = match job.operation {
+        ProcessingOperation::Process => execute_process(job, config, reporter),
+    };
+
+    match &result {
+        Ok(processing_result) => {
+            reporter.finished(processing_result.status == ProcessingStatus::Complete);
+        }
+        Err(_) => reporter.finished(false),
     }
+
+    result
 }
 
 // -----------------------------------------------------------------------------
 // Raw archive processing
 // -----------------------------------------------------------------------------
 
-fn execute_process(job: &ProcessingJob, config: &ProcessingConfig) -> Result<ProcessingResult> {
+fn execute_process(
+    job: &ProcessingJob,
+    config: &ProcessingConfig,
+    reporter: &ProgressReporter,
+) -> Result<ProcessingResult> {
     // -------------------------------------------------------------------------
     // Validate output content type
     // -------------------------------------------------------------------------
@@ -124,7 +146,7 @@ fn execute_process(job: &ProcessingJob, config: &ProcessingConfig) -> Result<Pro
 
     let mut context = ExecutionContext::default();
 
-    let result = process_tasks(job, config, &mut context);
+    let result = process_tasks(job, config, &mut context, reporter);
 
     match result {
         Ok(result) => Ok(result),
@@ -188,8 +210,18 @@ fn process_tasks(
     job: &ProcessingJob,
     config: &ProcessingConfig,
     context: &mut ExecutionContext,
+    reporter: &ProgressReporter,
 ) -> Result<ProcessingResult> {
     let staging = &job.output.staging_path;
+
+    // Validate source accessibility before resource estimation.
+    // Preserve the responsible task ID if preparation fails.
+    for task in &job.tasks {
+        if let Err(error) = estimate_task_resources(task, &config.resources.parquet) {
+            context.failed_task_id = Some(task.task_id.0);
+            return Err(error);
+        }
+    }
 
     let budget = ResourceBudget::new(
         config.resources.memory_budget_bytes,
@@ -201,12 +233,39 @@ fn process_tasks(
         config.resources.workers,
         &budget,
         |task| estimate_task_resources(task, &config.resources.parquet),
-        |task| Ok(execute_task(task, config, staging)),
+        |task| {
+            let task_id = task.task_id.0;
+            let progress_id = ProgressTaskId::new(job.job_id.0, task_id);
+
+            reporter.task_started(
+                progress_id,
+                format!("{:?}", task.exchange),
+                task.symbol.clone(),
+                format!("{:?}", job.output.content_type),
+                task.input_path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| task.input_path.display().to_string()),
+            );
+
+            let execution =
+                execute_task_with_progress(task, config, staging, reporter, progress_id);
+
+            if let Some(error) = &execution.error {
+                reporter.task_failed(progress_id, error.to_string());
+            } else {
+                reporter.task_completed(progress_id, &execution.metrics.counters);
+            }
+
+            Ok(execution)
+        },
     )?;
 
     let executions = executions
         .into_iter()
         .collect::<Result<Vec<TaskExecution>>>()?;
+
+    reporter.finalizing();
 
     finalize_processing_job(job, config, executions, context)
 }
@@ -243,22 +302,30 @@ pub(crate) fn finalize_processing_job(
     let mut first_error = None;
 
     for (task, execution) in job.tasks.iter().zip(executions) {
-        context.failed_task_id = Some(task.task_id.0);
+        let task_id = task.task_id.0;
 
-        if execution.task_id != task.task_id.0 {
+        if execution.task_id != task_id {
+            context.failed_task_id = Some(task_id);
+
             return Err(MarketForgeError::InvalidConfiguration(format!(
                 "job {} task execution mismatch: expected={}, actual={}",
-                job.job_id.0, task.task_id.0, execution.task_id,
+                job.job_id.0, task_id, execution.task_id,
             )));
         }
 
+        // Preserve the first failed task ID before metrics aggregation.
+        if execution.error.is_some() && first_error.is_none() {
+            context.failed_task_id = Some(task_id);
+        }
+
+        // Preserve the authoritative metrics for every attempted task.
         context
             .report
             .add_task(execution.metrics.into_report(task))?;
 
         if let Some(error) = execution.error {
             if first_error.is_none() {
-                first_error = Some((task.task_id.0, error));
+                first_error = Some((task_id, error));
             }
         }
     }

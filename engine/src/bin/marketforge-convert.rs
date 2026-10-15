@@ -1,9 +1,11 @@
-use std::{
-    env, fs,
-    path::{Path, PathBuf},
-    time::Instant,
+use marketforge_engine::process::convert::execution::execute_parallel_combined_conversion_with_progress;
+use marketforge_engine::process::convert::execution::execute_parallel_conversion_with_progress;
+use marketforge_engine::process::convert::execution::execute_parallel_depth_conversion_with_progress;
+use marketforge_engine::process::convert::output::{
+    publish_combined_conversion_with_progress, publish_conversion_with_progress,
+    publish_depth_conversion_with_progress,
 };
-
+use marketforge_engine::process::convert::progress::{ConversionPhase, ConversionProgressReporter};
 use marketforge_engine::{
     instrument::InstrumentCatalog,
     job::{ConvertJob, MergeParquetConfig, load_convert_job},
@@ -11,22 +13,48 @@ use marketforge_engine::{
         convert::{
             execution::{
                 CombinedReferenceSelection, PhysicalConversionMetrics,
-                build_combined_reference_checkpoints, build_conversion_checkpoints,
-                build_conversion_partition_plan, build_depth_reference_checkpoints,
-                execute_parallel_combined_conversion, execute_parallel_conversion,
-                execute_parallel_depth_conversion, materialize_depth_conversion,
+                build_combined_reference_checkpoints_with_progress, build_conversion_checkpoints,
+                build_conversion_partition_plan, build_conversion_partition_plan_with_count,
+                build_depth_reference_checkpoints, materialize_depth_conversion,
                 materialize_trade_conversion,
             },
-            output::{
-                ConversionExecutionReceipt, ConversionPublication, publish_combined_conversion,
-                publish_conversion, publish_depth_conversion,
-            },
+            output::{ConversionExecutionReceipt, ConversionPublication},
             plan_conversion, resolve_conversion_catalog,
         },
         merge::{PhysicalMergeManifest, UnifiedMergeMode},
     },
 };
+use std::cell::Cell;
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    time::Instant,
+};
 
+thread_local! {
+    static CONVERSION_TUI_MODE: Cell<bool> = const { Cell::new(false) };
+}
+
+fn set_conversion_tui_mode(enabled: bool) {
+    CONVERSION_TUI_MODE.with(|mode| mode.set(enabled));
+}
+
+fn conversion_tui_mode() -> bool {
+    CONVERSION_TUI_MODE.with(Cell::get)
+}
+macro_rules! conversion_println {
+    () => {
+        if !conversion_tui_mode() {
+            println!();
+        }
+    };
+
+    ($($arg:tt)*) => {
+        if !conversion_tui_mode() {
+            println!($($arg)*);
+        }
+    };
+}
 // -----------------------------------------------------------------------------
 // CLI modes
 // -----------------------------------------------------------------------------
@@ -43,6 +71,7 @@ struct Args {
     job: PathBuf,
     mode: ExecutionMode,
     workers: Option<usize>,
+    tui: bool,
 }
 
 // -----------------------------------------------------------------------------
@@ -55,7 +84,75 @@ fn main() {
         std::process::exit(1);
     }
 }
+fn execute_conversion_with_progress(
+    job: &ConvertJob,
+    source_manifest: &PhysicalMergeManifest,
+    root: &Path,
+    staging: &Path,
+    workers: usize,
+    mode: ExecutionMode,
+    reporter: &ConversionProgressReporter,
+) -> Result<(), String> {
+    let result = execute_conversion_with_progress_inner(
+        job,
+        source_manifest,
+        root,
+        staging,
+        workers,
+        mode,
+        reporter,
+    );
 
+    reporter.finished(result.is_ok());
+
+    result
+}
+
+fn execute_conversion_with_progress_inner(
+    job: &ConvertJob,
+    source_manifest: &PhysicalMergeManifest,
+    root: &Path,
+    staging: &Path,
+    workers: usize,
+    mode: ExecutionMode,
+    reporter: &ConversionProgressReporter,
+) -> Result<(), String> {
+    match mode {
+        ExecutionMode::Materialize => {
+            materialize_with_progress(job, source_manifest, root, staging, workers, reporter)
+        }
+
+        ExecutionMode::Publish => {
+            publish_with_progress(job, source_manifest, staging, workers, reporter)
+        }
+
+        ExecutionMode::Run => {
+            materialize_with_progress(job, source_manifest, root, staging, workers, reporter)?;
+
+            publish_with_progress(job, source_manifest, staging, workers, reporter)
+        }
+    }
+}
+fn materialize_with_progress(
+    job: &ConvertJob,
+    source_manifest: &PhysicalMergeManifest,
+    root: &Path,
+    staging: &Path,
+    workers: usize,
+    reporter: &ConversionProgressReporter,
+) -> Result<(), String> {
+    reporter.phase_started(ConversionPhase::SourceValidation);
+
+    source_manifest
+        .validate()
+        .map_err(|error| error.to_string())?;
+
+    reporter.phase_completed(ConversionPhase::SourceValidation);
+
+    let result = materialize_with_reporter(job, source_manifest, root, staging, workers, reporter);
+
+    result
+}
 fn run() -> Result<(), String> {
     let args = parse_args()?;
 
@@ -87,18 +184,28 @@ fn run() -> Result<(), String> {
     let source_manifest = load_source_manifest(&job.input_merge)?;
     let output = job.output.dataset_path.clone();
     let staging = output.with_extension("staging");
+    if args.tui {
+        #[cfg(feature = "monitor-tui")]
+        {
+            return run_conversion_tui(job, source_manifest, root, staging, workers, args.mode);
+        }
 
-    println!();
-    println!("{}", "=".repeat(80));
-    println!("MARKETFORGE — PHYSICAL CONVERSION");
-    println!("{}", "=".repeat(80));
+        #[cfg(not(feature = "monitor-tui"))]
+        {
+            return Err("--tui requires the monitor-tui feature".to_owned());
+        }
+    }
+    conversion_println!();
+    conversion_println!("{}", "=".repeat(80));
+    conversion_println!("MARKETFORGE — PHYSICAL CONVERSION");
+    conversion_println!("{}", "=".repeat(80));
 
-    println!("Job             : {}", job_path.display());
-    println!("Mode            : {:?}", args.mode);
-    println!("Input           : {}", job.input_merge.display());
-    println!("Output          : {}", output.display());
-    println!("Staging         : {}", staging.display());
-    println!("Events expected : {}", source_manifest.events_written);
+    conversion_println!("Job             : {}", job_path.display());
+    conversion_println!("Mode            : {:?}", args.mode);
+    conversion_println!("Input           : {}", job.input_merge.display());
+    conversion_println!("Output          : {}", output.display());
+    conversion_println!("Staging         : {}", staging.display());
+    conversion_println!("Events expected : {}", source_manifest.events_written);
 
     match args.mode {
         ExecutionMode::Materialize => {
@@ -117,6 +224,45 @@ fn run() -> Result<(), String> {
 
     Ok(())
 }
+#[cfg(feature = "monitor-tui")]
+fn run_conversion_tui(
+    job: ConvertJob,
+    source_manifest: PhysicalMergeManifest,
+    root: PathBuf,
+    staging: PathBuf,
+    workers: usize,
+    mode: ExecutionMode,
+) -> Result<(), String> {
+    use std::sync::mpsc;
+
+    let (sender, receiver) = mpsc::channel();
+
+    let reporter = ConversionProgressReporter::new(sender);
+    let progress_state = reporter.state();
+
+    let execution = std::thread::spawn(move || {
+        set_conversion_tui_mode(true);
+
+        execute_conversion_with_progress(
+            &job,
+            &source_manifest,
+            &root,
+            &staging,
+            workers,
+            mode,
+            &reporter,
+        )
+    });
+
+    // Temporary event consumer.
+    // The Ratatui dashboard will replace this in Part 2.
+    marketforge_engine::tui::conversion::execute_conversion_with_tui(receiver, progress_state)
+        .map_err(|error| error.to_string())?;
+
+    execution
+        .join()
+        .map_err(|_| "conversion execution thread panicked".to_owned())?
+}
 
 // -----------------------------------------------------------------------------
 // Materialization
@@ -129,25 +275,50 @@ fn materialize(
     staging: &Path,
     workers: usize,
 ) -> Result<(), String> {
-    match source_manifest.mode {
-        UnifiedMergeMode::Trades => {
-            materialize_trades(job, source_manifest, root, staging, workers)
-        }
-
-        UnifiedMergeMode::Depth => materialize_depth(job, source_manifest, root, staging, workers),
-
-        UnifiedMergeMode::Combined => {
-            materialize_combined(job, source_manifest, root, staging, workers)
-        }
-    }
+    materialize_with_reporter(
+        job,
+        source_manifest,
+        root,
+        staging,
+        workers,
+        &ConversionProgressReporter::disabled(),
+    )
 }
 
-fn materialize_trades(
+fn materialize_with_reporter(
     job: &ConvertJob,
     source_manifest: &PhysicalMergeManifest,
     root: &Path,
     staging: &Path,
     workers: usize,
+    reporter: &ConversionProgressReporter,
+) -> Result<(), String> {
+    match source_manifest.mode {
+        UnifiedMergeMode::Trades => {
+            materialize_trades_with_reporter(job, source_manifest, root, staging, workers, reporter)
+        }
+
+        UnifiedMergeMode::Depth => {
+            materialize_depth_with_reporter(job, source_manifest, root, staging, workers, reporter)
+        }
+
+        UnifiedMergeMode::Combined => materialize_combined_with_reporter(
+            job,
+            source_manifest,
+            root,
+            staging,
+            workers,
+            reporter,
+        ),
+    }
+}
+fn materialize_trades_with_reporter(
+    job: &ConvertJob,
+    source_manifest: &PhysicalMergeManifest,
+    root: &Path,
+    staging: &Path,
+    workers: usize,
+    reporter: &ConversionProgressReporter,
 ) -> Result<(), String> {
     if job.output.dataset_path.exists() {
         return Err(format!(
@@ -163,13 +334,21 @@ fn materialize_trades(
         ));
     }
 
+    reporter.phase_started(ConversionPhase::CatalogResolution);
+
     let catalog = InstrumentCatalog::load(&root.join("data/catalog/instruments.json"))
         .map_err(|error| error.to_string())?;
 
     let resolved = resolve_conversion_catalog(job, source_manifest, &catalog, root)
         .map_err(|error| error.to_string())?;
 
+    reporter.phase_completed(ConversionPhase::CatalogResolution);
+
+    reporter.phase_started(ConversionPhase::ConversionPlanning);
+
     let plan = plan_conversion(job, &resolved).map_err(|error| error.to_string())?;
+
+    reporter.phase_completed(ConversionPhase::ConversionPlanning);
 
     if plan.unresolved_streams > 0 {
         return Err(format!(
@@ -208,14 +387,20 @@ fn materialize_trades(
         // Parallel execution
         // -------------------------------------------------------------
 
+        reporter.phase_started(ConversionPhase::PartitionPlanning);
+
         let partitions =
             build_conversion_partition_plan(&job.input_merge, source_manifest, workers)
                 .map_err(|error| error.to_string())?;
 
-        println!("Requested workers : {}", workers);
-        println!("Partitions        : {}", partitions.partitions.len());
+        reporter.phase_completed(ConversionPhase::PartitionPlanning);
+
+        conversion_println!("Requested workers : {}", workers);
+        conversion_println!("Partitions        : {}", partitions.partitions.len());
 
         let prepass_start = Instant::now();
+
+        reporter.phase_started(ConversionPhase::ReferencePrepass);
 
         let prepass = build_conversion_checkpoints(
             job,
@@ -226,12 +411,14 @@ fn materialize_trades(
         )
         .map_err(|error| error.to_string())?;
 
-        println!(
+        reporter.phase_completed(ConversionPhase::ReferencePrepass);
+
+        conversion_println!(
             "Reference prepass : {:.3} s",
             prepass_start.elapsed().as_secs_f64()
         );
 
-        let result = execute_parallel_conversion(
+        let result = execute_parallel_conversion_with_progress(
             job,
             source_manifest,
             &plan,
@@ -240,59 +427,61 @@ fn materialize_trades(
             staging,
             workers,
             &parquet,
+            reporter,
         )
         .map_err(|error| error.to_string())?;
 
-        println!("Workers used      : {}", result.workers_used);
+        conversion_println!("Workers used      : {}", result.workers_used);
 
         result.metrics
     };
-
+    reporter.phase_started(ConversionPhase::ExecutionReceipt);
     // Persist execution metrics for a later publish-only invocation.
     let receipt =
         ConversionExecutionReceipt::new(job.job_id, &metrics).map_err(|error| error.to_string())?;
 
     receipt.write(staging).map_err(|error| error.to_string())?;
-
+    reporter.phase_completed(ConversionPhase::ExecutionReceipt);
     let elapsed = start.elapsed().as_secs_f64();
 
-    println!();
-    println!("{}", "=".repeat(80));
-    println!("CONVERSION MATERIALIZATION SUMMARY");
-    println!("{}", "=".repeat(80));
+    conversion_println!();
+    conversion_println!("{}", "=".repeat(80));
+    conversion_println!("CONVERSION MATERIALIZATION SUMMARY");
+    conversion_println!("{}", "=".repeat(80));
 
-    println!("Events read      : {}", metrics.events_read);
-    println!("Events written   : {}", metrics.events_written);
-    println!("Identity         : {}", metrics.identity_events);
-    println!("Converted        : {}", metrics.converted_events);
-    println!("Unavailable      : {}", metrics.unavailable_events);
-    println!("Reference updates: {}", metrics.reference_updates);
-    println!("Files            : {}", metrics.files_written);
-    println!("Row groups       : {}", metrics.row_groups_written);
-    println!("Elapsed          : {:.3} s", elapsed);
+    conversion_println!("Events read      : {}", metrics.events_read);
+    conversion_println!("Events written   : {}", metrics.events_written);
+    conversion_println!("Identity         : {}", metrics.identity_events);
+    conversion_println!("Converted        : {}", metrics.converted_events);
+    conversion_println!("Unavailable      : {}", metrics.unavailable_events);
+    conversion_println!("Reference updates: {}", metrics.reference_updates);
+    conversion_println!("Files            : {}", metrics.files_written);
+    conversion_println!("Row groups       : {}", metrics.row_groups_written);
+    conversion_println!("Elapsed          : {:.3} s", elapsed);
 
     if elapsed > 0.0 {
-        println!(
+        conversion_println!(
             "Throughput       : {:.0} events/s",
             metrics.events_written as f64 / elapsed
         );
     }
 
-    println!(
+    conversion_println!(
         "Receipt          : {}",
         staging.join("execution.json").display()
     );
-    println!("Status           : MATERIALIZED — NOT COMMITTED");
+    conversion_println!("Status           : MATERIALIZED — NOT COMMITTED");
 
     Ok(())
 }
 
-fn materialize_depth(
+fn materialize_depth_with_reporter(
     job: &ConvertJob,
     source_manifest: &PhysicalMergeManifest,
     root: &Path,
     staging: &Path,
     workers: usize,
+    reporter: &ConversionProgressReporter,
 ) -> Result<(), String> {
     if job.output.dataset_path.exists() {
         return Err("converted depth dataset already exists".to_owned());
@@ -348,10 +537,12 @@ fn materialize_depth(
             build_conversion_partition_plan(&job.input_merge, source_manifest, workers)
                 .map_err(|error| error.to_string())?;
 
-        println!("Requested workers : {}", workers);
-        println!("Partitions        : {}", partitions.partitions.len());
+        conversion_println!("Requested workers : {}", workers);
+        conversion_println!("Partitions        : {}", partitions.partitions.len());
 
         let prepass_start = Instant::now();
+
+        reporter.phase_started(ConversionPhase::ReferencePrepass);
 
         let prepass = build_depth_reference_checkpoints(
             &job.input_merge,
@@ -363,12 +554,14 @@ fn materialize_depth(
         )
         .map_err(|error| error.to_string())?;
 
-        println!(
+        reporter.phase_completed(ConversionPhase::ReferencePrepass);
+
+        conversion_println!(
             "Reference prepass : {:.3} s",
             prepass_start.elapsed().as_secs_f64()
         );
 
-        let result = execute_parallel_depth_conversion(
+        let result = execute_parallel_depth_conversion_with_progress(
             job,
             source_manifest,
             &references,
@@ -378,47 +571,48 @@ fn materialize_depth(
             staging,
             workers,
             &parquet,
+            reporter,
         )
         .map_err(|error| error.to_string())?;
 
-        println!("Workers used      : {}", result.workers_used);
+        conversion_println!("Workers used      : {}", result.workers_used);
 
         result.metrics
     };
-
+    reporter.phase_started(ConversionPhase::ExecutionReceipt);
     let receipt = ConversionExecutionReceipt::new_depth(job.job_id, &metrics)
         .map_err(|error| error.to_string())?;
 
     receipt.write(staging).map_err(|error| error.to_string())?;
-
+    reporter.phase_completed(ConversionPhase::ExecutionReceipt);
     let elapsed = start.elapsed().as_secs_f64();
 
-    println!();
-    println!("{}", "=".repeat(80));
-    println!("DEPTH CONVERSION MATERIALIZATION SUMMARY");
-    println!("{}", "=".repeat(80));
+    conversion_println!();
+    conversion_println!("{}", "=".repeat(80));
+    conversion_println!("DEPTH CONVERSION MATERIALIZATION SUMMARY");
+    conversion_println!("{}", "=".repeat(80));
 
-    println!("Events read       : {}", metrics.events_read);
-    println!("Events written    : {}", metrics.events_written);
-    println!("Depth levels      : {}", metrics.levels_read);
-    println!("Identity          : {}", metrics.identity_events);
-    println!("Converted         : {}", metrics.converted_events);
-    println!("Unavailable       : {}", metrics.unavailable_events);
-    println!("Converted levels  : {}", metrics.levels_converted);
-    println!("Unavailable levels: {}", metrics.levels_unavailable);
-    println!("Reference updates : {}", metrics.reference_updates);
-    println!("Files             : {}", metrics.files_written);
-    println!("Row groups        : {}", metrics.row_groups_written);
-    println!("Elapsed           : {:.3} s", elapsed);
+    conversion_println!("Events read       : {}", metrics.events_read);
+    conversion_println!("Events written    : {}", metrics.events_written);
+    conversion_println!("Depth levels      : {}", metrics.levels_read);
+    conversion_println!("Identity          : {}", metrics.identity_events);
+    conversion_println!("Converted         : {}", metrics.converted_events);
+    conversion_println!("Unavailable       : {}", metrics.unavailable_events);
+    conversion_println!("Converted levels  : {}", metrics.levels_converted);
+    conversion_println!("Unavailable levels: {}", metrics.levels_unavailable);
+    conversion_println!("Reference updates : {}", metrics.reference_updates);
+    conversion_println!("Files             : {}", metrics.files_written);
+    conversion_println!("Row groups        : {}", metrics.row_groups_written);
+    conversion_println!("Elapsed           : {:.3} s", elapsed);
 
     if elapsed > 0.0 {
-        println!(
+        conversion_println!(
             "Throughput        : {:.0} events/s",
             metrics.events_written as f64 / elapsed
         );
     }
 
-    println!("Status            : MATERIALIZED — NOT COMMITTED");
+    conversion_println!("Status            : MATERIALIZED — NOT COMMITTED");
 
     Ok(())
 }
@@ -432,6 +626,22 @@ fn publish(
     source_manifest: &PhysicalMergeManifest,
     staging: &Path,
     workers: usize,
+) -> Result<(), String> {
+    publish_with_reporter(
+        job,
+        source_manifest,
+        staging,
+        workers,
+        &ConversionProgressReporter::disabled(),
+    )
+}
+
+fn publish_with_reporter(
+    job: &ConvertJob,
+    source_manifest: &PhysicalMergeManifest,
+    staging: &Path,
+    workers: usize,
+    reporter: &ConversionProgressReporter,
 ) -> Result<(), String> {
     if !staging.is_dir() {
         return Err(format!(
@@ -450,13 +660,21 @@ fn publish(
     let start = Instant::now();
 
     let result = match source_manifest.mode {
-        UnifiedMergeMode::Trades => publish_conversion(job, source_manifest, staging),
-
-        UnifiedMergeMode::Depth => publish_depth_conversion(job, source_manifest, staging, workers),
-
-        UnifiedMergeMode::Combined => {
-            publish_combined_conversion(job, source_manifest, staging, workers)
+        UnifiedMergeMode::Trades => {
+            publish_conversion_with_progress(job, source_manifest, staging, reporter)
         }
+
+        UnifiedMergeMode::Depth => {
+            publish_depth_conversion_with_progress(job, source_manifest, staging, workers, reporter)
+        }
+
+        UnifiedMergeMode::Combined => publish_combined_conversion_with_progress(
+            job,
+            source_manifest,
+            staging,
+            workers,
+            reporter,
+        ),
     }
     .map_err(|error| error.to_string())?;
 
@@ -466,17 +684,17 @@ fn publish(
 }
 
 fn print_publication(result: &ConversionPublication, elapsed: f64) {
-    println!();
-    println!("{}", "=".repeat(80));
-    println!("CONVERSION PUBLICATION SUMMARY");
-    println!("{}", "=".repeat(80));
+    conversion_println!();
+    conversion_println!("{}", "=".repeat(80));
+    conversion_println!("CONVERSION PUBLICATION SUMMARY");
+    conversion_println!("{}", "=".repeat(80));
 
-    println!("Dataset          : {}", result.dataset_path.display());
-    println!("Manifest         : {}", result.manifest_path.display());
-    println!("Events           : {}", result.events_written);
-    println!("Files            : {}", result.files_written);
-    println!("Validation time  : {:.3} s", elapsed);
-    println!("Status           : PUBLISHED");
+    conversion_println!("Dataset          : {}", result.dataset_path.display());
+    conversion_println!("Manifest         : {}", result.manifest_path.display());
+    conversion_println!("Events           : {}", result.events_written);
+    conversion_println!("Files            : {}", result.files_written);
+    conversion_println!("Validation time  : {:.3} s", elapsed);
+    conversion_println!("Status           : PUBLISHED");
 }
 
 // -----------------------------------------------------------------------------
@@ -506,7 +724,7 @@ fn parse_args() -> Result<Args, String> {
     let mut job = None;
     let mut mode = None;
     let mut workers = None;
-
+    let mut tui = false;
     let mut args = env::args().skip(1);
 
     while let Some(argument) = args.next() {
@@ -518,7 +736,9 @@ fn parse_args() -> Result<Args, String> {
             "--job" => {
                 job = Some(PathBuf::from(args.next().ok_or("missing --job value")?));
             }
-
+            "--tui" => {
+                tui = true;
+            }
             "--materialize" => {
                 set_mode(&mut mode, ExecutionMode::Materialize)?;
             }
@@ -532,7 +752,7 @@ fn parse_args() -> Result<Args, String> {
             }
 
             "--help" | "-h" => {
-                println!(
+                conversion_println!(
                     "Usage: marketforge-convert --job PATH \
                      [--project-root PATH] \
                      [--materialize | --publish | --run] \
@@ -570,6 +790,7 @@ fn parse_args() -> Result<Args, String> {
         job: job.ok_or("missing required --job argument")?,
         mode: mode.unwrap_or(ExecutionMode::Run),
         workers,
+        tui,
     })
 }
 
@@ -591,12 +812,13 @@ fn resolve_path(root: &Path, path: &Path) -> PathBuf {
     }
 }
 
-fn materialize_combined(
+fn materialize_combined_with_reporter(
     job: &ConvertJob,
     source_manifest: &PhysicalMergeManifest,
     root: &Path,
     staging: &Path,
     workers: usize,
+    reporter: &ConversionProgressReporter,
 ) -> Result<(), String> {
     if job.output.dataset_path.exists() {
         return Err("converted combined dataset already exists".to_owned());
@@ -661,12 +883,19 @@ fn materialize_combined(
     // Build physical partitions
     // ---------------------------------------------------------------------
 
-    let partitions =
-        build_conversion_partition_plan(&execution_job.input_merge, source_manifest, workers)
-            .map_err(|error| error.to_string())?;
+    let requested_partitions = workers
+        .checked_mul(4)
+        .ok_or("conversion partition count overflow")?;
 
-    println!("Requested workers : {}", workers);
-    println!("Partitions        : {}", partitions.partitions.len());
+    let partitions = build_conversion_partition_plan_with_count(
+        &execution_job.input_merge,
+        source_manifest,
+        requested_partitions,
+    )
+    .map_err(|error| error.to_string())?;
+
+    conversion_println!("Requested workers : {}", workers);
+    conversion_println!("Partitions        : {}", partitions.partitions.len());
 
     // ---------------------------------------------------------------------
     // Build historical reference checkpoints
@@ -675,17 +904,22 @@ fn materialize_combined(
     let start = Instant::now();
     let prepass_start = Instant::now();
 
-    let prepass = build_combined_reference_checkpoints(
+    reporter.phase_started(ConversionPhase::ReferencePrepass);
+
+    let prepass = build_combined_reference_checkpoints_with_progress(
         &execution_job.input_merge,
         source_manifest,
         reference_directory.as_deref(),
         reference_manifest.as_ref(),
         &selection,
         &partitions,
+        reporter,
     )
     .map_err(|error| error.to_string())?;
 
-    println!(
+    reporter.phase_completed(ConversionPhase::ReferencePrepass);
+
+    conversion_println!(
         "Reference prepass : {:.3} s",
         prepass_start.elapsed().as_secs_f64()
     );
@@ -700,7 +934,7 @@ fn materialize_combined(
         compression_level: 3,
     };
 
-    let result = execute_parallel_combined_conversion(
+    let result = execute_parallel_combined_conversion_with_progress(
         &execution_job,
         source_manifest,
         reference_manifest.as_ref(),
@@ -711,6 +945,7 @@ fn materialize_combined(
         staging,
         workers,
         &parquet,
+        reporter,
     )
     .map_err(|error| error.to_string())?;
 
@@ -718,10 +953,14 @@ fn materialize_combined(
     // Persist execution receipt
     // ---------------------------------------------------------------------
 
+    reporter.phase_started(ConversionPhase::ExecutionReceipt);
+
     let receipt = ConversionExecutionReceipt::new_combined(execution_job.job_id, &result.metrics)
         .map_err(|error| error.to_string())?;
 
     receipt.write(staging).map_err(|error| error.to_string())?;
+
+    reporter.phase_completed(ConversionPhase::ExecutionReceipt);
 
     // ---------------------------------------------------------------------
     // Summary
@@ -730,43 +969,53 @@ fn materialize_combined(
     let metrics = &result.metrics;
     let elapsed = start.elapsed().as_secs_f64();
 
-    println!();
-    println!("{}", "=".repeat(80));
-    println!("COMBINED CONVERSION MATERIALIZATION SUMMARY");
-    println!("{}", "=".repeat(80));
+    conversion_println!();
+    conversion_println!("{}", "=".repeat(80));
+    conversion_println!("COMBINED CONVERSION MATERIALIZATION SUMMARY");
+    conversion_println!("{}", "=".repeat(80));
 
-    println!("Events read       : {}", metrics.events_read);
-    println!("Events written    : {}", metrics.events_written);
+    conversion_println!("Events read       : {}", metrics.events_read);
+    conversion_println!("Events written    : {}", metrics.events_written);
 
-    println!("Trades            : {}", metrics.trade_events);
-    println!("Depth             : {}", metrics.depth_events);
-    println!("Depth levels      : {}", metrics.depth_levels_read);
+    conversion_println!("Trades            : {}", metrics.trade_events);
+    conversion_println!("Depth             : {}", metrics.depth_events);
+    conversion_println!("Depth levels      : {}", metrics.depth_levels_read);
 
-    println!("Identity          : {}", metrics.identity_events);
-    println!("Converted         : {}", metrics.converted_events);
-    println!("Unavailable       : {}", metrics.unavailable_events);
+    conversion_println!("Identity          : {}", metrics.identity_events);
+    conversion_println!("Converted         : {}", metrics.converted_events);
+    conversion_println!("Unavailable       : {}", metrics.unavailable_events);
 
-    println!("Converted levels  : {}", metrics.depth_levels_converted);
-    println!("Unavailable levels: {}", metrics.depth_levels_unavailable);
+    conversion_println!("Converted levels  : {}", metrics.depth_levels_converted);
+    conversion_println!("Unavailable levels: {}", metrics.depth_levels_unavailable);
 
-    println!("Internal refs     : {}", metrics.internal_reference_updates);
-    println!("External refs     : {}", metrics.external_reference_updates);
+    conversion_println!("Internal refs     : {}", metrics.internal_reference_updates);
+    conversion_println!("External refs     : {}", metrics.external_reference_updates);
 
-    println!("Workers used      : {}", result.workers_used);
-    println!("Files             : {}", metrics.files_written);
-    println!("Row groups        : {}", metrics.row_groups_written);
-    println!("Skipped           : {}", metrics.skipped_events);
-    println!("Skipped levels    : {}", metrics.depth_levels_skipped);
-    println!("Elapsed           : {:.3} s", elapsed);
+    conversion_println!("Workers used      : {}", result.workers_used);
+    conversion_println!("Files             : {}", metrics.files_written);
+    conversion_println!("Row groups        : {}", metrics.row_groups_written);
+    conversion_println!("Skipped           : {}", metrics.skipped_events);
+    conversion_println!("Skipped levels    : {}", metrics.depth_levels_skipped);
+    conversion_println!("Elapsed           : {:.3} s", elapsed);
 
     if elapsed > 0.0 {
-        println!(
+        conversion_println!(
             "Throughput        : {:.0} events/s",
             metrics.events_written as f64 / elapsed
         );
     }
 
-    println!("Status            : MATERIALIZED — NOT COMMITTED");
+    conversion_println!("Status            : MATERIALIZED — NOT COMMITTED");
 
     Ok(())
+}
+
+fn publish_with_progress(
+    job: &ConvertJob,
+    source_manifest: &PhysicalMergeManifest,
+    staging: &Path,
+    workers: usize,
+    reporter: &ConversionProgressReporter,
+) -> Result<(), String> {
+    publish_with_reporter(job, source_manifest, staging, workers, reporter)
 }

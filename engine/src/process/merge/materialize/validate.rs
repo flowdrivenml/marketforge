@@ -1,19 +1,18 @@
-use std::{
-    fs::File,
-    path::{Path, PathBuf},
-};
-
-use arrow_array::{
-    Array, Int64Array, ListArray, RecordBatch, StructArray, UInt8Array, UInt32Array, UInt64Array,
-};
-use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-
-use crate::error::{MarketForgeError, Result};
-
+use super::progress::MergeProgressReporter;
 use super::{
     materialize_partition::MaterializationPartitionResult,
     materialize_schema::{physical_combined_schema, physical_depth_schema, physical_trade_schema},
     unified_manifest::UnifiedMergeMode,
+};
+use crate::error::{MarketForgeError, Result};
+use arrow_array::{
+    Array, Int64Array, ListArray, RecordBatch, StructArray, UInt8Array, UInt32Array, UInt64Array,
+};
+use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use std::time::{Duration, Instant};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
 };
 
 type OrderingKey = (i64, u32, u64, u64);
@@ -49,6 +48,33 @@ pub fn validate_physical_partition(
     staging: &Path,
     mode: UnifiedMergeMode,
     result: &MaterializationPartitionResult,
+) -> Result<PhysicalPartitionValidation> {
+    let mut files_completed = 0;
+    let mut events_validated = 0;
+    let mut row_groups_validated = 0;
+
+    validate_physical_partition_with_progress(
+        staging,
+        mode,
+        result,
+        &MergeProgressReporter::disabled(),
+        &mut files_completed,
+        &mut events_validated,
+        &mut row_groups_validated,
+        0,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn validate_physical_partition_with_progress(
+    staging: &Path,
+    mode: UnifiedMergeMode,
+    result: &MaterializationPartitionResult,
+    reporter: &MergeProgressReporter,
+    files_completed: &mut u64,
+    events_validated: &mut u64,
+    row_groups_validated: &mut u64,
+    partitions_completed: usize,
 ) -> Result<PhysicalPartitionValidation> {
     let directory = staging
         .join("timeline")
@@ -104,7 +130,7 @@ pub fn validate_physical_partition(
         partition_id: result.partition_id,
         ..Default::default()
     };
-
+    let mut last_progress = Instant::now();
     let mut previous_key: Option<OrderingKey> = None;
 
     for (index, path) in files.iter().enumerate() {
@@ -165,7 +191,16 @@ pub fn validate_physical_partition(
                 &mut previous_key,
                 &mut validation,
             )?;
+            if reporter.is_enabled() && last_progress.elapsed() >= Duration::from_millis(500) {
+                reporter.validation_progress(
+                    partitions_completed,
+                    *files_completed,
+                    events_validated.saturating_add(validation.events),
+                    *row_groups_validated,
+                );
 
+                last_progress = Instant::now();
+            }
             if batch.num_rows() > 0 {
                 let timestamps = batch
                     .column_by_name("event_timestamp_ns")
@@ -202,6 +237,7 @@ pub fn validate_physical_partition(
         });
 
         validation.files.push(path.clone());
+        *files_completed += 1;
     }
 
     if validation.events != result.references_read
@@ -215,7 +251,13 @@ pub fn validate_physical_partition(
             result.partition_id
         ));
     }
+    *events_validated = events_validated
+        .checked_add(validation.events)
+        .ok_or_else(|| invalid_error("validated event count overflow"))?;
 
+    *row_groups_validated = row_groups_validated
+        .checked_add(validation.row_groups)
+        .ok_or_else(|| invalid_error("validated row-group count overflow"))?;
     Ok(validation)
 }
 

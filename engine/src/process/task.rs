@@ -1,21 +1,20 @@
-use std::path::{Path, PathBuf};
-
-use crate::{
-    book::SequencePolicy,
-    error::{MarketForgeError, Result},
-    job::{IntegrityPolicy, ParquetResourceConfig, TargetSchema, WorkTask},
-};
-
+use super::progress::ProgressTaskId;
 use super::{
     config::ProcessingConfig,
     metrics::{ScopedIntegrityMetrics, TaskMetrics},
     parquet::{ParquetDepthWriter, ParquetTradeWriter},
+    progress::{ProgressReporter, WorkerProgress},
     sequence_policy::resolve_sequence_policy,
     worker::{
         DepthSink, TradeSink, process_depth_task_with_metrics, process_trade_task_with_metrics,
     },
 };
-
+use crate::{
+    book::SequencePolicy,
+    error::{MarketForgeError, Result},
+    job::{IntegrityPolicy, ParquetResourceConfig, TargetSchema, WorkTask},
+};
+use std::path::{Path, PathBuf};
 // -----------------------------------------------------------------------------
 // Task execution result
 // -----------------------------------------------------------------------------
@@ -93,6 +92,219 @@ pub fn execute_trade_task(
         output_path,
         metrics,
         error: result.err(),
+    }
+}
+pub fn execute_trade_task_with_progress(
+    task: &WorkTask,
+    policy: &IntegrityPolicy,
+    parquet: &ParquetResourceConfig,
+    staging: &Path,
+    reporter: &ProgressReporter,
+    progress_id: ProgressTaskId,
+) -> TradeTaskExecution {
+    let output_path = staging
+        .join("tasks")
+        .join(format!("task-{:06}", task.task_id.0))
+        .join("trades");
+
+    let mut metrics = TaskMetrics::default();
+    let mut progress = WorkerProgress::new(reporter, progress_id);
+
+    let result = execute_trade_task_inner_with_progress(
+        task,
+        policy,
+        parquet,
+        &output_path,
+        &mut metrics,
+        &mut progress,
+    );
+
+    progress.finish(&metrics.counters);
+
+    TradeTaskExecution {
+        task_id: task.task_id.0,
+        output_path,
+        metrics,
+        error: result.err(),
+    }
+}
+fn execute_trade_task_inner_with_progress(
+    task: &WorkTask,
+    policy: &IntegrityPolicy,
+    parquet: &ParquetResourceConfig,
+    output_path: &Path,
+    metrics: &mut TaskMetrics,
+    progress: &mut WorkerProgress,
+) -> Result<()> {
+    let mut writer = ParquetTradeWriter::new(output_path, parquet.clone())?;
+
+    let previous = ScopedIntegrityMetrics::default();
+    let worker_policy = worker_integrity_policy(policy);
+
+    super::worker::process_trade_task_with_metrics_and_progress(
+        task,
+        &mut writer,
+        metrics,
+        &worker_policy,
+        &previous,
+        progress,
+    )?;
+
+    writer.finish()?;
+
+    if writer.is_failed() || !writer.is_finished() {
+        return Err(MarketForgeError::InvalidConfiguration(
+            "task Parquet writer did not finalize successfully".to_owned(),
+        ));
+    }
+
+    let writer_metrics = writer.metrics();
+
+    if writer_metrics.trades_written != metrics.counters.events_written {
+        return Err(MarketForgeError::InvalidConfiguration(format!(
+            "task {} trade count mismatch: metrics={}, writer={}",
+            task.task_id.0, metrics.counters.events_written, writer_metrics.trades_written,
+        )));
+    }
+
+    Ok(())
+}
+pub fn execute_depth_task_with_progress(
+    task: &WorkTask,
+    config: &ProcessingConfig,
+    staging: &Path,
+    reporter: &ProgressReporter,
+    progress_id: ProgressTaskId,
+) -> TaskExecution {
+    let output_path = staging
+        .join("tasks")
+        .join(format!("task-{:06}", task.task_id.0))
+        .join("depth");
+
+    let mut metrics = TaskMetrics::default();
+    let mut progress = WorkerProgress::new(reporter, progress_id);
+
+    let result = execute_depth_task_inner_with_progress(
+        task,
+        config,
+        &output_path,
+        &mut metrics,
+        &mut progress,
+    );
+
+    progress.finish(&metrics.counters);
+
+    TaskExecution {
+        task_id: task.task_id.0,
+        output_paths: vec![output_path],
+        metrics,
+        error: result.err(),
+    }
+}
+fn execute_depth_task_inner_with_progress(
+    task: &WorkTask,
+    config: &ProcessingConfig,
+    output_path: &Path,
+    metrics: &mut TaskMetrics,
+    progress: &mut WorkerProgress,
+) -> Result<()> {
+    let sequence_policy = resolve_sequence_policy(task)?;
+
+    let mut writer = ParquetDepthWriter::new(output_path, config.resources.parquet.clone())?;
+
+    let previous = ScopedIntegrityMetrics::default();
+    let worker_policy = worker_integrity_policy(&config.integrity_policy);
+
+    super::worker::process_depth_task_with_metrics_and_progress(
+        task,
+        &mut writer,
+        metrics,
+        &worker_policy,
+        &previous,
+        sequence_policy,
+        progress,
+    )?;
+
+    writer.finish()?;
+
+    if writer.is_failed() || !writer.is_finished() {
+        return Err(MarketForgeError::InvalidConfiguration(
+            "depth Parquet writer did not finalize successfully".to_owned(),
+        ));
+    }
+
+    let writer_metrics = writer.metrics();
+
+    if writer_metrics.levels_written != metrics.counters.events_written {
+        return Err(MarketForgeError::InvalidConfiguration(format!(
+            "task {} depth level count mismatch: metrics={}, writer={}",
+            task.task_id.0, metrics.counters.events_written, writer_metrics.levels_written,
+        )));
+    }
+
+    Ok(())
+}
+pub fn execute_task_with_progress(
+    task: &WorkTask,
+    config: &ProcessingConfig,
+    staging: &Path,
+    reporter: &ProgressReporter,
+    progress_id: ProgressTaskId,
+) -> TaskExecution {
+    if !reporter.is_enabled() {
+        return execute_task(task, config, staging);
+    }
+
+    let unsupported = |message: String| TaskExecution {
+        task_id: task.task_id.0,
+        output_paths: Vec::new(),
+        metrics: TaskMetrics::default(),
+        error: Some(MarketForgeError::InvalidConfiguration(message)),
+    };
+
+    if task.normalizations.is_empty() {
+        return unsupported(format!(
+            "task {} contains no normalization configurations",
+            task.task_id.0,
+        ));
+    }
+
+    let target = task.normalizations[0].target_schema;
+
+    if task
+        .normalizations
+        .iter()
+        .any(|normalization| normalization.target_schema != target)
+    {
+        return unsupported(format!(
+            "task {} mixes trade and depth normalization targets",
+            task.task_id.0,
+        ));
+    }
+
+    match target {
+        TargetSchema::Trade => {
+            if task.normalizations.len() != 1 {
+                return unsupported(format!(
+                    "task {} requires exactly one trade normalization",
+                    task.task_id.0,
+                ));
+            }
+
+            execute_trade_task_with_progress(
+                task,
+                &config.integrity_policy,
+                &config.resources.parquet,
+                staging,
+                reporter,
+                progress_id,
+            )
+            .into()
+        }
+
+        TargetSchema::Depth => {
+            execute_depth_task_with_progress(task, config, staging, reporter, progress_id)
+        }
     }
 }
 

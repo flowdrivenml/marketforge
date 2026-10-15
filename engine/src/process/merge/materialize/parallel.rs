@@ -1,14 +1,5 @@
-use std::{
-    collections::HashSet,
-    path::{Path, PathBuf},
-};
-
-use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeJob,
-    process::{resources::ResourceBudget, scheduler::execute_parallel_budgeted},
-};
-
+use super::progress::MergeWorkerProgress;
+use super::progress::{MergePhase, MergeProgressReporter, PartitionKey};
 use super::{
     materialize_partition::{
         MaterializationPartitionInput, MaterializationPartitionResult,
@@ -20,7 +11,15 @@ use super::{
     unified_manifest::UnifiedMergeStream,
 };
 use crate::process::merge::DepthTaskInventory;
-
+use crate::{
+    error::{MarketForgeError, Result},
+    job::MergeJob,
+    process::{resources::ResourceBudget, scheduler::execute_parallel_budgeted},
+};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 // -----------------------------------------------------------------------------
 // Partition plan
 // -----------------------------------------------------------------------------
@@ -50,12 +49,35 @@ pub fn execute_parallel_materialization(
     job: &MergeJob,
     staging: &Path,
 ) -> Result<Vec<MaterializationPartitionResult>> {
+    execute_parallel_materialization_with_progress(
+        plans,
+        trade_inventory,
+        depth_inventory,
+        streams,
+        mode,
+        job,
+        staging,
+        &MergeProgressReporter::disabled(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn execute_parallel_materialization_with_progress(
+    plans: Vec<MaterializationPartitionPlan>,
+    trade_inventory: &[TradeTaskInventory],
+    depth_inventory: &[DepthTaskInventory],
+    streams: &[UnifiedMergeStream],
+    mode: UnifiedMergeMode,
+    job: &MergeJob,
+    staging: &Path,
+    reporter: &MergeProgressReporter,
+) -> Result<Vec<MaterializationPartitionResult>> {
     if plans.is_empty() {
         return invalid("parallel materialization requires partitions");
     }
 
     validate_plans(&plans)?;
-
+    reporter.partitions_planned(MergePhase::PhysicalMaterialization, plans.len());
     const MIB: u64 = 1024 * 1024;
 
     let memory_budget_bytes = job
@@ -79,6 +101,12 @@ pub fn execute_parallel_materialization(
         &budget,
         // Estimate each partition independently.
         |plan| {
+            let key = PartitionKey {
+                phase: MergePhase::PhysicalMaterialization,
+                partition_id: plan.partition_id,
+            };
+
+            reporter.partition_started(key);
             let task_count = plan.source_tasks.len();
 
             estimate_materialization_resources(task_count.max(1), &job.parquet, &job.resources)
@@ -86,6 +114,13 @@ pub fn execute_parallel_materialization(
         },
         // Execute one partition per worker.
         |plan| {
+            let key = PartitionKey {
+                phase: MergePhase::PhysicalMaterialization,
+                partition_id: plan.partition_id,
+            };
+
+            reporter.partition_started(key);
+
             let selected = plan.source_tasks.iter().copied().collect::<HashSet<_>>();
 
             let trades = trade_inventory
@@ -125,9 +160,29 @@ pub fn execute_parallel_materialization(
                 staging,
             };
 
-            let mut worker = MaterializationPartitionWorker::new(&input)?;
+            let result = (|| {
+                let mut worker = MaterializationPartitionWorker::new(&input)?;
 
-            worker.execute(&input)
+                if reporter.is_enabled() {
+                    let mut progress = MergeWorkerProgress::new(reporter, key);
+
+                    worker.execute_with_progress(&input, &mut progress)
+                } else {
+                    worker.execute(&input)
+                }
+            })();
+
+            match &result {
+                Ok(partition) => {
+                    reporter.partition_completed(key, partition.writer_metrics.events_written);
+                }
+
+                Err(error) => {
+                    reporter.partition_failed(key, error.to_string());
+                }
+            }
+
+            result
         },
     )?;
 

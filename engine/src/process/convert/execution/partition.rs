@@ -61,8 +61,16 @@ pub fn build_conversion_partition_plan(
     manifest: &PhysicalMergeManifest,
     requested_workers: usize,
 ) -> Result<ConversionPartitionPlan> {
-    if requested_workers == 0 {
-        return invalid("conversion worker count must be positive");
+    build_conversion_partition_plan_with_count(dataset_path, manifest, requested_workers)
+}
+
+pub fn build_conversion_partition_plan_with_count(
+    dataset_path: &Path,
+    manifest: &PhysicalMergeManifest,
+    requested_partitions: usize,
+) -> Result<ConversionPartitionPlan> {
+    if requested_partitions == 0 {
+        return invalid("conversion partition count must be positive");
     }
 
     manifest.validate()?;
@@ -142,7 +150,7 @@ pub fn build_conversion_partition_plan(
     // Balance contiguous row-group ranges
     // -------------------------------------------------------------------------
 
-    let partition_count = requested_workers.min(row_groups.len());
+    let partition_count = requested_partitions.min(row_groups.len());
 
     let mut partitions = Vec::with_capacity(partition_count);
 

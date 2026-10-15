@@ -1,19 +1,21 @@
-use std::{
-    fs::File,
-    path::{Path, PathBuf},
-};
-
-use arrow_array::RecordBatch;
-use arrow_schema::SchemaRef;
-
-use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
-
+use crate::process::convert::progress::ConversionProgressReporter;
 use crate::{
     error::{MarketForgeError, Result},
     process::{
         convert::execution::{CONVERSION_READ_BATCH_SIZE, PhysicalConversionReader},
         merge::PhysicalMergeManifest,
     },
+};
+use arrow_array::RecordBatch;
+use arrow_schema::SchemaRef;
+use parquet::arrow::{
+    ProjectionMask,
+    arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder},
+};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+    time::{Duration, Instant},
 };
 
 // -----------------------------------------------------------------------------
@@ -47,13 +49,20 @@ struct ConvertedBatchReader {
     schema: Option<SchemaRef>,
 
     batch_size: usize,
+    source_schema: Option<SchemaRef>,
+    appended_columns: usize,
 
     batches_read: u64,
     files_opened: u64,
 }
 
 impl ConvertedBatchReader {
-    fn new(directory: &Path, batch_size: usize) -> Result<Self> {
+    fn new(
+        directory: &Path,
+        batch_size: usize,
+        source_schema: Option<SchemaRef>,
+        appended_columns: usize,
+    ) -> Result<Self> {
         if batch_size == 0 {
             return invalid("converted batch size must be positive");
         }
@@ -70,6 +79,8 @@ impl ConvertedBatchReader {
             reader: None,
             schema: None,
             batch_size,
+            source_schema,
+            appended_columns,
             batches_read: 0,
             files_opened: 0,
         })
@@ -133,6 +144,53 @@ impl ConvertedBatchReader {
         } else {
             self.schema = Some(schema);
         }
+
+        let builder = if let Some(source_schema) = &self.source_schema {
+            let converted_schema = builder.schema();
+
+            if converted_schema.fields().len()
+                != source_schema.fields().len() + self.appended_columns
+            {
+                return invalid("converted dataset has unexpected column count");
+            }
+
+            for (index, field) in source_schema.fields().iter().enumerate() {
+                if converted_schema.field(index) != field.as_ref() {
+                    return invalid(format!("source schema field mismatch at index {index}"));
+                }
+            }
+
+            // Select complete source columns, including nested fields.
+            let source_names = source_schema
+                .fields()
+                .iter()
+                .map(|field| field.name().as_str())
+                .collect::<Vec<_>>();
+
+            let leaf_indices = builder
+                .parquet_schema()
+                .columns()
+                .iter()
+                .enumerate()
+                .filter_map(|(index, column)| {
+                    let path = column.path().parts();
+
+                    path.first()
+                        .is_some_and(|name| source_names.contains(&name.as_str()))
+                        .then_some(index)
+                })
+                .collect::<Vec<_>>();
+
+            if leaf_indices.is_empty() {
+                return invalid("source preservation projection is empty");
+            }
+
+            let mask = ProjectionMask::leaves(builder.parquet_schema(), leaf_indices);
+
+            builder.with_projection(mask)
+        } else {
+            builder
+        };
 
         self.reader = Some(
             builder
@@ -201,6 +259,24 @@ pub fn validate_source_preservation_with_mode(
     mode: SourcePreservationMode,
     appended_columns: usize,
 ) -> Result<SourcePreservationMetrics> {
+    validate_source_preservation_with_progress(
+        source_directory,
+        source_manifest,
+        converted_directory,
+        mode,
+        appended_columns,
+        &ConversionProgressReporter::disabled(),
+    )
+}
+
+pub fn validate_source_preservation_with_progress(
+    source_directory: &Path,
+    source_manifest: &PhysicalMergeManifest,
+    converted_directory: &Path,
+    mode: SourcePreservationMode,
+    appended_columns: usize,
+    reporter: &ConversionProgressReporter,
+) -> Result<SourcePreservationMetrics> {
     source_manifest.validate()?;
     if appended_columns == 0 {
         return invalid("source preservation requires appended columns");
@@ -227,11 +303,27 @@ pub fn validate_source_preservation_with_mode(
         CONVERSION_READ_BATCH_SIZE,
     )?;
 
-    let mut converted = ConvertedBatchReader::new(converted_directory, CONVERSION_READ_BATCH_SIZE)?;
+    let first_source_batch = source
+        .next_batch()?
+        .ok_or_else(|| invalid_error("source dataset contains no events"))?;
+
+    let source_schema = first_source_batch.schema();
+
+    let mut converted = ConvertedBatchReader::new(
+        converted_directory,
+        CONVERSION_READ_BATCH_SIZE,
+        Some(source_schema),
+        appended_columns,
+    )?;
 
     let mut metrics = SourcePreservationMetrics::default();
 
-    let mut source_batch: Option<RecordBatch> = None;
+    // The first source batch was already loaded to obtain its schema.
+    metrics.source_batches = 1;
+    let mut last_progress = Instant::now();
+
+    reporter.source_preservation_progress(0, expected_events);
+    let mut source_batch: Option<RecordBatch> = Some(first_source_batch);
     let mut converted_batch: Option<RecordBatch> = None;
 
     let mut source_offset = 0;
@@ -317,13 +409,13 @@ pub fn validate_source_preservation_with_mode(
             let source_fields = original.schema();
             let converted_fields = output.schema();
 
-            if converted_fields.fields().len() != source_fields.fields().len() + appended_columns {
-                return invalid("converted dataset has unexpected column count");
+            if converted_fields.fields().len() != source_fields.fields().len() {
+                return invalid("projected source column count mismatch");
             }
 
             for (index, field) in source_fields.fields().iter().enumerate() {
                 if converted_fields.field(index) != field.as_ref() {
-                    return invalid(format!("source schema field mismatch at index {index}"));
+                    return invalid(format!("projected source schema mismatch at index {index}"));
                 }
             }
 
@@ -345,7 +437,9 @@ pub fn validate_source_preservation_with_mode(
         if count == 0 {
             return invalid("unexpected empty comparison slice");
         }
-
+        if metrics.columns_compared == 0 {
+            return invalid("source preservation has no columns to compare");
+        }
         for index in 0..metrics.columns_compared {
             let source_slice = original.column(index).slice(source_offset, count);
 
@@ -368,6 +462,12 @@ pub fn validate_source_preservation_with_mode(
 
         source_offset += count;
         converted_offset += count;
+
+        if reporter.is_enabled() && last_progress.elapsed() >= Duration::from_millis(500) {
+            reporter.source_preservation_progress(metrics.events_compared, expected_events);
+
+            last_progress = Instant::now();
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -382,6 +482,8 @@ pub fn validate_source_preservation_with_mode(
     }
 
     metrics.converted_files = converted.files_opened;
+
+    reporter.source_preservation_progress(metrics.events_compared, expected_events);
 
     Ok(metrics)
 }

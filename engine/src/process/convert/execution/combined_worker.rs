@@ -1,5 +1,10 @@
-use std::path::{Path, PathBuf};
-
+use super::{
+    CONVERSION_READ_BATCH_SIZE, CombinedConversionKernel, CombinedConversionMetrics,
+    CombinedReferenceAlignment, CombinedReferenceCheckpoint, CombinedReferenceSelection,
+    ConversionPartition, ConversionPartitionPlan, ConversionPartitionReader,
+    PhysicalCombinedConversionMetrics,
+};
+use crate::process::convert::progress::{ConversionProgress, ConversionWorkerProgress};
 use crate::{
     error::{MarketForgeError, Result},
     job::{ConvertJob, MergeParquetConfig},
@@ -12,13 +17,7 @@ use crate::{
         merge::{PhysicalMergeManifest, UnifiedMergeMode},
     },
 };
-
-use super::{
-    CONVERSION_READ_BATCH_SIZE, CombinedConversionKernel, CombinedConversionMetrics,
-    CombinedReferenceAlignment, CombinedReferenceCheckpoint, CombinedReferenceSelection,
-    ConversionPartition, ConversionPartitionPlan, ConversionPartitionReader,
-    PhysicalCombinedConversionMetrics,
-};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct CombinedPartitionResult {
@@ -29,6 +28,7 @@ pub struct CombinedPartitionResult {
     pub metrics: PhysicalCombinedConversionMetrics,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn execute_combined_partition(
     job: &ConvertJob,
     source_manifest: &PhysicalMergeManifest,
@@ -40,6 +40,64 @@ pub fn execute_combined_partition(
     selection: &CombinedReferenceSelection,
     staging_directory: &Path,
     parquet_config: &MergeParquetConfig,
+) -> Result<CombinedPartitionResult> {
+    execute_combined_partition_impl(
+        job,
+        source_manifest,
+        reference_manifest,
+        plan,
+        partitions,
+        partition,
+        checkpoint,
+        selection,
+        staging_directory,
+        parquet_config,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn execute_combined_partition_with_progress(
+    job: &ConvertJob,
+    source_manifest: &PhysicalMergeManifest,
+    reference_manifest: Option<&PhysicalMergeManifest>,
+    plan: &ConversionPlan,
+    partitions: &ConversionPartitionPlan,
+    partition: &ConversionPartition,
+    checkpoint: &CombinedReferenceCheckpoint,
+    selection: &CombinedReferenceSelection,
+    staging_directory: &Path,
+    parquet_config: &MergeParquetConfig,
+    progress: &mut ConversionWorkerProgress,
+) -> Result<CombinedPartitionResult> {
+    execute_combined_partition_impl(
+        job,
+        source_manifest,
+        reference_manifest,
+        plan,
+        partitions,
+        partition,
+        checkpoint,
+        selection,
+        staging_directory,
+        parquet_config,
+        Some(progress),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_combined_partition_impl(
+    job: &ConvertJob,
+    source_manifest: &PhysicalMergeManifest,
+    reference_manifest: Option<&PhysicalMergeManifest>,
+    plan: &ConversionPlan,
+    partitions: &ConversionPartitionPlan,
+    partition: &ConversionPartition,
+    checkpoint: &CombinedReferenceCheckpoint,
+    selection: &CombinedReferenceSelection,
+    staging_directory: &Path,
+    parquet_config: &MergeParquetConfig,
+    mut progress: Option<&mut ConversionWorkerProgress>,
 ) -> Result<CombinedPartitionResult> {
     job.validate()?;
     source_manifest.validate()?;
@@ -155,6 +213,50 @@ pub fn execute_combined_partition(
             .as_mut()
             .expect("combined writer initialized")
             .write_batch(&converted)?;
+        if let Some(progress) = progress.as_deref_mut() {
+            let physical = writer
+                .as_ref()
+                .expect("combined writer initialized")
+                .metrics();
+
+            let snapshot = ConversionProgress {
+                events_read: conversion_metrics.events_read,
+                events_written: physical.events_written,
+
+                identity_events: conversion_metrics.trade.identity_events
+                    + conversion_metrics.depth.identity_events,
+
+                converted_events: conversion_metrics.trade.converted_events
+                    + conversion_metrics.depth.converted_events,
+
+                unavailable_events: conversion_metrics.trade.unavailable_events
+                    + conversion_metrics.depth.unavailable_events,
+
+                skipped_events: conversion_metrics.skipped_trade_events
+                    + conversion_metrics.skipped_depth_events,
+
+                trade_events: conversion_metrics.trade_events,
+                depth_events: conversion_metrics.depth_events,
+
+                depth_levels_read: conversion_metrics.depth.levels_read
+                    + conversion_metrics.skipped_depth_levels,
+
+                depth_levels_converted: conversion_metrics.depth.levels_converted,
+
+                depth_levels_unavailable: conversion_metrics.depth.levels_unavailable,
+
+                depth_levels_skipped: conversion_metrics.skipped_depth_levels,
+
+                internal_reference_updates: alignment.internal_updates(),
+
+                external_reference_updates: alignment.external_updates(),
+
+                files_written: physical.files_written,
+                row_groups_written: physical.row_groups_written,
+            };
+
+            progress.maybe_update(&snapshot);
+        }
     }
 
     // -------------------------------------------------------------
@@ -269,7 +371,31 @@ pub fn execute_combined_partition(
     {
         return invalid("combined partition physical event-kind mismatch");
     }
+    if let Some(progress) = progress.as_deref_mut() {
+        progress.finish(&ConversionProgress {
+            events_read: metrics.events_read,
+            events_written: metrics.events_written,
 
+            identity_events: metrics.identity_events,
+            converted_events: metrics.converted_events,
+            unavailable_events: metrics.unavailable_events,
+            skipped_events: metrics.skipped_events,
+
+            trade_events: metrics.trade_events,
+            depth_events: metrics.depth_events,
+
+            depth_levels_read: metrics.depth_levels_read,
+            depth_levels_converted: metrics.depth_levels_converted,
+            depth_levels_unavailable: metrics.depth_levels_unavailable,
+            depth_levels_skipped: metrics.depth_levels_skipped,
+
+            internal_reference_updates: metrics.internal_reference_updates,
+            external_reference_updates: metrics.external_reference_updates,
+
+            files_written: metrics.files_written,
+            row_groups_written: metrics.row_groups_written,
+        });
+    }
     Ok(CombinedPartitionResult {
         partition_id: partition.partition_id,
         start_row: partition.start_row,

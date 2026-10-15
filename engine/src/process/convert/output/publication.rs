@@ -1,17 +1,13 @@
 use super::atomic::atomic_publish_directory;
 use super::receipt::ConversionExecutionReceipt;
+use super::source_validation::validate_source_preservation_with_progress;
+use super::validate_converted_depth_parallel_with_progress;
 use super::{
-    combined_parallel_validation::validate_converted_combined_parallel,
-    source_validation::{SourcePreservationMode, validate_source_preservation_with_mode},
+    combined_parallel_validation::validate_converted_combined_parallel_with_progress,
+    source_validation::SourcePreservationMode,
 };
-use super::{
-    depth_parallel_validation::validate_converted_depth_parallel,
-    source_validation::validate_depth_source_preservation,
-};
-use super::{
-    manifest::ConversionManifest, source_validation::validate_source_preservation,
-    validation::validate_converted_trades,
-};
+use super::{manifest::ConversionManifest, validation::validate_converted_trades_with_progress};
+use crate::process::convert::progress::{ConversionPhase, ConversionProgressReporter};
 use crate::process::merge::UnifiedMergeMode;
 use crate::{
     error::{MarketForgeError, Result},
@@ -19,7 +15,6 @@ use crate::{
     process::merge::PhysicalMergeManifest,
 };
 use std::path::{Path, PathBuf};
-
 // -----------------------------------------------------------------------------
 // Publication result
 // -----------------------------------------------------------------------------
@@ -40,6 +35,20 @@ pub fn publish_conversion(
     job: &ConvertJob,
     source_manifest: &PhysicalMergeManifest,
     staging_directory: &Path,
+) -> Result<ConversionPublication> {
+    publish_conversion_with_progress(
+        job,
+        source_manifest,
+        staging_directory,
+        &ConversionProgressReporter::disabled(),
+    )
+}
+
+pub fn publish_conversion_with_progress(
+    job: &ConvertJob,
+    source_manifest: &PhysicalMergeManifest,
+    staging_directory: &Path,
+    reporter: &ConversionProgressReporter,
 ) -> Result<ConversionPublication> {
     job.validate()?;
     source_manifest.validate()?;
@@ -71,8 +80,15 @@ pub fn publish_conversion(
     // -------------------------------------------------------------------------
     // Validate conversion output
     // -------------------------------------------------------------------------
+    reporter.phase_started(ConversionPhase::PhysicalValidation);
+    let validation = validate_converted_trades_with_progress(
+        staging_directory,
+        job.conversion.max_staleness_ns,
+        reporter,
+    )?;
+    reporter.phase_completed(ConversionPhase::PhysicalValidation);
 
-    let validation = validate_converted_trades(staging_directory, job.conversion.max_staleness_ns)?;
+    reporter.phase_started(ConversionPhase::ReceiptReconciliation);
 
     let receipt = ConversionExecutionReceipt::load(staging_directory)?;
 
@@ -89,7 +105,6 @@ pub fn publish_conversion(
             source_manifest.events_written, validation.events,
         ));
     }
-
     if source_manifest.events_written != receipt.events_read {
         return invalid(format!(
             "conversion source/receipt event count mismatch: \
@@ -101,21 +116,34 @@ pub fn publish_conversion(
     if validation.events != source_manifest.events_written {
         return invalid("conversion output event count mismatch");
     }
+    reporter.phase_completed(ConversionPhase::ReceiptReconciliation);
 
     // -------------------------------------------------------------------------
     // Validate source preservation
     // -------------------------------------------------------------------------
 
-    let preservation =
-        validate_source_preservation(&job.input_merge, source_manifest, staging_directory)?;
+    reporter.phase_started(ConversionPhase::SourcePreservation);
+
+    let preservation = validate_source_preservation_with_progress(
+        &job.input_merge,
+        source_manifest,
+        staging_directory,
+        SourcePreservationMode::Full,
+        8,
+        reporter,
+    )?;
 
     if preservation.events_compared != validation.events {
         return invalid("source preservation event count mismatch");
     }
 
+    reporter.phase_completed(ConversionPhase::SourcePreservation);
+
     // -------------------------------------------------------------------------
     // Construct authoritative manifest
     // -------------------------------------------------------------------------
+
+    reporter.phase_started(ConversionPhase::ManifestConstruction);
 
     let manifest = ConversionManifest::build(
         job,
@@ -128,16 +156,26 @@ pub fn publish_conversion(
 
     manifest.validate()?;
 
+    reporter.phase_completed(ConversionPhase::ManifestConstruction);
+
     // -------------------------------------------------------------------------
     // Write manifest into staging
     // -------------------------------------------------------------------------
 
+    reporter.phase_started(ConversionPhase::PublicationPreparation);
+
     let staging_manifest = manifest.write(staging_directory)?;
+
+    reporter.phase_completed(ConversionPhase::PublicationPreparation);
 
     // -------------------------------------------------------------------------
     // Publish directory
     // -------------------------------------------------------------------------
+    reporter.phase_started(ConversionPhase::Commit);
+
     atomic_publish_directory(staging_directory, final_directory)?;
+
+    reporter.phase_completed(ConversionPhase::Commit);
 
     Ok(ConversionPublication {
         dataset_path: final_directory.clone(),
@@ -169,6 +207,22 @@ pub fn publish_depth_conversion(
     staging_directory: &Path,
     workers: usize,
 ) -> Result<ConversionPublication> {
+    publish_depth_conversion_with_progress(
+        job,
+        source_manifest,
+        staging_directory,
+        workers,
+        &ConversionProgressReporter::disabled(),
+    )
+}
+
+pub fn publish_depth_conversion_with_progress(
+    job: &ConvertJob,
+    source_manifest: &PhysicalMergeManifest,
+    staging_directory: &Path,
+    workers: usize,
+    reporter: &ConversionProgressReporter,
+) -> Result<ConversionPublication> {
     job.validate()?;
     source_manifest.validate()?;
 
@@ -193,17 +247,17 @@ pub fn publish_depth_conversion(
     if staging_directory == final_directory {
         return invalid("staging and final directories must differ");
     }
-
-    // Validate all converted depth files.
-    let validation = validate_converted_depth_parallel(
+    reporter.phase_started(ConversionPhase::PhysicalValidation);
+    let validation = validate_converted_depth_parallel_with_progress(
         staging_directory,
         job.conversion.max_staleness_ns,
         workers,
+        reporter,
     )?;
-
+    reporter.phase_completed(ConversionPhase::PhysicalValidation);
+    reporter.phase_started(ConversionPhase::ReceiptReconciliation);
     // Reconcile materialization receipt.
     let receipt = ConversionExecutionReceipt::load(staging_directory)?;
-
     receipt.reconcile_depth(job.job_id, &validation)?;
 
     if source_manifest.events_written != validation.events
@@ -211,20 +265,29 @@ pub fn publish_depth_conversion(
     {
         return invalid("depth source/output event count mismatch");
     }
+    reporter.phase_completed(ConversionPhase::ReceiptReconciliation);
 
     // Verify original source columns remain unchanged.
-    let preservation = validate_depth_source_preservation(
+    reporter.phase_started(ConversionPhase::SourcePreservation);
+
+    let preservation = validate_source_preservation_with_progress(
         &job.input_merge,
         source_manifest,
         staging_directory,
-        None,
+        SourcePreservationMode::Full,
+        7,
+        reporter,
     )?;
 
     if preservation.events_compared != validation.events {
         return invalid("depth source preservation count mismatch");
     }
 
+    reporter.phase_completed(ConversionPhase::SourcePreservation);
+
     // Construct authoritative depth manifest.
+    reporter.phase_started(ConversionPhase::ManifestConstruction);
+
     let manifest = ConversionManifest::build_depth(
         job,
         source_manifest,
@@ -236,11 +299,21 @@ pub fn publish_depth_conversion(
 
     manifest.validate()?;
 
+    reporter.phase_completed(ConversionPhase::ManifestConstruction);
+
     // Write manifest into staging before publication.
+    reporter.phase_started(ConversionPhase::PublicationPreparation);
+
     let staging_manifest = manifest.write(staging_directory)?;
 
+    reporter.phase_completed(ConversionPhase::PublicationPreparation);
+
     // Atomic no-overwrite publication.
+    reporter.phase_started(ConversionPhase::Commit);
+
     atomic_publish_directory(staging_directory, final_directory)?;
+
+    reporter.phase_completed(ConversionPhase::Commit);
 
     Ok(ConversionPublication {
         dataset_path: final_directory.clone(),
@@ -259,6 +332,22 @@ pub fn publish_combined_conversion(
     source_manifest: &PhysicalMergeManifest,
     staging_directory: &Path,
     workers: usize,
+) -> Result<ConversionPublication> {
+    publish_combined_conversion_with_progress(
+        job,
+        source_manifest,
+        staging_directory,
+        workers,
+        &ConversionProgressReporter::disabled(),
+    )
+}
+
+pub fn publish_combined_conversion_with_progress(
+    job: &ConvertJob,
+    source_manifest: &PhysicalMergeManifest,
+    staging_directory: &Path,
+    workers: usize,
+    reporter: &ConversionProgressReporter,
 ) -> Result<ConversionPublication> {
     job.validate()?;
     source_manifest.validate()?;
@@ -303,15 +392,18 @@ pub fn publish_combined_conversion(
     // Parallel physical validation
     // -------------------------------------------------------------------------
 
-    let validation = validate_converted_combined_parallel(
+    reporter.phase_started(ConversionPhase::PhysicalValidation);
+
+    let validation = validate_converted_combined_parallel_with_progress(
         staging_directory,
         job.conversion.max_staleness_ns,
         workers,
+        reporter,
     )?;
 
-    // -------------------------------------------------------------------------
-    // Reconcile execution receipt
-    // -------------------------------------------------------------------------
+    reporter.phase_completed(ConversionPhase::PhysicalValidation);
+
+    reporter.phase_started(ConversionPhase::ReceiptReconciliation);
 
     let receipt = ConversionExecutionReceipt::load(staging_directory)?;
 
@@ -329,26 +421,32 @@ pub fn publish_combined_conversion(
     {
         return invalid("combined source/output event count mismatch");
     }
-
+    reporter.phase_completed(ConversionPhase::ReceiptReconciliation);
     // -------------------------------------------------------------------------
     // Exact source preservation
     // -------------------------------------------------------------------------
+    reporter.phase_started(ConversionPhase::SourcePreservation);
 
-    let preservation = validate_source_preservation_with_mode(
+    let preservation = validate_source_preservation_with_progress(
         &job.input_merge,
         source_manifest,
         staging_directory,
         SourcePreservationMode::Full,
         8,
+        reporter,
     )?;
 
     if preservation.events_compared != validation.events {
         return invalid("combined source preservation count mismatch");
     }
 
+    reporter.phase_completed(ConversionPhase::SourcePreservation);
+
     // -------------------------------------------------------------------------
     // Construct authoritative combined manifest
     // -------------------------------------------------------------------------
+
+    reporter.phase_started(ConversionPhase::ManifestConstruction);
 
     let manifest = ConversionManifest::build_combined(
         job,
@@ -361,17 +459,27 @@ pub fn publish_combined_conversion(
 
     manifest.validate()?;
 
+    reporter.phase_completed(ConversionPhase::ManifestConstruction);
+
     // -------------------------------------------------------------------------
     // Write manifest into staging
     // -------------------------------------------------------------------------
 
+    reporter.phase_started(ConversionPhase::PublicationPreparation);
+
     let staging_manifest = manifest.write(staging_directory)?;
+
+    reporter.phase_completed(ConversionPhase::PublicationPreparation);
 
     // -------------------------------------------------------------------------
     // Atomic no-overwrite publication
     // -------------------------------------------------------------------------
 
+    reporter.phase_started(ConversionPhase::Commit);
+
     atomic_publish_directory(staging_directory, final_directory)?;
+
+    reporter.phase_completed(ConversionPhase::Commit);
 
     Ok(ConversionPublication {
         dataset_path: final_directory.clone(),

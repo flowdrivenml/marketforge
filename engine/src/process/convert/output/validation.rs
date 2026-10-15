@@ -7,15 +7,15 @@ use arrow_array::{
 use arrow_schema::SchemaRef;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
-use crate::{
-    error::{MarketForgeError, Result},
-    process::convert::{ConversionDecimal, reference::ReferenceKey},
-};
-
 use super::schema::{
     CONVERSION_FAILURE_ARITHMETIC, CONVERSION_FAILURE_FUTURE, CONVERSION_FAILURE_IDENTITY_MISMATCH,
     CONVERSION_FAILURE_MISSING, CONVERSION_FAILURE_NO_PATH, CONVERSION_FAILURE_STALE,
     CONVERSION_STATUS_CONVERTED, CONVERSION_STATUS_IDENTITY, CONVERSION_STATUS_UNAVAILABLE,
+};
+use crate::process::convert::progress::ConversionProgressReporter;
+use crate::{
+    error::{MarketForgeError, Result},
+    process::convert::{ConversionDecimal, reference::ReferenceKey},
 };
 
 pub const CONVERSION_VALIDATION_BATCH_SIZE: usize = 65_536;
@@ -39,8 +39,20 @@ pub fn validate_converted_trades(
     directory: &Path,
     max_staleness_ns: u64,
 ) -> Result<ConversionValidationMetrics> {
-    let files = super::files::discover_conversion_files(directory)?;
+    validate_converted_trades_with_progress(
+        directory,
+        max_staleness_ns,
+        &ConversionProgressReporter::disabled(),
+    )
+}
 
+pub fn validate_converted_trades_with_progress(
+    directory: &Path,
+    max_staleness_ns: u64,
+    reporter: &ConversionProgressReporter,
+) -> Result<ConversionValidationMetrics> {
+    let files = super::files::discover_conversion_files(directory)?;
+    reporter.validation_started(files.len() as u64, 0);
     let mut metrics = ConversionValidationMetrics::default();
 
     let mut expected_schema: Option<SchemaRef> = None;
@@ -78,11 +90,14 @@ pub fn validate_converted_trades(
 
             validate_batch(&batch, max_staleness_ns, &mut previous_key, &mut metrics)?;
         }
+        reporter.validation_progress(metrics.files, metrics.events, metrics.row_groups);
     }
 
     if metrics.events != metrics.identity + metrics.converted + metrics.unavailable {
         return invalid("conversion status accounting mismatch");
     }
+
+    reporter.validation_completed(metrics.files, metrics.events, metrics.row_groups);
 
     Ok(metrics)
 }

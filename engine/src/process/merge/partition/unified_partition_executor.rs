@@ -1,10 +1,4 @@
-use std::{collections::HashSet, fs, path::Path};
-
-use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeParquetConfig,
-};
-
+use super::progress::MergeWorkerProgress;
 use super::{
     boundary::DepthBoundaryLink,
     event::MergeEventKind,
@@ -19,6 +13,11 @@ use super::{
     unified_timeline::UnifiedTimelineRecord,
     unified_writer::UnifiedTimelineWriter,
 };
+use crate::{
+    error::{MarketForgeError, Result},
+    job::MergeParquetConfig,
+};
+use std::{collections::HashSet, fs, path::Path};
 
 // -----------------------------------------------------------------------------
 // Unified partition result
@@ -56,6 +55,52 @@ pub fn execute_unified_partition(
     dataset_order: &[u64],
     parquet: &MergeParquetConfig,
     staging: &Path,
+) -> Result<UnifiedPartitionResult> {
+    execute_unified_partition_impl(
+        plan,
+        trade_inventory,
+        depth_inventory,
+        boundaries,
+        dataset_order,
+        parquet,
+        staging,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn execute_unified_partition_with_progress(
+    plan: &UnifiedPartitionInputPlan,
+    trade_inventory: &[TradeTaskInventory],
+    depth_inventory: &[DepthTaskInventory],
+    boundaries: &[DepthBoundaryLink],
+    dataset_order: &[u64],
+    parquet: &MergeParquetConfig,
+    staging: &Path,
+    progress: &mut MergeWorkerProgress,
+) -> Result<UnifiedPartitionResult> {
+    execute_unified_partition_impl(
+        plan,
+        trade_inventory,
+        depth_inventory,
+        boundaries,
+        dataset_order,
+        parquet,
+        staging,
+        Some(progress),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_unified_partition_impl(
+    plan: &UnifiedPartitionInputPlan,
+    trade_inventory: &[TradeTaskInventory],
+    depth_inventory: &[DepthTaskInventory],
+    boundaries: &[DepthBoundaryLink],
+    dataset_order: &[u64],
+    parquet: &MergeParquetConfig,
+    staging: &Path,
+    mut progress: Option<&mut MergeWorkerProgress>,
 ) -> Result<UnifiedPartitionResult> {
     let partition = plan.partition;
 
@@ -150,6 +195,9 @@ pub fn execute_unified_partition(
     // -------------------------------------------------------------------------
 
     while let Some(merged) = merger.next_event()? {
+        if let Some(reporter) = progress.as_deref_mut() {
+            reporter.maybe_update(merger.events_emitted());
+        }
         let timestamp = merged.event.timestamp_ns();
 
         if !partition.contains(timestamp) {
@@ -252,7 +300,9 @@ pub fn execute_unified_partition(
     // -------------------------------------------------------------------------
 
     let skipped_initializations = merger.skipped_initializations();
-
+    if let Some(reporter) = progress.as_deref_mut() {
+        reporter.finish(metrics.events_written);
+    }
     Ok(UnifiedPartitionResult {
         partition_id: partition.partition_id,
 

@@ -154,25 +154,42 @@ fn failed_processing_persists_failure_report() {
     // Verify partial processing metrics
     // -------------------------------------------------------------------------
 
-    // Both the completed first task and failed second task
-    // must appear in the processing report.
+    // -------------------------------------------------------------------------
+    // Verify preflight failure metrics
+    // -------------------------------------------------------------------------
+
+    // Resource estimation validates all source archives before launching
+    // processing workers.
+    //
+    // The second task references a missing archive, so the executor must
+    // reject the job before executing any tasks.
+
     assert_eq!(
         report.processing_metrics.tasks.len(),
-        3,
-        "failure report must preserve all attempted tasks"
+        0,
+        "preflight failure must not produce executed task reports"
     );
 
-    assert!(
-        report.processing_metrics.counters.records_read > 0,
-        "completed first task should contribute records"
+    assert_eq!(
+        report.processing_metrics.counters.records_read, 0,
+        "preflight failure must not read source records"
     );
 
-    assert_eq!(report.processing_metrics.counters.tasks_completed, 2);
+    assert_eq!(report.processing_metrics.counters.records_matched, 0,);
 
-    assert_eq!(report.processing_metrics.counters.tasks_failed, 1);
+    assert_eq!(report.processing_metrics.counters.records_rejected, 0,);
 
-    // The second task failed before source records were decoded.
-    assert_eq!(report.processing_metrics.tasks[1].counters.records_read, 0);
+    assert_eq!(report.processing_metrics.counters.events_written, 0,);
+
+    assert_eq!(
+        report.processing_metrics.counters.tasks_completed, 0,
+        "no tasks should complete during preflight"
+    );
+
+    assert_eq!(
+        report.processing_metrics.counters.tasks_failed, 0,
+        "preflight rejection is not a worker execution failure"
+    );
 
     // -------------------------------------------------------------------------
     // Verify integrity evaluation

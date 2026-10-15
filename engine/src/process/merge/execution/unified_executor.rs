@@ -1,21 +1,24 @@
-use std::path::{Path, PathBuf};
-
-use crate::{
-    error::{MarketForgeError, Result},
-    job::{ContentType, MergeJob},
-};
-
+use super::progress::{MergePhase, MergeProgressReporter};
+use super::validate_physical_dataset_with_progress;
 use super::{
     MergeBoundaryRecord, MergeCommitPaths, MergeInputDataset, PhysicalMergeManifest,
     UnifiedMergeMode, UnifiedMergeStreamKind, build_depth_inventory, build_materialization_plans,
     build_merge_checkpoints, build_physical_checkpoints, build_trade_inventory,
-    depth_task_intervals, execute_parallel_materialization, execute_unified_partitions_parallel,
-    plan_merge_partitions, plan_unified_partition_inputs, prepare_physical_publication,
-    reconcile_depth_boundaries, resolve_initial_checkpoints, resolve_merge_inputs,
-    resolve_physical_initial_reconstruction, resolve_unified_merge_streams, trade_task_intervals,
-    validate_physical_dataset, validate_unified_merge_output,
+    depth_task_intervals, plan_merge_partitions, plan_unified_partition_inputs,
+    prepare_physical_publication, reconcile_depth_boundaries, resolve_initial_checkpoints,
+    resolve_merge_inputs, resolve_physical_initial_reconstruction, resolve_unified_merge_streams,
+    trade_task_intervals, validate_unified_merge_output,
 };
+use crate::{
+    error::{MarketForgeError, Result},
+    job::{ContentType, MergeJob},
+};
+use std::path::{Path, PathBuf};
 
+use super::{
+    execute_parallel_materialization_with_progress,
+    execute_unified_partitions_parallel_with_progress,
+};
 // -----------------------------------------------------------------------------
 // Execution result
 // -----------------------------------------------------------------------------
@@ -50,17 +53,37 @@ pub fn execute_unified_merge_job(
     job: &MergeJob,
     project_root: &Path,
 ) -> Result<UnifiedMergeExecutionResult> {
+    execute_unified_merge_job_with_progress(job, project_root, &MergeProgressReporter::disabled())
+}
+
+pub fn execute_unified_merge_job_with_progress(
+    job: &MergeJob,
+    project_root: &Path,
+    reporter: &MergeProgressReporter,
+) -> Result<UnifiedMergeExecutionResult> {
+    let result = execute_unified_merge_job_inner(job, project_root, reporter);
+
+    reporter.finished(result.is_ok());
+
+    result
+}
+
+fn execute_unified_merge_job_inner(
+    job: &MergeJob,
+    project_root: &Path,
+    reporter: &MergeProgressReporter,
+) -> Result<UnifiedMergeExecutionResult> {
     job.validate()?;
     let execution_started = std::time::Instant::now();
 
     // -------------------------------------------------------------------------
     // Resolve and classify input datasets
     // -------------------------------------------------------------------------
-
+    reporter.phase_started(MergePhase::InputResolution);
     let resolved = profile_stage("input_resolution", || {
         resolve_merge_inputs(job, project_root)
     })?;
-
+    reporter.phase_completed(MergePhase::InputResolution);
     let streams = resolve_unified_merge_streams(&resolved, project_root)?;
 
     let mut trade_inputs = Vec::new();
@@ -90,12 +113,13 @@ pub fn execute_unified_merge_job(
     // -------------------------------------------------------------------------
     // Build source inventories
     // -------------------------------------------------------------------------
-
+    reporter.phase_started(MergePhase::Inventory);
     let trade_inventory =
         profile_stage("trade_inventory", || build_trade_inventory(&trade_inputs))?;
 
     let depth_inventory =
         profile_stage("depth_inventory", || build_depth_inventory(&depth_inputs))?;
+    reporter.phase_completed(MergePhase::Inventory);
 
     let boundaries = profile_stage("depth_boundaries", || {
         reconcile_depth_boundaries(&depth_inventory)
@@ -164,21 +188,26 @@ pub fn execute_unified_merge_job(
     // Execute logical merge partitions
     // -------------------------------------------------------------------------
 
+    reporter.phase_started(MergePhase::LogicalMerge);
+
     let results = profile_stage("logical_merge", || {
-        execute_unified_partitions_parallel(
+        execute_unified_partitions_parallel_with_progress(
             job,
             plans,
             &trade_inventory,
             &depth_inventory,
             &boundaries,
             &logical_staging,
+            reporter,
         )
     })?;
+
+    reporter.phase_completed(MergePhase::LogicalMerge);
 
     // -------------------------------------------------------------------------
     // Validate logical timeline references
     // -------------------------------------------------------------------------
-
+    reporter.phase_started(MergePhase::LogicalValidation);
     let validated = profile_stage("logical_validation", || {
         validate_unified_merge_output(
             &logical_staging,
@@ -188,7 +217,7 @@ pub fn execute_unified_merge_job(
             &depth_inventory,
         )
     })?;
-
+    reporter.phase_completed(MergePhase::LogicalValidation);
     let expected_trade_events = results.iter().try_fold(0_u64, |total, result| {
         total
             .checked_add(result.trade_events)
@@ -241,8 +270,10 @@ pub fn execute_unified_merge_job(
     // Execute parallel physical materialization
     // -------------------------------------------------------------------------
 
+    reporter.phase_started(MergePhase::PhysicalMaterialization);
+
     let physical_results = profile_stage("physical_materialization", || {
-        execute_parallel_materialization(
+        execute_parallel_materialization_with_progress(
             materialization_plans,
             &trade_inventory,
             &depth_inventory,
@@ -250,16 +281,25 @@ pub fn execute_unified_merge_job(
             mode,
             job,
             &physical_staging,
+            reporter,
         )
     })?;
+
+    reporter.phase_completed(MergePhase::PhysicalMaterialization);
 
     // -------------------------------------------------------------------------
     // Validate physical Parquet dataset
     // -------------------------------------------------------------------------
-
+    reporter.phase_started(MergePhase::PhysicalValidation);
     let physical_validated = profile_stage("physical_validation", || {
-        validate_physical_dataset(&physical_staging, mode, &physical_results)
+        validate_physical_dataset_with_progress(
+            &physical_staging,
+            mode,
+            &physical_results,
+            reporter,
+        )
     })?;
+    reporter.phase_completed(MergePhase::PhysicalValidation);
     // -------------------------------------------------------------------------
     // Verify logical and physical event counts
     // -------------------------------------------------------------------------
@@ -297,6 +337,8 @@ pub fn execute_unified_merge_job(
     // Resolve physical reconstruction checkpoints
     // -------------------------------------------------------------------------
 
+    reporter.phase_started(MergePhase::Checkpoints);
+
     let physical_checkpoints = profile_stage("physical_checkpoints", || {
         build_physical_checkpoints(
             &physical_staging,
@@ -307,6 +349,8 @@ pub fn execute_unified_merge_job(
             job.time_range,
         )
     })?;
+
+    reporter.phase_completed(MergePhase::Checkpoints);
 
     // -------------------------------------------------------------------------
     // Resolve independent physical reconstruction availability
@@ -335,7 +379,7 @@ pub fn execute_unified_merge_job(
     // -------------------------------------------------------------------------
     // Construct physical dataset manifest
     // -------------------------------------------------------------------------
-
+    reporter.phase_started(MergePhase::Manifest);
     let physical_manifest = PhysicalMergeManifest::new(
         job.job_id,
         mode,
@@ -348,26 +392,32 @@ pub fn execute_unified_merge_job(
         physical_checkpoints,
         initial_reconstruction,
     )?;
-
     // -------------------------------------------------------------------------
     // Validate physical manifest
     // -------------------------------------------------------------------------
 
     physical_manifest.validate()?;
-
+    reporter.phase_completed(MergePhase::Manifest);
     // -------------------------------------------------------------------------
     // Prepare physical-only publication layout
     // -------------------------------------------------------------------------
+    reporter.phase_started(MergePhase::PublicationPreparation);
 
     profile_stage("publication_preparation", || {
         prepare_physical_publication(&commit.staging_path, &physical_manifest)
     })?;
 
+    reporter.phase_completed(MergePhase::PublicationPreparation);
+
     // -------------------------------------------------------------------------
     // Transactional publication
     // -------------------------------------------------------------------------
 
+    reporter.phase_started(MergePhase::Commit);
+
     profile_stage("transactional_commit", || commit.commit())?;
+
+    reporter.phase_completed(MergePhase::Commit);
 
     // -------------------------------------------------------------------------
     // Transactional publication

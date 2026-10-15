@@ -6,6 +6,9 @@ pub mod job;
 pub mod normalize;
 pub mod validate;
 
+#[cfg(feature = "monitor-tui")]
+pub mod tui;
+
 #[cfg(feature = "process")]
 pub mod decode;
 

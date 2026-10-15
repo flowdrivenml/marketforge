@@ -1,11 +1,4 @@
-use std::{collections::HashSet, path::Path};
-
-use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeJob,
-    process::{resources::ResourceBudget, scheduler::execute_parallel_budgeted},
-};
-
+use super::progress::{MergePhase, MergeProgressReporter, PartitionKey};
 use super::{
     boundary::DepthBoundaryLink,
     inventory::DepthTaskInventory,
@@ -14,6 +7,12 @@ use super::{
     unified_partition_executor::{UnifiedPartitionResult, execute_unified_partition},
     unified_partition_input::UnifiedPartitionInputPlan,
 };
+use crate::{
+    error::{MarketForgeError, Result},
+    job::MergeJob,
+    process::{resources::ResourceBudget, scheduler::execute_parallel_budgeted},
+};
+use std::{collections::HashSet, path::Path};
 
 // -----------------------------------------------------------------------------
 // Parallel unified merge execution
@@ -27,12 +26,32 @@ pub fn execute_unified_partitions_parallel(
     boundaries: &[DepthBoundaryLink],
     staging: &Path,
 ) -> Result<Vec<UnifiedPartitionResult>> {
+    execute_unified_partitions_parallel_with_progress(
+        job,
+        plans,
+        trade_inventory,
+        depth_inventory,
+        boundaries,
+        staging,
+        &MergeProgressReporter::disabled(),
+    )
+}
+
+pub fn execute_unified_partitions_parallel_with_progress(
+    job: &MergeJob,
+    plans: Vec<UnifiedPartitionInputPlan>,
+    trade_inventory: &[TradeTaskInventory],
+    depth_inventory: &[DepthTaskInventory],
+    boundaries: &[DepthBoundaryLink],
+    staging: &Path,
+    reporter: &MergeProgressReporter,
+) -> Result<Vec<UnifiedPartitionResult>> {
     if plans.is_empty() {
         return invalid("parallel unified merge requires partitions");
     }
 
     validate_plans(&plans, job)?;
-
+    reporter.partitions_planned(MergePhase::LogicalMerge, plans.len());
     const MIB: u64 = 1024 * 1024;
 
     let memory_budget_bytes = job
@@ -65,7 +84,14 @@ pub fn execute_unified_partitions_parallel(
             estimate_merge_stream_resources(stream_count, &job.parquet)
         },
         |plan| {
-            execute_unified_partition(
+            let key = PartitionKey {
+                phase: MergePhase::LogicalMerge,
+                partition_id: plan.partition.partition_id,
+            };
+
+            reporter.partition_started(key);
+
+            let result = execute_unified_partition(
                 &plan,
                 trade_inventory,
                 depth_inventory,
@@ -73,7 +99,19 @@ pub fn execute_unified_partitions_parallel(
                 &job.inputs,
                 &job.parquet,
                 staging,
-            )
+            );
+
+            match &result {
+                Ok(partition) => {
+                    reporter.partition_completed(key, partition.events_written);
+                }
+
+                Err(error) => {
+                    reporter.partition_failed(key, error.to_string());
+                }
+            }
+
+            result
         },
     )?;
 

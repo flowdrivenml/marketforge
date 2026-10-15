@@ -1,10 +1,6 @@
-use std::{
-    collections::VecDeque,
-    path::Path,
-    sync::{Arc, Mutex},
-    thread,
+use crate::process::convert::progress::{
+    ConversionPartitionKey, ConversionProgress, ConversionProgressReporter,
 };
-
 use crate::{
     error::{MarketForgeError, Result},
     job::{ConvertJob, MergeParquetConfig},
@@ -13,12 +9,19 @@ use crate::{
         merge::{PhysicalMergeManifest, UnifiedMergeMode},
     },
 };
+use std::{
+    collections::VecDeque,
+    path::Path,
+    sync::{Arc, Mutex},
+    thread,
+};
 
+use super::execute_depth_partition_with_progress;
 use super::{
     ConversionPartitionPlan, DepthPartitionResult, DepthReferencePrepass,
     PhysicalDepthConversionMetrics, execute_depth_partition,
 };
-
+use crate::process::convert::progress::ConversionWorkerProgress;
 // -----------------------------------------------------------------------------
 // Parallel depth conversion result
 // -----------------------------------------------------------------------------
@@ -34,6 +37,7 @@ pub struct ParallelDepthConversionResult {
 // Execute depth partitions concurrently
 // -----------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 pub fn execute_parallel_depth_conversion(
     job: &ConvertJob,
     source_manifest: &PhysicalMergeManifest,
@@ -44,6 +48,33 @@ pub fn execute_parallel_depth_conversion(
     staging_directory: &Path,
     requested_workers: usize,
     parquet_config: &MergeParquetConfig,
+) -> Result<ParallelDepthConversionResult> {
+    execute_parallel_depth_conversion_with_progress(
+        job,
+        source_manifest,
+        reference_manifest,
+        plan,
+        partitions,
+        prepass,
+        staging_directory,
+        requested_workers,
+        parquet_config,
+        &ConversionProgressReporter::disabled(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn execute_parallel_depth_conversion_with_progress(
+    job: &ConvertJob,
+    source_manifest: &PhysicalMergeManifest,
+    reference_manifest: &PhysicalMergeManifest,
+    plan: &ConversionPlan,
+    partitions: &ConversionPartitionPlan,
+    prepass: &DepthReferencePrepass,
+    staging_directory: &Path,
+    requested_workers: usize,
+    parquet_config: &MergeParquetConfig,
+    reporter: &ConversionProgressReporter,
 ) -> Result<ParallelDepthConversionResult> {
     job.validate()?;
     source_manifest.validate()?;
@@ -93,7 +124,7 @@ pub fn execute_parallel_depth_conversion(
     }
 
     let workers_used = requested_workers.min(partitions.partitions.len());
-
+    reporter.partitions_planned(partitions.partitions.len());
     // -------------------------------------------------------------------------
     // Shared work queue
     // -------------------------------------------------------------------------
@@ -132,17 +163,78 @@ pub fn execute_parallel_depth_conversion(
                     let partition = &partitions.partitions[index];
                     let checkpoint = &prepass.checkpoints[index];
 
-                    let result = execute_depth_partition(
-                        job,
-                        source_manifest,
-                        reference_manifest,
-                        plan,
-                        partitions,
-                        partition,
-                        checkpoint,
-                        staging_directory,
-                        parquet_config,
-                    )?;
+                    let key = ConversionPartitionKey {
+                        partition_id: partition.partition_id,
+                    };
+
+                    reporter.partition_started(key);
+
+                    let execution = if reporter.is_enabled() {
+                        let mut progress = ConversionWorkerProgress::new(reporter, key);
+
+                        execute_depth_partition_with_progress(
+                            job,
+                            source_manifest,
+                            reference_manifest,
+                            plan,
+                            partitions,
+                            partition,
+                            checkpoint,
+                            staging_directory,
+                            parquet_config,
+                            &mut progress,
+                        )
+                    } else {
+                        execute_depth_partition(
+                            job,
+                            source_manifest,
+                            reference_manifest,
+                            plan,
+                            partitions,
+                            partition,
+                            checkpoint,
+                            staging_directory,
+                            parquet_config,
+                        )
+                    };
+
+                    let result = match execution {
+                        Ok(result) => {
+                            let metrics = &result.metrics;
+
+                            reporter.partition_completed(
+                                key,
+                                ConversionProgress {
+                                    events_read: metrics.events_read,
+                                    events_written: metrics.events_written,
+
+                                    identity_events: metrics.identity_events,
+                                    converted_events: metrics.converted_events,
+                                    unavailable_events: metrics.unavailable_events,
+
+                                    depth_events: metrics.events_read,
+
+                                    depth_levels_read: metrics.levels_read,
+                                    depth_levels_converted: metrics.levels_converted,
+                                    depth_levels_unavailable: metrics.levels_unavailable,
+
+                                    external_reference_updates: metrics.reference_updates,
+
+                                    files_written: metrics.files_written,
+                                    row_groups_written: metrics.row_groups_written,
+
+                                    ..ConversionProgress::default()
+                                },
+                            );
+
+                            result
+                        }
+
+                        Err(error) => {
+                            reporter.partition_failed(key, error.to_string());
+                            return Err(error);
+                        }
+                    };
 
                     results
                         .lock()

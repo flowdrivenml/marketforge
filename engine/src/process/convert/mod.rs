@@ -6,6 +6,7 @@ mod executor;
 mod graph;
 pub mod output;
 mod planner;
+pub mod progress;
 pub mod reference;
 mod trade;
 

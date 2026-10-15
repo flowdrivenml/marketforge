@@ -1,3 +1,5 @@
+use super::sink::TradeSink;
+use crate::process::progress::WorkerProgress;
 use crate::{
     decode::CsvDecoder,
     error::{MarketForgeError, Result},
@@ -6,8 +8,6 @@ use crate::{
     },
     source::with_source_reader,
 };
-
-use super::sink::TradeSink;
 use crate::{
     job::{IntegrityPolicy, TargetSchema, WorkTask},
     process::metrics::{
@@ -144,6 +144,35 @@ pub fn process_trade_task_with_metrics<S: TradeSink>(
     policy: &IntegrityPolicy,
     previous_job_integrity: &ScopedIntegrityMetrics,
 ) -> Result<()> {
+    process_trade_task_with_metrics_impl(task, sink, metrics, policy, previous_job_integrity, None)
+}
+
+pub fn process_trade_task_with_metrics_and_progress<S: TradeSink>(
+    task: &WorkTask,
+    sink: &mut S,
+    metrics: &mut TaskMetrics,
+    policy: &IntegrityPolicy,
+    previous_job_integrity: &ScopedIntegrityMetrics,
+    progress: &mut WorkerProgress,
+) -> Result<()> {
+    process_trade_task_with_metrics_impl(
+        task,
+        sink,
+        metrics,
+        policy,
+        previous_job_integrity,
+        Some(progress),
+    )
+}
+
+fn process_trade_task_with_metrics_impl<S: TradeSink>(
+    task: &WorkTask,
+    sink: &mut S,
+    metrics: &mut TaskMetrics,
+    policy: &IntegrityPolicy,
+    previous_job_integrity: &ScopedIntegrityMetrics,
+    mut progress: Option<&mut WorkerProgress>,
+) -> Result<()> {
     let normalization = task
         .normalizations
         .iter()
@@ -203,6 +232,9 @@ pub fn process_trade_task_with_metrics<S: TradeSink>(
             let mut matcher = InstrumentMatcher::from_task(&headers, task)?;
 
             for (index, record) in decoder.records().enumerate() {
+                if let Some(reporter) = progress.as_deref_mut() {
+                    reporter.maybe_update(&metrics.counters);
+                }
                 let source_record = u64::try_from(index)
                     .ok()
                     .and_then(|value| value.checked_add(1))
@@ -345,7 +377,7 @@ pub fn process_trade_task_with_metrics<S: TradeSink>(
         },
     );
 
-    match result {
+    let outcome = match result {
         Ok(()) => {
             metrics.counters.tasks_completed += 1;
 
@@ -359,7 +391,14 @@ pub fn process_trade_task_with_metrics<S: TradeSink>(
 
             Err(error)
         }
+    };
+
+    // Publish the final counters, including partial progress on failure.
+    if let Some(reporter) = progress.as_deref_mut() {
+        reporter.finish(&metrics.counters);
     }
+
+    outcome
 }
 
 fn increment(counter: &mut u64, name: &str) -> Result<()> {

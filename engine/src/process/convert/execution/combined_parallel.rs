@@ -1,10 +1,12 @@
-use std::{
-    collections::VecDeque,
-    path::Path,
-    sync::{Arc, Mutex},
-    thread,
+use super::execute_combined_partition_with_progress;
+use super::{
+    CombinedPartitionResult, CombinedReferencePrepass, CombinedReferenceSelection,
+    ConversionPartitionPlan, PhysicalCombinedConversionMetrics, execute_combined_partition,
 };
-
+use crate::process::convert::progress::ConversionWorkerProgress;
+use crate::process::convert::progress::{
+    ConversionPartitionKey, ConversionProgress, ConversionProgressReporter,
+};
 use crate::{
     error::{MarketForgeError, Result},
     job::{ConvertJob, MergeParquetConfig},
@@ -13,12 +15,12 @@ use crate::{
         merge::{PhysicalMergeManifest, UnifiedMergeMode},
     },
 };
-
-use super::{
-    CombinedPartitionResult, CombinedReferencePrepass, CombinedReferenceSelection,
-    ConversionPartitionPlan, PhysicalCombinedConversionMetrics, execute_combined_partition,
+use std::{
+    collections::VecDeque,
+    path::Path,
+    sync::{Arc, Mutex},
+    thread,
 };
-
 // -----------------------------------------------------------------------------
 // Parallel execution result
 // -----------------------------------------------------------------------------
@@ -45,6 +47,35 @@ pub fn execute_parallel_combined_conversion(
     staging_directory: &Path,
     requested_workers: usize,
     parquet_config: &MergeParquetConfig,
+) -> Result<ParallelCombinedConversionResult> {
+    execute_parallel_combined_conversion_with_progress(
+        job,
+        source_manifest,
+        reference_manifest,
+        plan,
+        partitions,
+        prepass,
+        selection,
+        staging_directory,
+        requested_workers,
+        parquet_config,
+        &ConversionProgressReporter::disabled(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn execute_parallel_combined_conversion_with_progress(
+    job: &ConvertJob,
+    source_manifest: &PhysicalMergeManifest,
+    reference_manifest: Option<&PhysicalMergeManifest>,
+    plan: &ConversionPlan,
+    partitions: &ConversionPartitionPlan,
+    prepass: &CombinedReferencePrepass,
+    selection: &CombinedReferenceSelection,
+    staging_directory: &Path,
+    requested_workers: usize,
+    parquet_config: &MergeParquetConfig,
+    reporter: &ConversionProgressReporter,
 ) -> Result<ParallelCombinedConversionResult> {
     job.validate()?;
     source_manifest.validate()?;
@@ -108,6 +139,7 @@ pub fn execute_parallel_combined_conversion(
     }
 
     let workers_used = requested_workers.min(partitions.partitions.len());
+    reporter.partitions_planned(partitions.partitions.len());
 
     // -------------------------------------------------------------------------
     // Shared work queue
@@ -147,18 +179,83 @@ pub fn execute_parallel_combined_conversion(
                     let partition = &partitions.partitions[index];
                     let checkpoint = &prepass.checkpoints[index];
 
-                    let result = execute_combined_partition(
-                        job,
-                        source_manifest,
-                        reference_manifest,
-                        plan,
-                        partitions,
-                        partition,
-                        checkpoint,
-                        selection,
-                        staging_directory,
-                        parquet_config,
-                    )?;
+                    let key = ConversionPartitionKey {
+                        partition_id: partition.partition_id,
+                    };
+
+                    reporter.partition_started(key);
+
+                    let execution = if reporter.is_enabled() {
+                        let mut progress = ConversionWorkerProgress::new(reporter, key);
+
+                        execute_combined_partition_with_progress(
+                            job,
+                            source_manifest,
+                            reference_manifest,
+                            plan,
+                            partitions,
+                            partition,
+                            checkpoint,
+                            selection,
+                            staging_directory,
+                            parquet_config,
+                            &mut progress,
+                        )
+                    } else {
+                        execute_combined_partition(
+                            job,
+                            source_manifest,
+                            reference_manifest,
+                            plan,
+                            partitions,
+                            partition,
+                            checkpoint,
+                            selection,
+                            staging_directory,
+                            parquet_config,
+                        )
+                    };
+
+                    let result = match execution {
+                        Ok(result) => {
+                            let metrics = &result.metrics;
+
+                            reporter.partition_completed(
+                                key,
+                                ConversionProgress {
+                                    events_read: metrics.events_read,
+                                    events_written: metrics.events_written,
+
+                                    identity_events: metrics.identity_events,
+                                    converted_events: metrics.converted_events,
+                                    unavailable_events: metrics.unavailable_events,
+                                    skipped_events: metrics.skipped_events,
+
+                                    trade_events: metrics.trade_events,
+                                    depth_events: metrics.depth_events,
+
+                                    depth_levels_read: metrics.depth_levels_read,
+                                    depth_levels_converted: metrics.depth_levels_converted,
+                                    depth_levels_unavailable: metrics.depth_levels_unavailable,
+                                    depth_levels_skipped: metrics.depth_levels_skipped,
+
+                                    internal_reference_updates: metrics.internal_reference_updates,
+                                    external_reference_updates: metrics.external_reference_updates,
+
+                                    files_written: metrics.files_written,
+                                    row_groups_written: metrics.row_groups_written,
+                                },
+                            );
+
+                            result
+                        }
+
+                        Err(error) => {
+                            reporter.partition_failed(key, error.to_string());
+
+                            return Err(error);
+                        }
+                    };
 
                     results
                         .lock()

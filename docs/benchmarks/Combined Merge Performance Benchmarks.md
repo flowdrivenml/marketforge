@@ -14,21 +14,21 @@ Production benchmark of MarketForge's Rust engine for physically merging histori
 
 ## Configuration
 
-| Parameter | Value |
-|---|---|
-| Merge mode | Combined (trades + depth) |
-| Benchmark interval | September 1–4, 2026 (72 hours) |
-| Workers | 24 |
-| Partitions | 48 |
-| Repetitions | 1 |
-| Parquet row-group target | 128 MiB |
-| Parquet file target | 512 MiB |
-| Compression | ZSTD level 3 |
-| Memory budget | 60 GiB |
-| Maximum open files | 1,024 |
-| Physical materialization | Enabled |
-| Physical validation | Enabled |
-| Transactional commits | Enabled |
+| Parameter                | Value                          |
+| ------------------------ | ------------------------------ |
+| Merge mode               | Combined (trades + depth)      |
+| Benchmark interval       | September 1–4, 2026 (72 hours) |
+| Workers                  | 24                             |
+| Partitions               | 48                             |
+| Repetitions              | 1                              |
+| Parquet row-group target | 128 MiB                        |
+| Parquet file target      | 512 MiB                        |
+| Compression              | ZSTD level 3                   |
+| Memory budget            | 60 GiB                         |
+| Maximum open files       | 1,024                          |
+| Physical materialization | Enabled                        |
+| Physical validation      | Enabled                        |
+| Transactional commits    | Enabled                        |
 
 The benchmark measures the production pipeline: dataset discovery, inventory construction, depth-boundary reconciliation, partition planning, chronological event merging, canonical row resolution, physical Parquet writing, validation, and transactional publication.
 

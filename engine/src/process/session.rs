@@ -1,28 +1,34 @@
 use std::{collections::HashSet, path::PathBuf};
 
-use super::{
-    config::{ProcessingConfig, validate_resources},
-    resources::{ResourceBudget, estimate_task_resources},
-    scheduler::execute_parallel_budgeted,
-    task::{TaskExecution, execute_task},
-};
-use crate::job::{ContentType, TargetSchema};
-use crate::{
-    error::{MarketForgeError, Result},
-    job::{ProcessingJob, WorkTask, validate_processing_job_structure},
-};
-
+use super::progress::{ProgressReporter, ProgressTaskId};
 use super::{
     ProcessingResult,
     executor::{
         ExecutionContext, finalize_processing_job, persist_processing_failure, prepare_staging,
     },
 };
+use super::{
+    config::{ProcessingConfig, validate_resources},
+    resources::{ResourceBudget, estimate_task_resources},
+    scheduler::execute_parallel_budgeted,
+    task::{TaskExecution, execute_task, execute_task_with_progress},
+};
+use crate::job::{ContentType, TargetSchema};
+use crate::{
+    error::{MarketForgeError, Result},
+    job::{ProcessingJob, WorkTask, validate_processing_job_structure},
+};
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct ProcessingSessionResult {
     pub jobs: Vec<ProcessingResult>,
     pub total_tasks: usize,
+}
+#[derive(Debug)]
+struct JobPreflightFailure {
+    task_id: u64,
+    error: MarketForgeError,
 }
 
 // -----------------------------------------------------------------------------
@@ -33,12 +39,40 @@ pub fn execute_processing_session(
     jobs: &[ProcessingJob],
     config: &ProcessingConfig,
 ) -> Result<ProcessingSessionResult> {
+    execute_processing_session_with_progress(jobs, config, &ProgressReporter::disabled())
+}
+pub fn execute_processing_session_with_progress(
+    jobs: &[ProcessingJob],
+    config: &ProcessingConfig,
+    reporter: &ProgressReporter,
+) -> Result<ProcessingSessionResult> {
+    // Execute the existing processing session.
+    let result = execute_processing_session_inner(jobs, config, reporter);
+
+    // Determine whether every job completed successfully.
+    let success = result.as_ref().is_ok_and(|session| {
+        session
+            .jobs
+            .iter()
+            .all(|job| job.status == super::ProcessingStatus::Complete)
+    });
+
+    // Always notify the dashboard, including on errors.
+    reporter.finished(success);
+
+    result
+}
+fn execute_processing_session_inner(
+    jobs: &[ProcessingJob],
+    config: &ProcessingConfig,
+    reporter: &ProgressReporter,
+) -> Result<ProcessingSessionResult> {
     validate_resources(&config.resources)?;
     validate_session(jobs)?;
 
-    // -------------------------------------------------------------------------
-    // Prepare isolated staging directories
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------
+    // Validate output paths before creating staging directories
+    // -------------------------------------------------------------
 
     for job in jobs {
         if job.output.dataset_path.exists() {
@@ -56,31 +90,109 @@ pub fn execute_processing_session(
         }
     }
 
+    // -------------------------------------------------------------
+    // Job-level source preflight
+    // -------------------------------------------------------------
+
+    let mut preflight_failures = HashMap::new();
+    let mut eligible_jobs = Vec::new();
+    let mut eligible_indices = Vec::new();
+
+    for (job_index, job) in jobs.iter().enumerate() {
+        let mut failure = None;
+
+        for task in &job.tasks {
+            if let Err(error) = estimate_task_resources(task, &config.resources.parquet) {
+                failure = Some(JobPreflightFailure {
+                    task_id: task.task_id.0,
+                    error,
+                });
+
+                break;
+            }
+        }
+
+        match failure {
+            Some(failure) => {
+                if reporter.is_enabled() {
+                    let reason = failure.error.to_string();
+
+                    for task in &job.tasks {
+                        let id = ProgressTaskId::new(job.job_id.0, task.task_id.0);
+
+                        if task.task_id.0 == failure.task_id {
+                            reporter.task_failed(id, reason.clone());
+                        } else {
+                            reporter.task_skipped(id, "Job rejected during preflight".to_owned());
+                        }
+                    }
+                }
+
+                preflight_failures.insert(job_index, failure);
+            }
+
+            None => {
+                eligible_indices.push(job_index);
+                eligible_jobs.push(job.clone());
+            }
+        }
+    }
+
+    // -------------------------------------------------------------
+    // Prepare staging for every job
+    // -------------------------------------------------------------
+
     for job in jobs {
         prepare_staging(job)?;
     }
 
-    // -------------------------------------------------------------------------
-    // Execute all tasks using one global worker pool
-    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------
+    // Execute eligible jobs through the global worker pool
+    // -------------------------------------------------------------
 
-    let session = execute_session_tasks(jobs, config)?;
+    let session = execute_session_tasks_with_progress(&eligible_jobs, config, reporter)?;
 
-    // -------------------------------------------------------------------------
-    // Finalize each job independently
-    // -------------------------------------------------------------------------
+    let total_tasks = jobs.iter().map(|job| job.tasks.len()).sum();
+
+    // -------------------------------------------------------------
+    // Map successful scheduling results to original job indices
+    // -------------------------------------------------------------
+
+    let mut executions_by_job = HashMap::new();
+
+    for (eligible_index, job_results) in session.jobs.into_iter().enumerate() {
+        let original_index = eligible_indices[eligible_index];
+
+        executions_by_job.insert(original_index, job_results.executions);
+    }
+
+    // -------------------------------------------------------------
+    // Finalize every job independently
+    // -------------------------------------------------------------
 
     let mut results = Vec::with_capacity(jobs.len());
 
-    for (job, job_results) in jobs.iter().zip(session.jobs) {
+    for (job_index, job) in jobs.iter().enumerate() {
         let mut context = ExecutionContext::default();
+        reporter.finalizing();
 
-        let result = finalize_processing_job(job, config, job_results.executions, &mut context);
+        let result = if let Some(failure) = preflight_failures.remove(&job_index) {
+            context.failed_task_id = Some(failure.task_id);
 
-        let result = match result {
-            Ok(result) => result,
+            persist_processing_failure(job, context, failure.error)?
+        } else {
+            let executions = executions_by_job.remove(&job_index).ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration(format!(
+                    "missing session executions for job {}",
+                    job.job_id.0,
+                ))
+            })?;
 
-            Err(error) => persist_processing_failure(job, context, error)?,
+            match finalize_processing_job(job, config, executions, &mut context) {
+                Ok(result) => result,
+
+                Err(error) => persist_processing_failure(job, context, error)?,
+            }
         };
 
         results.push(result);
@@ -88,7 +200,7 @@ pub fn execute_processing_session(
 
     Ok(ProcessingSessionResult {
         jobs: results,
-        total_tasks: session.total_tasks,
+        total_tasks,
     })
 }
 
@@ -128,6 +240,14 @@ pub fn execute_session_tasks(
     jobs: &[ProcessingJob],
     config: &ProcessingConfig,
 ) -> Result<ProcessingSessionTasks> {
+    execute_session_tasks_with_progress(jobs, config, &ProgressReporter::disabled())
+}
+
+pub fn execute_session_tasks_with_progress(
+    jobs: &[ProcessingJob],
+    config: &ProcessingConfig,
+    reporter: &ProgressReporter,
+) -> Result<ProcessingSessionTasks> {
     validate_session(jobs)?;
 
     let mut scheduled = Vec::new();
@@ -156,7 +276,42 @@ pub fn execute_session_tasks(
         &budget,
         |scheduled| estimate_task_resources(scheduled.task, &config.resources.parquet),
         |scheduled| {
-            let execution = execute_task(scheduled.task, config, scheduled.staging_path);
+            let task = scheduled.task;
+
+            let job_id = jobs[scheduled.job_index].job_id.0;
+
+            let progress_id = ProgressTaskId::new(job_id, task.task_id.0);
+
+            if reporter.is_enabled() {
+                reporter.task_started(
+                    progress_id,
+                    format!("{:?}", task.exchange),
+                    task.symbol.clone(),
+                    format!("{:?}", jobs[scheduled.job_index].output.content_type),
+                    task.input_path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| task.input_path.display().to_string()),
+                );
+            }
+
+            let execution = if reporter.is_enabled() {
+                execute_task_with_progress(
+                    task,
+                    config,
+                    scheduled.staging_path,
+                    reporter,
+                    progress_id,
+                )
+            } else {
+                execute_task(task, config, scheduled.staging_path)
+            };
+
+            if let Some(error) = &execution.error {
+                reporter.task_failed(progress_id, error.to_string());
+            } else {
+                reporter.task_completed(progress_id, &execution.metrics.counters);
+            }
 
             Ok((scheduled.job_index, scheduled.task_index, execution))
         },

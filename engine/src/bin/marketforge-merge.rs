@@ -1,13 +1,14 @@
+#[cfg(feature = "monitor-tui")]
+use marketforge_engine::tui::merging::execute_merge_with_tui;
+use marketforge_engine::{
+    job::{ContentType, load_merge_job},
+    process::merge::{execute_unified_merge_job, resolve_merge_inputs},
+};
 use std::{
     env, fs,
     path::{Path, PathBuf},
     process::ExitCode,
     time::Instant,
-};
-
-use marketforge_engine::{
-    job::{ContentType, load_merge_job},
-    process::merge::{execute_unified_merge_job, resolve_merge_inputs},
 };
 
 // -----------------------------------------------------------------------------
@@ -17,6 +18,9 @@ use marketforge_engine::{
 struct CliArgs {
     job: PathBuf,
     project_root: PathBuf,
+
+    #[cfg(feature = "monitor-tui")]
+    tui: bool,
 }
 
 fn parse_args() -> Result<CliArgs, String> {
@@ -24,13 +28,25 @@ fn parse_args() -> Result<CliArgs, String> {
 
     let mut job = None;
     let mut project_root = None;
+    #[cfg(feature = "monitor-tui")]
+    let mut tui = false;
 
     while let Some(argument) = args.next() {
         match argument.as_str() {
             "--job" => {
                 job = Some(PathBuf::from(args.next().ok_or("missing value for --job")?));
             }
+            "--tui" => {
+                #[cfg(feature = "monitor-tui")]
+                {
+                    tui = true;
+                }
 
+                #[cfg(not(feature = "monitor-tui"))]
+                {
+                    return Err("--tui requires the monitor-tui feature".to_owned());
+                }
+            }
             "--project-root" => {
                 project_root = Some(PathBuf::from(
                     args.next().ok_or("missing value for --project-root")?,
@@ -57,7 +73,13 @@ fn parse_args() -> Result<CliArgs, String> {
 
     let project_root = project_root.unwrap_or_else(|| PathBuf::from("."));
 
-    Ok(CliArgs { job, project_root })
+    Ok(CliArgs {
+        job,
+        project_root,
+
+        #[cfg(feature = "monitor-tui")]
+        tui,
+    })
 }
 
 // -----------------------------------------------------------------------------
@@ -122,7 +144,17 @@ fn run() -> Result<(), String> {
     };
 
     let job = load_merge_job(&job_path).map_err(|error| error.to_string())?;
+    #[cfg(feature = "monitor-tui")]
+    if args.tui {
+        let result =
+            execute_merge_with_tui(job, project_root).map_err(|error| error.to_string())?;
 
+        // The TUI already prints its permanent summary.
+        // Do not execute the merge again.
+        let _ = result;
+
+        return Ok(());
+    }
     println!();
     println!("{}", "=".repeat(80));
     println!("MARKETFORGE — PARALLEL MERGE");

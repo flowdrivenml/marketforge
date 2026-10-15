@@ -1,5 +1,4 @@
-use std::{fs, path::PathBuf};
-
+use arrow_array::{ArrayRef, RecordBatch, UInt32Array};
 use marketforge_engine::{
     instrument::InstrumentCatalog,
     job::{MergeParquetConfig, load_convert_job},
@@ -10,12 +9,21 @@ use marketforge_engine::{
                 build_combined_reference_checkpoints, build_conversion_partition_plan,
                 execute_parallel_combined_conversion,
             },
-            output::{ConversionExecutionReceipt, ConversionManifest, publish_combined_conversion},
+            output::{
+                ConversionExecutionReceipt, ConversionManifest, SourcePreservationMode,
+                publish_combined_conversion, validate_source_preservation_with_mode,
+            },
             plan_conversion, resolve_conversion_catalog,
         },
         merge::PhysicalMergeManifest,
     },
 };
+use parquet::{
+    arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder},
+    file::properties::WriterProperties,
+};
+use std::sync::Arc;
+use std::{fs, path::PathBuf};
 
 const EVENTS: u64 = 20_000;
 
@@ -218,4 +226,93 @@ fn rejects_existing_combined_destination() {
     );
 
     assert!(fixture.staging.exists());
+}
+
+#[test]
+fn rejects_corrupted_original_source_column() {
+    let fixture = materialized_fixture();
+
+    // Locate one converted Parquet file.
+    let mut files = Vec::new();
+
+    fn collect_parquet(directory: &std::path::Path, files: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+
+            if path.is_dir() {
+                collect_parquet(&path, files);
+            } else if path.extension().is_some_and(|ext| ext == "parquet") {
+                files.push(path);
+            }
+        }
+    }
+
+    collect_parquet(&fixture.staging, &mut files);
+    files.sort();
+
+    let path = files.first().expect("missing converted Parquet file");
+
+    // Read the original converted batches.
+    let file = fs::File::open(path).unwrap();
+
+    let reader = ParquetRecordBatchReaderBuilder::try_new(file)
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let mut batches = reader.map(|batch| batch.unwrap()).collect::<Vec<_>>();
+
+    assert!(!batches.is_empty());
+
+    // Modify one original source column.
+    let first = &batches[0];
+
+    let column_index = first.schema().index_of("stream_rank").unwrap();
+
+    let original = first
+        .column(column_index)
+        .as_any()
+        .downcast_ref::<UInt32Array>()
+        .unwrap();
+
+    let mut values = original.values().to_vec();
+
+    values[0] = values[0].wrapping_add(1);
+
+    let corrupted = Arc::new(UInt32Array::from(values)) as ArrayRef;
+
+    let mut columns = first.columns().to_vec();
+    columns[column_index] = corrupted;
+
+    batches[0] = RecordBatch::try_new(first.schema(), columns).unwrap();
+
+    // Rewrite only the temporary converted file.
+    let output = fs::File::create(path).unwrap();
+
+    let properties = WriterProperties::builder().build();
+
+    let mut writer = ArrowWriter::try_new(output, batches[0].schema(), Some(properties)).unwrap();
+
+    for batch in &batches {
+        writer.write(batch).unwrap();
+    }
+
+    writer.close().unwrap();
+
+    // Source preservation must reject the modified source value.
+    let result = validate_source_preservation_with_mode(
+        &fixture.job.input_merge,
+        &fixture.source,
+        &fixture.staging,
+        SourcePreservationMode::Full,
+        8,
+    );
+
+    assert!(
+        result.is_err(),
+        "source preservation accepted corrupted original market data"
+    );
+
+    println!("Corrupted source column detected successfully");
+    println!("STATUS: PASS");
 }

@@ -4,6 +4,7 @@ use super::{
 };
 use crate::formats::depth::DepthEventBoundary;
 use crate::process::boundary::{BoundaryBookState, DepthBoundaryTracker};
+use crate::process::progress::WorkerProgress;
 use crate::{
     book::SequencePolicy,
     error::{MarketForgeError, Result},
@@ -13,12 +14,12 @@ use crate::{
     source::JsonlDecoder,
     source::with_source_reader,
 };
-use std::io::Read;
-
 use crate::{
     decode::{CsvDecoder, XlsxDepthDecoder},
     formats::depth::{DepthCsvAdapter, DepthSnapshotAssembler},
 };
+use std::io::Read;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DepthSourceFormat {
     Jsonl,
@@ -37,6 +38,46 @@ pub fn process_depth_task_with_metrics<S: DepthSink>(
     policy: &IntegrityPolicy,
     previous_job_integrity: &ScopedIntegrityMetrics,
     sequence_policy: SequencePolicy,
+) -> Result<()> {
+    process_depth_task_with_metrics_impl(
+        task,
+        sink,
+        metrics,
+        policy,
+        previous_job_integrity,
+        sequence_policy,
+        None,
+    )
+}
+
+pub fn process_depth_task_with_metrics_and_progress<S: DepthSink>(
+    task: &WorkTask,
+    sink: &mut S,
+    metrics: &mut TaskMetrics,
+    policy: &IntegrityPolicy,
+    previous_job_integrity: &ScopedIntegrityMetrics,
+    sequence_policy: SequencePolicy,
+    progress: &mut WorkerProgress,
+) -> Result<()> {
+    process_depth_task_with_metrics_impl(
+        task,
+        sink,
+        metrics,
+        policy,
+        previous_job_integrity,
+        sequence_policy,
+        Some(progress),
+    )
+}
+
+fn process_depth_task_with_metrics_impl<S: DepthSink>(
+    task: &WorkTask,
+    sink: &mut S,
+    metrics: &mut TaskMetrics,
+    policy: &IntegrityPolicy,
+    previous_job_integrity: &ScopedIntegrityMetrics,
+    sequence_policy: SequencePolicy,
+    mut progress: Option<&mut WorkerProgress>,
 ) -> Result<()> {
     // -------------------------------------------------------------------------
     // Validate depth normalization configuration
@@ -151,6 +192,7 @@ pub fn process_depth_task_with_metrics<S: DepthSink>(
                         policy,
                         previous_job_integrity,
                         &scope,
+                        progress.as_deref_mut(),
                     )?;
                 }
 
@@ -167,6 +209,10 @@ pub fn process_depth_task_with_metrics<S: DepthSink>(
                     // ---------------------------------------------------------
 
                     loop {
+                        if let Some(reporter) = progress.as_deref_mut() {
+                            reporter.maybe_update(&metrics.counters);
+                        }
+
                         let record = match decoder.next_json() {
                             Ok(Some(record)) => record,
 
@@ -298,6 +344,7 @@ pub fn process_depth_task_with_metrics<S: DepthSink>(
                         policy,
                         previous_job_integrity,
                         &scope,
+                        progress.as_deref_mut(),
                     )?;
                 }
             }
@@ -324,7 +371,7 @@ pub fn process_depth_task_with_metrics<S: DepthSink>(
     // Task finalization
     // -------------------------------------------------------------------------
 
-    match result {
+    let outcome = match result {
         Ok(()) => {
             increment(&mut metrics.counters.tasks_completed, "tasks_completed")?;
 
@@ -338,7 +385,13 @@ pub fn process_depth_task_with_metrics<S: DepthSink>(
 
             Err(error)
         }
+    };
+
+    if let Some(reporter) = progress.as_deref_mut() {
+        reporter.finish(&metrics.counters);
     }
+
+    outcome
 }
 
 fn process_csv_depth<R: Read, S: DepthSink>(
@@ -351,6 +404,7 @@ fn process_csv_depth<R: Read, S: DepthSink>(
     policy: &IntegrityPolicy,
     previous_job_integrity: &ScopedIntegrityMetrics,
     scope: &IntegrityScope,
+    mut progress: Option<&mut WorkerProgress>,
 ) -> Result<()> {
     let mut decoder = CsvDecoder::with_headers(reader, false);
     let adapter = DepthCsvAdapter::new(&task.raw_schema)?;
@@ -360,6 +414,9 @@ fn process_csv_depth<R: Read, S: DepthSink>(
     let mut snapshot_rows = 0u64;
 
     for row in decoder.records() {
+        if let Some(reporter) = progress.as_deref_mut() {
+            reporter.maybe_update(&metrics.counters);
+        }
         source_ordinal = source_ordinal.checked_add(1).ok_or_else(|| {
             MarketForgeError::InvalidConfiguration("CSV source ordinal overflow".to_owned())
         })?;
@@ -778,6 +835,7 @@ fn process_xlsx_depth<R: Read, S: DepthSink>(
     policy: &IntegrityPolicy,
     previous_job_integrity: &ScopedIntegrityMetrics,
     scope: &IntegrityScope,
+    mut progress: Option<&mut WorkerProgress>,
 ) -> Result<()> {
     use std::io::Cursor;
 
@@ -808,6 +866,9 @@ fn process_xlsx_depth<R: Read, S: DepthSink>(
     // -------------------------------------------------------------------------
 
     for (index, source_record) in records.into_iter().enumerate() {
+        if let Some(reporter) = progress.as_deref_mut() {
+            reporter.maybe_update(&metrics.counters);
+        }
         increment(&mut metrics.counters.records_read, "records_read")?;
 
         let event_ordinal = u64::try_from(index)

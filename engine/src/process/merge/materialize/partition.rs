@@ -1,9 +1,5 @@
-use std::{
-    collections::{HashMap, HashSet},
-    path::{Path, PathBuf},
-};
-
 use super::DepthTaskInventory;
+use super::progress::MergeWorkerProgress;
 use super::{
     materialize_combined_builder::{PhysicalCombinedBatchBuilder, PhysicalCombinedEvent},
     materialize_decoder::GroupedCanonicalDecoder,
@@ -28,6 +24,10 @@ use crate::{
     job::MergeParquetConfig,
 };
 use std::time::{Duration, Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
+};
 
 // -----------------------------------------------------------------------------
 // Partition input
@@ -247,6 +247,22 @@ impl MaterializationPartitionWorker {
         &mut self,
         input: &MaterializationPartitionInput<'_>,
     ) -> Result<MaterializationPartitionResult> {
+        self.execute_impl(input, None)
+    }
+
+    pub fn execute_with_progress(
+        &mut self,
+        input: &MaterializationPartitionInput<'_>,
+        progress: &mut MergeWorkerProgress,
+    ) -> Result<MaterializationPartitionResult> {
+        self.execute_impl(input, Some(progress))
+    }
+
+    fn execute_impl(
+        &mut self,
+        input: &MaterializationPartitionInput<'_>,
+        mut progress: Option<&mut MergeWorkerProgress>,
+    ) -> Result<MaterializationPartitionResult> {
         if input.start_ns >= input.end_ns {
             return invalid("invalid materialization partition range");
         }
@@ -281,16 +297,26 @@ impl MaterializationPartitionWorker {
             if let Some(window) = windows.push(reference)? {
                 self.materialize_window(&window, input.mode, &mut writer)?;
                 windows_processed += 1;
+
+                if let Some(reporter) = progress.as_deref_mut() {
+                    reporter.maybe_update(writer.metrics().events_written);
+                }
             }
         }
 
         if let Some(window) = windows.finish() {
             self.materialize_window(&window, input.mode, &mut writer)?;
             windows_processed += 1;
+
+            if let Some(reporter) = progress.as_deref_mut() {
+                reporter.maybe_update(writer.metrics().events_written);
+            }
         }
 
         writer.finish()?;
-
+        if let Some(reporter) = progress.as_deref_mut() {
+            reporter.finish(writer.metrics().events_written);
+        }
         if std::env::var_os("MARKETFORGE_PROFILE").is_some() {
             eprintln!(
                 "[materialize-profile] partition={} windows={} \

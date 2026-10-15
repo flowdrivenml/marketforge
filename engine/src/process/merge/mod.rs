@@ -94,6 +94,8 @@ mod partition_executor;
 mod partition_input;
 #[path = "depth/partition_stream.rs"]
 mod partition_stream;
+#[path = "progress/reporter.rs"]
+mod progress;
 #[path = "execution/resolver.rs"]
 mod resolver;
 #[path = "execution/resources.rs"]
@@ -169,7 +171,9 @@ pub use timeline::{TimelineBatchBuilder, TimelineRecord, timeline_schema};
 pub use trade_cursor::{IndexedTrade, TradeCursor};
 pub use trade_inventory::{TradeFileInventory, TradeTaskInventory, build_trade_inventory};
 pub use trade_stream::{TradeEventRef, TradeStream};
-pub use unified_executor::{UnifiedMergeExecutionResult, execute_unified_merge_job};
+pub use unified_executor::{
+    UnifiedMergeExecutionResult, execute_unified_merge_job, execute_unified_merge_job_with_progress,
+};
 pub use unified_manifest::{
     UNIFIED_MERGE_MANIFEST_VERSION, UnifiedMergeManifest, UnifiedMergeMode, UnifiedMergeStream,
     UnifiedMergeStreamKind,
@@ -177,9 +181,12 @@ pub use unified_manifest::{
 pub use unified_manifest_builder::build_unified_merge_manifest;
 pub use unified_output_validation::{ValidatedUnifiedMergeOutput, validate_unified_merge_output};
 pub use unified_parallel::{
-    execute_unified_partitions_parallel, validate_unified_partition_results,
+    execute_unified_partitions_parallel, execute_unified_partitions_parallel_with_progress,
+    validate_unified_partition_results,
 };
-pub use unified_partition_executor::{UnifiedPartitionResult, execute_unified_partition};
+pub use unified_partition_executor::{
+    UnifiedPartitionResult, execute_unified_partition, execute_unified_partition_with_progress,
+};
 pub use unified_partition_input::{
     MergeTaskInterval, UnifiedPartitionInputPlan, depth_task_intervals,
     plan_unified_partition_inputs, trade_task_intervals,
@@ -200,13 +207,18 @@ pub use materialize_combined_builder::{PhysicalCombinedBatchBuilder, PhysicalCom
 pub use materialize_decoder::GroupedCanonicalDecoder;
 pub use materialize_depth_builder::{PhysicalDepthBatchBuilder, PhysicalDepthEvent};
 pub use materialize_depth_metadata::{DepthMetadataResolver, ResolvedDepthMetadata};
-pub use materialize_global_validate::{ValidatedPhysicalDataset, validate_physical_dataset};
+pub use materialize_global_validate::{
+    ValidatedPhysicalDataset, validate_physical_dataset, validate_physical_dataset_with_progress,
+};
 pub use materialize_inventory::{CanonicalFileRange, CanonicalFileSlice, CanonicalRowIndex};
 pub use materialize_manifest::{
     PHYSICAL_MERGE_MANIFEST_VERSION, PHYSICAL_MERGE_SCHEMA_VERSION, PhysicalMergeManifest,
     write_physical_merge_manifest,
 };
-pub use materialize_parallel::{MaterializationPartitionPlan, execute_parallel_materialization};
+pub use materialize_parallel::{
+    MaterializationPartitionPlan, execute_parallel_materialization,
+    execute_parallel_materialization_with_progress,
+};
 pub use materialize_partition::{
     MaterializationPartitionInput, MaterializationPartitionResult, MaterializationPartitionWorker,
 };
@@ -234,8 +246,13 @@ pub use materialize_timeline_reader::MaterializationTimelineReader;
 pub use materialize_trade_builder::PhysicalTradeBatchBuilder;
 pub use materialize_validate::{
     PhysicalFileValidation, PhysicalPartitionValidation, validate_physical_partition,
+    validate_physical_partition_with_progress,
 };
 pub use materialize_window::{
     MaterializationBatchLimits, MaterializationWindow, MaterializationWindowBuilder,
 };
 pub use materialize_writer::{PhysicalParquetWriter, PhysicalWriterMetrics};
+pub use progress::{
+    MergePhase, MergeProgressEvent, MergeProgressReporter, MergeProgressState, MergeWorkerProgress,
+    PartitionKey, PartitionProgress, PartitionProgressCounters,
+};

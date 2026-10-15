@@ -1,15 +1,14 @@
+use super::materialize_validate::validate_physical_partition_with_progress;
+use super::progress::MergeProgressReporter;
+use super::{
+    manifest::MergeTimelineFile, materialize_partition::MaterializationPartitionResult,
+    unified_manifest::UnifiedMergeMode,
+};
+use crate::error::{MarketForgeError, Result};
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
 };
-
-use crate::error::{MarketForgeError, Result};
-
-use super::{
-    manifest::MergeTimelineFile, materialize_partition::MaterializationPartitionResult,
-    materialize_validate::validate_physical_partition, unified_manifest::UnifiedMergeMode,
-};
-
 // -----------------------------------------------------------------------------
 // Global validation result
 // -----------------------------------------------------------------------------
@@ -39,10 +38,36 @@ pub fn validate_physical_dataset(
     mode: UnifiedMergeMode,
     partitions: &[MaterializationPartitionResult],
 ) -> Result<ValidatedPhysicalDataset> {
+    validate_physical_dataset_with_progress(
+        staging,
+        mode,
+        partitions,
+        &MergeProgressReporter::disabled(),
+    )
+}
+
+pub fn validate_physical_dataset_with_progress(
+    staging: &Path,
+    mode: UnifiedMergeMode,
+    partitions: &[MaterializationPartitionResult],
+    reporter: &MergeProgressReporter,
+) -> Result<ValidatedPhysicalDataset> {
     if partitions.is_empty() {
         return invalid("physical dataset contains no partitions");
     }
+    let total_files = partitions.iter().try_fold(0_u64, |total, partition| {
+        total
+            .checked_add(partition.writer_metrics.files_written)
+            .ok_or_else(|| invalid_error("validation file count overflow"))
+    })?;
 
+    let expected_events = partitions.iter().try_fold(0_u64, |total, partition| {
+        total
+            .checked_add(partition.writer_metrics.events_written)
+            .ok_or_else(|| invalid_error("validation event count overflow"))
+    })?;
+
+    reporter.validation_started(partitions.len(), total_files, expected_events);
     let staging = staging.canonicalize().map_err(|error| {
         invalid_error(format!(
             "cannot resolve physical staging directory: {error}"
@@ -50,7 +75,10 @@ pub fn validate_physical_dataset(
     })?;
 
     let mut result = ValidatedPhysicalDataset::default();
-
+    let mut partitions_completed = 0_usize;
+    let mut files_completed = 0_u64;
+    let mut events_validated = 0_u64;
+    let mut row_groups_validated = 0_u64;
     let mut seen_partitions = HashSet::new();
     let mut seen_files = HashSet::<PathBuf>::new();
 
@@ -88,7 +116,16 @@ pub fn validate_physical_dataset(
         // Validate actual physical Parquet
         // ---------------------------------------------------------------------
 
-        let validated = validate_physical_partition(&staging, mode, partition)?;
+        let validated = validate_physical_partition_with_progress(
+            &staging,
+            mode,
+            partition,
+            reporter,
+            &mut files_completed,
+            &mut events_validated,
+            &mut row_groups_validated,
+            partitions_completed,
+        )?;
 
         if let (Some(previous), Some(first)) = (previous_timestamp, validated.first_timestamp_ns) {
             if first < previous {
@@ -228,7 +265,20 @@ pub fn validate_physical_dataset(
 
         _ => {}
     }
+    partitions_completed += 1;
 
+    reporter.validation_progress(
+        partitions_completed,
+        files_completed,
+        events_validated,
+        row_groups_validated,
+    );
+    reporter.validation_completed(
+        partitions_completed,
+        files_completed,
+        events_validated,
+        row_groups_validated,
+    );
     Ok(result)
 }
 

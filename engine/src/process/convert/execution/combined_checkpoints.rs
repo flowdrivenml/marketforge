@@ -1,9 +1,10 @@
-use std::path::Path;
-
+use crate::process::convert::progress::ConversionProgressReporter;
 use arrow_array::{
     Array, Decimal256Array, Int64Array, RecordBatch, StringArray, StructArray, UInt8Array,
     UInt32Array, UInt64Array,
 };
+use std::path::Path;
+use std::time::{Duration, Instant};
 
 use crate::{
     error::{MarketForgeError, Result},
@@ -51,6 +52,69 @@ pub fn build_combined_reference_checkpoints(
     selection: &CombinedReferenceSelection,
     partitions: &ConversionPartitionPlan,
 ) -> Result<CombinedReferencePrepass> {
+    build_combined_reference_checkpoints_with_progress(
+        source_directory,
+        source_manifest,
+        reference_directory,
+        reference_manifest,
+        selection,
+        partitions,
+        &ConversionProgressReporter::disabled(),
+    )
+}
+
+pub fn build_combined_reference_checkpoints_with_progress(
+    source_directory: &Path,
+    source_manifest: &PhysicalMergeManifest,
+    reference_directory: Option<&Path>,
+    reference_manifest: Option<&PhysicalMergeManifest>,
+    selection: &CombinedReferenceSelection,
+    partitions: &ConversionPartitionPlan,
+    reporter: &ConversionProgressReporter,
+) -> Result<CombinedReferencePrepass> {
+    build_combined_reference_checkpoints_impl(
+        source_directory,
+        source_manifest,
+        reference_directory,
+        reference_manifest,
+        selection,
+        partitions,
+        reporter,
+        true,
+    )
+}
+#[doc(hidden)]
+pub fn build_combined_reference_checkpoints_full_reader(
+    source_directory: &Path,
+    source_manifest: &PhysicalMergeManifest,
+    reference_directory: Option<&Path>,
+    reference_manifest: Option<&PhysicalMergeManifest>,
+    selection: &CombinedReferenceSelection,
+    partitions: &ConversionPartitionPlan,
+) -> Result<CombinedReferencePrepass> {
+    build_combined_reference_checkpoints_impl(
+        source_directory,
+        source_manifest,
+        reference_directory,
+        reference_manifest,
+        selection,
+        partitions,
+        &ConversionProgressReporter::disabled(),
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_combined_reference_checkpoints_impl(
+    source_directory: &Path,
+    source_manifest: &PhysicalMergeManifest,
+    reference_directory: Option<&Path>,
+    reference_manifest: Option<&PhysicalMergeManifest>,
+    selection: &CombinedReferenceSelection,
+    partitions: &ConversionPartitionPlan,
+    reporter: &ConversionProgressReporter,
+    projected: bool,
+) -> Result<CombinedReferencePrepass> {
     source_manifest.validate()?;
 
     if source_manifest.mode != UnifiedMergeMode::Combined {
@@ -92,16 +156,31 @@ pub fn build_combined_reference_checkpoints(
 
     let mut accumulator = CombinedCheckpointAccumulator::new(alignment);
 
-    let mut reader = PhysicalConversionReader::new(
-        source_directory,
-        source_manifest,
-        CONVERSION_READ_BATCH_SIZE,
-    )?;
+    let mut reader = if projected {
+        PhysicalConversionReader::new_reference_prepass(
+            source_directory,
+            source_manifest,
+            CONVERSION_READ_BATCH_SIZE,
+        )?
+    } else {
+        PhysicalConversionReader::new(
+            source_directory,
+            source_manifest,
+            CONVERSION_READ_BATCH_SIZE,
+        )?
+    };
 
     let mut checkpoints = Vec::with_capacity(partitions.partitions.len());
 
     let mut next_partition = 0_usize;
     let mut global_row = 0_u64;
+
+    let total_events = source_manifest.events_written;
+    let total_checkpoints = partitions.partitions.len();
+
+    let mut last_progress = Instant::now();
+
+    reporter.reference_prepass_progress(0, total_events, 0, total_checkpoints);
 
     while let Some(batch) = reader.next_batch()? {
         let timestamps = column::<Int64Array>(&batch, "event_timestamp_ns")?;
@@ -174,6 +253,17 @@ pub fn build_combined_reference_checkpoints(
 
             global_row = accumulator.events_seen();
         }
+
+        if reporter.is_enabled() && last_progress.elapsed() >= Duration::from_millis(500) {
+            reporter.reference_prepass_progress(
+                global_row,
+                total_events,
+                checkpoints.len(),
+                total_checkpoints,
+            );
+
+            last_progress = Instant::now();
+        }
     }
 
     if global_row != source_manifest.events_written {
@@ -191,6 +281,13 @@ pub fn build_combined_reference_checkpoints(
             return invalid("combined checkpoint boundary mismatch");
         }
     }
+
+    reporter.reference_prepass_progress(
+        global_row,
+        total_events,
+        checkpoints.len(),
+        total_checkpoints,
+    );
 
     Ok(CombinedReferencePrepass {
         checkpoints,

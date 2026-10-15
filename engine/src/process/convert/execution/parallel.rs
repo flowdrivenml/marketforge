@@ -1,19 +1,22 @@
-use std::{
-    collections::VecDeque,
-    path::Path,
-    sync::{Arc, Mutex},
-    thread,
+use super::execute_conversion_partition_with_progress;
+use super::{
+    ConversionPartitionPlan, ConversionPartitionResult, ConversionPrepassResult,
+    PhysicalConversionMetrics, execute_conversion_partition,
 };
-
+use crate::process::convert::progress::ConversionWorkerProgress;
+use crate::process::convert::progress::{
+    ConversionPartitionKey, ConversionProgress, ConversionProgressReporter,
+};
 use crate::{
     error::{MarketForgeError, Result},
     job::{ConvertJob, MergeParquetConfig},
     process::{convert::ConversionPlan, merge::PhysicalMergeManifest},
 };
-
-use super::{
-    ConversionPartitionPlan, ConversionPartitionResult, ConversionPrepassResult,
-    PhysicalConversionMetrics, execute_conversion_partition,
+use std::{
+    collections::VecDeque,
+    path::Path,
+    sync::{Arc, Mutex},
+    thread,
 };
 
 // -----------------------------------------------------------------------------
@@ -31,6 +34,7 @@ pub struct ParallelConversionResult {
 // Execute partitions concurrently
 // -----------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 pub fn execute_parallel_conversion(
     job: &ConvertJob,
     manifest: &PhysicalMergeManifest,
@@ -40,6 +44,31 @@ pub fn execute_parallel_conversion(
     staging_directory: &Path,
     requested_workers: usize,
     parquet_config: &MergeParquetConfig,
+) -> Result<ParallelConversionResult> {
+    execute_parallel_conversion_with_progress(
+        job,
+        manifest,
+        plan,
+        partitions,
+        prepass,
+        staging_directory,
+        requested_workers,
+        parquet_config,
+        &ConversionProgressReporter::disabled(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn execute_parallel_conversion_with_progress(
+    job: &ConvertJob,
+    manifest: &PhysicalMergeManifest,
+    plan: &ConversionPlan,
+    partitions: &ConversionPartitionPlan,
+    prepass: &ConversionPrepassResult,
+    staging_directory: &Path,
+    requested_workers: usize,
+    parquet_config: &MergeParquetConfig,
+    reporter: &ConversionProgressReporter,
 ) -> Result<ParallelConversionResult> {
     job.validate()?;
     manifest.validate()?;
@@ -70,7 +99,7 @@ pub fn execute_parallel_conversion(
     }
 
     let workers_used = requested_workers.min(partitions.partitions.len());
-
+    reporter.partitions_planned(partitions.partitions.len());
     // -------------------------------------------------------------------------
     // Validate checkpoint alignment
     // -------------------------------------------------------------------------
@@ -121,16 +150,69 @@ pub fn execute_parallel_conversion(
                     let partition = &partitions.partitions[index];
                     let checkpoint = &prepass.checkpoints[index];
 
-                    let result = execute_conversion_partition(
-                        job,
-                        manifest,
-                        plan,
-                        partitions,
-                        partition,
-                        checkpoint,
-                        staging_directory,
-                        parquet_config,
-                    )?;
+                    let key = ConversionPartitionKey {
+                        partition_id: partition.partition_id,
+                    };
+
+                    reporter.partition_started(key);
+                    let execution = if reporter.is_enabled() {
+                        let mut progress = ConversionWorkerProgress::new(reporter, key);
+
+                        execute_conversion_partition_with_progress(
+                            job,
+                            manifest,
+                            plan,
+                            partitions,
+                            partition,
+                            checkpoint,
+                            staging_directory,
+                            parquet_config,
+                            &mut progress,
+                        )
+                    } else {
+                        execute_conversion_partition(
+                            job,
+                            manifest,
+                            plan,
+                            partitions,
+                            partition,
+                            checkpoint,
+                            staging_directory,
+                            parquet_config,
+                        )
+                    };
+
+                    let result = match execution {
+                        Ok(result) => {
+                            let metrics = &result.metrics;
+
+                            reporter.partition_completed(
+                                key,
+                                ConversionProgress {
+                                    events_read: metrics.events_read,
+                                    events_written: metrics.events_written,
+
+                                    identity_events: metrics.identity_events,
+                                    converted_events: metrics.converted_events,
+                                    unavailable_events: metrics.unavailable_events,
+
+                                    internal_reference_updates: metrics.reference_updates,
+
+                                    files_written: metrics.files_written,
+                                    row_groups_written: metrics.row_groups_written,
+
+                                    ..ConversionProgress::default()
+                                },
+                            );
+
+                            result
+                        }
+
+                        Err(error) => {
+                            reporter.partition_failed(key, error.to_string());
+                            return Err(error);
+                        }
+                    };
 
                     results
                         .lock()

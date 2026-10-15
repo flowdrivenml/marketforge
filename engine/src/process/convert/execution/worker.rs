@@ -1,5 +1,9 @@
-use std::path::{Path, PathBuf};
-
+use super::{
+    CONVERSION_READ_BATCH_SIZE, ConversionPartition, ConversionPartitionPlan,
+    ConversionPartitionReader, ConversionReferenceCheckpoint, PhysicalConversionMetrics,
+    TradeConversionKernel,
+};
+use crate::process::convert::progress::{ConversionProgress, ConversionWorkerProgress};
 use crate::{
     error::{MarketForgeError, Result},
     job::{ConvertJob, MergeParquetConfig},
@@ -11,12 +15,7 @@ use crate::{
         merge::{PhysicalMergeManifest, UnifiedMergeMode},
     },
 };
-
-use super::{
-    CONVERSION_READ_BATCH_SIZE, ConversionPartition, ConversionPartitionPlan,
-    ConversionPartitionReader, ConversionReferenceCheckpoint, PhysicalConversionMetrics,
-    TradeConversionKernel,
-};
+use std::path::{Path, PathBuf};
 
 // -----------------------------------------------------------------------------
 // Worker result
@@ -37,7 +36,7 @@ pub struct ConversionPartitionResult {
 // -----------------------------------------------------------------------------
 // Execute one conversion partition
 // -----------------------------------------------------------------------------
-
+#[allow(clippy::too_many_arguments)]
 pub fn execute_conversion_partition(
     job: &ConvertJob,
     manifest: &PhysicalMergeManifest,
@@ -47,6 +46,56 @@ pub fn execute_conversion_partition(
     checkpoint: &ConversionReferenceCheckpoint,
     staging_directory: &Path,
     parquet_config: &MergeParquetConfig,
+) -> Result<ConversionPartitionResult> {
+    execute_conversion_partition_impl(
+        job,
+        manifest,
+        plan,
+        partitions,
+        partition,
+        checkpoint,
+        staging_directory,
+        parquet_config,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn execute_conversion_partition_with_progress(
+    job: &ConvertJob,
+    manifest: &PhysicalMergeManifest,
+    plan: &ConversionPlan,
+    partitions: &ConversionPartitionPlan,
+    partition: &ConversionPartition,
+    checkpoint: &ConversionReferenceCheckpoint,
+    staging_directory: &Path,
+    parquet_config: &MergeParquetConfig,
+    progress: &mut ConversionWorkerProgress,
+) -> Result<ConversionPartitionResult> {
+    execute_conversion_partition_impl(
+        job,
+        manifest,
+        plan,
+        partitions,
+        partition,
+        checkpoint,
+        staging_directory,
+        parquet_config,
+        Some(progress),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_conversion_partition_impl(
+    job: &ConvertJob,
+    manifest: &PhysicalMergeManifest,
+    plan: &ConversionPlan,
+    partitions: &ConversionPartitionPlan,
+    partition: &ConversionPartition,
+    checkpoint: &ConversionReferenceCheckpoint,
+    staging_directory: &Path,
+    parquet_config: &MergeParquetConfig,
+    mut progress: Option<&mut ConversionWorkerProgress>,
 ) -> Result<ConversionPartitionResult> {
     job.validate()?;
     manifest.validate()?;
@@ -146,15 +195,40 @@ pub fn execute_conversion_partition(
             .as_ref()
             .expect("conversion builder initialized")
             .build(&batch, &rows)?;
-
-        // -------------------------------------------------------------
-        // Write partition-specific Parquet
-        // -------------------------------------------------------------
-
         writer
             .as_mut()
             .expect("conversion writer initialized")
             .write_batch(&output)?;
+        // -------------------------------------------------------------
+        // Write partition-specific Parquet
+        // -------------------------------------------------------------
+
+        if let Some(progress) = progress.as_deref_mut() {
+            let physical = writer
+                .as_ref()
+                .expect("conversion writer initialized")
+                .metrics();
+
+            let snapshot = ConversionProgress {
+                events_read: metrics.events_read,
+                events_written: physical.events_written,
+
+                identity_events: metrics.identity_events,
+                converted_events: metrics.converted_events,
+                unavailable_events: metrics.unavailable_events,
+
+                trade_events: metrics.events_read,
+
+                internal_reference_updates: metrics.reference_updates,
+
+                files_written: physical.files_written,
+                row_groups_written: physical.row_groups_written,
+
+                ..ConversionProgress::default()
+            };
+
+            progress.maybe_update(&snapshot);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -208,7 +282,25 @@ pub fn execute_conversion_partition(
     if metrics.reference_updates > metrics.events_read {
         return invalid("conversion partition reference updates exceed events");
     }
+    if let Some(progress) = progress.as_deref_mut() {
+        progress.finish(&ConversionProgress {
+            events_read: metrics.events_read,
+            events_written: metrics.events_written,
 
+            identity_events: metrics.identity_events,
+            converted_events: metrics.converted_events,
+            unavailable_events: metrics.unavailable_events,
+
+            trade_events: metrics.events_read,
+
+            internal_reference_updates: metrics.reference_updates,
+
+            files_written: metrics.files_written,
+            row_groups_written: metrics.row_groups_written,
+
+            ..ConversionProgress::default()
+        });
+    }
     Ok(ConversionPartitionResult {
         partition_id: partition.partition_id,
         start_row: partition.start_row,

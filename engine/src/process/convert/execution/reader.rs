@@ -1,15 +1,16 @@
-use std::{
-    fs::File,
-    path::{Path, PathBuf},
-};
-
-use arrow_array::{Array, Int64Array, RecordBatch, UInt32Array, UInt64Array};
-use arrow_schema::SchemaRef;
-use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
-
 use crate::{
     error::{MarketForgeError, Result},
     process::merge::PhysicalMergeManifest,
+};
+use arrow_array::{Array, Int64Array, RecordBatch, UInt32Array, UInt64Array};
+use arrow_schema::SchemaRef;
+use parquet::arrow::{
+    ProjectionMask,
+    arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder},
+};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
 };
 
 use super::super::reference::ReferenceKey;
@@ -19,7 +20,11 @@ pub const CONVERSION_READ_BATCH_SIZE: usize = 65_536;
 // -----------------------------------------------------------------------------
 // Physical conversion reader
 // -----------------------------------------------------------------------------
-
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReaderProjection {
+    Full,
+    ReferencePrepass,
+}
 pub struct PhysicalConversionReader {
     files: Vec<PathBuf>,
     file_index: usize,
@@ -28,6 +33,7 @@ pub struct PhysicalConversionReader {
     schema: Option<SchemaRef>,
 
     batch_size: usize,
+    projection: ReaderProjection,
     last_key: Option<ReferenceKey>,
 
     records_read: u64,
@@ -39,6 +45,28 @@ impl PhysicalConversionReader {
         dataset_path: &Path,
         manifest: &PhysicalMergeManifest,
         batch_size: usize,
+    ) -> Result<Self> {
+        Self::new_with_projection(dataset_path, manifest, batch_size, ReaderProjection::Full)
+    }
+
+    pub fn new_reference_prepass(
+        dataset_path: &Path,
+        manifest: &PhysicalMergeManifest,
+        batch_size: usize,
+    ) -> Result<Self> {
+        Self::new_with_projection(
+            dataset_path,
+            manifest,
+            batch_size,
+            ReaderProjection::ReferencePrepass,
+        )
+    }
+
+    fn new_with_projection(
+        dataset_path: &Path,
+        manifest: &PhysicalMergeManifest,
+        batch_size: usize,
+        projection: ReaderProjection,
     ) -> Result<Self> {
         if batch_size == 0 {
             return invalid("conversion batch size must be positive");
@@ -61,6 +89,7 @@ impl PhysicalConversionReader {
             reader: None,
             schema: None,
             batch_size,
+            projection,
             last_key: None,
             records_read: 0,
             files_opened: 0,
@@ -138,6 +167,49 @@ impl PhysicalConversionReader {
         } else {
             self.schema = Some(schema);
         }
+
+        let builder = match self.projection {
+            ReaderProjection::Full => builder,
+
+            ReaderProjection::ReferencePrepass => {
+                let required_columns = [
+                    "event_timestamp_ns",
+                    "event_kind",
+                    "stream_id",
+                    "stream_rank",
+                    "dataset_id",
+                    "task_id",
+                    "event_ordinal",
+                    "trade.price",
+                ];
+
+                let schema_descriptor = builder.parquet_schema();
+
+                let leaf_indices = schema_descriptor
+                    .columns()
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, column)| {
+                        let path = column.path().string();
+
+                        required_columns.contains(&path.as_str()).then_some(index)
+                    })
+                    .collect::<Vec<_>>();
+
+                if leaf_indices.len() != required_columns.len() {
+                    return invalid(format!(
+                        "reference prepass projection mismatch: \
+                 expected {} columns, found {}",
+                        required_columns.len(),
+                        leaf_indices.len(),
+                    ));
+                }
+
+                let mask = ProjectionMask::leaves(schema_descriptor, leaf_indices);
+
+                builder.with_projection(mask)
+            }
+        };
 
         let reader = builder
             .with_batch_size(self.batch_size)
