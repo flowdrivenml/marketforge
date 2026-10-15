@@ -19,7 +19,7 @@ use ratatui::{
     widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType, Paragraph, Row, Table},
 };
 
-use crate::process::convert::progress::{
+use crate::historical::convert::progress::{
     ConversionPartitionKey, ConversionPhase, ConversionProgress, ConversionProgressEvent,
     ConversionProgressState,
 };

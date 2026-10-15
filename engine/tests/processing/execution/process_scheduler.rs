@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::{
     sync::{

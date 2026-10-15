@@ -1,7 +1,7 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
-use marketforge_engine::process::metrics::ScopedIntegrityMetrics;
-use marketforge_engine::process::metrics::{IntegrityCategory, IntegrityScope};
+use marketforge_engine::historical::normalize::metrics::ScopedIntegrityMetrics;
+use marketforge_engine::historical::normalize::metrics::{IntegrityCategory, IntegrityScope};
 use marketforge_engine::{
     canonical::Trade,
     error::Result,

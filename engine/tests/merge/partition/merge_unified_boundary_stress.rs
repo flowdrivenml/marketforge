@@ -1,6 +1,6 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
-use marketforge_engine::process::merge::{
+use marketforge_engine::historical::merge::{
     KWayEventMerger, MergeEventRef, MergeEventSource, MergeKey, TradeEventRef,
     UnifiedTimelineRecord,
 };

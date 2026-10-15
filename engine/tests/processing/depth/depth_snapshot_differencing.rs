@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use rust_decimal::Decimal;
 

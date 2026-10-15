@@ -9,11 +9,11 @@ use arrow_array::{
 };
 use arrow_buffer::OffsetBuffer;
 use arrow_schema::DataType;
-use marketforge_engine::job::MergeTimeRange;
-use marketforge_engine::process::merge::{
+use marketforge_engine::historical::merge::{
     MergeCheckpoint, MergeSkippedInitialization, MergeTimelineFile, UnifiedMergeMode,
     ValidatedPhysicalDataset, build_physical_checkpoints, physical_depth_schema,
 };
+use marketforge_engine::job::MergeTimeRange;
 use parquet::arrow::ArrowWriter;
 // -----------------------------------------------------------------------------
 // Fixtures

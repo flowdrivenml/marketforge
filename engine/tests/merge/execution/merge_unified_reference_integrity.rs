@@ -1,6 +1,6 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
-use marketforge_engine::process::merge::{
+use marketforge_engine::historical::merge::{
     DepthStream, MergeEventRef, MergedEvent, TradeStream, UnifiedReferenceValidator,
     UnifiedTimelineRecord, build_depth_inventory, build_trade_inventory,
     build_trade_inventory as build_trades, reconcile_depth_boundaries,

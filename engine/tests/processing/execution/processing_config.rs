@@ -1,8 +1,10 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::path::{Path, PathBuf};
 
-use marketforge_engine::process::{load_processing_config, validate_integrity_policy};
+use marketforge_engine::historical::normalize::{
+    load_processing_config, validate_integrity_policy,
+};
 
 fn project_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -11,7 +13,7 @@ fn project_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn load_config() -> marketforge_engine::process::ProcessingConfig {
+fn load_config() -> marketforge_engine::historical::normalize::ProcessingConfig {
     let root = project_root();
 
     load_processing_config(root.join("data/.jobs/processing.json"), &root)

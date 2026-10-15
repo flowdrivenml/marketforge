@@ -1,4 +1,4 @@
-use marketforge_engine::process::merge::{
+use marketforge_engine::historical::merge::{
     CheckpointAvailability, InitialMergeCheckpoint, MergeCheckpoint, PhysicalMergeCheckpoint,
     PhysicalReconstructionAvailability, resolve_physical_initial_reconstruction,
 };

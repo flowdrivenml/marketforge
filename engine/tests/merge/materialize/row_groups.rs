@@ -4,7 +4,7 @@ use arrow_array::{Int64Array, RecordBatch};
 use arrow_schema::{DataType, Field, Schema};
 use parquet::arrow::ArrowWriter;
 
-use marketforge_engine::process::merge::CanonicalRowGroupIndex;
+use marketforge_engine::historical::merge::CanonicalRowGroupIndex;
 
 // -----------------------------------------------------------------------------
 // Fixture

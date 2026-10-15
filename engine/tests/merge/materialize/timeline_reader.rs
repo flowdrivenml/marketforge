@@ -2,7 +2,7 @@ use std::{fs::File, path::Path};
 
 use parquet::arrow::ArrowWriter;
 
-use marketforge_engine::process::merge::{
+use marketforge_engine::historical::merge::{
     MaterializationTimelineReader, UnifiedTimelineBatchBuilder, UnifiedTimelineRecord,
     unified_timeline_schema,
 };

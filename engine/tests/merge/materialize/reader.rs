@@ -4,9 +4,9 @@ use arrow_array::{Array, Int64Array, RecordBatch};
 use arrow_schema::{DataType, Field, Schema};
 use parquet::arrow::ArrowWriter;
 
-use marketforge_engine::process::merge::CanonicalFileSlice;
-use marketforge_engine::process::merge::CanonicalForwardCursor;
-use marketforge_engine::process::merge::CanonicalParquetReader;
+use marketforge_engine::historical::merge::CanonicalFileSlice;
+use marketforge_engine::historical::merge::CanonicalForwardCursor;
+use marketforge_engine::historical::merge::CanonicalParquetReader;
 
 fn write_fixture(path: &Path, values: &[i64], group_size: usize) {
     let schema = Arc::new(Schema::new(vec![Field::new(

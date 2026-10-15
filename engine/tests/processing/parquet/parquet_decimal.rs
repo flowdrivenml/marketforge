@@ -1,8 +1,8 @@
-// #![cfg(feature = "process")]
+// #![cfg(feature = "historical")]
 
 use rust_decimal::Decimal;
 
-use marketforge_engine::process::parquet::{decimal_to_i256, i256_to_decimal};
+use marketforge_engine::historical::normalize::parquet::{decimal_to_i256, i256_to_decimal};
 
 fn assert_round_trip(value: &str) {
     let original: Decimal = value.parse().expect("parse decimal");

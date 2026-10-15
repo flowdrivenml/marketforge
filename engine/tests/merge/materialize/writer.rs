@@ -16,7 +16,7 @@ use marketforge_engine::{
 use arrow_buffer::OffsetBuffer;
 use arrow_schema::DataType;
 
-use marketforge_engine::process::merge::{physical_combined_schema, physical_depth_schema};
+use marketforge_engine::historical::merge::{physical_combined_schema, physical_depth_schema};
 
 fn config() -> MergeParquetConfig {
     MergeParquetConfig {

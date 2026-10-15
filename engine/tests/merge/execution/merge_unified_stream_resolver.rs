@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::{
     collections::HashSet,
@@ -7,7 +7,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use marketforge_engine::process::merge::{
+use marketforge_engine::historical::merge::{
     ResolvedMergeInput, UnifiedMergeStreamKind, resolve_unified_merge_streams,
 };
 

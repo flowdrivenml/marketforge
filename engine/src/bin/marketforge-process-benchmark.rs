@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::{
     env, fs,
@@ -472,7 +472,7 @@ fn cleanup_successful_job(job: &ProcessingJob) -> Result<(), String> {
 
 fn benchmark_per_job(
     jobs: &[(PathBuf, ProcessingJob)],
-    runtime_config: &marketforge_engine::process::ProcessingConfig,
+    runtime_config: &marketforge_engine::historical::normalize::ProcessingConfig,
     scratch: &Path,
     repetition: usize,
     workers: usize,
@@ -578,7 +578,7 @@ fn benchmark_per_job(
 
 fn benchmark_global(
     jobs: &[(PathBuf, ProcessingJob)],
-    runtime_config: &marketforge_engine::process::ProcessingConfig,
+    runtime_config: &marketforge_engine::historical::normalize::ProcessingConfig,
     scratch: &Path,
     repetition: usize,
     workers: usize,

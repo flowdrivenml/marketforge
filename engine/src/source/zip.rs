@@ -63,7 +63,14 @@ fn find_member(
                 message: error.to_string(),
             })?;
 
-        if !member.is_dir() && member.name() == requested_member {
+        let member_name = member
+            .name()
+            .map_err(|error| MarketForgeError::ArchiveOpen {
+                path: path.to_path_buf(),
+                message: error.to_string(),
+            })?;
+
+        if !member.is_dir() && member_name.as_ref() == requested_member {
             return Ok(index);
         }
     }

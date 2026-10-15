@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::{
     fs::{self, File},
@@ -6,8 +6,8 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use marketforge_engine::process::manifest::DatasetManifest;
-use marketforge_engine::process::manifest::inspect_parquet_files;
+use marketforge_engine::historical::normalize::manifest::DatasetManifest;
+use marketforge_engine::historical::normalize::manifest::inspect_parquet_files;
 use marketforge_engine::{
     job::load_processing_job,
     process::{ProcessingStatus, execute_processing_job, load_processing_config},

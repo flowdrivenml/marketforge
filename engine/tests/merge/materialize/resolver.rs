@@ -8,10 +8,10 @@ use arrow_buffer::i256;
 use arrow_schema::SchemaRef;
 use parquet::arrow::ArrowWriter;
 
-use marketforge_engine::process::merge::{
+use marketforge_engine::historical::merge::{
     CanonicalReadPlanner, CanonicalRowGroupIndex, CanonicalRowIndex, GroupedCanonicalDecoder,
 };
-use marketforge_engine::process::{
+use marketforge_engine::historical::normalize::{
     merge::{
         CanonicalParquetReader, CanonicalReferenceResolver, CanonicalRowGroupCache,
         CanonicalTaskKey, UnifiedTimelineRecord,

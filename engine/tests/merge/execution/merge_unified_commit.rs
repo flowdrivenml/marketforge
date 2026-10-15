@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::collections::HashSet;
 use std::{
@@ -10,7 +10,7 @@ use std::{
 
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
-use marketforge_engine::process::merge::{physical_combined_schema, physical_trade_schema};
+use marketforge_engine::historical::merge::{physical_combined_schema, physical_trade_schema};
 use marketforge_engine::{
     job::{
         MergeJob, MergeOperation, MergeOutput, MergeParquetConfig, MergePartitioning,

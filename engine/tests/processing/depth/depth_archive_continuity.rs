@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::{
     fs::{self, File},
@@ -63,7 +63,7 @@ fn project_root() -> PathBuf {
 fn process_archive(
     task: &marketforge_engine::job::WorkTask,
     output_path: &Path,
-    config: &marketforge_engine::process::config::ProcessingConfig,
+    config: &marketforge_engine::historical::normalize::config::ProcessingConfig,
 ) -> DepthBoundaryManifest {
     let mut writer = ParquetDepthWriter::new(output_path, config.resources.parquet.clone())
         .expect("create Parquet writer");

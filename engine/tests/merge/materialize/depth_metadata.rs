@@ -3,7 +3,7 @@ use std::{fs::File, path::Path, sync::Arc};
 use arrow_array::{ArrayRef, Int64Array, RecordBatch, UInt8Array, UInt64Array};
 use parquet::arrow::ArrowWriter;
 
-use marketforge_engine::process::{
+use marketforge_engine::historical::normalize::{
     merge::{DepthMetadataResolver, UnifiedTimelineRecord},
     parquet::depth_event_schema,
 };

@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 #[path = "depth_formats/common.rs"]
 mod common;

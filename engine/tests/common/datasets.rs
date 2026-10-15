@@ -3,7 +3,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use marketforge_engine::process::{manifest::DatasetManifest, merge::ResolvedMergeInput};
+use marketforge_engine::historical::normalize::{
+    manifest::DatasetManifest, merge::ResolvedMergeInput,
+};
 
 // -----------------------------------------------------------------------------
 // Project root

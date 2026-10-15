@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use arrow_array::{Array, Decimal256Array, Int64Array, StringArray, UInt64Array};
 

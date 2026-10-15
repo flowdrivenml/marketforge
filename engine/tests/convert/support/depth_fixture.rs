@@ -8,7 +8,9 @@ use arrow_array::{
 use arrow_buffer::{OffsetBuffer, i256};
 use arrow_schema::DataType;
 
-use marketforge_engine::process::{convert::ConversionDecimal, merge::physical_depth_schema};
+use marketforge_engine::historical::normalize::{
+    convert::ConversionDecimal, merge::physical_depth_schema,
+};
 
 pub fn decimal(value: i128) -> ConversionDecimal {
     ConversionDecimal::new(i256::from_i128(value * 10_i128.pow(28))).unwrap()

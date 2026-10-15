@@ -1,8 +1,8 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::path::PathBuf;
 
-use marketforge_engine::process::merge::DepthEventCursor;
+use marketforge_engine::historical::merge::DepthEventCursor;
 
 fn project_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

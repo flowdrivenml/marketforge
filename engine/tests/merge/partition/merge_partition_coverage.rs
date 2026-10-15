@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::path::PathBuf;
 
@@ -72,8 +72,8 @@ impl From<&DepthEventRef> for EventIdentity {
 // -----------------------------------------------------------------------------
 
 struct TestContext {
-    inventory: Vec<marketforge_engine::process::merge::DepthTaskInventory>,
-    boundaries: Vec<marketforge_engine::process::merge::DepthBoundaryLink>,
+    inventory: Vec<marketforge_engine::historical::merge::DepthTaskInventory>,
+    boundaries: Vec<marketforge_engine::historical::merge::DepthBoundaryLink>,
     dataset_order: Vec<u64>,
 }
 

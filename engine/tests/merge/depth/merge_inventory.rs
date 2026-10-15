@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::path::PathBuf;
 
@@ -57,7 +57,7 @@ fn reconciles_real_depth_boundaries() {
 
     let inventory = build_depth_inventory(&inputs).expect("build inventory");
 
-    let links = marketforge_engine::process::merge::reconcile_depth_boundaries(&inventory)
+    let links = marketforge_engine::historical::merge::reconcile_depth_boundaries(&inventory)
         .expect("reconcile boundaries");
 
     assert_eq!(links.len(), 77);
@@ -79,7 +79,7 @@ fn reconciles_real_depth_boundaries() {
             );
         }
     }
-    use marketforge_engine::process::merge::MergeBoundaryRelation;
+    use marketforge_engine::historical::merge::MergeBoundaryRelation;
 
     let gateio: Vec<_> = links.iter().filter(|link| link.dataset_id == 112).collect();
 

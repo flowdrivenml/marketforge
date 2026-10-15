@@ -1,6 +1,8 @@
-use crate::process::ProcessingStatus;
-use crate::process::progress::ProgressTaskId;
-use crate::process::session::{ProcessingSessionResult, execute_processing_session_with_progress};
+use crate::historical::normalize::ProcessingStatus;
+use crate::historical::normalize::progress::ProgressTaskId;
+use crate::historical::normalize::session::{
+    ProcessingSessionResult, execute_processing_session_with_progress,
+};
 use crate::{
     job::ProcessingJob,
     process::{

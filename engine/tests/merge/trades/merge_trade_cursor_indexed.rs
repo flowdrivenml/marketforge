@@ -1,11 +1,11 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::{
     fs::File,
     path::{Path, PathBuf},
 };
 
-use marketforge_engine::process::merge::TradeCursor;
+use marketforge_engine::historical::merge::TradeCursor;
 
 fn project_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

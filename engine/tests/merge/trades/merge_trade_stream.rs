@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::{
     collections::HashSet,
@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use marketforge_engine::process::{
+use marketforge_engine::historical::normalize::{
     manifest::DatasetManifest,
     merge::{ResolvedMergeInput, TradeStream, build_trade_inventory},
 };

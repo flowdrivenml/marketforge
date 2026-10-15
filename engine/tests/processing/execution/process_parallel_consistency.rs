@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::{
     fs::{self, File},
@@ -136,7 +136,13 @@ fn canonical_fingerprint(dataset: &Path) -> (String, u64) {
 
     let digest = hasher.finalize();
 
-    (format!("{digest:x}"), total_rows)
+    (
+        digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>(),
+        total_rows,
+    )
 }
 
 // -----------------------------------------------------------------------------

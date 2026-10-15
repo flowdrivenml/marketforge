@@ -1,5 +1,5 @@
-#![cfg(feature = "process")]
-use marketforge_engine::process::merge::DepthEventSource;
+#![cfg(feature = "historical")]
+use marketforge_engine::historical::merge::DepthEventSource;
 use std::path::PathBuf;
 
 use marketforge_engine::{

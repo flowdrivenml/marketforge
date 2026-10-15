@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::{
     sync::{Arc, Barrier},
@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use marketforge_engine::process::resources::{ResourceBudget, ResourceRequirements};
+use marketforge_engine::historical::normalize::resources::{ResourceBudget, ResourceRequirements};
 
 // -----------------------------------------------------------------------------
 // Helpers

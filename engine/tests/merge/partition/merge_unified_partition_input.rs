@@ -1,5 +1,5 @@
-#![cfg(feature = "process")]
-use marketforge_engine::process::merge::{
+#![cfg(feature = "historical")]
+use marketforge_engine::historical::merge::{
     MergePartition, build_depth_inventory, build_trade_inventory, depth_task_intervals,
     plan_partition_inputs, plan_unified_partition_inputs, trade_task_intervals,
 };
@@ -8,7 +8,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use marketforge_engine::process::{manifest::DatasetManifest, merge::ResolvedMergeInput};
+use marketforge_engine::historical::normalize::{
+    manifest::DatasetManifest, merge::ResolvedMergeInput,
+};
 
 fn project_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

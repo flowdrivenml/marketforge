@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::{
     fs,
@@ -15,7 +15,7 @@ use marketforge_engine::{
     process::{parquet::ParquetDepthWriter, worker::DepthSink},
 };
 
-use marketforge_engine::process::boundary::DepthBoundaryManifest;
+use marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use rust_decimal::Decimal;
 // -----------------------------------------------------------------------------
@@ -486,7 +486,7 @@ fn rejects_decreasing_event_ordinals() {
 
 #[test]
 fn event_index_has_nine_columns() {
-    let schema = marketforge_engine::process::parquet::depth_event_schema();
+    let schema = marketforge_engine::historical::normalize::parquet::depth_event_schema();
 
     assert_eq!(schema.fields().len(), 9);
 

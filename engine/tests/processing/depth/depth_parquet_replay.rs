@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::{
     fs,
@@ -8,7 +8,7 @@ use std::{
 };
 
 use arrow_array::{Array, Decimal256Array, Int64Array, StringArray, UInt64Array};
-use marketforge_engine::process::boundary::{
+use marketforge_engine::historical::normalize::boundary::{
     BoundaryBookState, DepthBoundaryManifest, fingerprint_book,
 };
 use marketforge_engine::{

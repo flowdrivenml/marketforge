@@ -1,9 +1,9 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::path::{Path, PathBuf};
 
-use marketforge_engine::process::load_processing_config;
-use marketforge_engine::process::metrics::ScopedIntegrityMetrics;
+use marketforge_engine::historical::normalize::load_processing_config;
+use marketforge_engine::historical::normalize::metrics::ScopedIntegrityMetrics;
 use marketforge_engine::{
     canonical::Trade,
     error::Result,
@@ -125,7 +125,7 @@ fn print_metrics(metrics: &TaskMetrics) {
 }
 
 fn print_hourly_integrity(metrics: &TaskMetrics) {
-    use marketforge_engine::process::metrics::IntegrityCategory;
+    use marketforge_engine::historical::normalize::metrics::IntegrityCategory;
 
     println!("\nHOURLY INTEGRITY");
 

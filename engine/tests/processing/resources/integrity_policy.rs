@@ -1,14 +1,14 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
-use marketforge_engine::job::IntegrityAction;
-use marketforge_engine::process::metrics::enforce_immediate_integrity;
-use marketforge_engine::process::{
+use marketforge_engine::historical::normalize::metrics::enforce_immediate_integrity;
+use marketforge_engine::historical::normalize::{
     load_processing_config,
     metrics::{
         IntegrityCategory, IntegrityScope, IntegrityStatus, IntegrityThreshold,
         ScopedIntegrityMetrics, evaluate_integrity_policy,
     },
 };
+use marketforge_engine::job::IntegrityAction;
 use std::path::Path;
 
 fn policy() -> marketforge_engine::job::IntegrityPolicy {
@@ -128,7 +128,7 @@ fn absolute_count_threshold_fails() {
 
 #[test]
 fn policy_violation_reports_are_bounded() {
-    use marketforge_engine::process::metrics::MAX_POLICY_VIOLATIONS;
+    use marketforge_engine::historical::normalize::metrics::MAX_POLICY_VIOLATIONS;
 
     let mut policy = policy();
 

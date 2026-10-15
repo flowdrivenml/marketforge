@@ -7,7 +7,7 @@ use arrow_array::{
 use arrow_buffer::i256;
 use parquet::arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder};
 
-use marketforge_engine::process::{
+use marketforge_engine::historical::normalize::{
     merge::{
         PhysicalCombinedBatchBuilder, PhysicalCombinedEvent, ResolvedDepthMetadata,
         ResolvedMarketEvent, UnifiedMergeStream, UnifiedMergeStreamKind, UnifiedTimelineRecord,

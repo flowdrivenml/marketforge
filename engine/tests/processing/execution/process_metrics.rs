@@ -1,6 +1,6 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
-use marketforge_engine::process::metrics::{
+use marketforge_engine::historical::normalize::metrics::{
     IntegrityCategory, IntegrityDiagnostic, IntegrityMetrics, ProcessingCounters,
 };
 

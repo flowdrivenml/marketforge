@@ -1,8 +1,8 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::path::{Path, PathBuf};
 
-use marketforge_engine::process::boundary::DepthBoundaryManifest;
+use marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest;
 use marketforge_engine::{
     book::SegmentTracker,
     formats::depth::{DepthEventBoundary, DepthProcessingOutcome},

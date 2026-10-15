@@ -1,6 +1,6 @@
-#![cfg(feature = "process")]
-use marketforge_engine::process::merge::ResolvedMergeInput;
-use marketforge_engine::process::merge::{
+#![cfg(feature = "historical")]
+use marketforge_engine::historical::merge::ResolvedMergeInput;
+use marketforge_engine::historical::merge::{
     MergePartition, build_depth_inventory, build_trade_inventory, depth_task_intervals,
     plan_unified_partition_inputs, trade_task_intervals,
 };
@@ -187,7 +187,7 @@ fn validate_partition_output(staging: &Path, result: &UnifiedPartitionResult) {
 
         assert_eq!(
             reader.schema().as_ref(),
-            marketforge_engine::process::merge::unified_timeline_schema().as_ref()
+            marketforge_engine::historical::merge::unified_timeline_schema().as_ref()
         );
 
         physical_rows += reader.metadata().file_metadata().num_rows() as u64;

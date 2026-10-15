@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::path::{Path, PathBuf};
 
@@ -23,7 +23,7 @@ fn load_job() -> marketforge_engine::job::ProcessingJob {
         .expect("load processing job")
 }
 
-fn load_config() -> marketforge_engine::process::ProcessingConfig {
+fn load_config() -> marketforge_engine::historical::normalize::ProcessingConfig {
     let root = project_root();
 
     load_processing_config(root.join("data/.jobs/processing.json"), &root)

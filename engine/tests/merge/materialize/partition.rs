@@ -5,9 +5,9 @@ use arrow_array::{
     ArrayRef, Decimal256Array, Int64Array, RecordBatch, StringArray, UInt64Array, new_null_array,
 };
 use arrow_buffer::i256;
-use marketforge_engine::process::merge::MergeBoundarySummary;
-use marketforge_engine::process::merge::validate_physical_partition;
-use marketforge_engine::process::merge::{
+use marketforge_engine::historical::merge::MergeBoundarySummary;
+use marketforge_engine::historical::merge::validate_physical_partition;
+use marketforge_engine::historical::merge::{
     MaterializationPartitionResult, validate_physical_dataset,
 };
 use marketforge_engine::{
@@ -413,8 +413,8 @@ fn physical_result(
     start_ns: i64,
     end_ns: i64,
     events: u64,
-) -> marketforge_engine::process::merge::MaterializationPartitionResult {
-    use marketforge_engine::process::merge::{
+) -> marketforge_engine::historical::merge::MaterializationPartitionResult {
+    use marketforge_engine::historical::merge::{
         MaterializationPartitionResult, PhysicalWriterMetrics,
     };
 
@@ -499,10 +499,10 @@ fn materializes_trade_partition_end_to_end() {
     write_timeline(&timeline_path, &references);
 
     // Construct the existing trade inventory directly.
-    let trade_inventory = marketforge_engine::process::merge::TradeTaskInventory {
+    let trade_inventory = marketforge_engine::historical::merge::TradeTaskInventory {
         dataset_id: 88,
         task_id: 0,
-        files: vec![marketforge_engine::process::merge::TradeFileInventory {
+        files: vec![marketforge_engine::historical::merge::TradeFileInventory {
             path: canonical_path,
             part_index: 0,
             row_offset: 0,
@@ -717,10 +717,10 @@ fn materializes_combined_partition_end_to_end() {
 
     write_parquet(&trade_path, &canonical_trades(&[150, 250, 350]));
 
-    let trade_inventory = marketforge_engine::process::merge::TradeTaskInventory {
+    let trade_inventory = marketforge_engine::historical::merge::TradeTaskInventory {
         dataset_id: 88,
         task_id: 0,
-        files: vec![marketforge_engine::process::merge::TradeFileInventory {
+        files: vec![marketforge_engine::historical::merge::TradeFileInventory {
             path: trade_path,
             part_index: 0,
             row_offset: 0,
@@ -884,10 +884,10 @@ fn materializes_multiple_partitions_in_parallel() {
         &canonical_trades(&[100, 200, 300, 400, 500, 600]),
     );
 
-    let trade_inventory = marketforge_engine::process::merge::TradeTaskInventory {
+    let trade_inventory = marketforge_engine::historical::merge::TradeTaskInventory {
         dataset_id: 88,
         task_id: 0,
-        files: vec![marketforge_engine::process::merge::TradeFileInventory {
+        files: vec![marketforge_engine::historical::merge::TradeFileInventory {
             path: canonical_path,
             part_index: 0,
             row_offset: 0,

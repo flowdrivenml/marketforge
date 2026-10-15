@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 #[allow(dead_code)]
 #[path = "depth_formats/common.rs"]
 mod depth_format_common;
@@ -10,7 +10,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use marketforge_engine::process::boundary::{BoundaryBookState, fingerprint_book};
+use marketforge_engine::historical::normalize::boundary::{BoundaryBookState, fingerprint_book};
 use marketforge_engine::{
     book::SequencePolicy,
     job::{SourceContainer, load_processing_job},
@@ -143,7 +143,7 @@ fn processes_gateio_spot_csv_pipeline() {
 
     let boundary_path = output_path.join("boundary.json");
 
-    let boundary: marketforge_engine::process::boundary::DepthBoundaryManifest =
+    let boundary: marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest =
         serde_json::from_slice(&fs::read(boundary_path).unwrap()).unwrap();
 
     assert_eq!(boundary.continuity, BoundaryContinuity::Verified,);
@@ -305,7 +305,7 @@ fn recovers_after_malformed_gateio_snapshot() {
     // Recovered boundary
     // ---------------------------------------------------------
 
-    let boundary: marketforge_engine::process::boundary::DepthBoundaryManifest =
+    let boundary: marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest =
         serde_json::from_slice(&fs::read(output_path.join("boundary.json")).unwrap()).unwrap();
 
     assert_eq!(
@@ -410,7 +410,7 @@ fn recovers_after_gateio_sequence_gap() {
     // Boundary continuity
     // ---------------------------------------------------------
 
-    let boundary: marketforge_engine::process::boundary::DepthBoundaryManifest =
+    let boundary: marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest =
         serde_json::from_slice(&fs::read(output_path.join("boundary.json")).unwrap()).unwrap();
 
     assert_eq!(
@@ -494,7 +494,7 @@ fn flushes_gateio_snapshot_at_eof() {
     assert_eq!(metrics.counters.records_rejected, 0);
     assert_eq!(metrics.counters.events_written, 2);
 
-    let boundary: marketforge_engine::process::boundary::DepthBoundaryManifest =
+    let boundary: marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest =
         serde_json::from_slice(&fs::read(output_path.join("boundary.json")).unwrap()).unwrap();
 
     assert_eq!(boundary.continuity, BoundaryContinuity::Verified,);
@@ -563,7 +563,7 @@ fn rejects_incomplete_initial_snapshot_at_eof() {
     assert_eq!(metrics.counters.records_rejected_unmatched, 0);
     assert_eq!(metrics.counters.events_written, 0);
 
-    let boundary: marketforge_engine::process::boundary::DepthBoundaryManifest =
+    let boundary: marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest =
         serde_json::from_slice(&fs::read(output_path.join("boundary.json")).unwrap()).unwrap();
 
     assert_eq!(boundary.continuity, BoundaryContinuity::GapDetected,);
@@ -634,7 +634,7 @@ fn rejects_incomplete_replacement_snapshot_at_eof() {
     assert_eq!(metrics.counters.records_rejected, 2);
     assert_eq!(metrics.counters.events_written, 3);
 
-    let boundary: marketforge_engine::process::boundary::DepthBoundaryManifest =
+    let boundary: marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest =
         serde_json::from_slice(&fs::read(output_path.join("boundary.json")).unwrap()).unwrap();
 
     // The previous book must not be advertised as a valid final state.

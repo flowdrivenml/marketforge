@@ -1,12 +1,12 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use arrow_array::{Array, Int64Array, UInt8Array, UInt32Array, UInt64Array};
 
-use marketforge_engine::process::merge::{
+use marketforge_engine::historical::merge::{
     MergeEventRef, MergedEvent, TradeEventRef, UNIFIED_TIMELINE_VERSION,
     UnifiedTimelineBatchBuilder, UnifiedTimelineRecord, unified_timeline_schema,
 };
-use marketforge_engine::process::{
+use marketforge_engine::historical::normalize::{
     manifest::DatasetManifest,
     merge::{
         DepthStream, MergeEventKind, ResolvedMergeInput, build_depth_inventory,

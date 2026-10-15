@@ -3,7 +3,7 @@ use std::sync::Arc;
 use arrow_array::{ArrayRef, Int64Array, RecordBatch, UInt64Array};
 use arrow_schema::DataType;
 
-use marketforge_engine::process::{
+use marketforge_engine::historical::normalize::{
     merge::{
         PhysicalTradeBatchBuilder, ResolvedMarketEvent, UnifiedTimelineRecord,
         physical_trade_schema,

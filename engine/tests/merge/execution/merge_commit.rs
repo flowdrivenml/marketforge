@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::{
     fs,
@@ -6,7 +6,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use marketforge_engine::process::merge::MergeCommitPaths;
+use marketforge_engine::historical::merge::MergeCommitPaths;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 

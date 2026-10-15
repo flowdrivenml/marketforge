@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::{
     fs::{self, File},
@@ -8,7 +8,7 @@ use std::{
 };
 
 use arrow_array::{Array, UInt64Array};
-use marketforge_engine::process::config::load_processing_config;
+use marketforge_engine::historical::normalize::config::load_processing_config;
 use marketforge_engine::{
     book::SequencePolicy,
     job::{SourceContainer, load_processing_job},

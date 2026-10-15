@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::{
     collections::HashMap,
@@ -6,7 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use marketforge_engine::process::merge::{DepthTaskInventory, TradeTaskInventory};
+use marketforge_engine::historical::merge::{DepthTaskInventory, TradeTaskInventory};
 use marketforge_engine::{
     job::{
         MergeJob, MergeOperation, MergeOutput, MergeParquetConfig, MergePartitioning,

@@ -1,4 +1,4 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use marketforge_engine::{
     book::SegmentTracker,
@@ -8,7 +8,7 @@ use marketforge_engine::{
     process::worker::DepthSink,
 };
 
-use marketforge_engine::process::boundary::DepthBoundaryManifest;
+use marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest;
 use rust_decimal::Decimal;
 // -----------------------------------------------------------------------------
 // In-memory depth sink

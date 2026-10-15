@@ -1,6 +1,6 @@
 use std::io::{Cursor, Read, Seek};
 
-use quick_xml::{Reader, events::Event};
+use quick_xml::{Reader, XmlVersion, events::Event};
 use serde_json::{Value, json};
 use zip::ZipArchive;
 
@@ -84,8 +84,13 @@ impl XlsxDepthDecoder {
 fn find_worksheet<R: Read + Seek>(workbook: &mut ZipArchive<R>) -> Result<String> {
     let sheets = workbook
         .file_names()
+        .map(|name| {
+            name.map(|name| name.into_owned())
+                .map_err(|error| invalid_error(format!("invalid XLSX member name: {error}")))
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
         .filter(|name| name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml"))
-        .map(str::to_owned)
         .collect::<Vec<_>>();
 
     if sheets.len() != 1 {
@@ -122,19 +127,17 @@ fn read_shared_strings<R: Read + Seek>(workbook: &mut ZipArchive<R>) -> Result<V
             .read_event_into(&mut buffer)
             .map_err(|error| invalid_error(error.to_string()))?
         {
-            Event::Start(event) if event.name().as_ref() == b"si" => {
+            Event::Start(event) if event.name().as_ref() == "si" => {
                 current.clear();
                 inside_string = true;
             }
 
-            Event::Start(event) if event.name().as_ref() == b"t" => {
+            Event::Start(event) if event.name().as_ref() == "t" => {
                 inside_text = true;
             }
 
             Event::Text(event) if inside_string && inside_text => {
-                let text = event
-                    .xml_content()
-                    .map_err(|error| invalid_error(error.to_string()))?;
+                let text = event.xml_content(XmlVersion::Implicit1_0);
 
                 let text = quick_xml::escape::unescape(&text)
                     .map_err(|error| invalid_error(error.to_string()))?;
@@ -142,11 +145,11 @@ fn read_shared_strings<R: Read + Seek>(workbook: &mut ZipArchive<R>) -> Result<V
                 current.push_str(&text);
             }
 
-            Event::End(event) if event.name().as_ref() == b"t" => {
+            Event::End(event) if event.name().as_ref() == "t" => {
                 inside_text = false;
             }
 
-            Event::End(event) if event.name().as_ref() == b"si" => {
+            Event::End(event) if event.name().as_ref() == "si" => {
                 strings.push(std::mem::take(&mut current));
                 inside_string = false;
             }
@@ -185,7 +188,7 @@ fn parse_worksheet(xml: &[u8], shared_strings: &[String]) -> Result<Vec<Vec<Stri
             .read_event_into(&mut buffer)
             .map_err(|error| invalid_error(error.to_string()))?
         {
-            Event::Start(event) if event.name().as_ref() == b"row" => {
+            Event::Start(event) if event.name().as_ref() == "row" => {
                 if inside_row {
                     return invalid("nested XLSX worksheet rows");
                 }
@@ -196,9 +199,8 @@ fn parse_worksheet(xml: &[u8], shared_strings: &[String]) -> Result<Vec<Vec<Stri
                 for attribute in event.attributes() {
                     let attribute = attribute.map_err(|error| invalid_error(error.to_string()))?;
 
-                    if attribute.key.as_ref() == b"r" {
-                        let text = std::str::from_utf8(attribute.value.as_ref())
-                            .map_err(|_| invalid_error("invalid XLSX row reference encoding"))?;
+                    if attribute.key.as_ref() == "r" {
+                        let text = attribute.value.as_ref();
 
                         let number = text
                             .parse::<u32>()
@@ -219,7 +221,7 @@ fn parse_worksheet(xml: &[u8], shared_strings: &[String]) -> Result<Vec<Vec<Stri
                 inside_row = true;
             }
 
-            Event::Start(event) if event.name().as_ref() == b"c" => {
+            Event::Start(event) if event.name().as_ref() == "c" => {
                 if !inside_row || inside_cell {
                     return invalid("invalid XLSX cell structure");
                 }
@@ -232,11 +234,8 @@ fn parse_worksheet(xml: &[u8], shared_strings: &[String]) -> Result<Vec<Vec<Stri
                     let attribute = attribute.map_err(|error| invalid_error(error.to_string()))?;
 
                     match attribute.key.as_ref() {
-                        b"r" => {
-                            let reference =
-                                std::str::from_utf8(attribute.value.as_ref()).map_err(|_| {
-                                    invalid_error("invalid XLSX cell reference encoding")
-                                })?;
+                        "r" => {
+                            let reference = attribute.value.as_ref();
                             let (column, row_number) = parse_cell_reference(reference)?;
 
                             if Some(row_number) != current_row_number {
@@ -249,9 +248,8 @@ fn parse_worksheet(xml: &[u8], shared_strings: &[String]) -> Result<Vec<Vec<Stri
                             current_column = Some(column);
                         }
 
-                        b"t" => {
-                            current_type =
-                                String::from_utf8_lossy(attribute.value.as_ref()).into_owned();
+                        "t" => {
+                            current_type = attribute.value.as_ref().to_owned();
                         }
 
                         _ => {}
@@ -267,15 +265,13 @@ fn parse_worksheet(xml: &[u8], shared_strings: &[String]) -> Result<Vec<Vec<Stri
 
             Event::Start(event)
                 if inside_cell
-                    && (event.name().as_ref() == b"v" || event.name().as_ref() == b"t") =>
+                    && (event.name().as_ref() == "v" || event.name().as_ref() == "t") =>
             {
                 inside_value = true;
             }
 
             Event::Text(event) if inside_value => {
-                let text = event
-                    .xml_content()
-                    .map_err(|error| invalid_error(error.to_string()))?;
+                let text = event.xml_content(XmlVersion::Implicit1_0);
 
                 let text = quick_xml::escape::unescape(&text)
                     .map_err(|error| invalid_error(error.to_string()))?;
@@ -283,11 +279,11 @@ fn parse_worksheet(xml: &[u8], shared_strings: &[String]) -> Result<Vec<Vec<Stri
                 current_value.push_str(&text);
             }
 
-            Event::End(event) if event.name().as_ref() == b"v" || event.name().as_ref() == b"t" => {
+            Event::End(event) if event.name().as_ref() == "v" || event.name().as_ref() == "t" => {
                 inside_value = false;
             }
 
-            Event::End(event) if event.name().as_ref() == b"c" => {
+            Event::End(event) if event.name().as_ref() == "c" => {
                 if !inside_cell {
                     return invalid("XLSX cell closed without opening");
                 }
@@ -316,7 +312,7 @@ fn parse_worksheet(xml: &[u8], shared_strings: &[String]) -> Result<Vec<Vec<Stri
                 inside_cell = false;
             }
 
-            Event::End(event) if event.name().as_ref() == b"row" => {
+            Event::End(event) if event.name().as_ref() == "row" => {
                 if !inside_row || inside_cell {
                     return invalid("invalid XLSX row termination");
                 }

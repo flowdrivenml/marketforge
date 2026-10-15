@@ -3,7 +3,7 @@ use std::{path::Path, sync::Arc};
 use arrow_array::{Int64Array, RecordBatch};
 use arrow_schema::{DataType, Field, Schema};
 
-use marketforge_engine::process::merge::CanonicalRowGroupCache;
+use marketforge_engine::historical::merge::CanonicalRowGroupCache;
 
 fn batch(values: Vec<i64>) -> RecordBatch {
     let schema = Arc::new(Schema::new(vec![Field::new(

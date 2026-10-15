@@ -7,7 +7,7 @@ use arrow_array::{Array, BooleanArray, Int64Array, RecordBatch};
 use arrow_select::filter::filter_record_batch;
 use parquet::arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder};
 
-use marketforge_engine::process::merge::{MergeTimelineFile, PhysicalMergeManifest};
+use marketforge_engine::historical::merge::{MergeTimelineFile, PhysicalMergeManifest};
 
 const START_NS: i64 = 1788220800322740000;
 const END_NS: i64 = 1788220810322740000;
@@ -95,7 +95,7 @@ pub fn create_fixture(directory: &Path) -> PhysicalMergeManifest {
     use parquet::file::properties::WriterProperties;
 
     let properties = WriterProperties::builder()
-        .set_max_row_group_size(64)
+        .set_max_row_group_row_count(Some(64))
         .build();
 
     let mut writer = ArrowWriter::try_new(

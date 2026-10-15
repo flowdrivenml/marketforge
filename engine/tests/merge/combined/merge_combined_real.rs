@@ -1,11 +1,11 @@
-#![cfg(feature = "process")]
+#![cfg(feature = "historical")]
 
 use std::{
     fs::File,
     path::{Path, PathBuf},
 };
 
-use marketforge_engine::process::{
+use marketforge_engine::historical::normalize::{
     manifest::DatasetManifest,
     merge::{
         DepthStream, KWayEventMerger, MergeEventKind, MergeEventSource, ResolvedMergeInput,
