@@ -1,0 +1,328 @@
+# MarketForge Live — Binance USDⓈ-M Futures L2 Depth
+#
+# Proposed MarketForge Live format schema v1.
+#
+# Official references:
+# https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/public#diff-book-depth-streams
+# https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data#order-book
+#
+# Exchange: Binance
+# Market: Linear (USDⓈ-M)
+# Channel: <symbol>@depth@<updateSpeed>
+#
+# Connectivity and REST:
+# exchanges/binance_linear.toml
+#
+# Instrument metadata:
+# Python-managed MarketForge instrument catalog.
+
+schema_version = 1
+
+[format]
+id = "binance_linear"
+exchange = "binance"
+market = "linear"
+channel = "depth"
+
+encoding = "json"
+target_schema = "canonical_l2_update"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+event_type_field = "e"
+event_type_value = "depthUpdate"
+
+symbol_field = "s"
+records = "single"
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+first_update_id = "U"
+last_update_id = "u"
+previous_update_id = "pu"
+
+exchange_event_timestamp = "E"
+transaction_timestamp = "T"
+
+symbol_type = "st"
+pair_symbol = "ps"
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+first_update_id = "u64"
+last_update_id = "u64"
+previous_update_id = "u64"
+
+exchange_event_timestamp = "i64"
+transaction_timestamp = "i64"
+
+symbol_type = "optional_u8"
+pair_symbol = "optional_string"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "transaction_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+preserve_exchange_event_timestamp = true
+
+# ============================================================
+# BID LEVELS
+# ============================================================
+
+[levels.bids]
+path = "b"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "bid"
+
+# ============================================================
+# ASK LEVELS
+# ============================================================
+
+[levels.asks]
+path = "a"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "ask"
+
+# ============================================================
+# NUMERIC NORMALIZATION
+# ============================================================
+
+[normalization.price]
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+[normalization.quantity]
+
+# Raw depth quantity must be interpreted using the
+# authoritative instrument specifications.
+#
+# Relevant metadata:
+# quantity_type
+# contract_value
+# contract_value_asset
+#
+# No contract values are hardcoded here.
+
+quantity_semantics = "instrument_metadata"
+
+representation = "exact_decimal"
+
+allow_zero = true
+allow_negative = false
+
+update_mode = "absolute"
+zero_quantity_action = "delete"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "symbol"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "binance"
+market = "linear"
+
+require_known_instrument = true
+
+# ============================================================
+# NATIVE SEQUENCING
+# ============================================================
+
+[sequence]
+strategy = "binance_futures_previous_update"
+
+first_field = "first_update_id"
+last_field = "last_update_id"
+previous_field = "previous_update_id"
+
+previous_field_required = true
+
+validate_range = true
+require_first_lte_last = true
+
+# Normal continuity:
+#
+# current.pu == previous.u
+#
+# A mismatch indicates a discontinuity.
+
+continuity_strategy = "previous_last_update_id"
+
+# ============================================================
+# BOOK SYNCHRONIZATION
+# ============================================================
+
+[synchronization]
+strategy = "binance_futures_diff_depth"
+
+snapshot_source = "rest"
+snapshot_endpoint = "depth_snapshot"
+
+# Begin buffering WebSocket events before requesting
+# the REST snapshot.
+
+buffer_updates_before_snapshot = true
+
+# REST response:
+# lastUpdateId
+# bids
+# asks
+
+snapshot_sequence_field = "lastUpdateId"
+
+# Historical futures synchronization procedure:
+#
+# Remove buffered updates with u < lastUpdateId.
+#
+# The initial applicable update must bridge the
+# snapshot boundary:
+#
+# U <= lastUpdateId <= u
+#
+# Alternatively, a directly continuing event may
+# satisfy pu == lastUpdateId.
+#
+# The exact initial bridge rule must be verified
+# against the current exchange implementation.
+
+initial_bridge_strategy = "binance_futures_snapshot_bridge"
+
+# Subsequent updates:
+#
+# current.pu == previous.u
+
+continuity_strategy = "previous_last_update_id"
+
+# ============================================================
+# BOOK UPDATE SEMANTICS
+# ============================================================
+
+[book]
+storage = "marketforge_book_store"
+
+update_type = "absolute"
+zero_quantity_action = "delete"
+
+atomic_message_updates = true
+require_valid_generation = true
+
+# ============================================================
+# INTEGRITY
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_negative_quantity = true
+
+detect_sequence_gaps = true
+detect_stale_updates = true
+
+validate_previous_update_id = true
+
+gap_action = "invalidate_and_resynchronize"
+
+checksum_strategy = "none"
+
+# ============================================================
+# SYMBOL TYPE
+# ============================================================
+
+[symbol_type]
+source = "symbol_type"
+
+# st=1: USDⓈ-M
+# st=2: COIN-M
+
+expected_values = [1]
+
+missing_policy = "allow"
+mismatch_policy = "reject"
+
+# ============================================================
+# RECOVERY
+# ============================================================
+
+[recovery]
+strategy = "rest_snapshot_resynchronization"
+
+on_sequence_gap = "resynchronize"
+on_connection_loss = "resynchronize"
+
+require_generation_fencing = true
+
+# Recovery is coordinated by the generic Recovery Coordinator.
+# The exchange-specific synchronization strategy determines
+# whether the reconstructed book is valid.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+event_type = "l2_update"
+
+preserve_native_sequence_range = true
+preserve_previous_update_id = true
+
+preserve_event_timestamp = true
+preserve_exchange_event_timestamp = true
+
+preserve_source_provenance = true
+
+atomic_updates = true
+
+# Snapshot initialization uses a separate canonical
+# L2 snapshot representation.
+#
+# Live envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# book_generation
+# received_timestamp_ns

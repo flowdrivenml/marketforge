@@ -1,0 +1,220 @@
+# MarketForge Live — Binance Spot Trade Format
+#
+# Proposed MarketForge Live format schema v1.
+#
+# Official reference:
+# https://github.com/binance/binance-spot-api-docs/blob/master/web-socket-streams.md
+#
+# Exchange: Binance
+# Market: Spot
+# Channel: <symbol>@trade
+#
+# Scope:
+#   Raw JSON extraction
+#   Canonical trade normalization
+#   Native trade identification
+#   Trade integrity validation
+#
+# Connectivity, subscriptions, REST recovery, and rate limiting
+# are configured in exchanges/binance_spot.toml.
+#
+# Instrument specifications are supplied by the existing
+# MarketForge instrument catalog managed by Python orchestration.
+
+schema_version = 1
+
+[format]
+id = "binance_spot"
+exchange = "binance"
+market = "spot"
+channel = "trades"
+
+encoding = "json"
+target_schema = "canonical_trade"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+event_type_field = "e"
+event_type_value = "trade"
+
+symbol_field = "s"
+
+records = "single"
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+trade_id = "t"
+
+price = "p"
+quantity_base = "q"
+
+trade_timestamp = "T"
+exchange_event_timestamp = "E"
+
+buyer_is_maker = "m"
+
+# Binance field "M" (ignore) is intentionally excluded.
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+trade_id = "u64"
+
+price = "decimal_string"
+quantity_base = "decimal_string"
+
+trade_timestamp = "i64"
+exchange_event_timestamp = "i64"
+
+buyer_is_maker = "boolean"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "trade_timestamp"
+
+# Binance Spot uses milliseconds by default.
+# Microseconds are supported through the WebSocket timeUnit
+# parameter and require a corresponding compiled format variant.
+source_unit = "milliseconds"
+
+canonical_unit = "nanoseconds"
+
+preserve_exchange_event_timestamp = true
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+source = "price"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+source = "quantity_base"
+
+# Binance Spot trade quantity is expressed in base-asset units.
+# The raw field semantics are defined by the exchange protocol.
+# Instrument metadata supplies the canonical instrument context.
+source_unit = "base_asset"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+derive_quote_quantity = true
+
+# ============================================================
+# AGGRESSOR SIDE
+# ============================================================
+
+[normalization.side]
+source = "buyer_is_maker"
+
+# m=true: buyer is maker, seller is aggressor.
+# m=false: seller is maker, buyer is aggressor.
+
+true = "sell"
+false = "buy"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "symbol"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "binance"
+market = "spot"
+
+require_known_instrument = true
+
+# Instrument metadata is resolved at stream initialization.
+# No database queries occur during per-event normalization.
+
+# ============================================================
+# NATIVE TRADE IDENTITY
+# ============================================================
+
+[identity]
+strategy = "native_trade_id"
+
+source = "trade_id"
+
+preserve_native_id = true
+
+deduplication_key = [
+    "exchange",
+    "market",
+    "instrument",
+    "trade_id",
+]
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_nonpositive_quantity = true
+
+detect_duplicate_trade_ids = true
+detect_trade_id_regression = true
+detect_trade_id_gaps = true
+
+# A trade-ID gap triggers recovery/coverage evaluation.
+# It does not prove an equivalent number of WebSocket
+# messages were lost.
+
+gap_action = "request_recovery"
+
+# Recovery execution belongs to the Recovery Coordinator.
+# REST endpoint selection belongs to the exchange profile.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+event_type = "trade"
+
+preserve_native_trade_id = true
+preserve_event_timestamp = true
+preserve_exchange_event_timestamp = true
+
+preserve_source_provenance = true
+
+# Live metadata is supplied by the Live event envelope:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# received_timestamp_ns

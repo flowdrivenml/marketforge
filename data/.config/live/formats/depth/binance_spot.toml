@@ -1,0 +1,302 @@
+# MarketForge Live — Binance Spot L2 Depth
+#
+# Proposed MarketForge Live format schema v1.
+#
+# Official reference:
+# https://github.com/binance/binance-spot-api-docs/blob/master/web-socket-streams.md
+#
+# Exchange: Binance
+# Market: Spot
+# Channel: <symbol>@depth or <symbol>@depth@100ms
+#
+# Connectivity and REST endpoints:
+# exchanges/binance_spot.toml
+#
+# Instrument specifications:
+# Python-managed MarketForge instrument catalog.
+
+schema_version = 1
+
+[format]
+id = "binance_spot"
+exchange = "binance"
+market = "spot"
+channel = "depth"
+
+encoding = "json"
+target_schema = "canonical_l2_update"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+event_type_field = "e"
+event_type_value = "depthUpdate"
+
+symbol_field = "s"
+records = "single"
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+first_update_id = "U"
+last_update_id = "u"
+
+exchange_event_timestamp = "E"
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+first_update_id = "u64"
+last_update_id = "u64"
+
+exchange_event_timestamp = "i64"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "exchange_event_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+# The source WebSocket connection must use matching
+# timestamp-unit configuration.
+
+# ============================================================
+# BID LEVELS
+# ============================================================
+
+[levels.bids]
+path = "b"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "bid"
+
+# ============================================================
+# ASK LEVELS
+# ============================================================
+
+[levels.asks]
+path = "a"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "ask"
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+source_unit = "base_asset"
+
+representation = "exact_decimal"
+
+allow_zero = true
+allow_negative = false
+
+# Binance publishes absolute quantities.
+# Updates do not represent quantity increments.
+
+update_mode = "absolute"
+
+zero_quantity_action = "delete"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "symbol"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "binance"
+market = "spot"
+
+require_known_instrument = true
+
+# ============================================================
+# NATIVE SEQUENCE
+# ============================================================
+
+[sequence]
+strategy = "binance_spot_update_range"
+
+first_field = "first_update_id"
+last_field = "last_update_id"
+
+# Binance Spot has no previous-update-ID field.
+previous_field_required = false
+
+# Each message covers a native sequence interval [U, u].
+validate_range = true
+
+# A range must be internally consistent.
+require_first_lte_last = true
+
+# ============================================================
+# BOOK SYNCHRONIZATION
+# ============================================================
+
+[synchronization]
+strategy = "binance_spot_diff_depth"
+
+snapshot_source = "rest"
+snapshot_endpoint = "depth_snapshot"
+
+# Begin buffering WebSocket updates before requesting
+# the REST snapshot.
+
+buffer_updates_before_snapshot = true
+
+# Retry snapshot acquisition if:
+#
+# snapshot.lastUpdateId < first_buffered.U
+
+snapshot_retry_condition = "snapshot_before_first_buffered"
+
+# Discard buffered events satisfying:
+#
+# event.u <= snapshot.lastUpdateId
+
+discard_condition = "last_update_id_lte_snapshot"
+
+# The first applicable buffered event must bridge
+# the snapshot update ID.
+
+initial_bridge_strategy = "update_range_contains_snapshot"
+
+# Normal operation:
+#
+# If event.u < current_book_update_id:
+#     Ignore stale event.
+#
+# If event.U > current_book_update_id + 1:
+#     Invalidate book and resynchronize.
+#
+# Otherwise:
+#     Apply update atomically.
+#
+# See official Binance synchronization procedure.
+
+continuity_strategy = "binance_spot_range_continuity"
+
+# ============================================================
+# BOOK UPDATE SEMANTICS
+# ============================================================
+
+[book]
+storage = "marketforge_book_store"
+
+update_type = "absolute"
+zero_quantity_action = "delete"
+
+# Process all changes from one WebSocket message
+# as one logically atomic L2 update.
+
+atomic_message_updates = true
+
+# A valid synchronized book generation is required
+# before publishing updates as valid book state.
+
+require_valid_generation = true
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_negative_quantity = true
+
+detect_sequence_gaps = true
+detect_stale_updates = true
+
+gap_action = "invalidate_and_resynchronize"
+
+# Binance Spot diff-depth does not include a documented
+# checksum in this payload.
+checksum_strategy = "none"
+
+# ============================================================
+# RECOVERY
+# ============================================================
+
+[recovery]
+strategy = "rest_snapshot_resynchronization"
+
+on_sequence_gap = "resynchronize"
+on_connection_loss = "resynchronize"
+
+# Failed or obsolete snapshot responses must not
+# initialize a newer book generation.
+
+require_generation_fencing = true
+
+# Recovery attempts use the exchange-profile REST
+# endpoint and shared API rate limiter.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+event_type = "l2_update"
+
+preserve_native_sequence_range = true
+preserve_event_timestamp = true
+preserve_source_provenance = true
+
+atomic_updates = true
+
+# Snapshot initialization uses a separate canonical
+# L2 snapshot representation.
+#
+# Live envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# book_generation
+# received_timestamp_ns

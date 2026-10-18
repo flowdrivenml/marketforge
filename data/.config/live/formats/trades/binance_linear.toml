@@ -1,0 +1,262 @@
+# MarketForge Live — Binance USDⓈ-M Aggregated Trades
+#
+# Proposed MarketForge Live format schema v1.
+#
+# Official reference:
+# https://developers.binance.com/en/docs/derivatives/usds-margined-futures/websocket-market-streams/Aggregate-Trade-Streams
+#
+# Exchange: Binance
+# Market: Linear (USDⓈ-M)
+# Channel: <symbol>@aggTrade
+#
+# Instrument normalization parameters come from the
+# Python-managed MarketForge instrument catalog.
+#
+# This format represents aggregated market executions.
+# It must not be interpreted as individual trade records.
+
+schema_version = 1
+
+[format]
+id = "binance_linear"
+exchange = "binance"
+market = "linear"
+channel = "aggregate_trades"
+
+encoding = "json"
+target_schema = "canonical_trade"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+event_type_field = "e"
+event_type_value = "aggTrade"
+
+symbol_field = "s"
+records = "single"
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+aggregate_trade_id = "a"
+
+first_trade_id = "f"
+last_trade_id = "l"
+
+price = "p"
+quantity = "q"
+
+# Quantity excluding RPI-related executions.
+normal_quantity = "nq"
+
+trade_timestamp = "T"
+exchange_event_timestamp = "E"
+
+buyer_is_maker = "m"
+
+# Optional symbol-type discriminator.
+symbol_type = "st"
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+aggregate_trade_id = "u64"
+
+first_trade_id = "u64"
+last_trade_id = "u64"
+
+price = "decimal_string"
+quantity = "decimal_string"
+
+normal_quantity = "optional_decimal_string"
+
+trade_timestamp = "i64"
+exchange_event_timestamp = "i64"
+
+buyer_is_maker = "boolean"
+symbol_type = "optional_u8"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "trade_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+preserve_exchange_event_timestamp = true
+
+# ============================================================
+# TRADE AGGREGATION
+# ============================================================
+
+[aggregation]
+type = "exchange_aggregated"
+
+# Binance aggregates market fills with the same
+# price and taker side over approximately 100 ms.
+#
+# This describes exchange behavior, not a MarketForge
+# aggregation instruction.
+
+aggregation_window_ms = 100
+
+preserve_aggregate_id = true
+preserve_trade_id_range = true
+
+# Do not reconstruct individual trade records.
+expand_to_individual_trades = false
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+source = "price"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+source = "quantity"
+
+# The raw quantity is interpreted using the instrument's
+# authoritative quantity semantics from the catalog.
+quantity_semantics = "instrument_metadata"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+derive_base_quantity = true
+derive_quote_quantity = true
+
+# Preserve nq separately when the canonical schema
+# supports supplementary native quantity metadata.
+rpi_excluded_quantity_source = "normal_quantity"
+
+# ============================================================
+# AGGRESSOR SIDE
+# ============================================================
+
+[normalization.side]
+source = "buyer_is_maker"
+
+true = "sell"
+false = "buy"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "symbol"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "binance"
+market = "linear"
+
+require_known_instrument = true
+
+# ============================================================
+# NATIVE TRADE IDENTITY
+# ============================================================
+
+[identity]
+strategy = "aggregate_trade_id"
+
+source = "aggregate_trade_id"
+
+preserve_native_id = true
+
+deduplication_key = [
+    "exchange",
+    "market",
+    "instrument",
+    "aggregate_trade_id",
+]
+
+# ============================================================
+# INTEGRITY
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_nonpositive_quantity = true
+
+detect_duplicate_aggregate_ids = true
+detect_aggregate_id_regression = true
+detect_aggregate_id_gaps = true
+
+validate_trade_id_range = true
+
+# f <= l, but f/l are native execution identifiers
+# rather than MarketForge event cursors.
+
+gap_action = "request_recovery"
+
+# Recovery must use a compatible aggregate-trade source.
+# Do not assume that individual-trade REST responses
+# are interchangeable with aggregate WebSocket events.
+
+# ============================================================
+# SYMBOL TYPE
+# ============================================================
+
+[symbol_type]
+source = "symbol_type"
+
+# st=1 represents USDⓈ-M.
+# st=2 represents COIN-M after migration.
+
+expected_values = [1]
+
+missing_policy = "allow"
+
+mismatch_policy = "reject"
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+event_type = "trade"
+trade_semantics = "aggregated"
+
+preserve_native_aggregate_id = true
+preserve_native_trade_id_range = true
+
+preserve_event_timestamp = true
+preserve_exchange_event_timestamp = true
+
+preserve_source_provenance = true
+
+# Live metadata is supplied by the event envelope:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# received_timestamp_ns

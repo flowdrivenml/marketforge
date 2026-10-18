@@ -1,0 +1,252 @@
+# MarketForge Live — Binance Spot
+# Schema: proposed MarketForge Live exchange-profile v1
+#
+# Official references:
+# https://github.com/binance/binance-spot-api-docs/blob/master/web-socket-streams.md
+# https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md
+#
+# Scope: connectivity, subscriptions, protocol capabilities,
+# REST endpoints, and exchange rate limits.
+#
+# Trade/L2 normalization is defined in separate format files.
+
+schema_version = 1
+
+[exchange]
+id = "binance"
+market = "spot"
+profile = "binance_spot"
+
+# ============================================================
+# WEBSOCKET CONNECTIVITY
+# ============================================================
+
+[websocket]
+url = "wss://stream.binance.com:9443/ws"
+alternative_url = "wss://stream.binance.com:443/ws"
+market_data_only_url = "wss://data-stream.binance.vision/ws"
+
+connection_lifetime_seconds = 86400
+max_subscriptions_per_connection = 1024
+
+# Includes outgoing PING, PONG, and JSON control messages.
+max_client_messages_per_second = 5
+
+connection_attempt_limit = 300
+connection_attempt_window_seconds = 300
+
+symbol_case = "lowercase"
+timestamp_unit = "milliseconds"
+
+[websocket.heartbeat]
+strategy = "websocket_control_frames"
+
+server_ping_interval_seconds = 20
+pong_deadline_seconds = 60
+
+respond_to_ping = true
+echo_ping_payload = true
+
+[websocket.lifecycle]
+server_shutdown_event = "serverShutdown"
+
+# MarketForge policy, not a Binance requirement.
+rotate_before_expiration_seconds = 300
+
+# ============================================================
+# SUBSCRIPTIONS
+# ============================================================
+
+[websocket.subscription]
+strategy = "json_rpc"
+
+subscribe_method = "SUBSCRIBE"
+unsubscribe_method = "UNSUBSCRIBE"
+list_method = "LIST_SUBSCRIPTIONS"
+
+request_id_field = "id"
+request_id_type = "signed_integer"
+
+success_field = "result"
+success_is_null = true
+
+error_code_field = "code"
+error_message_field = "msg"
+
+supports_dynamic_subscriptions = true
+supports_unsubscribe = true
+supports_list_subscriptions = true
+
+# ============================================================
+# MESSAGE ROUTING
+# ============================================================
+
+[websocket.routing]
+mode = "raw"
+
+event_type_field = "e"
+symbol_field = "s"
+
+combined_wrapper_field = "data"
+combined_stream_field = "stream"
+
+# ============================================================
+# INDIVIDUAL TRADES
+# ============================================================
+
+[channels.trades]
+enabled = true
+
+stream_template = "{symbol_lower}@trade"
+
+event_type = "trade"
+format = "trades/binance_spot"
+
+native_trade_id_field = "t"
+trade_timestamp_field = "T"
+
+recovery_strategy = "trade_id_pagination"
+recovery_endpoint = "historical_trades"
+
+# ============================================================
+# L2 DIFFERENTIAL DEPTH
+# ============================================================
+
+[channels.depth]
+enabled = true
+
+stream_template = "{symbol_lower}@depth"
+fast_stream_template = "{symbol_lower}@depth@100ms"
+
+default_interval_ms = 1000
+supported_intervals_ms = [1000, 100]
+
+event_type = "depthUpdate"
+format = "depth/binance_spot"
+
+synchronization_strategy = "binance_spot_diff_depth"
+snapshot_endpoint = "depth_snapshot"
+
+first_update_id_field = "U"
+last_update_id_field = "u"
+
+quantity_mode = "absolute"
+zero_quantity_action = "delete"
+
+# ============================================================
+# REST API
+# ============================================================
+
+[rest]
+base_url = "https://api.binance.com"
+
+# MarketForge operational policy.
+request_timeout_seconds = 10
+
+# ------------------------------------------------------------
+# ORDER BOOK SNAPSHOT
+# ------------------------------------------------------------
+
+[rest.endpoints.depth_snapshot]
+method = "GET"
+path = "/api/v3/depth"
+
+parameters = ["symbol", "limit"]
+
+default_limit = 1000
+maximum_limit = 5000
+
+response_sequence_field = "lastUpdateId"
+
+weight_policy = "depth_snapshot"
+
+# ------------------------------------------------------------
+# RECENT TRADES
+# ------------------------------------------------------------
+
+[rest.endpoints.recent_trades]
+method = "GET"
+path = "/api/v3/trades"
+
+parameters = ["symbol", "limit"]
+
+default_limit = 500
+maximum_limit = 1000
+
+weight_policy = "recent_trades"
+
+# ------------------------------------------------------------
+# HISTORICAL TRADES
+# ------------------------------------------------------------
+
+[rest.endpoints.historical_trades]
+method = "GET"
+path = "/api/v3/historicalTrades"
+
+parameters = ["symbol", "limit", "fromId"]
+
+default_limit = 500
+maximum_limit = 1000
+
+pagination_strategy = "trade_id"
+pagination_parameter = "fromId"
+
+# Historical trades require an API key.
+# Credential values must not be stored in this profile.
+authentication = "api_key_header"
+authentication_header = "X-MBX-APIKEY"
+
+weight_policy = "historical_trades"
+
+# ------------------------------------------------------------
+# EXCHANGE METADATA
+# ------------------------------------------------------------
+
+[rest.endpoints.exchange_info]
+method = "GET"
+path = "/api/v3/exchangeInfo"
+
+weight_policy = "exchange_info"
+
+# ============================================================
+# REST RATE LIMITING
+# ============================================================
+
+[rest.rate_limiting]
+strategy = "weighted_shared_pool"
+
+limits_source = "exchange_info"
+
+usage_header_prefix = "X-MBX-USED-WEIGHT"
+
+http_throttled_status = 429
+http_banned_status = 418
+
+honor_retry_after = true
+
+# ------------------------------------------------------------
+# ENDPOINT WEIGHTS
+# ------------------------------------------------------------
+
+[rest.weight_policies.depth_snapshot]
+type = "tiered"
+parameter = "limit"
+
+tiers = [
+    { max = 100, weight = 5 },
+    { max = 500, weight = 25 },
+    { max = 1000, weight = 50 },
+    { max = 5000, weight = 250 },
+]
+
+[rest.weight_policies.recent_trades]
+type = "fixed"
+weight = 25
+
+[rest.weight_policies.historical_trades]
+type = "fixed"
+weight = 25
+
+[rest.weight_policies.exchange_info]
+type = "fixed"
+weight = 20
