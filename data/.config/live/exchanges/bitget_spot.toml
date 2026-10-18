@@ -1,0 +1,407 @@
+# MarketForge Live — Bitget Spot
+#
+# Proposed MarketForge Live exchange-profile schema v1.
+#
+# API generation: Unified Trading Account (UTA), V3
+#
+# Official references:
+# https://www.bitget.com/docs/uta/quick-start
+# https://www.bitget.com/docs/uta/websocket/public/Order-Book-Channel
+# https://www.bitget.com/docs/catalog/market/market-data
+# https://www.bitget.com/docs/uta/changelog/2026-05
+# https://www.bitget.com/docs/uta/update-preview
+#
+# Scope:
+#   WebSocket connectivity
+#   Heartbeat and subscription management
+#   Trade and depth channels
+#   REST order-book snapshots and recent fills
+#   Rate limiting
+#
+# Instrument specifications are supplied by Python orchestration.
+# Normalization specifications are maintained separately.
+#
+# IMPORTANT:
+# - Use UTA V3, not Classic V2.
+# - V3 subscriptions use instType/topic/symbol.
+# - Standard books uses seq/pseq continuity.
+# - Order-book checksums were removed in May 2026.
+# - RPI order-book channels are separate.
+# - books50 is undergoing a protocol transition in 2026.
+
+schema_version = 1
+
+[exchange]
+id = "bitget"
+market = "spot"
+profile = "bitget_spot"
+api_generation = "uta_v3"
+
+# ============================================================
+# WEBSOCKET
+# ============================================================
+
+[websocket]
+url = "wss://ws.bitget.com/v3/ws/public"
+
+authentication = "none"
+
+symbol_case = "uppercase"
+timestamp_unit = "milliseconds"
+
+# ============================================================
+# CONNECTION LIMITS
+# ============================================================
+
+[websocket.limits]
+
+connection_attempt_limit = 300
+connection_attempt_window_seconds = 300
+
+max_connections_per_ip = 100
+
+subscription_requests_per_hour = 240
+max_subscriptions_per_connection = 1000
+
+max_client_messages_per_second = 10
+
+# Bitget recommends fewer than 50 subscriptions
+# per connection, even though the protocol permits more.
+#
+# MarketForge connection-sharding policy.
+recommended_max_subscriptions = 49
+
+# ============================================================
+# HEARTBEAT
+# ============================================================
+
+[websocket.heartbeat]
+
+# Bitget uses literal text ping/pong messages,
+# not JSON messages or WebSocket control frames.
+
+strategy = "text_ping_pong"
+
+request = "ping"
+response = "pong"
+
+interval_seconds = 30
+
+# Bitget disconnects connections that do not send
+# ping messages for approximately two minutes.
+server_inactivity_limit_seconds = 120
+
+# MarketForge operational policy.
+response_timeout_seconds = 10
+
+# Unlike OKX's inactivity-triggered heartbeat,
+# Bitget recommends a periodic 30-second timer.
+
+reset_timer_on_message = false
+
+# ============================================================
+# SUBSCRIPTIONS
+# ============================================================
+
+[websocket.subscription]
+strategy = "json_operation"
+
+subscribe_method = "subscribe"
+unsubscribe_method = "unsubscribe"
+
+operation_field = "op"
+arguments_field = "args"
+
+# V3 subscription arguments use:
+#
+# instType
+# topic
+# symbol
+
+instrument_type_field = "instType"
+topic_field = "topic"
+symbol_field = "symbol"
+
+# For Spot the instType value must be lowercase.
+instrument_type = "spot"
+
+acknowledgement_field = "event"
+
+subscribe_acknowledgement = "subscribe"
+unsubscribe_acknowledgement = "unsubscribe"
+
+error_event = "error"
+error_code_field = "code"
+error_message_field = "msg"
+
+# Added to subscription responses in May 2026.
+connection_id_field = "connId"
+
+supports_dynamic_subscriptions = true
+supports_unsubscribe = true
+
+# ============================================================
+# MESSAGE ROUTING
+# ============================================================
+
+[websocket.routing]
+mode = "arg"
+
+instrument_type_field = "arg.instType"
+channel_field = "arg.topic"
+instrument_field = "arg.symbol"
+
+payload_field = "data"
+action_field = "action"
+
+# ============================================================
+# INDIVIDUAL TRADES
+# ============================================================
+
+[channels.trades]
+enabled = true
+
+channel = "publicTrade"
+
+subscription_template = '{"instType":"spot","topic":"publicTrade","symbol":"{symbol}"}'
+
+format = "trades/bitget_spot"
+
+trade_semantics = "individual"
+
+records = "array"
+payload_path = "data"
+
+# REST recent fills can support limited reconciliation.
+# Arbitrary trade-history pagination is not available
+# through the configured public endpoint.
+
+recovery_strategy = "recent_trade_reconciliation"
+recovery_endpoint = "recent_trades"
+
+# ============================================================
+# L2 ORDER BOOK
+# ============================================================
+
+[channels.depth]
+enabled = true
+
+channel = "books"
+
+subscription_template = '{"instType":"spot","topic":"books","symbol":"{symbol}"}'
+
+format = "depth/bitget_spot"
+
+# Standard books provides the complete available
+# depth for the selected instrument, subject to
+# exchange-side maxDepth.
+#
+# Do not assume that every instrument has exactly
+# 1000 levels.
+
+depth = "exchange_defined"
+
+push_interval_ms = 50
+
+# ============================================================
+# L2 SYNCHRONIZATION
+# ============================================================
+
+[channels.depth.synchronization]
+strategy = "bitget_v3_books"
+
+snapshot_source = "websocket"
+
+snapshot_message_type = "snapshot"
+delta_message_type = "update"
+
+snapshot_action = "replace"
+
+sequence_field = "seq"
+previous_sequence_field = "pseq"
+
+# Normal incremental continuity:
+#
+# current.pseq == previous.seq
+#
+# Bitget additionally documents special reset behavior
+# and a snapshot-to-delta bridge condition.
+#
+# Detailed synchronization logic belongs to
+# formats/depth/bitget_spot.toml.
+
+continuity_strategy = "previous_sequence_matches"
+
+reset_previous_sequence_id = 0
+
+# Removed in May 2026.
+checksum_strategy = "none"
+
+# ============================================================
+# L2 QUANTITY
+# ============================================================
+
+[channels.depth.quantity]
+
+raw_unit = "base_asset"
+
+update_mode = "absolute"
+zero_quantity_action = "delete"
+
+# ============================================================
+# OPTIONAL DEPTH CHANNELS
+# ============================================================
+
+[channels.depth1]
+enabled = false
+
+channel = "books1"
+
+subscription_template = '{"instType":"spot","topic":"books1","symbol":"{symbol}"}'
+
+depth = 1
+push_interval_ms = 1
+
+synchronization_strategy = "snapshot_only"
+
+[channels.depth5]
+enabled = false
+
+channel = "books5"
+
+subscription_template = '{"instType":"spot","topic":"books5","symbol":"{symbol}"}'
+
+depth = 5
+push_interval_ms = 10
+
+synchronization_strategy = "snapshot_only"
+
+# books50 intentionally deferred.
+#
+# Bitget announced a transition from snapshot-only
+# to snapshot + incremental updates for books50.
+# The production deployment date is November 5, 2026.
+#
+# Its protocol must be reverified before activation.
+
+# ============================================================
+# REST API
+# ============================================================
+
+[rest]
+base_url = "https://api.bitget.com"
+
+authentication = "none"
+
+# MarketForge operational policy.
+request_timeout_seconds = 10
+
+# ============================================================
+# ORDER BOOK SNAPSHOT
+# ============================================================
+
+[rest.endpoints.depth_snapshot]
+method = "GET"
+
+path = "/api/v3/market/orderbook"
+
+parameters = [
+    "category",
+    "symbol",
+    "limit",
+]
+
+category = "SPOT"
+
+default_limit = 200
+maximum_limit = 1000
+
+response_root = "data"
+
+response_bids_field = "b"
+response_asks_field = "a"
+response_timestamp_field = "ts"
+
+authentication = "none"
+
+rate_limit_policy = "depth_snapshot"
+
+# IMPORTANT:
+#
+# This REST response does not document a sequence
+# identifier equivalent to WebSocket seq/pseq.
+#
+# Do not use arbitrary REST snapshots to initialize
+# incremental WebSocket processing without a
+# verified synchronization procedure.
+
+# ============================================================
+# RECENT PUBLIC TRADES
+# ============================================================
+
+[rest.endpoints.recent_trades]
+method = "GET"
+
+path = "/api/v3/market/fills"
+
+parameters = [
+    "category",
+    "symbol",
+    "limit",
+]
+
+category = "SPOT"
+
+default_limit = 100
+maximum_limit = 100
+
+response_root = "data"
+
+authentication = "none"
+
+# Recent fills do not provide a documented
+# historical trade-ID pagination mechanism.
+
+pagination_strategy = "none"
+
+# REST identifiers:
+# execId
+# execLinkId
+#
+# Reconciliation with WebSocket publicTrade identities
+# must be verified through protocol fixtures.
+
+rate_limit_policy = "recent_trades"
+
+# ============================================================
+# RATE LIMITING
+# ============================================================
+
+[rest.rate_limiting]
+
+strategy = "endpoint_window"
+
+rule = "ip"
+
+# Bitget documents an overall common-domain limit
+# in addition to endpoint-specific rate limits.
+
+global_max_requests = 6000
+global_window_seconds = 60
+
+http_throttled_status = 429
+
+# Coordinate quotas with other Bitget clients
+# where IP-level limits are shared.
+
+# ============================================================
+# ENDPOINT RATE LIMITS
+# ============================================================
+
+[rest.rate_limit_policies.depth_snapshot]
+max_requests = 20
+window_seconds = 1
+
+[rest.rate_limit_policies.recent_trades]
+max_requests = 20
+window_seconds = 1

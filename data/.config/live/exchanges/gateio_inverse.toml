@@ -1,0 +1,492 @@
+# MarketForge Live — Gate.io Inverse Futures
+#
+# Proposed MarketForge Live exchange-profile schema v1.
+#
+# API generation: Gate Futures V4
+#
+# Official references:
+# https://www.gate.com/docs/developers/futures/ws/en/
+# https://www.gate.com/docs/developers/apiv4/en/futures/
+#
+# MarketForge classification: inverse
+# Native settlement: btc
+#
+# Instrument metadata is managed by Python orchestration.
+# Trade and depth normalization are configured separately.
+#
+# IMPORTANT:
+# - BTC-settled Futures use a dedicated WebSocket endpoint.
+# - Native trade sizes are signed contract quantities.
+# - Native depth sizes are absolute contract quantities.
+# - Fractional sizes require X-Gate-Size-Decimal: 1.
+# - Contract values must come from instrument metadata.
+# - L2 synchronization uses U/u sequence ranges.
+# - The standard depth-update channel supports full snapshots.
+
+schema_version = 1
+
+[exchange]
+id = "gateio"
+market = "inverse"
+profile = "gateio_inverse"
+api_generation = "v4"
+
+# ============================================================
+# NATIVE MARKET CLASSIFICATION
+# ============================================================
+
+[market_mapping]
+
+resolver = "marketforge_instrument_catalog"
+
+native_settlement = "btc"
+
+# The catalog must verify that each selected contract
+# has inverse economic semantics.
+#
+# Settlement currency alone is not sufficient for
+# calculating canonical quantities.
+
+require_inverse_contract_classification = true
+
+# ============================================================
+# WEBSOCKET
+# ============================================================
+
+[websocket]
+
+url = "wss://fx-ws.gateio.ws/v4/ws/btc"
+
+authentication = "none"
+
+symbol_case = "uppercase"
+
+# Example native contract:
+# BTC_USD
+
+envelope_timestamp_unit = "seconds"
+
+# ============================================================
+# WEBSOCKET HANDSHAKE HEADERS
+# ============================================================
+
+[websocket.headers]
+
+# CRITICAL:
+#
+# Gate documents that without this header,
+# fractional contract quantities may be truncated
+# when the server emits legacy integer-size fields.
+
+X-Gate-Size-Decimal = "1"
+
+# ============================================================
+# CONNECTION MANAGEMENT
+# ============================================================
+
+[websocket.connection]
+
+reconnect_strategy = "exponential_backoff"
+
+# MarketForge's generic connection manager handles:
+#
+# - connection establishment
+# - retries and backoff
+# - subscription restoration
+# - connection generations
+# - resource admission
+#
+# Do not invent undocumented connection quotas.
+
+# ============================================================
+# HEARTBEAT
+# ============================================================
+
+[websocket.heartbeat]
+
+strategy = "websocket_control_frames"
+
+respond_to_ping = true
+echo_ping_payload = true
+
+# ============================================================
+# OPTIONAL APPLICATION HEARTBEAT
+# ============================================================
+
+[websocket.application_heartbeat]
+
+enabled = false
+
+strategy = "json_channel_ping"
+
+request_channel = "futures.ping"
+response_channel = "futures.pong"
+
+# MarketForge operational policy.
+
+interval_seconds = 30
+response_timeout_seconds = 10
+
+# ============================================================
+# SERVICE NOTIFICATIONS
+# ============================================================
+
+[websocket.lifecycle]
+
+# Service-upgrade messages require the connection
+# supervisor to establish a replacement connection
+# and restore source subscriptions.
+
+system_channel = "futures.system"
+system_event = "update"
+
+upgrade_type_field = "result.type"
+upgrade_type_value = "upgrade"
+
+upgrade_action = "reconnect_and_restore"
+
+# ============================================================
+# SUBSCRIPTIONS
+# ============================================================
+
+[websocket.subscription]
+
+strategy = "gate_v4_channel_event"
+
+# Example:
+#
+# {
+#   "time": <unix_seconds>,
+#   "channel": "futures.trades",
+#   "event": "subscribe",
+#   "payload": ["BTC_USD"]
+# }
+
+channel_field = "channel"
+
+operation_field = "event"
+arguments_field = "payload"
+
+subscribe_method = "subscribe"
+unsubscribe_method = "unsubscribe"
+
+timestamp_field = "time"
+timestamp_unit = "seconds"
+
+request_id_field = "id"
+request_id_type = "unsigned_integer"
+request_id_optional = true
+
+acknowledgement_field = "event"
+
+subscribe_acknowledgement = "subscribe"
+unsubscribe_acknowledgement = "unsubscribe"
+
+success_field = "result.status"
+success_value = "success"
+
+error_field = "error"
+
+supports_dynamic_subscriptions = true
+supports_unsubscribe = true
+
+# ============================================================
+# MESSAGE ROUTING
+# ============================================================
+
+[websocket.routing]
+
+mode = "channel"
+
+channel_field = "channel"
+event_field = "event"
+
+payload_field = "result"
+
+update_event = "update"
+
+# Acknowledgements and system events are handled
+# separately from market-data normalization.
+
+# ============================================================
+# INDIVIDUAL TRADES
+# ============================================================
+
+[channels.trades]
+
+enabled = true
+
+channel = "futures.trades"
+
+subscription_payload = [
+    "{symbol}",
+]
+
+format = "trades/gateio_inverse"
+
+trade_semantics = "individual"
+
+# One notification may contain multiple executions.
+
+records = "array"
+payload_path = "result"
+
+# Gate Futures:
+#
+# positive size -> taker buy
+# negative size -> taker sell
+#
+# abs(size) is the number of native contracts.
+#
+# Economic value is instrument-dependent.
+
+side_strategy = "signed_quantity"
+
+recovery_strategy = "gate_futures_trade_reconciliation"
+recovery_endpoint = "historical_trades"
+
+# ============================================================
+# INCREMENTAL L2 DEPTH
+# ============================================================
+
+[channels.depth]
+
+enabled = true
+
+channel = "futures.order_book_update"
+
+format = "depth/gateio_inverse"
+
+# Subscription:
+#
+# [contract, frequency, level]
+#
+# Example:
+#
+# ["BTC_USD", "100ms", "100"]
+
+subscription_payload = [
+    "{symbol}",
+    "{interval}",
+    "{depth}",
+]
+
+default_interval = "100ms"
+default_depth = 100
+
+supported_intervals = [
+    "20ms",
+    "100ms",
+]
+
+supported_depths = [
+    20,
+    50,
+    100,
+]
+
+# ============================================================
+# DEPTH SUBSCRIPTION CONSTRAINTS
+# ============================================================
+
+[channels.depth.constraints]
+
+# 20ms subscriptions support only 20 levels.
+
+"20ms" = [20]
+
+"100ms" = [20, 50, 100]
+
+# ============================================================
+# L2 SYNCHRONIZATION
+# ============================================================
+
+[channels.depth.synchronization]
+
+strategy = "gate_futures_order_book_update"
+
+snapshot_source = "rest"
+snapshot_endpoint = "depth_snapshot"
+
+buffer_updates_before_snapshot = true
+
+snapshot_sequence_field = "id"
+
+first_update_id_field = "U"
+last_update_id_field = "u"
+
+# Initial snapshot bridge:
+#
+# U <= snapshot.id + 1 <= u
+#
+# Subsequent continuity:
+#
+# U <= last_applied_id + 1 <= u
+#
+# Stale messages:
+#
+# u < last_applied_id + 1
+#
+# Missing updates:
+#
+# U > last_applied_id + 1
+
+initial_bridge_strategy = "next_update_in_range"
+
+continuity_strategy = "range_covers_next_update"
+
+# The current Futures channel can also emit
+# full=true snapshots, replacing the local book.
+
+websocket_full_snapshot_field = "full"
+websocket_full_snapshot_action = "replace"
+
+# ============================================================
+# DEPTH QUANTITY
+# ============================================================
+
+[channels.depth.quantity]
+
+# Depth sizes represent absolute native contracts.
+#
+# A zero value removes the corresponding price level.
+#
+# Contract-to-base/quote conversion is performed by
+# MarketForge's compiled instrument normalizer.
+
+raw_unit = "contracts"
+
+quantity_semantics = "instrument_metadata"
+
+update_mode = "absolute"
+
+zero_quantity_action = "delete"
+
+# ============================================================
+# REST API
+# ============================================================
+
+[rest]
+
+base_url = "https://api.gateio.ws/api/v4"
+
+authentication = "none"
+
+# MarketForge operational policy.
+
+request_timeout_seconds = 10
+
+# ============================================================
+# REST ORDER BOOK SNAPSHOT
+# ============================================================
+
+[rest.endpoints.depth_snapshot]
+
+method = "GET"
+
+path = "/futures/{settlement}/order_book"
+
+settlement = "btc"
+
+parameters = [
+    "contract",
+    "interval",
+    "limit",
+    "with_id",
+]
+
+contract = "{symbol}"
+
+# Request unaggregated price levels.
+
+interval = "0"
+
+default_limit = 100
+
+# Required for WebSocket U/u bridging.
+
+with_id = true
+
+response_sequence_field = "id"
+
+response_bids_field = "bids"
+response_asks_field = "asks"
+
+# Futures REST price levels are objects:
+#
+# {
+#   "p": "<price>",
+#   "s": <quantity>
+# }
+
+response_level_type = "object"
+
+response_price_field = "p"
+response_quantity_field = "s"
+
+authentication = "none"
+
+rate_limit_policy = "futures_public"
+
+# ============================================================
+# REST PUBLIC TRADE HISTORY
+# ============================================================
+
+[rest.endpoints.historical_trades]
+
+method = "GET"
+
+path = "/futures/{settlement}/trades"
+
+settlement = "btc"
+
+parameters = [
+    "contract",
+    "limit",
+    "last_id",
+    "from",
+    "to",
+]
+
+contract = "{symbol}"
+
+default_limit = 100
+
+authentication = "none"
+
+response_root = "$"
+
+# Prefer time-range recovery.
+#
+# Gate documents last_id as deprecated.
+
+pagination_strategy = "gate_futures_trades"
+
+preferred_pagination = "time_range"
+
+legacy_id_pagination = true
+
+rate_limit_policy = "futures_public"
+
+# ============================================================
+# RATE LIMITING
+# ============================================================
+
+[rest.rate_limiting]
+
+strategy = "endpoint_window"
+
+rule = "ip"
+
+# Production REST quotas must be validated against
+# current Futures endpoint-specific documentation.
+#
+# Do not reuse a Spot quota without verification.
+
+[rest.rate_limit_policies.futures_public]
+
+status = "requires_verification"
+
+# The configuration compiler should reject automatic
+# high-volume REST recovery until a verified quota
+# and operational safety margin are provided.

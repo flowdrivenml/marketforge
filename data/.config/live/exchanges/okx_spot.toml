@@ -1,0 +1,384 @@
+# MarketForge Live — OKX Spot
+#
+# Proposed MarketForge Live exchange-profile schema v1.
+#
+# Official documentation:
+# https://www.okx.com/docs-v5/en/
+# https://www.okx.com/docs-v5/log_en/
+#
+# Scope:
+#   WebSocket connectivity
+#   Heartbeat and subscription management
+#   Public trade and order-book channels
+#   REST snapshot and trade recovery
+#   Rate limiting
+#
+# Instrument metadata is supplied by Python orchestration.
+# Trade/L2 normalization is specified separately.
+#
+# IMPORTANT:
+#   - Use port 443, not deprecated port 8443.
+#   - Standard books checksum is deprecated.
+#   - trades and trades-all have different semantics.
+
+schema_version = 1
+
+[exchange]
+id = "okx"
+market = "spot"
+profile = "okx_spot"
+
+# ============================================================
+# WEBSOCKET
+# ============================================================
+
+[websocket]
+authentication = "none"
+
+symbol_case = "uppercase"
+timestamp_unit = "milliseconds"
+
+# ------------------------------------------------------------
+# CONNECTION ROUTES
+# ------------------------------------------------------------
+
+[websocket.routes.public]
+url = "wss://ws.okx.com/ws/v5/public"
+
+authentication = "none"
+
+[websocket.routes.business]
+url = "wss://ws.okx.com/ws/v5/business"
+
+# Public market-data channels on the business route
+# do not require private account authentication.
+authentication = "none"
+
+# ------------------------------------------------------------
+# CONNECTION LIMITS
+# ------------------------------------------------------------
+
+[websocket.limits]
+
+connection_attempts_per_second = 3
+
+# Combined subscribe, unsubscribe, and login operations.
+subscription_operations_per_hour = 480
+
+# Maximum subscription request payload.
+max_subscription_payload_bytes = 65536
+
+# ------------------------------------------------------------
+# HEARTBEAT
+# ------------------------------------------------------------
+
+[websocket.heartbeat]
+
+# OKX requires a text heartbeat following inactivity.
+# This is not a JSON ping and not a WebSocket control ping.
+
+strategy = "text_ping_pong"
+
+request = "ping"
+response = "pong"
+
+# Send ping after this period without incoming messages.
+# Must remain below OKX's 30-second inactivity threshold.
+inactivity_seconds = 25
+
+# MarketForge operational timeout.
+response_timeout_seconds = 5
+
+reset_timer_on_message = true
+
+# ------------------------------------------------------------
+# SUBSCRIPTIONS
+# ------------------------------------------------------------
+
+[websocket.subscription]
+strategy = "json_operation"
+
+subscribe_method = "subscribe"
+unsubscribe_method = "unsubscribe"
+
+operation_field = "op"
+arguments_field = "args"
+
+request_id_field = "id"
+request_id_type = "string"
+request_id_optional = true
+
+# Subscription acknowledgement:
+# {"event":"subscribe","arg":{...},"connId":"..."}
+
+acknowledgement_field = "event"
+subscribe_acknowledgement = "subscribe"
+unsubscribe_acknowledgement = "unsubscribe"
+
+error_event = "error"
+error_code_field = "code"
+error_message_field = "msg"
+
+supports_dynamic_subscriptions = true
+supports_unsubscribe = true
+
+# ------------------------------------------------------------
+# MESSAGE ROUTING
+# ------------------------------------------------------------
+
+[websocket.routing]
+mode = "arg"
+
+channel_field = "arg.channel"
+instrument_field = "arg.instId"
+
+payload_field = "data"
+action_field = "action"
+
+# ============================================================
+# INDIVIDUAL TRADES
+# ============================================================
+
+[channels.trades]
+enabled = true
+
+# OKX trades-all provides individual executions.
+route = "business"
+
+channel = "trades-all"
+
+subscription_template = '{"channel":"trades-all","instId":"{symbol}"}'
+
+format = "trades/okx_spot"
+
+trade_semantics = "individual"
+
+records = "array"
+payload_path = "data"
+
+recovery_strategy = "historical_trade_reconciliation"
+recovery_endpoint = "historical_trades"
+
+# ============================================================
+# AGGREGATED TRADES
+# ============================================================
+
+[channels.aggregate_trades]
+enabled = true
+
+route = "public"
+
+channel = "trades"
+
+subscription_template = '{"channel":"trades","instId":"{symbol}"}'
+
+# Separate format required because one message may represent
+# multiple executions and include an aggregation count.
+#
+# Do not decode aggregated records as individual trades.
+
+format = "trades/okx_spot_aggregated"
+
+trade_semantics = "aggregated"
+
+records = "array"
+payload_path = "data"
+
+# Aggregate-to-individual recovery equivalence
+# must not be assumed.
+recovery_strategy = "coverage_evaluation"
+
+# ============================================================
+# L2 ORDER BOOK
+# ============================================================
+
+[channels.depth]
+enabled = true
+
+route = "public"
+
+channel = "books"
+
+subscription_template = '{"channel":"books","instId":"{symbol}"}'
+
+format = "depth/okx_spot"
+
+depth = 400
+push_interval_ms = 100
+
+# Initial snapshot followed by incremental updates.
+synchronization_strategy = "okx_v5_books"
+
+snapshot_source = "websocket"
+snapshot_action = "replace"
+
+sequence_field = "seqId"
+previous_sequence_field = "prevSeqId"
+
+# IMPORTANT:
+# OKX deprecated the checksum field in June 2026.
+# It must not be used for validation.
+checksum_strategy = "none"
+
+quantity_mode = "absolute"
+zero_quantity_action = "delete"
+
+# ------------------------------------------------------------
+# OPTIONAL SNAPSHOT-ONLY CHANNELS
+# ------------------------------------------------------------
+
+[channels.depth5]
+enabled = false
+
+route = "public"
+channel = "books5"
+
+subscription_template = '{"channel":"books5","instId":"{symbol}"}'
+
+depth = 5
+push_interval_ms = 100
+
+synchronization_strategy = "snapshot_only"
+
+[channels.bbo]
+enabled = false
+
+route = "public"
+channel = "bbo-tbt"
+
+subscription_template = '{"channel":"bbo-tbt","instId":"{symbol}"}'
+
+depth = 1
+push_interval_ms = 10
+
+synchronization_strategy = "snapshot_only"
+
+# ============================================================
+# REST
+# ============================================================
+
+[rest]
+base_url = "https://openapi.okx.com"
+
+authentication = "none"
+
+# MarketForge operational policy.
+request_timeout_seconds = 10
+
+# ------------------------------------------------------------
+# ORDER BOOK SNAPSHOT
+# ------------------------------------------------------------
+
+[rest.endpoints.depth_snapshot]
+method = "GET"
+
+path = "/api/v5/market/books"
+
+parameters = [
+    "instId",
+    "sz",
+]
+
+default_limit = 400
+maximum_limit = 400
+
+response_root = "data"
+
+response_sequence_field = "seqId"
+
+authentication = "none"
+
+rate_limit_policy = "depth_snapshot"
+
+# ------------------------------------------------------------
+# RECENT TRADES
+# ------------------------------------------------------------
+
+[rest.endpoints.recent_trades]
+method = "GET"
+
+path = "/api/v5/market/trades"
+
+parameters = [
+    "instId",
+    "limit",
+]
+
+default_limit = 100
+maximum_limit = 500
+
+response_root = "data"
+
+authentication = "none"
+
+rate_limit_policy = "recent_trades"
+
+# ------------------------------------------------------------
+# HISTORICAL TRADES
+# ------------------------------------------------------------
+
+[rest.endpoints.historical_trades]
+method = "GET"
+
+path = "/api/v5/market/history-trades"
+
+parameters = [
+    "instId",
+    "type",
+    "after",
+    "before",
+    "limit",
+]
+
+default_limit = 100
+maximum_limit = 100
+
+response_root = "data"
+
+authentication = "none"
+
+# OKX supports approximately three months of
+# public historical trades through this endpoint.
+max_history_days = 90
+
+# type=1: trade-ID pagination.
+# type=2: timestamp pagination.
+#
+# Pagination directions must be handled explicitly:
+# after = older records
+# before = newer records (trade ID pagination)
+
+pagination_strategy = "okx_trade_history"
+
+default_pagination_type = 1
+
+rate_limit_policy = "historical_trades"
+
+# ============================================================
+# RATE LIMITING
+# ============================================================
+
+[rest.rate_limiting]
+strategy = "endpoint_window"
+
+# Public REST quotas are IP-based.
+rule = "ip"
+
+# OKX reports application-level rate-limit errors.
+rate_limit_error_code = "50011"
+
+# ------------------------------------------------------------
+# ENDPOINT POLICIES
+# ------------------------------------------------------------
+
+[rest.rate_limit_policies.depth_snapshot]
+max_requests = 40
+window_seconds = 2
+
+[rest.rate_limit_policies.recent_trades]
+max_requests = 100
+window_seconds = 2
+
+[rest.rate_limit_policies.historical_trades]
+max_requests = 20
+window_seconds = 2

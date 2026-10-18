@@ -1,0 +1,345 @@
+# MarketForge Live — Bitget Spot Public Trades
+#
+# Proposed MarketForge Live format schema v1.
+#
+# API generation: Unified Trading Account (UTA), V3
+# Encoding: JSON WebSocket
+#
+# References:
+# https://www.bitget.com/docs/uta/quick-start
+# https://www.bitget.com/docs/uta/changelog
+# https://www.bitget.com/support/articles/12560603867770
+#
+# Exchange: Bitget
+# Market: Spot
+# Channel: publicTrade
+#
+# Connectivity and REST:
+# exchanges/bitget_spot.toml
+#
+# Instrument metadata:
+# Python-managed MarketForge instrument catalog.
+#
+# IMPORTANT:
+# - Do not confuse UTA V3 with Classic V2.
+# - Do not confuse JSON publicTrade with SBE publicTrade.
+# - Preserve native execution IDs and correlation IDs.
+# - Spot quantity is denominated in base-asset units.
+# - Initial subscription snapshots require explicit handling.
+
+schema_version = 1
+
+[format]
+id = "bitget_spot"
+exchange = "bitget"
+market = "spot"
+channel = "trades"
+
+encoding = "json"
+target_schema = "canonical_trade"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+topic_field = "arg.topic"
+topic_value = "publicTrade"
+
+instrument_type_field = "arg.instType"
+instrument_type_value = "spot"
+
+instrument_field = "arg.symbol"
+
+action_field = "action"
+
+payload_path = "data"
+
+# ============================================================
+# RECORD EXTRACTION
+# ============================================================
+
+[records]
+path = "data"
+
+representation = "array"
+record_type = "object"
+
+# A message may contain multiple individual executions.
+# Do not assume one WebSocket message equals one trade.
+
+preserve_array_order = true
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+trade_id = "execId"
+execution_link_id = "execLinkId"
+
+price = "price"
+quantity_base = "size"
+
+taker_side = "side"
+
+trade_timestamp = "ts"
+
+is_rpi = "isRPI"
+
+# ============================================================
+# ENVELOPE FIELDS
+# ============================================================
+
+[envelope]
+instrument_type = "arg.instType"
+channel = "arg.topic"
+instrument = "arg.symbol"
+
+message_action = "action"
+
+# Bitget may also provide a top-level push timestamp.
+# Preserve it separately if present.
+
+message_timestamp = "ts"
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+trade_id = "string"
+
+execution_link_id = "optional_string"
+
+price = "decimal_string"
+quantity_base = "decimal_string"
+
+taker_side = "string"
+
+trade_timestamp = "integer_string"
+
+is_rpi = "optional_string"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "trade_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+parse_integer_string = true
+
+# The execution timestamp is the canonical event time.
+# Local receipt time is supplied by MarketForge.
+
+preserve_exchange_event_timestamp = false
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+source = "price"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+source = "quantity_base"
+
+# Spot public-trade size represents base-asset quantity.
+#
+# Instrument identity and quantity specifications are
+# resolved from the existing MarketForge catalog.
+
+raw_unit = "base_asset"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+derive_quote_quantity = true
+
+# Do not introduce contract multipliers for Spot.
+
+# ============================================================
+# AGGRESSOR SIDE
+# ============================================================
+
+[normalization.side]
+source = "taker_side"
+
+buy = "buy"
+sell = "sell"
+
+unknown_policy = "reject"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "envelope.instrument"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "bitget"
+market = "spot"
+
+require_known_instrument = true
+
+validate_subscription_symbol = true
+
+# Instrument context is compiled at stream initialization.
+# No PostgreSQL queries occur on the per-event hot path.
+
+# ============================================================
+# NATIVE TRADE IDENTITY
+# ============================================================
+
+[identity]
+strategy = "native_string_trade_id"
+
+source = "trade_id"
+
+preserve_native_id = true
+
+deduplication_key = [
+    "exchange",
+    "market",
+    "instrument",
+    "trade_id",
+]
+
+# Execution IDs are retained as opaque native identities.
+# Do not assume exact numeric consecutiveness.
+
+# ============================================================
+# EXECUTION CORRELATION
+# ============================================================
+
+[attributes.execution_link_id]
+source = "execution_link_id"
+
+preserve = true
+missing_policy = "unknown"
+
+# The correlation ID must not replace the native
+# execution ID as the deduplication key.
+
+# ============================================================
+# RETAIL PRICE IMPROVEMENT
+# ============================================================
+
+[attributes.is_rpi]
+source = "is_rpi"
+
+preserve = true
+missing_policy = "unknown"
+
+true_value = "yes"
+false_value = "no"
+
+# Absence is not automatically equivalent to false.
+#
+# Preserve RPI classification when provided.
+
+# ============================================================
+# INITIAL SNAPSHOT HANDLING
+# ============================================================
+
+[stream_initialization]
+
+# Some Bitget publicTrade implementations expose an
+# initial historical snapshot after subscription.
+#
+# MarketForge must distinguish replayed initial trades
+# from subsequent live executions.
+
+strategy = "action_aware_trade_stream"
+
+action_source = "envelope.message_action"
+
+snapshot_action = "snapshot"
+update_action = "update"
+
+# Snapshot records are not automatically discarded.
+# Their treatment must be selected by the stream's
+# acquisition policy and verified with live fixtures.
+
+snapshot_policy = "deduplicate_with_live"
+
+# Preserve native execution IDs to prevent duplicates
+# when snapshot records overlap subsequent updates.
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_nonpositive_quantity = true
+
+detect_duplicate_trade_ids = true
+
+# No confirmed consecutive-ID guarantee for JSON
+# publicTrade is assumed here.
+#
+# Numeric ID comparisons may support diagnostics,
+# but an ID jump alone must not prove trade loss.
+
+detect_trade_id_regression = false
+detect_trade_id_gaps = false
+
+gap_action = "report_unverified_coverage"
+
+# Recovery uses the public recent-fills endpoint.
+#
+# The endpoint offers limited recent history.
+# Recovery must verify exact execution identities
+# and coverage rather than assume completeness.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+event_type = "trade"
+trade_semantics = "individual"
+
+preserve_native_trade_id = true
+preserve_execution_link_id = true
+preserve_rpi_flag = true
+
+preserve_event_timestamp = true
+preserve_source_provenance = true
+
+# Emit one canonical trade per accepted data[] record.
+#
+# MarketForge assigns each accepted event its own
+# stable source-stream cursor.
+#
+# The Live event envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# received_timestamp_ns

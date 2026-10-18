@@ -1,0 +1,258 @@
+# MarketForge Live — Binance COIN-M Aggregated Trades
+#
+# Proposed MarketForge Live format schema v1.
+#
+# References:
+# https://developers.binance.com/en/docs/products/derivatives-trading-coin-futures/websocket-market-streams/Connect
+# https://developers.binance.com/docs/derivatives/coin-margined-futures/market-data/rest-api/Compressed-Aggregate-Trades-List
+#
+# Exchange: Binance
+# Market: Inverse (COIN-M)
+# Channel: <symbol>@aggTrade
+#
+# Connection and recovery configuration:
+# exchanges/binance_inverse.toml
+#
+# Instrument specifications are supplied by the existing
+# Python-managed MarketForge instrument catalog.
+#
+# This feed contains aggregated market executions.
+# Individual executions must not be fabricated.
+
+schema_version = 1
+
+[format]
+id = "binance_inverse"
+exchange = "binance"
+market = "inverse"
+channel = "aggregate_trades"
+
+encoding = "json"
+target_schema = "canonical_trade"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+event_type_field = "e"
+event_type_value = "aggTrade"
+
+symbol_field = "s"
+records = "single"
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+aggregate_trade_id = "a"
+
+first_trade_id = "f"
+last_trade_id = "l"
+
+price = "p"
+quantity = "q"
+
+trade_timestamp = "T"
+exchange_event_timestamp = "E"
+
+buyer_is_maker = "m"
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+aggregate_trade_id = "u64"
+
+first_trade_id = "u64"
+last_trade_id = "u64"
+
+price = "decimal_string"
+quantity = "decimal_string"
+
+trade_timestamp = "i64"
+exchange_event_timestamp = "i64"
+
+buyer_is_maker = "boolean"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "trade_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+preserve_exchange_event_timestamp = true
+
+# ============================================================
+# AGGREGATION SEMANTICS
+# ============================================================
+
+[aggregation]
+type = "exchange_aggregated"
+
+# Describes exchange behavior, not MarketForge aggregation.
+aggregation_window_ms = 100
+
+preserve_aggregate_id = true
+preserve_trade_id_range = true
+
+expand_to_individual_trades = false
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+source = "price"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+source = "quantity"
+
+# COIN-M aggregated trade quantity is denominated
+# in contracts, not directly in base-asset units.
+raw_unit = "contracts"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# Resolve contract specifications using the instrument
+# metadata supplied by Python orchestration.
+#
+# Required normalization metadata:
+#
+# quantity_type
+# contract_value
+# contract_value_asset
+#
+# No contract-specific constants are stored here.
+
+quantity_semantics = "instrument_metadata"
+
+derive_base_quantity = true
+derive_quote_quantity = true
+
+# ============================================================
+# AGGRESSOR SIDE
+# ============================================================
+
+[normalization.side]
+source = "buyer_is_maker"
+
+# m=true: buyer was maker -> sell aggressor.
+# m=false: seller was maker -> buy aggressor.
+
+true = "sell"
+false = "buy"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "symbol"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "binance"
+market = "inverse"
+
+require_known_instrument = true
+
+# Contract denomination and multiplier are resolved
+# once during stream initialization.
+#
+# No PostgreSQL lookups occur per trade.
+
+# ============================================================
+# NATIVE TRADE IDENTITY
+# ============================================================
+
+[identity]
+strategy = "aggregate_trade_id"
+
+source = "aggregate_trade_id"
+
+preserve_native_id = true
+
+deduplication_key = [
+    "exchange",
+    "market",
+    "instrument",
+    "aggregate_trade_id",
+]
+
+# ============================================================
+# INTEGRITY
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_nonpositive_quantity = true
+
+detect_duplicate_aggregate_ids = true
+detect_aggregate_id_regression = true
+detect_aggregate_id_gaps = true
+
+validate_trade_id_range = true
+
+# Validate:
+# first_trade_id <= last_trade_id
+
+# Aggregate ID gaps require coverage evaluation.
+# Missing aggregate IDs are not equivalent to missing
+# individual executions or WebSocket messages.
+
+gap_action = "request_recovery"
+
+# Recovery must use aggregate-trade-compatible history.
+# The exchange profile selects GET /dapi/v1/aggTrades.
+#
+# REST responses must be reconciled by aggregate identity.
+# Their availability does not prove arbitrary gap recovery.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+event_type = "trade"
+trade_semantics = "aggregated"
+
+preserve_native_aggregate_id = true
+preserve_native_trade_id_range = true
+
+preserve_event_timestamp = true
+preserve_exchange_event_timestamp = true
+
+preserve_source_provenance = true
+
+# The Live event envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# received_timestamp_ns

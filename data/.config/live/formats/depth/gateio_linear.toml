@@ -1,0 +1,520 @@
+# MarketForge Live — Gate.io Linear Futures L2
+#
+# Proposed MarketForge Live format schema v1.
+#
+# Official references:
+# https://www.gate.com/docs/developers/futures/ws/en/
+# https://www.gate.com/docs/developers/apiv4/en/futures/
+#
+# Exchange: Gate.io
+# Market: Linear
+# Channel: futures.order_book_update
+#
+# Connectivity:
+# exchanges/gateio_linear.toml
+#
+# Supported settlement routes:
+#   usdt
+#   usd1 (subject to instrument classification)
+#
+# IMPORTANT:
+# - L2 levels contain objects, not arrays.
+# - Quantities represent absolute contract amounts.
+# - Fractional sizes require X-Gate-Size-Decimal: 1.
+# - Sequence continuity uses U/u ranges.
+# - Full snapshots can appear in the update channel.
+# - REST snapshots require with_id=true.
+# - Contract conversion uses instrument metadata.
+
+schema_version = 1
+
+[format]
+id = "gateio_linear"
+exchange = "gateio"
+market = "linear"
+channel = "depth"
+
+encoding = "json"
+target_schema = "canonical_l2_update"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+channel_field = "channel"
+channel_value = "futures.order_book_update"
+
+event_field = "event"
+event_value = "update"
+
+payload_path = "result"
+
+# ============================================================
+# RECORD EXTRACTION
+# ============================================================
+
+[records]
+path = "result"
+
+representation = "object"
+record_type = "object"
+
+preserve_source_order = true
+
+# One result object represents one atomic book update.
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+instrument = "s"
+
+first_update_id = "U"
+last_update_id = "u"
+
+book_timestamp = "t"
+
+full_snapshot = "full"
+snapshot_depth = "l"
+
+# ============================================================
+# ENVELOPE
+# ============================================================
+
+[envelope]
+channel = "channel"
+event = "event"
+
+message_timestamp_seconds = "time"
+message_timestamp_ms = "time_ms"
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+instrument = "string"
+
+first_update_id = "optional_u64"
+last_update_id = "u64"
+
+book_timestamp = "i64"
+
+full_snapshot = "optional_boolean"
+snapshot_depth = "optional_integer_string"
+
+# U is required for incremental updates.
+# Full snapshots establish a baseline using u.
+
+# ============================================================
+# TIMESTAMPS
+# ============================================================
+
+[timestamps]
+event_source = "book_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+preserve_message_timestamp = true
+
+# Local receipt time comes from the live event envelope.
+
+# ============================================================
+# BID LEVEL EXTRACTION
+# ============================================================
+
+[levels.bids]
+path = "b"
+
+representation = "array"
+level_type = "object"
+
+price_field = "p"
+quantity_field = "s"
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "bid"
+
+# ============================================================
+# ASK LEVEL EXTRACTION
+# ============================================================
+
+[levels.asks]
+path = "a"
+
+representation = "array"
+level_type = "object"
+
+price_field = "p"
+quantity_field = "s"
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "ask"
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+
+# Gate Futures depth level size represents the
+# absolute quantity resting at that price.
+#
+# The raw unit is native contracts, not base assets.
+#
+# Contract-to-base/quote conversion is delegated to
+# MarketForge's compiled instrument context.
+
+raw_unit = "contracts"
+
+quantity_semantics = "instrument_metadata"
+
+representation = "exact_decimal"
+
+signed = false
+
+allow_zero = true
+allow_negative = false
+
+# Deltas specify the new absolute size at a level,
+# not the amount to add or subtract.
+
+update_mode = "absolute"
+
+zero_quantity_action = "delete"
+
+# Preserve fractional contracts exactly.
+
+reject_precision_loss = true
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "instrument"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "gateio"
+market = "linear"
+
+require_known_instrument = true
+validate_subscription_symbol = true
+
+# The source stream resolves its settlement route
+# through the exchange connectivity profile.
+#
+# Instrument context supplies:
+#
+# instrument_id
+# quantity_type
+# contract_value
+# contract_value_asset
+# base_asset
+# quote_asset
+#
+# No per-event PostgreSQL queries.
+
+# ============================================================
+# MESSAGE CLASSIFICATION
+# ============================================================
+
+[classification]
+strategy = "gate_futures_depth_message"
+
+full_snapshot_field = "full_snapshot"
+
+full_snapshot_value = true
+
+missing_full_means_delta = true
+
+# full=true:
+#   replace the authoritative subscribed-depth book.
+#
+# full absent/false:
+#   apply an incremental update.
+
+# ============================================================
+# NATIVE SEQUENCING
+# ============================================================
+
+[sequence]
+strategy = "gate_futures_update_range"
+
+first_field = "first_update_id"
+last_field = "last_update_id"
+
+preserve_native_sequence_range = true
+
+# Every incremental message must satisfy:
+#
+# U <= u
+
+validate_range = true
+require_first_lte_last = true
+
+# Sequence ranges need not contain exactly one ID.
+# An update may cover multiple native book changes.
+
+require_consecutive_integer_ids = false
+
+continuity_strategy = "range_covers_next_update"
+
+# ============================================================
+# INITIALIZATION
+# ============================================================
+
+[synchronization]
+strategy = "gate_futures_order_book_update"
+
+snapshot_source = "rest"
+
+snapshot_endpoint = "depth_snapshot"
+
+buffer_updates_before_snapshot = true
+
+snapshot_sequence_field = "id"
+
+require_snapshot_id = true
+
+# REST request:
+#
+# GET /futures/{settlement}/order_book
+#
+# contract={symbol}
+# interval=0
+# with_id=true
+#
+# The returned id establishes the sequence baseline.
+
+# ============================================================
+# REST SNAPSHOT BRIDGE
+# ============================================================
+
+[synchronization.snapshot_bridge]
+
+enabled = true
+
+# Given:
+#
+# base_id = REST snapshot.id
+#
+# The first usable WebSocket update satisfies:
+#
+# U <= base_id + 1 <= u
+
+strategy = "next_update_in_range"
+
+# Discard updates whose last sequence precedes
+# the next required sequence ID.
+
+discard_strategy = "last_update_before_next_required"
+
+# A missing bridge means the snapshot is too old.
+
+on_bridge_failure = "retry_snapshot"
+
+# ============================================================
+# INCREMENTAL CONTINUITY
+# ============================================================
+
+[sequence.incremental]
+
+# next_required = last_applied_update_id + 1
+#
+# If:
+#   update.u < next_required
+# Ignore an already-covered update.
+#
+# If:
+#   update.U > next_required
+# A gap exists; resynchronize.
+#
+# Otherwise:
+#   The update covers the required sequence.
+
+stale_action = "ignore"
+
+gap_action = "invalidate_and_resynchronize"
+
+allow_overlapping_ranges = true
+
+# ============================================================
+# WEBSOCKET FULL SNAPSHOTS
+# ============================================================
+
+[synchronization.websocket_snapshot]
+
+enabled = true
+
+indicator_field = "full_snapshot"
+indicator_value = true
+
+snapshot_action = "replace"
+
+sequence_baseline_field = "last_update_id"
+
+depth_field = "snapshot_depth"
+
+# A full snapshot is authoritative only for the
+# depth represented by the subscribed channel.
+#
+# Replacing an existing book creates a new
+# book synchronization generation.
+
+require_coverage_tracking = true
+
+new_book_generation = true
+
+# ============================================================
+# BOOK STATE
+# ============================================================
+
+[book]
+storage = "marketforge_book_store"
+
+snapshot_action = "replace"
+
+delta_update_type = "absolute"
+
+zero_quantity_action = "delete"
+
+# Apply every message's bid/ask changes atomically.
+
+atomic_message_updates = true
+
+require_valid_generation = true
+
+# ============================================================
+# DEPTH COVERAGE
+# ============================================================
+
+[book.depth]
+strategy = "exchange_reported"
+
+source = "snapshot_depth"
+
+supported_depths = [20, 50, 100]
+
+track_snapshot_source = true
+track_snapshot_depth = true
+
+# Subscriptions restrict observable depth.
+#
+# Do not claim that an initialized 20-level book
+# contains the exchange's complete order book.
+
+# ============================================================
+# PROTOCOL REQUIREMENTS
+# ============================================================
+
+[protocol]
+
+required_header = "X-Gate-Size-Decimal"
+required_header_value = "1"
+
+require_decimal_size_support = true
+
+# Gate explicitly documents truncation of fractional
+# sizes when this header is absent.
+#
+# The decoder must not silently accept a transport
+# that lacks the required decimal-size negotiation.
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_negative_quantity = true
+
+reject_precision_loss = true
+
+validate_sequence_ranges = true
+validate_snapshot_bridge = true
+
+detect_sequence_gaps = true
+detect_stale_updates = true
+
+# Full snapshots establish authoritative baselines,
+# rather than behaving like ordinary deltas.
+
+allow_authoritative_snapshot_reset = true
+
+# No checksum is specified for this JSON channel.
+
+checksum_strategy = "none"
+
+gap_action = "invalidate_and_resynchronize"
+
+# ============================================================
+# RECOVERY
+# ============================================================
+
+[recovery]
+strategy = "gate_futures_snapshot_recovery"
+
+on_connection_loss = "invalidate_and_resubscribe"
+
+on_sequence_violation = "resynchronize"
+
+on_new_snapshot = "replace_book"
+
+rest_snapshot_fallback = true
+
+require_generation_fencing = true
+
+# Snapshot recovery restores current book state.
+# It cannot reconstruct all missed historical deltas.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+snapshot_event_type = "l2_snapshot"
+delta_event_type = "l2_update"
+
+preserve_native_sequence_range = true
+
+preserve_event_timestamp = true
+preserve_message_timestamp = true
+
+preserve_snapshot_depth = true
+preserve_source_provenance = true
+
+atomic_updates = true
+
+# Live event envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# book_generation
+# received_timestamp_ns

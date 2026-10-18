@@ -1,0 +1,422 @@
+# MarketForge Live — Gate.io Spot
+#
+# Proposed MarketForge Live exchange-profile schema v1.
+#
+# API generation: Gate API V4
+#
+# Official documentation:
+# https://www.gate.com/docs/developers/apiv4/ws/en/
+# https://www.gate.com/docs/developers/apiv4/en/spot/
+#
+# Scope:
+#   Public WebSocket connectivity
+#   Subscription and heartbeat protocols
+#   Individual trade acquisition
+#   L2 order-book acquisition
+#   REST snapshots and trade reconciliation
+#
+# Instrument metadata is provided by Python orchestration.
+# Trade/L2 normalization specifications are separate.
+
+schema_version = 1
+
+[exchange]
+id = "gateio"
+market = "spot"
+profile = "gateio_spot"
+api_generation = "v4"
+
+# ============================================================
+# WEBSOCKET
+# ============================================================
+
+[websocket]
+url = "wss://api.gateio.ws/ws/v4/"
+
+authentication = "none"
+
+symbol_case = "uppercase"
+
+# Gate Spot symbols use an underscore separator.
+# Example: BTC_USDT
+
+symbol_format = "BASE_QUOTE"
+
+# WebSocket envelope time is expressed in seconds.
+# Individual channels may expose more precise timestamps.
+
+envelope_timestamp_unit = "seconds"
+
+# ============================================================
+# CONNECTION MANAGEMENT
+# ============================================================
+
+[websocket.connection]
+
+# Connection admission and sharding are managed
+# by MarketForge's generic Connection Manager.
+#
+# No unverified subscription-per-connection limit
+# is assigned here.
+
+reconnect_strategy = "exponential_backoff"
+
+# ============================================================
+# HEARTBEAT
+# ============================================================
+
+[websocket.heartbeat]
+
+# Gate.io uses WebSocket protocol-level ping/pong.
+# Its spot.ping application command is optional.
+
+strategy = "websocket_control_frames"
+
+respond_to_ping = true
+echo_ping_payload = true
+
+# ------------------------------------------------------------
+# OPTIONAL APPLICATION HEARTBEAT
+# ------------------------------------------------------------
+
+[websocket.application_heartbeat]
+
+enabled = false
+
+strategy = "json_channel_ping"
+
+request_channel = "spot.ping"
+response_channel = "spot.pong"
+
+# Application ping uses the same V4 envelope:
+#
+# {
+#   "time": <unix_seconds>,
+#   "channel": "spot.ping"
+# }
+
+# MarketForge operational settings, not exchange limits.
+
+interval_seconds = 30
+response_timeout_seconds = 10
+
+# ============================================================
+# SUBSCRIPTIONS
+# ============================================================
+
+[websocket.subscription]
+
+strategy = "gate_v4_channel_event"
+
+# Gate uses:
+#
+# {
+#   "time": <unix_seconds>,
+#   "channel": "spot.trades",
+#   "event": "subscribe",
+#   "payload": ["BTC_USDT"]
+# }
+
+channel_field = "channel"
+operation_field = "event"
+arguments_field = "payload"
+
+subscribe_method = "subscribe"
+unsubscribe_method = "unsubscribe"
+
+# Unix seconds must be generated for each request.
+timestamp_field = "time"
+timestamp_unit = "seconds"
+
+acknowledgement_field = "event"
+
+subscribe_acknowledgement = "subscribe"
+unsubscribe_acknowledgement = "unsubscribe"
+
+error_field = "error"
+
+supports_dynamic_subscriptions = true
+supports_unsubscribe = true
+
+# ============================================================
+# MESSAGE ROUTING
+# ============================================================
+
+[websocket.routing]
+
+mode = "channel"
+
+channel_field = "channel"
+event_field = "event"
+
+payload_field = "result"
+
+# Market data is normally delivered with event=update.
+update_event = "update"
+
+# Protocol acknowledgements and application heartbeats
+# must be dispatched separately from market data.
+
+# ============================================================
+# INDIVIDUAL TRADES
+# ============================================================
+
+[channels.trades]
+
+enabled = true
+
+channel = "spot.trades"
+
+subscription_payload = ["{symbol}"]
+
+format = "trades/gateio_spot"
+
+trade_semantics = "individual"
+
+# Gate's current spot.trades notification contains
+# a trade object in result.
+
+records = "single"
+payload_path = "result"
+
+# Gate provides:
+#
+# id        - exchange-wide trade identifier
+# id_market - market-specific trade identifier
+#
+# The latter can assist continuity analysis.
+
+native_trade_id_field = "id"
+market_trade_id_field = "id_market"
+
+recovery_strategy = "gate_spot_trade_reconciliation"
+recovery_endpoint = "historical_trades"
+
+# ============================================================
+# L2 DIFFERENTIAL DEPTH
+# ============================================================
+
+[channels.depth]
+
+enabled = true
+
+channel = "spot.order_book_update"
+
+format = "depth/gateio_spot"
+
+# Subscription:
+#
+# ["BTC_USDT", "100ms"]
+#
+# Current API docs list 20ms and 100ms variants.
+
+subscription_payload = [
+    "{symbol}",
+    "{interval}",
+]
+
+default_interval = "100ms"
+
+supported_intervals = [
+    "20ms",
+    "100ms",
+]
+
+# Incremental updates carry U/u sequence ranges.
+# Some messages may also be authoritative snapshots.
+
+synchronization_strategy = "gate_spot_order_book_update"
+
+snapshot_endpoint = "depth_snapshot"
+
+first_update_id_field = "U"
+last_update_id_field = "u"
+
+full_snapshot_field = "full"
+
+quantity_mode = "absolute"
+zero_quantity_action = "delete"
+
+# ============================================================
+# L2 SYNCHRONIZATION
+# ============================================================
+
+[channels.depth.synchronization]
+
+strategy = "gate_spot_order_book_update"
+
+# Gate documents REST snapshot initialization:
+#
+# 1. Subscribe to updates and buffer them.
+# 2. Fetch REST order book with with_id=true.
+# 3. Record the returned book ID.
+# 4. Find an update bridging base_id + 1.
+# 5. Apply subsequent updates.
+# 6. Resynchronize on discontinuity.
+#
+# The current WebSocket feed also documents
+# full=true snapshots. Handle them explicitly.
+
+snapshot_source = "rest"
+
+buffer_updates_before_snapshot = true
+
+snapshot_sequence_field = "id"
+
+initial_bridge_strategy = "gate_spot_snapshot_bridge"
+
+continuity_strategy = "gate_spot_update_range"
+
+websocket_full_snapshot_field = "full"
+websocket_full_snapshot_action = "replace"
+
+# ============================================================
+# OPTIONAL SNAPSHOT CHANNEL
+# ============================================================
+
+[channels.depth_snapshot]
+
+enabled = false
+
+channel = "spot.order_book"
+
+# This channel publishes limited-level snapshots.
+# It is distinct from the diff-depth channel.
+
+subscription_payload = [
+    "{symbol}",
+    "{depth}",
+    "{interval}",
+]
+
+supported_intervals = [
+    "100ms",
+    "1000ms",
+]
+
+synchronization_strategy = "snapshot_only"
+
+# ============================================================
+# REST
+# ============================================================
+
+[rest]
+
+# Base URL includes the API version prefix.
+
+base_url = "https://api.gateio.ws/api/v4"
+
+authentication = "none"
+
+# MarketForge operational policy.
+request_timeout_seconds = 10
+
+# ============================================================
+# ORDER BOOK SNAPSHOT
+# ============================================================
+
+[rest.endpoints.depth_snapshot]
+
+method = "GET"
+
+path = "/spot/order_book"
+
+parameters = [
+    "currency_pair",
+    "interval",
+    "limit",
+    "with_id",
+]
+
+currency_pair = "{symbol}"
+
+# No aggregation.
+interval = "0"
+
+# Essential for matching WebSocket update IDs.
+with_id = true
+
+default_limit = 100
+
+# Do not assign an unverified maximum here.
+
+response_sequence_field = "id"
+
+response_bids_field = "bids"
+response_asks_field = "asks"
+
+authentication = "none"
+
+rate_limit_policy = "spot_public"
+
+# ============================================================
+# HISTORICAL MARKET TRADES
+# ============================================================
+
+[rest.endpoints.historical_trades]
+
+method = "GET"
+
+path = "/spot/trades"
+
+parameters = [
+    "currency_pair",
+    "limit",
+    "from",
+    "to",
+    "last_id",
+    "reverse",
+    "page",
+]
+
+currency_pair = "{symbol}"
+
+default_limit = 100
+maximum_limit = 1000
+
+authentication = "none"
+
+# Gate supports both time-range queries and
+# legacy trade-ID pagination.
+#
+# Time-range querying is the preferred mechanism.
+
+pagination_strategy = "gate_spot_trades"
+
+preferred_pagination = "time_range"
+
+# last_id is legacy and should not be the
+# primary recovery mechanism.
+
+legacy_id_pagination = true
+
+rate_limit_policy = "spot_public"
+
+# ============================================================
+# RATE LIMITING
+# ============================================================
+
+[rest.rate_limiting]
+
+strategy = "shared_window"
+
+rule = "ip"
+
+# Conservative admission must use the applicable
+# deployment-specific Gate public REST quota.
+#
+# The current general API V4 documentation describes
+# a spot public limit of 900 requests per second.
+#
+# This is an exchange ceiling, not a recommended
+# MarketForge operating rate.
+
+[rest.rate_limit_policies.spot_public]
+
+max_requests = 900
+window_seconds = 1
+
+# MarketForge should reserve headroom for other
+# processes sharing the same public IP.
+#
+# Reconcile actual throttling behavior during testing.

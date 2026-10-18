@@ -1,0 +1,537 @@
+# MarketForge Live — Gate.io Spot L2 Order Book
+#
+# Proposed MarketForge Live format schema v1.
+#
+# Official documentation:
+# https://www.gate.com/docs/developers/apiv4/ws/en/
+# https://www.gate.com/docs/developers/apiv4/en/spot/
+#
+# Exchange: Gate.io
+# Market: Spot
+# Channel: spot.order_book_update
+#
+# Connectivity and REST:
+# exchanges/gateio_spot.toml
+#
+# Instrument metadata:
+# Python-managed MarketForge instrument catalog.
+#
+# IMPORTANT:
+# - Supports incremental updates and full=true snapshots.
+# - Native continuity uses U/u update ID ranges.
+# - REST initialization requires with_id=true.
+# - Snapshot-to-update bridging is mandatory.
+# - Quantities are absolute base-asset quantities.
+# - A zero quantity removes the price level.
+# - Full snapshots are depth-limited.
+# - SBE and spot.obu are separate protocols.
+
+schema_version = 1
+
+[format]
+id = "gateio_spot"
+exchange = "gateio"
+market = "spot"
+channel = "depth"
+
+encoding = "json"
+target_schema = "canonical_l2_update"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+channel_field = "channel"
+channel_value = "spot.order_book_update"
+
+event_field = "event"
+event_value = "update"
+
+payload_path = "result"
+
+records = "single"
+
+# ============================================================
+# RECORD EXTRACTION
+# ============================================================
+
+[records]
+path = "result"
+
+representation = "object"
+record_type = "object"
+
+preserve_source_order = true
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+instrument = "s"
+
+first_update_id = "U"
+last_update_id = "u"
+
+book_timestamp = "t"
+
+# Deprecated field:
+# E contains a timestamp in seconds.
+#
+# Prefer t, which provides millisecond precision.
+deprecated_event_timestamp = "E"
+
+full_snapshot = "full"
+snapshot_depth = "l"
+
+# ============================================================
+# ENVELOPE FIELDS
+# ============================================================
+
+[envelope]
+channel = "channel"
+event = "event"
+
+message_timestamp_seconds = "time"
+message_timestamp_ms = "time_ms"
+
+# Envelope timestamps represent exchange-side
+# message publication, not necessarily book generation.
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+instrument = "string"
+
+first_update_id = "optional_u64"
+last_update_id = "u64"
+
+book_timestamp = "i64"
+
+deprecated_event_timestamp = "optional_i64"
+
+full_snapshot = "optional_boolean"
+snapshot_depth = "optional_integer_string"
+
+# U may be absent from full snapshot variants.
+# Incremental updates require U.
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "book_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+preserve_message_timestamp = true
+
+# Do not use deprecated E as canonical event time.
+#
+# Local receipt time is assigned by MarketForge.
+
+# ============================================================
+# BID LEVELS
+# ============================================================
+
+[levels.bids]
+path = "b"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "bid"
+
+# ============================================================
+# ASK LEVELS
+# ============================================================
+
+[levels.asks]
+path = "a"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "ask"
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+
+# Standard Gate Spot order-book quantities represent
+# base-asset amounts.
+#
+# Instrument metadata is resolved through the existing
+# MarketForge instrument catalog.
+
+raw_unit = "base_asset"
+
+representation = "exact_decimal"
+
+allow_zero = true
+allow_negative = false
+
+# Incremental messages provide absolute quantities.
+#
+# They are not additive or subtractive level changes.
+
+update_mode = "absolute"
+
+zero_quantity_action = "delete"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "instrument"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "gateio"
+market = "spot"
+
+require_known_instrument = true
+validate_subscription_symbol = true
+
+# Gate Spot symbols typically use BASE_QUOTE.
+#
+# Resolve the actual instrument through the catalog,
+# rather than using symbol parsing for canonical identity.
+
+# ============================================================
+# MESSAGE CLASSIFICATION
+# ============================================================
+
+[classification]
+strategy = "gate_spot_depth_message"
+
+full_snapshot_field = "full_snapshot"
+
+full_snapshot_value = true
+
+# Missing full or full=false indicates an incremental
+# update, according to the current exchange protocol.
+
+missing_full_means_delta = true
+
+# The full snapshot variant replaces the local book.
+#
+# An incremental update modifies existing levels.
+
+# ============================================================
+# NATIVE SEQUENCING
+# ============================================================
+
+[sequence]
+strategy = "gate_spot_update_range"
+
+first_field = "first_update_id"
+last_field = "last_update_id"
+
+preserve_native_sequence_range = true
+
+# Incremental messages must contain a valid range:
+#
+# U <= u
+
+validate_range = true
+require_first_lte_last = true
+
+# Native update IDs increase per order-book update.
+#
+# A single WebSocket message can cover multiple IDs.
+#
+# Therefore:
+#
+# Do not require current.U == previous.u + 1
+# in the presence of overlapping update ranges.
+#
+# Instead, verify that the next required ID is covered.
+
+continuity_strategy = "range_covers_next_update"
+
+# ============================================================
+# REST SNAPSHOT INITIALIZATION
+# ============================================================
+
+[synchronization]
+strategy = "gate_spot_order_book_update"
+
+snapshot_source = "rest"
+
+snapshot_endpoint = "depth_snapshot"
+
+buffer_updates_before_snapshot = true
+
+snapshot_sequence_field = "id"
+
+# The REST request must include:
+#
+# with_id=true
+#
+# The returned snapshot ID establishes the baseline.
+
+require_snapshot_id = true
+
+# ============================================================
+# INITIAL SNAPSHOT BRIDGE
+# ============================================================
+
+[synchronization.snapshot_bridge]
+
+enabled = true
+
+# Given REST snapshot ID:
+#
+# base_id = snapshot.id
+#
+# The first applicable WebSocket update must satisfy:
+#
+# U <= base_id + 1 <= u
+
+strategy = "next_update_in_range"
+
+# Discard updates satisfying:
+#
+# u < base_id + 1
+
+discard_strategy = "last_update_before_next_required"
+
+# If the first available update begins beyond
+# base_id + 1, the snapshot is too old.
+#
+# Request a newer snapshot.
+
+on_bridge_failure = "retry_snapshot"
+
+# ============================================================
+# INCREMENTAL CONTINUITY
+# ============================================================
+
+[sequence.incremental]
+
+# Current authoritative book update ID:
+#
+# last_applied = previous.u
+#
+# Next expected update ID:
+#
+# next_required = last_applied + 1
+#
+# If:
+#
+# current.u < next_required
+#
+# the message is stale.
+#
+# If:
+#
+# current.U > next_required
+#
+# one or more native updates are missing.
+#
+# Otherwise, the new message covers the required ID.
+
+stale_action = "ignore"
+
+gap_action = "invalidate_and_resynchronize"
+
+allow_overlapping_ranges = true
+
+# ============================================================
+# WEBSOCKET FULL SNAPSHOTS
+# ============================================================
+
+[synchronization.websocket_snapshot]
+
+enabled = true
+
+indicator_field = "full_snapshot"
+indicator_value = true
+
+# A full=true message replaces the local book.
+#
+# Its u field establishes a new sequence baseline.
+
+snapshot_action = "replace"
+
+sequence_baseline_field = "last_update_id"
+
+# The l field identifies the snapshot depth
+# when supplied by the exchange.
+
+depth_field = "snapshot_depth"
+
+# Do not treat a depth-limited snapshot as an
+# authoritative reconstruction of arbitrary
+# deeper book levels.
+
+require_coverage_tracking = true
+
+# A new authoritative snapshot establishes a new
+# synchronization generation.
+
+new_book_generation = true
+
+# ============================================================
+# BOOK STATE
+# ============================================================
+
+[book]
+storage = "marketforge_book_store"
+
+snapshot_action = "replace"
+
+delta_update_type = "absolute"
+
+zero_quantity_action = "delete"
+
+# All price-level changes within one WebSocket
+# message form one logical atomic L2 event.
+
+atomic_message_updates = true
+
+# Valid publication requires a synchronized
+# book generation.
+
+require_valid_generation = true
+
+# ============================================================
+# BOOK DEPTH
+# ============================================================
+
+[book.depth]
+
+# Gate's full=true snapshots may contain a declared
+# limited depth, such as 100 levels.
+#
+# Do not assume unlimited book completeness.
+
+strategy = "exchange_reported"
+
+source = "snapshot_depth"
+
+# REST and WebSocket snapshots may establish
+# different coverage guarantees.
+#
+# Record the actual initialization source and depth.
+
+track_snapshot_source = true
+track_snapshot_depth = true
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_negative_quantity = true
+
+detect_sequence_gaps = true
+detect_stale_updates = true
+
+validate_sequence_ranges = true
+validate_snapshot_bridge = true
+
+# A full=true snapshot is a valid book reset,
+# not an incremental sequence violation.
+
+allow_authoritative_snapshot_reset = true
+
+# The standard spot.order_book_update protocol
+# does not provide a checksum field for validation.
+
+checksum_strategy = "none"
+
+gap_action = "invalidate_and_resynchronize"
+
+# ============================================================
+# RECOVERY
+# ============================================================
+
+[recovery]
+strategy = "gate_spot_snapshot_recovery"
+
+on_connection_loss = "invalidate_and_resubscribe"
+
+on_sequence_violation = "resynchronize"
+
+on_new_snapshot = "replace_book"
+
+# REST snapshot synchronization is supported when
+# WebSocket update buffering and sequence bridging
+# are performed correctly.
+
+rest_snapshot_fallback = true
+
+# Stale asynchronous snapshot responses must not
+# initialize newer connection/book generations.
+
+require_generation_fencing = true
+
+# Restoring current book validity does not recover
+# L2 events missed during an outage.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+snapshot_event_type = "l2_snapshot"
+delta_event_type = "l2_update"
+
+preserve_native_sequence_range = true
+
+preserve_event_timestamp = true
+preserve_message_timestamp = true
+
+preserve_source_provenance = true
+
+preserve_snapshot_depth = true
+
+atomic_updates = true
+
+# Live event envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# book_generation
+# received_timestamp_ns

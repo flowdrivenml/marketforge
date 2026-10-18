@@ -1,0 +1,310 @@
+# MarketForge Live — Bybit Inverse
+#
+# Proposed MarketForge Live exchange-profile schema v1.
+#
+# Official references:
+# https://bybit-exchange.github.io/docs/v5/ws/connect
+# https://bybit-exchange.github.io/docs/v5/websocket/public/trade
+# https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook
+# https://bybit-exchange.github.io/docs/v5/market/orderbook
+# https://bybit-exchange.github.io/docs/v5/market/recent-trade
+# https://bybit-exchange.github.io/docs/v5/rate-limit
+#
+# Scope:
+#   WebSocket connectivity
+#   Subscription and heartbeat protocols
+#   Public trade and L2 channel capabilities
+#   REST snapshot and limited trade recovery
+#   API rate limiting
+#
+# Instrument discovery and contract specifications
+# are provided by Python orchestration.
+#
+# Trade and L2 normalization are configured separately.
+
+schema_version = 1
+
+[exchange]
+id = "bybit"
+market = "inverse"
+profile = "bybit_inverse"
+
+# ============================================================
+# WEBSOCKET
+# ============================================================
+
+[websocket]
+url = "wss://stream.bybit.com/v5/public/inverse"
+testnet_url = "wss://stream-testnet.bybit.com/v5/public/inverse"
+
+authentication = "none"
+
+symbol_case = "uppercase"
+timestamp_unit = "milliseconds"
+
+# ============================================================
+# CONNECTION LIMITS
+# ============================================================
+
+[websocket.limits]
+
+connection_attempt_limit = 500
+connection_attempt_window_seconds = 300
+
+# Market-data connections are counted separately
+# for Spot, Linear, Inverse, and Options.
+max_market_data_connections_per_ip = 1000
+
+# Futures have no documented fixed topic-count limit
+# per subscription request.
+#
+# The args payload nevertheless has a character limit.
+max_args_characters = 21000
+
+# ============================================================
+# HEARTBEAT
+# ============================================================
+
+[websocket.heartbeat]
+strategy = "json_ping_pong"
+
+interval_seconds = 20
+request = '{"op":"ping"}'
+
+response_op_field = "op"
+response_op_value = "ping"
+
+response_success_field = "success"
+response_success_value = true
+
+response_message_field = "ret_msg"
+response_message_value = "pong"
+
+# MarketForge operational policy.
+timeout_seconds = 30
+
+# ============================================================
+# SUBSCRIPTIONS
+# ============================================================
+
+[websocket.subscription]
+strategy = "json_operation"
+
+subscribe_method = "subscribe"
+unsubscribe_method = "unsubscribe"
+
+operation_field = "op"
+arguments_field = "args"
+
+request_id_field = "req_id"
+request_id_type = "string"
+request_id_optional = true
+
+success_field = "success"
+success_value = true
+
+error_message_field = "ret_msg"
+
+supports_dynamic_subscriptions = true
+supports_unsubscribe = true
+
+# ============================================================
+# MESSAGE ROUTING
+# ============================================================
+
+[websocket.routing]
+mode = "topic"
+
+topic_field = "topic"
+message_type_field = "type"
+payload_field = "data"
+
+# ============================================================
+# INDIVIDUAL TRADES
+# ============================================================
+
+[channels.trades]
+enabled = true
+
+stream_template = "publicTrade.{symbol_upper}"
+
+format = "trades/bybit_inverse"
+
+trade_semantics = "individual"
+
+records = "array"
+payload_path = "data"
+
+# REST recent-trade recovery is limited to the
+# exchange's currently available recent executions.
+#
+# Arbitrary historical trade-ID pagination is unavailable.
+
+recovery_strategy = "recent_trade_reconciliation"
+recovery_endpoint = "recent_trades"
+
+# ============================================================
+# L2 ORDER BOOK
+# ============================================================
+
+[channels.depth]
+enabled = true
+
+stream_template = "orderbook.{depth}.{symbol_upper}"
+
+format = "depth/bybit_inverse"
+
+supported_depths = [1, 50, 200, 1000]
+default_depth = 200
+
+# Exchange-documented nominal push frequencies.
+
+[channels.depth.push_intervals_ms]
+"1" = 10
+"50" = 20
+"200" = 100
+"1000" = 200
+
+# ============================================================
+# DEPTH SYNCHRONIZATION
+# ============================================================
+
+[channels.depth.synchronization]
+strategy = "bybit_v5_snapshot_delta"
+
+snapshot_source = "websocket"
+
+snapshot_message_type = "snapshot"
+delta_message_type = "delta"
+
+snapshot_action = "replace"
+
+# Bybit may issue a snapshot with u=1
+# following a service reset.
+reset_update_id = 1
+
+update_id_field = "u"
+cross_sequence_field = "seq"
+
+# Standard depth streams do not expose Binance-style
+# U/u/pu ranges or a universal consecutive u+1 rule.
+require_consecutive_update_id = false
+
+rest_snapshot_endpoint = "depth_snapshot"
+
+# ============================================================
+# DEPTH QUANTITY SEMANTICS
+# ============================================================
+
+[channels.depth.quantity]
+
+update_mode = "absolute"
+zero_quantity_action = "delete"
+
+# Inverse instrument quantities must be interpreted
+# using the authoritative instrument catalog.
+#
+# Relevant metadata:
+# quantity_type
+# contract_value
+# contract_value_asset
+
+quantity_semantics = "instrument_metadata"
+
+# ============================================================
+# REST API
+# ============================================================
+
+[rest]
+base_url = "https://api.bybit.com"
+
+authentication = "none"
+
+# MarketForge operational policy.
+request_timeout_seconds = 10
+
+# ============================================================
+# ORDER BOOK SNAPSHOT
+# ============================================================
+
+[rest.endpoints.depth_snapshot]
+method = "GET"
+path = "/v5/market/orderbook"
+
+parameters = [
+    "category",
+    "symbol",
+    "limit",
+]
+
+category = "inverse"
+
+# MarketForge default; Bybit's documented default is 25.
+default_limit = 200
+maximum_limit = 1000
+
+response_root = "result"
+
+response_symbol_field = "s"
+response_update_id_field = "u"
+response_cross_sequence_field = "seq"
+
+weight_policy = "public_market_data"
+
+# ============================================================
+# RECENT PUBLIC TRADES
+# ============================================================
+
+[rest.endpoints.recent_trades]
+method = "GET"
+path = "/v5/market/recent-trade"
+
+parameters = [
+    "category",
+    "symbol",
+    "limit",
+]
+
+category = "inverse"
+
+default_limit = 500
+maximum_limit = 1000
+
+response_root = "result.list"
+
+pagination_strategy = "none"
+
+weight_policy = "public_market_data"
+
+# ============================================================
+# RATE LIMITING
+# ============================================================
+
+[rest.rate_limiting]
+strategy = "shared_window"
+
+# Bybit's default HTTP IP request limit.
+ip_window_seconds = 5
+ip_max_requests = 600
+
+rate_limit_error_code = 10006
+ip_limit_http_status = 403
+
+# Shared IP limits must coordinate with other Bybit
+# REST consumers where applicable.
+#
+# An IP-frequency 403 requires the exchange-prescribed
+# cooldown; it is not an ordinary transient HTTP 403.
+
+[rest.rate_limiting.headers]
+limit = "X-Bapi-Limit"
+remaining = "X-Bapi-Limit-Status"
+reset_timestamp = "X-Bapi-Limit-Reset-Timestamp"
+
+# ============================================================
+# REQUEST COST
+# ============================================================
+
+[rest.weight_policies.public_market_data]
+type = "request_count"
+cost = 1

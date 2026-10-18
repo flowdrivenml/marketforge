@@ -1,0 +1,454 @@
+# MarketForge Live — Bitget Spot L2 Order Book
+#
+# Proposed MarketForge Live format schema v1.
+#
+# API generation: UTA V3
+# Encoding: JSON WebSocket
+#
+# Official references:
+# https://www.bitget.com/docs/uta/websocket/public/Order-Book-Channel
+# https://www.bitget.com/docs/uta/changelog/2026-05
+#
+# Exchange: Bitget
+# Market: Spot
+# Channel: books
+#
+# Connectivity:
+# exchanges/bitget_spot.toml
+#
+# Instrument metadata:
+# Python-managed MarketForge instrument catalog.
+#
+# IMPORTANT:
+# - Initial snapshot followed by incremental updates.
+# - Continuity uses seq/pseq.
+# - Snapshot-to-update bridging is required.
+# - Sequence resets require explicit handling.
+# - Checksum was removed on 2026-05-19.
+# - RPI depth is a separate channel.
+
+schema_version = 1
+
+[format]
+id = "bitget_spot"
+exchange = "bitget"
+market = "spot"
+channel = "depth"
+
+encoding = "json"
+target_schema = "canonical_l2_update"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+topic_field = "arg.topic"
+topic_value = "books"
+
+instrument_type_field = "arg.instType"
+instrument_type_value = "spot"
+
+instrument_field = "arg.symbol"
+
+action_field = "action"
+
+snapshot_action = "snapshot"
+update_action = "update"
+
+payload_path = "data"
+
+# ============================================================
+# RECORD EXTRACTION
+# ============================================================
+
+[records]
+path = "data"
+
+representation = "array"
+record_type = "object"
+
+expected_records_per_message = 1
+preserve_array_order = true
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+sequence_id = "seq"
+previous_sequence_id = "pseq"
+
+book_timestamp = "ts"
+max_depth = "maxDepth"
+
+# ============================================================
+# ENVELOPE FIELDS
+# ============================================================
+
+[envelope]
+instrument_type = "arg.instType"
+channel = "arg.topic"
+instrument = "arg.symbol"
+
+message_action = "action"
+message_timestamp = "ts"
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+sequence_id = "u64"
+previous_sequence_id = "u64"
+
+# Bitget examples use JSON numbers for sequence IDs.
+# Parsing should accept the documented integer
+# representation without floating-point conversion.
+
+book_timestamp = "integer_string"
+
+# maxDepth is a string and varies by instrument.
+max_depth = "optional_integer_string"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "book_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+parse_integer_string = true
+
+preserve_message_timestamp = true
+
+# The inner timestamp describes data generation.
+# The outer timestamp describes message publication.
+#
+# Local receipt time is assigned by MarketForge.
+
+# ============================================================
+# BID LEVELS
+# ============================================================
+
+[levels.bids]
+path = "b"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "bid"
+
+# ============================================================
+# ASK LEVELS
+# ============================================================
+
+[levels.asks]
+path = "a"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "ask"
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+
+# Spot book quantities represent base-asset units.
+#
+# Instrument identity and specifications come from
+# the existing MarketForge instrument catalog.
+
+raw_unit = "base_asset"
+
+representation = "exact_decimal"
+
+allow_zero = true
+allow_negative = false
+
+# Incremental updates provide absolute quantities
+# at their respective price levels.
+
+update_mode = "absolute"
+
+# Quantity zero removes the price level.
+zero_quantity_action = "delete"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "envelope.instrument"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "bitget"
+market = "spot"
+
+require_known_instrument = true
+validate_subscription_symbol = true
+
+# Resolve normalization context during stream activation.
+# No per-event PostgreSQL queries.
+
+# ============================================================
+# NATIVE SEQUENCING
+# ============================================================
+
+[sequence]
+strategy = "bitget_v3_books"
+
+sequence_field = "sequence_id"
+previous_sequence_field = "previous_sequence_id"
+
+preserve_sequence_id = true
+preserve_previous_sequence_id = true
+
+# Normal continuity:
+#
+# current.pseq == previous.seq
+
+continuity_strategy = "previous_sequence_matches"
+
+# seq values are not required to increase by exactly one.
+require_consecutive_integer_ids = false
+
+# Under normal operation:
+#
+# seq > pseq
+#
+# Documented maintenance and restart cases
+# must be handled by the dedicated strategy.
+
+# ============================================================
+# SNAPSHOT BRIDGE
+# ============================================================
+
+[sequence.snapshot_bridge]
+
+enabled = true
+
+# First update after snapshot:
+#
+# update.pseq <= snapshot.seq <= update.seq
+
+strategy = "snapshot_sequence_in_update_range"
+
+# Do not blindly apply an update that cannot
+# be reconciled with the snapshot baseline.
+
+on_bridge_failure = "invalidate_and_resynchronize"
+
+# ============================================================
+# SEQUENCE RESET
+# ============================================================
+
+[sequence.reset]
+
+# Bitget may emit pseq=0 after a service restart.
+#
+# A reset invalidates assumptions about continuity
+# with the previous book generation.
+#
+# Require a new authoritative synchronization
+# baseline instead of trusting the old book.
+
+reset_previous_sequence_id = 0
+
+action = "require_new_snapshot"
+
+# Do not interpret an ordinary initial snapshot
+# with pseq=0 as an integrity failure.
+
+allow_initial_snapshot = true
+
+# ============================================================
+# MAINTENANCE EXCEPTION
+# ============================================================
+
+[sequence.maintenance]
+
+# Bitget documents non-increasing sequence behavior
+# during instrument maintenance.
+#
+# A sequence decrease alone is not sufficient
+# evidence of a missing update.
+
+allow_sequence_decrease = true
+
+# Continuity with the previously accepted message
+# remains required unless a new snapshot resets state.
+
+require_previous_sequence_match = true
+
+# ============================================================
+# SNAPSHOT / DELTA SYNCHRONIZATION
+# ============================================================
+
+[synchronization]
+strategy = "bitget_v3_books"
+
+snapshot_source = "websocket"
+
+snapshot_action = "snapshot"
+delta_action = "update"
+
+require_initial_snapshot = true
+
+# A new snapshot replaces the entire local book.
+
+snapshot_book_action = "replace"
+
+# Deltas cannot initialize an uninitialized book.
+
+delta_before_snapshot_action = "reject_and_resynchronize"
+
+initial_sequence_strategy = "snapshot_bridge"
+
+# ============================================================
+# BOOK DEPTH
+# ============================================================
+
+[book.depth]
+
+# Bitget provides maxDepth per instrument.
+#
+# Do not assume every books subscription
+# contains the same number of levels.
+
+source = "max_depth"
+
+strategy = "exchange_reported"
+
+maximum_documented_depth = 1000
+
+# A synchronized book is valid relative to the
+# depth actually supplied by the exchange.
+
+# ============================================================
+# BOOK STATE
+# ============================================================
+
+[book]
+storage = "marketforge_book_store"
+
+snapshot_action = "replace"
+delta_update_type = "absolute"
+
+zero_quantity_action = "delete"
+
+# All changes in one message form one atomic L2 update.
+
+atomic_message_updates = true
+
+require_valid_generation = true
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_negative_quantity = true
+
+detect_sequence_gaps = true
+detect_stale_updates = true
+
+validate_previous_sequence_id = true
+validate_snapshot_bridge = true
+
+allow_documented_sequence_exceptions = true
+
+# Checksum fields were removed on 2026-05-19.
+
+checksum_strategy = "none"
+
+gap_action = "invalidate_and_resynchronize"
+
+# ============================================================
+# RECOVERY
+# ============================================================
+
+[recovery]
+strategy = "bitget_v3_snapshot_recovery"
+
+on_connection_loss = "invalidate_and_resubscribe"
+
+on_sequence_violation = "resubscribe"
+
+on_new_snapshot = "replace_book"
+
+# REST snapshots do not expose a verified
+# equivalent seq/pseq synchronization contract.
+#
+# Do not join arbitrary REST snapshots to
+# WebSocket deltas.
+
+rest_snapshot_fallback = false
+
+require_generation_fencing = true
+
+# A fresh snapshot restores current book validity,
+# not historical completeness of missed L2 updates.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+snapshot_event_type = "l2_snapshot"
+delta_event_type = "l2_update"
+
+preserve_native_sequence_id = true
+preserve_previous_sequence_id = true
+
+preserve_event_timestamp = true
+preserve_message_timestamp = true
+
+preserve_source_provenance = true
+
+atomic_updates = true
+
+# MarketForge Live envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# book_generation
+# received_timestamp_ns

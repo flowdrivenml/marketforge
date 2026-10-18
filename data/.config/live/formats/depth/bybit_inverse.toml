@@ -1,0 +1,376 @@
+# MarketForge Live — Bybit Inverse L2 Order Book
+#
+# Proposed MarketForge Live format schema v1.
+#
+# Official references:
+# https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook
+# https://bybit-exchange.github.io/docs/v5/market/orderbook
+#
+# Exchange: Bybit
+# Market: Inverse
+# Channel: orderbook.{depth}.{symbol}
+#
+# Connectivity and REST:
+# exchanges/bybit_inverse.toml
+#
+# Instrument specifications:
+# Python-managed MarketForge instrument catalog.
+#
+# Standard Bybit V5 order book.
+# Full-depth and RPI-inclusive feeds are separate protocols.
+
+schema_version = 1
+
+[format]
+id = "bybit_inverse"
+exchange = "bybit"
+market = "inverse"
+channel = "depth"
+
+encoding = "json"
+target_schema = "canonical_l2_update"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+topic_field = "topic"
+topic_pattern = "orderbook.{depth}.{symbol_upper}"
+
+message_type_field = "type"
+
+snapshot_type = "snapshot"
+delta_type = "delta"
+
+payload_path = "data"
+records = "single"
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+symbol = "data.s"
+
+update_id = "data.u"
+cross_sequence = "data.seq"
+
+message_timestamp = "ts"
+matching_engine_timestamp = "cts"
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+symbol = "string"
+
+update_id = "u64"
+cross_sequence = "u64"
+
+message_timestamp = "i64"
+matching_engine_timestamp = "i64"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+
+# Matching-engine timestamp is preferred as canonical
+# event time.
+
+event_source = "matching_engine_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+preserve_message_timestamp = true
+
+# ============================================================
+# BID LEVELS
+# ============================================================
+
+[levels.bids]
+path = "data.b"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "bid"
+
+# ============================================================
+# ASK LEVELS
+# ============================================================
+
+[levels.asks]
+path = "data.a"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "ask"
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+
+# Bybit Inverse L2 quantities represent contract sizes
+# for conventional inverse contracts.
+#
+# Canonical base and quote quantities must be derived
+# from the authoritative instrument specifications:
+#
+# quantity_type
+# contract_value
+# contract_value_asset
+#
+# No hardcoded contract multipliers.
+
+raw_unit = "contracts"
+quantity_semantics = "instrument_metadata"
+
+representation = "exact_decimal"
+
+allow_zero = true
+allow_negative = false
+
+# Bybit deltas provide absolute quantities at price levels.
+# They do not represent incremental quantity changes.
+
+update_mode = "absolute"
+zero_quantity_action = "delete"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "symbol"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "bybit"
+market = "inverse"
+
+require_known_instrument = true
+validate_subscription_symbol = true
+
+# Resolve normalization-critical metadata at stream
+# initialization.
+#
+# No PostgreSQL queries on the per-event processing path.
+
+# ============================================================
+# NATIVE SEQUENCE
+# ============================================================
+
+[sequence]
+strategy = "bybit_v5_orderbook"
+
+update_id_field = "update_id"
+cross_sequence_field = "cross_sequence"
+
+preserve_update_id = true
+preserve_cross_sequence = true
+
+# Cross-sequence values can be used for ordering
+# comparisons but are not consecutive event counters.
+
+cross_sequence_requires_consecutive = false
+
+# Do not apply Binance-style U/u/pu validation.
+previous_update_id_required = false
+
+# Standard Bybit order-book documentation does not
+# establish a universal u+1 rule for all depth channels.
+
+require_consecutive_update_id = false
+
+# ============================================================
+# SNAPSHOT / DELTA SYNCHRONIZATION
+# ============================================================
+
+[synchronization]
+strategy = "bybit_v5_snapshot_delta"
+
+snapshot_source = "websocket"
+
+snapshot_message_type = "snapshot"
+delta_message_type = "delta"
+
+# The initial subscription establishes book state
+# through an authoritative WebSocket snapshot.
+
+require_initial_snapshot = true
+
+# Any subsequent snapshot replaces the current book.
+
+snapshot_action = "replace"
+
+# Deltas cannot initialize an uninitialized book.
+
+delta_before_snapshot_action = "reject_and_resynchronize"
+
+# Bybit may send a snapshot with u=1 after a
+# service restart.
+
+reset_update_id = 1
+
+# Reset interpretation must consider message type.
+# A numeric update ID alone does not establish validity.
+
+reset_action = "invalidate_and_await_snapshot"
+
+# Depth 1 sends snapshots only.
+#
+# Repeated snapshots may have the same update ID
+# and must not be treated as sequence failures.
+
+snapshot_only_depths = [1]
+
+# ============================================================
+# BOOK STATE
+# ============================================================
+
+[book]
+storage = "marketforge_book_store"
+
+snapshot_action = "replace"
+delta_update_type = "absolute"
+
+zero_quantity_action = "delete"
+
+# Apply all changes from one WebSocket message
+# as one logical canonical L2 update.
+
+atomic_message_updates = true
+
+require_valid_generation = true
+
+# Book validity is relative to the subscribed depth.
+# A synchronized 200-level book does not imply
+# visibility of every resting exchange order.
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_negative_quantity = true
+
+detect_stale_updates = true
+detect_update_id_regression = true
+detect_cross_sequence_regression = true
+
+# Do not infer exact missing-message counts from seq gaps.
+
+detect_cross_sequence_gaps = false
+
+# Exact missing update counts cannot be inferred
+# from standard depth u values alone.
+
+detect_exact_missing_update_count = false
+
+# Suspicious transitions are evaluated by the
+# Bybit synchronization strategy.
+
+sequence_violation_action = "invalidate_and_resynchronize"
+
+# Standard order-book messages do not expose
+# a documented checksum field.
+
+checksum_strategy = "none"
+
+# ============================================================
+# RECOVERY
+# ============================================================
+
+[recovery]
+strategy = "bybit_v5_snapshot_recovery"
+
+# Every new authoritative snapshot reinitializes the book.
+
+on_new_snapshot = "replace_book"
+
+# Following connection loss, invalidate the previous
+# book generation and establish a new subscription.
+
+on_connection_loss = "invalidate_and_resubscribe"
+
+on_sequence_violation = "resubscribe"
+
+# Bybit REST snapshots exist, but joining an arbitrary
+# REST snapshot to standard WebSocket deltas requires
+# an independently verified synchronization procedure.
+#
+# Use WebSocket snapshot recovery initially.
+
+rest_snapshot_fallback = false
+
+# Reject stale messages belonging to previous
+# connection or subscription generations.
+
+require_generation_fencing = true
+
+# Restoring current book validity does not reconstruct
+# missing historical L2 updates.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+snapshot_event_type = "l2_snapshot"
+delta_event_type = "l2_update"
+
+preserve_native_update_id = true
+preserve_native_cross_sequence = true
+
+preserve_event_timestamp = true
+preserve_message_timestamp = true
+
+preserve_source_provenance = true
+
+atomic_updates = true
+
+# Live event envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# book_generation
+# received_timestamp_ns

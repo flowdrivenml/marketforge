@@ -1,0 +1,303 @@
+# MarketForge Live — OKX Linear Individual Trades
+#
+# Proposed MarketForge Live format schema v1.
+#
+# Official documentation:
+# https://www.okx.com/docs-v5/en/
+#
+# Exchange: OKX
+# Market: Linear
+# Channel: trades-all
+# WebSocket route: /ws/v5/business
+#
+# Connectivity and REST:
+# exchanges/okx_linear.toml
+#
+# Instrument specifications:
+# Python-managed MarketForge instrument catalog.
+#
+# Supports eligible USDT/USDC-margined SWAP and FUTURES.
+#
+# This feed represents individual executions.
+# Aggregated "trades" requires a separate format.
+
+schema_version = 1
+
+[format]
+id = "okx_linear"
+exchange = "okx"
+market = "linear"
+channel = "trades-all"
+
+encoding = "json"
+target_schema = "canonical_trade"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+channel_field = "arg.channel"
+channel_value = "trades-all"
+
+instrument_field = "arg.instId"
+
+records = "array"
+
+# ============================================================
+# RECORD EXTRACTION
+# ============================================================
+
+[records]
+path = "data"
+
+representation = "array"
+record_type = "object"
+
+# trades-all represents individual executions.
+# One trade is normally delivered per update.
+
+expected_records_per_message = 1
+
+preserve_array_order = true
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+instrument = "instId"
+
+trade_id = "tradeId"
+
+price = "px"
+quantity = "sz"
+
+taker_side = "side"
+
+trade_timestamp = "ts"
+
+trade_source = "source"
+
+# ============================================================
+# ENVELOPE FIELDS
+# ============================================================
+
+[envelope]
+channel = "arg.channel"
+instrument = "arg.instId"
+
+# Receipt time is supplied by MarketForge.
+# No additional event-generation timestamp is assumed.
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+instrument = "string"
+
+trade_id = "numeric_string"
+
+price = "decimal_string"
+quantity = "decimal_string"
+
+taker_side = "string"
+
+trade_timestamp = "integer_string"
+
+trade_source = "optional_string"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "trade_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+parse_integer_string = true
+
+preserve_exchange_event_timestamp = false
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+source = "price"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+source = "quantity"
+
+# OKX SWAP/FUTURES trade sizes represent contracts.
+#
+# Canonical quantity calculations require:
+#
+# quantity_type
+# contract_value
+# contract_value_asset
+#
+# These values are supplied by the authoritative
+# MarketForge instrument catalog.
+#
+# Linear contracts generally derive economic quantities
+# using the instrument's contract multiplier.
+#
+# No instrument-specific multiplier is hardcoded.
+
+raw_unit = "contracts"
+
+quantity_semantics = "instrument_metadata"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+derive_base_quantity = true
+derive_quote_quantity = true
+
+# ============================================================
+# AGGRESSOR SIDE
+# ============================================================
+
+[normalization.side]
+source = "taker_side"
+
+buy = "buy"
+sell = "sell"
+
+unknown_policy = "reject"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "instrument"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "okx"
+market = "linear"
+
+require_known_instrument = true
+
+validate_subscription_symbol = true
+
+# Instrument identity must match the subscription.
+#
+# Resolve normalization-critical metadata once during
+# source-stream initialization.
+#
+# No per-event PostgreSQL queries.
+
+# ============================================================
+# NATIVE TRADE IDENTITY
+# ============================================================
+
+[identity]
+strategy = "native_numeric_string_trade_id"
+
+source = "trade_id"
+
+preserve_native_id = true
+
+deduplication_key = [
+    "exchange",
+    "market",
+    "instrument",
+    "trade_id",
+]
+
+# Parse native trade IDs exactly.
+# Never convert through floating-point arithmetic.
+
+# ============================================================
+# NATIVE TRADE SOURCE
+# ============================================================
+
+[attributes.trade_source]
+source = "trade_source"
+
+preserve = true
+missing_policy = "unknown"
+
+# Preserve native source values without hardcoding
+# a potentially incomplete classification.
+#
+# The protocol may distinguish ordinary trades
+# from exchange-specific liquidity programs.
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_nonpositive_quantity = true
+
+detect_duplicate_trade_ids = true
+
+# Native trade IDs support identity-based diagnostics.
+#
+# Exact numeric consecutiveness must not be assumed
+# without a verified exchange guarantee.
+
+detect_trade_id_regression = true
+detect_trade_id_gaps = false
+
+# Suspicious ordering or missing coverage must be
+# reported independently of MarketForge cursor gaps.
+
+gap_action = "report_unverified_coverage"
+
+# Recovery uses the OKX historical-trades REST endpoint
+# defined in exchanges/okx_linear.toml.
+#
+# The Recovery Coordinator must reconcile identities
+# and verify actual recovered coverage.
+#
+# A successful REST response is not proof of continuity.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+event_type = "trade"
+trade_semantics = "individual"
+
+preserve_native_trade_id = true
+preserve_trade_source = true
+
+preserve_event_timestamp = true
+preserve_source_provenance = true
+
+# Emit one canonical trade per valid record.
+#
+# The MarketForge Live envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# received_timestamp_ns

@@ -1,0 +1,357 @@
+# MarketForge Live — Bybit Spot L2 Order Book
+#
+# Proposed MarketForge Live format schema v1.
+#
+# Official references:
+# https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook
+# https://bybit-exchange.github.io/docs/v5/market/orderbook
+#
+# Exchange: Bybit
+# Market: Spot
+# Channel: orderbook.{depth}.{symbol}
+#
+# Connectivity and REST configuration:
+# exchanges/bybit_spot.toml
+#
+# Instrument metadata:
+# Python-managed MarketForge instrument catalog.
+#
+# This file describes standard Bybit V5 depth feeds.
+# Full-depth and RPI-inclusive feeds are separate protocols.
+
+schema_version = 1
+
+[format]
+id = "bybit_spot"
+exchange = "bybit"
+market = "spot"
+channel = "depth"
+
+encoding = "json"
+target_schema = "canonical_l2_update"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+topic_field = "topic"
+topic_pattern = "orderbook.{depth}.{symbol_upper}"
+
+message_type_field = "type"
+
+snapshot_type = "snapshot"
+delta_type = "delta"
+
+payload_path = "data"
+
+records = "single"
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+symbol = "data.s"
+
+update_id = "data.u"
+cross_sequence = "data.seq"
+
+message_timestamp = "ts"
+matching_engine_timestamp = "cts"
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+symbol = "string"
+
+update_id = "u64"
+cross_sequence = "u64"
+
+message_timestamp = "i64"
+matching_engine_timestamp = "i64"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+
+# Matching-engine timestamp is the preferred
+# canonical event timestamp.
+
+event_source = "matching_engine_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+# Preserve Bybit's message-generation timestamp
+# as additional provenance.
+
+preserve_message_timestamp = true
+
+# ============================================================
+# BID LEVELS
+# ============================================================
+
+[levels.bids]
+path = "data.b"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "bid"
+
+# ============================================================
+# ASK LEVELS
+# ============================================================
+
+[levels.asks]
+path = "data.a"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "ask"
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+
+# Spot order-book quantities represent base-asset units.
+
+raw_unit = "base_asset"
+
+representation = "exact_decimal"
+
+allow_zero = true
+allow_negative = false
+
+# Delta quantities replace the existing quantity
+# at the corresponding price level.
+
+update_mode = "absolute"
+zero_quantity_action = "delete"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "symbol"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "bybit"
+market = "spot"
+
+require_known_instrument = true
+validate_subscription_symbol = true
+
+# ============================================================
+# NATIVE SEQUENCE
+# ============================================================
+
+[sequence]
+strategy = "bybit_v5_orderbook"
+
+update_id_field = "update_id"
+cross_sequence_field = "cross_sequence"
+
+# Bybit's cross sequence is an ordering/version indicator.
+# It must not be interpreted as a consecutive event counter.
+
+cross_sequence_requires_consecutive = false
+
+# Do not impose Binance-style U/u/pu rules.
+previous_update_id_required = false
+
+# Preserve native sequencing information for
+# integrity diagnostics and recovery.
+
+preserve_update_id = true
+preserve_cross_sequence = true
+
+# The standard depth feed does not have the same
+# documented u+1 guarantee as Bybit's full-depth feed.
+# Do not infer exact missing-message counts from u gaps.
+
+require_consecutive_update_id = false
+
+# ============================================================
+# SNAPSHOT / DELTA SYNCHRONIZATION
+# ============================================================
+
+[synchronization]
+strategy = "bybit_v5_snapshot_delta"
+
+snapshot_source = "websocket"
+
+snapshot_message_type = "snapshot"
+delta_message_type = "delta"
+
+# Every new snapshot replaces the current local book.
+
+snapshot_action = "replace"
+
+# Standard depth subscriptions receive an initial
+# snapshot before normal delta processing.
+
+require_initial_snapshot = true
+
+# A delta received before initialization cannot be
+# applied to an uninitialized local book.
+
+delta_before_snapshot_action = "reject_and_resynchronize"
+
+# Bybit documents u=1 as a service reset indicator.
+
+reset_update_id = 1
+reset_action = "invalidate_and_await_snapshot"
+
+# Depth 1 is snapshot-only.
+
+snapshot_only_depths = [1]
+
+# ============================================================
+# BOOK STATE
+# ============================================================
+
+[book]
+storage = "marketforge_book_store"
+
+snapshot_action = "replace"
+
+delta_update_type = "absolute"
+
+zero_quantity_action = "delete"
+
+# Apply all level changes from one WebSocket
+# message as one logical canonical update.
+
+atomic_message_updates = true
+
+# Publication of valid state requires an
+# initialized and synchronized book generation.
+
+require_valid_generation = true
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_negative_quantity = true
+
+detect_stale_updates = true
+detect_update_id_regression = true
+detect_cross_sequence_regression = true
+
+# Do not assume consecutive cross-sequence values.
+
+detect_cross_sequence_gaps = false
+
+# Do not assume u increments by exactly one
+# in the standard depth feed.
+
+detect_exact_missing_update_count = false
+
+# A suspicious sequence transition must be reported.
+# Resynchronization decisions belong to the
+# stream's protocol strategy.
+
+sequence_violation_action = "invalidate_and_resynchronize"
+
+# Standard Bybit depth messages do not expose
+# a documented order-book checksum field.
+
+checksum_strategy = "none"
+
+# ============================================================
+# RECOVERY
+# ============================================================
+
+[recovery]
+strategy = "bybit_v5_snapshot_recovery"
+
+# A new WebSocket snapshot restores the book baseline.
+
+on_new_snapshot = "replace_book"
+
+on_connection_loss = "invalidate_and_resubscribe"
+
+on_sequence_violation = "resubscribe"
+
+# The exchange profile exposes a REST order-book
+# endpoint, but REST-to-WebSocket snapshot joining
+# is not assumed to be valid for this standard feed.
+
+rest_snapshot_fallback = false
+
+# Stale messages from previous subscription or
+# connection generations must be rejected.
+
+require_generation_fencing = true
+
+# A fresh valid snapshot restores current book state.
+# It does not reconstruct missing historical L2 updates.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+snapshot_event_type = "l2_snapshot"
+delta_event_type = "l2_update"
+
+preserve_native_update_id = true
+preserve_native_cross_sequence = true
+
+preserve_event_timestamp = true
+preserve_message_timestamp = true
+
+preserve_source_provenance = true
+
+atomic_updates = true
+
+# The Live event envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# book_generation
+# received_timestamp_ns

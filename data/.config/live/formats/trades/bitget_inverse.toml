@@ -1,0 +1,384 @@
+# MarketForge Live — Bitget Inverse Public Trades
+#
+# Proposed MarketForge Live format schema v1.
+#
+# API generation: Unified Trading Account (UTA), V3
+# Encoding: JSON WebSocket
+#
+# Official references:
+# https://www.bitget.com/docs/uta/quick-start
+# https://www.bitget.com/docs/catalog/market/market-data
+# https://www.bitget.com/docs/classic/uta-api-upgrade-guide
+#
+# Exchange: Bitget
+# Market: Inverse
+# Channel: publicTrade
+# Native category: coin-futures
+#
+# Connectivity and REST:
+# exchanges/bitget_inverse.toml
+#
+# Instrument metadata:
+# Python-managed MarketForge instrument catalog.
+#
+# IMPORTANT:
+# - Uses UTA V3 JSON, not Classic V2 or SBE.
+# - Public executions are individual trades.
+# - COIN-Futures public fill size is quote-denominated.
+# - Do not interpret size as base quantity or contract count.
+# - Preserve execution identity and correlation metadata.
+# - JSON payload mapping requires live fixture verification.
+
+schema_version = 1
+
+[format]
+id = "bitget_inverse"
+exchange = "bitget"
+market = "inverse"
+channel = "trades"
+
+encoding = "json"
+target_schema = "canonical_trade"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+topic_field = "arg.topic"
+topic_value = "publicTrade"
+
+instrument_type_field = "arg.instType"
+instrument_type_value = "coin-futures"
+
+instrument_field = "arg.symbol"
+
+action_field = "action"
+payload_path = "data"
+
+# ============================================================
+# RECORD EXTRACTION
+# ============================================================
+
+[records]
+path = "data"
+
+representation = "array"
+record_type = "object"
+
+# A WebSocket message may contain multiple executions.
+preserve_array_order = true
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+# Provisional JSON WebSocket field mapping.
+#
+# Confirm against actual V3 publicTrade frames.
+# REST fills use these names, but REST/WS equivalence
+# must not be assumed without verification.
+
+[fields]
+trade_id = "execId"
+execution_link_id = "execLinkId"
+
+price = "price"
+quantity_quote = "size"
+
+taker_side = "side"
+trade_timestamp = "ts"
+
+is_rpi = "isRPI"
+
+# ============================================================
+# ENVELOPE FIELDS
+# ============================================================
+
+[envelope]
+instrument_type = "arg.instType"
+channel = "arg.topic"
+instrument = "arg.symbol"
+
+message_action = "action"
+message_timestamp = "ts"
+
+# Top-level message timestamp presence and type
+# must be verified against actual WebSocket frames.
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+trade_id = "string"
+execution_link_id = "optional_string"
+
+price = "decimal_string"
+quantity_quote = "decimal_string"
+
+taker_side = "string"
+trade_timestamp = "integer_string"
+
+is_rpi = "optional_string"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "trade_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+parse_integer_string = true
+
+preserve_exchange_event_timestamp = false
+
+# Execution timestamp is canonical event time.
+# Local receipt time is provided by MarketForge.
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+source = "price"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+source = "quantity_quote"
+
+# Bitget UTA V3 public REST fills:
+#
+# COIN-FUTURES:
+#   size is denominated in the quote asset.
+#
+# USDT/USDC-FUTURES:
+#   size is denominated in the base asset.
+#
+# For COIN-Futures, do not multiply the raw size
+# by a contract multiplier unless the authoritative
+# instrument semantics explicitly require it.
+
+raw_unit = "quote_asset"
+
+quantity_semantics = "instrument_metadata"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+derive_base_quantity = true
+derive_quote_quantity = true
+
+# Example for a conventional BTC/USD inverse instrument:
+#
+# price = 60000 USD/BTC
+# size  = 100 USD
+#
+# quote_quantity = 100 USD
+# base_quantity  = 100 / 60000 BTC
+#
+# This formula is valid only when the instrument
+# catalog confirms the currency denomination.
+#
+# Required instrument metadata:
+#
+# quantity_type
+# contract_value
+# contract_value_asset
+# base_asset
+# quote_asset
+#
+# Never hardcode an instrument-specific multiplier.
+
+# ============================================================
+# AGGRESSOR SIDE
+# ============================================================
+
+[normalization.side]
+source = "taker_side"
+
+buy = "buy"
+sell = "sell"
+
+unknown_policy = "reject"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "envelope.instrument"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "bitget"
+market = "inverse"
+
+require_known_instrument = true
+validate_subscription_symbol = true
+
+native_category_source = "envelope.instrument_type"
+validate_native_category = true
+
+# Native category must resolve to coin-futures.
+#
+# Do not infer inverse contract semantics from
+# the instrument symbol alone.
+#
+# Compile the quantity normalization context
+# during source-stream initialization.
+#
+# No per-event PostgreSQL queries.
+
+# ============================================================
+# NATIVE TRADE IDENTITY
+# ============================================================
+
+[identity]
+strategy = "native_string_trade_id"
+
+source = "trade_id"
+
+preserve_native_id = true
+
+deduplication_key = [
+    "exchange",
+    "market",
+    "instrument",
+    "trade_id",
+]
+
+# Execution IDs must be preserved exactly.
+#
+# No consecutive-ID guarantee is assumed for
+# the JSON publicTrade feed.
+
+# ============================================================
+# EXECUTION CORRELATION
+# ============================================================
+
+[attributes.execution_link_id]
+source = "execution_link_id"
+
+preserve = true
+missing_policy = "unknown"
+
+# execLinkId must not replace execId as the
+# canonical native execution identity.
+
+# ============================================================
+# RETAIL PRICE IMPROVEMENT
+# ============================================================
+
+[attributes.is_rpi]
+source = "is_rpi"
+
+preserve = true
+missing_policy = "unknown"
+
+true_value = "yes"
+false_value = "no"
+
+# Absence must remain distinct from explicit false.
+
+# ============================================================
+# INITIAL STREAM HANDLING
+# ============================================================
+
+[stream_initialization]
+
+# Provisional strategy shared with Bitget Spot/Linear.
+#
+# Confirm whether the JSON publicTrade feed emits an
+# initial snapshot, updates, or both.
+#
+# Do not infer public-channel behavior from Bitget's
+# separate authenticated private fill channel.
+
+strategy = "action_aware_trade_stream"
+
+action_source = "envelope.message_action"
+
+snapshot_action = "snapshot"
+update_action = "update"
+
+snapshot_policy = "deduplicate_with_live"
+
+# Deduplicate by native execution identity.
+# Preserve accepted record order.
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_nonpositive_quantity = true
+
+detect_duplicate_trade_ids = true
+
+# Numeric appearance of execution IDs does not
+# establish a consecutive-ID guarantee.
+
+detect_trade_id_regression = false
+detect_trade_id_gaps = false
+
+gap_action = "report_unverified_coverage"
+
+# Recovery:
+#
+# GET /api/v3/market/fills
+# category = COIN-FUTURES
+#
+# Maximum 100 recent executions.
+# No arbitrary historical trade-ID pagination.
+#
+# REST/WS native identity compatibility must be
+# verified before automatic reconciliation.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+event_type = "trade"
+trade_semantics = "individual"
+
+preserve_native_trade_id = true
+preserve_execution_link_id = true
+preserve_rpi_flag = true
+
+preserve_event_timestamp = true
+preserve_source_provenance = true
+
+# Emit one canonical trade per valid record.
+#
+# Preserve the raw quote-denominated quantity
+# and its normalization provenance.
+#
+# Live event envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# received_timestamp_ns

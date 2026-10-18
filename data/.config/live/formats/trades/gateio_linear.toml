@@ -1,0 +1,359 @@
+# MarketForge Live — Gate.io Linear Futures Trades
+#
+# Proposed MarketForge Live format schema v1.
+#
+# Official references:
+# https://www.gate.com/docs/developers/futures/ws/en/
+# https://www.gate.com/docs/developers/apiv4/en/futures/
+#
+# Exchange: Gate.io
+# Market: Linear
+# Channel: futures.trades
+#
+# Supported settlement families:
+#   usdt
+#   usd1 (subject to instrument catalog classification)
+#
+# Connectivity:
+# exchanges/gateio_linear.toml
+#
+# Instrument metadata:
+# Python-managed MarketForge instrument catalog.
+#
+# IMPORTANT:
+# - result contains an array of executions.
+# - Trade direction is encoded in the sign of size.
+# - Native size represents contract quantity.
+# - X-Gate-Size-Decimal: 1 is required.
+# - Decimal size must never be truncated to an integer.
+# - is_internal identifies special nonstandard executions.
+
+schema_version = 1
+
+[format]
+id = "gateio_linear"
+exchange = "gateio"
+market = "linear"
+channel = "trades"
+
+encoding = "json"
+target_schema = "canonical_trade"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+channel_field = "channel"
+channel_value = "futures.trades"
+
+event_field = "event"
+event_value = "update"
+
+payload_path = "result"
+
+# ============================================================
+# RECORD EXTRACTION
+# ============================================================
+
+[records]
+path = "result"
+
+representation = "array"
+record_type = "object"
+
+preserve_array_order = true
+
+# One message may contain multiple executions.
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+instrument = "contract"
+
+trade_id = "id"
+
+price = "price"
+
+signed_quantity = "size"
+
+trade_timestamp = "create_time_ms"
+trade_timestamp_seconds = "create_time"
+
+is_internal = "is_internal"
+
+# ============================================================
+# ENVELOPE FIELDS
+# ============================================================
+
+[envelope]
+channel = "channel"
+event = "event"
+
+message_timestamp_seconds = "time"
+message_timestamp_ms = "time_ms"
+
+# Envelope timestamps are separate from
+# the execution timestamp.
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+instrument = "string"
+
+trade_id = "u64"
+
+price = "decimal_string"
+
+# With X-Gate-Size-Decimal: 1, size is a signed
+# decimal string and may contain fractional values.
+
+signed_quantity = "signed_decimal_string"
+
+trade_timestamp = "i64"
+trade_timestamp_seconds = "i64"
+
+is_internal = "optional_boolean"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "trade_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+# The documented create_time_ms field is an integer
+# millisecond timestamp.
+#
+# Do not apply Gate Spot's fractional-millisecond
+# timestamp parser to this field.
+
+preserve_secondary_timestamp = true
+
+secondary_timestamp_source = "trade_timestamp_seconds"
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+source = "price"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+source = "signed_quantity"
+
+# Gate Futures size represents signed contracts.
+#
+# The absolute quantity is normalized using the
+# instrument's contract specifications.
+#
+# Required metadata:
+#
+# quantity_type
+# contract_value
+# contract_value_asset
+#
+# No contract multipliers are hardcoded.
+
+raw_unit = "contracts"
+
+representation = "exact_decimal"
+
+signed = true
+
+# The sign encodes trade aggressor direction,
+# not a negative economic quantity.
+
+absolute_value = true
+
+allow_zero = false
+
+quantity_semantics = "instrument_metadata"
+
+derive_base_quantity = true
+derive_quote_quantity = true
+
+# ============================================================
+# AGGRESSOR SIDE
+# ============================================================
+
+[normalization.side]
+
+strategy = "signed_quantity"
+
+source = "signed_quantity"
+
+positive = "buy"
+negative = "sell"
+
+zero = "reject"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "instrument"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "gateio"
+market = "linear"
+
+require_known_instrument = true
+
+validate_subscription_symbol = true
+
+# Native settlement route is resolved through
+# the source's compiled exchange profile.
+#
+# Instrument classification and quantity
+# normalization are resolved before activation.
+
+# ============================================================
+# NATIVE TRADE IDENTITY
+# ============================================================
+
+[identity]
+strategy = "native_trade_id"
+
+source = "trade_id"
+
+preserve_native_id = true
+
+deduplication_key = [
+    "exchange",
+    "market",
+    "instrument",
+    "trade_id",
+]
+
+# Trade IDs identify native executions.
+#
+# Exact consecutive-ID semantics are not assumed.
+
+# ============================================================
+# INTERNAL TRADE CLASSIFICATION
+# ============================================================
+
+[attributes.is_internal]
+source = "is_internal"
+
+preserve = true
+
+missing_policy = "false"
+
+# Gate documents internal trades as liquidation
+# insurance-fund / ADL-related transactions.
+#
+# They may not correspond to ordinary visible
+# order-book matching.
+#
+# Do not silently discard these trades or
+# merge their semantics with ordinary executions.
+
+# ============================================================
+# PROTOCOL REQUIREMENTS
+# ============================================================
+
+[protocol]
+
+# Required WebSocket handshake header.
+#
+# Without this header, Gate can deliver integer
+# sizes with fractional values truncated.
+
+required_header = "X-Gate-Size-Decimal"
+required_header_value = "1"
+
+# Refuse activation when the transport cannot
+# satisfy the decimal-size protocol requirement.
+
+require_decimal_size_support = true
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_zero_quantity = true
+
+detect_duplicate_trade_ids = true
+
+# Do not infer exact missing execution counts
+# without documented consecutive ID guarantees.
+
+detect_trade_id_regression = true
+detect_trade_id_gaps = false
+
+# The normalization system must never silently
+# truncate fractional contract quantities.
+
+reject_precision_loss = true
+
+gap_action = "report_unverified_coverage"
+
+# Recovery is coordinated independently.
+#
+# The exchange profile references:
+#
+# GET /futures/{settlement}/trades
+#
+# REST reconciliation must preserve native
+# execution identity and contract quantity.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+event_type = "trade"
+
+trade_semantics = "individual"
+
+preserve_native_trade_id = true
+preserve_internal_trade_flag = true
+
+preserve_event_timestamp = true
+preserve_source_provenance = true
+
+# Signed raw size is transformed into:
+#
+# aggressor side
+# positive economic quantity
+#
+# The original native value may be retained in
+# provenance where supported.
+#
+# Emit one canonical trade per accepted result[] item.
+#
+# Live envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# received_timestamp_ns

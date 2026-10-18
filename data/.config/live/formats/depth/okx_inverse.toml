@@ -1,0 +1,439 @@
+# MarketForge Live — OKX Inverse L2 Order Book
+#
+# Proposed MarketForge Live format schema v1.
+#
+# Official references:
+# https://www.okx.com/docs-v5/en/
+# https://www.okx.com/docs-v5/log_en/
+#
+# Exchange: OKX
+# Market: Inverse (coin-margined SWAP/FUTURES)
+# Channel: books
+# WebSocket route: /ws/v5/public
+#
+# Connectivity and REST:
+# exchanges/okx_inverse.toml
+#
+# Instrument specifications:
+# Python-managed MarketForge instrument catalog.
+#
+# IMPORTANT:
+# - Standard books: 400 levels per side, 100 ms updates.
+# - WebSocket snapshot followed by incremental updates.
+# - Continuity uses prevSeqId / seqId.
+# - Valid keepalive and maintenance-reset exceptions exist.
+# - Checksum validation is deprecated.
+# - Derivative quantities are expressed in contracts.
+# - books-rpi requires a separate format specification.
+
+schema_version = 1
+
+[format]
+id = "okx_inverse"
+exchange = "okx"
+market = "inverse"
+channel = "depth"
+
+encoding = "json"
+target_schema = "canonical_l2_update"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+channel_field = "arg.channel"
+channel_value = "books"
+
+instrument_field = "arg.instId"
+
+action_field = "action"
+
+snapshot_action = "snapshot"
+update_action = "update"
+
+payload_path = "data"
+
+# ============================================================
+# RECORD EXTRACTION
+# ============================================================
+
+[records]
+path = "data"
+
+representation = "array"
+record_type = "object"
+
+expected_records_per_message = 1
+preserve_array_order = true
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+sequence_id = "seqId"
+previous_sequence_id = "prevSeqId"
+
+book_timestamp = "ts"
+
+# The deprecated checksum is intentionally excluded.
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+sequence_id = "i64"
+
+# Snapshot prevSeqId = -1.
+previous_sequence_id = "i64"
+
+book_timestamp = "integer_string"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "book_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+parse_integer_string = true
+
+# Local receipt time is supplied by MarketForge.
+# Do not interpret ts as a separately synchronized
+# trade-execution timestamp.
+
+# ============================================================
+# BID LEVELS
+# ============================================================
+
+[levels.bids]
+path = "bids"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+order_count_index = 3
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+order_count_type = "integer_string"
+
+side = "bid"
+
+# Element 2 belongs to a deprecated OKX field.
+ignored_indices = [2]
+
+# ============================================================
+# ASK LEVELS
+# ============================================================
+
+[levels.asks]
+path = "asks"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+order_count_index = 3
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+order_count_type = "integer_string"
+
+side = "ask"
+
+ignored_indices = [2]
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+
+# OKX Inverse SWAP/FUTURES depth quantities are contracts.
+#
+# Canonical economic quantities require:
+#
+# quantity_type
+# contract_value
+# contract_value_asset
+#
+# These are provided by the existing instrument catalog.
+#
+# For an inverse contract with USD-denominated face value:
+#
+#   quote_quantity = contracts * contract_value
+#   base_quantity  = quote_quantity / price
+#
+# The formula applies only when instrument metadata
+# confirms the corresponding contract denomination.
+#
+# No hardcoded instrument multipliers.
+
+raw_unit = "contracts"
+quantity_semantics = "instrument_metadata"
+
+representation = "exact_decimal"
+
+allow_zero = true
+allow_negative = false
+
+# Level updates replace quantities, rather than
+# adding or subtracting from existing quantities.
+
+update_mode = "absolute"
+zero_quantity_action = "delete"
+
+# ============================================================
+# ORDER COUNT
+# ============================================================
+
+[normalization.order_count]
+source = "order_count"
+
+preserve = true
+
+allow_zero = true
+allow_negative = false
+
+# Use the existing BookLevel.order_count representation.
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "envelope.instrument"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "okx"
+market = "inverse"
+
+require_known_instrument = true
+validate_subscription_symbol = true
+
+# Resolve quantity and contract semantics during
+# source-stream initialization.
+#
+# No PostgreSQL queries on the per-event hot path.
+
+# ============================================================
+# NATIVE SEQUENCING
+# ============================================================
+
+[sequence]
+strategy = "okx_v5_books"
+
+sequence_field = "sequence_id"
+previous_sequence_field = "previous_sequence_id"
+
+preserve_sequence_id = true
+preserve_previous_sequence_id = true
+
+# Snapshot baseline:
+#
+#   prevSeqId = -1
+#   seqId >= 0
+
+snapshot_previous_sequence_id = -1
+
+# Normal incremental continuity:
+#
+#   current.prevSeqId == previous.seqId
+
+continuity_strategy = "previous_sequence_matches"
+
+# Sequence IDs are not necessarily consecutive integers.
+require_consecutive_integer_ids = false
+
+# ============================================================
+# KEEPALIVE EXCEPTION
+# ============================================================
+
+[sequence.keepalive]
+
+# OKX can send empty incremental updates when
+# the book has not changed for approximately 60 seconds.
+
+enabled = true
+
+require_empty_bids = true
+require_empty_asks = true
+
+# Valid keepalive:
+#
+#   current.prevSeqId == previous.seqId
+#   current.seqId     == previous.seqId
+
+allow_equal_sequence_id = true
+
+# Keepalive updates do not mutate book levels.
+book_action = "none"
+
+# ============================================================
+# SEQUENCE RESET EXCEPTION
+# ============================================================
+
+[sequence.reset]
+
+# OKX may reset sequence IDs during maintenance.
+#
+# A valid reset transition may satisfy:
+#
+#   current.prevSeqId == previous.seqId
+#   current.seqId < current.prevSeqId
+#
+# A decreasing sequence alone is not evidence of loss.
+
+allow_sequence_decrease = true
+require_previous_sequence_match = true
+
+action = "accept_validated_transition"
+
+# ============================================================
+# SNAPSHOT / DELTA SYNCHRONIZATION
+# ============================================================
+
+[synchronization]
+strategy = "okx_v5_books"
+
+snapshot_source = "websocket"
+
+snapshot_action = "snapshot"
+delta_action = "update"
+
+require_initial_snapshot = true
+
+# Every authoritative snapshot replaces the local book.
+snapshot_book_action = "replace"
+
+# Deltas received before synchronization cannot
+# initialize the book.
+
+delta_before_snapshot_action = "reject_and_resynchronize"
+
+# Initial snapshot establishes the sequence baseline.
+initial_sequence_strategy = "snapshot_baseline"
+
+# ============================================================
+# BOOK STATE
+# ============================================================
+
+[book]
+storage = "marketforge_book_store"
+
+snapshot_action = "replace"
+delta_update_type = "absolute"
+
+zero_quantity_action = "delete"
+
+# One WebSocket message is one logically atomic
+# L2 update, including all its price-level changes.
+
+atomic_message_updates = true
+
+require_valid_generation = true
+
+# A synchronized 400-level book is not equivalent
+# to complete exchange-wide order-book depth.
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_negative_quantity = true
+reject_negative_order_count = true
+
+detect_sequence_gaps = true
+detect_stale_updates = true
+
+validate_previous_sequence_id = true
+
+# Keepalives and valid maintenance resets must not
+# be classified as sequence gaps.
+
+allow_documented_sequence_exceptions = true
+
+# Deprecated in production on 2026-06-23.
+# Any remaining checksum field is fixed to zero.
+checksum_strategy = "none"
+
+gap_action = "invalidate_and_resynchronize"
+
+# ============================================================
+# RECOVERY
+# ============================================================
+
+[recovery]
+strategy = "okx_v5_snapshot_recovery"
+
+on_connection_loss = "invalidate_and_resubscribe"
+on_sequence_violation = "resubscribe"
+on_new_snapshot = "replace_book"
+
+# Do not join arbitrary REST snapshots with
+# WebSocket deltas without a verified procedure.
+
+rest_snapshot_fallback = false
+
+# Reject messages originating from obsolete
+# connection/subscription generations.
+
+require_generation_fencing = true
+
+# A new valid snapshot restores current book state.
+# It does not reconstruct missing historical L2 updates.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+snapshot_event_type = "l2_snapshot"
+delta_event_type = "l2_update"
+
+preserve_native_sequence_id = true
+preserve_previous_sequence_id = true
+
+preserve_event_timestamp = true
+preserve_order_count = true
+
+preserve_source_provenance = true
+
+atomic_updates = true
+
+# Live event envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# book_generation
+# received_timestamp_ns

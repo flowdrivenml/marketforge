@@ -1,0 +1,328 @@
+# MarketForge Live — Bybit Spot
+#
+# Proposed MarketForge Live exchange-profile schema v1.
+#
+# Official documentation:
+# https://bybit-exchange.github.io/docs/v5/ws/connect
+# https://bybit-exchange.github.io/docs/v5/websocket/public/trade
+# https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook
+# https://bybit-exchange.github.io/docs/v5/market/orderbook
+# https://bybit-exchange.github.io/docs/v5/market/recent-trade
+# https://bybit-exchange.github.io/docs/v5/rate-limit
+#
+# Scope:
+#   WebSocket connectivity
+#   Heartbeats
+#   Subscription management
+#   Channel definitions
+#   REST endpoints
+#   Rate limiting
+#
+# Instrument metadata is managed by Python orchestration.
+# Normalization specifications are defined separately.
+
+schema_version = 1
+
+[exchange]
+id = "bybit"
+market = "spot"
+profile = "bybit_spot"
+
+# ============================================================
+# WEBSOCKET
+# ============================================================
+
+[websocket]
+url = "wss://stream.bybit.com/v5/public/spot"
+
+testnet_url = "wss://stream-testnet.bybit.com/v5/public/spot"
+
+authentication = "none"
+
+symbol_case = "uppercase"
+timestamp_unit = "milliseconds"
+
+# ------------------------------------------------------------
+# CONNECTION LIMITS
+# ------------------------------------------------------------
+
+[websocket.limits]
+
+connection_attempt_limit = 500
+connection_attempt_window_seconds = 300
+
+# Market-data connection limits are counted separately
+# for Spot, Linear, Inverse, and Options.
+
+max_market_data_connections_per_ip = 1000
+
+# Maximum arguments per Spot subscription request.
+max_args_per_subscribe_request = 10
+
+# Maximum JSON args array length, in characters.
+max_args_characters = 21000
+
+# ------------------------------------------------------------
+# HEARTBEAT
+# ------------------------------------------------------------
+
+[websocket.heartbeat]
+strategy = "json_ping_pong"
+
+# Recommended by Bybit.
+interval_seconds = 20
+
+request = '{"op":"ping"}'
+
+response_op_field = "op"
+response_op_value = "ping"
+
+response_success_field = "success"
+response_success_value = true
+
+response_message_field = "ret_msg"
+response_message_value = "pong"
+
+# MarketForge operational policy.
+# Not an exchange-mandated timeout.
+timeout_seconds = 30
+
+# ------------------------------------------------------------
+# SUBSCRIPTIONS
+# ------------------------------------------------------------
+
+[websocket.subscription]
+strategy = "json_operation"
+
+subscribe_method = "subscribe"
+unsubscribe_method = "unsubscribe"
+
+operation_field = "op"
+arguments_field = "args"
+
+request_id_field = "req_id"
+request_id_type = "string"
+request_id_optional = true
+
+success_field = "success"
+success_value = true
+
+error_message_field = "ret_msg"
+
+supports_dynamic_subscriptions = true
+supports_unsubscribe = true
+
+# ------------------------------------------------------------
+# MESSAGE ROUTING
+# ------------------------------------------------------------
+
+[websocket.routing]
+mode = "topic"
+
+topic_field = "topic"
+message_type_field = "type"
+
+payload_field = "data"
+
+# Trades and depth use different payload structures.
+# The channel-specific format determines extraction.
+
+# ============================================================
+# INDIVIDUAL TRADES
+# ============================================================
+
+[channels.trades]
+enabled = true
+
+stream_template = "publicTrade.{symbol_upper}"
+
+format = "trades/bybit_spot"
+
+trade_semantics = "individual"
+
+# One WebSocket message may contain multiple trades.
+records = "array"
+
+payload_path = "data"
+
+# Bybit V5 Spot recent-trade REST is limited to
+# a small recent window. Arbitrary historical
+# recovery is not guaranteed.
+
+recovery_strategy = "recent_trade_reconciliation"
+recovery_endpoint = "recent_trades"
+
+# ============================================================
+# L2 ORDER BOOK
+# ============================================================
+
+[channels.depth]
+enabled = true
+
+stream_template = "orderbook.{depth}.{symbol_upper}"
+
+format = "depth/bybit_spot"
+
+supported_depths = [1, 50, 200, 1000]
+default_depth = 200
+
+# Bybit documents these nominal push frequencies.
+# They are exchange properties, not scheduling controls.
+
+[channels.depth.push_intervals_ms]
+"1" = 10
+"50" = 20
+"200" = 100
+"1000" = 200
+
+# ------------------------------------------------------------
+# DEPTH SYNCHRONIZATION
+# ------------------------------------------------------------
+
+[channels.depth.synchronization]
+
+strategy = "bybit_v5_snapshot_delta"
+
+# Standard Bybit depth subscriptions deliver an
+# initial WebSocket snapshot.
+
+snapshot_source = "websocket"
+
+snapshot_message_type = "snapshot"
+delta_message_type = "delta"
+
+# A new snapshot replaces the complete local book.
+snapshot_action = "replace"
+
+# Service resets may produce u=1.
+reset_update_id = 1
+
+update_id_field = "u"
+cross_sequence_field = "seq"
+
+# REST is available as a snapshot source for
+# recovery and future alternative strategies.
+
+rest_snapshot_endpoint = "depth_snapshot"
+
+# ------------------------------------------------------------
+# DEPTH QUANTITY SEMANTICS
+# ------------------------------------------------------------
+
+[channels.depth.quantity]
+
+update_mode = "absolute"
+zero_quantity_action = "delete"
+
+# Spot quantities are base-asset quantities.
+raw_unit = "base_asset"
+
+# ============================================================
+# REST API
+# ============================================================
+
+[rest]
+base_url = "https://api.bybit.com"
+
+authentication = "none"
+
+# MarketForge operational policy.
+request_timeout_seconds = 10
+
+# ------------------------------------------------------------
+# ORDER BOOK SNAPSHOT
+# ------------------------------------------------------------
+
+[rest.endpoints.depth_snapshot]
+method = "GET"
+
+path = "/v5/market/orderbook"
+
+parameters = [
+    "category",
+    "symbol",
+    "limit",
+]
+
+category = "spot"
+
+default_limit = 200
+maximum_limit = 1000
+
+response_root = "result"
+
+response_symbol_field = "s"
+response_update_id_field = "u"
+response_cross_sequence_field = "seq"
+
+weight_policy = "public_market_data"
+
+# ------------------------------------------------------------
+# RECENT PUBLIC TRADES
+# ------------------------------------------------------------
+
+[rest.endpoints.recent_trades]
+method = "GET"
+
+path = "/v5/market/recent-trade"
+
+parameters = [
+    "category",
+    "symbol",
+    "limit",
+]
+
+category = "spot"
+
+default_limit = 60
+maximum_limit = 60
+
+response_root = "result.list"
+
+# No historical trade-ID pagination is documented
+# for this endpoint.
+pagination_strategy = "none"
+
+weight_policy = "public_market_data"
+
+# ============================================================
+# RATE LIMITING
+# ============================================================
+
+[rest.rate_limiting]
+
+strategy = "shared_window"
+
+# Bybit's documented default HTTP IP limit.
+ip_window_seconds = 5
+ip_max_requests = 600
+
+# Application-level retCode for rate-limit violations.
+rate_limit_error_code = 10006
+
+# Bybit also documents HTTP 403 for IP frequency limits.
+ip_limit_http_status = 403
+
+# The public market-data endpoints must share the
+# appropriate IP-level limiter with other requests.
+#
+# Endpoint-specific limits, where applicable,
+# require further verification.
+
+[rest.rate_limiting.headers]
+
+limit = "X-Bapi-Limit"
+remaining = "X-Bapi-Limit-Status"
+reset_timestamp = "X-Bapi-Limit-Reset-Timestamp"
+
+# ============================================================
+# REQUEST WEIGHT POLICIES
+# ============================================================
+
+[rest.weight_policies.public_market_data]
+
+# No Binance-style endpoint weight is assumed.
+# Admission is currently based on shared request limits.
+
+type = "request_count"
+cost = 1

@@ -1,0 +1,289 @@
+# MarketForge Live — OKX Spot Individual Trades
+#
+# Proposed MarketForge Live format schema v1.
+#
+# Official documentation:
+# https://www.okx.com/docs-v5/en/
+#
+# Exchange: OKX
+# Market: Spot
+# Channel: trades-all
+# WebSocket route: /ws/v5/business
+#
+# Connectivity and REST:
+# exchanges/okx_spot.toml
+#
+# Instrument specifications:
+# Python-managed MarketForge instrument catalog.
+#
+# This format represents individual executions.
+# The aggregated "trades" channel requires a separate format.
+
+schema_version = 1
+
+[format]
+id = "okx_spot"
+exchange = "okx"
+market = "spot"
+channel = "trades-all"
+
+encoding = "json"
+target_schema = "canonical_trade"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+channel_field = "arg.channel"
+channel_value = "trades-all"
+
+instrument_field = "arg.instId"
+
+records = "array"
+
+# ============================================================
+# RECORD EXTRACTION
+# ============================================================
+
+[records]
+path = "data"
+
+representation = "array"
+record_type = "object"
+
+# OKX trades-all publishes one trade per update.
+expected_records_per_message = 1
+
+preserve_array_order = true
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+instrument = "instId"
+
+trade_id = "tradeId"
+
+price = "px"
+quantity_base = "sz"
+
+taker_side = "side"
+
+trade_timestamp = "ts"
+
+trade_source = "source"
+
+# ============================================================
+# ENVELOPE FIELDS
+# ============================================================
+
+[envelope]
+channel = "arg.channel"
+instrument = "arg.instId"
+
+# The individual-trade payload does not provide a
+# separate exchange event-generation timestamp.
+#
+# MarketForge supplies local receipt time independently.
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+instrument = "string"
+
+trade_id = "numeric_string"
+
+price = "decimal_string"
+quantity_base = "decimal_string"
+
+taker_side = "string"
+
+trade_timestamp = "integer_string"
+
+trade_source = "optional_string"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "trade_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+# The trade execution timestamp is supplied as a string.
+# Parse as an integer before exact unit conversion.
+
+parse_integer_string = true
+
+# No distinct exchange event timestamp is provided.
+preserve_exchange_event_timestamp = false
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+source = "price"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+source = "quantity_base"
+
+# OKX Spot trade quantity represents base currency.
+raw_unit = "base_asset"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+derive_quote_quantity = true
+
+# Instrument metadata is resolved from the
+# authoritative MarketForge catalog.
+#
+# No contract values or instrument-specific constants
+# are duplicated in this configuration.
+
+# ============================================================
+# AGGRESSOR SIDE
+# ============================================================
+
+[normalization.side]
+source = "taker_side"
+
+buy = "buy"
+sell = "sell"
+
+unknown_policy = "reject"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "instrument"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "okx"
+market = "spot"
+
+require_known_instrument = true
+
+# Verify that the record's instrument matches
+# the subscribed topic's instrument identity.
+
+validate_subscription_symbol = true
+
+# ============================================================
+# NATIVE TRADE IDENTITY
+# ============================================================
+
+[identity]
+strategy = "native_numeric_string_trade_id"
+
+source = "trade_id"
+
+preserve_native_id = true
+
+deduplication_key = [
+    "exchange",
+    "market",
+    "instrument",
+    "trade_id",
+]
+
+# Preserve the original numeric identifier.
+#
+# Do not convert through floating-point arithmetic.
+
+# ============================================================
+# NATIVE TRADE SOURCE
+# ============================================================
+
+[attributes.trade_source]
+source = "trade_source"
+
+preserve = true
+missing_policy = "unknown"
+
+# Source values are interpreted according to the
+# exchange's current protocol definitions.
+#
+# Preserve unknown values rather than silently
+# classifying them as ordinary trades.
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_nonpositive_quantity = true
+
+detect_duplicate_trade_ids = true
+detect_trade_id_regression = true
+
+# Native trade IDs are numeric strings, but exact
+# continuity must be established by a protocol strategy.
+#
+# Do not assume every difference between numeric IDs
+# represents an equivalent number of missing messages.
+
+detect_trade_id_gaps = true
+
+gap_action = "request_recovery"
+
+# Historical trade recovery uses OKX's REST
+# /api/v5/market/history-trades endpoint.
+#
+# The Recovery Coordinator must verify recovered
+# trade identities and interval coverage.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+event_type = "trade"
+trade_semantics = "individual"
+
+preserve_native_trade_id = true
+preserve_trade_source = true
+
+preserve_event_timestamp = true
+preserve_source_provenance = true
+
+# Emit one canonical trade per valid data[] record.
+#
+# MarketForge assigns each accepted event its
+# own stable source-stream cursor.
+#
+# Live event envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# received_timestamp_ns

@@ -1,0 +1,447 @@
+# MarketForge Live — Gate.io Linear Futures
+#
+# Proposed exchange-profile schema v1.
+#
+# API generation: Gate Futures WebSocket / REST V4
+#
+# Official references:
+# https://www.gate.com/docs/developers/futures/ws/en/
+# https://www.gate.com/docs/developers/apiv4/en/futures/
+#
+# Scope:
+#   Public Futures WebSocket connectivity
+#   Settlement-specific endpoint selection
+#   Subscription and heartbeat protocols
+#   Trade and L2 acquisition
+#   REST snapshots and trade recovery
+#
+# Instrument metadata comes from Python orchestration.
+# Trade/L2 normalization is configured separately.
+#
+# IMPORTANT:
+# - Futures endpoints are settlement-specific.
+# - futures.trades size is signed.
+# - futures.order_book_update uses U/u ranges.
+# - Futures L2 levels are objects, NOT Spot arrays.
+# - 20ms order-book updates support only 20 levels.
+
+schema_version = 1
+
+[exchange]
+id = "gateio"
+market = "linear"
+profile = "gateio_linear"
+api_generation = "v4"
+
+# ============================================================
+# NATIVE MARKET MAPPING
+# ============================================================
+
+[market_mapping]
+
+resolver = "marketforge_instrument_catalog"
+
+# Supported settlement families for this proposed profile.
+# Each instrument must independently satisfy MarketForge's
+# linear-contract classification.
+
+supported_settlements = [
+    "usdt",
+    "usd1",
+]
+
+[market_mapping.native_types.usdt]
+settlement = "usdt"
+websocket_route = "usdt"
+
+[market_mapping.native_types.usd1]
+settlement = "usd1"
+websocket_route = "usd1"
+
+# ============================================================
+# WEBSOCKET
+# ============================================================
+
+[websocket]
+
+authentication = "none"
+
+symbol_case = "uppercase"
+
+envelope_timestamp_unit = "seconds"
+
+# ------------------------------------------------------------
+# CONNECTION ROUTES
+# ------------------------------------------------------------
+
+[websocket.routes.usdt]
+
+url = "wss://fx-ws.gateio.ws/v4/ws/usdt"
+
+authentication = "none"
+
+[websocket.routes.usd1]
+
+url = "wss://fx-ws.gateio.ws/v4/ws/usd1"
+
+authentication = "none"
+
+# ------------------------------------------------------------
+# CONNECTION MANAGEMENT
+# ------------------------------------------------------------
+
+[websocket.connection]
+
+reconnect_strategy = "exponential_backoff"
+
+# Do not invent undocumented maximum subscription counts.
+# Runtime limits are enforced through verified exchange
+# constraints and MarketForge resource policies.
+
+# ------------------------------------------------------------
+# HEARTBEAT
+# ------------------------------------------------------------
+
+[websocket.heartbeat]
+
+strategy = "websocket_control_frames"
+
+respond_to_ping = true
+echo_ping_payload = true
+
+# ------------------------------------------------------------
+# OPTIONAL APPLICATION HEARTBEAT
+# ------------------------------------------------------------
+
+[websocket.application_heartbeat]
+
+enabled = false
+
+strategy = "json_channel_ping"
+
+request_channel = "futures.ping"
+response_channel = "futures.pong"
+
+# MarketForge operational settings.
+interval_seconds = 30
+response_timeout_seconds = 10
+
+# ------------------------------------------------------------
+# SERVICE NOTIFICATIONS
+# ------------------------------------------------------------
+
+[websocket.lifecycle]
+
+# Gate may announce an upcoming service upgrade.
+# The connection supervisor should establish a
+# replacement connection and restore subscriptions.
+
+system_channel = "futures.system"
+system_event = "update"
+
+upgrade_type_field = "result.type"
+upgrade_type_value = "upgrade"
+
+upgrade_action = "reconnect_and_restore"
+
+# ============================================================
+# SUBSCRIPTIONS
+# ============================================================
+
+[websocket.subscription]
+
+strategy = "gate_v4_channel_event"
+
+channel_field = "channel"
+operation_field = "event"
+arguments_field = "payload"
+
+subscribe_method = "subscribe"
+unsubscribe_method = "unsubscribe"
+
+timestamp_field = "time"
+timestamp_unit = "seconds"
+
+request_id_field = "id"
+request_id_type = "unsigned_integer"
+request_id_optional = true
+
+acknowledgement_field = "event"
+
+subscribe_acknowledgement = "subscribe"
+unsubscribe_acknowledgement = "unsubscribe"
+
+success_field = "result.status"
+success_value = "success"
+
+error_field = "error"
+
+supports_dynamic_subscriptions = true
+supports_unsubscribe = true
+
+# ============================================================
+# MESSAGE ROUTING
+# ============================================================
+
+[websocket.routing]
+
+mode = "channel"
+
+channel_field = "channel"
+event_field = "event"
+
+payload_field = "result"
+
+update_event = "update"
+
+# ============================================================
+# INDIVIDUAL TRADES
+# ============================================================
+
+[channels.trades]
+
+enabled = true
+
+channel = "futures.trades"
+
+subscription_payload = [
+    "{symbol}",
+]
+
+format = "trades/gateio_linear"
+
+trade_semantics = "individual"
+
+# Futures trades contain arrays of trade objects.
+records = "array"
+payload_path = "result"
+
+# Gate Futures sizes are signed:
+#
+# positive = taker buy
+# negative = taker sell
+#
+# The raw unit depends on contract specifications.
+# Do not interpret signed size as a base-asset quantity.
+
+side_strategy = "signed_quantity"
+
+recovery_strategy = "gate_futures_trade_reconciliation"
+recovery_endpoint = "historical_trades"
+
+# ============================================================
+# L2 DIFFERENTIAL DEPTH
+# ============================================================
+
+[channels.depth]
+
+enabled = true
+
+channel = "futures.order_book_update"
+
+format = "depth/gateio_linear"
+
+# Subscription:
+#
+# [contract, frequency, level]
+
+subscription_payload = [
+    "{symbol}",
+    "{interval}",
+    "{depth}",
+]
+
+default_interval = "100ms"
+default_depth = 100
+
+supported_intervals = [
+    "20ms",
+    "100ms",
+]
+
+supported_depths = [
+    20,
+    50,
+    100,
+]
+
+# 20ms is supported only for 20 levels.
+
+[channels.depth.constraints]
+
+"20ms" = [20]
+"100ms" = [20, 50, 100]
+
+# ------------------------------------------------------------
+# L2 SYNCHRONIZATION
+# ------------------------------------------------------------
+
+[channels.depth.synchronization]
+
+strategy = "gate_futures_order_book_update"
+
+snapshot_source = "rest"
+snapshot_endpoint = "depth_snapshot"
+
+buffer_updates_before_snapshot = true
+
+snapshot_sequence_field = "id"
+
+first_update_id_field = "U"
+last_update_id_field = "u"
+
+# REST snapshot bridge:
+#
+# U <= snapshot.id + 1 <= u
+
+initial_bridge_strategy = "next_update_in_range"
+
+continuity_strategy = "range_covers_next_update"
+
+# ------------------------------------------------------------
+# L2 QUANTITY
+# ------------------------------------------------------------
+
+[channels.depth.quantity]
+
+# Futures depth levels use objects:
+#
+# {"p": "price", "s": size}
+#
+# Size represents the native contract quantity.
+
+raw_unit = "contracts"
+
+quantity_semantics = "instrument_metadata"
+
+update_mode = "absolute"
+zero_quantity_action = "delete"
+
+# ============================================================
+# REST API
+# ============================================================
+
+[rest]
+
+base_url = "https://api.gateio.ws/api/v4"
+
+authentication = "none"
+
+# MarketForge operational timeout.
+request_timeout_seconds = 10
+
+# ============================================================
+# ORDER BOOK SNAPSHOT
+# ============================================================
+
+[rest.endpoints.depth_snapshot]
+
+method = "GET"
+
+path = "/futures/{settlement}/order_book"
+
+parameters = [
+    "contract",
+    "interval",
+    "limit",
+    "with_id",
+]
+
+contract = "{symbol}"
+settlement = "{native_settlement}"
+
+interval = "0"
+
+default_limit = 100
+
+# Required for matching WebSocket U/u.
+with_id = true
+
+response_sequence_field = "id"
+
+response_bids_field = "bids"
+response_asks_field = "asks"
+
+# REST depth levels contain objects:
+#
+# {"p": "...", "s": "..."}
+
+response_level_type = "object"
+response_price_field = "p"
+response_quantity_field = "s"
+
+authentication = "none"
+
+rate_limit_policy = "futures_public"
+
+# ============================================================
+# HISTORICAL MARKET TRADES
+# ============================================================
+
+[rest.endpoints.historical_trades]
+
+method = "GET"
+
+path = "/futures/{settlement}/trades"
+
+parameters = [
+    "contract",
+    "limit",
+    "offset",
+    "last_id",
+    "from",
+    "to",
+]
+
+contract = "{symbol}"
+settlement = "{native_settlement}"
+
+default_limit = 100
+
+authentication = "none"
+
+# Gate deprecates last_id in favor of time ranges.
+pagination_strategy = "gate_futures_trades"
+preferred_pagination = "time_range"
+
+legacy_id_pagination = true
+
+# The REST response is an array of trade objects.
+response_root = "$"
+
+rate_limit_policy = "futures_public"
+
+# ============================================================
+# RATE LIMITING
+# ============================================================
+
+[rest.rate_limiting]
+
+strategy = "endpoint_window"
+
+rule = "ip"
+
+# Precise production quota must be verified against
+# current Gate Futures API limits before activation.
+#
+# Do not assume Spot limits apply to Futures.
+
+[rest.rate_limit_policies.futures_public]
+
+# Unresolved intentionally.
+# Supply verified quota configuration before enabling
+# automatic high-volume REST recovery.
+
+status = "requires_verification"
+
+
+# ============================================================
+# WEBSOCKET HANDSHAKE HEADERS
+# ============================================================
+
+[websocket.headers]
+
+# Required for lossless fractional contract quantities.
+# Without this header, Gate may truncate decimal sizes.
+
+X-Gate-Size-Decimal = "1"

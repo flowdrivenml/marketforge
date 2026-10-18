@@ -1,0 +1,326 @@
+# MarketForge Live — Bybit Spot Trades
+#
+# Proposed MarketForge Live format schema v1.
+#
+# Official documentation:
+# https://bybit-exchange.github.io/docs/v5/websocket/public/trade
+#
+# Exchange: Bybit
+# Market: Spot
+# Channel: publicTrade.{symbol}
+#
+# Connectivity and REST:
+# exchanges/bybit_spot.toml
+#
+# Instrument metadata:
+# Python-managed MarketForge instrument catalog.
+#
+# Each WebSocket message contains an array of individual
+# executions, potentially up to 1024 trades.
+
+schema_version = 1
+
+[format]
+id = "bybit_spot"
+exchange = "bybit"
+market = "spot"
+channel = "trades"
+
+encoding = "json"
+target_schema = "canonical_trade"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+topic_field = "topic"
+topic_pattern = "publicTrade.{symbol_upper}"
+
+message_type_field = "type"
+message_type_value = "snapshot"
+
+# The "snapshot" message type does not mean that
+# every message replaces a previous trade dataset.
+# This is Bybit's documented public-trade message type.
+
+symbol_source = "topic"
+
+# ============================================================
+# RECORD EXTRACTION
+# ============================================================
+
+[records]
+path = "data"
+
+representation = "array"
+record_type = "object"
+
+# Bybit documents up to 1024 trades per message.
+max_records_per_message = 1024
+
+# Preserve the exchange-provided order of records.
+preserve_array_order = true
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+trade_id = "i"
+
+price = "p"
+quantity_base = "v"
+
+trade_timestamp = "T"
+
+symbol = "s"
+taker_side = "S"
+
+block_trade = "BT"
+rpi_trade = "RPI"
+
+cross_sequence = "seq"
+
+# ============================================================
+# ENVELOPE FIELDS
+# ============================================================
+
+[envelope]
+exchange_event_timestamp = "ts"
+
+topic = "topic"
+message_type = "type"
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+trade_id = "string"
+
+price = "decimal_string"
+quantity_base = "decimal_string"
+
+trade_timestamp = "i64"
+
+symbol = "string"
+taker_side = "string"
+
+block_trade = "boolean"
+rpi_trade = "optional_boolean"
+
+cross_sequence = "optional_u64"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "trade_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+preserve_exchange_event_timestamp = true
+
+# Bybit's outer message timestamp is expressed
+# in milliseconds.
+
+exchange_event_timestamp_source = "envelope.exchange_event_timestamp"
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+source = "price"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+source = "quantity_base"
+
+# Spot trade sizes represent base-asset quantities.
+raw_unit = "base_asset"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+derive_quote_quantity = true
+
+# Instrument specifications are resolved from the
+# existing MarketForge catalog.
+#
+# No contract multipliers, tick sizes, or quantity
+# steps are hardcoded in this format.
+
+# ============================================================
+# AGGRESSOR SIDE
+# ============================================================
+
+[normalization.side]
+source = "taker_side"
+
+Buy = "buy"
+Sell = "sell"
+
+unknown_policy = "reject"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "symbol"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "bybit"
+market = "spot"
+
+require_known_instrument = true
+
+# The trade symbol must match the subscription's
+# resolved instrument identity.
+
+validate_subscription_symbol = true
+
+# ============================================================
+# NATIVE TRADE IDENTITY
+# ============================================================
+
+[identity]
+strategy = "native_string_trade_id"
+
+source = "trade_id"
+
+preserve_native_id = true
+
+deduplication_key = [
+    "exchange",
+    "market",
+    "instrument",
+    "trade_id",
+]
+
+# Native trade IDs are strings.
+#
+# Do not interpret their lexical ordering as
+# trade execution ordering or continuity.
+
+# ============================================================
+# CROSS-SEQUENCE METADATA
+# ============================================================
+
+[sequence]
+strategy = "cross_sequence_metadata"
+
+source = "cross_sequence"
+
+preserve_native_sequence = true
+
+# Multiple messages can share the same sequence.
+# Multiple trades within a message may also share it.
+#
+# Therefore:
+# - Do not require seq + 1.
+# - Do not reject equal seq values.
+# - Do not infer missing trade counts from seq gaps.
+
+require_consecutive = false
+allow_equal_values = true
+
+# ============================================================
+# TRADE ATTRIBUTES
+# ============================================================
+
+[attributes.block_trade]
+source = "block_trade"
+
+preserve = true
+
+[attributes.rpi_trade]
+source = "rpi_trade"
+
+preserve = true
+
+missing_policy = "unknown"
+
+# Optional native attributes must not be silently
+# conflated with ordinary false values when absent.
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_nonpositive_quantity = true
+
+detect_duplicate_trade_ids = true
+
+# Trade IDs are strings without a documented
+# consecutive numeric sequence guarantee.
+
+detect_trade_id_regression = false
+detect_trade_id_gaps = false
+
+# Cross-sequence values are retained for diagnostics
+# but are not sufficient to prove missing trades.
+
+detect_cross_sequence_regression = true
+
+gap_action = "report_unverified_coverage"
+
+# Recovery execution belongs to the Recovery Coordinator.
+#
+# Bybit's recent-trade REST endpoint does not guarantee
+# arbitrary historical gap reconstruction.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+event_type = "trade"
+trade_semantics = "individual"
+
+preserve_native_trade_id = true
+preserve_native_sequence = true
+
+preserve_event_timestamp = true
+preserve_exchange_event_timestamp = true
+
+preserve_source_provenance = true
+
+preserve_block_trade_flag = true
+preserve_rpi_trade_flag = true
+
+# The processor emits one canonical trade for each
+# valid record in the data array.
+#
+# All records preserve their source-message provenance.
+#
+# Live event envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# received_timestamp_ns

@@ -1,0 +1,417 @@
+# MarketForge Live — Bitget Inverse
+#
+# Proposed MarketForge Live exchange-profile schema v1.
+#
+# API generation: Unified Trading Account (UTA), V3
+#
+# Official references:
+# https://www.bitget.com/docs/uta/quick-start
+# https://www.bitget.com/docs/uta/websocket/public/Order-Book-Channel
+# https://www.bitget.com/docs/catalog/market/market-data
+# https://www.bitget.com/docs/uta/changelog/2026-05
+#
+# MarketForge category: inverse
+# Native category: COIN-FUTURES
+#
+# Instrument metadata is supplied by Python orchestration.
+# Trade and depth formats are configured separately.
+#
+# IMPORTANT:
+# - Uses UTA V3, not Classic V2.
+# - Native WebSocket instType is coin-futures.
+# - Native REST category is COIN-FUTURES.
+# - Public fill size is denominated in quote currency.
+# - Depth quantity units require fixture verification.
+# - WebSocket books uses seq/pseq synchronization.
+# - Order-book checksums were removed in May 2026.
+
+schema_version = 1
+
+[exchange]
+id = "bitget"
+market = "inverse"
+profile = "bitget_inverse"
+api_generation = "uta_v3"
+
+# ============================================================
+# NATIVE MARKET CLASSIFICATION
+# ============================================================
+
+[market_mapping]
+resolver = "marketforge_instrument_catalog"
+
+native_category = "COIN-FUTURES"
+websocket_inst_type = "coin-futures"
+rest_category = "COIN-FUTURES"
+
+# ============================================================
+# WEBSOCKET
+# ============================================================
+
+[websocket]
+url = "wss://ws.bitget.com/v3/ws/public"
+
+authentication = "none"
+
+symbol_case = "uppercase"
+timestamp_unit = "milliseconds"
+
+# ============================================================
+# CONNECTION LIMITS
+# ============================================================
+
+[websocket.limits]
+
+connection_attempt_limit = 300
+connection_attempt_window_seconds = 300
+
+max_connections_per_ip = 100
+
+subscription_requests_per_hour = 240
+max_subscriptions_per_connection = 1000
+
+max_client_messages_per_second = 10
+
+# Bitget recommends fewer than 50 subscriptions
+# per connection.
+#
+# MarketForge connection-sharding policy.
+
+recommended_max_subscriptions = 49
+
+# ============================================================
+# HEARTBEAT
+# ============================================================
+
+[websocket.heartbeat]
+
+strategy = "text_ping_pong"
+
+request = "ping"
+response = "pong"
+
+interval_seconds = 30
+
+server_inactivity_limit_seconds = 120
+
+# MarketForge operational policy.
+response_timeout_seconds = 10
+
+reset_timer_on_message = false
+
+# ============================================================
+# SUBSCRIPTIONS
+# ============================================================
+
+[websocket.subscription]
+
+strategy = "json_operation"
+
+subscribe_method = "subscribe"
+unsubscribe_method = "unsubscribe"
+
+operation_field = "op"
+arguments_field = "args"
+
+instrument_type_field = "instType"
+topic_field = "topic"
+symbol_field = "symbol"
+
+instrument_type = "coin-futures"
+
+acknowledgement_field = "event"
+
+subscribe_acknowledgement = "subscribe"
+unsubscribe_acknowledgement = "unsubscribe"
+
+error_event = "error"
+error_code_field = "code"
+error_message_field = "msg"
+
+connection_id_field = "connId"
+
+supports_dynamic_subscriptions = true
+supports_unsubscribe = true
+
+# ============================================================
+# MESSAGE ROUTING
+# ============================================================
+
+[websocket.routing]
+
+mode = "arg"
+
+instrument_type_field = "arg.instType"
+channel_field = "arg.topic"
+instrument_field = "arg.symbol"
+
+payload_field = "data"
+action_field = "action"
+
+# ============================================================
+# INDIVIDUAL TRADES
+# ============================================================
+
+[channels.trades]
+
+enabled = true
+
+channel = "publicTrade"
+
+subscription_template = '{"instType":"coin-futures","topic":"publicTrade","symbol":"{symbol}"}'
+
+format = "trades/bitget_inverse"
+
+trade_semantics = "individual"
+
+records = "array"
+payload_path = "data"
+
+# Public REST fills provide a limited recent history.
+# Arbitrary historical trade-ID pagination is unavailable.
+
+recovery_strategy = "recent_trade_reconciliation"
+recovery_endpoint = "recent_trades"
+
+# ============================================================
+# L2 ORDER BOOK
+# ============================================================
+
+[channels.depth]
+
+enabled = true
+
+channel = "books"
+
+subscription_template = '{"instType":"coin-futures","topic":"books","symbol":"{symbol}"}'
+
+format = "depth/bitget_inverse"
+
+depth = "exchange_defined"
+push_interval_ms = 50
+
+# ============================================================
+# L2 SYNCHRONIZATION
+# ============================================================
+
+[channels.depth.synchronization]
+
+strategy = "bitget_v3_books"
+
+snapshot_source = "websocket"
+
+snapshot_message_type = "snapshot"
+delta_message_type = "update"
+
+snapshot_action = "replace"
+
+sequence_field = "seq"
+previous_sequence_field = "pseq"
+
+# Initial snapshot bridge:
+#
+# update.pseq <= snapshot.seq <= update.seq
+#
+# Subsequent continuity:
+#
+# current.pseq == previous.seq
+
+continuity_strategy = "previous_sequence_matches"
+
+# Service resets may use pseq=0.
+reset_previous_sequence_id = 0
+
+# Removed in May 2026.
+checksum_strategy = "none"
+
+# ============================================================
+# DEPTH QUANTITY SEMANTICS
+# ============================================================
+
+[channels.depth.quantity]
+
+update_mode = "absolute"
+zero_quantity_action = "delete"
+
+# Unlike public fills, the exact COIN-Futures
+# WebSocket depth quantity denomination has not
+# been independently verified.
+#
+# Resolve using exchange documentation and
+# captured protocol fixtures before activation.
+#
+# Do not infer the raw unit from contract type alone.
+
+quantity_semantics = "instrument_metadata"
+
+raw_unit = "requires_verification"
+
+# ============================================================
+# OPTIONAL DEPTH CHANNELS
+# ============================================================
+
+[channels.depth1]
+
+enabled = false
+
+channel = "books1"
+
+subscription_template = '{"instType":"coin-futures","topic":"books1","symbol":"{symbol}"}'
+
+depth = 1
+push_interval_ms = 1
+
+synchronization_strategy = "snapshot_only"
+
+[channels.depth5]
+
+enabled = false
+
+channel = "books5"
+
+subscription_template = '{"instType":"coin-futures","topic":"books5","symbol":"{symbol}"}'
+
+depth = 5
+push_interval_ms = 10
+
+synchronization_strategy = "snapshot_only"
+
+[channels.depth50]
+
+enabled = false
+
+channel = "books50"
+
+subscription_template = '{"instType":"coin-futures","topic":"books50","symbol":"{symbol}"}'
+
+depth = 50
+push_interval_ms = 20
+
+synchronization_strategy = "bitget_v3_books"
+
+# RPI-inclusive channels are separate.
+
+# ============================================================
+# REST API
+# ============================================================
+
+[rest]
+
+base_url = "https://api.bitget.com"
+
+authentication = "none"
+
+# MarketForge operational policy.
+request_timeout_seconds = 10
+
+# ============================================================
+# ORDER BOOK SNAPSHOT
+# ============================================================
+
+[rest.endpoints.depth_snapshot]
+
+method = "GET"
+path = "/api/v3/market/orderbook"
+
+parameters = [
+    "category",
+    "symbol",
+    "limit",
+]
+
+category = "COIN-FUTURES"
+
+default_limit = 200
+maximum_limit = 1000
+
+response_root = "data"
+
+response_bids_field = "b"
+response_asks_field = "a"
+response_timestamp_field = "ts"
+
+authentication = "none"
+
+rate_limit_policy = "depth_snapshot"
+
+# REST snapshots do not expose a documented
+# seq/pseq boundary compatible with WebSocket books.
+#
+# Therefore, do not use arbitrary REST snapshots
+# to initialize the incremental stream.
+
+# ============================================================
+# RECENT PUBLIC TRADES
+# ============================================================
+
+[rest.endpoints.recent_trades]
+
+method = "GET"
+path = "/api/v3/market/fills"
+
+parameters = [
+    "category",
+    "symbol",
+    "limit",
+]
+
+category = "COIN-FUTURES"
+
+default_limit = 100
+maximum_limit = 100
+
+response_root = "data"
+
+authentication = "none"
+
+pagination_strategy = "none"
+
+# REST fields include:
+#
+# execId
+# execLinkId
+# price
+# size
+# side
+# ts
+# isRPI
+#
+# COIN-FUTURES size is quote-denominated.
+#
+# WebSocket/REST identity compatibility must
+# be verified through protocol fixtures.
+
+rate_limit_policy = "recent_trades"
+
+# ============================================================
+# RATE LIMITING
+# ============================================================
+
+[rest.rate_limiting]
+
+strategy = "endpoint_window"
+
+rule = "ip"
+
+# Shared Bitget REST budget.
+global_max_requests = 6000
+global_window_seconds = 60
+
+http_throttled_status = 429
+
+# Quotas must be coordinated with other Bitget
+# clients using the same public IP.
+
+# ============================================================
+# ENDPOINT RATE LIMITS
+# ============================================================
+
+[rest.rate_limit_policies.depth_snapshot]
+
+max_requests = 20
+window_seconds = 1
+
+[rest.rate_limit_policies.recent_trades]
+
+max_requests = 20
+window_seconds = 1

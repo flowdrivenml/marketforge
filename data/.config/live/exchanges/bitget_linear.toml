@@ -1,0 +1,418 @@
+# MarketForge Live — Bitget Linear
+#
+# Proposed MarketForge Live exchange-profile schema v1.
+#
+# API generation: Unified Trading Account (UTA), V3
+#
+# Official references:
+# https://www.bitget.com/docs/uta/quick-start
+# https://www.bitget.com/docs/uta/websocket/public/Order-Book-Channel
+# https://www.bitget.com/docs/catalog/market/market-data
+# https://www.bitget.com/docs/uta/changelog/2026-05
+#
+# MarketForge classification: Linear
+# Native categories: USDT-FUTURES, USDC-FUTURES
+#
+# Instrument metadata and native product classification
+# are supplied by Python orchestration.
+#
+# Trade and L2 normalization are configured separately.
+#
+# IMPORTANT:
+# - Uses UTA V3, not Classic V2.
+# - USDT and USDC futures share this protocol profile.
+# - Native instType/category are resolved per instrument.
+# - WebSocket books uses seq/pseq synchronization.
+# - Order-book checksums were removed in May 2026.
+# - JSON and SBE feeds are distinct protocols.
+
+schema_version = 1
+
+[exchange]
+id = "bitget"
+market = "linear"
+profile = "bitget_linear"
+api_generation = "uta_v3"
+
+# ============================================================
+# NATIVE MARKET CLASSIFICATION
+# ============================================================
+
+[market_mapping]
+
+# MarketForge's Linear category contains two native
+# Bitget futures product types.
+#
+# The catalog must resolve exactly one mapping
+# for each instrument before stream activation.
+
+resolver = "marketforge_instrument_catalog"
+
+supported_native_categories = [
+    "USDT-FUTURES",
+    "USDC-FUTURES",
+]
+
+[market_mapping.native_types.USDT-FUTURES]
+websocket_inst_type = "usdt-futures"
+rest_category = "USDT-FUTURES"
+
+[market_mapping.native_types.USDC-FUTURES]
+websocket_inst_type = "usdc-futures"
+rest_category = "USDC-FUTURES"
+
+# ============================================================
+# WEBSOCKET
+# ============================================================
+
+[websocket]
+url = "wss://ws.bitget.com/v3/ws/public"
+
+authentication = "none"
+
+symbol_case = "uppercase"
+timestamp_unit = "milliseconds"
+
+# ============================================================
+# CONNECTION LIMITS
+# ============================================================
+
+[websocket.limits]
+
+connection_attempt_limit = 300
+connection_attempt_window_seconds = 300
+
+max_connections_per_ip = 100
+
+subscription_requests_per_hour = 240
+max_subscriptions_per_connection = 1000
+
+max_client_messages_per_second = 10
+
+# MarketForge sharding recommendation.
+# Bitget recommends fewer than 50 channels
+# per physical connection.
+
+recommended_max_subscriptions = 49
+
+# ============================================================
+# HEARTBEAT
+# ============================================================
+
+[websocket.heartbeat]
+
+strategy = "text_ping_pong"
+
+request = "ping"
+response = "pong"
+
+interval_seconds = 30
+
+server_inactivity_limit_seconds = 120
+
+# MarketForge operational policy.
+response_timeout_seconds = 10
+
+reset_timer_on_message = false
+
+# ============================================================
+# SUBSCRIPTIONS
+# ============================================================
+
+[websocket.subscription]
+strategy = "json_operation"
+
+subscribe_method = "subscribe"
+unsubscribe_method = "unsubscribe"
+
+operation_field = "op"
+arguments_field = "args"
+
+instrument_type_field = "instType"
+topic_field = "topic"
+symbol_field = "symbol"
+
+# instType is resolved through market_mapping.
+instrument_type = "{native_ws_inst_type}"
+
+acknowledgement_field = "event"
+
+subscribe_acknowledgement = "subscribe"
+unsubscribe_acknowledgement = "unsubscribe"
+
+error_event = "error"
+error_code_field = "code"
+error_message_field = "msg"
+
+connection_id_field = "connId"
+
+supports_dynamic_subscriptions = true
+supports_unsubscribe = true
+
+# ============================================================
+# MESSAGE ROUTING
+# ============================================================
+
+[websocket.routing]
+mode = "arg"
+
+instrument_type_field = "arg.instType"
+channel_field = "arg.topic"
+instrument_field = "arg.symbol"
+
+payload_field = "data"
+action_field = "action"
+
+# ============================================================
+# INDIVIDUAL TRADES
+# ============================================================
+
+[channels.trades]
+enabled = true
+
+channel = "publicTrade"
+
+subscription_template = '{"instType":"{native_ws_inst_type}","topic":"publicTrade","symbol":"{symbol}"}'
+
+format = "trades/bitget_linear"
+
+trade_semantics = "individual"
+
+records = "array"
+payload_path = "data"
+
+recovery_strategy = "recent_trade_reconciliation"
+recovery_endpoint = "recent_trades"
+
+# Arbitrary historical execution recovery is not
+# guaranteed by the V3 public recent-fills endpoint.
+
+# ============================================================
+# L2 ORDER BOOK
+# ============================================================
+
+[channels.depth]
+enabled = true
+
+channel = "books"
+
+subscription_template = '{"instType":"{native_ws_inst_type}","topic":"books","symbol":"{symbol}"}'
+
+format = "depth/bitget_linear"
+
+depth = "exchange_defined"
+push_interval_ms = 50
+
+# ============================================================
+# L2 SYNCHRONIZATION
+# ============================================================
+
+[channels.depth.synchronization]
+
+strategy = "bitget_v3_books"
+
+snapshot_source = "websocket"
+
+snapshot_message_type = "snapshot"
+delta_message_type = "update"
+
+snapshot_action = "replace"
+
+sequence_field = "seq"
+previous_sequence_field = "pseq"
+
+# Normal continuity:
+#
+# current.pseq == previous.seq
+#
+# Initial snapshot bridge:
+#
+# update.pseq <= snapshot.seq <= update.seq
+
+continuity_strategy = "previous_sequence_matches"
+
+reset_previous_sequence_id = 0
+
+checksum_strategy = "none"
+
+# ============================================================
+# L2 QUANTITY
+# ============================================================
+
+[channels.depth.quantity]
+
+update_mode = "absolute"
+zero_quantity_action = "delete"
+
+# Raw quantity semantics must be confirmed against
+# the native V3 depth channel and instrument catalog.
+#
+# Do not infer contract-count units solely from the
+# MarketForge "linear" classification.
+
+quantity_semantics = "instrument_metadata"
+
+# ============================================================
+# OPTIONAL DEPTH CHANNELS
+# ============================================================
+
+[channels.depth1]
+enabled = false
+
+channel = "books1"
+
+subscription_template = '{"instType":"{native_ws_inst_type}","topic":"books1","symbol":"{symbol}"}'
+
+depth = 1
+push_interval_ms = 1
+
+synchronization_strategy = "snapshot_only"
+
+[channels.depth5]
+enabled = false
+
+channel = "books5"
+
+subscription_template = '{"instType":"{native_ws_inst_type}","topic":"books5","symbol":"{symbol}"}'
+
+depth = 5
+push_interval_ms = 10
+
+synchronization_strategy = "snapshot_only"
+
+[channels.depth50]
+enabled = false
+
+channel = "books50"
+
+subscription_template = '{"instType":"{native_ws_inst_type}","topic":"books50","symbol":"{symbol}"}'
+
+depth = 50
+push_interval_ms = 20
+
+# Current V3 documentation describes an initial
+# snapshot followed by incremental updates.
+
+synchronization_strategy = "bitget_v3_books"
+
+# RPI-inclusive depth is a separate channel family.
+
+# ============================================================
+# REST API
+# ============================================================
+
+[rest]
+
+base_url = "https://api.bitget.com"
+
+authentication = "none"
+
+# MarketForge operational policy.
+request_timeout_seconds = 10
+
+# ============================================================
+# ORDER BOOK SNAPSHOT
+# ============================================================
+
+[rest.endpoints.depth_snapshot]
+
+method = "GET"
+path = "/api/v3/market/orderbook"
+
+parameters = [
+    "category",
+    "symbol",
+    "limit",
+]
+
+# Category is selected per instrument:
+# USDT-FUTURES or USDC-FUTURES.
+
+category = "{native_rest_category}"
+
+default_limit = 200
+maximum_limit = 1000
+
+response_root = "data"
+
+response_bids_field = "b"
+response_asks_field = "a"
+response_timestamp_field = "ts"
+
+authentication = "none"
+
+rate_limit_policy = "depth_snapshot"
+
+# REST snapshots do not expose a verified seq/pseq
+# synchronization boundary.
+#
+# Do not join arbitrary REST snapshots to the
+# incremental WebSocket stream.
+
+# ============================================================
+# RECENT PUBLIC TRADES
+# ============================================================
+
+[rest.endpoints.recent_trades]
+
+method = "GET"
+path = "/api/v3/market/fills"
+
+parameters = [
+    "category",
+    "symbol",
+    "limit",
+]
+
+category = "{native_rest_category}"
+
+default_limit = 100
+maximum_limit = 100
+
+response_root = "data"
+
+authentication = "none"
+
+pagination_strategy = "none"
+
+# Native execution identifiers:
+#
+# execId
+# execLinkId
+#
+# Actual recovery coverage must be verified.
+
+rate_limit_policy = "recent_trades"
+
+# ============================================================
+# RATE LIMITING
+# ============================================================
+
+[rest.rate_limiting]
+
+strategy = "endpoint_window"
+
+rule = "ip"
+
+# Exchange-wide shared REST budget.
+global_max_requests = 6000
+global_window_seconds = 60
+
+http_throttled_status = 429
+
+# Quotas must be coordinated with other local
+# Bitget clients sharing the same public IP.
+
+# ============================================================
+# ENDPOINT RATE LIMITS
+# ============================================================
+
+[rest.rate_limit_policies.depth_snapshot]
+
+max_requests = 20
+window_seconds = 1
+
+[rest.rate_limit_policies.recent_trades]
+
+max_requests = 20
+window_seconds = 1

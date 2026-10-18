@@ -1,0 +1,394 @@
+# MarketForge Live — Gate.io Spot Trades
+#
+# Proposed MarketForge Live format schema v1.
+#
+# Official documentation:
+# https://www.gate.com/docs/developers/apiv4/ws/en/
+#
+# Exchange: Gate.io
+# Market: Spot
+# Channel: spot.trades
+#
+# Connectivity and REST:
+# exchanges/gateio_spot.toml
+#
+# Instrument metadata:
+# Python-managed MarketForge instrument catalog.
+#
+# IMPORTANT:
+# - One notification contains one trade object.
+# - create_time_ms may have submillisecond precision.
+# - id and id_market have different identity scopes.
+# - Market-specific IDs increase but exact consecutive
+#   increments must not be assumed.
+# - Unified pairs may have actual assets differing
+#   from the nominal subscribed currency pair.
+
+schema_version = 1
+
+[format]
+id = "gateio_spot"
+exchange = "gateio"
+market = "spot"
+channel = "trades"
+
+encoding = "json"
+target_schema = "canonical_trade"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+channel_field = "channel"
+channel_value = "spot.trades"
+
+event_field = "event"
+event_value = "update"
+
+payload_path = "result"
+
+records = "single"
+
+# ============================================================
+# RECORD EXTRACTION
+# ============================================================
+
+[records]
+path = "result"
+
+representation = "object"
+record_type = "object"
+
+# One trade object per standard notification.
+preserve_source_order = true
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+trade_id = "id"
+market_trade_id = "id_market"
+
+price = "price"
+quantity_base = "amount"
+
+taker_side = "side"
+
+trade_timestamp = "create_time_ms"
+trade_timestamp_seconds = "create_time"
+
+currency_pair = "currency_pair"
+
+trade_range = "range"
+
+actual_base_asset = "stock"
+actual_quote_asset = "money"
+
+trade_mode = "trade_mode"
+
+# ============================================================
+# ENVELOPE FIELDS
+# ============================================================
+
+[envelope]
+channel = "channel"
+event = "event"
+
+message_timestamp_seconds = "time"
+message_timestamp_ms = "time_ms"
+
+# Envelope timestamps are exchange publication times.
+# They are not substitutes for execution timestamps.
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+trade_id = "u64"
+market_trade_id = "u64"
+
+price = "decimal_string"
+quantity_base = "decimal_string"
+
+taker_side = "string"
+
+# Fractional milliseconds must be preserved exactly.
+trade_timestamp = "decimal_string"
+
+trade_timestamp_seconds = "i64"
+
+currency_pair = "string"
+
+trade_range = "optional_string"
+
+actual_base_asset = "optional_string"
+actual_quote_asset = "optional_string"
+
+trade_mode = "optional_u8"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "trade_timestamp"
+
+source_unit = "milliseconds_decimal"
+canonical_unit = "nanoseconds"
+
+# Example:
+#
+# "1606292218213.4578" milliseconds
+#
+# becomes:
+#
+# 1606292218213457800 nanoseconds
+#
+# Do not parse through floating-point arithmetic.
+# Do not truncate fractional milliseconds.
+
+parse_strategy = "exact_decimal_to_nanoseconds"
+
+preserve_submillisecond_precision = true
+
+# Retain the integer-second timestamp as optional
+# source metadata or for consistency validation.
+
+secondary_timestamp_source = "trade_timestamp_seconds"
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+source = "price"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+source = "quantity_base"
+
+# Standard Gate Spot trade amount is base-denominated.
+#
+# Unified trading-pair behavior requires validation
+# of actual base/quote assets.
+
+raw_unit = "base_asset"
+
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+derive_quote_quantity = true
+
+# Use existing MarketForge decimal and instrument
+# normalization primitives.
+#
+# No contract multipliers are applicable to
+# ordinary Spot instruments.
+
+# ============================================================
+# AGGRESSOR SIDE
+# ============================================================
+
+[normalization.side]
+source = "taker_side"
+
+buy = "buy"
+sell = "sell"
+
+unknown_policy = "reject"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "currency_pair"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "gateio"
+market = "spot"
+
+require_known_instrument = true
+
+validate_subscription_symbol = true
+
+# Gate symbols commonly use BASE_QUOTE formatting.
+# Example: BTC_USDT
+#
+# The actual instrument identity is resolved from
+# authoritative catalog metadata.
+
+# ============================================================
+# UNIFIED TRADING PAIR METADATA
+# ============================================================
+
+[unified_trade]
+mode_source = "trade_mode"
+
+actual_base_source = "actual_base_asset"
+actual_quote_source = "actual_quote_asset"
+
+# Gate trade_mode:
+#
+# 0 = regular
+# 1 = quote-side unified
+# 2 = base-side unified
+# 3 = both sides unified
+
+regular_mode = 0
+
+preserve_trade_mode = true
+preserve_actual_assets = true
+
+# For non-regular modes, stock/money may differ
+# from the nominal subscribed currency pair.
+#
+# Do not blindly derive economic quantities using
+# nominal base/quote metadata when actual assets
+# differ.
+#
+# Unresolved actual-asset semantics must produce
+# an explicit validation failure or unsupported
+# classification, not fabricated canonical values.
+
+nonregular_mode_policy = "require_supported_asset_resolution"
+
+# ============================================================
+# NATIVE TRADE IDENTITY
+# ============================================================
+
+[identity]
+strategy = "native_market_trade_id"
+
+# Market-specific identifier is preferred for
+# per-instrument identity and diagnostics.
+
+source = "market_trade_id"
+
+preserve_exchange_trade_id = true
+preserve_market_trade_id = true
+
+deduplication_key = [
+    "exchange",
+    "market",
+    "instrument",
+    "market_trade_id",
+]
+
+# id:
+#   Exchange-wide trade identifier.
+#
+# id_market:
+#   Increasing trade identifier within one market.
+#
+# Preserve both without conflating their scopes.
+
+# ============================================================
+# TRADE RANGE
+# ============================================================
+
+[attributes.trade_range]
+source = "trade_range"
+
+preserve = true
+missing_policy = "unknown"
+
+# Native representation:
+#
+# "start-end"
+#
+# Do not interpret range as a confirmed missing-trade
+# count without a separately verified protocol rule.
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_nonpositive_quantity = true
+
+detect_duplicate_trade_ids = true
+
+# Market-specific IDs are documented as increasing.
+# Their exact consecutive-integer behavior is not
+# established here.
+
+detect_market_trade_id_regression = true
+detect_market_trade_id_gaps = false
+
+# Preserve exchange-wide and market-specific identities
+# separately when performing recovery reconciliation.
+
+validate_timestamp_consistency = true
+
+# A failure to interpret unified-pair economic
+# semantics must not silently create incorrect
+# canonical base/quote quantities.
+
+validate_unified_trade_assets = true
+
+gap_action = "report_unverified_coverage"
+
+# Recovery is coordinated by the Recovery Coordinator.
+#
+# The exchange profile references:
+#
+# GET /spot/trades
+#
+# REST trade history supports time-range querying.
+# Recovered records must be reconciled by native
+# identity and actual coverage.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+event_type = "trade"
+trade_semantics = "individual"
+
+preserve_native_trade_id = true
+preserve_market_trade_id = true
+preserve_trade_range = true
+
+preserve_trade_mode = true
+preserve_actual_assets = true
+
+preserve_event_timestamp = true
+preserve_source_provenance = true
+
+# Emit one canonical trade per accepted notification.
+#
+# Preserve exact timestamps and decimal quantities.
+#
+# Supplementary native fields require a compatible
+# canonical/provenance representation.
+#
+# Live event envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# received_timestamp_ns

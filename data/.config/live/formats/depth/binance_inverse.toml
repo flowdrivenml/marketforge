@@ -1,0 +1,341 @@
+# MarketForge Live — Binance COIN-M Futures L2 Depth
+#
+# Proposed MarketForge Live format schema v1.
+#
+# Official references:
+# https://developers.binance.com/en/docs/products/derivatives-trading-coin-futures/websocket-market-streams/How-to-manage-a-local-order-book-correctly
+# https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-coin-m-futures/api/ws-streams/
+# https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-coin-m-futures/api/rest-api/market-data
+#
+# Exchange: Binance
+# Market: Inverse (COIN-M)
+# Channel: <symbol>@depth
+#
+# Connectivity and REST configuration:
+# exchanges/binance_inverse.toml
+#
+# Instrument specifications:
+# Python-managed MarketForge instrument catalog.
+#
+# This format describes differential depth updates,
+# NOT partial order-book snapshots.
+
+schema_version = 1
+
+[format]
+id = "binance_inverse"
+exchange = "binance"
+market = "inverse"
+channel = "depth"
+
+encoding = "json"
+target_schema = "canonical_l2_update"
+
+# ============================================================
+# MESSAGE IDENTIFICATION
+# ============================================================
+
+[message]
+root = "$"
+
+event_type_field = "e"
+event_type_value = "depthUpdate"
+
+symbol_field = "s"
+records = "single"
+
+# ============================================================
+# FIELD EXTRACTION
+# ============================================================
+
+[fields]
+first_update_id = "U"
+last_update_id = "u"
+previous_update_id = "pu"
+
+exchange_event_timestamp = "E"
+transaction_timestamp = "T"
+
+pair_symbol = "ps"
+
+# ============================================================
+# FIELD TYPES
+# ============================================================
+
+[types]
+first_update_id = "u64"
+last_update_id = "u64"
+previous_update_id = "u64"
+
+exchange_event_timestamp = "i64"
+transaction_timestamp = "i64"
+
+pair_symbol = "optional_string"
+
+# ============================================================
+# TIMESTAMP NORMALIZATION
+# ============================================================
+
+[timestamps]
+event_source = "transaction_timestamp"
+
+source_unit = "milliseconds"
+canonical_unit = "nanoseconds"
+
+preserve_exchange_event_timestamp = true
+
+# ============================================================
+# BID LEVELS
+# ============================================================
+
+[levels.bids]
+path = "b"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "bid"
+
+# ============================================================
+# ASK LEVELS
+# ============================================================
+
+[levels.asks]
+path = "a"
+
+representation = "array"
+level_type = "array"
+
+price_index = 0
+quantity_index = 1
+
+price_type = "decimal_string"
+quantity_type = "decimal_string"
+
+side = "ask"
+
+# ============================================================
+# PRICE NORMALIZATION
+# ============================================================
+
+[normalization.price]
+representation = "exact_decimal"
+
+allow_zero = false
+allow_negative = false
+
+# ============================================================
+# QUANTITY NORMALIZATION
+# ============================================================
+
+[normalization.quantity]
+
+# Binance COIN-M order-book quantities represent contracts.
+#
+# Quantity normalization requires:
+#
+# quantity_type
+# contract_value
+# contract_value_asset
+#
+# These are resolved from the existing instrument catalog.
+# No instrument-specific contract multiplier is stored here.
+
+raw_unit = "contracts"
+quantity_semantics = "instrument_metadata"
+
+representation = "exact_decimal"
+
+allow_zero = true
+allow_negative = false
+
+# Binance depth messages contain absolute level quantities,
+# not relative quantity increments.
+
+update_mode = "absolute"
+zero_quantity_action = "delete"
+
+# ============================================================
+# INSTRUMENT RESOLUTION
+# ============================================================
+
+[instrument]
+source = "symbol"
+
+resolver = "marketforge_instrument_catalog"
+
+exchange = "binance"
+market = "inverse"
+
+require_known_instrument = true
+
+# Instrument-specific normalization parameters are compiled
+# once when the source stream is initialized.
+#
+# No PostgreSQL queries occur on the per-event processing path.
+
+# ============================================================
+# NATIVE SEQUENCING
+# ============================================================
+
+[sequence]
+strategy = "binance_futures_previous_update"
+
+first_field = "first_update_id"
+last_field = "last_update_id"
+previous_field = "previous_update_id"
+
+previous_field_required = true
+
+validate_range = true
+require_first_lte_last = true
+
+# Subsequent updates must satisfy:
+#
+# current.pu == previous.u
+#
+# Failure requires book invalidation and resynchronization.
+
+continuity_strategy = "previous_last_update_id"
+
+# ============================================================
+# BOOK SYNCHRONIZATION
+# ============================================================
+
+[synchronization]
+strategy = "binance_futures_diff_depth"
+
+snapshot_source = "rest"
+snapshot_endpoint = "depth_snapshot"
+
+# WebSocket updates must be buffered before requesting
+# the authoritative REST snapshot.
+
+buffer_updates_before_snapshot = true
+
+snapshot_sequence_field = "lastUpdateId"
+
+# Binance COIN-M official synchronization procedure:
+#
+# 1. Open the WebSocket diff-depth stream.
+# 2. Begin buffering received updates.
+# 3. Request the REST depth snapshot.
+# 4. Discard buffered updates with:
+#
+#        u < snapshot.lastUpdateId
+#
+# 5. The first processed event must satisfy:
+#
+#        U <= snapshot.lastUpdateId <= u
+#
+# 6. Subsequent updates must satisfy:
+#
+#        current.pu == previous.u
+#
+# 7. On continuity failure, invalidate and resynchronize.
+#
+# A zero-quantity update removes the specified price level.
+#
+# Removing a level absent from the local book is valid.
+
+snapshot_discard_strategy = "last_update_id_lt_snapshot"
+
+initial_bridge_strategy = "binance_futures_snapshot_bridge"
+
+continuity_strategy = "previous_last_update_id"
+
+# ============================================================
+# BOOK STATE
+# ============================================================
+
+[book]
+storage = "marketforge_book_store"
+
+update_type = "absolute"
+zero_quantity_action = "delete"
+
+# A WebSocket message containing multiple level changes
+# must be processed as one logical canonical L2 update.
+
+atomic_message_updates = true
+
+# Valid publication requires a synchronized book generation.
+
+require_valid_generation = true
+
+# ============================================================
+# INTEGRITY VALIDATION
+# ============================================================
+
+[integrity]
+reject_malformed_json = true
+reject_missing_required_fields = true
+
+reject_invalid_numeric_values = true
+reject_nonpositive_price = true
+reject_negative_quantity = true
+
+detect_sequence_gaps = true
+detect_stale_updates = true
+
+validate_previous_update_id = true
+
+gap_action = "invalidate_and_resynchronize"
+
+# The standard COIN-M diff-depth message does not expose
+# a checksum field.
+
+checksum_strategy = "none"
+
+# ============================================================
+# RECOVERY
+# ============================================================
+
+[recovery]
+strategy = "rest_snapshot_resynchronization"
+
+on_sequence_gap = "resynchronize"
+on_connection_loss = "resynchronize"
+
+require_generation_fencing = true
+
+# Stale REST snapshot responses must not initialize
+# newer synchronization generations.
+#
+# A successful snapshot restores current book validity,
+# not necessarily complete historical L2 coverage.
+
+# ============================================================
+# CANONICAL OUTPUT
+# ============================================================
+
+[output]
+event_type = "l2_update"
+
+preserve_native_sequence_range = true
+preserve_previous_update_id = true
+
+preserve_event_timestamp = true
+preserve_exchange_event_timestamp = true
+
+preserve_source_provenance = true
+
+atomic_updates = true
+
+# Snapshot initialization uses a separate canonical
+# L2 snapshot representation.
+#
+# Live event envelope supplies:
+#
+# stream_id
+# stream_cursor
+# connection_generation
+# subscription_generation
+# book_generation
+# received_timestamp_ns
