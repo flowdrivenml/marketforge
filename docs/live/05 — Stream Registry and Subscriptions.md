@@ -1742,29 +1742,45 @@ Required functionality:
 
 The TUI must not bypass registry command validation.
 
-### 21.4 API Integration
+### 21.4 Control API Integration
 
-The runtime API exposes the same control-plane operations as the TUI.
+The runtime exposes stream-management operations through the versioned
+Control API defined in Document 13 — Runtime Configuration and Control API.
 
-Conceptual endpoints:
+The Ratatui interface and external clients use the same authoritative
+control-plane contracts. Neither may bypass Stream Registry validation
+or directly mutate internal runtime state.
 
-    GET    /streams
-    GET    /streams/{stream_id}
+The following capabilities map to the conceptual `ControlCommand`
+vocabulary defined in Document 13, Section 5.3.
 
-    POST   /streams
-    POST   /streams/{stream_id}/activate
-    POST   /streams/{stream_id}/deactivate
-    POST   /streams/{stream_id}/restart
+| Capability                             | Control API operation                                                                               |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| List registered streams                | `ListStreams`                                                                                       |
+| Inspect an individual stream           | `GetStream`                                                                                         |
+| Register a source stream               | `RegisterStream`                                                                                    |
+| Activate a source stream               | `ActivateStream`                                                                                    |
+| Deactivate a source stream             | `DeactivateStream`                                                                                  |
+| Remove a source stream                 | `RemoveStream`                                                                                      |
+| Inspect an asynchronous operation      | `GetOperation`                                                                                      |
+| Update persistent stream configuration | Configuration Manager via `ApplyConfiguration`; exact resource-scoped mapping requires confirmation |
+| Restart a stream                       | Exact control command and restart semantics require confirmation                                    |
+| Subscribe to stream lifecycle events   | Event subscription and framing contract require confirmation                                        |
 
-    PATCH  /streams/{stream_id}
-    DELETE /streams/{stream_id}
+The command names above represent the conceptual vocabulary in Document 13.
+They do not independently define the final serialized wire schema.
 
-    GET    /streams/{stream_id}/operations
-    GET    /streams/events
+Control messages use the Unix-domain control socket and the versioned,
+length-prefixed JSON framing specified in Document 13, Section 20.
 
-The exact HTTP contract is defined separately.
+The Control API is separate from the binary Unix-domain socket used
+for canonical market-data distribution.
 
-Long-running operations return an operation identifier rather than blocking until exchange synchronization completes.
+Long-running operations return an operation identifier rather than
+blocking until exchange synchronization completes.
+
+A command acknowledgement confirms acceptance or rejection, not
+successful completion of asynchronous runtime work.
 
 ---
 

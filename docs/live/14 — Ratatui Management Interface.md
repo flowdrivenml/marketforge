@@ -5281,7 +5281,20 @@ The progress model must come from the Runtime Reconciler.
 
 ### 25.8 Restart-Required Changes
 
-A valid restart-required configuration change may be persisted as desired state while remaining unapplied to the current runtime.
+A valid configuration change classified as `ServiceRestart` may be accepted
+and durably persisted as a new desired configuration revision without
+immediately changing the running service.
+
+The Control API must distinguish:
+
+- **Desired configuration:** The accepted and persisted configuration revision.
+- **Applied configuration:** The configuration whose required runtime effects
+  have successfully completed.
+- **Actual runtime state:** The resources, connections, and settings currently
+  active in the running daemon.
+
+For restart-required changes, the desired revision may be newer than the
+applied revision.
 
 The UI should display:
 
@@ -5289,10 +5302,27 @@ The UI should display:
 
     Restart Required
 
+    Desired Revision:
+        45
+
+    Applied Revision:
+        44
+
     Current Runtime Uses:
         Previous Effective Value
 
-The TUI must not claim that a new listener or exchange endpoint is already active.
+The revision numbers above are illustrative.
+
+The TUI must not claim that newly configured listeners, exchange endpoints,
+or other restart-required settings are active until the required restart
+and subsequent runtime reconciliation have succeeded.
+
+Successful persistence does not imply successful runtime application.
+
+The Ratatui interface obtains desired configuration, applied revision
+information, and actual runtime state through the authoritative Control API
+defined in Document 13. It must not infer successful application merely
+because a configuration update was accepted.
 
 ### 25.9 Rollback
 
@@ -6066,7 +6096,19 @@ Sensitive information must remain redacted.
 
 ## 30. Asynchronous Control Client Integration
 
-The Ratatui application communicates with MarketForge Live through the versioned Control API defined in Document 13.
+The Ratatui application communicates with MarketForge Live through the
+versioned Control API defined in Document 13.
+
+The Ratatui control client uses the configured Unix-domain control socket.
+Requests and responses are serialized as JSON and use the length-prefixed
+framing defined in Document 13, Section 20.
+
+This control socket is separate from the binary Unix-domain socket used
+for canonical market-data distribution in Document 08. Ratatui must not
+interpret market-data distribution frames as Control API messages.
+
+Document 13 is authoritative for control protocol versioning, message
+framing, request correlation, response envelopes, and error semantics.
 
 Control communication must remain independent of terminal rendering.
 

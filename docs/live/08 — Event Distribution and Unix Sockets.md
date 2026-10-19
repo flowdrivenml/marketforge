@@ -61,6 +61,38 @@ The initial Publisher must not depend on:
 
 Unix domain sockets provide local interprocess communication using operating-system-managed socket buffers and standard asynchronous I/O.
 
+### 1.2.1 Separation from the Control API
+
+MarketForge Live exposes two independent Unix-domain socket interfaces:
+
+| Interface | Protocol | Responsibility | Authoritative Document |
+|---|---|---|---|
+| Market-Data Socket | Versioned binary event protocol | Canonical event distribution, subscriptions, and supported replay delivery | Document 08 |
+| Control Socket | Versioned, length-prefixed JSON | Runtime management, configuration, operational commands, and status queries | Document 13 |
+
+These interfaces have separate application protocols and ownership boundaries.
+
+The Event Distribution subsystem owns the market-data publication interface.
+The Control API subsystem owns the management interface.
+
+Control API messages must not be interpreted as canonical market-data frames.
+Canonical market-data frames must not be interpreted as Control API messages.
+
+Clients must use the appropriate socket and protocol for each operation.
+
+The Ratatui interface and Python orchestration communicate with the daemon
+through the Control API defined in Document 13.
+
+Market-data consumers receive canonical events through the binary publication
+interface defined in this document.
+
+The two interfaces may reuse generic transport or framing utilities where
+compatible, but they must not share incompatible application-level message
+contracts.
+
+The optional Prometheus HTTP exposition endpoint is separate from both
+Unix-domain sockets and does not provide runtime management operations.
+
 ### 1.3 Supported Event Types
 
 The initial Publisher distributes:

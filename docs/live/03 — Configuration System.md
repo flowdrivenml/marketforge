@@ -2042,17 +2042,25 @@ Ratatui must not directly modify TOML files or access internal runtime configura
 
 ### 15.1 Configuration Operations
 
-Initial operations:
+The following operations are logical Control API capabilities, not HTTP
+endpoints. External management clients communicate with MarketForge Live
+through the versioned Unix-domain control socket defined in
+Document 13 — Runtime Configuration and Control API.
 
-| Operation | Responsibility |
-|---|---|
-| `config.get` | Retrieve current desired configuration |
-| `config.effective` | Retrieve resolved effective values |
-| `config.validate` | Validate proposed changes |
-| `config.diff` | Calculate affected resources |
-| `config.apply` | Submit a revision-checked configuration update |
-| `config.status` | Inspect runtime convergence |
-| `config.history` | Retrieve accepted revision metadata |
+Requests and responses use the length-prefixed JSON framing specified
+in Document 13, Section 20. These operations must pass through the
+authoritative Configuration Manager and respect configuration revision,
+validation, and runtime reconciliation contracts.
+
+| Operation          | Responsibility                                 |
+| ------------------ | ---------------------------------------------- |
+| `config.get`       | Retrieve current desired configuration         |
+| `config.effective` | Retrieve resolved effective values             |
+| `config.validate`  | Validate proposed changes                      |
+| `config.diff`      | Calculate affected resources                   |
+| `config.apply`     | Submit a revision-checked configuration update |
+| `config.status`    | Inspect runtime convergence                    |
+| `config.history`   | Retrieve accepted revision metadata            |
 
 The final protocol names and serialization format belong to the Control API specification.
 
