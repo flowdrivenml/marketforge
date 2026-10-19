@@ -1,0 +1,245 @@
+# MarketForge Live — initial multi-exchange smoke-test sources
+# Proposed schema v1; all symbols must resolve through the instrument catalog.
+# Spot/linear use BTCUSDT. Inverse uses BTCUSD (USD-quoted, BTC-settled).
+# Exchange-specific native symbols, routes, depth limits and update intervals come from compiled exchange profiles.
+# Activating all streams simultaneously is an integration/load test; set enabled=false selectively for incremental tests.
+schema_version = 1
+
+# --- BINANCE ---
+[[sources]]
+id = "binance_spot_btcusdt_trades"
+exchange = "binance"
+market = "spot"
+instrument = "BTCUSDT"
+channel = "trades"
+enabled = true
+record = false
+
+[[sources]]
+id = "binance_spot_btcusdt_depth"
+exchange = "binance"
+market = "spot"
+instrument = "BTCUSDT"
+channel = "depth"
+enabled = true
+record = false
+
+[[sources]]
+id = "binance_linear_btcusdt_trades"
+exchange = "binance"
+market = "linear"
+instrument = "BTCUSDT"
+channel = "trades"
+enabled = true
+record = false
+
+[[sources]]
+id = "binance_linear_btcusdt_depth"
+exchange = "binance"
+market = "linear"
+instrument = "BTCUSDT"
+channel = "depth"
+enabled = true
+record = false
+
+[[sources]]
+id = "binance_inverse_btcusd_trades"
+exchange = "binance"
+market = "inverse"
+instrument = "BTCUSD"
+channel = "trades"
+enabled = true
+record = false
+
+[[sources]]
+id = "binance_inverse_btcusd_depth"
+exchange = "binance"
+market = "inverse"
+instrument = "BTCUSD"
+channel = "depth"
+enabled = true
+record = false
+
+# --- BYBIT ---
+[[sources]]
+id = "bybit_spot_btcusdt_trades"
+exchange = "bybit"
+market = "spot"
+instrument = "BTCUSDT"
+channel = "trades"
+enabled = true
+record = false
+
+[[sources]]
+id = "bybit_spot_btcusdt_depth"
+exchange = "bybit"
+market = "spot"
+instrument = "BTCUSDT"
+channel = "depth"
+enabled = true
+record = false
+
+[[sources]]
+id = "bybit_linear_btcusdt_trades"
+exchange = "bybit"
+market = "linear"
+instrument = "BTCUSDT"
+channel = "trades"
+enabled = true
+record = false
+
+[[sources]]
+id = "bybit_linear_btcusdt_depth"
+exchange = "bybit"
+market = "linear"
+instrument = "BTCUSDT"
+channel = "depth"
+enabled = true
+record = false
+
+[[sources]]
+id = "bybit_inverse_btcusd_trades"
+exchange = "bybit"
+market = "inverse"
+instrument = "BTCUSD"
+channel = "trades"
+enabled = true
+record = false
+
+[[sources]]
+id = "bybit_inverse_btcusd_depth"
+exchange = "bybit"
+market = "inverse"
+instrument = "BTCUSD"
+channel = "depth"
+enabled = true
+record = false
+
+id = "bitget_linear_btcusdt_trades"
+exchange = "bitget"
+market = "linear"
+instrument = "BTCUSDT"
+channel = "trades"
+enabled = true
+record = false
+
+[[sources]]
+id = "bitget_linear_btcusdt_depth"
+exchange = "bitget"
+market = "linear"
+instrument = "BTCUSDT"
+channel = "depth"
+enabled = true
+record = false
+
+[[sources]]
+id = "bitget_inverse_btcusd_trades"
+exchange = "bitget"
+market = "inverse"
+instrument = "BTCUSD"
+channel = "trades"
+enabled = true
+record = false
+
+[[sources]]
+id = "bitget_inverse_btcusd_depth"
+exchange = "bitget"
+market = "inverse"
+instrument = "BTCUSD"
+channel = "depth"
+enabled = true
+record = false
+
+# --- GATEIO ---
+[[sources]]
+id = "gateio_spot_btcusdt_trades"
+exchange = "gateio"
+market = "spot"
+instrument = "BTCUSDT"
+channel = "trades"
+enabled = true
+record = false
+
+[[sources]]
+id = "gateio_spot_btcusdt_depth"
+exchange = "gateio"
+market = "spot"
+instrument = "BTCUSDT"
+channel = "depth"
+enabled = true
+record = false
+
+[[sources]]
+id = "gateio_linear_btcusdt_trades"
+exchange = "gateio"
+market = "linear"
+instrument = "BTCUSDT"
+channel = "trades"
+enabled = true
+record = false
+
+[[sources]]
+id = "gateio_linear_btcusdt_depth"
+exchange = "gateio"
+market = "linear"
+instrument = "BTCUSDT"
+channel = "depth"
+enabled = true
+record = false
+
+[[sources]]
+id = "gateio_inverse_btcusd_trades"
+exchange = "gateio"
+market = "inverse"
+instrument = "BTCUSD"
+channel = "trades"
+enabled = true
+record = false
+
+[[sources]]
+id = "gateio_inverse_btcusd_depth"
+exchange = "gateio"
+market = "inverse"
+instrument = "BTCUSD"
+channel = "depth"
+enabled = true
+record = false
+
+# --- BYBIT SPOT CONVERSION REFERENCES ---
+# These pair listings must be verified against the target Bybit venue/catalog before activation.
+# Start disabled until confirmed; both trades and depth declared for symmetric channel testing.
+[[sources]]
+id = "bybit_spot_ethbtc_trades"
+exchange = "bybit"
+market = "spot"
+instrument = "ETHBTC"
+channel = "trades"
+enabled = false
+record = false
+
+[[sources]]
+id = "bybit_spot_ethbtc_depth"
+exchange = "bybit"
+market = "spot"
+instrument = "ETHBTC"
+channel = "depth"
+enabled = false
+record = false
+
+[[sources]]
+id = "bybit_spot_btcusdc_trades"
+exchange = "bybit"
+market = "spot"
+instrument = "BTCUSDC"
+channel = "trades"
+enabled = false
+record = false
+
+[[sources]]
+id = "bybit_spot_btcusdc_depth"
+exchange = "bybit"
+market = "spot"
+instrument = "BTCUSDC"
+channel = "depth"
+enabled = false
+record = false

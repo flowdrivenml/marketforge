@@ -232,6 +232,23 @@ enabled = true
 detailed_timing = false
 snapshot_interval_ms = 1000
 
+[metrics.prometheus]
+enabled = false
+
+# Local, read-only HTTP exposition endpoint.
+listen_address = "127.0.0.1:9091"
+path = "/metrics"
+
+# Maximum simultaneous HTTP requests served.
+max_concurrent_requests = 8
+
+# Maximum supported response size.
+max_response_bytes = 4194304
+
+# The exporter may refresh a cached representation
+# independently of Prometheus scrape frequency.
+cache_interval_ms = 1000
+
 [logging]
 level = "info"
 
@@ -294,7 +311,115 @@ Changing a global setting must not restart exchange connections unless explicitl
 Existing subscribers must not be disconnected merely because the configured maximum subscriber count is reduced below the current count.
 
 ---
+### 4.4 Optional Metrics Export Configuration
 
+The Metrics subsystem supports an optional Prometheus exporter.
+
+The exporter is configured independently of native metric collection.
+
+#### Configuration Ownership
+
+The Metrics Registry owns internal measurements.
+
+The Prometheus exporter owns only:
+
+- Exposition formatting.
+- HTTP listener lifecycle.
+- Read-only scrape responses.
+- Export-specific resource limits.
+- Export-specific diagnostics.
+
+The exporter must not create an independent metric collection
+or health evaluation system.
+
+#### Activation
+
+When:
+
+    metrics.prometheus.enabled = false
+
+the exporter must not bind an HTTP listener.
+
+When enabled, it exposes selected metrics from the existing
+Metrics Registry.
+
+Prometheus and Grafana remain external applications.
+
+Their availability is not checked as a prerequisite for
+MarketForge startup.
+
+#### Configuration Validation
+
+The configuration compiler must validate:
+
+- Supported listen address.
+- Valid TCP port.
+- Valid HTTP path.
+- Maximum concurrent requests.
+- Maximum response size.
+- Cache refresh interval.
+- Compatibility with effective metrics configuration.
+
+The exporter must not expose secrets, credentials,
+raw market-data payloads, or unrestricted runtime internals.
+
+#### Network Security
+
+The default listener must bind to loopback.
+
+Non-loopback exposure requires an explicitly validated
+deployment configuration and appropriate network access
+controls.
+
+The endpoint is read-only.
+
+It must not expose configuration mutation, stream management,
+recovery commands, or other control-plane operations.
+
+#### Runtime Configuration
+
+The initial implementation treats exporter activation and
+listener-address changes as ServiceRestart operations.
+
+Ordinary native metrics settings retain their existing
+hot-editable behavior.
+
+Future hot activation may be supported through a dedicated
+exporter lifecycle manager.
+
+#### Disabled Metrics
+
+When internal optional metrics collection is disabled,
+the exporter must not fabricate measurements.
+
+Authoritative lifecycle and integrity state remains
+available through the existing runtime interfaces.
+
+Disabling the Prometheus exporter must not disable
+native metrics collection.
+
+#### Failure Isolation
+
+Exporter initialization and runtime failures must be
+reported through local operational diagnostics.
+
+Exporter failures must not interrupt:
+
+- Exchange connections.
+- Canonical event processing.
+- Unix socket publication.
+- Live Retention.
+- PostgreSQL recording.
+- Recovery coordination.
+
+#### Configuration Invariant
+
+    Prometheus Export
+    Is An Optional Consumer
+    Of Existing Measurements.
+
+    It Is Not A Dependency
+    Of MarketForge Live.
 ## 5. Exchange and API-Family Configuration
 
 Exchange profiles describe protocol behavior independently of individual instruments and active subscriptions.

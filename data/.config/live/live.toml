@@ -1,0 +1,48 @@
+schema_version = 1
+
+[runtime]
+shutdown_timeout_seconds = 15
+
+[publication]
+enabled = true
+transport = "unix_socket"
+socket_path = "data/.live/marketforge-data.sock"
+max_subscribers = 64
+subscriber_queue_bytes = 16777216
+
+[control]
+socket_path = "data/.live/marketforge-control.sock"
+
+[recording]
+enabled = false
+batch_max_records = 10000
+batch_max_delay_ms = 100
+
+[retention]
+enabled = true
+memory_limit_bytes = 536870912
+spill_threshold_ratio = 0.70
+spill_directory = "data/.live/retention"
+max_disk_bytes = 107374182400
+
+[metrics]
+enabled = true
+detailed_timing = false
+snapshot_interval_ms = 1000
+
+[metrics.prometheus]
+enabled = false
+listen_address = "127.0.0.1:9091"
+path = "/metrics"
+max_concurrent_requests = 8
+max_response_bytes = 4194304
+cache_interval_ms = 1000
+
+[logging]
+level = "info"
+
+[defaults.recovery]
+enabled = true
+initial_backoff_ms = 500
+max_backoff_seconds = 60
+jitter = true

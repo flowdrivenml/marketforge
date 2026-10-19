@@ -88,7 +88,56 @@ Provide shared operational capabilities:
 - Runtime supervision and shutdown.
 
 Infrastructure services expose narrow interfaces and must not acquire ownership of unrelated domain state.
+### 2.4 Optional Prometheus Metrics Export
 
+MarketForge Live supports an optional read-only Prometheus
+exposition adapter.
+
+The adapter belongs to the infrastructure layer and consumes
+existing Metrics Registry measurements.
+
+Conceptually:
+
+    Metrics Registry
+          |
+          +-- HealthEvaluator
+          |
+          +-- Runtime Monitoring API
+          |
+          +-- Prometheus Exporter (optional)
+                    |
+                    v
+              HTTP /metrics
+                    |
+                    v
+                Prometheus
+                    |
+                    v
+                  Grafana
+
+The exporter must not:
+
+- Own independent market-data counters.
+- Reimplement health evaluation or integrity validation.
+- Modify authoritative runtime state.
+- Require changes to canonical event models.
+- Participate in exchange acquisition.
+- Block market-data processing on HTTP requests.
+- Start or supervise Prometheus or Grafana.
+
+The exporter is disabled by default.
+
+When disabled, it creates no HTTP listener or exporter-specific
+background work.
+
+Exporter failure must not invalidate MarketForge's internal
+metrics or stream-health guarantees.
+
+The exporter may be placed under:
+
+    engine/src/live/metrics/prometheus/
+
+The final module layout is an implementation decision.
 ## 3. Dependency Rules
 
 Dependencies must follow a directed hierarchy.

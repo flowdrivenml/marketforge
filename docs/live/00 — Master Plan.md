@@ -41,7 +41,13 @@ MarketForge Live must not implement feature generation, trading strategies, or h
 9. **Versioned runtime configuration.** Separate desired state from actual state; validate and reconcile changes without unnecessary restarts.
 10. **Observability by design.** Per-stream metrics, health states, integrity counters, and recovery diagnostics exist independently of Ratatui.
 11. **Deterministic verification.** Preserve historical tests; add simulated transports, fault injection, state-machine tests, and reproducible end-to-end tests.
-12. **Minimal infrastructure.** Rust/Tokio, Unix sockets, existing PostgreSQL, and local Parquet storage; no Kafka, Redis, Prometheus, Grafana, or web frontend required.
+12. **Minimal core infrastructure, optional observability integrations.**
+    MarketForge Live requires no external monitoring stack.
+    Native Rust metrics, health evaluation, the runtime API, and
+    Ratatui operate independently. An optional Prometheus exporter
+    may expose existing metrics for externally managed Prometheus
+    and Grafana deployments. Disabling the exporter must not affect
+    market-data acquisition, integrity, recovery, or local monitoring.
 
 ---
 
@@ -279,32 +285,18 @@ The future Bootstrap Engine consumes retention/replay interfaces rather than imp
 
 ## 8. Metrics and Health
 
-Native, lightweight Rust observability; no Prometheus/Grafana dependency.
+MarketForge Live provides native, lightweight Rust observability
+through the Metrics Registry and HealthEvaluator.
 
-Maintain per-connection and per-source-stream measurements:
+The runtime API and Ratatui expose monitoring information without
+requiring Prometheus or Grafana.
 
-- Connectivity, disconnects, reconnects, silence.
-- Received, normalized, rejected, published events.
-- Sequence-gap incidents and detectable missing sequence units.
-- Duplicates, malformed messages, checksum failures.
-- Book validity and recovery outcomes.
-- Throughput, normalization latency, publication latency.
-- Queue utilization, recording lag, retention pressure.
+An optional Prometheus exporter exposes selected existing metrics
+through a read-only HTTP endpoint.
 
-Do not equate missing sequence units with lost WebSocket messages without protocol evidence.
-
-Health exposes explicit operational states:
-
-```text
-HEALTHY
-DEGRADED
-RECOVERING
-FAILED
-```
-
-Current health and historical coverage completeness are represented independently.
-
-Expose immutable metrics snapshots and periodic subscriptions through the Unix control API.
+Prometheus and Grafana are external, independently operated
+applications and are never required for MarketForge startup,
+operation, or recovery.
 
 ---
 
