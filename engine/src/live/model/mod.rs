@@ -23,6 +23,10 @@ pub use cursor::{
     SubscriptionGeneration,
 };
 pub use demand::{DemandId, DemandOwner, RetentionSessionId, StreamHandle, SubscriberId};
+pub use envelope::{
+    EventProvenance, EventTiming, LiveEvent, LiveL2Group, LivePayload, NativeSequence,
+    NativeTradeId,
+};
 pub use identity::{
     ChannelKind, ChannelSpec, DerivedStreamId, ExchangeId, MarketKind, SourceStreamKey, StreamId,
     ValidationIssue, ValidationIssueKind, ValidationIssues,
