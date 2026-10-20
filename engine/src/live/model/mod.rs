@@ -22,7 +22,12 @@ pub use cursor::{
     BookGeneration, ConnectionGeneration, DerivedGeneration, LogEpoch, StreamCursor,
     SubscriptionGeneration,
 };
+pub use demand::{DemandId, DemandOwner, RetentionSessionId, StreamHandle, SubscriberId};
 pub use identity::{
     ChannelKind, ChannelSpec, DerivedStreamId, ExchangeId, MarketKind, SourceStreamKey, StreamId,
     ValidationIssue, ValidationIssueKind, ValidationIssues,
+};
+pub use lifecycle::{
+    ConnectionState, CoverageState, IntegrityFailure, IntegrityState, RecoveryState,
+    SourceStreamState, StreamLifecycle, SubscriptionState,
 };
