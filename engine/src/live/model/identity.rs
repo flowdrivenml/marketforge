@@ -68,9 +68,40 @@ pub struct SourceStreamKey {
 }
 
 /// Validation errors collected from a single SourceStreamKey check.
+///
+/// Consumers inspect this to determine whether definite failures exist
+/// (caller must reject) versus unresolved classifications (escalate to
+/// the configuration compiler).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationIssues {
     pub issues: Vec<ValidationIssue>,
+}
+
+impl ValidationIssues {
+    /// Whether any **definite** validation failures exist.
+    ///
+    /// Unresolved classifications (e.g., perpetuals without contract_kind)
+    /// do not count; they are informational for the configuration compiler.
+    pub fn has_definite_failures(&self) -> bool {
+        self.issues
+            .iter()
+            .any(|issue| issue.kind.is_definite_failure())
+    }
+
+    /// Definite validation failures only (unresolved classifications excluded).
+    pub fn definite_failures(&self) -> impl Iterator<Item = &ValidationIssue> + '_ {
+        self.issues
+            .iter()
+            .filter(|issue| issue.kind.is_definite_failure())
+    }
+
+    /// Unresolved classification requirements — metadata gaps the
+    /// configuration compiler must resolve.
+    pub fn unresolved_classifications(&self) -> impl Iterator<Item = &ValidationIssue> + '_ {
+        self.issues
+            .iter()
+            .filter(|issue| !issue.kind.is_definite_failure())
+    }
 }
 
 /// A single identity-consistency validation issue.
@@ -81,6 +112,9 @@ pub struct ValidationIssue {
 }
 
 /// Classification of a validated identity constraint.
+///
+// Public because configuration-compiler consumers need to discriminate
+// definite failures from unresolved classification requirements.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationIssueKind {
     /// SourceStreamKey.exchange and InstrumentIdentity.exchange do not match.
@@ -90,11 +124,28 @@ pub enum ValidationIssueKind {
     /// MarketKind is ambiguous with respect to the instrument identity
     /// metadata. The catalog does not distinguish linear from inverse
     /// for this instrument kind; the ambiguity must be resolved manually.
+    ///
+    /// Examples: `InstrumentKind::Perpetual` (contract_kind always None)
+    /// or `InstrumentKind::Future` with contract_kind missing.
+    /// This is an **unresolved classification**, not a definite user error.
     MarketKindAmbiguous,
     /// The instrument kind is not yet supported by the validation rules.
     UnsupportedInstrumentKind,
     /// A channel parameter violates a basic consistency rule.
     InvalidChannelSpec,
+}
+
+impl ValidationIssueKind {
+    /// Whether this issue represents a definite validation failure
+    /// versus an unresolved classification requirement.
+    ///
+    /// Definite failures must be addressed before the key can be used.
+    /// Unresolved classifications indicate missing metadata (e.g., perpetuals
+    /// without contract_kind) that the caller should escalate to the
+    /// configuration compiler for resolution.
+    pub fn is_definite_failure(&self) -> bool {
+        !matches!(self, ValidationIssueKind::MarketKindAmbiguous)
+    }
 }
 
 impl SourceStreamKey {
@@ -240,8 +291,18 @@ impl SourceStreamKey {
         ValidationIssues { issues }
     }
 
-    /// Create a SourceStreamKey, validating it returns any issues
-    /// (caller may inspect and decide whether to proceed).
+    /// Construct a SourceStreamKey candidate without validating catalog or
+    /// exchange-capability correctness.
+    ///
+    /// **This constructor does NOT establish** that:
+    /// - `exchange` matches `InstrumentIdentity.exchange`
+    /// - `market` is the correct category for the instrument
+    /// - the exchange supports acquisition for this instrument type
+    ///
+    /// Callers **must** run `validate()` and inspect the result before
+    /// using the key: use `has_definite_failures()` to reject outright
+    /// failures and `unresolved_classifications()` to escalate metadata
+    /// gaps to the configuration compiler.
     pub fn new(
         exchange: ExchangeId,
         market: MarketKind,
