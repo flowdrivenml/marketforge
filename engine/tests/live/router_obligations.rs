@@ -10,6 +10,9 @@
 //!
 //! Part 2 adds fan-out outcomes, journal handoff,
 //! cursor preservation, and transaction lifecycle tests.
+use crate::live::support::live_events::l2_event;
+use marketforge_engine::live::routing::router::FanoutCommitmentError;
+use marketforge_engine::live::routing::router::TrackedFanoutResult;
 use marketforge_engine::live::routing::router::{FanoutCommitmentCoordinator, TrackedFanoutError};
 use marketforge_engine::live::{
     foundation::cancellation::CancellationToken,
@@ -21,8 +24,6 @@ use marketforge_engine::live::{
         },
     },
 };
-
-use crate::live::support::live_events::l2_event;
 use marketforge_engine::live::{
     model::delivery::DeliveryCapacity,
     ports::routing::{
@@ -45,6 +46,7 @@ use marketforge_engine::live::{
         DeliveryObligation, DeliveryObligationId, DeliveryObligationSpec, FinalizationJournal,
     },
 };
+
 use std::sync::Arc;
 use std::{
     future::Future,
@@ -1286,4 +1288,254 @@ fn tracked_commitment_activation_is_non_abortable() {
     assert!(result.is_err());
 
     assert_eq!(tracker.len(), 2);
+}
+
+#[test]
+fn failed_tracked_activation_preserves_transaction_ownership() {
+    let (_, _, mut tracker, mut plan, prepared, obligations) = validation_fixture();
+
+    let original_ids: Vec<_> = obligations
+        .obligations()
+        .iter()
+        .map(|obligation| obligation.id)
+        .collect();
+
+    // Force validation failure.
+    plan.last_cursor = cursor(999);
+
+    let failure = FanoutCommitmentCoordinator::try_begin_tracked_commitment(
+        &mut tracker,
+        &plan,
+        &prepared,
+        obligations,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        failure.reason,
+        TrackedFanoutError::Validation(RoutingObligationValidationError::CursorRangeMismatch)
+    );
+
+    // The original transaction is still available.
+    let recovered = failure.obligations.unwrap();
+
+    let recovered_ids: Vec<_> = recovered
+        .obligations()
+        .iter()
+        .map(|obligation| obligation.id)
+        .collect();
+
+    assert_eq!(recovered_ids, original_ids);
+
+    // No obligations were silently removed.
+    assert_eq!(tracker.len(), 2);
+
+    // Controlled rollback remains possible.
+    tracker.abort_prepared(recovered).unwrap();
+
+    assert!(tracker.is_empty());
+}
+
+#[test]
+fn tracked_commitment_registry_change_aborts_obligations() {
+    let (registry, batch, mut tracker, plan, prepared, obligations) = validation_fixture();
+
+    let ids: Vec<_> = obligations
+        .obligations()
+        .iter()
+        .map(|obligation| obligation.id)
+        .collect();
+
+    // Change the registry revision after preparation.
+    registry.unregister(DestinationId(2)).unwrap();
+
+    let result = FanoutCommitmentCoordinator::commit_tracked(
+        &registry,
+        &mut tracker,
+        &plan,
+        prepared,
+        obligations,
+        batch,
+    );
+
+    assert!(matches!(result, TrackedFanoutResult::Rejected { .. }));
+
+    for id in ids {
+        assert_eq!(tracker.status(id), None);
+    }
+
+    assert!(tracker.is_empty());
+
+    let queue = registry.peek_queue(DestinationId(1)).unwrap();
+
+    assert_eq!(queue.snapshot().queued_batches, 0);
+}
+
+#[test]
+fn tracked_commitment_shutdown_aborts_obligations() {
+    let (registry, batch, mut tracker, plan, prepared, obligations) = validation_fixture();
+
+    let ids: Vec<_> = obligations
+        .obligations()
+        .iter()
+        .map(|obligation| obligation.id)
+        .collect();
+
+    let first_queue = registry.peek_queue(DestinationId(1)).unwrap();
+    let second_queue = registry.peek_queue(DestinationId(2)).unwrap();
+
+    registry.shutdown();
+
+    let result = FanoutCommitmentCoordinator::commit_tracked(
+        &registry,
+        &mut tracker,
+        &plan,
+        prepared,
+        obligations,
+        batch,
+    );
+
+    assert!(matches!(result, TrackedFanoutResult::Rejected { .. }));
+
+    for id in ids {
+        assert_eq!(tracker.status(id), None);
+    }
+
+    assert!(tracker.is_empty());
+
+    assert_eq!(first_queue.snapshot().queued_batches, 0);
+    assert_eq!(second_queue.snapshot().queued_batches, 0);
+}
+
+#[test]
+fn tracked_commitment_cursor_mismatch_aborts_before_enqueue() {
+    let (registry, batch, mut tracker, plan, prepared, obligations) = validation_fixture();
+
+    let ids: Vec<_> = obligations
+        .obligations()
+        .iter()
+        .map(|obligation| obligation.id)
+        .collect();
+
+    let first_queue = registry.peek_queue(DestinationId(1)).unwrap();
+    let second_queue = registry.peek_queue(DestinationId(2)).unwrap();
+
+    // Change the batch cursor identity without changing
+    // the prepared fan-out.
+    let different_batch = EventBatch::new(vec![
+        l2_event("obligation-source", 1, 100),
+        l2_event("obligation-source", 1, 101),
+    ])
+    .unwrap();
+
+    let result = FanoutCommitmentCoordinator::commit_tracked(
+        &registry,
+        &mut tracker,
+        &plan,
+        prepared,
+        obligations,
+        different_batch,
+    );
+
+    assert!(matches!(
+        result,
+        TrackedFanoutResult::Rejected {
+            reason: TrackedFanoutError::Precommit(FanoutCommitmentError::CursorMismatch),
+            ..
+        }
+    ));
+
+    assert!(tracker.is_empty());
+
+    for id in ids {
+        assert_eq!(tracker.status(id), None);
+    }
+
+    assert_eq!(first_queue.snapshot().queued_batches, 0);
+    assert_eq!(second_queue.snapshot().queued_batches, 0);
+
+    // Original batch remains valid.
+    assert_eq!(batch.len(), 2);
+}
+
+#[test]
+fn tracked_commitment_preserves_queue_capacity_ownership() {
+    let (registry, batch, mut tracker, plan, prepared, obligations) = validation_fixture();
+
+    let first_queue = registry.peek_queue(DestinationId(1)).unwrap();
+    let second_queue = registry.peek_queue(DestinationId(2)).unwrap();
+
+    let result = FanoutCommitmentCoordinator::commit_tracked(
+        &registry,
+        &mut tracker,
+        &plan,
+        prepared,
+        obligations,
+        batch.clone(),
+    );
+
+    assert!(matches!(result, TrackedFanoutResult::Complete { .. }));
+
+    for queue in [&first_queue, &second_queue] {
+        assert_eq!(queue.snapshot().queued_batches, 1);
+
+        assert_eq!(queue.capacity().usage().occupied_events, batch.len());
+
+        let queued = queue.try_dequeue().unwrap();
+
+        // Capacity remains occupied while the consumer
+        // owns the dequeued batch.
+        assert_eq!(queue.capacity().usage().occupied_events, batch.len());
+
+        drop(queued);
+
+        assert_eq!(queue.capacity().usage().occupied_events, 0);
+    }
+
+    // Queue capacity release does not finalize obligations.
+    assert_eq!(tracker.len(), 2);
+}
+
+#[test]
+fn tracked_partial_commitment_preserves_independent_ownership() {
+    let (registry, batch, mut tracker, plan, prepared, obligations) = validation_fixture();
+
+    let ids: Vec<_> = obligations
+        .obligations()
+        .iter()
+        .map(|obligation| (obligation.destination, obligation.id))
+        .collect();
+
+    let first_queue = registry.peek_queue(DestinationId(1)).unwrap();
+    let second_queue = registry.peek_queue(DestinationId(2)).unwrap();
+
+    second_queue.close();
+
+    let result = FanoutCommitmentCoordinator::commit_tracked(
+        &registry,
+        &mut tracker,
+        &plan,
+        prepared,
+        obligations,
+        batch.clone(),
+    );
+
+    assert!(matches!(result, TrackedFanoutResult::Partial { .. }));
+
+    assert_eq!(first_queue.snapshot().queued_batches, 1);
+    assert_eq!(second_queue.snapshot().queued_batches, 0);
+
+    assert_eq!(first_queue.capacity().usage().occupied_events, batch.len());
+
+    assert_eq!(second_queue.capacity().usage().occupied_events, 0);
+
+    for (destination, id) in ids {
+        let status = tracker.status(id).unwrap();
+
+        if destination == DestinationId(1) {
+            assert_eq!(status, DeliveryStatus::Progress(DeliveryStage::Queued));
+        } else {
+            assert!(matches!(status, DeliveryStatus::Failed(_)));
+        }
+    }
 }

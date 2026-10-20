@@ -193,10 +193,13 @@ impl PreparedObligationsHandle {
             .inner
             .take()
             .ok_or(PreparedObligationsHandleError::AlreadyCommitted)?;
-        tracker.begin_commitment(prepared).map(|mut handle| {
-            handle.committed = true;
-            handle
-        })
+        tracker
+            .begin_commitment(prepared)
+            .map(|mut handle| {
+                handle.committed = true;
+                handle
+            })
+            .map_err(|(error, _prepared)| error)
     }
 
     /// Attempt to abort this handle through the tracker.
@@ -1192,19 +1195,23 @@ impl AcknowledgementTracker {
     pub fn begin_commitment(
         &mut self,
         prepared: PreparedObligations,
-    ) -> Result<PreparedObligationsHandle, PreparedObligationsHandleError> {
+    ) -> Result<PreparedObligationsHandle, (PreparedObligationsHandleError, PreparedObligations)>
+    {
         let transaction_id = prepared.transaction_id();
 
-        let pending = self
-            .transaction_state
-            .remove(&transaction_id)
-            .ok_or(PreparedObligationsHandleError::AlreadyCommitted)?;
+        // Validate transaction existence without consuming ownership.
+        let Some(pending) = self.transaction_state.get(&transaction_id) else {
+            return Err((PreparedObligationsHandleError::AlreadyCommitted, prepared));
+        };
 
-        for id in &pending {
-            if !self.obligations.contains_key(id) {
-                return Err(PreparedObligationsHandleError::AlreadyCommitted);
-            }
+        // Validate all registered obligations before mutation.
+        if pending.iter().any(|id| !self.obligations.contains_key(id)) {
+            return Err((PreparedObligationsHandleError::AlreadyCommitted, prepared));
         }
+
+        // All checks succeeded.
+        // The transaction becomes non-abortable here.
+        self.transaction_state.remove(&transaction_id);
 
         Ok(PreparedObligationsHandle {
             inner: Some(prepared),

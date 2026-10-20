@@ -6,6 +6,9 @@
 //! Stage 1 does not reserve capacity or commit event batches.
 
 use crate::live::model::delivery::DeliveryStatus;
+use crate::live::model::delivery::{DeliveryFailure, DeliveryStage};
+use crate::live::routing::acknowledgement::DeliveryAcknowledgement;
+use crate::live::routing::acknowledgement::DeliveryObligation;
 use crate::live::routing::acknowledgement::PreparedObligationsHandle;
 use crate::live::routing::acknowledgement::{
     AcknowledgementError, AcknowledgementTracker, DeliveryCursorRange, DeliveryObligationSpec,
@@ -50,11 +53,17 @@ pub enum FanoutPreparationError {
         reason: AsyncQueueAdmissionError,
     },
 }
+#[derive(Debug)]
+pub struct TrackedCommitmentFailure {
+    pub reason: TrackedFanoutError,
+    pub obligations: Option<PreparedObligations>,
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrackedFanoutError {
     Validation(RoutingObligationValidationError),
     ObligationCommitment,
     RollbackFailed,
+    Precommit(FanoutCommitmentError),
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoutingObligationValidationError {
@@ -77,6 +86,31 @@ pub enum FanoutCommitResult {
     Partial(PartialFanoutCommitment),
 
     Rejected(FanoutCommitmentRejection),
+}
+
+#[derive(Debug)]
+pub enum TrackedFanoutResult {
+    Complete {
+        through: StreamCursor,
+        committed: Vec<CommittedDestination>,
+    },
+
+    Partial {
+        batch: EventBatch,
+        committed: Vec<CommittedDestination>,
+        failed: Vec<FailedDestinationCommitment>,
+    },
+
+    Rejected {
+        batch: EventBatch,
+        reason: TrackedFanoutError,
+    },
+    AcknowledgementFailed {
+        batch: EventBatch,
+        committed: Vec<CommittedDestination>,
+        failed: Vec<FailedDestinationCommitment>,
+        acknowledgement_errors: Vec<(DestinationId, AcknowledgementError)>,
+    },
 }
 
 #[derive(Debug)]
@@ -552,6 +586,51 @@ impl FanoutCommitmentCoordinator {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
+        Self::commit_locked(registry, prepared, batch)
+    }
+    fn validate_precommit(
+        registry: &RouterRegistry,
+        prepared: &PreparedFanout,
+        batch: &EventBatch,
+    ) -> Result<(), FanoutCommitmentError> {
+        // Caller must already hold registry.commitment.
+
+        let state = registry
+            .state
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        if state.shutting_down {
+            return Err(FanoutCommitmentError::ShuttingDown);
+        }
+
+        if state.revision != prepared.registry_revision {
+            return Err(FanoutCommitmentError::RegistryChanged);
+        }
+
+        if prepared.first_cursor != *batch.first_cursor()
+            || prepared.last_cursor != *batch.last_cursor()
+        {
+            return Err(FanoutCommitmentError::CursorMismatch);
+        }
+
+        if prepared.destinations.is_empty() {
+            return Err(FanoutCommitmentError::NoRequiredDestinations);
+        }
+
+        for destination in &prepared.destinations {
+            if !state.destinations.contains_key(&destination.id) {
+                return Err(FanoutCommitmentError::DestinationMismatch);
+            }
+        }
+
+        Ok(())
+    }
+    fn commit_locked(
+        registry: &RouterRegistry,
+        prepared: PreparedFanout,
+        batch: EventBatch,
+    ) -> FanoutCommitResult {
         let state = registry
             .state
             .read()
@@ -643,6 +722,146 @@ impl FanoutCommitmentCoordinator {
             })
         }
     }
+    pub fn commit_tracked(
+        registry: &RouterRegistry,
+        tracker: &mut AcknowledgementTracker,
+        plan: &RoutingPlan,
+        prepared: PreparedFanout,
+        obligations: PreparedObligations,
+        batch: EventBatch,
+    ) -> TrackedFanoutResult {
+        // Acquire the commitment lock BEFORE validation.
+        let _commitment = registry
+            .commitment
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        // Validate while holding the commitment lock.
+        if let Err(error) = Self::validate_precommit(registry, &prepared, &batch) {
+            if tracker.abort_prepared(obligations).is_err() {
+                return TrackedFanoutResult::Rejected {
+                    batch,
+                    reason: TrackedFanoutError::RollbackFailed,
+                };
+            }
+
+            return TrackedFanoutResult::Rejected {
+                batch,
+                reason: TrackedFanoutError::Precommit(error),
+            };
+        }
+
+        // Continue with the existing activation logic.
+        let activation = Self::try_begin_tracked_commitment(tracker, plan, &prepared, obligations);
+
+        let handle = match activation {
+            Ok(handle) => handle,
+
+            Err(failure) => {
+                if let Some(obligations) = failure.obligations {
+                    if tracker.abort_prepared(obligations).is_err() {
+                        return TrackedFanoutResult::Rejected {
+                            batch,
+                            reason: TrackedFanoutError::RollbackFailed,
+                        };
+                    }
+                }
+
+                return TrackedFanoutResult::Rejected {
+                    batch,
+                    reason: failure.reason,
+                };
+            }
+        };
+
+        let obligation_map: HashMap<DestinationId, _> = handle
+            .obligations()
+            .iter()
+            .map(|obligation| (obligation.destination, obligation.clone()))
+            .collect();
+
+        let result = Self::commit_locked(registry, prepared, batch.clone());
+
+        let (committed, failed) = match result {
+            FanoutCommitResult::Complete { committed, .. } => (committed, Vec::new()),
+
+            FanoutCommitResult::Partial(partial) => (partial.committed, partial.failed),
+
+            FanoutCommitResult::Rejected(_) => {
+                fail_tracked_obligations(
+                    tracker,
+                    handle.obligations(),
+                    DeliveryFailure::Unavailable,
+                )
+                .expect("active obligations must accept terminal failure");
+
+                return TrackedFanoutResult::Rejected {
+                    batch,
+                    reason: TrackedFanoutError::ObligationCommitment,
+                };
+            }
+        };
+        let mut acknowledgement_errors = Vec::new();
+
+        // Report successful queue commitments.
+        for destination in &committed {
+            let Some(obligation) = obligation_map.get(&destination.id) else {
+                // This should be impossible after successful validation,
+                // but do not panic after irreversible queue commitment.
+                continue;
+            };
+
+            if let Err(error) = tracker.acknowledge(DeliveryAcknowledgement {
+                obligation: obligation.id,
+                destination: obligation.destination,
+                range: obligation.range.clone(),
+                status: DeliveryStatus::Progress(DeliveryStage::Queued),
+            }) {
+                acknowledgement_errors.push((destination.id, error));
+            }
+        }
+
+        // Report failed queue commitments.
+        for destination in &failed {
+            let Some(obligation) = obligation_map.get(&destination.id) else {
+                continue;
+            };
+
+            if let Err(error) = tracker.acknowledge(DeliveryAcknowledgement {
+                obligation: obligation.id,
+                destination: obligation.destination,
+                range: obligation.range.clone(),
+                status: DeliveryStatus::Failed(map_queue_error_to_delivery_failure(
+                    &destination.reason,
+                )),
+            }) {
+                acknowledgement_errors.push((destination.id, error));
+            }
+        }
+
+        // All destination acknowledgements have been attempted.
+        if !acknowledgement_errors.is_empty() {
+            return TrackedFanoutResult::AcknowledgementFailed {
+                batch,
+                committed,
+                failed,
+                acknowledgement_errors,
+            };
+        }
+
+        if failed.is_empty() {
+            TrackedFanoutResult::Complete {
+                through: batch.last_cursor().clone(),
+                committed,
+            }
+        } else {
+            TrackedFanoutResult::Partial {
+                batch,
+                committed,
+                failed,
+            }
+        }
+    }
     /// Validate and activate prepared delivery obligations.
     ///
     /// This operation does not enqueue events.
@@ -669,9 +888,39 @@ impl FanoutCommitmentCoordinator {
             return Err(TrackedFanoutError::Validation(error));
         }
 
-        tracker
-            .begin_commitment(obligations)
-            .map_err(|_| TrackedFanoutError::ObligationCommitment)
+        match tracker.begin_commitment(obligations) {
+            Ok(handle) => Ok(handle),
+
+            Err((_, prepared)) => {
+                tracker
+                    .abort_prepared(prepared)
+                    .map_err(|_| TrackedFanoutError::RollbackFailed)?;
+
+                Err(TrackedFanoutError::ObligationCommitment)
+            }
+        }
+    }
+    pub fn try_begin_tracked_commitment(
+        tracker: &mut AcknowledgementTracker,
+        plan: &RoutingPlan,
+        prepared: &PreparedFanout,
+        obligations: PreparedObligations,
+    ) -> Result<PreparedObligationsHandle, TrackedCommitmentFailure> {
+        if let Err(error) = validate_routing_obligations(tracker, plan, prepared, &obligations) {
+            return Err(TrackedCommitmentFailure {
+                reason: TrackedFanoutError::Validation(error),
+                obligations: Some(obligations),
+            });
+        }
+
+        match tracker.begin_commitment(obligations) {
+            Ok(handle) => Ok(handle),
+
+            Err((_, obligations)) => Err(TrackedCommitmentFailure {
+                reason: TrackedFanoutError::ObligationCommitment,
+                obligations: Some(obligations),
+            }),
+        }
     }
 }
 
@@ -767,6 +1016,35 @@ pub fn validate_routing_obligations(
         if tracker.status(obligation.id) != Some(DeliveryStatus::Pending) {
             return Err(RoutingObligationValidationError::ObligationNotPending);
         }
+    }
+
+    Ok(())
+}
+
+fn map_queue_error_to_delivery_failure(error: &QueueError) -> DeliveryFailure {
+    match error {
+        QueueError::Capacity(_) => DeliveryFailure::CapacityExceeded,
+
+        QueueError::Closed => DeliveryFailure::Unavailable,
+
+        QueueError::MemoryAccountingOverflow | QueueError::ReservationMismatch => {
+            DeliveryFailure::Internal
+        }
+    }
+}
+
+fn fail_tracked_obligations(
+    tracker: &mut AcknowledgementTracker,
+    obligations: &[DeliveryObligation],
+    reason: DeliveryFailure,
+) -> Result<(), AcknowledgementError> {
+    for obligation in obligations {
+        tracker.acknowledge(DeliveryAcknowledgement {
+            obligation: obligation.id,
+            destination: obligation.destination,
+            range: obligation.range.clone(),
+            status: DeliveryStatus::Failed(reason),
+        })?;
     }
 
     Ok(())
