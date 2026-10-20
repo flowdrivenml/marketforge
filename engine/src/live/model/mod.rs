@@ -24,4 +24,5 @@ pub use cursor::{
 };
 pub use identity::{
     ChannelKind, ChannelSpec, DerivedStreamId, ExchangeId, MarketKind, SourceStreamKey, StreamId,
+    ValidationIssue, ValidationIssueKind, ValidationIssues,
 };
