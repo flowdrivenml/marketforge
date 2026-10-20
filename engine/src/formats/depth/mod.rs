@@ -1,4 +1,5 @@
 mod assembler;
+#[cfg(feature = "historical")]
 mod csv;
 mod json;
 mod outcome;
@@ -10,6 +11,7 @@ mod spec;
 pub mod transforms;
 mod update;
 
+#[cfg(feature = "historical")]
 pub use csv::DepthCsvAdapter;
 pub use relative::{RelativeAction, apply_relative_update};
 

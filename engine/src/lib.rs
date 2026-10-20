@@ -12,7 +12,6 @@ pub mod tui;
 #[cfg(feature = "historical")]
 pub mod decode;
 
-#[cfg(feature = "historical")]
 pub mod formats;
 
 #[cfg(feature = "historical")]
