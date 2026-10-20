@@ -313,62 +313,174 @@ fn closed_sink_rejects_new_acceptance() {
 }
 
 /// G: receipt remains valid after being claimed (try_take).
+///
+/// Requires the full lifecycle: accept → commit_resolution → try_take.
 #[test]
 fn receipt_valid_after_claim() {
     let obligation = make_obligation(1);
-    let sink = sink_with_capacity(5);
+    let mut tracker =
+        marketforge_engine::live::routing::acknowledgement::AcknowledgementTracker::new(10)
+            .unwrap();
+    tracker.register(obligation.clone()).unwrap();
+    tracker
+        .acknowledge(
+            marketforge_engine::live::routing::acknowledgement::DeliveryAcknowledgement {
+                obligation: obligation.id,
+                destination: obligation.destination,
+                range: obligation.range.clone(),
+                status: marketforge_engine::live::model::delivery::DeliveryStatus::Failed(
+                    marketforge_engine::live::model::delivery::DeliveryFailure::PersistenceFailed,
+                ),
+            },
+        )
+        .unwrap();
+    let mut journal = FinalizationJournal::new(10).unwrap();
+    tracker.finalize_into(obligation.id, &mut journal).unwrap();
 
-    let record = make_escalation_record(&obligation);
-    let token = EscalationResolutionToken {
-        journal: marketforge_engine::live::routing::acknowledgement::FinalizationJournalId(1),
-        sequence: 1,
-    };
-    let receipt = sink.accept(token, &record).unwrap();
+    let clock = ManualClock::new();
+    let claim = journal
+        .claim_next(&clock, Duration::from_secs(30))
+        .unwrap()
+        .unwrap();
+    journal
+        .escalate(
+            claim.record.obligation.id,
+            claim.token,
+            &clock,
+            FinalizationEscalation::PermanentReportingFailure,
+        )
+        .unwrap();
+    let prepared = journal
+        .prepare_resolution(claim.record.obligation.id, EscalationResolution::ReportingVerified)
+        .unwrap();
+    let id = claim.record.obligation.id;
+
+    let sink = sink_with_capacity(5);
+    let receipt = sink.accept(prepared.token, &prepared.record).unwrap();
+
+    // Commit the resolution to transition to JournalCommitted state.
+    journal.commit_resolution(id, &receipt, &sink).unwrap();
 
     // Claim the receipt.
-    let taken = sink.try_take().unwrap();
-    assert_eq!(taken.token(), receipt.token());
+    let clock = ManualClock::new();
+    let taken = sink.try_take(&clock, Duration::from_secs(30)).unwrap().unwrap();
+    assert_eq!(taken.receipt.token(), receipt.token());
 
     // Sink still retains the record (claimed but not acknowledged).
     assert_eq!(sink.len(), 1);
 
     // The receipt is still verifiable.
-    assert!(sink.verify(&taken));
+    assert!(sink.verify(&taken.receipt));
 }
 
 /// H: downstream acknowledgement releases sink capacity.
+///
+/// Requires the full lifecycle: accept → commit_resolution → try_take → acknowledge.
 #[test]
 fn acknowledgement_releases_capacity() {
-    let obligation = make_obligation(1);
-    let sink = sink_with_capacity(5);
-
-    let record = make_escalation_record(&obligation);
-    let token = EscalationResolutionToken {
-        journal: marketforge_engine::live::routing::acknowledgement::FinalizationJournalId(1),
-        sequence: 1,
-    };
-    let _receipt = sink.accept(token, &record).unwrap();
-
-    // Claim + acknowledge.
-    let taken = sink.try_take().unwrap();
-    sink.acknowledge(&taken).unwrap();
-
-    // Capacity is released.
+    // Start with an empty sink of capacity 1.
+    let sink = sink_with_capacity(1);
     assert_eq!(sink.len(), 0);
 
-    // The receipt is no longer verifiable.
-    assert!(!sink.verify(&taken));
+    // First resolution: go through full lifecycle.
+    let obligation_a = make_obligation(1);
+    let mut tracker_a =
+        marketforge_engine::live::routing::acknowledgement::AcknowledgementTracker::new(10)
+            .unwrap();
+    tracker_a.register(obligation_a.clone()).unwrap();
+    tracker_a
+        .acknowledge(
+            marketforge_engine::live::routing::acknowledgement::DeliveryAcknowledgement {
+                obligation: obligation_a.id,
+                destination: obligation_a.destination,
+                range: obligation_a.range.clone(),
+                status: marketforge_engine::live::model::delivery::DeliveryStatus::Failed(
+                    marketforge_engine::live::model::delivery::DeliveryFailure::PersistenceFailed,
+                ),
+            },
+        )
+        .unwrap();
+    let mut journal_a = FinalizationJournal::new(10).unwrap();
+    tracker_a.finalize_into(obligation_a.id, &mut journal_a).unwrap();
+
+    let clock_a = ManualClock::new();
+    let claim_a = journal_a
+        .claim_next(&clock_a, Duration::from_secs(30))
+        .unwrap()
+        .unwrap();
+    journal_a
+        .escalate(
+            claim_a.record.obligation.id,
+            claim_a.token,
+            &clock_a,
+            FinalizationEscalation::PermanentReportingFailure,
+        )
+        .unwrap();
+    let prepared_a = journal_a
+        .prepare_resolution(
+            claim_a.record.obligation.id,
+            EscalationResolution::ReportingVerified,
+        )
+        .unwrap();
+    let id_a = claim_a.record.obligation.id;
+
+    let receipt_a = sink.accept(prepared_a.token, &prepared_a.record).unwrap();
+    journal_a.commit_resolution(id_a, &receipt_a, &sink).unwrap();
+
+    // Claim the record.
+    let clock_a = ManualClock::new();
+    let taken_a = sink.try_take(&clock_a, Duration::from_secs(30)).unwrap().unwrap();
+    assert_eq!(sink.len(), 1); // claimed but not acknowledged.
+
+    // Acknowledge releases capacity.
+    sink.acknowledge(&taken_a.receipt, taken_a.token, &clock_a).unwrap();
+    assert_eq!(sink.len(), 0);
+    assert!(!sink.verify(&taken_a.receipt));
 
     // A new record can now be accepted (capacity available).
     let obligation_b = make_obligation(2);
-    let record_b = make_escalation_record(&obligation_b);
-    let token_b = EscalationResolutionToken {
-        journal: marketforge_engine::live::routing::acknowledgement::FinalizationJournalId(1),
-        sequence: 2,
-    };
-    let new_receipt = sink.accept(token_b, &record_b).unwrap();
+    let mut tracker_b =
+        marketforge_engine::live::routing::acknowledgement::AcknowledgementTracker::new(10)
+            .unwrap();
+    tracker_b.register(obligation_b.clone()).unwrap();
+    tracker_b
+        .acknowledge(
+            marketforge_engine::live::routing::acknowledgement::DeliveryAcknowledgement {
+                obligation: obligation_b.id,
+                destination: obligation_b.destination,
+                range: obligation_b.range.clone(),
+                status: marketforge_engine::live::model::delivery::DeliveryStatus::Failed(
+                    marketforge_engine::live::model::delivery::DeliveryFailure::PersistenceFailed,
+                ),
+            },
+        )
+        .unwrap();
+    let mut journal_b = FinalizationJournal::new(10).unwrap();
+    tracker_b.finalize_into(obligation_b.id, &mut journal_b).unwrap();
+
+    let clock_b = ManualClock::new();
+    let claim_b = journal_b
+        .claim_next(&clock_b, Duration::from_secs(30))
+        .unwrap()
+        .unwrap();
+    journal_b
+        .escalate(
+            claim_b.record.obligation.id,
+            claim_b.token,
+            &clock_b,
+            FinalizationEscalation::PermanentReportingFailure,
+        )
+        .unwrap();
+    let prepared_b = journal_b
+        .prepare_resolution(
+            claim_b.record.obligation.id,
+            EscalationResolution::ReportingVerified,
+        )
+        .unwrap();
+
+    let new_receipt = sink.accept(prepared_b.token, &prepared_b.record).unwrap();
     assert_eq!(sink.len(), 1);
-    assert_eq!(new_receipt.token(), token_b);
+    assert_eq!(new_receipt.token(), prepared_b.token);
 }
 
 /// I: duplicate acceptance returns the same receipt (idempotent).
