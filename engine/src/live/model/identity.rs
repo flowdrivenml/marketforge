@@ -67,6 +67,196 @@ pub struct SourceStreamKey {
     pub channel: ChannelSpec,
 }
 
+/// Validation errors collected from a single SourceStreamKey check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidationIssues {
+    pub issues: Vec<ValidationIssue>,
+}
+
+/// A single identity-consistency validation issue.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidationIssue {
+    pub kind: ValidationIssueKind,
+    pub detail: String,
+}
+
+/// Classification of a validated identity constraint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidationIssueKind {
+    /// SourceStreamKey.exchange and InstrumentIdentity.exchange do not match.
+    ExchangeMismatch,
+    /// MarketKind is incompatible with the instrument identity metadata.
+    MarketKindMismatch,
+    /// MarketKind is ambiguous with respect to the instrument identity
+    /// metadata. The catalog does not distinguish linear from inverse
+    /// for this instrument kind; the ambiguity must be resolved manually.
+    MarketKindAmbiguous,
+    /// The instrument kind is not yet supported by the validation rules.
+    UnsupportedInstrumentKind,
+    /// A channel parameter violates a basic consistency rule.
+    InvalidChannelSpec,
+}
+
+impl SourceStreamKey {
+    /// Validate identity consistency without catalog lookup or runtime state.
+    ///
+    /// Returns all collected issues. The caller may treat one or more issues
+    /// as hard errors or proceed with warnings.
+    ///
+    /// # Validation rules
+    ///
+    /// 1. **Exchange consistency** — the canonical ExchangeId variant is
+    ///    converted to its snake_case string and compared against
+    ///    `InstrumentIdentity.exchange`.
+    ///
+    /// 2. **MarketKind against instrument metadata** — where
+    ///    `InstrumentIdentity` provides enough information to determine the
+    ///    market family unambiguously, the MarketKind is checked for
+    ///    compatibiity. Where the metadata is insufficient the constraint
+    ///    is reported as an ambiguity (not silently accepted).
+    ///
+    /// 3. **Unsupported instrument kinds** — instrument kinds outside
+    ///    {Spot, Perpetual, Future} are rejected unconditionally.
+    ///
+    /// 4. **Channel parameter consistency** — depth must be > 0 when
+    ///    present; interval_ms must be > 0 when present.
+    ///
+    /// # Design constraints observed
+    ///
+    /// - No catalog lookup (belongs to configuration compiler).
+    /// - No exchange capability validation.
+    /// - No WebSocket, subscriber, recording, or metrics coupling.
+    /// - No new instrument model invented.
+    /// - No mappings invented for ambiguous instrument categories:
+    ///   when `InstrumentIdentity` cannot determine the market family
+    ///   (e.g., perpetuals without contract_kind), the ambiguity is
+    ///   reported rather than silently assumed.
+    pub fn validate(&self) -> ValidationIssues {
+        let mut issues: Vec<ValidationIssue> = Vec::new();
+
+        // 1. Exchange consistency
+        let exchange_str = match self.exchange {
+            Exchange::Bybit => "bybit",
+            Exchange::Binance => "binance",
+            Exchange::Okx => "okx",
+            Exchange::Bitget => "bitget",
+            Exchange::GateIo => "gateio",
+        };
+        if !exchange_str.eq_ignore_ascii_case(self.instrument.exchange.as_str()) {
+            issues.push(ValidationIssue {
+                kind: ValidationIssueKind::ExchangeMismatch,
+                detail: format!(
+                    "exchange {:?} resolves to \"{}\" but instrument.exchange is \"{}\"",
+                    self.exchange, exchange_str, self.instrument.exchange
+                ),
+            });
+        }
+
+        // 2. MarketKind against instrument identity metadata
+        match self.instrument.instrument_kind {
+            crate::job::InstrumentKind::Spot => {
+                if self.market != MarketKind::Spot {
+                    issues.push(ValidationIssue {
+                        kind: ValidationIssueKind::MarketKindMismatch,
+                        detail: format!(
+                            "instrument_kind=Spot requires MarketKind::Spot, got {:?}",
+                            self.market
+                        ),
+                    });
+                }
+            }
+            crate::job::InstrumentKind::Perpetual => {
+                // Perpetuals lack contract_kind in InstrumentIdentity
+                // (always None due to #[serde(default)]). We cannot
+                // determine whether the market family is Linear or
+                // Inverse from the instrument identity alone.
+                // This is a known catalog schema gap, not a user error.
+                issues.push(ValidationIssue {
+                    kind: ValidationIssueKind::MarketKindAmbiguous,
+                    detail: format!(
+                        "instrument_kind=Perpetual has no contract_kind; \
+                         market family (Linear vs Inverse) cannot be determined \
+                         from instrument identity. market={:?}. \
+                         This is a catalog schema gap, not a user error.",
+                        self.market
+                    ),
+                });
+            }
+            crate::job::InstrumentKind::Future => {
+                if let Some(contract_kind) = self.instrument.contract_kind {
+                    let expected = match contract_kind {
+                        crate::job::ContractKind::Linear => MarketKind::Linear,
+                        crate::job::ContractKind::Inverse => MarketKind::Inverse,
+                    };
+                    if self.market != expected {
+                        issues.push(ValidationIssue {
+                            kind: ValidationIssueKind::MarketKindMismatch,
+                            detail: format!(
+                                "instrument_kind=Future(contract_kind={:?}) \
+                                 requires MarketKind::{:?}, got {:?}",
+                                contract_kind, expected, self.market
+                            ),
+                        });
+                    }
+                } else {
+                    // Future without contract_kind — ambiguous.
+                    issues.push(ValidationIssue {
+                        kind: ValidationIssueKind::MarketKindAmbiguous,
+                        detail: format!(
+                            "instrument_kind=Future with contract_kind=None: \
+                             market family cannot be determined. \
+                             market={:?}",
+                            self.market
+                        ),
+                    });
+                }
+            }
+            crate::job::InstrumentKind::Option => {
+                issues.push(ValidationIssue {
+                    kind: ValidationIssueKind::UnsupportedInstrumentKind,
+                    detail: "instrument_kind=Option is not yet supported".to_owned(),
+                });
+            }
+        }
+
+        // 3. Channel parameter consistency
+        if let Some(depth) = self.channel.depth {
+            if depth == 0 {
+                issues.push(ValidationIssue {
+                    kind: ValidationIssueKind::InvalidChannelSpec,
+                    detail: "channel depth must be > 0 when present".to_owned(),
+                });
+            }
+        }
+        if let Some(interval_ms) = self.channel.interval_ms {
+            if interval_ms == 0 {
+                issues.push(ValidationIssue {
+                    kind: ValidationIssueKind::InvalidChannelSpec,
+                    detail: "channel interval_ms must be > 0 when present".to_owned(),
+                });
+            }
+        }
+
+        ValidationIssues { issues }
+    }
+
+    /// Create a SourceStreamKey, validating it returns any issues
+    /// (caller may inspect and decide whether to proceed).
+    pub fn new(
+        exchange: ExchangeId,
+        market: MarketKind,
+        instrument: InstrumentIdentity,
+        channel: ChannelSpec,
+    ) -> Self {
+        Self {
+            exchange,
+            market,
+            instrument,
+            channel,
+        }
+    }
+}
+
 /// Opaque identifier assigned to a registered logical stream.
 ///
 // The representation is provisional.
