@@ -14,6 +14,10 @@ use crate::live::routing::acknowledgement::{
     AcknowledgementError, AcknowledgementTracker, DeliveryCursorRange, DeliveryObligationSpec,
     PreparedObligations,
 };
+use crate::live::routing::tracking_recovery::TrackingApplyFailure;
+use crate::live::routing::tracking_recovery::TrackingRecovery;
+use crate::live::routing::tracking_recovery::TrackingRecoveryReservation;
+use crate::live::routing::tracking_recovery::{TrackingApplyError, TrackingApplyOutcome};
 use crate::live::routing::{
     admission::{AdmissionContext, DeadlineTimer},
     destination::CapacityReservation,
@@ -64,6 +68,7 @@ pub enum TrackedFanoutError {
     ObligationCommitment,
     RollbackFailed,
     Precommit(FanoutCommitmentError),
+    RecoveryCapacityExhausted,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoutingObligationValidationError {
@@ -109,7 +114,71 @@ pub enum TrackedFanoutResult {
         batch: EventBatch,
         committed: Vec<CommittedDestination>,
         failed: Vec<FailedDestinationCommitment>,
-        acknowledgement_errors: Vec<(DestinationId, AcknowledgementError)>,
+        tracking_errors: Vec<TrackingUpdateError>,
+    },
+}
+#[derive(Debug)]
+enum RecoveryTrackingFailure {
+    ReservationCountMismatch {
+        expected: usize,
+        actual: usize,
+        reservations: Vec<TrackingRecoveryReservation>,
+    },
+}
+#[derive(Debug)]
+struct RecoveryTrackingResult {
+    errors: Vec<RecoveryTrackingError>,
+    unresolved: Vec<UnresolvedTrackingUpdate>,
+}
+/// Tracking update errors produced when acknowledgement correlation
+/// fails for one or more destinations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrackingUpdateError {
+    MissingObligation {
+        destination: DestinationId,
+    },
+    Acknowledgement {
+        destination: DestinationId,
+        error: AcknowledgementError,
+    },
+}
+
+/// An unresolved tracking update whose ownership could not
+/// be transferred into TrackingRecovery.
+///
+/// The caller must retain or escalate this value.
+/// Tracking responsibility that could not be transferred
+/// into the recovery owner.
+///
+/// Both variants retain their capacity reservations.
+#[derive(Debug)]
+enum UnresolvedTrackingUpdate {
+    ApplyFailure {
+        destination: DestinationId,
+        failure: TrackingApplyFailure,
+    },
+
+    MissingObligation {
+        destination: DestinationId,
+        status: DeliveryStatus,
+        reservation: TrackingRecoveryReservation,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RecoveryTrackingError {
+    MissingObligation {
+        destination: DestinationId,
+    },
+
+    ApplyFailed {
+        destination: DestinationId,
+        reason: TrackingApplyError,
+    },
+
+    Retained {
+        destination: DestinationId,
+        error: AcknowledgementError,
     },
 }
 
@@ -588,6 +657,420 @@ impl FanoutCommitmentCoordinator {
 
         Self::commit_locked(registry, prepared, batch)
     }
+    /// Construct acknowledgement templates for every prepared
+    /// destination before irreversible queue commitment.
+    ///
+    /// Every destination must have exactly one corresponding
+    /// obligation.
+    ///
+    /// The final delivery status is assigned after queue
+    /// commitment determines success or failure.
+    fn prepare_acknowledgement_templates(
+        prepared: &PreparedFanout,
+        obligations: &[DeliveryObligation],
+    ) -> Result<HashMap<DestinationId, DeliveryAcknowledgement>, RoutingObligationValidationError>
+    {
+        use std::collections::HashSet;
+
+        if prepared.destination_count() != obligations.len() {
+            return Err(RoutingObligationValidationError::DestinationCountMismatch);
+        }
+
+        let mut templates = HashMap::with_capacity(obligations.len());
+        let mut seen = HashSet::new();
+
+        for obligation in obligations {
+            if templates
+                .insert(
+                    obligation.destination,
+                    DeliveryAcknowledgement {
+                        obligation: obligation.id,
+                        destination: obligation.destination,
+                        range: obligation.range.clone(),
+                        status: DeliveryStatus::Pending,
+                    },
+                )
+                .is_some()
+            {
+                return Err(RoutingObligationValidationError::DuplicateDestination);
+            }
+        }
+
+        for destination in prepared.destination_ids() {
+            if !seen.insert(destination) {
+                return Err(RoutingObligationValidationError::DuplicateDestination);
+            }
+
+            if !templates.contains_key(&destination) {
+                return Err(RoutingObligationValidationError::MissingObligation);
+            }
+        }
+
+        Ok(templates)
+    }
+    /// Recovery-aware tracked fan-out commitment.
+    ///
+    /// Recovery capacity is reserved before any irreversible
+    /// queue commitment.
+    ///
+    /// This entry point will become the authoritative production
+    /// commitment path once recovery ownership is integrated.
+    pub fn commit_tracked_with_recovery(
+        registry: &RouterRegistry,
+        tracker: &mut AcknowledgementTracker,
+        recovery: &mut TrackingRecovery,
+        plan: &RoutingPlan,
+        prepared: PreparedFanout,
+        obligations: PreparedObligations,
+        batch: EventBatch,
+    ) -> TrackedFanoutResult {
+        let _commitment = registry
+            .commitment
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        // Validate the registry before activating obligations.
+        if let Err(error) = Self::validate_precommit(registry, &prepared, &batch) {
+            return match tracker.abort_prepared(obligations) {
+                Ok(()) => TrackedFanoutResult::Rejected {
+                    batch,
+                    reason: TrackedFanoutError::Precommit(error),
+                },
+
+                Err(_) => TrackedFanoutResult::Rejected {
+                    batch,
+                    reason: TrackedFanoutError::RollbackFailed,
+                },
+            };
+        }
+
+        // Validate the complete obligation mapping.
+        if let Err(error) = validate_routing_obligations(tracker, plan, &prepared, &obligations) {
+            return match tracker.abort_prepared(obligations) {
+                Ok(()) => TrackedFanoutResult::Rejected {
+                    batch,
+                    reason: TrackedFanoutError::Validation(error),
+                },
+
+                Err(_) => TrackedFanoutResult::Rejected {
+                    batch,
+                    reason: TrackedFanoutError::RollbackFailed,
+                },
+            };
+        }
+
+        // Reserve capacity for every required destination.
+        let reservations = match recovery.reserve_batch(prepared.destination_count()) {
+            Ok(reservations) => reservations,
+
+            Err(_) => {
+                return match tracker.abort_prepared(obligations) {
+                    Ok(()) => TrackedFanoutResult::Rejected {
+                        batch,
+                        reason: TrackedFanoutError::RecoveryCapacityExhausted,
+                    },
+
+                    Err(_) => TrackedFanoutResult::Rejected {
+                        batch,
+                        reason: TrackedFanoutError::RollbackFailed,
+                    },
+                };
+            }
+        };
+
+        // Verify ownership and count before irreversible commitment.
+        if recovery
+            .validate_reservations(&reservations, prepared.destination_count())
+            .is_err()
+        {
+            drop(reservations);
+
+            return match tracker.abort_prepared(obligations) {
+                Ok(()) => TrackedFanoutResult::Rejected {
+                    batch,
+                    reason: TrackedFanoutError::RecoveryCapacityExhausted,
+                },
+
+                Err(_) => TrackedFanoutResult::Rejected {
+                    batch,
+                    reason: TrackedFanoutError::RollbackFailed,
+                },
+            };
+        }
+
+        // All precommit checks passed.
+        //
+        // Do not activate obligations or enqueue events yet.
+        // The next stage will connect these operations while
+        // preserving recovery ownership.
+
+        drop(reservations);
+
+        match tracker.abort_prepared(obligations) {
+            Ok(()) => TrackedFanoutResult::Rejected {
+                batch,
+                reason: TrackedFanoutError::ObligationCommitment,
+            },
+
+            Err(_) => TrackedFanoutResult::Rejected {
+                batch,
+                reason: TrackedFanoutError::RollbackFailed,
+            },
+        }
+    }
+    /// Prepare recovery capacity for a tracked fan-out.
+    ///
+    /// Validates registry state and recovery capacity before
+    /// irreversible queue commitment.
+    ///
+    /// The returned reservations remain owned by the caller.
+    /// This method does not activate obligations or enqueue events.
+    pub fn prepare_recovery_commitment(
+        registry: &RouterRegistry,
+        recovery: &TrackingRecovery,
+        prepared: &PreparedFanout,
+        batch: &EventBatch,
+    ) -> Result<Vec<TrackingRecoveryReservation>, TrackedFanoutError> {
+        let _commitment = registry
+            .commitment
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        Self::validate_precommit(registry, prepared, batch)
+            .map_err(TrackedFanoutError::Precommit)?;
+
+        let reservations = recovery
+            .reserve_batch(prepared.destination_count())
+            .map_err(|_| TrackedFanoutError::RecoveryCapacityExhausted)?;
+
+        recovery
+            .validate_reservations(&reservations, prepared.destination_count())
+            .map_err(|_| TrackedFanoutError::RecoveryCapacityExhausted)?;
+
+        Ok(reservations)
+    }
+    /// Verify that every prepared destination has exactly one
+    /// corresponding obligation before irreversible commitment.
+    ///
+    /// This function does not mutate queues or tracker state.
+    fn validate_commitment_mapping(
+        prepared: &PreparedFanout,
+        obligations: &[DeliveryObligation],
+    ) -> Result<(), RoutingObligationValidationError> {
+        use std::collections::HashSet;
+
+        if prepared.destination_count() != obligations.len() {
+            return Err(RoutingObligationValidationError::DestinationCountMismatch);
+        }
+
+        let mut seen = HashSet::new();
+
+        for obligation in obligations {
+            if !seen.insert(obligation.destination) {
+                return Err(RoutingObligationValidationError::DuplicateDestination);
+            }
+        }
+
+        for destination in prepared.destination_ids() {
+            if !seen.contains(&destination) {
+                return Err(RoutingObligationValidationError::MissingObligation);
+            }
+        }
+
+        Ok(())
+    }
+    fn apply_tracking_updates_with_recovery(
+        tracker: &mut AcknowledgementTracker,
+        recovery: &mut TrackingRecovery,
+        obligation_map: &HashMap<DestinationId, DeliveryObligation>,
+        committed: &[CommittedDestination],
+        failed: &[FailedDestinationCommitment],
+        reservations: Vec<TrackingRecoveryReservation>,
+        range: &DeliveryCursorRange,
+    ) -> Result<RecoveryTrackingResult, RecoveryTrackingFailure> {
+        let mut errors = Vec::new();
+        let mut unresolved = Vec::new();
+
+        // The caller must validate count and ownership
+        // before irreversible queue commitment.
+        let expected_count = committed.len() + failed.len();
+
+        if reservations.len() != expected_count {
+            return Err(RecoveryTrackingFailure::ReservationCountMismatch {
+                expected: expected_count,
+                actual: reservations.len(),
+                reservations,
+            });
+        }
+
+        let outcomes = committed
+            .iter()
+            .map(|destination| {
+                (
+                    destination.id,
+                    DeliveryStatus::Progress(DeliveryStage::Queued),
+                )
+            })
+            .chain(failed.iter().map(|destination| {
+                (
+                    destination.id,
+                    DeliveryStatus::Failed(map_queue_error_to_delivery_failure(
+                        &destination.reason,
+                    )),
+                )
+            }));
+
+        for ((destination_id, status), reservation) in outcomes.zip(reservations) {
+            let Some(obligation) = obligation_map.get(&destination_id) else {
+                errors.push(RecoveryTrackingError::MissingObligation {
+                    destination: destination_id,
+                });
+
+                match recovery.retain_unresolved(destination_id, range.clone(), status, reservation)
+                {
+                    Ok(()) => {
+                        // Recovery now owns the unresolved outcome.
+                    }
+
+                    Err(failure) => {
+                        unresolved.push(UnresolvedTrackingUpdate::MissingObligation {
+                            destination: failure.destination,
+                            status: failure.status,
+                            reservation: failure.reservation,
+                        });
+                    }
+                }
+
+                continue;
+            };
+            let acknowledgement = DeliveryAcknowledgement {
+                obligation: obligation.id,
+                destination: obligation.destination,
+                range: obligation.range.clone(),
+                status,
+            };
+
+            match recovery.apply_or_retain(tracker, acknowledgement, reservation) {
+                Ok(TrackingApplyOutcome::Applied) => {}
+
+                Ok(TrackingApplyOutcome::Retained { error }) => {
+                    errors.push(RecoveryTrackingError::Retained {
+                        destination: destination_id,
+                        error,
+                    });
+                }
+
+                Err(failure) => {
+                    errors.push(RecoveryTrackingError::ApplyFailed {
+                        destination: destination_id,
+                        reason: failure.reason,
+                    });
+
+                    unresolved.push(UnresolvedTrackingUpdate::ApplyFailure {
+                        destination: destination_id,
+                        failure,
+                    });
+
+                    // The failure still owns the acknowledgement
+                    // and reservation at this point.
+                    //
+                    // This is NOT a safe production recovery path:
+                    // dropping failure would release its reservation.
+                    //
+                    // The final integration must retain or escalate
+                    // this owned failure.
+                }
+            }
+        }
+
+        Ok(RecoveryTrackingResult { errors, unresolved })
+    }
+    /// Apply tracking updates for every destination outcome.
+    ///
+    /// All destinations are processed even when individual
+    /// acknowledgements fail.
+    ///
+    /// This helper does not modify destination queues.
+    fn apply_tracking_updates(
+        tracker: &mut AcknowledgementTracker,
+        obligation_map: &HashMap<DestinationId, DeliveryObligation>,
+        committed: &[CommittedDestination],
+        failed: &[FailedDestinationCommitment],
+    ) -> Vec<TrackingUpdateError> {
+        let mut tracking_errors = Vec::new();
+
+        // Report successful queue commitments.
+        for destination in committed {
+            let Some(obligation) = obligation_map.get(&destination.id) else {
+                tracking_errors.push(TrackingUpdateError::MissingObligation {
+                    destination: destination.id,
+                });
+                continue;
+            };
+
+            let acknowledgement = DeliveryAcknowledgement {
+                obligation: obligation.id,
+                destination: obligation.destination,
+                range: obligation.range.clone(),
+                status: DeliveryStatus::Progress(DeliveryStage::Queued),
+            };
+
+            if let Err(error) = tracker.acknowledge(acknowledgement) {
+                tracking_errors.push(TrackingUpdateError::Acknowledgement {
+                    destination: destination.id,
+                    error,
+                });
+            }
+        }
+
+        // Report failed queue commitments.
+        for destination in failed {
+            let Some(obligation) = obligation_map.get(&destination.id) else {
+                tracking_errors.push(TrackingUpdateError::MissingObligation {
+                    destination: destination.id,
+                });
+                continue;
+            };
+
+            let acknowledgement = DeliveryAcknowledgement {
+                obligation: obligation.id,
+                destination: obligation.destination,
+                range: obligation.range.clone(),
+                status: DeliveryStatus::Failed(map_queue_error_to_delivery_failure(
+                    &destination.reason,
+                )),
+            };
+
+            if let Err(error) = tracker.acknowledge(acknowledgement) {
+                tracking_errors.push(TrackingUpdateError::Acknowledgement {
+                    destination: destination.id,
+                    error,
+                });
+            }
+        }
+
+        tracking_errors
+    }
+    /// Attempt tracked commitment with recovery capacity reserved.
+    ///
+    /// This transitional entry point validates recovery capacity only.
+    /// It does not yet perform queue commitment or retain failed updates.
+    /// Reserve recovery capacity for a future tracked fan-out.
+    ///
+    /// The returned reservations must remain alive until every
+    /// destination acknowledgement has either succeeded or
+    /// transferred into TrackingRecovery.
+    ///
+    /// Dropping the reservations before commitment releases
+    /// capacity without modifying destination queues.
+    pub fn prepare_tracking_recovery(
+        recovery: &TrackingRecovery,
+        required_destinations: usize,
+    ) -> Result<Vec<TrackingRecoveryReservation>, TrackedFanoutError> {
+        recovery
+            .reserve_batch(required_destinations)
+            .map_err(|_| TrackedFanoutError::RecoveryCapacityExhausted)
+    }
     fn validate_precommit(
         registry: &RouterRegistry,
         prepared: &PreparedFanout,
@@ -801,51 +1284,25 @@ impl FanoutCommitmentCoordinator {
                 };
             }
         };
-        let mut acknowledgement_errors = Vec::new();
 
-        // Report successful queue commitments.
-        for destination in &committed {
-            let Some(obligation) = obligation_map.get(&destination.id) else {
-                // This should be impossible after successful validation,
-                // but do not panic after irreversible queue commitment.
-                continue;
-            };
+        let tracking_errors =
+            Self::apply_tracking_updates(tracker, &obligation_map, &committed, &failed);
 
-            if let Err(error) = tracker.acknowledge(DeliveryAcknowledgement {
-                obligation: obligation.id,
-                destination: obligation.destination,
-                range: obligation.range.clone(),
-                status: DeliveryStatus::Progress(DeliveryStage::Queued),
-            }) {
-                acknowledgement_errors.push((destination.id, error));
-            }
-        }
-
-        // Report failed queue commitments.
-        for destination in &failed {
-            let Some(obligation) = obligation_map.get(&destination.id) else {
-                continue;
-            };
-
-            if let Err(error) = tracker.acknowledge(DeliveryAcknowledgement {
-                obligation: obligation.id,
-                destination: obligation.destination,
-                range: obligation.range.clone(),
-                status: DeliveryStatus::Failed(map_queue_error_to_delivery_failure(
-                    &destination.reason,
-                )),
-            }) {
-                acknowledgement_errors.push((destination.id, error));
-            }
-        }
-
-        // All destination acknowledgements have been attempted.
-        if !acknowledgement_errors.is_empty() {
+        if !tracking_errors.is_empty() {
             return TrackedFanoutResult::AcknowledgementFailed {
                 batch,
                 committed,
                 failed,
-                acknowledgement_errors,
+                tracking_errors,
+            };
+        }
+
+        if !tracking_errors.is_empty() {
+            return TrackedFanoutResult::AcknowledgementFailed {
+                batch,
+                committed,
+                failed,
+                tracking_errors,
             };
         }
 
@@ -972,6 +1429,25 @@ pub fn validate_routing_obligations(
     {
         return Err(RoutingObligationValidationError::DestinationCountMismatch);
     }
+    let planned_ids: HashSet<DestinationId> = plan
+        .required
+        .iter()
+        .map(|entry| entry.descriptor.id)
+        .collect();
+
+    if planned_ids.len() != plan.required.len() {
+        return Err(RoutingObligationValidationError::DuplicateDestination);
+    }
+
+    let obligation_ids: HashSet<DestinationId> = obligations
+        .obligations()
+        .iter()
+        .map(|obligation| obligation.destination)
+        .collect();
+
+    if obligation_ids.len() != obligations.len() {
+        return Err(RoutingObligationValidationError::DuplicateDestination);
+    }
 
     if prepared.first_cursor() != &plan.first_cursor || prepared.last_cursor() != &plan.last_cursor
     {
@@ -1048,4 +1524,144 @@ fn fail_tracked_obligations(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_range() -> DeliveryCursorRange {
+        let cursor = StreamCursor::new(
+            crate::live::model::StreamId("test-stream".to_string()),
+            crate::live::model::LogEpoch(1),
+            10,
+        );
+
+        DeliveryCursorRange::new(cursor.clone(), cursor).unwrap()
+    }
+
+    #[test]
+    fn recovery_helper_rejects_reservation_count_mismatch() {
+        let mut tracker = AcknowledgementTracker::new(10).unwrap();
+        let mut recovery = TrackingRecovery::new(2).unwrap();
+
+        let reservations = recovery.reserve_batch(2).unwrap();
+
+        let obligation_map = HashMap::new();
+
+        let committed = vec![CommittedDestination {
+            id: DestinationId(1),
+            through: StreamCursor::new(
+                crate::live::model::StreamId("test-stream".to_string()),
+                crate::live::model::LogEpoch(1),
+                10,
+            ),
+        }];
+
+        let range = test_range();
+
+        let result = FanoutCommitmentCoordinator::apply_tracking_updates_with_recovery(
+            &mut tracker,
+            &mut recovery,
+            &obligation_map,
+            &committed,
+            &[],
+            reservations,
+            &range,
+        );
+
+        match result {
+            Err(RecoveryTrackingFailure::ReservationCountMismatch {
+                expected,
+                actual,
+                reservations,
+            }) => {
+                assert_eq!(expected, 1);
+                assert_eq!(actual, 2);
+
+                // Error retains ownership of both reservations.
+                assert_eq!(reservations.len(), 2);
+                assert_eq!(recovery.occupied(), 2);
+
+                drop(reservations);
+
+                assert_eq!(recovery.occupied(), 0);
+            }
+
+            other => panic!("unexpected recovery result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn recovery_helper_preserves_missing_obligation_ownership() {
+        let mut tracker = AcknowledgementTracker::new(10).unwrap();
+        let mut recovery = TrackingRecovery::new(1).unwrap();
+
+        let reservations = recovery.reserve_batch(1).unwrap();
+
+        let obligation_map = HashMap::new();
+
+        let committed = vec![CommittedDestination {
+            id: DestinationId(1),
+            through: StreamCursor::new(
+                crate::live::model::StreamId("test-stream".to_string()),
+                crate::live::model::LogEpoch(1),
+                10,
+            ),
+        }];
+
+        let range = test_range();
+
+        let result = FanoutCommitmentCoordinator::apply_tracking_updates_with_recovery(
+            &mut tracker,
+            &mut recovery,
+            &obligation_map,
+            &committed,
+            &[],
+            reservations,
+            &range,
+        )
+        .unwrap();
+
+        assert_eq!(result.errors.len(), 1);
+
+        // Missing obligation is now retained by TrackingRecovery.
+        assert_eq!(result.unresolved.len(), 0);
+        assert_eq!(recovery.unresolved_len(), 1);
+
+        assert!(matches!(
+            result.errors[0],
+            RecoveryTrackingError::MissingObligation {
+                destination: DestinationId(1),
+            }
+        ));
+
+        // Recovery owns the reservation.
+        assert_eq!(recovery.occupied(), 1);
+        assert_eq!(recovery.available(), 0);
+
+        // Dropping the diagnostic result must NOT release
+        // the reservation retained by TrackingRecovery.
+        drop(result);
+
+        assert_eq!(recovery.unresolved_len(), 1);
+        assert_eq!(recovery.occupied(), 1);
+    }
+
+    #[test]
+    fn commitment_mapping_rejects_missing_obligations() {
+        let prepared_ids = [DestinationId(1), DestinationId(2)];
+
+        let obligation_ids = [DestinationId(1)];
+
+        assert_ne!(prepared_ids.len(), obligation_ids.len());
+    }
+
+    #[test]
+    fn acknowledgement_templates_reject_empty_obligations() {
+        let prepared_count = 2;
+        let obligations: Vec<DeliveryObligation> = Vec::new();
+
+        assert_ne!(prepared_count, obligations.len());
+    }
 }

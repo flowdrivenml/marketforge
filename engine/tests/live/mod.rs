@@ -29,6 +29,7 @@ pub(crate) mod routing;
 pub(crate) mod runtime;
 pub(crate) mod subscriptions;
 pub(crate) mod support;
+pub mod tracking_recovery;
 pub(crate) mod trades;
 pub(crate) mod transport;
 pub(crate) mod tui;

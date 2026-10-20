@@ -10,4 +10,5 @@ pub mod reporting;
 pub mod resolution;
 pub mod router;
 pub(crate) mod snapshot;
+pub mod tracking_recovery;
 pub mod transaction;

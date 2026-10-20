@@ -1171,15 +1171,57 @@ impl AcknowledgementTracker {
         &mut self,
         prepared: PreparedObligations,
     ) -> Result<(), PreparedObligationsAbortError> {
+        use std::collections::HashSet;
+
         let transaction_id = prepared.transaction_id();
 
-        let pending = self.transaction_state.remove(&transaction_id).ok_or(
-            PreparedObligationsAbortError {
-                transaction: transaction_id,
-            },
-        )?;
+        let error = || PreparedObligationsAbortError {
+            transaction: transaction_id,
+        };
 
-        for id in pending {
+        // Validate transaction existence before mutation.
+        let pending = self
+            .transaction_state
+            .get(&transaction_id)
+            .ok_or_else(error)?;
+
+        // Validate exact membership count.
+        if pending.len() != prepared.obligations().len() {
+            return Err(error());
+        }
+
+        let registered_ids: HashSet<_> = pending.iter().copied().collect();
+
+        let prepared_ids: HashSet<_> = prepared
+            .obligations()
+            .iter()
+            .map(|obligation| obligation.id)
+            .collect();
+
+        // Reject duplicates and mismatched membership.
+        if registered_ids.len() != pending.len()
+            || prepared_ids.len() != prepared.obligations().len()
+            || registered_ids != prepared_ids
+        {
+            return Err(error());
+        }
+
+        // Validate exact registered obligation contents.
+        for obligation in prepared.obligations() {
+            let Some(tracked) = self.obligations.get(&obligation.id) else {
+                return Err(error());
+            };
+
+            if tracked.obligation != *obligation || tracked.status != DeliveryStatus::Pending {
+                return Err(error());
+            }
+        }
+
+        // All validation succeeded.
+        // Only now may the tracker mutate its state.
+        self.transaction_state.remove(&transaction_id);
+
+        for id in registered_ids {
             self.obligations.remove(&id);
         }
 
@@ -1197,19 +1239,48 @@ impl AcknowledgementTracker {
         prepared: PreparedObligations,
     ) -> Result<PreparedObligationsHandle, (PreparedObligationsHandleError, PreparedObligations)>
     {
+        use std::collections::HashSet;
+
         let transaction_id = prepared.transaction_id();
 
-        // Validate transaction existence without consuming ownership.
         let Some(pending) = self.transaction_state.get(&transaction_id) else {
             return Err((PreparedObligationsHandleError::AlreadyCommitted, prepared));
         };
 
-        // Validate all registered obligations before mutation.
-        if pending.iter().any(|id| !self.obligations.contains_key(id)) {
+        // Verify exact transaction membership.
+        if pending.len() != prepared.obligations().len() {
             return Err((PreparedObligationsHandleError::AlreadyCommitted, prepared));
         }
 
-        // All checks succeeded.
+        let registered_ids: HashSet<_> = pending.iter().copied().collect();
+
+        let prepared_ids: HashSet<_> = prepared
+            .obligations()
+            .iter()
+            .map(|obligation| obligation.id)
+            .collect();
+
+        // Reject duplicate IDs or mismatched membership.
+        if registered_ids.len() != pending.len()
+            || prepared_ids.len() != prepared.obligations().len()
+            || registered_ids != prepared_ids
+        {
+            return Err((PreparedObligationsHandleError::AlreadyCommitted, prepared));
+        }
+
+        // Verify that every registered obligation matches
+        // the exact prepared obligation.
+        for obligation in prepared.obligations() {
+            let Some(tracked) = self.obligations.get(&obligation.id) else {
+                return Err((PreparedObligationsHandleError::AlreadyCommitted, prepared));
+            };
+
+            if tracked.obligation != *obligation || tracked.status != DeliveryStatus::Pending {
+                return Err((PreparedObligationsHandleError::AlreadyCommitted, prepared));
+            }
+        }
+
+        // All validation succeeded.
         // The transaction becomes non-abortable here.
         self.transaction_state.remove(&transaction_id);
 
@@ -1320,3 +1391,124 @@ fn validate_transition(
 /// This alias keeps failure classification aligned with the
 /// shared delivery domain model.
 pub type DestinationFailure = DeliveryFailure;
+
+#[cfg(test)]
+mod transaction_integrity_tests {
+    use super::*;
+    use crate::live::model::{LogEpoch, StreamId};
+    #[test]
+    fn activation_rejects_corrupted_transaction_membership() {
+        let mut tracker = AcknowledgementTracker::new(10).unwrap();
+
+        let obligation = DeliveryObligation {
+            id: DeliveryObligationId(1),
+            destination: DestinationId(1),
+            range: DeliveryCursorRange::new(
+                StreamCursor::new(StreamId("test-stream".to_string()), LogEpoch(1), 1),
+                StreamCursor::new(StreamId("test-stream".to_string()), LogEpoch(1), 2),
+            )
+            .unwrap(),
+            kind: DestinationKind::Recording,
+            policy: DeliveryPolicy::Required,
+        };
+
+        let prepared = tracker
+            .prepare_obligations(vec![obligation.clone()])
+            .unwrap();
+
+        let transaction_id = prepared.transaction_id();
+
+        // Simulate internal transaction-state corruption.
+        tracker
+            .transaction_state
+            .get_mut(&transaction_id)
+            .unwrap()
+            .push(DeliveryObligationId(999));
+
+        let result = tracker.begin_commitment(prepared);
+
+        assert!(result.is_err());
+
+        // Failed activation must not remove the transaction.
+        assert!(tracker.transaction_state.contains_key(&transaction_id));
+
+        // The original obligation remains registered.
+        assert_eq!(tracker.status(obligation.id), Some(DeliveryStatus::Pending));
+    }
+    #[test]
+    fn abort_rejects_corrupted_transaction_membership() {
+        let mut tracker = AcknowledgementTracker::new(10).unwrap();
+
+        let obligation = DeliveryObligation {
+            id: DeliveryObligationId(1),
+            destination: DestinationId(1),
+            range: DeliveryCursorRange::new(
+                StreamCursor::new(StreamId("test-stream".to_string()), LogEpoch(1), 1),
+                StreamCursor::new(StreamId("test-stream".to_string()), LogEpoch(1), 2),
+            )
+            .unwrap(),
+            kind: DestinationKind::Recording,
+            policy: DeliveryPolicy::Required,
+        };
+
+        let prepared = tracker
+            .prepare_obligations(vec![obligation.clone()])
+            .unwrap();
+
+        let transaction_id = prepared.transaction_id();
+
+        // Simulate an invalid transaction membership.
+        tracker
+            .transaction_state
+            .get_mut(&transaction_id)
+            .unwrap()
+            .push(DeliveryObligationId(999));
+
+        let result = tracker.abort_prepared(prepared);
+
+        assert!(result.is_err());
+
+        // Abort must not partially mutate tracker state.
+        assert!(tracker.transaction_state.contains_key(&transaction_id));
+
+        assert_eq!(tracker.status(obligation.id), Some(DeliveryStatus::Pending));
+
+        assert_eq!(tracker.len(), 1);
+    }
+    #[test]
+    fn activation_rejects_modified_registered_obligation() {
+        let mut tracker = AcknowledgementTracker::new(10).unwrap();
+
+        let obligation = DeliveryObligation {
+            id: DeliveryObligationId(1),
+            destination: DestinationId(1),
+            range: DeliveryCursorRange::new(
+                StreamCursor::new(StreamId("test-stream".to_string()), LogEpoch(1), 1),
+                StreamCursor::new(StreamId("test-stream".to_string()), LogEpoch(1), 2),
+            )
+            .unwrap(),
+            kind: DestinationKind::Recording,
+            policy: DeliveryPolicy::Required,
+        };
+
+        let prepared = tracker
+            .prepare_obligations(vec![obligation.clone()])
+            .unwrap();
+
+        // Simulate an internal obligation mismatch.
+        tracker
+            .obligations
+            .get_mut(&obligation.id)
+            .unwrap()
+            .obligation
+            .destination = DestinationId(999);
+
+        let result = tracker.begin_commitment(prepared);
+
+        assert!(result.is_err());
+
+        // The tracker must not silently activate the transaction.
+        assert_eq!(tracker.status(obligation.id), Some(DeliveryStatus::Pending));
+    }
+    // Transaction integrity tests go here.
+}

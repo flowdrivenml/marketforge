@@ -14,6 +14,7 @@ use crate::live::support::live_events::l2_event;
 use marketforge_engine::live::routing::router::FanoutCommitmentError;
 use marketforge_engine::live::routing::router::TrackedFanoutResult;
 use marketforge_engine::live::routing::router::{FanoutCommitmentCoordinator, TrackedFanoutError};
+use marketforge_engine::live::routing::tracking_recovery::TrackingRecovery;
 use marketforge_engine::live::{
     foundation::cancellation::CancellationToken,
     routing::{
@@ -1537,5 +1538,181 @@ fn tracked_partial_commitment_preserves_independent_ownership() {
         } else {
             assert!(matches!(status, DeliveryStatus::Failed(_)));
         }
+    }
+}
+
+#[test]
+fn recovery_aware_commitment_accepts_available_capacity() {
+    let recovery = TrackingRecovery::new(2).unwrap();
+
+    let reservations =
+        FanoutCommitmentCoordinator::prepare_tracking_recovery(&recovery, 2).unwrap();
+
+    assert_eq!(reservations.len(), 2);
+    assert_eq!(recovery.occupied(), 2);
+    assert_eq!(recovery.available(), 0);
+
+    drop(reservations);
+
+    assert_eq!(recovery.occupied(), 0);
+    assert_eq!(recovery.available(), 2);
+}
+
+#[test]
+fn recovery_aware_commitment_rejects_exhausted_capacity() {
+    let recovery = TrackingRecovery::new(1).unwrap();
+
+    let result = FanoutCommitmentCoordinator::prepare_tracking_recovery(&recovery, 2);
+
+    assert!(matches!(
+        result,
+        Err(TrackedFanoutError::RecoveryCapacityExhausted)
+    ));
+
+    assert_eq!(recovery.occupied(), 0);
+    assert_eq!(recovery.available(), 1);
+}
+
+#[test]
+fn validation_rejects_duplicate_planned_destinations() {
+    let (_, _, tracker, mut plan, prepared, obligations) = validation_fixture();
+
+    // Preserve the destination count, but duplicate one ID.
+    plan.required[1] = plan.required[0].clone();
+
+    let result = validate_routing_obligations(&tracker, &plan, &prepared, &obligations);
+
+    assert_eq!(
+        result,
+        Err(RoutingObligationValidationError::DuplicateDestination)
+    );
+}
+
+#[test]
+fn validation_rejects_duplicate_obligation_destinations() {
+    use marketforge_engine::live::routing::acknowledgement::{
+        DeliveryCursorRange, DeliveryObligationSpec,
+    };
+
+    let (_, _, mut tracker, plan, prepared, original) = validation_fixture();
+
+    // Remove the original prepared transaction.
+    tracker.abort_prepared(original).unwrap();
+
+    let range =
+        DeliveryCursorRange::new(plan.first_cursor.clone(), plan.last_cursor.clone()).unwrap();
+
+    let descriptor = &plan.required[0].descriptor;
+
+    let duplicate_specs = vec![
+        DeliveryObligationSpec {
+            destination: descriptor.id,
+            range: range.clone(),
+            kind: descriptor.kind,
+            policy: descriptor.policy,
+        },
+        DeliveryObligationSpec {
+            destination: descriptor.id,
+            range,
+            kind: descriptor.kind,
+            policy: descriptor.policy,
+        },
+    ];
+
+    let obligations = tracker.prepare_obligation_specs(duplicate_specs).unwrap();
+
+    let result = validate_routing_obligations(&tracker, &plan, &prepared, &obligations);
+
+    assert_eq!(
+        result,
+        Err(RoutingObligationValidationError::DuplicateDestination)
+    );
+
+    // Clean up the prepared transaction.
+    tracker.abort_prepared(obligations).unwrap();
+
+    assert!(tracker.is_empty());
+}
+
+#[test]
+fn recovery_commitment_preparation_reserves_capacity() {
+    let (registry, batch, _, _, prepared, _) = validation_fixture();
+
+    let recovery = TrackingRecovery::new(2).unwrap();
+
+    let reservations = FanoutCommitmentCoordinator::prepare_recovery_commitment(
+        &registry, &recovery, &prepared, &batch,
+    )
+    .unwrap();
+
+    assert_eq!(reservations.len(), 2);
+    assert_eq!(recovery.occupied(), 2);
+
+    for destination in [DestinationId(1), DestinationId(2)] {
+        let queue = registry.peek_queue(destination).unwrap();
+
+        assert_eq!(queue.snapshot().queued_batches, 0);
+    }
+
+    drop(reservations);
+
+    assert_eq!(recovery.occupied(), 0);
+}
+
+#[test]
+fn recovery_commitment_preparation_rejects_insufficient_capacity() {
+    let (registry, batch, _, _, prepared, _) = validation_fixture();
+
+    let recovery = TrackingRecovery::new(1).unwrap();
+
+    let result = FanoutCommitmentCoordinator::prepare_recovery_commitment(
+        &registry, &recovery, &prepared, &batch,
+    );
+
+    assert!(matches!(
+        result,
+        Err(TrackedFanoutError::RecoveryCapacityExhausted)
+    ));
+
+    assert_eq!(recovery.occupied(), 0);
+
+    for destination in [DestinationId(1), DestinationId(2)] {
+        let queue = registry.peek_queue(destination).unwrap();
+
+        assert_eq!(queue.snapshot().queued_batches, 0);
+    }
+}
+
+#[test]
+fn recovery_aware_commitment_rejects_insufficient_capacity() {
+    let (registry, batch, mut tracker, plan, prepared, obligations) = validation_fixture();
+
+    let mut recovery = TrackingRecovery::new(1).unwrap();
+
+    let result = FanoutCommitmentCoordinator::commit_tracked_with_recovery(
+        &registry,
+        &mut tracker,
+        &mut recovery,
+        &plan,
+        prepared,
+        obligations,
+        batch,
+    );
+
+    assert!(matches!(
+        result,
+        TrackedFanoutResult::Rejected {
+            reason: TrackedFanoutError::RecoveryCapacityExhausted,
+            ..
+        }
+    ));
+
+    assert!(tracker.is_empty());
+    assert_eq!(recovery.occupied(), 0);
+
+    for destination in [DestinationId(1), DestinationId(2)] {
+        let queue = registry.peek_queue(destination).unwrap();
+
+        assert_eq!(queue.snapshot().queued_batches, 0);
     }
 }
