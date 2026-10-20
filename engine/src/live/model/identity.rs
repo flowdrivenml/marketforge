@@ -2,22 +2,15 @@
 //!
 //! Authoritative reference: 02 — Domain Models and Contracts.md, Sections 3–5.
 
+use crate::canonical::Exchange;
+use crate::instrument::InstrumentIdentity;
 use serde::{Deserialize, Serialize};
 
 /// Exchange identity — venue-level enum.
-// Re-uses the same variants as the canonical Exchange but exists as an
-// independent type so live-specific extensions can be added without
-// changing the shared canonical contract.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ExchangeId {
-    Binance,
-    Bybit,
-    Okx,
-    Bitget,
-    #[serde(rename = "gateio")]
-    GateIo,
-}
+///
+// Prefers the canonical Exchange enum to avoid identity duplication across
+// subsystems. Re-exported here as ExchangeId for live-module clarity.
+pub type ExchangeId = Exchange;
 
 /// Market category: Spot, Linear perpetuals, or Inverse futures.
 ///
@@ -62,6 +55,7 @@ pub struct ChannelSpec {
 // - Independent of subscribers and recording configuration.
 // - Includes all acquisition parameters affecting feed semantics.
 // - Compatible with configuration serialization.
+// - Uses resolved instrument identity from the instrument catalog.
 //
 // Two equivalent keys must resolve to one logical source acquisition.
 // Different acquisition semantics must produce different keys.
@@ -69,7 +63,7 @@ pub struct ChannelSpec {
 pub struct SourceStreamKey {
     pub exchange: ExchangeId,
     pub market: MarketKind,
-    pub instrument: String,
+    pub instrument: InstrumentIdentity,
     pub channel: ChannelSpec,
 }
 
