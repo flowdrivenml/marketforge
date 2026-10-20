@@ -1,35 +1,8 @@
 use csv::ByteRecord;
 
-use crate::{
-    canonical::Exchange,
-    error::{MarketForgeError, Result},
-    job::{InstrumentKind, WorkTask},
-};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IdentityPolicy {
-    /// Archive is expected to contain only the requested instrument.
-    Strict,
-
-    /// Archive may contain multiple instruments.
-    Filter,
-
-    /// Source does not expose a native instrument identifier.
-    TrustSource,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IdentityDecision {
-    Match,
-    Skip,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct IdentityMetrics {
-    pub records_read: u64,
-    pub records_matched: u64,
-    pub records_skipped_instrument: u64,
-}
+use super::policy::{IdentityDecision, IdentityMetrics, IdentityPolicy};
+use crate::error::{MarketForgeError, Result};
+use crate::job::WorkTask;
 
 pub struct InstrumentMatcher {
     policy: IdentityPolicy,
@@ -85,7 +58,7 @@ impl InstrumentMatcher {
     }
 
     pub fn from_task(headers: &ByteRecord, task: &WorkTask) -> Result<Self> {
-        let policy = identity_policy(task);
+        let policy = crate::formats::trades::identity_policy(task);
 
         Self::new(headers, task.symbol.clone(), policy)
     }
@@ -181,6 +154,7 @@ impl InstrumentMatcher {
         self.policy
     }
 }
+
 fn okx_futures_family(symbol: &str) -> Option<&str> {
     let (family, expiry) = symbol.rsplit_once('-')?;
 
@@ -190,6 +164,7 @@ fn okx_futures_family(symbol: &str) -> Option<&str> {
 
     Some(family)
 }
+
 fn resolve_identity_column(headers: &ByteRecord) -> Result<usize> {
     for name in ["instrument_name", "symbol"] {
         if let Some(index) = headers.iter().position(|header| header == name.as_bytes()) {
@@ -200,18 +175,6 @@ fn resolve_identity_column(headers: &ByteRecord) -> Result<usize> {
     Err(MarketForgeError::InvalidConfiguration(
         "instrument identity policy requires an instrument_name or symbol column".to_owned(),
     ))
-}
-
-pub fn identity_policy(task: &WorkTask) -> IdentityPolicy {
-    match (task.exchange, task.instrument.instrument_kind) {
-        (Exchange::Okx, InstrumentKind::Future) => IdentityPolicy::Filter,
-
-        (Exchange::Okx, _) => IdentityPolicy::Strict,
-
-        (Exchange::Bybit, InstrumentKind::Perpetual) => IdentityPolicy::Strict,
-
-        _ => IdentityPolicy::TrustSource,
-    }
 }
 
 #[cfg(test)]
