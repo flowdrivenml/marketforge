@@ -14,6 +14,7 @@ pub mod error;
 pub mod generation;
 pub mod identity;
 pub mod lifecycle;
+pub mod memory;
 pub mod operation;
 pub mod protocol;
 pub mod snapshot;

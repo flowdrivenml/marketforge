@@ -22,5 +22,8 @@ pub mod historical;
 #[cfg(feature = "historical")]
 pub use historical::normalize as process;
 
+#[cfg(any(feature = "live-retention", feature = "historical"))]
+pub mod storage;
+
 #[cfg(feature = "live")]
 pub mod live;

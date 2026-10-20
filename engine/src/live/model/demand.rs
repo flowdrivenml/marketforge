@@ -39,28 +39,58 @@ pub struct RetentionSessionId(pub String);
 
 /// Category that originated a demand registration.
 ///
-/// Multiple distinct `DemandId` registrations may share the same
-/// `DemandOwner` category.
+/// This enum classifies **who** initiated the demand, not **whether**
+/// the demand persists across restarts. Persistence lifetime is a
+/// property of the subsystem that owns the owner — not an intrinsic
+/// property of the `DemandOwner` variant.
 ///
-/// Demand ownership must not rely solely on manually incremented
-/// counters for uniqueness — `DemandId` itself is the unique
-/// registration identifier.
+/// # Persistent-configuration demands
+///
+/// `PersistentConfiguration` requirements are restored through the
+/// Configuration Manager (Document 13) and the Runtime Reconciler
+/// after restart. The Runtime Reconciler re-applies configuration to
+/// the Stream Registry, which creates corresponding demand
+/// registrations on behalf of `PersistentConfiguration`.
+///
+/// # Recording demands
+///
+/// `Recording` demands are created when a recording subsystem begins
+/// acquisition and released when recording ends. Whether a recording
+/// survives a restart depends on external configuration, not on this
+/// enum variant.
+///
+/// # Derived-stream demands
+///
+/// `DerivedStream` demands represent demands originated by another
+/// registered stream that depends on this source. Derived-stream
+/// demands are **neither** inherently persistent **nor** inherently
+/// transient. Their lifetime depends on whether the derived stream's
+/// own registration is persistent or transient — determined by its
+/// own `DemandOwner` and the configuration that established it.
+///
+/// # Demand registration
+///
+/// Demand registrations are managed independently by the Stream
+/// Registry (Document 05). The registry creates, tracks, and
+/// garbage-collects `DemandId` registrations. Multiple distinct
+/// `DemandId` registrations may share the same `DemandOwner`
+/// category — shared acquisition is the norm, not the exception.
+///
+/// The registry does **not** use manual reference counting. When
+/// demand registrations are released, the registry determines whether
+/// the underlying source stream must continue acquiring, pause to
+/// idle, or be deregistered.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DemandOwner {
-    /// A configured, persistent acquisition requirement.
-    /// Survives runtime restarts.
+    /// A configured, persistent acquisition requirement (ownership category).
     PersistentConfiguration,
-    /// A recording subsystem requirement.
-    /// Survives runtime restarts while the recording is enabled.
+    /// A recording subsystem requirement (ownership category).
     Recording,
-    /// A connected subscriber session.
-    /// Existed only while the session remains active.
+    /// A connected subscriber session (ownership category).
     Subscriber(SubscriberId),
-    /// A derived stream requiring this source's data.
-    /// Existed only while the derived stream remains registered.
+    /// A derived stream requiring this source's data (ownership category).
     DerivedStream(DerivedStreamId),
-    /// A temporary retention reservation.
-    /// Existed only for the duration of the retention session.
+    /// A temporary retention reservation (ownership category).
     RetentionSession(RetentionSessionId),
 }
 

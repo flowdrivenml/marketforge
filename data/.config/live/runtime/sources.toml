@@ -115,6 +115,7 @@ channel = "depth"
 enabled = true
 record = false
 
+[[sources]]
 id = "bitget_linear_btcusdt_trades"
 exchange = "bitget"
 market = "linear"

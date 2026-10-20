@@ -1476,27 +1476,38 @@ When new snapshots arrive:
 - Recalculate its visible row position.
 - Clear selection safely if it has been removed.
 
-### 8.6 Stream Lifecycle Presentation
+### ### 8.6 Stream Lifecycle Presentation
 
-The Streams view must distinguish lifecycle from health.
+The Streams view must distinguish logical stream lifecycle,
+connection lifecycle, acquisition readiness, and health.
 
-Example:
+For example:
 
-    Lifecycle:
-        Reconnecting
+    StreamLifecycle:     Active
+    ConnectionState:     Reconnecting
+    AcquisitionReadiness: Not Ready
+    Health:              Degraded
 
-    Health:
-        Degraded
+This represents a running logical source-stream runtime
+whose physical connection is recovering.
 
 Another example:
 
-    Lifecycle:
-        Active
+    StreamLifecycle:     Active
+    ConnectionState:     Connected
+    AcquisitionReadiness: Ready
+    Health:              Unhealthy
 
-    Health:
-        Unhealthy
+This is possible when an independently required operational
+guarantee is failing despite current acquisition readiness.
 
 These states are not contradictory.
+
+Ratatui must not represent `Reconnecting` or `Synchronizing`
+as `StreamLifecycle` variants.
+
+Operational observations must retain their authoritative
+state dimensions.
 
 ### 8.7 Stream Readiness
 
@@ -1663,19 +1674,46 @@ Health filtering must use the shared HealthEvaluator assessment.
 
 ### 9.5 Lifecycle Filter
 
-The user may optionally filter by lifecycle.
+The user may optionally filter streams by their logical
+runtime lifecycle.
 
-Examples:
+The lifecycle filter uses the authoritative `StreamLifecycle`
+defined in Document 02, Section 7.2.
 
+Supported values are:
+
+    Registered
+    Starting
     Active
-
-    Reconnecting
-
-    Synchronizing
-
+    Idle
+    Stopping
+    Stopped
     Failed
 
-    Inactive
+The Streams view may additionally provide separate filters for:
+
+- Physical connection state, including `Reconnecting`.
+- Market-data integrity, including `Synchronizing`.
+- Persistent desired acquisition state, including `Inactive`.
+- Acquisition readiness.
+- Recovery progress.
+- Health classification.
+
+These filters must not introduce additional logical
+`StreamLifecycle` variants.
+
+A stream may match multiple independent operational filters
+simultaneously.
+
+For example:
+
+    StreamLifecycle: Active
+    ConnectionState: Reconnecting
+    PersistentDesiredState: Inactive
+    EffectiveAcquisitionRequired: true
+
+This is valid when independent demand continues to require
+the source after persistent acquisition has been disabled.
 
 Health and lifecycle filters must remain independent.
 

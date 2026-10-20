@@ -1,0 +1,257 @@
+# MarketForge Live — Binance USDⓈ-M Futures (Linear)
+# Proposed exchange-profile schema v1.
+#
+# Official documentation:
+# https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/websocket-market-streams/Connect
+# https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/websocket-market-streams/How-to-manage-a-local-order-book-correctly
+# https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data
+#
+# Instrument metadata is provided by Python orchestration.
+# MarketForge Live does not fetch exchangeInfo.
+#
+# Trade and depth normalization are configured separately.
+
+schema_version = 1
+
+[exchange]
+id = "binance"
+market = "linear"
+profile = "binance_linear"
+
+# ============================================================
+# WEBSOCKET
+# ============================================================
+
+[websocket]
+connection_lifetime_seconds = 86400
+max_subscriptions_per_connection = 1024
+max_client_messages_per_second = 10
+
+symbol_case = "lowercase"
+timestamp_unit = "milliseconds"
+
+# ------------------------------------------------------------
+# CONNECTION ROUTES
+# ------------------------------------------------------------
+
+[websocket.routes.public]
+base_url = "wss://fstream.binance.com/public"
+access_mode = "stream"
+
+[websocket.routes.market]
+base_url = "wss://fstream.binance.com/market"
+access_mode = "stream"
+
+# Private user-data streams are outside MarketForge Live scope.
+
+# ------------------------------------------------------------
+# HEARTBEAT
+# ------------------------------------------------------------
+
+[websocket.heartbeat]
+strategy = "websocket_control_frames"
+
+server_ping_interval_seconds = 180
+pong_deadline_seconds = 600
+
+respond_to_ping = true
+echo_ping_payload = true
+
+# ------------------------------------------------------------
+# CONNECTION LIFECYCLE
+# ------------------------------------------------------------
+
+[websocket.lifecycle]
+
+# MarketForge policy, not an exchange requirement.
+rotate_before_expiration_seconds = 300
+
+# ------------------------------------------------------------
+# SUBSCRIPTIONS
+# ------------------------------------------------------------
+
+[websocket.subscription]
+strategy = "json_rpc"
+
+subscribe_method = "SUBSCRIBE"
+unsubscribe_method = "UNSUBSCRIBE"
+list_method = "LIST_SUBSCRIPTIONS"
+
+request_id_field = "id"
+request_id_type = "unsigned_integer"
+
+success_field = "result"
+success_is_null = true
+
+supports_dynamic_subscriptions = true
+supports_unsubscribe = true
+supports_list_subscriptions = true
+
+# ------------------------------------------------------------
+# MESSAGE ROUTING
+# ------------------------------------------------------------
+
+[websocket.routing]
+mode = "combined"
+
+combined_wrapper_field = "data"
+combined_stream_field = "stream"
+
+event_type_field = "e"
+symbol_field = "s"
+
+# ============================================================
+# AGGREGATED TRADES
+# ============================================================
+
+[channels.aggregate_trades]
+enabled = true
+
+route = "market"
+stream_template = "{symbol_lower}@aggTrade"
+
+event_type = "aggTrade"
+format = "trades/binance_linear"
+
+# Aggregated executions are NOT individual trade records.
+trade_semantics = "aggregated"
+
+# ============================================================
+# L2 DIFFERENTIAL DEPTH
+# ============================================================
+
+[channels.depth]
+enabled = true
+
+route = "public"
+
+stream_template = "{symbol_lower}@depth"
+fast_stream_template = "{symbol_lower}@depth@100ms"
+
+default_interval_ms = 250
+supported_intervals_ms = [100, 250, 500]
+
+event_type = "depthUpdate"
+format = "depth/binance_linear"
+
+synchronization_strategy = "binance_futures_diff_depth"
+snapshot_endpoint = "depth_snapshot"
+
+first_update_id_field = "U"
+last_update_id_field = "u"
+previous_update_id_field = "pu"
+
+quantity_mode = "absolute"
+zero_quantity_action = "delete"
+
+# ============================================================
+# REST
+# ============================================================
+
+[rest]
+base_url = "https://fapi.binance.com"
+
+# MarketForge operational policy.
+request_timeout_seconds = 10
+
+# ------------------------------------------------------------
+# L2 SNAPSHOT
+# ------------------------------------------------------------
+
+[rest.endpoints.depth_snapshot]
+method = "GET"
+path = "/fapi/v1/depth"
+
+parameters = ["symbol", "limit"]
+
+default_limit = 500
+maximum_limit = 1000
+
+response_sequence_field = "lastUpdateId"
+
+authentication = "none"
+weight_policy = "depth_snapshot"
+
+# ------------------------------------------------------------
+# RECENT TRADES
+# ------------------------------------------------------------
+
+[rest.endpoints.recent_trades]
+method = "GET"
+path = "/fapi/v1/trades"
+
+parameters = ["symbol", "limit"]
+
+default_limit = 500
+maximum_limit = 1000
+
+authentication = "none"
+weight_policy = "recent_trades"
+
+# ------------------------------------------------------------
+# HISTORICAL TRADES
+# ------------------------------------------------------------
+
+[rest.endpoints.historical_trades]
+method = "GET"
+path = "/fapi/v1/historicalTrades"
+
+parameters = ["symbol", "limit", "fromId"]
+
+default_limit = 100
+maximum_limit = 500
+
+pagination_strategy = "trade_id"
+pagination_parameter = "fromId"
+
+authentication = "api_key_header"
+authentication_header = "X-MBX-APIKEY"
+
+# Binance documents a one-month availability window.
+max_history_days = 30
+
+weight_policy = "historical_trades"
+
+# ============================================================
+# RATE LIMITING
+# ============================================================
+
+[rest.rate_limiting]
+strategy = "weighted_shared_pool"
+
+# Limits are managed by configured policies and reconciled
+# against exchange response headers when available.
+limits_source = "configured"
+
+usage_header_prefix = "X-MBX-USED-WEIGHT"
+
+http_throttled_status = 429
+http_banned_status = 418
+
+honor_retry_after = true
+
+# ------------------------------------------------------------
+# REQUEST WEIGHTS
+# ------------------------------------------------------------
+
+[rest.weight_policies.depth_snapshot]
+type = "discrete"
+parameter = "limit"
+
+tiers = [
+    { limit = 5, weight = 2 },
+    { limit = 10, weight = 2 },
+    { limit = 20, weight = 2 },
+    { limit = 50, weight = 2 },
+    { limit = 100, weight = 5 },
+    { limit = 500, weight = 10 },
+    { limit = 1000, weight = 20 },
+]
+
+[rest.weight_policies.recent_trades]
+type = "fixed"
+weight = 5
+
+[rest.weight_policies.historical_trades]
+type = "fixed"
+weight = 200

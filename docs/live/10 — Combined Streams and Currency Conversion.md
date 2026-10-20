@@ -998,7 +998,7 @@ Conceptually:
     DerivedEventEnvelope {
         derived_stream_id
 
-        cursor_epoch
+        log_epoch
         derived_cursor
 
         source_event_identity
@@ -1577,7 +1577,7 @@ Conceptually:
         stream_rank
 
         source_generation
-        cursor_epoch
+        log_epoch
 
         last_accepted_cursor
         maximum_observed_event_time
@@ -1723,11 +1723,32 @@ Events eligible under the inclusive watermark rule may be released through that 
 
 The initial recommended release rule is:
 
-    EventTimestamp <= CombinedWatermark
+    EventTimestamp < CombinedWatermark
 
 Events are released in complete merge-key order.
 
-A release operation must also respect the active derived-stream generation and output admission contract.
+The strict inequality is required because reaching a timestamp
+watermark does not, by itself, establish that every event with
+that exact timestamp has already arrived.
+
+Events at the watermark timestamp remain buffered until the
+timestamp is closed under the applicable source-completeness
+and ordering contracts.
+
+An inclusive release rule:
+
+    EventTimestamp <= CombinedWatermark
+
+is permitted only when all relevant source contracts explicitly
+establish completeness at the watermark timestamp.
+
+A release operation must also respect the active derived-stream
+generation and output admission contract.
+
+This rule governs ordinary watermark-based release.
+Events exceeding the configured lateness or buffer limits
+remain subject to the separately defined late-event,
+overflow, and source-failure policies.
 
 ### 11.6 Equal-Timestamp Ordering
 

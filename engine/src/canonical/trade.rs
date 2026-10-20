@@ -1,8 +1,9 @@
 use super::enums::TradeSide;
 use super::envelope::EventEnvelope;
 use super::numeric::{ImpliedVolatility, Price, Quantity};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Trade {
     pub envelope: EventEnvelope,
 

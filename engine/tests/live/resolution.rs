@@ -15,9 +15,6 @@ use marketforge_engine::live::{
     },
     ports::routing::DestinationId,
 };
-use std::time::Duration;
-
-use crate::live::support::manual_clock::ManualClock;
 
 fn resolution(token: u64) -> (EscalationResolutionToken, EscalationResolutionRecord) {
     let stream = StreamId("resolution-source".to_owned());

@@ -3643,7 +3643,27 @@ Conceptually:
 
 These representations are illustrative.
 
-The authoritative Rust field definitions remain those specified in document 02.
+These structures illustrate snapshot and update semantics;
+they do not independently define the final Rust canonical
+event representation.
+
+The authoritative logical L2 event boundary, grouping,
+and cursor-assignment contract is defined in
+Document 02, Section 6.4.
+
+One accepted logical L2 event may contain multiple
+ordered canonical `L2LevelUpdate` values.
+
+The normalization and integrity pipeline must preserve
+the grouping established by the applicable historical
+depth-processing contract.
+
+It must not assign independent MarketForge cursors to
+individual price-level changes.
+
+The exact shared Rust representation must be verified
+against the existing historical implementation before
+the event schema is frozen.
 
 ### 26.4 L2 Event Semantics
 

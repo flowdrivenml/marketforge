@@ -153,13 +153,56 @@ pub enum IntegrityState {
 
 /// Reason for an integrity failure.
 ///
-/// Defined by Document 04 (Integrity model). Future variants will
-/// enumerate specific failure modes (gap detected, sequence mismatch,
-/// snapshot mismatch, etc.).
+/// Covers the established trade and L2 integrity failure categories
+/// drawn from Documents 06, 06.1, and 06.2. Future variants will
+/// enumerate additional failure modes specific to other subsystems.
+///
+/// These categories describe the structural integrity of the event
+/// stream, independent of recovery disposition. Recovery state
+/// tracks how the system responds; integrity failure tracks what
+/// went wrong.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IntegrityFailure {
-    /// A specific failure reason will be added when Document 04 is applied.
-    ReasonNotDefined,
+    /// A gap in the event sequence has been confirmed (Document 06.2).
+    ///
+    /// Evidence indicates that event(s) were expected but not received
+    /// and are not recoverable through normal live acquisition.
+    DataGap,
+
+    /// Expected continuity between events has been violated (Documents 06, 06.2).
+    ///
+    /// Sequence identifiers, timestamps, or ordering constraints
+    /// required by the integrity strategy are no longer satisfiable
+    /// from the live event flow.
+    ContinuityViolation,
+
+    /// A record with a matching identity carries conflicting canonical values (Document 06).
+    ///
+    /// Examples: different price, different quantity, different
+    /// aggressor side, or different execution timestamp for a record
+    /// that already passed validation under a matching identity.
+    ConflictingDuplicate,
+
+    /// A message or canonical record violates required structural invariants.
+    ///
+    /// Covers malformed structure (Document 06.1), invalid price or
+    /// quantity values (Document 06.1 §24), and mutation violations
+    /// that prevent atomic book transitions.
+    MalformedData,
+
+    /// Authoritative snapshot is unavailable or unusable (Document 06.1).
+    ///
+    /// Covers snapshot timeout, malformed snapshot, snapshot
+    /// incompatibility with the active instrument, and metadata
+    /// mismatches between snapshot and update contexts.
+    SnapshotFailure,
+
+    /// The resulting order-book state violates required structural invariants.
+    ///
+    /// Bid/ask ordering, price-level ordering, or zero-quantity level
+    /// violations that the BookStore (§24) has detected after applying
+    /// incremental updates.
+    StructuralViolation,
 }
 
 /// Current recovery workflow state.

@@ -329,13 +329,18 @@ fn resolution_preserves_original_delivery_outcome() {
         )
         .unwrap();
 
-    let resolved = journal
-        .resolve_escalation(id, EscalationResolution::FailureAcknowledged)
+    let prepared = journal
+        .prepare_resolution(id, EscalationResolution::FailureAcknowledged)
         .unwrap();
 
-    assert_eq!(resolved.record.outcome, claim.record.outcome);
+    let sink = BoundedResolutionSink::new(10).unwrap();
+    let receipt = sink.accept(prepared.token, &prepared.record).unwrap();
+
+    let committed = journal.commit_resolution(id, &receipt, &sink).unwrap();
+
+    assert_eq!(committed.record.outcome, claim.record.outcome);
     assert_eq!(
-        resolved.resolution,
+        committed.resolution,
         EscalationResolution::FailureAcknowledged
     );
 
@@ -343,11 +348,11 @@ fn resolution_preserves_original_delivery_outcome() {
 }
 
 #[test]
-fn non_escalated_record_cannot_be_resolved() {
+fn non_escalated_record_cannot_prepare_resolution() {
     let mut journal = journal_with_failure();
 
     assert!(matches!(
-        journal.resolve_escalation(
+        journal.prepare_resolution(
             DeliveryObligationId(1),
             EscalationResolution::FailureAcknowledged,
         ),

@@ -155,9 +155,7 @@ parameters = ["symbol", "limit"]
 
 default_limit = 1000
 maximum_limit = 5000
-
 response_sequence_field = "lastUpdateId"
-
 weight_policy = "depth_snapshot"
 
 # ------------------------------------------------------------
@@ -191,22 +189,7 @@ maximum_limit = 1000
 pagination_strategy = "trade_id"
 pagination_parameter = "fromId"
 
-# Historical trades require an API key.
-# Credential values must not be stored in this profile.
-authentication = "api_key_header"
-authentication_header = "X-MBX-APIKEY"
-
 weight_policy = "historical_trades"
-
-# ------------------------------------------------------------
-# EXCHANGE METADATA
-# ------------------------------------------------------------
-
-[rest.endpoints.exchange_info]
-method = "GET"
-path = "/api/v3/exchangeInfo"
-
-weight_policy = "exchange_info"
 
 # ============================================================
 # REST RATE LIMITING

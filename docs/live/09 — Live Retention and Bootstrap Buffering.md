@@ -4098,7 +4098,7 @@ Possible outcomes include:
 
     CursorExpired
 
-    InvalidCursorEpoch
+    InvalidLogEpoch
 
     SegmentUnavailable
 
@@ -5127,6 +5127,35 @@ The specification must not assume that Parquet encoding, compression, or storage
 ## 38. Implementation Acceptance Criteria
 
 The Live Retention subsystem is complete when the following conditions are satisfied.
+
+Bootstrap-related requirements in this section define the
+capabilities that Live Retention must provide to the separate
+Bootstrap Engine.
+
+MarketForge Live must implement and validate:
+
+- Retention reservations and protection.
+- Cursor-based reading and replay.
+- Continuous replay-to-live handoff.
+- Coverage tracking and gap reporting.
+- Generation-safe retained-event interpretation.
+- Concurrent capture and replay.
+- The interfaces required for historical/live reconciliation.
+
+Bootstrap integration tests must verify these guarantees
+using appropriate test consumers, fixtures, or simulated
+Bootstrap Coordinator interactions.
+
+The separate Bootstrap Engine owns historical archive
+processing, cross-source dataset assembly, overlap
+reconciliation orchestration, and bootstrap completion.
+
+These orchestration responsibilities are not required
+inside the MarketForge Live daemon.
+
+The Bootstrap requirements and tests below remain part
+of the architecture. Their execution must respect
+this application boundary.
 
 ### 38.1 Architecture
 

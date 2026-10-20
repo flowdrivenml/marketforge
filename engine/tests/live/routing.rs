@@ -9,7 +9,7 @@ use marketforge_engine::live::{
     ports::routing::DestinationId,
     routing::acknowledgement::{
         AcknowledgementError, AcknowledgementTracker, DeliveryAcknowledgement, DeliveryCursorRange,
-        DeliveryObligation, DeliveryObligationId,
+        DeliveryObligation, DeliveryObligationId, FinalizationHandoffError, FinalizationJournal,
     },
 };
 
@@ -32,6 +32,7 @@ fn durable_recording_cannot_finalize_at_committed() {
     obligation.policy = DeliveryPolicy::Durable;
 
     let mut tracker = AcknowledgementTracker::new(10).unwrap();
+    let mut journal = FinalizationJournal::new(10).unwrap();
     tracker.register(obligation.clone()).unwrap();
 
     tracker
@@ -43,10 +44,12 @@ fn durable_recording_cannot_finalize_at_committed() {
         })
         .unwrap();
 
-    assert_eq!(
-        tracker.finalize(obligation.id),
-        Err(AcknowledgementError::IncompleteObligation)
-    );
+    assert!(matches!(
+        tracker.finalize_into(obligation.id, &mut journal),
+        Err(FinalizationHandoffError::Acknowledgement(
+            AcknowledgementError::IncompleteObligation
+        ))
+    ));
 
     assert_eq!(tracker.len(), 1);
 }
@@ -57,6 +60,7 @@ fn durable_recording_finalizes_after_durable_stage() {
     obligation.policy = DeliveryPolicy::Durable;
 
     let mut tracker = AcknowledgementTracker::new(10).unwrap();
+    let mut journal = FinalizationJournal::new(10).unwrap();
     tracker.register(obligation.clone()).unwrap();
 
     tracker
@@ -68,13 +72,13 @@ fn durable_recording_finalizes_after_durable_stage() {
         })
         .unwrap();
 
-    assert_eq!(
-        tracker.finalize(obligation.id),
+    assert!(matches!(
+        tracker.finalize_into(obligation.id, &mut journal),
         Ok(ObligationFinalization::Succeeded {
-            id: obligation.id,
-            destination: obligation.destination,
-        })
-    );
+            id,
+            destination: _,
+        }) if id == obligation.id
+    ));
 
     assert!(tracker.is_empty());
 }
@@ -86,6 +90,7 @@ fn required_publication_finalizes_at_delivered() {
     obligation.policy = DeliveryPolicy::Required;
 
     let mut tracker = AcknowledgementTracker::new(10).unwrap();
+    let mut journal = FinalizationJournal::new(10).unwrap();
     tracker.register(obligation.clone()).unwrap();
 
     tracker
@@ -98,7 +103,7 @@ fn required_publication_finalizes_at_delivered() {
         .unwrap();
 
     assert!(matches!(
-        tracker.finalize(obligation.id),
+        tracker.finalize_into(obligation.id, &mut journal),
         Ok(ObligationFinalization::Succeeded { .. })
     ));
 }
@@ -108,6 +113,7 @@ fn required_recording_cannot_finalize_while_queued() {
     let obligation = test_obligation();
 
     let mut tracker = AcknowledgementTracker::new(10).unwrap();
+    let mut journal = FinalizationJournal::new(10).unwrap();
     tracker.register(obligation.clone()).unwrap();
 
     tracker
@@ -119,10 +125,12 @@ fn required_recording_cannot_finalize_while_queued() {
         })
         .unwrap();
 
-    assert_eq!(
-        tracker.finalize(obligation.id),
-        Err(AcknowledgementError::IncompleteObligation)
-    );
+    assert!(matches!(
+        tracker.finalize_into(obligation.id, &mut journal),
+        Err(FinalizationHandoffError::Acknowledgement(
+            AcknowledgementError::IncompleteObligation
+        ))
+    ));
 }
 
 #[test]
@@ -130,6 +138,7 @@ fn failed_obligation_returns_explicit_failure_outcome() {
     let obligation = test_obligation();
 
     let mut tracker = AcknowledgementTracker::new(10).unwrap();
+    let mut journal = FinalizationJournal::new(10).unwrap();
     tracker.register(obligation.clone()).unwrap();
 
     tracker
@@ -142,7 +151,7 @@ fn failed_obligation_returns_explicit_failure_outcome() {
         .unwrap();
 
     assert_eq!(
-        tracker.finalize(obligation.id),
+        tracker.finalize_into(obligation.id, &mut journal),
         Ok(ObligationFinalization::Failed {
             id: obligation.id,
             destination: obligation.destination,
@@ -758,24 +767,28 @@ fn tracker_allocates_distinct_ids() {
 }
 
 #[test]
-fn tracker_rejects_removal_of_pending_obligation() {
+fn tracker_rejects_finalization_of_pending_obligation() {
     let mut tracker = AcknowledgementTracker::new(10).unwrap();
+    let mut journal = FinalizationJournal::new(10).unwrap();
 
     let obligation = test_obligation();
 
     tracker.register(obligation.clone()).unwrap();
 
-    assert_eq!(
-        tracker.remove(obligation.id),
-        Err(AcknowledgementError::IncompleteObligation)
-    );
+    assert!(matches!(
+        tracker.finalize_into(obligation.id, &mut journal),
+        Err(FinalizationHandoffError::Acknowledgement(
+            AcknowledgementError::IncompleteObligation
+        ))
+    ));
 
     assert_eq!(tracker.len(), 1);
 }
 
 #[test]
-fn tracker_can_remove_failed_obligation() {
+fn tracker_finalizes_failed_obligation() {
     let mut tracker = AcknowledgementTracker::new(10).unwrap();
+    let mut journal = FinalizationJournal::new(10).unwrap();
 
     let obligation = test_obligation();
 
@@ -790,10 +803,8 @@ fn tracker_can_remove_failed_obligation() {
         })
         .unwrap();
 
-    assert_eq!(
-        tracker.remove(obligation.id),
-        Ok(DeliveryStatus::Failed(DeliveryFailure::PersistenceFailed))
-    );
+    let status = tracker.finalize_into(obligation.id, &mut journal);
+    assert!(matches!(status, Ok(ObligationFinalization::Failed { .. })));
 
     assert!(tracker.is_empty());
 }
@@ -1377,14 +1388,11 @@ mod destination_queue_tests {
         task::{Context, Poll, Waker},
     };
 
+    use crate::live::support::live_events::l2_event;
     use marketforge_engine::live::{
         foundation::cancellation::CancellationToken,
         routing::{admission::AdmissionContext, queue::AsyncQueueAdmissionError},
     };
-    use std::pin::Pin;
-    use std::time::{Duration, Instant};
-
-    use crate::live::support::live_events::l2_event;
     fn queue() -> DestinationQueue {
         let capacity =
             DestinationCapacity::new(DeliveryCapacity::new(10, 1024).unwrap(), 10).unwrap();

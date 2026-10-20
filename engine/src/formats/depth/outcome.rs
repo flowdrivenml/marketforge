@@ -1,7 +1,7 @@
 use crate::canonical::L2LevelUpdate;
 
 /// Metadata describing how canonical levels should be interpreted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DepthEventBoundary {
     /// Complete initialization of an independently reconstructable book.
     Initialization,
@@ -16,7 +16,7 @@ pub enum DepthEventBoundary {
 /// provides them.
 ///
 /// The ordinal identifies the source record's position within its task.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DepthSourceEventMetadata {
     pub source_event_ordinal: Option<u64>,
 
@@ -30,7 +30,7 @@ pub struct DepthSourceEventMetadata {
 /// Operation represented by the original exchange message.
 ///
 /// Independent of reconstruction-segment boundaries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DepthSourceOperation {
     Snapshot,
     AbsoluteUpdate,

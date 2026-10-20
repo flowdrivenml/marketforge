@@ -3201,10 +3201,25 @@ Replay does not automatically recover exchange events that MarketForge never acq
 A replay request must identify:
 
     StreamId
-    CursorEpoch
+    LogEpoch
     StartingCursor
 
-The cursor epoch may be represented by a runtime-instance identity or another restart-safe namespace defined in document 02.
+`LogEpoch` is the authoritative namespace for MarketForge
+event-log offsets, as defined in Document 02, Sections 4.1
+and 5.5.
+
+A log epoch must not be inferred from a physical connection,
+subscription generation, or runtime-instance identity.
+
+An ordinary WebSocket reconnection does not independently
+establish a new log epoch.
+
+Replay requests identify positions using the complete
+`StreamCursor` identity:
+
+    StreamId
+    LogEpoch
+    Offset
 
 A numeric cursor without its applicable epoch may be ambiguous across process restarts.
 
@@ -3216,7 +3231,7 @@ Conceptual structure:
         request_id
         stream_id
 
-        cursor_epoch
+        log_epoch
         starting_cursor
 
         delivery_mode
@@ -3893,15 +3908,39 @@ This avoids accidental dependence on compiler-specific or architecture-specific 
 
 ### 29.5 Canonical Event Types
 
-The initial serialized event variants are:
+The initial serialized event categories are:
 
     Trade
     L2Snapshot
     L2Update
 
-Each variant must have an unambiguous type identifier.
+These names describe event semantics rather than
+establishing independent canonical Rust payload types.
 
-The decoder must not infer event type from payload length or field presence alone.
+The authoritative logical L2 event grouping contract
+is defined in Document 02, Section 6.4.
+
+An L2 snapshot or update may contain multiple
+ordered canonical `L2LevelUpdate` values.
+
+The Publisher must serialize the complete logical
+L2 event as one accepted MarketForge event.
+
+All level changes belonging to that event share
+the same parent `StreamCursor`.
+
+The Publisher must not allocate additional
+canonical event identities for individual levels.
+
+Each serialized event category must have an
+unambiguous type identifier.
+
+The decoder must not infer event type from payload
+length or field presence alone.
+
+The exact binary representation must preserve
+the shared historical canonical semantics and
+logical depth-event boundaries.
 
 ### 29.6 SerializedEvent
 
@@ -3935,9 +3974,18 @@ Conceptually:
 
     EventIdentity {
         stream_id
-        cursor_epoch
-        stream_cursor
+        log_epoch
+        offset
     }
+This is the authoritative `StreamCursor` identity from
+Document 02, Section 4.1.
+
+The serialized representation may organize these fields
+differently, but must preserve their exact semantics.
+
+Connection, subscription, and book generations remain
+separate provenance fields and are not part of the
+MarketForge cursor namespace.
 
 The Publisher must not generate a new canonical event identity for every subscriber.
 

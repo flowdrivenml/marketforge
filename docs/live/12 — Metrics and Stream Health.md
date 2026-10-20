@@ -3889,43 +3889,214 @@ A disabled component required by an active dependent stream may nevertheless mak
 
 ### 19.8 Lifecycle vs Health
 
-Lifecycle describes what the component is doing.
+Lifecycle and health are independent operational dimensions.
 
-Health describes whether it satisfies its operational contract.
+Lifecycle describes the execution state of a resource.
 
-Example:
+Health describes whether the resource currently satisfies
+its applicable operational guarantees.
 
-    Lifecycle = Recovering
+A logical source-stream runtime uses the authoritative
+`StreamLifecycle` defined in Document 02, Section 7.2.
 
-    Health = Degraded
+A physical connection uses the authoritative
+`ConnectionState` defined in Document 02, Section 7.3.
 
-Another example:
+Recovery progress is represented independently through
+the recovery contracts.
 
-    Lifecycle = Active
-
-    Health = Unhealthy
-
-A component may remain active while processing invalid or incomplete data.
-
-### 19.9 Desired State vs Actual State
-
-The system must distinguish:
-
-    DesiredState
-
-    LifecycleState
-
-    HealthStatus
+#### Logical Runtime and Health
 
 For example:
 
-    DesiredState = Enabled
+    StreamLifecycle: Active
+    AcquisitionReady: false
+    Health:           Degraded
 
-    LifecycleState = Reconnecting
+This is valid when the logical runtime is running
+but its acquisition requirements are temporarily
+unavailable during recovery.
 
-    HealthStatus = Degraded
+Another example:
 
-These values must not be collapsed into one status field.
+    StreamLifecycle: Active
+    ConnectionState: Connected
+    IntegrityState:  Invalid
+    Health:          Unhealthy
+
+This represents a running logical source-stream runtime
+whose market-data integrity requirements are not satisfied.
+
+`StreamLifecycle::Active` must not be interpreted as proof
+that the stream is healthy or acquisition-ready.
+
+#### Connection Lifecycle and Health
+
+A physical connection may report:
+
+    ConnectionState:  Connected
+    ConnectionHealth: Degraded
+
+This indicates that the transport remains established
+while its health measurements exceed configured thresholds.
+
+Connection health degradation must not independently
+introduce a `ConnectionState::Degraded` lifecycle transition.
+
+#### Recovery Independence
+
+Recovery progress is not a logical source-stream
+lifecycle state.
+
+For example:
+
+    StreamLifecycle: Active
+    RecoveryState:   Recovering
+    Health:          Degraded
+
+The HealthEvaluator uses authoritative recovery
+observations when assessing currently available
+service guarantees.
+
+It must not independently initiate recovery,
+modify logical lifecycle state, or declare
+market-data integrity restored.
+
+#### Health Invariants
+
+- Lifecycle state is owned by the responsible
+  runtime subsystem.
+- Health is derived from authoritative state
+  and diagnostic measurements.
+- Acquisition readiness is evaluated separately.
+- Recovery progress does not replace lifecycle state.
+- Historical coverage is independent of current readiness.
+- An active runtime may be unhealthy.
+- A connected transport may have degraded health.
+- A completed recovery operation does not automatically
+  imply complete historical coverage.
+
+Health evaluation must not mutate the authoritative
+state dimensions it observes.
+
+### 19.9 Desired State vs Actual State
+
+The system must distinguish persistent desired configuration,
+effective acquisition demand, logical runtime lifecycle,
+acquisition readiness, and health assessment.
+
+These dimensions are not interchangeable.
+
+#### Persistent Desired State
+
+Persistent desired configuration expresses whether
+the configured source independently requests acquisition.
+
+Conceptually:
+
+    DesiredState:
+        Active
+        Inactive
+        Removed
+
+The Configuration Manager owns the authoritative
+persisted configuration.
+
+The Stream Registry maintains the corresponding
+runtime registration and demand ownership.
+
+`DesiredState::Inactive` means persistent configuration
+does not independently require acquisition.
+
+It does not prevent other valid demand owners from
+requiring the same logical source.
+
+#### Effective Acquisition Demand
+
+Effective acquisition demand is derived from all
+current valid demand registrations.
+
+For example:
+
+    Persistent Desired State: Inactive
+
+    Recording Demand:         Present
+    Subscriber Demand:        Present
+
+    Effective Acquisition:    Required
+
+The source remains required even though persistent
+acquisition has been disabled.
+
+The Stream Registry is authoritative for this
+demand-ownership calculation.
+
+#### Actual Runtime State
+
+Actual runtime state is represented through independent
+authoritative dimensions.
+
+For example:
+
+    Persistent Desired State: Inactive
+    Effective Acquisition:    Required
+
+    StreamLifecycle:          Active
+    ConnectionState:          Reconnecting
+    SubscriptionState:        Pending
+    RecoveryState:            Recovering
+    AcquisitionReadiness:     Not Ready
+
+    HealthStatus:             Degraded
+
+This is a valid state.
+
+The logical runtime remains active because independent
+demand owners still require acquisition.
+
+Connection recovery and subscription restoration do
+not create new logical lifecycle states.
+
+#### Health Evaluation
+
+The HealthEvaluator consumes authoritative operational
+observations and relevant diagnostic measurements.
+
+It must not infer actual acquisition demand solely
+from persistent desired state.
+
+It must not infer acquisition readiness solely from
+`StreamLifecycle::Active`.
+
+A source with no valid acquisition demand and an
+intentionally stopped runtime must not automatically
+be classified as unhealthy merely because it is
+not receiving market data.
+
+Conversely, a source required for acquisition may
+be unhealthy when its configured guarantees cannot
+be satisfied.
+
+The final health classification depends on the
+applicable health policies and available evidence.
+
+#### Reporting Invariant
+
+The following must remain independently observable:
+
+- Persistent desired configuration.
+- Effective acquisition demand.
+- Logical source-stream lifecycle.
+- Physical connection lifecycle.
+- Native subscription state.
+- Market-data integrity.
+- Recovery progress.
+- Acquisition readiness.
+- Historical coverage.
+- Health assessment.
+
+No monitoring component may collapse these dimensions
+into one ambiguous lifecycle or health value.
 
 ### 19.10 Health Reason
 
@@ -4186,14 +4357,33 @@ Different stream types have different validity conditions.
 
 ### 21.1 SourceStreamHealth
 
-Conceptually:
+Source-stream health combines authoritative runtime observations
+with the operational measurements required to evaluate the
+source's configured service guarantees.
+
+The HealthEvaluator does not own logical source identity,
+acquisition demand, connection state, subscription state,
+market-data integrity, or recovery state.
+
+It consumes these observations from their authoritative owners.
+
+#### Conceptual Health Snapshot
 
     SourceStreamHealth {
         stream_id
-        stream_generation
+        source_stream_key
 
-        desired_state
-        lifecycle_state
+        persistent_desired_state
+        effective_acquisition_required
+
+        stream_lifecycle
+        acquisition_readiness
+
+        connection_state
+        subscription_state
+        integrity_state
+        recovery_state
+        coverage_state
 
         transport_health
         subscription_health
@@ -4212,8 +4402,259 @@ Conceptually:
         evaluated_at
     }
 
-Not every dimension applies to every source stream.
+This representation is conceptual.
 
+The final snapshot schema, field types, and serialization
+contracts belong to the shared domain and metrics contracts.
+
+Not every health dimension applies to every source stream.
+
+Unavailable observations must remain distinguishable
+from healthy, unhealthy, or zero-valued observations.
+
+#### Source Identity
+
+`stream_id` identifies the registered logical source.
+
+`source_stream_key` identifies its canonical acquisition
+semantics.
+
+Both are supplied by the authoritative Stream Registry.
+
+A temporary WebSocket disconnection, native subscription
+restoration, or L2 resynchronization must not change
+the source's logical identity.
+
+#### Persistent Desired State
+
+`persistent_desired_state` represents the accepted
+persistent acquisition intent.
+
+Its authoritative configuration is owned by the
+Configuration Manager.
+
+The Stream Registry maintains the corresponding
+runtime registration and persistent demand ownership.
+
+A persistent desired state of `Inactive` does not
+necessarily mean the physical acquisition is stopped.
+
+Other valid demand owners may still require the source.
+
+#### Effective Acquisition Demand
+
+`effective_acquisition_required` is derived from the
+valid demand registrations maintained by the
+Stream Registry.
+
+For example:
+
+    Persistent Desired State: Inactive
+
+    Recording Demand:         Present
+    Subscriber Demand:        Present
+
+    Effective Acquisition:    Required
+
+The HealthEvaluator must evaluate the source against
+its actual required service guarantees.
+
+It must not infer effective acquisition demand solely
+from persistent desired configuration.
+
+A source intentionally stopped because no valid
+acquisition demand remains must not automatically
+be classified as unhealthy for failing to receive
+market-data events.
+
+#### Logical Runtime Lifecycle
+
+`stream_lifecycle` uses the authoritative
+`StreamLifecycle` contract defined in
+Document 02, Section 7.2.
+
+For example:
+
+    StreamLifecycle: Active
+
+This means the logical runtime is executing.
+
+It does not imply that the native subscription is
+established or that market data is ready.
+
+The Stream Registry remains authoritative for
+logical lifecycle transitions.
+
+The HealthEvaluator must not introduce additional
+logical lifecycle variants.
+
+#### Acquisition Readiness
+
+`acquisition_readiness` represents whether the
+source currently satisfies its configured
+channel-specific readiness requirements.
+
+Readiness must be evaluated from authoritative
+connection, subscription, processor-initialization,
+and integrity observations.
+
+A source may report:
+
+    StreamLifecycle:      Active
+    ConnectionState:      Reconnecting
+    SubscriptionState:    Pending
+    AcquisitionReadiness: Not Ready
+
+This is valid while its logical runtime coordinates
+recovery.
+
+For L2 streams, acquisition readiness requires
+successful synchronization according to the
+configured snapshot and sequence-integrity contract.
+
+Current acquisition readiness does not independently
+establish historical coverage completeness.
+
+#### Authoritative State Sources
+
+| Observation | Authoritative Owner |
+|---|---|
+| Logical source identity | Stream Registry |
+| Persistent desired configuration | Configuration Manager |
+| Effective acquisition demand | Stream Registry |
+| Logical runtime lifecycle | Stream Registry |
+| Physical connection lifecycle | Connection Manager |
+| Native subscription lifecycle | Subscription Manager |
+| Market-data integrity | Stream Processor / Integrity subsystem |
+| Recovery-operation state | Recovery Coordinator |
+| Historical coverage | Recovery / Retention subsystems |
+| Health classification | Metrics and Stream Health subsystem |
+
+The HealthEvaluator consumes these observations
+without independently mutating their authoritative
+states.
+
+#### Generation and Revision Context
+
+Health snapshots must carry sufficient generation
+and revision context to distinguish current
+observations from obsolete asynchronous results.
+
+Relevant identifiers may include:
+
+    ConnectionGeneration
+    SubscriptionGeneration
+    BookGeneration
+    ConfigRevisionId
+    LogEpoch
+
+These identifiers represent different domains.
+
+They must not be replaced by one ambiguous
+`stream_generation` field.
+
+In particular:
+
+- `ConnectionGeneration` identifies the physical
+  connection incarnation.
+- `SubscriptionGeneration` identifies the native
+  subscription incarnation.
+- `BookGeneration` identifies the authoritative
+  L2 synchronization incarnation.
+- `ConfigRevisionId` identifies an accepted
+  desired configuration revision.
+- `LogEpoch` identifies a MarketForge cursor
+  namespace.
+
+Only applicable identifiers need to appear
+in a particular source-health snapshot.
+
+The exact generation and revision fields included
+in the final serialized health schema must be
+established by the shared metrics contract.
+
+#### Health Evaluation
+
+The HealthEvaluator combines applicable component
+health assessments according to the configured
+service requirements.
+
+For example:
+
+    Persistent Desired State: Inactive
+    Effective Acquisition:    Required
+
+    StreamLifecycle:          Active
+    ConnectionState:          Connected
+    SubscriptionState:        Active
+    IntegrityState:           Synchronizing
+
+    AcquisitionReadiness:     Not Ready
+    OverallHealth:           Degraded
+
+This is a possible assessment for a required L2
+source whose runtime and subscription are active
+but whose order book is still synchronizing.
+
+The exact health classification depends on the
+configured health policy.
+
+The HealthEvaluator must not automatically classify
+every synchronizing or recovering source as
+`Degraded` when a different classification is
+required by its service guarantees.
+
+#### Recording and Retention
+
+Recording and retention health are included only
+when their corresponding guarantees apply.
+
+A source with optional recording disabled must
+not become unhealthy merely because PostgreSQL
+recording is unavailable.
+
+Conversely, a required recording or retention
+obligation that cannot be satisfied must affect
+the applicable health assessment.
+
+The HealthEvaluator must preserve the distinction
+between acquisition readiness and downstream
+delivery or durability guarantees.
+
+#### Snapshot Consistency
+
+Each health snapshot must include an observation
+timestamp.
+
+Component observations may originate from
+different collection instants.
+
+The evaluator must preserve relevant generation
+and revision context and reject or explicitly
+qualify stale observations.
+
+A health snapshot must not claim atomic consistency
+across independent components unless that guarantee
+is explicitly implemented.
+
+#### Source Health Invariants
+
+- Logical lifecycle is independent of health.
+- Connection lifecycle is independent of connection health.
+- Persistent desired state is independent of effective demand.
+- Effective demand determines which acquisition guarantees
+  are currently required.
+- Acquisition readiness is independent of historical coverage.
+- Current market-data integrity remains authoritative
+  in the responsible processor.
+- Recovery progress remains authoritative in the
+  Recovery Coordinator.
+- Recording and retention guarantees remain separate
+  from source acquisition.
+- Health evaluation must not mutate canonical
+  market-data processing state.
+- Obsolete generations must not overwrite current
+  authoritative observations.
 ### 21.2 Transport Health
 
 Transport health reflects the connection required by the source stream.
@@ -4390,20 +4831,47 @@ Conceptually:
 
 A derived stream may require several source streams.
 
-Example:
+Dependency availability must be evaluated against the specific
+capabilities required by the derived-stream transformation.
 
-    Combined BTC Trades
+The HealthEvaluator must not infer dependency availability solely
+from `StreamLifecycle::Active`.
 
-        Binance:
-            Healthy
+A source may have an operational logical runtime while its
+connection is recovering, its native subscription is unavailable,
+or its market-data integrity is invalid.
 
-        Bybit:
-            Healthy
+For example:
 
-        OKX:
-            Degraded
+    SourceStream:
+        StreamLifecycle:     Active
+        ConnectionState:     Connected
+        SubscriptionState:   Active
+        IntegrityState:      Synchronizing
+        AcquisitionReady:    false
 
-The combined stream must interpret this state according to its configured source-participation policy.
+    Dependent L2 Processor:
+        Required Capability: BookSynchronization
+        Dependency Available: false
+
+The logical source runtime remains operational, but it does
+not currently satisfy the dependent processor's requirements.
+
+Conversely, an intentionally inactive persistent source
+may remain available to dependent consumers when independent
+acquisition demand keeps the source running and ready.
+
+Persistent desired state must not be used as a substitute
+for effective acquisition demand or actual source readiness.
+
+The dependency manager remains authoritative for dependency
+relationships and ownership.
+
+The HealthEvaluator assesses whether the required capabilities
+are currently satisfied.
+
+Health evaluation must not independently activate sources,
+release demand registrations, or mutate dependency relationships.
 
 ### 22.3 Strict Participation
 
@@ -4595,25 +5063,50 @@ Dependencies should reuse the authoritative Stream Registry and combined-stream 
 
 A component may require only specific capabilities from a dependency.
 
-Examples:
+Capability availability must be evaluated using authoritative
+operational observations and the dependent component's declared
+requirements.
 
-    Connectivity
+The logical lifecycle of a dependency is not sufficient
+to establish capability availability.
 
-    CanonicalProcessing
+In particular:
 
-    TradeContinuity
+- `StreamLifecycle::Active` confirms that a logical runtime
+  is executing, not that its market data is ready.
+- `ConnectionState::Connected` confirms physical connectivity,
+  not successful native subscription or valid market data.
+- `SubscriptionState::Active` confirms native subscription
+  establishment, not synchronized L2 integrity.
+- `IntegrityState::Valid` establishes the applicable current
+  integrity condition, not complete historical coverage.
+- `RecoveryState::Recovering` describes recovery progress,
+  not a logical source-stream lifecycle transition.
 
-    BookSynchronization
+Dependencies must be evaluated according to the exact
+capabilities required by their consumers.
 
-    OrderedPublication
+Examples include:
 
-    ConversionAvailability
+- A live trade merger requiring current trade acquisition readiness.
+- An L2-dependent processor requiring synchronized book state.
+- A historical continuity consumer requiring complete coverage
+  over a specified interval.
+- A recording consumer requiring the configured database
+  commitment guarantee.
+- A currency-conversion processor requiring an eligible,
+  sufficiently fresh reference observation.
 
-    RecordingDurability
+A dependency may satisfy one capability while failing another.
 
-    RetainedCoverage
+For example, current trade acquisition may be ready while
+historical coverage remains incomplete.
 
-This prevents overly broad health propagation.
+The HealthEvaluator must preserve this distinction rather
+than assigning all downstream consumers the same status.
+
+Health assessment must not independently determine canonical
+market-data validity or alter the authoritative dependency graph.
 
 ### 23.4 Example: Optional Recording Failure
 
@@ -4796,23 +5289,52 @@ The system must not downgrade a confirmed unresolved integrity failure to `Unkno
 
 ### 24.5 Recovery State
 
-During recovery, health reflects the guarantees currently available.
+Recovery state is independent of logical source-stream
+lifecycle and physical connection lifecycle.
 
-Example:
+During recovery, health reflects the guarantees
+currently available.
 
-    Lifecycle:
-        Recovering
+For example:
 
-    Transport:
-        Healthy
+    StreamLifecycle: Active
 
-    TradeContinuity:
-        Degraded
+    ConnectionState: Connected
 
-    Overall:
-        Degraded
+    RecoveryState: Recovering
 
-A recovered connection does not automatically restore complete trade continuity.
+    TradeContinuity: Degraded
+
+    AcquisitionReadiness: Not Ready
+
+    OverallHealth: Degraded
+
+This represents an operational logical runtime
+whose required trade-continuity guarantees are
+temporarily impaired.
+
+Recovery progress must not be represented as
+`StreamLifecycle::Recovering`.
+
+A recovered physical connection does not automatically
+restore native subscription state or complete trade
+continuity.
+
+Likewise, successful current acquisition recovery
+does not imply complete historical market-data coverage.
+
+The HealthEvaluator must consume authoritative
+recovery observations from the Recovery Coordinator.
+
+It must not independently mark recovery completed,
+restore integrity state, or modify the logical runtime
+lifecycle.
+
+Health classifications must reflect current evidence
+and the configured health policy.
+
+A recovery operation may complete while unresolved
+historical coverage gaps remain visible.
 
 ### 24.6 Recovery Completion
 

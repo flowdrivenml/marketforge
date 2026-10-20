@@ -3,6 +3,7 @@ use super::{
     envelope::EventEnvelope,
     numeric::{Price, Quantity},
 };
+use serde::{Deserialize, Serialize};
 
 /// A canonical absolute L2 price-level update.
 ///
@@ -14,7 +15,7 @@ use super::{
 ///
 /// Source snapshots and incremental updates are normalized into this
 /// same representation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct L2LevelUpdate {
     pub envelope: EventEnvelope,
 

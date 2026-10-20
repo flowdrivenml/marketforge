@@ -23,7 +23,15 @@ historical = [
     "dep:num-integer",
 ]
 
-live = []
+live = ["live-retention"]
+
+live-retention = [
+    "dep:arrow-array",
+    "dep:arrow-schema",
+    "dep:arrow-buffer",
+    "dep:arrow-select",
+    "dep:parquet",
+]
 monitor-tui = ["dep:ratatui", "dep:crossterm"]
 arrow-select = ["dep:arrow-select"]
 
@@ -929,3 +937,15 @@ required-features = ["historical"]
 name = "convert_combined_publication"
 path = "tests/convert/combined/combined_publication.rs"
 required-features = ["historical"]
+
+# Document 17: Live targets (no dependency changes).
+
+[[bin]]
+name = "marketforge-live-tui"
+path = "src/bin/marketforge-live-tui.rs"
+required-features = ["live", "monitor-tui"]
+
+[[test]]
+name = "live_suite"
+path = "tests/live_suite.rs"
+required-features = ["live"]

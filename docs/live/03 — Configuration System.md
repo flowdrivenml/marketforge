@@ -197,7 +197,8 @@ Global configuration defines service-wide operational policies and defaults.
 
 Proposed file:
 
-`config/live/live.toml`
+
+`data/.config/live/live.toml`
 
 ```toml
 schema_version = 1
@@ -897,7 +898,7 @@ The source identity must not include recording, metrics, or recovery settings.
 
 Proposed file:
 
-`config/live/runtime/sources.toml`
+data/.config/live/runtime/sources.toml
 
 ```toml
 schema_version = 1
@@ -1085,7 +1086,7 @@ Derived streams acquire their dependencies through the registry.
 
 Proposed file:
 
-`config/live/runtime/derived.toml`
+`data/.config/live/runtime/derived.toml`
 
 ```toml
 schema_version = 1

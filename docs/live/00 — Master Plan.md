@@ -213,13 +213,15 @@ Proposed Configuration
         ↓
 Structural/Semantic Validation
         ↓
-Effective Configuration Diff
+Compile Effective Configuration
         ↓
-Reconciliation Plan
+Calculate Semantic Diff
         ↓
-Apply Affected Changes
+Check Expected Revision
         ↓
-Persist Accepted Revision
+Persist Accepted Desired Revision
+        ↓
+Publish Accepted Revision
 ```
 
 Initially hot-editable:
@@ -467,6 +469,9 @@ Resolved decisions should be reflected in their subsystem specifications and upd
 
 ## 15. Reference Documents
 
+The following documents constitute the MarketForge Live architecture
+and implementation specification.
+
 ```text
 00 — Master Plan.md
 01 — Architecture and Module Boundaries.md
@@ -474,19 +479,50 @@ Resolved decisions should be reflected in their subsystem specifications and upd
 03 — Configuration System.md
 04 — Exchange Protocols and Connectivity.md
 05 — Stream Registry and Subscriptions.md
+05.1 — Connection Manager and Transport Lifecycle.md
 06 — Normalization and Integrity.md
-07 — Fault Tolerance and Recovery.md
+06.1 — L2 BookStore and Synchronization.md
+06.2 — Trade Processing and Continuity.md
+07 — Recovery Coordination and System Resilience.md
 08 — Event Distribution and Unix Sockets.md
-09 — Combined Streams and Currency Conversion.md
-10 — Retention and Parquet Spill.md
+09 — Live Retention and Bootstrap Buffering.md
+10 — Combined Streams and Currency Conversion.md
 11 — PostgreSQL Recording.md
 12 — Metrics and Stream Health.md
 13 — Runtime Configuration and Control API.md
 14 — Ratatui Management Interface.md
 15 — Testing and Validation.md
-16 — Implementation Roadmap.md
-17 — External Libraries and Code Reuse.md
+16 — External Libraries and Code Reuse.md
+17 — Implementation Roadmap.md
 ```
+
+Documents 00–16 define the architecture, shared contracts, subsystem
+requirements, configuration, and validation strategy.
+
+Document 17 defines the implementation roadmap and must be completed
+only after the architecture's implementation-critical contracts have
+been reconciled and verified.
+
+Each shared architectural contract must have one authoritative
+definition. Subsystem documents must reference that definition
+rather than introduce incompatible alternatives.
+
+When a later subsystem specification establishes a more precise
+contract than an earlier illustrative example, the precise contract
+takes precedence, provided it does not contradict an explicitly
+approved system-wide architectural decision.
+
+An identified contradiction must be corrected in the affected
+documents before implementation.
+
+Implementation work packages must cover the complete approved
+v1 requirements of their target module, including known downstream
+interface requirements, failure behavior, configuration, metrics,
+and tests.
+
+Implementation milestones may be incremental, but modules must
+not be declared complete while previously approved v1
+functionality remains unimplemented.
 
 **Architectural rule:** Every subsystem specification must define responsibility, ownership, interfaces, failure semantics, configuration scope, reuse opportunities, and testable invariants.
 

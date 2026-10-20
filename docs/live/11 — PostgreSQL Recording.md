@@ -693,9 +693,26 @@ Conceptually:
 
     RecordedEventKey {
         stream_id
-        cursor_epoch
-        stream_cursor
+        log_epoch
+        offset
     }
+
+This key is the relational representation of the
+authoritative `StreamCursor` defined in Document 02.
+
+The existing database column name `stream_cursor`,
+where retained for schema compatibility, represents
+the numeric `offset` component.
+
+It must not be interpreted as a second complete
+`StreamCursor` or an independent cursor namespace.
+
+The canonical uniqueness constraint is logically:
+
+    UNIQUE (stream_id, log_epoch, offset)
+
+Equivalent physical column names are permitted when
+required for compatibility with the existing database.
 
 This identifies a canonical publication event.
 
@@ -1253,9 +1270,27 @@ Conceptually:
           |
           +-- Ask 65010 -> Quantity 3
 
-The historical merged depth representation preserves this grouping.
+The historical merged depth representation preserves
+this grouping.
 
 PostgreSQL recording must do the same.
+
+One accepted logical L2 event receives exactly one
+MarketForge `StreamCursor`, as defined in
+Document 02, Sections 4.1 and 6.4.
+
+Its constituent `L2LevelUpdate` values do not
+receive independent MarketForge event cursors.
+
+The `depth_events` row identifies the parent
+logical event and preserves its cursor.
+
+The associated `depth_levels` rows preserve
+the ordered canonical level changes.
+
+Recording and replay must reconstruct the complete
+logical L2 event without changing its original
+cursor identity or event boundaries.
 
 ### 8.3 Recommended Relational Representation
 
@@ -1508,7 +1543,7 @@ The canonical publication identity is:
 
     StreamId
 
-    CursorEpoch
+    `LogEpoch`
 
     StreamCursor
 
@@ -2058,7 +2093,7 @@ For cursor-based recording replay, queries must preserve the canonical publicati
 Conceptually:
 
     StreamId
-    CursorEpoch
+    `LogEpoch`
     StreamCursor
 
 Event-time pagination and publication-cursor pagination serve different purposes.
@@ -2589,7 +2624,7 @@ The primary recording identity is:
 
     StreamId
 
-    CursorEpoch
+    `LogEpoch`
 
     StreamCursor
 
@@ -3181,7 +3216,7 @@ A recovered retained event preserves:
 
     Original StreamId
 
-    Original CursorEpoch
+    Original `LogEpoch`
 
     Original StreamCursor
 
@@ -5637,6 +5672,38 @@ Recording policies may differ by source stream and event type.
 
 The PostgreSQL Recording subsystem is complete when the following requirements are satisfied.
 
+Bootstrap-related requirements in this section define
+the recording and query capabilities required by the
+separate Bootstrap Engine.
+
+MarketForge Live must implement and validate:
+
+- Durable canonical event recording.
+- Preservation of native trade identities.
+- Preservation of logical L2 event boundaries.
+- Recording commit and coverage tracking.
+- Historical-compatible database reads.
+- Recording availability and gap reporting.
+- Recording retention and protected-reader guarantees.
+- Safe coexistence with Live Retention.
+
+Bootstrap integration tests must verify that recorded
+events can be consumed correctly by historical/live
+reconciliation logic.
+
+The separate Bootstrap Engine owns the orchestration
+that combines exchange archives, PostgreSQL recordings,
+and live retained events.
+
+It also owns final historical/live dataset assembly
+and bootstrap completion decisions.
+
+These responsibilities do not become part of the
+PostgreSQL Recording Manager.
+
+The Bootstrap requirements and tests below remain
+valid and must not be removed.
+
 ### 39.1 Architecture
 
 - PostgreSQL recording is independently configurable.
@@ -5711,10 +5778,6 @@ The PostgreSQL Recording subsystem is complete when the following requirements a
 
 ### 39.8 Testing
 
-- Canonical schema tests pass.
-- Exact decimal round-trip tests pass.
-- Timestamp precision tests pass.
-- Event identity tests pass.
 - Partition uniqueness tests pass.
 - Transaction atomicity tests pass.
 - Idempotency tests pass.

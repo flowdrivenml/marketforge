@@ -16,7 +16,6 @@ use marketforge_engine::live::routing::{
     },
     resolution::{BoundedResolutionSink, ResolutionAcceptanceSink},
 };
-use marketforge_engine::live::routing::resolution::ResolutionClaim;
 use marketforge_engine::live::{
     model::{
         cursor::{LogEpoch, StreamCursor},
@@ -59,7 +58,9 @@ fn make_escalation_record(obligation: &DeliveryObligation) -> EscalationResoluti
 }
 
 /// Helper: prepare a resolution via the full tracker → journal pipeline.
-fn prepare_resolution(obligation: DeliveryObligation) -> (
+fn prepare_resolution(
+    obligation: DeliveryObligation,
+) -> (
     FinalizationJournal,
     EscalationResolutionToken,
     EscalationResolutionRecord,
@@ -124,7 +125,11 @@ fn accept_transitions_to_accepted_state() {
     assert!(sink.verify(&receipt));
 
     // try_take() cannot claim an Accepted record.
-    assert!(sink.try_take(&clock, Duration::from_secs(30)).unwrap().is_none());
+    assert!(
+        sink.try_take(&clock, Duration::from_secs(30))
+            .unwrap()
+            .is_none()
+    );
 }
 
 /// L2: commit_resolution transitions Accepted → JournalCommitted.
@@ -142,13 +147,20 @@ fn commit_resolution_transitions_to_journal_committed() {
     let receipt = sink.accept(token, &record).unwrap();
 
     // Before commit: try_take returns None.
-    assert!(sink.try_take(&clock, Duration::from_secs(30)).unwrap().is_none());
+    assert!(
+        sink.try_take(&clock, Duration::from_secs(30))
+            .unwrap()
+            .is_none()
+    );
 
     // Commit transitions to JournalCommitted.
     journal.commit_resolution(id, &receipt, &sink).unwrap();
 
     // After commit: try_take succeeds.
-    let taken = sink.try_take(&clock, Duration::from_secs(30)).unwrap().unwrap();
+    let taken = sink
+        .try_take(&clock, Duration::from_secs(30))
+        .unwrap()
+        .unwrap();
     assert!(sink.verify(&taken.receipt));
 }
 
@@ -175,8 +187,7 @@ fn try_take_transitions_to_claimed_state() {
     assert!(sink.verify(&receipt));
 
     // Record remains verifiable while Claimed.
-    let claim_receipt =
-        sink.try_take(&clock, Duration::from_secs(30)).unwrap();
+    let claim_receipt = sink.try_take(&clock, Duration::from_secs(30)).unwrap();
     assert!(claim_receipt.is_none()); // already claimed
 }
 
@@ -191,10 +202,14 @@ fn acknowledge_removes_claimed_record_and_releases_capacity() {
     journal.commit_resolution(id, &receipt, &sink).unwrap();
 
     let clock = ManualClock::new();
-    let taken = sink.try_take(&clock, Duration::from_secs(30)).unwrap().unwrap();
+    let taken = sink
+        .try_take(&clock, Duration::from_secs(30))
+        .unwrap()
+        .unwrap();
     assert_eq!(sink.len(), 1); // still retained (Claimed).
 
-    sink.acknowledge(&taken.receipt, taken.token, &clock).unwrap();
+    sink.acknowledge(&taken.receipt, taken.token, &clock)
+        .unwrap();
     assert_eq!(sink.len(), 0);
     assert!(!sink.verify(&receipt));
 
@@ -225,7 +240,11 @@ fn try_take_rejected_on_accepted_record() {
     let _receipt = sink.accept(token, &record).unwrap();
 
     let clock = ManualClock::new();
-    assert!(sink.try_take(&clock, Duration::from_secs(30)).unwrap().is_none());
+    assert!(
+        sink.try_take(&clock, Duration::from_secs(30))
+            .unwrap()
+            .is_none()
+    );
 }
 
 /// L6: release_claim() restores JournalCommitted state and re-enables claiming.
@@ -244,19 +263,27 @@ fn release_claim_restores_journal_committed_state() {
     let clock = ManualClock::new();
 
     // Claim to get a valid lease.
-    let claim_a = sink.try_take(&clock, Duration::from_secs(30)).unwrap().unwrap();
+    let claim_a = sink
+        .try_take(&clock, Duration::from_secs(30))
+        .unwrap()
+        .unwrap();
     assert_eq!(sink.len(), 1);
 
     // Release the claim — restores JournalCommitted and removes lease.
-    sink.release_claim(&claim_a.receipt, claim_a.token, &clock).unwrap();
+    sink.release_claim(&claim_a.receipt, claim_a.token, &clock)
+        .unwrap();
 
     // Record is re-claimable.
-    let claim_b = sink.try_take(&clock, Duration::from_secs(30)).unwrap().unwrap();
+    let claim_b = sink
+        .try_take(&clock, Duration::from_secs(30))
+        .unwrap()
+        .unwrap();
     // The re-claim produces a new claim (same record, possible new token).
     assert_eq!(sink.len(), 1);
 
     // Acknowledge to complete the lifecycle.
-    sink.acknowledge(&claim_b.receipt, claim_b.token, &clock).unwrap();
+    sink.acknowledge(&claim_b.receipt, claim_b.token, &clock)
+        .unwrap();
     assert_eq!(sink.len(), 0);
 }
 
@@ -281,18 +308,33 @@ fn try_take_fifo_ordering() {
 
     assert_eq!(sink.len(), 3);
 
-    journal_a.commit_resolution(id_a, &receipt_a, &sink).unwrap();
-    journal_b.commit_resolution(id_b, &receipt_b, &sink).unwrap();
-    journal_c.commit_resolution(id_c, &receipt_c, &sink).unwrap();
+    journal_a
+        .commit_resolution(id_a, &receipt_a, &sink)
+        .unwrap();
+    journal_b
+        .commit_resolution(id_b, &receipt_b, &sink)
+        .unwrap();
+    journal_c
+        .commit_resolution(id_c, &receipt_c, &sink)
+        .unwrap();
 
     // First taken is the oldest committed.
     let clock = ManualClock::new();
-    let taken_first = sink.try_take(&clock, Duration::from_secs(30)).unwrap().unwrap();
+    let taken_first = sink
+        .try_take(&clock, Duration::from_secs(30))
+        .unwrap()
+        .unwrap();
     assert_eq!(taken_first.receipt.token().journal, journal_a.id());
 
-    let taken_second = sink.try_take(&clock, Duration::from_secs(30)).unwrap().unwrap();
+    let taken_second = sink
+        .try_take(&clock, Duration::from_secs(30))
+        .unwrap()
+        .unwrap();
     assert_eq!(taken_second.receipt.token().journal, journal_b.id());
-    assert_ne!(taken_first.receipt.token().journal, taken_second.receipt.token().journal);
+    assert_ne!(
+        taken_first.receipt.token().journal,
+        taken_second.receipt.token().journal
+    );
 }
 
 /// L8: Acknowledging one record does not affect Accepted state records.
@@ -312,7 +354,9 @@ fn acknowledge_does_not_affect_accepted_records() {
     assert_eq!(sink.len(), 2);
 
     // Commit only A.
-    journal_a.commit_resolution(id_a, &receipt_a, &sink).unwrap();
+    journal_a
+        .commit_resolution(id_a, &receipt_a, &sink)
+        .unwrap();
 
     // B remains Accepted (not committed).
     assert_eq!(sink.len(), 2);
@@ -320,11 +364,15 @@ fn acknowledge_does_not_affect_accepted_records() {
     let clock = ManualClock::new();
 
     // Take A (now Claimed).
-    let taken = sink.try_take(&clock, Duration::from_secs(30)).unwrap().unwrap();
+    let taken = sink
+        .try_take(&clock, Duration::from_secs(30))
+        .unwrap()
+        .unwrap();
     assert_eq!(taken.receipt.record().record.obligation.id, id_a);
 
     // Acknowledge A to release it.
-    sink.acknowledge(&taken.receipt, taken.token, &clock).unwrap();
+    sink.acknowledge(&taken.receipt, taken.token, &clock)
+        .unwrap();
 
     // B (still Accepted) remains in the sink, not removed by A's claim.
     assert_eq!(sink.len(), 1);
@@ -369,11 +417,18 @@ fn full_lifecycle_chain() {
     let receipt = sink.accept(token, &record).unwrap();
     assert_eq!(sink.len(), 1);
     assert!(sink.verify(&receipt));
-    assert!(sink.try_take(&clock, Duration::from_secs(30)).unwrap().is_none()); // Accepted ≠ JournalCommitted
+    assert!(
+        sink.try_take(&clock, Duration::from_secs(30))
+            .unwrap()
+            .is_none()
+    ); // Accepted ≠ JournalCommitted
 
     // Phase 2: JournalCommitted state.
     journal.commit_resolution(id, &receipt, &sink).unwrap();
-    let taken = sink.try_take(&clock, Duration::from_secs(30)).unwrap().unwrap();
+    let taken = sink
+        .try_take(&clock, Duration::from_secs(30))
+        .unwrap()
+        .unwrap();
     assert_eq!(sink.len(), 1); // retained (Claimed, not removed)
     assert!(sink.verify(&taken.receipt));
 
@@ -382,7 +437,8 @@ fn full_lifecycle_chain() {
     assert!(sink.verify(&receipt));
 
     // Phase 4: Removed via acknowledge.
-    sink.acknowledge(&taken.receipt, taken.token, &clock).unwrap();
+    sink.acknowledge(&taken.receipt, taken.token, &clock)
+        .unwrap();
     assert_eq!(sink.len(), 0);
     assert!(!sink.verify(&taken.receipt));
 }

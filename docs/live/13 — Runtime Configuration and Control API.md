@@ -491,53 +491,259 @@ These distinctions were established in Documents 02, 03, 05, and 12.
 
 ### 4.1 Desired State
 
-Desired state describes what the user or orchestration layer wants MarketForge to maintain.
+Desired state describes the configuration that MarketForge Live
+has accepted and committed as its persistent operating intent.
 
-Examples:
+The Configuration Manager is authoritative for persisted
+desired configuration and its revisions.
 
-    Stream Enabled
+Desired state is distinct from effective acquisition demand,
+actual runtime state, and health.
+
+#### Persistent Source Acquisition
+
+For registered source streams, the conceptual desired states are:
+
+    Active
+    Inactive
+    Removed
+
+Their meanings are:
+
+| Desired State | Meaning |
+|---|---|
+| `Active` | Persistent configuration independently requires acquisition of the registered source. |
+| `Inactive` | Persistent configuration does not independently require acquisition. Other valid demand owners may still require the source. |
+| `Removed` | Removal of the persistent source registration is requested, subject to applicable ownership and dependency constraints. |
+
+These semantics follow Document 05, Section 4.3.
+
+Persistent source acquisition is only one possible
+contributor to effective acquisition demand.
+
+Other contributors may include:
+
+- Recording requirements.
+- External subscribers.
+- Derived-stream dependencies.
+- Retention sessions.
+
+A source with persistent desired state `Inactive`
+may therefore remain operational when independent
+demand requires acquisition.
+
+#### Other Desired Configuration
+
+Desired configuration also describes supported
+requirements for:
 
     Recording Enabled
-
-    Derived Stream Active
-
+    Derived Stream Enabled
     Metrics Enabled
 
-Desired state is persistent where specified by the Configuration System.
+Each resource follows its own authoritative
+configuration and ownership contracts.
+
+These settings must not be interpreted as
+`StreamLifecycle` states.
+
+#### Configuration Acceptance
+
+Persistent desired-state changes must pass through:
+
+    Validation
+        |
+        v
+    Effective Configuration Compilation
+        |
+        v
+    Semantic Diff
+        |
+        v
+    Expected Revision Check
+        |
+        v
+    Durable Configuration Persistence
+        |
+        v
+    Accepted Revision Publication
+        |
+        v
+    Runtime Reconciliation
+
+A successfully accepted desired configuration
+does not prove that the requested runtime resources
+have already reached their required operational state.
+
+The Control API must distinguish accepted desired
+configuration from applied configuration and
+actual runtime observations.
+
 
 ### 4.2 Actual State
 
-Actual state describes what the runtime is currently doing.
+Actual state describes the operational conditions
+currently observed in MarketForge Live.
 
-Examples:
+Actual state is represented through independent
+authoritative dimensions rather than one combined
+stream-status enum.
 
-    Stream Reconnecting
+#### Logical Source Runtime
 
-    Book Synchronizing
+The Stream Registry owns the logical source-stream
+lifecycle defined in Document 02, Section 7.2.
 
-    Recording Recovering
+For example:
 
-    Derived Stream Degraded
+    StreamLifecycle: Active
 
-Actual state may temporarily differ from desired state.
+This means the logical runtime is executing.
+
+It does not imply successful acquisition or
+valid market-data processing.
+
+#### Physical Connection
+
+The Connection Manager owns the authoritative
+physical connection lifecycle.
+
+For example:
+
+    ConnectionState: Reconnecting
+
+This describes physical transport restoration,
+not a logical source-stream lifecycle transition.
+
+A logical source runtime may remain
+`StreamLifecycle::Active` while its assigned
+connection is reconnecting.
+
+#### Native Subscription
+
+The Subscription Manager owns native subscription
+state and subscription generations.
+
+For example:
+
+    SubscriptionState: Pending
+
+A successfully connected WebSocket does not
+independently establish native subscription readiness.
+
+#### Market-Data Integrity
+
+The responsible stream processor owns
+market-data integrity.
+
+For example:
+
+    IntegrityState: Synchronizing
+
+For L2 streams, synchronization requires
+the configured snapshot and sequence-validation
+procedure.
+
+A native subscription acknowledgement does not
+establish valid synchronized book state.
+
+#### Recovery and Historical Coverage
+
+The Recovery Coordinator owns recovery-operation
+coordination.
+
+Historical coverage is tracked through the
+applicable recovery and retention contracts.
+
+These dimensions remain distinct:
+
+    RecoveryState: Recovering
+    CoverageState: Incomplete
+
+Recovery of current market-data integrity does
+not automatically establish complete historical
+coverage.
+
+#### Effective Acquisition Demand
+
+The Stream Registry derives effective acquisition
+requirements from the current valid demand
+registrations.
+
+For example:
+
+    Persistent Desired State: Inactive
+    Recording Demand:         Present
+    Effective Acquisition:    Required
+
+Actual acquisition may remain operational
+despite persistent acquisition being disabled.
+
+#### Acquisition Readiness
+
+Acquisition readiness describes whether a source
+currently satisfies its configured channel-specific
+requirements.
+
+It must be evaluated from authoritative connection,
+subscription, processor-initialization, and
+integrity observations.
+
+A source may report:
+
+    Persistent Desired State: Inactive
+    Effective Acquisition:    Required
+
+    StreamLifecycle:          Active
+    ConnectionState:          Connected
+    SubscriptionState:        Active
+    IntegrityState:           Synchronizing
+
+    AcquisitionReadiness:     Not Ready
+
+This is valid for a source whose logical runtime
+and native subscription are operational while
+its L2 order book is synchronizing.
+
+#### Actual State Invariants
+
+- Persistent desired state is not actual runtime state.
+- Effective acquisition demand is not persistent desired state.
+- Logical runtime activity is not acquisition readiness.
+- Physical connectivity is not native subscription readiness.
+- Native subscription readiness is not market-data integrity.
+- Current market-data integrity is not historical completeness.
+- Recovery progress is not logical runtime lifecycle.
+- Health assessment is independent of authoritative lifecycle state.
+
+Actual runtime observations must originate from
+their authoritative component owners.
+
+The Control API aggregates these observations
+without independently maintaining competing
+state machines.
 
 ### 4.3 Health State
 
-Health evaluates whether applicable operational guarantees are satisfied.
+Health is an independent assessment of whether a resource
+currently satisfies its applicable operational guarantees.
 
-The shared health classifications are:
+The Metrics and Stream Health subsystem is authoritative
+for health evaluation, as defined in Document 12.
 
-    Healthy
+Health must not be used as a replacement for logical
+runtime lifecycle, physical connection state, subscription
+state, acquisition readiness, or recovery progress.
 
-    Degraded
+A source may be `StreamLifecycle::Active` while its
+health is `Degraded` or `Unhealthy`.
 
-    Unhealthy
+Likewise, a connection may be `ConnectionState::Connected`
+while its independent connection-health assessment is
+`Degraded`.
 
-    Unknown
-
-    Disabled
-
-Health must not be conflated with lifecycle state.
+Health evaluation consumes authoritative observations
+without modifying their underlying state machines.
 
 ### 4.4 Configuration Revision
 
@@ -559,15 +765,25 @@ An active component may report:
 
     AppliedRevision
 
-Example:
+For example:
 
-    DesiredRevision = 15
+    DesiredRevision: 15
+    AppliedRevision: 14
 
-    AppliedRevision = 14
+    StreamLifecycle: Active
+    ConnectionState: Reconnecting
 
-    Lifecycle = Reconnecting
+    AcquisitionReadiness: Not Ready
 
-This may represent a valid configuration change awaiting runtime convergence.
+This may represent a valid configuration change awaiting
+runtime convergence while the logical source-stream
+runtime remains operational.
+
+The accepted desired revision does not imply that
+the affected resource has adopted the new configuration.
+
+Physical reconnection and acquisition readiness remain
+independent of configuration-revision acceptance.
 
 ### 4.6 RuntimeSnapshot
 
@@ -600,32 +816,281 @@ Detailed stream and dependency queries belong to separate operations.
 
 ### 4.7 StreamSnapshot
 
-Conceptual representation:
+The Control API exposes a coherent operational snapshot
+for each registered logical stream.
+
+The snapshot combines authoritative observations from
+the responsible subsystems without introducing competing
+state machines.
+
+Source-stream snapshots must distinguish persistent
+configuration intent, effective acquisition demand,
+logical runtime lifecycle, acquisition readiness,
+integrity, recovery, and health.
+
+#### Conceptual Representation
 
     StreamSnapshot {
         stream_id
-
         stream_kind
 
-        desired_state
-        lifecycle_state
-        health
+        source_stream_key
 
-        desired_revision
-        applied_revision
+        persistent_desired_state
+        effective_acquisition_required
+
+        stream_lifecycle
+        acquisition_readiness
 
         connection_identity
+        connection_state
+        connection_generation
+
+        subscription_state
         subscription_generation
 
         integrity_state
         recovery_state
+        coverage_state
+
+        health
+
+        desired_revision
+        applied_revision
 
         recording_state
 
         observed_at
     }
 
-Fields not applicable to a stream type must remain explicitly unavailable.
+This representation is conceptual.
+
+The final serialized schema belongs to the Control API
+contract and must be aligned with the shared domain
+models in Document 02 and the metrics and health
+contracts in Document 12.
+
+Fields that do not apply to a particular stream type
+must remain explicitly unavailable.
+
+#### Source Identity
+
+`stream_id` identifies the registered logical stream.
+
+For a source stream, `source_stream_key` identifies
+its canonical acquisition semantics.
+
+The Stream Registry owns logical source identity.
+
+Physical connection replacement, native subscription
+restoration, and L2 resynchronization must not
+independently change the logical source identity.
+
+Derived streams retain their distinct identity
+and lifecycle contracts.
+
+Source-specific fields must not be fabricated for
+derived streams.
+
+#### Persistent Desired State
+
+`persistent_desired_state` describes the accepted
+persistent acquisition intent associated with
+a registered source.
+
+The Configuration Manager owns the accepted
+desired configuration and its revisions.
+
+A persistent desired state of `Inactive` does not
+necessarily mean the physical acquisition is stopped.
+
+Independent demand may still require the source.
+
+#### Effective Acquisition Demand
+
+`effective_acquisition_required` indicates whether
+the Stream Registry currently has at least one
+valid acquisition-demand registration for the source.
+
+For example:
+
+    Persistent Desired State: Inactive
+    Recording Demand:         Present
+    Subscriber Demand:        Present
+    Effective Acquisition:    Required
+
+This is a valid state.
+
+The Control API must not infer effective acquisition
+demand solely from persistent desired configuration.
+
+The Stream Registry remains authoritative for
+demand registration and effective demand calculation.
+
+#### Logical Runtime Lifecycle
+
+`stream_lifecycle` uses the authoritative
+`StreamLifecycle` contract defined in
+Document 02, Section 7.2.
+
+For example:
+
+    StreamLifecycle: Active
+
+This means the logical runtime is executing.
+
+It does not independently establish native
+subscription readiness or market-data integrity.
+
+#### Connection and Subscription State
+
+Physical connection lifecycle originates from
+the Connection Manager.
+
+Native subscription lifecycle originates from
+the Subscription Manager.
+
+Their generations must remain separate.
+
+For example:
+
+    ConnectionState:   Reconnecting
+    SubscriptionState: Pending
+
+These states do not automatically change
+`StreamLifecycle::Active`.
+
+A physical connection may be shared by several
+source streams with different subscription,
+integrity, and readiness conditions.
+
+#### Acquisition Readiness
+
+`acquisition_readiness` indicates whether a source
+currently satisfies its configured channel-specific
+readiness requirements.
+
+Readiness is determined from authoritative connection,
+subscription, processor-initialization, and integrity
+observations.
+
+For trades, readiness requires the applicable native
+subscription, processing, metadata, and integrity
+prerequisites.
+
+For L2, readiness additionally requires successful
+snapshot and sequence synchronization.
+
+The Control API must not report L2 acquisition
+readiness merely because a native subscription
+has been acknowledged.
+
+A source may report:
+
+    Persistent Desired State: Active
+    Effective Acquisition:    Required
+
+    StreamLifecycle:          Active
+    ConnectionState:          Connected
+    SubscriptionState:        Active
+    IntegrityState:           Synchronizing
+
+    AcquisitionReadiness:     Not Ready
+
+This is valid.
+
+The logical runtime is running while its L2 book
+is completing synchronization.
+
+#### Integrity, Recovery, and Coverage
+
+The responsible stream processor owns integrity state.
+
+The Recovery Coordinator owns recovery-operation state.
+
+Historical coverage is maintained through the
+authoritative recovery and retention contracts.
+
+These observations must remain independent.
+
+A stream may be acquisition-ready while historical
+coverage remains incomplete.
+
+Successful current acquisition recovery must not
+be reported as complete historical recovery.
+
+#### Health Assessment
+
+`health` is supplied by the Metrics and Stream Health
+subsystem.
+
+Health evaluation consumes authoritative operational
+observations and applicable diagnostic measurements.
+
+It must not independently mutate connection,
+subscription, integrity, recovery, or logical
+stream lifecycle state.
+
+The Control API must distinguish connection health
+from overall source-stream health when both are exposed.
+
+The health classification must reflect the
+configured guarantees rather than being inferred
+solely from `StreamLifecycle::Active`.
+
+#### Configuration Revisions
+
+`desired_revision` identifies the accepted desired
+configuration revision.
+
+`applied_revision` identifies the revision whose
+required runtime effects have been successfully applied
+to the relevant resource.
+
+These values may differ during reconciliation.
+
+A persisted desired revision does not imply that
+the corresponding runtime changes are already active.
+
+Revision information must remain distinct from
+connection, subscription, book, and cursor generations.
+
+#### Recording State
+
+`recording_state` is supplied by the Recording Manager.
+
+Recording may be enabled independently of persistent
+source-acquisition intent.
+
+Recording requirements may contribute acquisition
+demand according to the Stream Registry contracts.
+
+The Control API must not infer recording availability
+from logical runtime lifecycle or acquisition
+readiness alone.
+
+#### Snapshot Ownership and Consistency
+
+The Control API aggregates observations from
+authoritative subsystem owners.
+
+It must not independently maintain competing copies
+of their state machines.
+
+Snapshots must include an observation timestamp
+and sufficient generation and revision context
+to distinguish current observations from obsolete
+asynchronous results.
+
+Component observations may originate from
+different collection instants.
+
+Unless explicitly supported, a snapshot must not
+claim atomic consistency across all subsystems.
+
+The final field types, optionality, serialization,
+and snapshot-versioning rules must be established
+centrally before implementation.
 
 ### 4.8 Snapshot Consistency
 
@@ -737,7 +1202,156 @@ This is an illustrative command vocabulary.
 
 Concrete variants may use separate request objects.
 
-The final protocol must distinguish persistent configuration mutations from session-scoped operations.
+The final protocol must distinguish persistent configuration mutations
+from session-scoped operations.
+
+#### Source-Stream Command Semantics
+
+The source-stream commands operate on authoritative logical source
+identities and must respect the demand-ownership contracts defined
+in Documents 02 and 05.
+
+| Command | Responsibility |
+|---|---|
+| `RegisterStream` | Register or reuse a logical source identified by its canonical `SourceStreamKey`. Registration does not independently establish acquisition demand. |
+| `ActivateStream` | Enable persistent acquisition intent for the registered logical source. |
+| `DeactivateStream` | Disable persistent acquisition intent without releasing independent demand owned by other consumers. |
+| `RemoveStream` | Request removal of the logical registration, subject to dependency, demand-ownership, and configuration constraints. |
+
+These commands must not bypass the Configuration Manager when they
+change persistent desired configuration.
+
+A successful command acknowledgement does not imply that the
+requested runtime transition has completed.
+
+#### Persistent Acquisition Commands
+
+`ActivateStream` and `DeactivateStream` are persistent desired-state
+mutations.
+
+They must follow the authoritative configuration transaction:
+
+    Validate Proposed Change
+              |
+              v
+    Compile Effective Configuration
+              |
+              v
+    Calculate Semantic Diff
+              |
+              v
+    Check Expected Revision
+              |
+              v
+    Persist Accepted Desired Revision
+              |
+              v
+    Publish Accepted Revision
+              |
+              v
+    Runtime Reconciliation
+
+The Configuration Manager owns revision acceptance and persistence.
+
+The Runtime Reconciler coordinates application.
+
+The Stream Registry adds or releases the corresponding persistent
+acquisition-demand registration.
+
+The commands must not directly mutate authoritative persisted
+configuration or bypass revision conflict detection.
+
+The conceptual `StreamId` command arguments shown above are not
+a complete serialized mutation schema.
+
+The final request contract must carry or otherwise enforce the
+applicable expected configuration revision, authorization context,
+request identity, and idempotency requirements.
+
+#### Independent Acquisition Demand
+
+Persistent acquisition intent is independent of demand owned by:
+
+- Recording.
+- External subscribers.
+- Derived streams.
+- Retention sessions.
+- Other explicitly supported demand owners.
+
+`ActivateStream` establishes or retains the persistent configuration
+demand for the specified source.
+
+Repeated activation must not create multiple persistent demand
+registrations or duplicate exchange-native subscriptions.
+
+`DeactivateStream` releases only the persistent configuration demand.
+
+For example:
+
+    Persistent Desired State: Inactive
+    Recording Demand:         Present
+    Subscriber Demand:        Present
+    Effective Acquisition:    Required
+
+This is a valid runtime configuration.
+
+The physical acquisition may remain operational because independent
+demand owners still require the source.
+
+`DeactivateStream` must not silently disconnect those consumers,
+release their demand registrations, or invalidate healthy market-data
+processing.
+
+The Stream Registry derives effective acquisition requirements from
+all current valid demand registrations.
+
+#### Source Removal
+
+`RemoveStream` is distinct from `DeactivateStream`.
+
+It requests deletion of the logical source registration rather
+than merely disabling persistent acquisition.
+
+An ordinary removal request must not silently destroy independent
+subscriber, recording, derived-stream, or retention demand.
+
+If protected dependencies or independent demand prevent removal,
+the command must return a structured conflict.
+
+A coordinated removal policy may be used only when explicitly
+supported, authorized, and validated.
+
+The default dependency-removal behavior remains the
+`RejectRemoval` policy defined in Document 05, Section 18.3.
+
+Removing a persistently configured source definition must follow
+the Configuration Manager's accepted-revision and persistence
+contracts.
+
+The logical registration must not be deleted before the required
+configuration mutation has been durably accepted.
+
+The registry must fence obsolete asynchronous operations before
+final removal.
+
+#### Session-Scoped Operations
+
+Transient demand is managed through the authoritative acquisition
+and demand-handle contracts defined in Document 02, Section 8.
+
+A session-scoped acquisition must receive an independent `DemandId`.
+
+Releasing such demand must affect only the corresponding ownership
+claim.
+
+Persistent `ActivateStream` and `DeactivateStream` commands must not
+be used as substitutes for transient demand-handle acquisition
+and release.
+
+The exact externally exposed session-scoped demand command vocabulary,
+if required, remains a separate wire-contract decision.
+
+No additional serialized commands are established by this section.
 
 ### 5.4 Read Commands
 
@@ -808,17 +1422,72 @@ A manual recovery request must not bypass the Recovery Coordinator.
 
 ### 5.8 Command Idempotency
 
-Mutating commands must define retry semantics.
+Mutating commands must define explicit retry and idempotency semantics.
+
+Command idempotency, configuration-revision conflicts, and
+acquisition deduplication are separate concerns.
+
+#### Persistent Activation
+
+Repeated `ActivateStream` requests must not establish duplicate
+persistent acquisition-demand registrations.
 
 For example:
 
     ActivateStream(A)
-
     ActivateStream(A)
 
-must not create two exchange-native subscriptions.
+must not create two logical source acquisitions or two equivalent
+exchange-native subscriptions.
 
-The Stream Registry remains responsible for source-demand deduplication.
+If persistent acquisition is already enabled, the command may
+return an appropriate already-satisfied result, subject to
+the applicable expected-revision and operation contracts.
+
+#### Persistent Deactivation
+
+Repeated `DeactivateStream` requests must not release independent
+demand registrations or decrement shared demand ownership more
+than once.
+
+If persistent acquisition is already disabled, repeating the
+command must not affect recording, subscribers, derived streams,
+or retention sessions.
+
+#### Source Removal
+
+Repeated `RemoveStream` requests must not:
+
+- Repeat resource release.
+- Reuse obsolete stream generations.
+- Resurrect a removed logical registration.
+- Delete an unrelated source registration.
+
+The control plane must distinguish an already completed removal,
+a currently pending removal, and a new conflicting operation.
+
+#### Request Retries
+
+A retried request must not create a second independent operation
+when the original accepted request is still identifiable.
+
+The Control API must preserve the distinction between:
+
+- Request identity.
+- Configuration revision.
+- Asynchronous operation identity.
+- Logical stream identity.
+- Demand registration identity.
+- Native subscription generation.
+
+The Stream Registry remains authoritative for source deduplication
+and demand ownership.
+
+The Configuration Manager remains authoritative for persistent
+configuration revisions.
+
+The final wire contract must specify the bounded request-idempotency
+retention and retry behavior.
 
 ### 5.9 Revision Conflicts
 
@@ -994,33 +1663,138 @@ The client may query progress using the returned operation identifier.
 
 ### 6.5 Operation Completion
 
-A command reaches `Completed` only when its declared completion condition is satisfied.
+A command reaches `Completed` only when its declared completion
+condition has been satisfied.
 
-Examples:
+Command acceptance, persistent configuration application,
+logical runtime activity, and acquisition readiness are
+distinct outcomes.
 
-**Stream activation**
+#### Persistent Activation
 
-    Native Subscription Established
+For `ActivateStream`, the persistent desired-state mutation
+and its runtime reconciliation must be distinguished from
+channel-specific acquisition readiness.
 
-    Processing Initialized
+Conceptually:
 
-    Required Readiness Established
+    Persistent Activation Requested
+                  |
+                  v
+    Desired Revision Accepted and Persisted
+                  |
+                  v
+    Persistent Demand Registration Established
+                  |
+                  v
+    Effective Acquisition Requirement Evaluated
+                  |
+                  v
+    Runtime Reconciliation Applied
 
-**L2 stream activation**
+The persistent configuration transition is successfully applied
+when its required persistent-demand and reconciliation effects
+have completed.
 
-    Subscription Established
+This does not independently establish acquisition readiness.
 
-    Snapshot Synchronized
+A newly required acquisition may continue asynchronously
+through connection, subscription, and integrity initialization.
 
-    Book Generation Valid
+#### Acquisition Readiness
 
-**Configuration update**
+When an operation explicitly requires acquisition readiness,
+successful completion additionally requires the configured
+channel-specific readiness conditions.
 
-    Desired Revision Accepted
+For trades:
 
-    Required Runtime Transitions Completed
+    Native Subscription Confirmed
+    Processor Initialized
+    Required Metadata Available
+    Applicable Integrity Requirements Satisfied
 
-The exact operation contract must state whether completion refers to configuration persistence, resource readiness, or both.
+For L2:
+
+    Native Subscription Confirmed
+    Processor Initialized
+    Snapshot / Sequence Synchronization Completed
+    Required Book Integrity Established
+
+`StreamLifecycle::Active` alone is insufficient to establish
+acquisition readiness.
+
+A running logical runtime may remain active while a temporary
+connection outage or L2 synchronization failure prevents readiness.
+
+The Control API must not describe persistent-demand application
+as successful acquisition readiness.
+
+#### Persistent Deactivation
+
+For `DeactivateStream`, completion requires:
+
+- The desired configuration revision to be accepted and persisted.
+- The persistent demand registration to be released or confirmed absent.
+- The effective acquisition requirement to be recalculated.
+- The required reconciliation effects to be completed.
+
+If independent demand remains, the operation may complete while
+the logical runtime and native subscription continue operating.
+
+If no demand remains, completion must respect the configured
+idle-retention or acquisition-shutdown requirements.
+
+Successful persistent deactivation must not be represented
+as proof that every physical subscription has stopped.
+
+#### Source Removal
+
+For `RemoveStream`, successful completion requires:
+
+- Authorization and dependency checks.
+- Any required persistent configuration mutation to be committed.
+- Required demand-ownership conditions to be satisfied.
+- Obsolete operations and generations to be fenced.
+- Required resource cleanup to complete.
+- The logical registration to be removed.
+
+A removal blocked by independent demand or protected
+dependencies must not be reported as completed.
+
+#### Configuration Updates
+
+Configuration acceptance establishes a persisted desired revision.
+
+Runtime convergence is evaluated separately.
+
+For a configuration update affecting multiple resources,
+successful full convergence requires all applicable
+resource transitions to meet their declared completion
+conditions.
+
+A valid accepted revision may remain partially applied while
+an exchange or other resource is unavailable.
+
+#### Operation Reporting
+
+The Control API must identify what an operation actually completed.
+
+At minimum, clients must be able to distinguish:
+
+- Request accepted.
+- Desired revision persisted.
+- Persistent demand reconciled.
+- Logical runtime started or stopped.
+- Acquisition readiness achieved or lost.
+- Source registration removed.
+- Configuration reconciliation pending or completed.
+- Operation failed or cancelled.
+
+A command acknowledgement is not an acquisition-readiness guarantee.
+
+The final operation-result schema must preserve these distinctions
+without introducing contradictory lifecycle states.
 
 ### 6.6 Partial Application
 
@@ -1681,14 +2455,21 @@ Suppose a configuration revision requests:
 
 After reconciliation:
 
-    Binance:
-        Active
+    Binance BTC Trades:
+        StreamLifecycle: Active
+        AcquisitionReadiness: Ready
 
-    Bybit:
-        Active
+    Bybit BTC Trades:
+        StreamLifecycle: Active
+        AcquisitionReadiness: Ready
 
-    OKX:
-        Reconnecting
+    OKX BTC Trades:
+        StreamLifecycle: Active
+        ConnectionState: Reconnecting
+        AcquisitionReadiness: Not Ready
+
+The logical runtime for the OKX stream remains operational
+while its physical connection is recovering.
 
 The configuration revision may remain valid and accepted.
 
@@ -1696,7 +2477,17 @@ Its runtime convergence status is:
 
     Degraded
 
-The reconciler must not incorrectly report complete convergence.
+The reconciler must not report complete acquisition
+convergence merely because all logical runtimes have
+entered `StreamLifecycle::Active`.
+
+Convergence must satisfy the completion conditions
+of the applicable configuration transitions.
+
+Persistent acquisition-demand reconciliation and
+channel-specific acquisition readiness remain distinct
+outcomes. Their operation status must identify which
+guarantees have actually been established.
 
 ### 9.8 Reconciliation State
 
@@ -2254,15 +3045,37 @@ Startup completion must distinguish:
 
     Control Plane Available
 
-    Source Streams Active
+    Persistent Acquisition Demand Reconstructed
 
-    Derived Streams Active
+    Required Logical Source Runtimes Started
 
-    Recording Restored
+    Required Source Acquisition Readiness Established
 
-    Health Verified
+    Derived Stream Requirements Reconciled
+
+    Recording Requirements Reconciled
+
+    Health Evaluated
 
 A running process may remain partially converged while exchange connectivity is recovering.
+Logical runtime startup and acquisition readiness are
+separate convergence milestones.
+
+A source may be `StreamLifecycle::Active` while its
+physical connection, native subscription, or integrity
+requirements are still recovering.
+
+The startup status must report incomplete acquisition
+readiness without incorrectly declaring the logical
+runtime stopped or failed.
+
+Recording reconciliation must distinguish restored
+configuration from successful recovery of the required
+recording commitments.
+
+Health evaluation must reflect the currently observed
+runtime guarantees rather than imply that all resources
+are healthy merely because startup has completed.
 
 ### 12.12 Startup Invariant
 
@@ -2403,7 +3216,7 @@ Possible results:
 
 A request resolving to an existing equivalent source may return its registered identity rather than create another source.
 
-### 13.7 ActivateSourceStream
+### ### 13.7 ActivateSourceStream
 
 Conceptual request:
 
@@ -2413,33 +3226,54 @@ Conceptual request:
         expected_configuration_revision
     }
 
-Activation follows the existing Stream Registry lifecycle:
+`ActivateSourceStream` enables persistent acquisition intent
+for the registered logical source.
 
-    Validate Current State
-              |
-              v
-    Acquire Persistent Demand
-              |
-              v
-    Resolve Native Subscription
-              |
-              v
-    Establish Connection Assignment
-              |
-              v
-    Activate Subscription
-              |
-              v
-    Initialize Processing
-              |
-              v
-    Establish Stream Readiness
+It is a persistent configuration mutation and must follow
+the Configuration Manager's validation, revision-checking,
+durable persistence, and reconciliation contracts.
 
-The operation returns an OperationId when completion requires asynchronous work.
+Conceptually:
 
+    Validate Current Configuration
+              |
+              v
+    Check Expected Revision
+              |
+              v
+    Persist Accepted Desired Revision
+              |
+              v
+    Reconcile Persistent Demand
+              |
+              v
+    Evaluate Effective Acquisition Requirement
+
+If independent demand already keeps the source operational,
+persistent activation must not create another native subscription.
+
+If acquisition must be started, the responsible components
+coordinate connection assignment, native subscription activation,
+processor initialization, and channel-specific readiness.
+
+The Control API must distinguish:
+
+- Persistent activation successfully applied.
+- Logical runtime started.
+- Acquisition readiness achieved.
+
+`StreamLifecycle::Active` indicates that the logical runtime
+is running. It does not independently establish acquisition
+readiness.
+
+The operation returns an `OperationId` when completion
+requires asynchronous work.
+
+Persistent activation completion and acquisition readiness
+must follow their separately declared completion contracts.
 ### 13.8 Trade Stream Readiness
 
-A trade stream may become active when:
+A trade stream achieves acquisition readiness when:
 
 - Its subscription is operational.
 - Its decoder and normalizer are initialized.
@@ -2461,7 +3295,11 @@ An L2 stream requires:
 - An initialized shared BookStore.
 - A valid book generation.
 
-The Control API must not report completed L2 activation merely because the WebSocket subscription was acknowledged.
+The Control API must not report L2 acquisition readiness merely
+because the WebSocket subscription was acknowledged.
+
+Persistent activation may be applied before L2 acquisition
+readiness is achieved. These outcomes must remain distinguishable.
 
 ### 13.10 DeactivateSourceStream
 

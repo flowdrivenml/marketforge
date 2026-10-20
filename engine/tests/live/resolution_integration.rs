@@ -351,7 +351,10 @@ fn receipt_valid_after_claim() {
         )
         .unwrap();
     let prepared = journal
-        .prepare_resolution(claim.record.obligation.id, EscalationResolution::ReportingVerified)
+        .prepare_resolution(
+            claim.record.obligation.id,
+            EscalationResolution::ReportingVerified,
+        )
         .unwrap();
     let id = claim.record.obligation.id;
 
@@ -363,7 +366,10 @@ fn receipt_valid_after_claim() {
 
     // Claim the receipt.
     let clock = ManualClock::new();
-    let taken = sink.try_take(&clock, Duration::from_secs(30)).unwrap().unwrap();
+    let taken = sink
+        .try_take(&clock, Duration::from_secs(30))
+        .unwrap()
+        .unwrap();
     assert_eq!(taken.receipt.token(), receipt.token());
 
     // Sink still retains the record (claimed but not acknowledged).
@@ -401,7 +407,9 @@ fn acknowledgement_releases_capacity() {
         )
         .unwrap();
     let mut journal_a = FinalizationJournal::new(10).unwrap();
-    tracker_a.finalize_into(obligation_a.id, &mut journal_a).unwrap();
+    tracker_a
+        .finalize_into(obligation_a.id, &mut journal_a)
+        .unwrap();
 
     let clock_a = ManualClock::new();
     let claim_a = journal_a
@@ -425,15 +433,21 @@ fn acknowledgement_releases_capacity() {
     let id_a = claim_a.record.obligation.id;
 
     let receipt_a = sink.accept(prepared_a.token, &prepared_a.record).unwrap();
-    journal_a.commit_resolution(id_a, &receipt_a, &sink).unwrap();
+    journal_a
+        .commit_resolution(id_a, &receipt_a, &sink)
+        .unwrap();
 
     // Claim the record.
     let clock_a = ManualClock::new();
-    let taken_a = sink.try_take(&clock_a, Duration::from_secs(30)).unwrap().unwrap();
+    let taken_a = sink
+        .try_take(&clock_a, Duration::from_secs(30))
+        .unwrap()
+        .unwrap();
     assert_eq!(sink.len(), 1); // claimed but not acknowledged.
 
     // Acknowledge releases capacity.
-    sink.acknowledge(&taken_a.receipt, taken_a.token, &clock_a).unwrap();
+    sink.acknowledge(&taken_a.receipt, taken_a.token, &clock_a)
+        .unwrap();
     assert_eq!(sink.len(), 0);
     assert!(!sink.verify(&taken_a.receipt));
 
@@ -456,7 +470,9 @@ fn acknowledgement_releases_capacity() {
         )
         .unwrap();
     let mut journal_b = FinalizationJournal::new(10).unwrap();
-    tracker_b.finalize_into(obligation_b.id, &mut journal_b).unwrap();
+    tracker_b
+        .finalize_into(obligation_b.id, &mut journal_b)
+        .unwrap();
 
     let clock_b = ManualClock::new();
     let claim_b = journal_b

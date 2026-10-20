@@ -993,7 +993,17 @@ Conceptually:
     Trade  Trade  L2
     Ready  Ready  Sync
 
-The L2 stream does not become active until its book is synchronized.
+An L2 stream may retain `StreamLifecycle::Active` while its order book
+is synchronizing or recovering.
+
+However, the stream must not report acquisition readiness until its
+configured snapshot and sequence synchronization requirements have
+been satisfied.
+
+Successful physical reconnection and native subscription restoration
+do not independently establish valid L2 book state.
+
+Historical coverage remains independent of current acquisition readiness.
 
 Trade coverage may remain unverified after live acquisition resumes.
 
@@ -1554,9 +1564,70 @@ The latter must not automatically become authoritative after restart.
           v
     Resume Normal Operation
 
-The process must not report all previously active streams as operational immediately after loading their declarations.
+Loading previously accepted stream declarations does not restore
+the operational state of their former runtime instances.
 
-Each stream must pass its normal activation and readiness requirements.
+The daemon reconstructs registered source identities and persistent
+acquisition requirements from authoritative persisted configuration.
+
+Transient subscriber demand must not be restored automatically.
+
+A reconstructed source may transition through:
+
+    StreamLifecycle::Registered
+              |
+              v
+    StreamLifecycle::Starting
+              |
+              v
+    StreamLifecycle::Active
+
+`StreamLifecycle::Active` means that the logical source-stream
+runtime is executing and capable of coordinating acquisition
+and recovery.
+
+It does not imply that the source has successfully restored
+physical connectivity, native subscription state, processor
+initialization, or market-data integrity.
+
+For example, during restart recovery:
+
+    Persistent Desired State: Active
+    Effective Acquisition:    Required
+    StreamLifecycle:          Active
+    ConnectionState:          Connecting
+    SubscriptionState:        Pending
+    IntegrityState:           Uninitialized
+    AcquisitionReady:         false
+
+This is a valid runtime state.
+
+The Recovery Coordinator must not report acquisition readiness
+until the responsible components have established the required
+channel-specific guarantees.
+
+Trade streams require valid subscription and processor
+initialization, together with applicable trade-integrity checks.
+
+L2 streams additionally require successful snapshot and
+sequence synchronization before data requiring a synchronized
+book can be reported as ready.
+
+A successful physical reconnection does not imply successful
+subscription restoration.
+
+Successful subscription restoration does not imply valid L2
+book state.
+
+Restored current acquisition readiness does not imply complete
+historical coverage.
+
+Recovery status, acquisition readiness, historical coverage,
+and logical runtime lifecycle must remain independently
+observable.
+
+A daemon restart must not reuse obsolete connection or
+subscription generations as current operational state.
 
 ### 11.4 Runtime Instance Identity
 
@@ -2986,21 +3057,39 @@ Each event should include:
 
 Events must not contain credentials or sensitive configuration values.
 
-### 21.5 TUI Integration
+### ### 21.5 TUI Integration
 
-The Ratatui dashboard should display a concise recovery summary.
+The Ratatui interface displays recovery information obtained
+through the authoritative Control API.
+
+The TUI must not independently implement recovery algorithms,
+evaluate market-data integrity, or mutate subsystem state.
+
+#### Dashboard Recovery Summary
+
+The Dashboard should display a concise recovery summary.
 
 Suggested information:
 
-    Active Recoveries
-    Failed Recoveries
-    Degraded Streams
-    Invalid Books
-    Unresolved Trade Gaps
+    Active Recovery Operations
+    Pending Recovery Operations
+    Failed Recovery Operations
+    Degraded Source Streams
+    Invalid L2 Books
+    Unresolved Trade Coverage Gaps
     Recording Health
     Retention Health
 
-The Streams view should expose stream-specific recovery status.
+Recovery-operation counts describe recovery workflows,
+not logical source-stream lifecycle states.
+
+A stream may have an active recovery operation while its
+logical runtime remains `StreamLifecycle::Active`.
+
+#### Per-Stream Recovery Status
+
+The Streams view should expose the relevant independent
+operational dimensions.
 
 For example:
 
@@ -3008,37 +3097,295 @@ For example:
     Instrument: BTCUSDT
     Channel: L2
 
-    Stream: Active
-    Book: Synchronizing
-    Recovery: REST Snapshot
-    Attempt: 3
-    Last Error: Sequence Gap
+    Persistent Desired State: Active
+    Effective Acquisition:    Required
 
-The TUI must not implement recovery algorithms.
+    StreamLifecycle:          Active
+    ConnectionState:          Connected
+    SubscriptionState:        Active
 
-Manual recovery requests must use the same control-plane interfaces as automatic recovery.
+    IntegrityState:           Synchronizing
+    RecoveryState:            Recovering
+    AcquisitionReadiness:     Not Ready
 
-### 21.6 API Integration
+    Recovery Action:          REST Snapshot
+    Recovery Attempt:         3
+    Last Error:               Sequence Gap
 
-The runtime API should expose read-only recovery state and supported recovery commands.
+This represents a logical source-stream runtime that
+remains operational while its L2 processor attempts
+to restore synchronized book integrity.
 
-Conceptual operations:
+`StreamLifecycle::Active` does not imply acquisition
+readiness.
+
+Likewise, `ConnectionState::Connected` and
+`SubscriptionState::Active` do not imply that an
+L2 order book is synchronized.
+
+The TUI must not collapse these independent states
+into one ambiguous stream lifecycle status.
+
+#### Recovery Outcomes
+
+The interface must distinguish:
+
+- Physical connection restoration.
+- Native subscription restoration.
+- Processor initialization.
+- Current market-data integrity restoration.
+- Acquisition readiness restoration.
+- Historical coverage recovery.
+- Recovery-operation completion.
+- Recovery-operation failure or cancellation.
+
+Successful recovery of current acquisition readiness
+does not imply that every historical event has been
+recovered.
+
+Unresolved coverage gaps must remain visible after
+current acquisition resumes.
+
+#### Health Assessment
+
+Health classifications are derived from the Metrics
+and Stream Health subsystem.
+
+Recovery activity does not independently determine
+the authoritative logical stream lifecycle.
+
+A source may be:
+
+    StreamLifecycle: Active
+    AcquisitionReadiness: Not Ready
+    Health: Degraded
+
+The exact health classification depends on the
+configured health policy and available observations.
+
+The Recovery Coordinator reports recovery state
+and outcomes.
+
+The Stream Registry reports logical lifecycle
+and effective acquisition demand.
+
+The responsible stream processor reports integrity.
+
+The Metrics and Stream Health subsystem evaluates
+health using these authoritative observations.
+
+#### Manual Recovery Operations
+
+Manual recovery requests must pass through the
+same authoritative control-plane interfaces,
+admission rules, generation validation, and
+rate-limit policies as automatic recovery.
+
+The TUI must not initiate physical reconnection,
+native subscription restoration, or L2
+resynchronization directly.
+
+The exact externally supported recovery commands
+are governed by Document 13.
+
+A conceptual recovery capability in this document
+does not independently establish an externally
+serialized Control API command.
+
+### 21.6 Control API Integration
+
+Recovery information and supported recovery operations are exposed
+through the authoritative Control API defined in Document 13 —
+Runtime Configuration and Control API.
+
+The initial management transport is the dedicated Unix-domain
+control socket.
+
+Requests and responses use the versioned, length-prefixed JSON
+protocol defined in Document 13, Section 20.
+
+The Recovery Coordinator remains authoritative for recovery-operation
+state, ownership, scheduling, cancellation, and outcomes.
+
+The Control API provides validated access to recovery capabilities.
+It must not independently implement recovery algorithms or maintain
+a competing recovery state machine.
+
+#### Recovery Management Capabilities
+
+The runtime must support the following conceptual capabilities:
+
+| Capability | Responsibility |
+|---|---|
+| `GetRecoveryStatus` | Inspect the current recovery state of an affected resource. |
+| `ListRecoveryOperations` | Inspect recovery operations within an authorized scope. |
+| `GetRecoveryOperation` | Inspect one recovery operation and its progress or outcome. |
+| `ListUnresolvedCoverageGaps` | Inspect known unresolved historical market-data coverage gaps. |
+| `RequestStreamRecovery` | Request an authorized recovery action for a logical source stream. |
+| `CancelRecoveryOperation` | Request cancellation of an eligible recovery operation. |
+
+These names describe required runtime capabilities.
+
+They do not independently define serialized Control API commands,
+request schemas, or response variants.
+
+The external command vocabulary belongs to Document 13.
+
+#### Mapping to Existing Control API Contracts
+
+Document 13, Section 5.3, currently defines the following
+relevant conceptual commands:
+
+| Control API Command | Applicable Use | Limitation |
+|---|---|---|
+| `GetOperation(OperationId)` | Inspect an asynchronous operation when its identifier and status contract are applicable. | The relationship between general operations and recovery-operation identities requires confirmation. |
+| `GetHealth(HealthQuery)` | Retrieve health information associated with recovery conditions. | Health information does not replace recovery-operation state or historical coverage records. |
+| `GetRuntimeStatus` | Inspect overall runtime status. | Does not independently guarantee detailed recovery-operation inspection. |
+| `GetStream(StreamId)` | Inspect the operational status of a registered stream. | Does not independently establish the full recovery or coverage query schema. |
+
+The remaining recovery-specific capabilities require explicit
+Control API contract decisions.
+
+In particular, this document does not independently introduce:
 
     GetRecoveryStatus
-
     ListRecoveryOperations
-
     GetRecoveryOperation
-
     ListUnresolvedCoverageGaps
-
     RequestStreamRecovery
-
     CancelRecoveryOperation
 
-The precise API transport and endpoint paths are defined separately.
+as serialized variants of `ControlCommand`.
 
-A manual recovery request must pass through normal admission, generation validation, and rate-limit enforcement.
+Their exact external exposure, request and response schemas,
+authorization requirements, and operation-correlation rules
+must be finalized centrally with Document 13.
+
+These unresolved wire contracts must not be silently delegated
+to individual subsystem implementations.
+
+#### Read-Only Recovery Queries
+
+Recovery queries must preserve the distinction between:
+
+- Current logical stream lifecycle.
+- Physical connection lifecycle.
+- Native subscription state.
+- Market-data integrity.
+- Recovery-operation progress.
+- Current acquisition readiness.
+- Historical coverage completeness.
+- Health assessment.
+
+For example:
+
+    StreamLifecycle:      Active
+    ConnectionState:      Connected
+    SubscriptionState:    Active
+    IntegrityState:       Valid
+    RecoveryState:        Recovering
+    AcquisitionReadiness: Ready
+    HistoricalCoverage:  Incomplete
+
+This is a valid state when current acquisition has recovered
+but earlier historical coverage remains unresolved.
+
+A query must not interpret successful connection restoration
+or current acquisition readiness as proof of complete
+historical recovery.
+
+Recovery observations must originate from their authoritative
+component owners.
+
+#### Manual Recovery Requests
+
+A manual recovery request must:
+
+- Identify the affected logical source or recovery resource.
+- Validate that the resource still exists.
+- Validate authorization and operation parameters.
+- Respect current effective acquisition demand where applicable.
+- Respect the current configuration revision.
+- Validate connection, subscription, and recovery generations.
+- Use the Recovery Coordinator's authoritative operation interfaces.
+- Respect applicable exchange rate limits and cooldowns.
+- Avoid creating duplicate recovery operations.
+- Preserve existing integrity and historical coverage guarantees.
+- Return an explicit acceptance, rejection, or conflict outcome.
+
+A manual recovery request must not directly establish WebSocket
+connections, manipulate native subscriptions, or modify L2 books
+outside their authoritative subsystem interfaces.
+
+Request acceptance does not imply recovery completion.
+
+#### Recovery Cancellation
+
+Recovery cancellation must follow the ownership and demand rules
+defined in Section 24.4.
+
+A change to persistent `DesiredState::Inactive` does not
+automatically invalidate recovery required by independent
+recording, subscriber, derived-stream, or retention demand.
+
+Cancellation must identify the specific recovery operation
+and must not terminate unrelated recovery work.
+
+A cancelled operation must not subsequently modify current
+runtime state through delayed asynchronous callbacks.
+
+#### Operation Identity and Completion
+
+Control request identity, asynchronous operation identity,
+recovery-operation identity, and runtime generations must
+remain distinguishable.
+
+The final shared contract must define how recovery operations
+are correlated with general Control API operations.
+
+The Control API must distinguish:
+
+- Request accepted.
+- Recovery operation scheduled.
+- Recovery operation running.
+- Recovery waiting for retry or admission.
+- Recovery completed.
+- Recovery failed.
+- Recovery cancelled.
+- Current acquisition readiness restored.
+- Historical coverage fully or partially recovered.
+
+Recovery completion must report its actual guarantee.
+
+Restoring current market-data integrity does not automatically
+establish complete historical coverage.
+
+#### Operational Notifications
+
+Document 13, Section 24, describes optional low-frequency
+operational notifications.
+
+Recovery transitions may be exposed through that mechanism
+when supported by the finalized notification contract.
+
+Notifications do not replace authoritative recovery queries.
+
+A client that misses notifications must be able to refresh
+its view from authoritative runtime state.
+
+The Control API must not manufacture recovery transitions
+independently of the Recovery Coordinator.
+
+#### Implementation Contract Status
+
+Recovery-management capabilities are required by this document.
+
+Their final external command mappings remain unresolved where
+Document 13 does not yet define an equivalent operation.
+
+The missing mappings must be resolved during the shared
+contract-freeze process before implementing dependent
+Control API and Ratatui recovery-management features.
 
 ### 21.7 Local Structured Logging
 
@@ -3329,16 +3676,107 @@ It must not create three independent physical reconnection attempts.
 
 ### 24.4 Recovery Cancellation
 
-Verify cancellation when:
+Recovery cancellation must respect current acquisition demand,
+resource ownership, and generation validity.
 
-- A stream is removed.
-- A connection pool is closed.
-- Runtime shutdown begins.
-- A newer recovery operation supersedes an older one.
-- Desired stream state changes to inactive.
-- Configuration becomes invalid.
+A persistent desired-state change does not independently determine
+whether an in-progress recovery operation is still required.
 
-Cancelled operations must release their owned reservations.
+#### Cancellation Conditions
+
+Recovery operations must be cancelled or superseded when:
+
+- The affected logical source is removed through an authorized
+  registry operation.
+- The owning connection pool is closed and no valid dependency
+  requires restoration through that pool.
+- Runtime shutdown invalidates the operation.
+- A newer authoritative recovery operation supersedes it.
+- The affected resource is no longer required by any valid
+  acquisition-demand owner.
+- The applicable configuration becomes invalid or incompatible
+  with the recovery operation.
+- The operation targets an obsolete connection, subscription,
+  or recovery generation.
+
+Cancellation must be scoped to the affected operation.
+
+Cancelling one stream's recovery must not unnecessarily cancel
+recovery required by other streams sharing the same connection.
+
+#### Persistent Deactivation
+
+A transition to:
+
+    DesiredState::Inactive
+
+releases the persistent configuration's acquisition demand.
+
+It does not automatically invalidate independent demand owned by:
+
+- Recording.
+- Subscribers.
+- Derived streams.
+- Retention sessions.
+
+The Recovery Coordinator must evaluate the current effective
+acquisition requirement through the authoritative Stream Registry.
+
+For example:
+
+    Persistent Desired State: Inactive
+    Recording Demand:         Present
+    Subscriber Demand:        Present
+    Effective Acquisition:    Required
+
+An in-progress recovery operation remains eligible to continue
+when it is still required to satisfy these valid demand owners.
+
+Conversely, when no valid acquisition demand remains, recovery
+work that exists solely to restore live acquisition must be
+cancelled or safely completed according to its ownership contract.
+
+Historical coverage repair, retention commitments, and recording
+obligations may have independent requirements.
+
+They must not be cancelled merely because live acquisition
+demand has disappeared.
+
+#### Cancellation Safety
+
+A cancelled recovery operation must:
+
+- Release its owned resource reservations.
+- Cancel or invalidate pending asynchronous work.
+- Respect applicable connection and subscription generation fences.
+- Preserve previously established authoritative state.
+- Avoid modifying unrelated demand registrations.
+- Report cancellation through its operation-status interface.
+- Preserve unresolved historical coverage or integrity incidents.
+
+Cancellation does not imply successful recovery.
+
+A cancelled operation must not subsequently restore obsolete
+native subscriptions, reactivate removed sources, or modify
+newer processing generations.
+
+#### Ownership
+
+The Recovery Coordinator owns recovery-operation coordination
+and cancellation decisions.
+
+The Stream Registry remains authoritative for source identity
+and effective acquisition demand.
+
+The Connection Manager owns physical reconnection.
+
+The Subscription Manager owns native subscription restoration.
+
+The responsible processors own market-data integrity.
+
+The Recovery Coordinator must not independently mutate
+persistent desired configuration or release demand registrations
+owned by unrelated components.
 
 ### 24.5 Generation Fencing
 
@@ -4235,1065 +4673,3 @@ The essential invariant is:
 
 This principle applies to connectivity, subscriptions, normalization, L2 synchronization, historical coverage, publication, retention, and recording.
 
----
-## 23. System-Level Testing Strategy
-
-The Recovery Coordinator requires deterministic unit tests, asynchronous integration tests, fault-injection tests, and full-runtime recovery simulations.
-
-Testing must verify not only that individual components recover successfully, but also that their recovery operations remain coordinated.
-
-The primary objective is to establish that MarketForge can restore valid operation without:
-
-- Creating duplicate recovery operations.
-- Violating component ownership.
-- Exceeding exchange rate limits.
-- Accepting obsolete processing generations.
-- Publishing invalid market data.
-- Concealing missing historical coverage.
-- Losing committed publication identities.
-- Leaking runtime resources.
-- Causing cascading failures across unrelated streams.
-
-### 23.1 Testing Categories
-
-| Category | Scope |
-|---|---|
-| Unit tests | Recovery decisions, state transitions, failure classification |
-| Dependency tests | Recovery action prerequisites and ordering |
-| Concurrency tests | Simultaneous failures and competing recovery operations |
-| Exchange outage tests | Shared failures across connections and streams |
-| Data-integrity tests | Trade gaps and L2 synchronization failures |
-| Infrastructure tests | Disk, memory, file descriptors, PostgreSQL |
-| Crash recovery tests | Process restart and persistent-state reconciliation |
-| Publication tests | Cursor consistency and recovery delivery |
-| Fault-injection tests | Combined and repeated failures |
-| Property-based tests | Arbitrary failure and recovery sequences |
-| Performance tests | Recovery scheduling, concurrency, resource utilization |
-
-Core correctness tests must run without live exchange connectivity.
-
-External exchange integration tests supplement the deterministic test suite.
-
-### 23.2 Test Infrastructure
-
-The testing infrastructure should support:
-
-- Mock Connection Managers.
-- Mock Subscription Managers.
-- Simulated exchange protocol adapters.
-- Deterministic REST responses.
-- Controlled WebSocket disconnections.
-- Configurable execution delays.
-- Mock clocks.
-- Deterministic retry scheduling.
-- Simulated resource limits.
-- Simulated publisher failures.
-- Simulated storage failures.
-- Explicit recovery completion events.
-
-Tests must avoid depending on arbitrary real-time sleeps for correctness.
-
-### 23.3 Failure Injection Interface
-
-Conceptually:
-
-    InjectFailure {
-        target
-        failure_class
-        failure_scope
-        runtime_generation
-        occurrence_time
-        parameters
-    }
-
-The test framework must support failures occurring:
-
-- Before operation admission.
-- During operation execution.
-- After local completion but before acknowledgement.
-- During recovery validation.
-- During cancellation.
-- After an operation has been superseded.
-
-These boundaries are important because asynchronous failures can produce ambiguous outcomes.
-
----
-
-## 24. Recovery Coordinator Unit Tests
-
-### 24.1 Failure Classification
-
-Verify classification of:
-
-    TransportFailure
-    SubscriptionFailure
-    ProtocolFailure
-    NormalizationFailure
-    TradeContinuityFailure
-    L2SynchronizationFailure
-    ResourceExhaustion
-    PublicationFailure
-    RetentionFailure
-    RecordingFailure
-    ConfigurationFailure
-    InfrastructureFailure
-
-Each classification must produce an appropriate recovery decision or explicit nonrecoverable outcome.
-
-### 24.2 Recovery Operation Lifecycle
-
-Verify valid transitions between:
-
-    Created
-    PendingDependencies
-    PendingAdmission
-    Scheduled
-    Running
-    Validating
-    Completed
-    PartiallyCompleted
-    Failed
-    Cancelled
-
-Invalid transitions must be rejected.
-
-A completed recovery operation must not resume execution.
-
-### 24.3 Recovery Deduplication
-
-Simulate several components reporting the same connection failure.
-
-Example:
-
-    Reader:
-        Unexpected EOF
-
-    Writer:
-        Connection closed
-
-    Heartbeat:
-        Timeout
-
-All reports refer to:
-
-    ConnectionId = 12
-
-    ConnectionGeneration = 5
-
-Expected:
-
-    One Authoritative Connection Recovery
-
-The coordinator may preserve multiple failure observations.
-
-It must not create three independent physical reconnection attempts.
-
-### 24.4 Recovery Cancellation
-
-Verify cancellation when:
-
-- A stream is removed.
-- A connection pool is closed.
-- Runtime shutdown begins.
-- A newer recovery operation supersedes an older one.
-- Desired stream state changes to inactive.
-- Configuration becomes invalid.
-
-Cancelled operations must release their owned reservations.
-
-### 24.5 Generation Fencing
-
-Simulate:
-
-    Recovery Generation 7 starts.
-
-    Recovery Generation 8 supersedes it.
-
-    Generation 8 completes.
-
-    Generation 7 reports success.
-
-The obsolete completion must not modify authoritative recovery state.
-
-### 24.6 Recovery Completion Evidence
-
-Verify that the coordinator requires confirmation from the responsible component.
-
-Examples:
-
-    RestoreConnection:
-        Connection Manager confirmation required.
-
-    RestoreSubscription:
-        Subscription Manager confirmation required.
-
-    ResynchronizeBook:
-        BookStore synchronization confirmation required.
-
-    ReconcileTrades:
-        Coverage evidence required.
-
-The coordinator must not infer completion solely from a successful command dispatch.
-
----
-
-## 25. Recovery Dependency Tests
-
-Recovery operations must execute only when their actual prerequisites are satisfied.
-
-### 25.1 Dependency Ordering
-
-Verify:
-
-    RestoreConnection
-            |
-            v
-    RestoreSubscription
-            |
-            v
-    RestoreProcessing
-
-Subscription restoration must not proceed through an unavailable physical connection.
-
-### 25.2 Independent Historical Recovery
-
-Historical trade acquisition may proceed while the live WebSocket endpoint remains unavailable if its REST or archive source is independently accessible.
-
-Test:
-
-    WebSocket unavailable.
-
-    Historical REST available.
-
-Expected:
-
-    Historical acquisition may proceed.
-
-The coordinator must not impose an unnecessary dependency on WebSocket restoration.
-
-### 25.3 L2 Recovery Dependencies
-
-For REST-snapshot protocols, verify:
-
-    Subscription Active
-            |
-            v
-    Delta Buffering Active
-            |
-            v
-    REST Snapshot Acquired
-            |
-            v
-    Sequence Bridge Valid
-            |
-            v
-    Book Generation Committed
-
-The coordinator tracks the final outcome.
-
-The Synchronization Coordinator owns the actual reconstruction procedure.
-
-### 25.4 Dependency Invalidation
-
-Simulate:
-
-    Connection restored.
-
-    Subscription restoration begins.
-
-    Connection fails again.
-
-Expected:
-
-- The old connection generation becomes invalid.
-- Dependent restoration operations are suspended or cancelled.
-- A new connection recovery proceeds.
-- Obsolete completions cannot restore stream state.
-
-### 25.5 Dependency Graph Validation
-
-The recovery planner must reject:
-
-- Cyclic dependencies.
-- Unknown action owners.
-- Missing required prerequisites.
-- Incompatible resource generations.
-- Unsupported recovery action combinations.
-
-A malformed plan must not begin partial execution.
-
----
-
-## 26. Exchange Outage Simulations
-
-Exchange outages may affect hundreds of logical source streams.
-
-The test suite must verify that recovery work is coordinated at the appropriate scope.
-
-### 26.1 Shared Connection Failure
-
-Simulate one connection containing:
-
-    BTCUSDT Trades
-
-    ETHUSDT Trades
-
-    BTCUSDT L2
-
-Disconnect the physical WebSocket.
-
-Expected:
-
-- One physical reconnection operation.
-- Three affected logical stream assignments.
-- Independent subscription restoration outcomes.
-- Trade coverage marked unverified where necessary.
-- L2 state invalidated.
-- Fresh L2 synchronization required.
-- No duplicate native subscriptions.
-
-### 26.2 Exchange-Wide Outage
-
-Simulate:
-
-    Exchange: Binance
-
-    Affected Connections: 20
-
-    Affected Streams: 500
-
-The coordinator must:
-
-- Identify the common failure scope.
-- Avoid redundant recovery plans.
-- Respect shared exchange connection limits.
-- Respect subscription request budgets.
-- Schedule recovery gradually.
-- Preserve stream-specific integrity states.
-- Avoid exhausting local memory.
-
-No arbitrary assumption should be made that all 500 streams can recover simultaneously.
-
-### 26.3 Multi-Exchange Isolation
-
-Simulate:
-
-    Binance unavailable.
-
-    Bybit healthy.
-
-    OKX healthy.
-
-    Bitget healthy.
-
-    Gate.io healthy.
-
-Expected:
-
-- Binance recovery proceeds.
-- Other exchanges remain operational.
-- Global recovery scheduling does not block unrelated healthy streams.
-- Shared local resources remain bounded.
-
-### 26.4 Reconnection Storm Prevention
-
-Simulate many connection failures at the same instant.
-
-Verify:
-
-- Bounded concurrent attempts.
-- Exchange cooldown enforcement.
-- Exponential backoff.
-- Jitter.
-- Shared rate-limit accounting.
-- No duplicate supervisor ownership.
-
-### 26.5 Repeated Exchange Instability
-
-Simulate:
-
-    Connect
-       |
-       v
-    Disconnect
-       |
-       v
-    Reconnect
-       |
-       v
-    Disconnect
-
-Repeat the sequence.
-
-Verify that backoff is not reset prematurely.
-
-A successful handshake alone must not erase repeated instability history.
-
-### 26.6 Partial Exchange Recovery
-
-Simulate an exchange where:
-
-    WebSocket endpoint restored.
-
-    REST trade history unavailable.
-
-Expected:
-
-    TransportRestored = Satisfied
-
-    SubscriptionRestored = Satisfied
-
-    ProcessingRestored = Satisfied
-
-    HistoricalCoverageRestored = Unverified
-
-The runtime must not report full recovery.
-
----
-
-## 27. Trade and L2 Recovery Integration Tests
-
-### 27.1 Trade Recovery With Live Continuation
-
-Simulate:
-
-    Trades 100–110 received.
-
-    Connection interrupted.
-
-    Trades 120–130 received after restoration.
-
-    Recovery retrieves trades 111–119.
-
-Verify:
-
-- Live acquisition resumes.
-- Recovery executes independently.
-- Native identities remain stable.
-- Missing executions are accepted once.
-- Publication policy is respected.
-- Coverage state reflects the verified recovery evidence.
-
-The fixture must explicitly establish the native continuity guarantee required to identify the missing interval.
-
-### 27.2 Partial Trade Recovery
-
-Simulate a recovery endpoint returning only a subset of missing executions.
-
-Expected:
-
-    RecoveryOperation = PartiallyCompleted
-
-    HistoricalCoverage = Incomplete
-
-Current live acquisition may remain healthy.
-
-### 27.3 L2 Sequence Gap
-
-Simulate:
-
-    Current sequence = 1000
-
-    Incoming update begins at 1010.
-
-The configured protocol confirms a sequence gap.
-
-Expected:
-
-- Current book generation invalidated.
-- Invalid delta rejected.
-- No publication of corrupted book state.
-- Recovery Coordinator notified.
-- Synchronization Coordinator establishes a new authoritative generation.
-
-### 27.4 L2 Snapshot Failure
-
-Simulate:
-
-    Sequence gap detected.
-
-    REST snapshot requested.
-
-    Snapshot request times out.
-
-Expected:
-
-- The book remains invalid.
-- Recovery operation remains unresolved.
-- Retry policy is applied.
-- REST rate limits are respected.
-- No fabricated synchronization success.
-
-### 27.5 Repeated L2 Failure
-
-Simulate repeated synchronization failures.
-
-Verify escalation according to policy:
-
-    Retry Synchronization
-             |
-             v
-    Resubscribe if Required
-             |
-             v
-    Replace Connection if Required
-             |
-             v
-    Escalate Persistent Failure
-
-The coordinator must not replace a healthy physical connection unnecessarily.
-
-### 27.6 Current-State vs Historical Recovery
-
-Simulate successful L2 resynchronization after missing native deltas.
-
-Expected:
-
-    CurrentBookRestored = Satisfied
-
-    HistoricalCoverageRestored = Unsatisfied
-
-A fresh snapshot cannot be interpreted as reconstruction of missed incremental updates.
-
----
-
-## 28. Infrastructure and Crash Recovery Tests
-
-### 28.1 Process Crash
-
-Simulate process termination during normal market-data acquisition.
-
-After restart, verify:
-
-- Persistent configuration loads.
-- Instrument metadata snapshot validates.
-- Desired streams are reconstructed.
-- New runtime instance identity is established.
-- New transport generations are allocated.
-- Native subscriptions are restored.
-- L2 books are reinitialized.
-- Trade coverage is evaluated.
-- Existing durable events are not blindly duplicated.
-
-### 28.2 Crash During Recovery
-
-Simulate:
-
-    Recovery started.
-
-    Historical records acquired.
-
-    Process crashes before reconciliation completes.
-
-After restart:
-
-- In-memory recovery operations are not assumed complete.
-- Available durable recovery evidence is inspected.
-- Unresolved coverage remains identifiable.
-- Recovery may safely restart.
-- Duplicate canonical acceptance is prevented where persistent identity evidence permits it.
-
-### 28.3 Repeated Crash
-
-Simulate:
-
-    Process starts.
-
-    Recovery begins.
-
-    Process crashes.
-
-    Process starts again.
-
-    Recovery begins again.
-
-Verify that repeated restart recovery does not create duplicate authoritative stream declarations or inconsistent persistent cursor identities.
-
-### 28.4 Disk Exhaustion
-
-Simulate:
-
-- Parquet spill failure.
-- Checkpoint write failure.
-- Metadata snapshot write failure.
-- Local log write failure.
-
-Verify:
-
-- Existing valid files remain intact.
-- Incomplete writes are detected.
-- Resource pressure is reported.
-- Retention guarantees are degraded explicitly.
-- No unbounded memory buffering occurs.
-- Recovery resumes only after storage validation.
-
-### 28.5 PostgreSQL Outage
-
-Simulate an outage while optional recording is enabled.
-
-Expected:
-
-    Acquisition = Operational
-
-    Publication = Operational
-
-    Recording = Degraded
-
-provided the configured recording policy permits continuation.
-
-Verify bounded recording buffers and explicit persistence-gap reporting.
-
-### 28.6 Ambiguous Database Commit
-
-Simulate:
-
-    PostgreSQL transaction commits.
-
-    Connection fails before client acknowledgement.
-
-Expected:
-
-The Recording Manager reconciles the transaction outcome using its defined persistence identity and commit contract.
-
-The Recovery Coordinator must not blindly duplicate the write.
-
-### 28.7 Runtime Memory Pressure
-
-Simulate simultaneous:
-
-- High trade throughput.
-- L2 snapshot reconstruction.
-- Recovery buffers.
-- Publication congestion.
-
-Verify:
-
-- Resource limits are enforced.
-- Noncritical recovery is deferred.
-- Essential processing is protected where possible.
-- No silent market-data dropping occurs.
-- Failed guarantees are reported explicitly.
-
-### 28.8 File Descriptor Exhaustion
-
-Simulate failure to open new sockets and files.
-
-Verify that the system identifies the shared resource condition.
-
-It must not repeatedly launch futile connection attempts without considering the underlying exhaustion.
-
----
-
-## 29. Publication, Retention, and Recording Tests
-
-### 29.1 Publication Failure
-
-Simulate an accepted canonical event that cannot enter the Publisher's required delivery boundary.
-
-Verify:
-
-- The failure is reported.
-- Publication identity remains consistent.
-- The event is not silently discarded.
-- Recovery or explicit delivery-gap handling occurs.
-
-### 29.2 Subscriber Failure
-
-Simulate one subscriber becoming unavailable.
-
-Verify:
-
-- Other subscribers remain unaffected where possible.
-- Accepted source-stream state remains valid.
-- Subscriber delivery failure is distinguished from exchange acquisition failure.
-- Replay or explicit delivery-gap reporting follows the Publisher contract.
-
-### 29.3 Retention Failure
-
-Simulate accepted events whose temporary Parquet retention fails.
-
-Verify:
-
-- Acquisition state remains independently classified.
-- Retention failure is visible.
-- Required retention guarantees are marked impaired.
-- Existing valid retained segments are preserved.
-
-### 29.4 Recording Failure
-
-Simulate PostgreSQL recording interruption.
-
-Verify:
-
-- Recording status becomes degraded.
-- Pending batches remain bounded.
-- Retry behavior respects the Recording Manager's persistence contract.
-- Ambiguous commits are reconciled.
-- Unrecoverable recording gaps remain visible.
-
-### 29.5 Independent Guarantee Restoration
-
-Restore the Publisher while keeping recording unavailable.
-
-Expected:
-
-    PublicationRestored = Satisfied
-
-    RecordingRestored = Unsatisfied
-
-Restore recording without resolving an earlier acquisition gap.
-
-Expected:
-
-    RecordingRestored = Satisfied
-
-    HistoricalCoverageRestored = Unsatisfied
-
-Guarantees must remain independently evaluated.
-
----
-
-## 30. Property-Based Testing
-
-Property-based testing should generate arbitrary valid failure, recovery, cancellation, and completion sequences.
-
-### 30.1 Recovery Ownership Invariants
-
-    One authoritative recovery operation per
-    target, recovery kind, and resource generation.
-
-    Recovery operations never bypass
-    component ownership boundaries.
-
-    Connection recovery is executed by
-    the Connection Manager.
-
-    Subscription restoration is executed by
-    the Subscription Manager.
-
-    Trade reconciliation is executed by
-    the Trade Reconciliation Engine.
-
-    L2 synchronization is executed by
-    the Synchronization Coordinator.
-
-### 30.2 Generation Invariants
-
-    Obsolete recovery completions cannot
-    modify current authoritative state.
-
-    Removed streams cannot be restored
-    by delayed recovery operations.
-
-    Recovery dependencies must match
-    current resource generations.
-
-    A cancelled recovery cannot later
-    become authoritative.
-
-### 30.3 Integrity Invariants
-
-    Transport restoration does not imply
-    historical completeness.
-
-    Subscription restoration does not imply
-    processing readiness.
-
-    Current L2 synchronization does not imply
-    complete historical L2 coverage.
-
-    Recovered trades cannot bypass native
-    execution identity validation.
-
-    Invalid books cannot be published as
-    synchronized current state.
-
-### 30.4 Resource Invariants
-
-    Recovery queues remain bounded.
-
-    Recovery concurrency limits are respected.
-
-    Exchange rate limits are never bypassed.
-
-    Failed operations release reservations.
-
-    Cancelled operations release resources.
-
-    Recovery cannot create uncontrolled
-    retry or reconnection storms.
-
-### 30.5 Completion Invariants
-
-    Completed recovery requires evidence
-    for every applicable required guarantee.
-
-    Partial recovery cannot be reported
-    as complete.
-
-    A successful REST request is not
-    sufficient evidence of coverage.
-
-    Optional disabled capabilities cannot
-    cause false recovery failures.
-
-### 30.6 Reference Model
-
-A simplified reference Recovery Coordinator should be implemented for deterministic testing.
-
-Generated operations may include:
-
-    ReportFailure
-    CreateRecovery
-    AdmitRecovery
-    SatisfyDependency
-    FailDependency
-    CompleteAction
-    FailAction
-    CancelRecovery
-    ChangeDesiredState
-    ReplaceGeneration
-    Shutdown
-
-For equivalent inputs, the reference and optimized implementations must produce compatible:
-
-- Recovery operation states.
-- Dependency states.
-- Required guarantees.
-- Completion outcomes.
-- Resource reservations.
-- Failure escalation decisions.
-
----
-
-## 31. Performance and Recovery Scalability
-
-Recovery coordination must remain efficient when many streams fail simultaneously.
-
-It must not become a global bottleneck for otherwise healthy market-data processing.
-
-### 31.1 Performance Requirements
-
-The coordinator should minimize:
-
-- Global lock contention.
-- Duplicate failure processing.
-- Redundant recovery plans.
-- Unnecessary resource reservations.
-- Repeated dependency scans.
-- Unbounded scheduling queues.
-- Excessive state copying.
-- Expensive synchronous control-plane operations.
-
-### 31.2 Recovery Scheduling Benchmarks
-
-Benchmark:
-
-- Failure-report ingestion.
-- Recovery deduplication.
-- Recovery-plan construction.
-- Dependency resolution.
-- Admission scheduling.
-- Cancellation.
-- Completion processing.
-- Escalation evaluation.
-- Recovery snapshot generation.
-
-### 31.3 Scaling Dimensions
-
-Benchmarks should vary:
-
-- Number of active streams.
-- Number of exchange connections.
-- Simultaneous failure count.
-- Recovery dependency depth.
-- Pending recovery count.
-- Available REST request capacity.
-- Recovery concurrency limits.
-- Failure notification duplication.
-- Cancellation frequency.
-
-### 31.4 Recovery Storm Benchmark
-
-A representative benchmark should simulate:
-
-    5 Exchanges
-
-    15 Market Families
-
-    Hundreds of Active Streams
-
-    Multiple Shared Connection Failures
-
-The coordinator must consolidate shared failures and schedule bounded recovery work.
-
-Concrete performance targets must be established through measurement rather than arbitrary assumptions.
-
-### 31.5 Isolation Benchmark
-
-Saturate recovery processing for one exchange.
-
-Verify that:
-
-- Healthy exchange processing remains operational.
-- Recovery scheduling remains responsive.
-- Control-plane commands can still be processed.
-- Runtime memory remains bounded.
-- Unrelated connection pools are not blocked by recovery locks.
-
----
-
-## 32. Implementation Acceptance Criteria
-
-The Recovery Coordination subsystem is complete when the following conditions are satisfied.
-
-### 32.1 Architecture
-
-- The Recovery Coordinator has explicit ownership boundaries.
-- Failure reporting uses structured typed events.
-- Recovery planning is deterministic.
-- Recovery operations have stable identities.
-- Recovery generations prevent obsolete completions.
-- Duplicate recovery requests are consolidated.
-- Component-specific recovery mechanisms remain independently owned.
-
-### 32.2 Dependency Coordination
-
-- Recovery prerequisites are represented explicitly.
-- Recovery dependency graphs are validated.
-- Dependent actions wait for valid prerequisites.
-- Obsolete dependencies invalidate affected operations.
-- Independent recovery tasks can execute concurrently.
-- Desired stream state is respected throughout recovery.
-
-### 32.3 Resource Safety
-
-- Recovery queues are bounded.
-- Recovery concurrency is bounded.
-- Exchange rate limits are respected.
-- Local resource reservations are tracked.
-- Failed and cancelled operations release resources.
-- Shared failures do not produce duplicate recovery storms.
-- Recovery workloads do not unnecessarily starve healthy acquisition.
-
-### 32.4 Fault Tolerance
-
-- Transient failures trigger appropriate recovery actions.
-- Permanent errors stop futile automatic retries.
-- Repeated failures escalate according to policy.
-- Exchange outages are handled at the correct scope.
-- Individual stream failures remain isolated where possible.
-- Process crashes trigger validated restart recovery.
-- Disk exhaustion is handled explicitly.
-- PostgreSQL recording outages remain isolated when optional.
-- Resource exhaustion does not produce silent integrity violations.
-
-### 32.5 Data Integrity
-
-- Trade coverage uncertainty remains visible.
-- Confirmed gaps require supported evidence.
-- Partial recovery is distinguished from complete recovery.
-- Invalid L2 books cannot become authoritative.
-- Current L2 restoration is distinct from historical coverage restoration.
-- Publication gaps are distinct from acquisition gaps.
-- Retention gaps are distinct from recording gaps.
-- Recovery completion requires authoritative evidence.
-
-### 32.6 Observability
-
-- Recovery operation states are exposed.
-- Failure classifications are available.
-- Recovery dependencies are inspectable.
-- Recovery escalation is visible.
-- Unresolved coverage gaps remain identifiable.
-- Runtime health reflects required service guarantees.
-- TUI and API expose recovery status.
-- Operational logs remain local.
-- No Prometheus or Grafana dependency is required.
-
-### 32.7 Testing
-
-- Recovery Coordinator unit tests pass.
-- Dependency coordination tests pass.
-- Shared failure tests pass.
-- Exchange outage simulations pass.
-- Trade recovery integration tests pass.
-- L2 resynchronization integration tests pass.
-- Crash recovery tests pass.
-- Disk and database failure tests pass.
-- Publication and retention failure tests pass.
-- Concurrency and generation-safety tests pass.
-- Property-based tests pass.
-- Recovery scalability benchmarks establish acceptable performance.
-
----
-
-## 33. Final Architectural Contract
-
-The Recovery Coordinator is responsible for restoring MarketForge Live's required operational guarantees after failures.
-
-It does so by coordinating the existing components rather than duplicating their implementations.
-
-The system-wide recovery architecture is:
-
-    Runtime Failure
-          |
-          v
-    Structured Failure Report
-          |
-          v
-    Recovery Coordinator
-          |
-          v
-    Failure Classification
-          |
-          v
-    Recovery Plan
-          |
-          v
-    Dependency and Resource Admission
-          |
-          v
-    Component-Owned Recovery Actions
-          |
-          v
-    Authoritative Result Validation
-          |
-          v
-    Recovery Guarantee Evaluation
-          |
-          v
-    Completed / Partial / Failed
-
-The coordinator guarantees:
-
-- Explicit failure classification.
-- Correct recovery ownership.
-- Bounded and dependency-aware scheduling.
-- Prevention of duplicate recovery operations.
-- Generation-safe asynchronous completion.
-- Exchange-compliant recovery admission.
-- Resource-aware failure escalation.
-- Independent evaluation of recovery guarantees.
-- Preservation of unresolved coverage gaps.
-- Observable system health and recovery progress.
-
-It does not guarantee:
-
-- That every exchange outage can be resolved automatically.
-- That missing trades are always recoverable.
-- That a new L2 snapshot reconstructs missed historical updates.
-- That all subscriber deliveries are exactly-once.
-- That optional recording remains available during database outages.
-- That arbitrary hardware or operating-system failures can be handled without process termination.
-- That a recovered connection implies complete market-data integrity.
-
-The essential invariant is:
-
-    Recovery must never claim a guarantee
-    that the responsible component
-    has not established.
-
-This principle applies to connectivity, subscriptions, normalization, L2 synchronization, historical coverage, publication, retention, and recording.
-
----

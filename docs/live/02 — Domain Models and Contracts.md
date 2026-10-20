@@ -528,15 +528,177 @@ Exchange timestamps must not be assumed perfectly synchronized across venues.
 
 ### 6.4 Canonical Payload
 
-Reuse existing canonical structures for:
+MarketForge Live must reuse the existing historical
+canonical market-data models.
 
-- Trade events.
-- Atomic L2 updates.
-- Authoritative L2 snapshots.
-- Existing supported event metadata.
+The live layer must not introduce competing financial
+representations for trades, prices, quantities, instrument
+identities, or order-book levels.
 
-The live layer must not introduce a second independent representation of canonical price, quantity, side, or instrument semantics.
+#### Trade Events
 
+One accepted logical trade event receives one
+MarketForge `StreamCursor`.
+
+The canonical trade payload retains the existing
+historical trade representation.
+
+#### L2 Event Grouping
+
+One accepted logical L2 event represents one atomic
+depth-processing boundary.
+
+An L2 event may contain multiple ordered canonical
+`L2LevelUpdate` values.
+
+Conceptually:
+
+    LogicalL2Event
+        EventBoundary
+        SourceOperation
+        SequenceMetadata
+        BookGeneration
+        OrderedLevels:
+            L2LevelUpdate
+            L2LevelUpdate
+            L2LevelUpdate
+
+This is a conceptual grouping contract, not a new
+independent canonical financial model.
+
+The implementation must reuse the existing historical
+depth-event grouping and canonical `L2LevelUpdate`
+representation wherever compatible.
+
+The exact Rust types and field names must be confirmed
+against the existing historical implementation before
+the shared event schema is frozen.
+
+#### Atomic Event Boundary
+
+The complete logical L2 event is the unit of:
+
+- Canonical event acceptance.
+- MarketForge cursor assignment.
+- Event Router admission.
+- Publication serialization.
+- Retention and replay.
+- PostgreSQL recording.
+
+One accepted logical L2 event receives exactly one
+MarketForge `StreamCursor`.
+
+Individual level changes within the event do not
+receive independent MarketForge event cursors.
+
+For example:
+
+    StreamCursor:
+        stream_id: BTC_L2
+        log_epoch: 2
+        offset: 100
+
+    LogicalL2Event:
+        BookGeneration: 7
+        EventBoundary: Delta
+
+        Levels:
+            0: Bid 65000 -> 2
+            1: Bid 64990 -> 4
+            2: Ask 65010 -> 3
+
+The three level changes belong to one logical event
+identified by offset 100.
+
+They must not be published or recorded as three
+independent accepted events.
+
+#### Initialization and Delta Semantics
+
+Logical L2 events must preserve the distinction between:
+
+- Authoritative book initialization.
+- Ordinary incremental depth changes.
+
+An initialization event establishes the complete
+authoritative book state for its declared scope
+and book generation.
+
+An incremental event contains the validated changes
+associated with its logical depth-processing boundary.
+
+The existing historical depth-processing contracts
+determine the canonical level representation.
+
+Native snapshot or delta terminology must not
+silently change the meaning of canonical level values.
+
+#### Ordering and Integrity
+
+The original ordering of level changes within a
+logical event must be preserved whenever required
+by the canonical depth-processing contract.
+
+The event must retain sufficient metadata to
+interpret its sequence and book-generation context.
+
+A logical L2 event must not be partially accepted
+as canonical output.
+
+If required validation fails, the responsible
+processor must reject or invalidate the complete
+affected event according to its integrity contract.
+
+Rejected events do not receive accepted-event
+cursor positions.
+
+A synchronized book generation must not accept
+obsolete updates from an earlier generation.
+
+#### Downstream Representation
+
+Publication, retention, recording, and derived-stream
+processing must preserve the logical L2 event boundary.
+
+They may use different physical serialization or
+storage layouts.
+
+For example, PostgreSQL may store:
+
+    One depth_events row
+              |
+              +-- Multiple depth_levels rows
+
+However, the complete group remains one accepted
+logical MarketForge event.
+
+Reconstructing an event from storage must recover:
+
+- Its original `StreamCursor`.
+- Its canonical level values.
+- Its level ordering.
+- Its initialization or delta classification.
+- Its relevant native sequence metadata.
+- Its book-generation identity.
+- Its applicable provenance.
+
+Physical representation differences must not create
+additional canonical event identities.
+
+#### Canonical Compatibility
+
+The existing historical canonical models and BookStore
+remain authoritative for financial and order-book semantics.
+
+Live-specific metadata belongs in the shared live event
+envelope or associated depth-event metadata.
+
+The shared implementation contract must be established
+through inspection of the existing historical Rust code
+and compatibility fixtures.
+
+No subsystem may independently invent a competing
+L2 grouping or cursor-assignment model.
 ### 6.5 Event Immutability
 
 Once a canonical event has been accepted and assigned a cursor, its semantic payload must remain immutable.
@@ -577,6 +739,14 @@ Each field represents an independent operational dimension.
 
 ### 7.2 StreamLifecycle
 
+`StreamLifecycle` represents the execution and resource-ownership
+lifecycle of a logical source-stream runtime.
+
+It does not represent exchange connectivity, native subscription
+readiness, market-data integrity, historical coverage, or health.
+
+The Stream Registry is authoritative for this lifecycle.
+
 ```rust
 pub enum StreamLifecycle {
     Registered,
@@ -589,51 +759,282 @@ pub enum StreamLifecycle {
 }
 ```
 
-The lifecycle represents resource ownership and execution state, not market-data validity.
+#### Lifecycle Semantics
 
-```text
-REGISTERED
-     |
-     v
-  STARTING
-     |
-     v
-   ACTIVE
-     |
-     +---- No remaining demand ----> IDLE
-     |                                |
-     |                                +---- New demand ---> ACTIVE
-     |                                |
-     |                                v
-     |                             STOPPING
-     |                                |
-     |                                v
-     |                             STOPPED
-     |
-     +---- Fatal failure ----------> FAILED
-```
+| State | Meaning |
+|---|---|
+| `Registered` | The logical stream has been registered, but its runtime has not yet started. |
+| `Starting` | The logical runtime is initializing its required resources and coordinating activation. |
+| `Active` | The logical runtime is running and can coordinate acquisition, integrity processing, and recovery. |
+| `Idle` | The logical runtime remains allocated but is not currently acquiring data because no acquisition demand requires it. |
+| `Stopping` | Runtime shutdown or resource release is in progress. |
+| `Stopped` | The logical runtime is stopped, but its registration may remain available for later activation. |
+| `Failed` | The logical runtime cannot continue without intervention or a separately authorized restart. |
 
-A recoverable exchange disconnection does not necessarily transition the logical stream to `Failed`.
+#### Active Does Not Imply Data Readiness
 
-The stream may remain active while its connection supervisor attempts recovery.
+`StreamLifecycle::Active` means the logical runtime is operational,
+not that its market-data feed is currently healthy.
 
-### 7.3 ConnectionState
+An active stream may simultaneously have:
+
+    ConnectionState:    Reconnecting
+    SubscriptionState:  Pending
+    IntegrityState:     Invalid
+    RecoveryState:      Recovering
+    CoverageState:      Incomplete
+
+The logical runtime remains `Active` while its responsible components
+attempt recovery, provided the runtime itself remains operational.
+
+A temporary connection failure, subscription interruption, L2
+resynchronization, or recoverable integrity failure must not
+automatically transition the logical lifecycle to `Failed`.
+
+`Failed` is reserved for failures that prevent the logical runtime
+from continuing under its established execution and recovery contracts.
+
+#### Lifecycle Independence
+
+The following dimensions remain authoritative in their respective
+subsystems:
+
+| Dimension | Authoritative Owner |
+|---|---|
+| Desired activation state | Stream Registry |
+| Logical stream lifecycle | Stream Registry |
+| Physical connection lifecycle | Connection Manager |
+| Native subscription lifecycle | Subscription Manager |
+| Market-data integrity | Integrity Processor |
+| Recovery operation state | Recovery Coordinator |
+| Historical coverage | Recovery and Retention subsystems |
+| Health assessment | Metrics and Stream Health subsystem |
+
+The lifecycle must not duplicate the states owned by these components.
+
+In particular:
+
+- WebSocket reconnection belongs to `ConnectionState`.
+- Subscription admission and acknowledgement belong to `SubscriptionState`.
+- L2 synchronization belongs to `IntegrityState`.
+- Recovery progress belongs to `RecoveryState`.
+- Readiness and degraded service conditions are assessed using the
+  relevant operational dimensions, not by inventing additional
+  logical lifecycle variants.
+
+#### Lifecycle Transitions
+
+Conceptually:
+
+    Registered
+        |
+        v
+     Starting
+        |
+        v
+      Active
+        |
+        +---- No remaining demand ----> Idle
+        |                                |
+        |                                +---- Demand resumes ---> Active
+        |                                |
+        v                                v
+     Stopping <---------------------- Stopping
+        |
+        v
+      Stopped
+
+A stopped stream may start again through a new validated activation.
+
+A terminal logical-runtime failure may transition to `Failed`.
+
+Stopping, failure handling, and restart operations must preserve
+generation fencing and resource-ownership guarantees.
+
+Stream removal is a separate registry operation. Removal releases
+the logical registration and must not be confused with a stopped
+runtime that remains registered.
+
+#### Readiness and Health
+
+A logical runtime becoming `Active` does not automatically complete
+a stream-activation operation.
+
+Activation completion is determined separately by the configured
+subscription, processor-initialization, and integrity-readiness
+requirements.
+
+For example:
+
+- A trade stream may become ready after native subscription
+  confirmation and successful processor initialization.
+- An L2 stream requires its configured snapshot and sequence
+  synchronization procedure before reporting data readiness.
+
+An `Active` logical runtime can therefore be temporarily not ready,
+degraded, or unhealthy without changing its lifecycle state.
+
+Historical coverage remains independent of current readiness.
+
+### ### 7.3 ConnectionState
+
+`ConnectionState` represents the authoritative physical connection
+lifecycle.
+
+The Connection Manager owns this state.
+
+Connection lifecycle is independent of logical source-stream lifecycle,
+native subscription state, market-data integrity, and health assessment.
+
+The authoritative connection lifecycle is:
 
 ```rust
 pub enum ConnectionState {
-    Disconnected,
+    Created,
+    PendingAdmission,
+    Resolving,
     Connecting,
+    Handshaking,
     Connected,
     Reconnecting,
+    Closing,
+    Closed,
     Failed,
 }
 ```
 
-Connection state belongs to the physical connection owner.
+#### State Semantics
 
-Multiple source streams may reference the same connection state.
+| State | Meaning |
+|---|---|
+| `Created` | The logical connection descriptor exists, but connection establishment has not begun. |
+| `PendingAdmission` | Connection establishment is waiting for applicable resource capacity or rate-limit admission. |
+| `Resolving` | Endpoint resolution is in progress. |
+| `Connecting` | Physical connection establishment is in progress. |
+| `Handshaking` | Required TLS and WebSocket negotiation is in progress. |
+| `Connected` | The physical transport has satisfied its connection-establishment requirements. |
+| `Reconnecting` | A recoverable connection interruption has occurred and restoration is pending or underway. |
+| `Closing` | An intentional connection shutdown or replacement is in progress. |
+| `Closed` | The physical connection has terminated intentionally or through completed shutdown. |
+| `Failed` | Connection establishment or operation cannot continue without configuration correction or explicit intervention. |
 
-A connected socket does not imply successful subscription or valid market data.
+#### Lifecycle Ownership
+
+The Connection Manager owns:
+
+- Connection creation and admission coordination.
+- Physical connection establishment.
+- TLS and WebSocket handshaking.
+- Physical connection lifecycle transitions.
+- Connection-generation assignment and fencing.
+- Transport supervision and reconnection.
+- Intentional connection shutdown.
+- Connection resource cleanup.
+
+The Subscription Manager owns native subscription state.
+
+The Stream Registry owns logical source-stream identity and
+`StreamLifecycle`.
+
+A physical connection may carry multiple logical source streams.
+
+Those streams may have different subscription, integrity, recovery,
+and acquisition-readiness states while sharing the same connection.
+
+#### Lifecycle and Health Independence
+
+Connection lifecycle and connection health are separate dimensions.
+
+A connection may report:
+
+    ConnectionState:  Connected
+    ConnectionHealth: Degraded
+
+This indicates that the physical transport remains established
+but its operational measurements violate configured health criteria.
+
+Health degradation does not automatically require a physical
+connection lifecycle transition.
+
+The connection-health classification is defined by
+Document 05.1, Section 15, and aligned with the shared
+Metrics and Stream Health contracts in Document 12.
+
+`Degraded` is not a `ConnectionState` variant.
+
+#### Connected Does Not Imply Acquisition Readiness
+
+`ConnectionState::Connected` confirms physical transport
+availability.
+
+It does not imply:
+
+- A native subscription has been established.
+- An exchange subscription acknowledgement was received.
+- A stream processor has completed initialization.
+- An L2 book is synchronized.
+- Required integrity conditions are satisfied.
+- Historical market-data coverage is complete.
+
+Acquisition readiness is evaluated independently for each
+affected logical source stream.
+
+#### Failure and Reconnection
+
+A recoverable transport interruption transitions the
+connection toward `Reconnecting` under the Connection Manager's
+supervision.
+
+The Connection Manager fences the obsolete connection
+generation before replacement resources become authoritative.
+
+Reconnection may include renewed admission, endpoint resolution,
+physical connection establishment, and handshaking.
+
+The Connection Manager must preserve the applicable retry,
+backoff, cooldown, and resource-admission requirements.
+
+Temporary transport failures must not automatically produce
+`ConnectionState::Failed`.
+
+`Failed` represents a terminal connection condition requiring
+configuration correction or explicit intervention.
+
+The exact transition rules, retry policies, and physical
+resource lifecycle are specified in Document 05.1.
+
+#### Intentional Shutdown
+
+An intentional shutdown transitions toward `Closing`
+and subsequently `Closed`.
+
+Intentional shutdown must not be misclassified as
+unexpected transport failure.
+
+Connection closure must respect the ownership of
+native subscriptions and other resources sharing
+the affected physical connection.
+
+#### Generation Safety
+
+Each physical connection incarnation is identified
+by `ConnectionGeneration`.
+
+Connection generations remain distinct from:
+
+- Logical `StreamId`.
+- `SubscriptionGeneration`.
+- `BookGeneration`.
+- `LogEpoch`.
+- Configuration revisions.
+
+Obsolete-generation events must not modify current
+physical connection state or enter current
+stream processing.
+
+A successful physical reconnection does not imply
+successful subscription restoration or
+market-data recovery.
 
 ### 7.4 SubscriptionState
 
