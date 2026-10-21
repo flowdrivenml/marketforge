@@ -50,6 +50,11 @@ impl IngressRecord {
     pub fn outcome(&self) -> &IngressOutcome {
         &self.outcome
     }
+
+    /// Reconcile or transfer recovery reservations while the record stays charged.
+    pub fn outcome_mut(&mut self) -> &mut IngressOutcome {
+        &mut self.outcome
+    }
 }
 
 #[derive(Default)]
@@ -158,5 +163,69 @@ impl IngressOutcomes {
     /// coordinator must continue polling `poll_next` while this is pending.
     pub fn poll_shutdown(&self, cx: &mut Context<'_>) -> Poll<()> {
         self.budget.poll_shutdown(cx)
+    }
+}
+
+/// Runtime handler for a complete ingress outcome. Success means this handler
+/// has accounted for every result and transferred any recovery responsibility;
+/// it does not mean downstream delivery or durability. On error, mutations must
+/// leave unresolved responsibility in `outcome`. Handlers must tolerate retries.
+pub trait IngressReporter {
+    fn report(
+        &mut self,
+        batch: &EventBatch,
+        outcome: &mut IngressOutcome,
+    ) -> Result<(), super::reporting::ReportingError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IngressReportingStep {
+    Idle,
+    Reported,
+    Retained(super::reporting::ReportingError),
+}
+
+/// A single reporting coordinator, retaining at most one charged journal record.
+/// Failed records stay ahead of later records; neither temporary nor permanent
+/// failure silently releases their recovery reservations. The runtime schedules
+/// retries and escalation; this bounded turn does not self-wake or spin.
+#[derive(Default)]
+pub struct IngressReportingConsumer {
+    pending: Option<IngressRecord>,
+}
+
+impl IngressReportingConsumer {
+    pub fn pending(&self) -> Option<&IngressRecord> {
+        self.pending.as_ref()
+    }
+
+    /// Transfer the charged pending record during runtime replacement/escalation.
+    /// The caller must retain it until its unresolved responsibility is handled.
+    pub fn take_pending(&mut self) -> Option<IngressRecord> {
+        self.pending.take()
+    }
+
+    /// Process at most one record, synchronously retaining it on handler failure.
+    /// No journal or delivery-driver lock is held while invoking user code.
+    pub fn process_one(
+        &mut self,
+        journal: &IngressOutcomes,
+        reporter: &mut impl IngressReporter,
+        cx: &mut Context<'_>,
+    ) -> IngressReportingStep {
+        if self.pending.is_none() {
+            match journal.poll_next(cx) {
+                Poll::Pending => return IngressReportingStep::Idle,
+                Poll::Ready(record) => self.pending = Some(record),
+            }
+        }
+        let record = self.pending.as_mut().expect("record loaded above");
+        match reporter.report(&record.batch, &mut record.outcome) {
+            Ok(()) => {
+                self.pending.take();
+                IngressReportingStep::Reported
+            }
+            Err(error) => IngressReportingStep::Retained(error),
+        }
     }
 }

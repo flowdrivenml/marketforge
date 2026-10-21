@@ -3069,6 +3069,149 @@ mod ingress_witnesses {
     }
 
     #[test]
+    fn ingress_reporting_consumer_retains_failed_records_and_resource_charges() {
+        use marketforge_engine::live::routing::{
+            ingress_reporting::{
+                IngressOutcomes, IngressReporter, IngressReportingConsumer, IngressReportingStep,
+            },
+            reporting::ReportingError,
+        };
+        struct Reporter {
+            result: Result<(), ReportingError>,
+            calls: usize,
+        }
+        impl IngressReporter for Reporter {
+            fn report(
+                &mut self,
+                original: &EventBatch,
+                outcome: &mut IngressOutcome,
+            ) -> Result<(), ReportingError> {
+                self.calls += 1;
+                assert_eq!(original, &batch());
+                assert!(matches!(
+                    outcome,
+                    IngressOutcome::Required {
+                        required: OrderedCommitOutcome::Tracked(
+                            TrackedFanoutResult::Complete { .. }
+                        ),
+                        ..
+                    }
+                ));
+                self.result
+            }
+        }
+        let fixture = Fixture::new();
+        let _queue = fixture.queue(1, DeliveryPolicy::Required);
+        let journal = IngressOutcomes::new(ResourceUsage {
+            items: 1,
+            bytes: 100_000,
+        })
+        .unwrap();
+        ready(journal.admit(&fixture.ingress(), batch(), context())).unwrap();
+        let charged = journal.snapshot().usage;
+        let mut consumer = IngressReportingConsumer::default();
+        let mut reporter = Reporter {
+            result: Err(ReportingError::TemporarilyUnavailable),
+            calls: 0,
+        };
+        let mut cx = Context::from_waker(Waker::noop());
+        assert_eq!(
+            consumer.process_one(&journal, &mut reporter, &mut cx),
+            IngressReportingStep::Retained(ReportingError::TemporarilyUnavailable)
+        );
+        assert!(consumer.pending().is_some());
+        assert_eq!(journal.snapshot().usage, charged);
+        reporter.result = Err(ReportingError::PermanentFailure);
+        assert_eq!(
+            consumer.process_one(&journal, &mut reporter, &mut cx),
+            IngressReportingStep::Retained(ReportingError::PermanentFailure)
+        );
+        assert!(journal.poll_shutdown(&mut cx).is_pending());
+        // Escalation/replacement transfers the actual charged record.
+        let mut transferred = consumer.take_pending().unwrap();
+        assert!(matches!(
+            transferred.outcome_mut(),
+            IngressOutcome::Required { .. }
+        ));
+        assert_eq!(journal.snapshot().usage, charged);
+        drop(transferred);
+        assert!(journal.poll_shutdown(&mut cx).is_ready());
+        reporter.result = Ok(());
+        assert_eq!(
+            consumer.process_one(&journal, &mut reporter, &mut cx),
+            IngressReportingStep::Idle
+        );
+        assert_eq!(reporter.calls, 2);
+    }
+
+    #[test]
+    fn ingress_reporting_consumer_retains_unwound_handler_and_releases_on_success() {
+        use marketforge_engine::live::routing::{
+            ingress_reporting::{
+                IngressOutcomes, IngressReporter, IngressReportingConsumer, IngressReportingStep,
+            },
+            reporting::ReportingError,
+        };
+        struct Reporter {
+            panic: bool,
+            calls: usize,
+        }
+        impl IngressReporter for Reporter {
+            fn report(
+                &mut self,
+                original: &EventBatch,
+                _: &mut IngressOutcome,
+            ) -> Result<(), ReportingError> {
+                self.calls += 1;
+                assert_eq!(original, &batch());
+                assert!(!self.panic, "controlled reporting fault");
+                Ok(())
+            }
+        }
+        let fixture = Fixture::new();
+        let queue = fixture.queue(1, DeliveryPolicy::Required);
+        let journal = IngressOutcomes::new(ResourceUsage {
+            items: 1,
+            bytes: 100_000,
+        })
+        .unwrap();
+        ready(journal.admit(&fixture.ingress(), batch(), context())).unwrap();
+        let mut consumer = IngressReportingConsumer::default();
+        let mut reporter = Reporter {
+            panic: true,
+            calls: 0,
+        };
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                consumer.process_one(&journal, &mut reporter, &mut cx)
+            }))
+            .is_err()
+        );
+        assert!(consumer.pending().is_some());
+        assert_eq!(journal.snapshot().usage.items, 1);
+        assert!(journal.poll_shutdown(&mut cx).is_pending());
+        reporter.panic = false;
+        assert_eq!(
+            consumer.process_one(&journal, &mut reporter, &mut cx),
+            IngressReportingStep::Reported
+        );
+        assert!(consumer.pending().is_none());
+        assert!(journal.poll_shutdown(&mut cx).is_ready());
+        assert_eq!(
+            journal.snapshot().usage,
+            ResourceUsage { items: 0, bytes: 0 }
+        );
+        assert_eq!(
+            consumer.process_one(&journal, &mut reporter, &mut cx),
+            IngressReportingStep::Idle
+        );
+        assert_eq!(reporter.calls, 2);
+        // Reporting is independent of delivery: the actual queue still owns its batch.
+        assert_eq!(queue.try_dequeue().unwrap().batch(), &batch());
+    }
+
+    #[test]
     fn recorded_ingress_wakes_latest_reporter_and_drains_admission_reserved_before_close() {
         use marketforge_engine::live::routing::ingress_reporting::{
             IngressOutcomes, RecordedIngressError,
