@@ -1070,3 +1070,64 @@ Remaining: production EventRouterPort owner, recovery scheduling, supervision,
 native metrics/control binding and whole-router shutdown. Earlier WP-05/06/07/09
 completion gates persist; WP-11–29 pending. No package acceptance claimed.
 Further autonomous implementation can safely continue in WP-10.
+
+## Continuation — bounded delivery supervision (2026-10-21)
+
+Status: Partial. Baseline `0d24ffa`, branch `codex/wp06-completion`; initial
+inventory contained only pre-existing untracked `scripts/run-autonomous-codex.sh`,
+preserved. Read repository/campaign instructions, decisions, status and latest
+WP-10 evidence, roadmap requirements and Document 08 distribution requirements;
+inspected actual admission, worker, tracker and retained-completion consumers.
+WP-10 remains the next executable package; completed work was preserved.
+
+Implemented `DeliverySupervisor`, composing the actual exclusive worker scheduler
+with bounded retained-delivery tracking. Each poll transfers at most one worker
+outcome or terminal payload. Tracker and journal supplied by the admission owner
+remain authoritative. Rejections apply their actual failure; acceptance creates
+no completion progress. Completion uses the existing exact destination/cursor
+correlation. Invalid responses retain one charged original outcome for explicit
+recovery transfer; capacity/correlation/journal faults are explicit backpressure,
+not hidden retries. The supervisor owns all pending adapter futures through
+shutdown expiry. Expiry fences new calls; resuming uses the same owner and a new
+deadline registration. Resource drain includes externally transferred charges but
+does not claim tracker/recovery/journal drain. No spawned task or runtime claimed.
+
+Three deterministic production-interface tests cover real worker pending/resume,
+no resubmission, automatic correlation, independent durable completion, retained
+capacity through terminal handoff, bounded pending pressure, actual rejection,
+invalid adapter response recovery, closed queue admission and deadline expiry
+before first adapter call followed by resumed drain. Existing full suite exercises
+journal-full retained handoff and worker fairness; no sleeps or external services.
+
+Verification from engine/ unless indicated:
+- `cargo test --locked --offline --no-default-features --features live --test
+  live_suite delivery_supervisor`: final exit 0, 3 passed / 427 filtered out.
+  Initial run after adding shutdown test: exit 101, 2 passed / 1 failed because
+  the test polled std::future::Ready after completion. Corrected the fixture to
+  supply a fresh deadline when resuming, and documented that requirement.
+- Root `./scripts/verify-live.sh full`: exit 0. Gates: `cargo fmt --all --
+  --check`; `cargo check --locked --offline --no-default-features --features live
+  --lib`; equivalent test flags with `--lib` (132 passed), `--test live_suite`
+  (428 passed, 2 opt-in ignored), `--doc` (1 passed). Final receipts:
+  `engine/target/live-verification/20261021T044309Z-2/`.
+- `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; `engine/target/wp10-supervisor-combined.log`.
+- Root `git diff --check`: exit 0 before checkpoint.
+Existing dead-code warnings persist. SQL/performance opt-in and historical
+baseline execution not rerun; no new claims for these gates.
+
+Changed: `engine/src/live/routing/{mod,supervisor}.rs`,
+`engine/tests/live/destination_worker.rs`, STATUS.md and this ledger. Checkpoint:
+local commit carrying this entry. No SQL/exchange requests, Python/historical
+execution edits, dependency/lockfile or ignored configuration edits; no push.
+
+Remaining acceptance ledger: production EventRouterPort owner and ordered
+admission composition, recovery scheduling/lifecycle, native metrics/control
+binding and complete router shutdown remain unverified/unimplemented. Invalid
+outcome retention intentionally stops additional worker ingestion until recovery
+transfer; the enclosing runtime must handle the explicit fault rather than spin.
+Blocked steps require repolling after external progress. This component does not
+certify router-wide fairness under exhausted supervision capacity, restart
+durability or full service operation. Earlier WP-05/06/07/09 gates persist;
+WP-11–29 pending. Next authorized executable work: WP-10. Further autonomous
+implementation can safely continue; no package acceptance claimed.

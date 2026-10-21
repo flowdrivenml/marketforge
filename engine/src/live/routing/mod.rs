@@ -13,6 +13,7 @@ pub mod reporting;
 pub mod resolution;
 pub mod router;
 pub mod snapshot;
+pub mod supervisor;
 pub mod tracking_recovery;
 pub mod transaction;
 pub mod worker;

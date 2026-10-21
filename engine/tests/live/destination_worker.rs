@@ -1236,3 +1236,178 @@ fn pending_deliveries_scan_skips_incomplete_and_transfers_terminal_payload() {
             .is_none()
     );
 }
+
+#[test]
+fn delivery_supervisor_drives_real_worker_completion_and_charged_terminal_handoff() {
+    use marketforge_engine::live::{
+        model::delivery::{DeliveryStage, DeliveryStatus},
+        ports::routing::DestinationCompletion,
+        routing::{
+            acknowledgement::{DeliveryObligationId, FinalizationJournal},
+            supervisor::{DeliverySupervisor, SupervisionStep},
+            worker::DestinationWorkers,
+        },
+    };
+    let (_, old_outcome, mut tracker) = retained_fixture(0);
+    drop(old_outcome);
+    let (queue, adapter, worker) = fixture(0);
+    let batch = batch(10);
+    let through = batch.last_cursor().clone();
+    queue.try_enqueue(batch).unwrap();
+    let mut workers = DestinationWorkers::new(std::num::NonZeroUsize::new(1).unwrap());
+    assert!(workers.insert(worker).is_ok());
+    let mut supervisor = DeliverySupervisor::new(workers, std::num::NonZeroUsize::new(1).unwrap());
+    let mut journal = FinalizationJournal::new(1).unwrap();
+    let waker = Waker::from(Arc::new(WakeCount::default()));
+    let mut cx = Context::from_waker(&waker);
+    assert!(
+        supervisor
+            .poll_step(&mut cx, &mut tracker, &mut journal)
+            .is_pending()
+    );
+    assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+    adapter.release();
+    assert!(matches!(
+        supervisor.poll_step(&mut cx, &mut tracker, &mut journal),
+        Poll::Ready(SupervisionStep::Retained(DeliveryObligationId(1)))
+    ));
+    assert_eq!(
+        tracker.status(DeliveryObligationId(1)),
+        Some(DeliveryStatus::Progress(DeliveryStage::Queued))
+    );
+    assert!(matches!(
+        supervisor.poll_step(&mut cx, &mut tracker, &mut journal),
+        Poll::Ready(SupervisionStep::CapacityBlocked)
+    ));
+    supervisor.close();
+    assert!(!supervisor.resources_drained());
+    supervisor
+        .apply_completion(
+            &mut tracker,
+            &DestinationCompletion {
+                destination: DestinationId(7),
+                through,
+                status: DeliveryStatus::Progress(DeliveryStage::Durable),
+            },
+        )
+        .unwrap();
+    let Poll::Ready(SupervisionStep::Finalized(delivery)) =
+        supervisor.poll_step(&mut cx, &mut tracker, &mut journal)
+    else {
+        panic!("terminal handoff");
+    };
+    assert_eq!(supervisor.pending_len(), 0);
+    assert!(tracker.is_empty());
+    assert_eq!(journal.len(), 1);
+    assert!(!supervisor.resources_drained());
+    drop(delivery);
+    assert!(supervisor.resources_drained());
+    assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn delivery_supervisor_retains_invalid_outcomes_and_records_real_rejections() {
+    use marketforge_engine::live::routing::{
+        acknowledgement::{DeliveryObligationId, FinalizationJournal},
+        supervisor::{DeliverySupervisor, SupervisionStep},
+        worker::DestinationWorkers,
+    };
+    for mode in [1, 2] {
+        let (_, old_outcome, mut tracker) = retained_fixture(0);
+        drop(old_outcome);
+        let (queue, adapter, worker) = fixture(mode);
+        queue.try_enqueue(batch(10)).unwrap();
+        adapter.release();
+        let mut workers = DestinationWorkers::new(std::num::NonZeroUsize::new(1).unwrap());
+        assert!(workers.insert(worker).is_ok());
+        let mut supervisor =
+            DeliverySupervisor::new(workers, std::num::NonZeroUsize::new(1).unwrap());
+        let mut journal = FinalizationJournal::new(1).unwrap();
+        let waker = Waker::from(Arc::new(WakeCount::default()));
+        let mut cx = Context::from_waker(&waker);
+        let step = supervisor.poll_step(&mut cx, &mut tracker, &mut journal);
+        supervisor.close();
+        assert!(!supervisor.resources_drained());
+        if mode == 1 {
+            assert!(matches!(
+                step,
+                Poll::Ready(SupervisionStep::Retained(DeliveryObligationId(1)))
+            ));
+            let Poll::Ready(SupervisionStep::Finalized(delivery)) =
+                supervisor.poll_step(&mut cx, &mut tracker, &mut journal)
+            else {
+                panic!("rejection must finalize");
+            };
+            assert!(!supervisor.resources_drained());
+            drop(delivery);
+            assert!(supervisor.resources_drained());
+        } else {
+            assert!(matches!(
+                step,
+                Poll::Ready(SupervisionStep::OutcomeBlocked(_))
+            ));
+            assert!(matches!(
+                supervisor.poll_step(&mut cx, &mut tracker, &mut journal),
+                Poll::Ready(SupervisionStep::OutcomeBlocked(_))
+            ));
+            let (_, outcome) = supervisor.take_blocked_for_recovery().unwrap();
+            assert!(!supervisor.resources_drained());
+            drop(outcome);
+            assert!(supervisor.resources_drained());
+            assert_eq!(tracker.len(), 1); // Recovery still owns the obligation.
+        }
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[test]
+fn delivery_supervisor_shutdown_deadline_preserves_unstarted_payload_for_resumption() {
+    use marketforge_engine::live::routing::{
+        acknowledgement::FinalizationJournal,
+        admission::DeadlineFuture,
+        supervisor::{DeliverySupervisor, SupervisionShutdownStep, SupervisionStep},
+        worker::DestinationWorkers,
+    };
+    let (_, old_outcome, mut tracker) = retained_fixture(0);
+    drop(old_outcome);
+    let (queue, adapter, worker) = fixture(1);
+    queue.try_enqueue(batch(10)).unwrap();
+    adapter.release();
+    let mut workers = DestinationWorkers::new(std::num::NonZeroUsize::new(1).unwrap());
+    assert!(workers.insert(worker).is_ok());
+    let mut supervisor = DeliverySupervisor::new(workers, std::num::NonZeroUsize::new(1).unwrap());
+    let mut journal = FinalizationJournal::new(1).unwrap();
+    let waker = Waker::from(Arc::new(WakeCount::default()));
+    let mut cx = Context::from_waker(&waker);
+    let mut expired: DeadlineFuture = Box::pin(std::future::ready(()));
+    assert!(matches!(
+        supervisor.poll_shutdown(&mut cx, &mut expired, &mut tracker, &mut journal),
+        Poll::Ready(SupervisionShutdownStep::DeadlineReached)
+    ));
+    assert_eq!(adapter.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(supervisor.workers_snapshot().workers[0].1.queued_batches, 1);
+    assert!(queue.try_enqueue(batch(20)).is_err());
+    let mut later: DeadlineFuture = Box::pin(std::future::pending());
+    assert!(matches!(
+        supervisor.poll_shutdown(&mut cx, &mut later, &mut tracker, &mut journal),
+        Poll::Ready(SupervisionShutdownStep::Step(SupervisionStep::Retained(_)))
+    ));
+    let Poll::Ready(SupervisionShutdownStep::Step(SupervisionStep::Finalized(delivery))) =
+        supervisor.poll_shutdown(&mut cx, &mut later, &mut tracker, &mut journal)
+    else {
+        panic!("terminal failure handoff");
+    };
+    let mut expired: DeadlineFuture = Box::pin(std::future::ready(()));
+    assert!(matches!(
+        supervisor.poll_shutdown(&mut cx, &mut expired, &mut tracker, &mut journal),
+        Poll::Ready(SupervisionShutdownStep::DeadlineReached)
+    ));
+    drop(delivery);
+    assert!(matches!(
+        supervisor.poll_shutdown(&mut cx, &mut expired, &mut tracker, &mut journal),
+        Poll::Ready(SupervisionShutdownStep::ResourcesDrained)
+    ));
+    assert!(tracker.is_empty());
+    assert_eq!(journal.len(), 1); // Reporting is independently retained.
+    assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+}

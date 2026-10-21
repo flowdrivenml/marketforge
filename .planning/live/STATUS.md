@@ -40,6 +40,21 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest continuation adds WP-10 `DeliverySupervisor`: bounded real worker polling,
+automatic obligation correlation, retained completion and terminal journal handoff,
+explicit charged invalid-response recovery, and resumable deadline shutdown.
+Full verification exits 0: 132 library, 428 integration (2 ignored), 1 doctest,
+formatting/Live check and Live+historical compilation. Final receipts:
+`engine/target/live-verification/20261021T044309Z-2/`.
+WP-10 remains Partial: production EventRouterPort owner, recovery scheduling,
+native metrics/control and complete router shutdown remain. The supervisor is
+an integrated scheduling component, not a running daemon. Earlier WP-05/06/07/09
+gates remain open; WP-11–29 pending. Further autonomous WP-10 work is safe.
+See WP-10 evidence for scope, initial test fault and verification. Local checkpoint:
+commit carrying this entry. Pre-existing untracked launcher preserved; no push,
+SQL/exchange traffic, Python/historical execution, dependency or config edits.
+
+
 Latest continuation adds bounded automatic terminal handoff with
 `PendingDeliveries::finalize_next_into`: incomplete obligations are skipped,
 one terminal payload is transferred per call, and journal/tracking failures
