@@ -39,6 +39,24 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest implementation checkpoint `8f348f4` fixes mixed monotonic timelines in
+ordered fan-out: the admission owner's clock now reaches each queue reservation's
+final deadline fence. Existing entry points retain system-clock behavior. Two
+new deterministic witnesses verify a deadline valid only on the injected timeline
+and expiry between destinations with complete reservation rollback. The existing
+commitment-fence witness now explicitly arms expiry after preparation, preserving
+its negative assertions independently of reservation clock-read count.
+Final verification exits 0: formatting, Live check, 135 library / 458 integration
+(2 opt-in ignored) / 1 doctest, Live+historical check. Receipts:
+`engine/target/live-verification/20261021T054117Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort admission,
+concrete runtime/reporter integration and full metric/control wiring remain.
+Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Further autonomous work is
+safe. No SQL/exchange traffic, push, Python/historical execution, dependencies or
+ignored configuration changes. Pre-existing untracked launcher preserved.
+See WP-10 evidence. No package acceptance or project completion claimed.
+
+
 Latest implementation checkpoint `5775ada` adds a finite native router metric
 catalog and binds the authoritative owned router observation to six independent
 gauges. Admission count/bytes, retained deliveries, tracked obligations, terminal

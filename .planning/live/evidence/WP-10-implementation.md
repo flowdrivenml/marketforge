@@ -2178,3 +2178,70 @@ system changes; no push. Documentation checkpoint is the commit carrying this
 entry. Remaining: WP-05/06/07/09 open gates, WP-10 Partial, WP-11–29 pending.
 Next authorized executable package: WP-10 completion. Further autonomous work can
 safely continue; no package acceptance or project completion claimed.
+
+
+## Continuation — one clock across ordered fan-out (2026-10-21)
+
+Status: Partial. Starting HEAD `215cdce`, branch `codex/wp06-completion`.
+Read AGENTS.md, autonomous plan, decisions, status, roadmap WP-10/11, current
+ordered admission, queue, driver, shutdown, timer contracts and consumer tests.
+Next executable package remains WP-10. Existing work retained. Initial tree had
+only untracked `scripts/run-autonomous-codex.sh`; preserved throughout.
+
+Implementation checkpoint: `8f348f4`.
+
+Acceptance ledger:
+- Implemented: queue `reserve_async_with_clock`, fan-out `prepare_with_clock`,
+  and ordered preparation propagation of the existing authoritative clock.
+  No financial, ownership, cursor or wire contract changed. Compatibility methods
+  delegate to the same implementation with SystemMonotonicClock.
+- Corrected defect: ordered preparation formerly checked injected time around
+  fan-out but queue reservation checked Instant::now, permitting contradictory
+  deadline results. Timer and clock must share the same monotonic timeline.
+- Two new real-path deterministic tests: an already system-expired deadline still
+  valid on the owner timeline; exact deadline expiry with a pending timer; expiry
+  at destination 2 after destination 1 reserves; both queues release bytes/events/
+  waiters, nothing enqueues, no obligations appear and fresh preparation succeeds.
+- Existing commitment-fence test explicitly arms its clock after preparation;
+  expiry still occurs at the final fence with unchanged rejection/rollback
+  assertions. Additional legitimate clock reads no longer expire it prematurely.
+- Missing for package acceptance: production EventRouterPort owner composition,
+  concrete runtime/reporting, scheduled instrumentation and full control binding.
+  This repair does not constitute a running daemon or package acceptance.
+
+Verification (engine/ unless marked root):
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite ordered_fanout_reservations_use_the_owners_monotonic_timeline:
+  exit 0, 1 passed.
+- Same command with filter
+  fanout_deadline_between_destinations_releases_prior_reservations:
+  exit 0, 1 passed.
+- Same command with filter
+  ordered_fanout_rechecks_deadline_inside_commitment_fence:
+  final exit 0, 1 passed.
+- Root ./scripts/verify-live.sh full: final exit 0; cargo fmt --all -- --check;
+  cargo check --locked --offline --no-default-features --features live --lib;
+  cargo test with identical flags and --lib (135 passed), --test live_suite
+  (458 passed, 2 opt-in ignored), --doc (1 passed). Receipts:
+  engine/target/live-verification/20261021T054117Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; pre-existing dead-code warnings remain.
+- Root git diff --check: exit 0 before implementation checkpoint.
+- Failed attempts retained transparently: initial test append used a root-relative
+  path from engine/ and wrote nothing; following filtered test ran zero and does
+  not count as verification. First full run (054015Z-2) failed the old clock-read
+  fixture; second (054058Z-2) repeated that failure after a fixture edit failed
+  due to the same path mistake. Corrected using an absolute path, explicitly
+  armed expiry after preparation, then focused and full gates passed above.
+  No production assertion was weakened to accommodate failure.
+- SQL/performance opt-in and historical-only suites were not run; historical
+  zero-stream baseline not rechecked. No database writes or exchange requests.
+
+Changed: engine/src/live/routing/{ordered,queue,router}.rs,
+engine/tests/live/router_obligations.rs, STATUS.md and this ledger. No Python or
+historical execution, ignored configuration, dependencies/lockfile, system changes
+or push. Documentation checkpoint is the commit carrying this entry.
+
+Remaining: earlier WP-05/06/07/09 gates, WP-10 Partial, WP-11–29 pending.
+Next authorized package: WP-10 completion. Further autonomous work can safely
+continue; the approved v1 implementation and release are not complete.
