@@ -39,6 +39,25 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Checkpoint `ac00c84` fixes ingress-reporting backlog scheduling: each successful
+scheduled reporting turn requests one more bounded turn, so prequeued outcomes
+cannot stall waiting for unrelated admission/delivery activity. The next idle turn
+parks without self-waking. A deterministic real-ingress witness covers open and
+closed journals, ordered outcomes, optional queue overflow, no retry timers and
+independent destination payload ownership. Full verification exits 0: formatting,
+Live check, 135 library / 489 integration passes (2 opt-in ignored) / 1 doctest,
+and Live+historical compilation. Receipts:
+`engine/target/live-verification/20261021T065506Z-3/`.
+Historical-only library baseline rechecked: exit 101, 151 passed / 1 failed,
+`historical::merge::resources::tests::rejects_empty_streams`; no historical edits.
+WP-10 remains Partial and next executable; full outcome/recovery policy, runtime
+lifecycle and Control composition remain. Earlier WP-05/06/07/09 gates persist;
+WP-11–29 pending. Further autonomous implementation can safely continue.
+No SQL/exchange access, dependency/lockfile, Python/historical execution or ignored
+configuration edits. Pre-existing untracked launcher preserved; no push.
+See [WP-10 evidence](evidence/WP-10-implementation.md).
+
+
 Checkpoint `ebea89c` adds delivery-coordinator notifications for producer tracking
 handoff and successful explicit unresolved reconciliation, including after closure.
 Notifications coalesce through the existing single waiter; failed/unchanged attempts

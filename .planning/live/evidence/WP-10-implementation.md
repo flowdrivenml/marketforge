@@ -3317,3 +3317,62 @@ Changed: engine/src/live/routing/driver.rs, engine/tests/live/router.rs,
 STATUS.md and this ledger. No database/exchange requests, Python/historical
 execution, dependency/lockfile, ignored configuration or launcher edits. No push.
 Further autonomous WP-10 implementation can safely continue within recorded gates.
+
+
+### 2026-10-21 — Schedule ingress reporting backlog progress
+
+Status: Partial. Next executable package: WP-10. Baseline HEAD `201f2fd`,
+branch `codex/wp06-completion`; pre-existing untracked
+`scripts/run-autonomous-codex.sh` preserved. Read AGENTS, autonomous plan,
+decisions, current status, roadmap and latest evidence; inspected actual ingress,
+reporting, accounting, delivery driver and complete shutdown consumers. Existing
+WP-05/06/07/09 gates persist; completed functionality was not restarted.
+Implementation checkpoint: `ac00c84`.
+
+Acceptance ledger:
+- Fixed a reproduced cooperative scheduling stall: outcomes queued before the
+  reporting coordinator registers a waiter have no future enqueue notification.
+  Successful reporting previously returned without scheduling the next turn;
+  accounting only wakes shutdown on the final charge release. A backlog could
+  therefore remain charged indefinitely in an otherwise idle runtime.
+- ScheduledIngressReporting now wakes once after success. Each turn still calls
+  at most one handler; the following idle turn parks. Retry, permanent failure,
+  escalation and unwind behavior remain unchanged. No queue, parallel owner,
+  timer or delivery guarantee was introduced.
+- New actual-ingress witness admits three ordered events before coordinator
+  polling, for both open and closed journals. Third optional queue admission
+  overflows while its complete producer outcome is retained. Every successful
+  reporting turn wakes, records drain in cursor order, idle does not wake, no
+  retry timer is used, and two destination payloads remain independently owned.
+- Remaining: full concrete outcome/recovery policy, runtime supervision/lifecycle
+  and Control composition. WP-10 is not accepted; WP-11–29 remain pending.
+  Further autonomous implementation can safely continue within existing gates.
+
+Verification (root unless indicated):
+- Initial new test compile: cargo test --manifest-path engine/Cargo.toml --locked
+  --offline --no-default-features --features live --test live_suite
+  scheduled_ingress_reporting_drains_backlog_without_external_notifications:
+  Cargo exit 101 (test used observation instead of observe); corrected test API.
+- Same command before production fix: exit 101, 0 passed / 1 failed / 490 filtered;
+  expected wake count 1, actual 0. Receipt: /tmp/live-backlog-regression.log.
+- cargo fmt --manifest-path engine/Cargo.toml --all: exit 0.
+- cargo test with same flags and filter scheduled_ingress_reporting: exit 0,
+  3 passed / 488 filtered. Receipt: /tmp/live-backlog-fixed.log.
+- ./scripts/verify-live.sh full: exit 0. Formatting and Live check pass;
+  135 library, 489 integration (2 opt-in ignored), 1 doctest pass. Exact gate
+  commands and receipts: engine/target/live-verification/20261021T065506Z-3/.
+- engine/: cargo check --locked --offline --no-default-features --features
+  live,historical: exit 0; existing dead-code warnings.
+- engine/: cargo test --locked --offline --no-default-features --features
+  historical --lib: exit 101, 151 passed / 1 failed / 0 ignored. Reproduces
+  documented historical::merge::resources::tests::rejects_empty_streams baseline
+  at historical/merge/execution/shared/resources.rs:180. Unchanged; outside scope.
+  Receipt: /tmp/live-campaign-historical.log.
+- git diff --check before implementation checkpoint: exit 0.
+No SQL, exchange, performance or soak verification claimed. No database writes,
+Python/historical execution changes, dependencies, lockfile, ignored configuration
+or launcher edits. No push.
+
+Changed: engine/src/live/routing/ingress_reporting.rs,
+engine/tests/live/router.rs, STATUS.md and this ledger. Documentation checkpoint
+is the commit carrying this entry. Next authorized work remains WP-10.
