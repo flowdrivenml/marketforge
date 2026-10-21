@@ -1332,3 +1332,114 @@ fn registered_driver_advances_tracked_delivery_without_inventing_completion() {
     assert_eq!(replacement.0.load(Ordering::SeqCst), before + 1);
     assert_eq!(driver.snapshot().journal_records, 0);
 }
+
+#[test]
+fn registered_driver_retry_timer_is_bounded_and_drains_external_payload_charge() {
+    use marketforge_engine::live::{
+        foundation::{clock::ManualClock, deadline::ManualDeadlineTimer},
+        model::error::ErrorCode,
+        routing::{
+            acknowledgement::{AcknowledgementTracker, FinalizationJournal},
+            admission::DeadlineTimer,
+            destination::DestinationCapacity,
+            driver::DeliveryDriver,
+            queue::DestinationQueue,
+            supervisor::DeliverySupervisor,
+            tracking_recovery::TrackingRecovery,
+            worker::DestinationWorkers,
+        },
+    };
+    use std::{
+        num::NonZeroUsize,
+        sync::atomic::{AtomicUsize, Ordering},
+        task::{Context, Wake, Waker},
+        time::{Duration, Instant},
+    };
+    #[derive(Default)]
+    struct Counter(AtomicUsize);
+    impl Wake for Counter {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let now = Instant::now();
+    let interval = Duration::from_secs(1);
+    let clock = ManualClock::new(now, 0);
+    let timer = ManualDeadlineTimer::new(now, 1).unwrap();
+    let registry = RouterRegistry::new();
+    let adapter = destination(1, DestinationKind::Publication, DeliveryPolicy::Required);
+    let queue =
+        DestinationQueue::new(DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap());
+    queue.try_enqueue(batch()).unwrap();
+    let held = queue.try_dequeue().unwrap();
+    registry.register_queue(adapter, queue).unwrap();
+    let limit = NonZeroUsize::new(1).unwrap();
+    let mut driver = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(2).unwrap(),
+        TrackingRecovery::new(2).unwrap(),
+        FinalizationJournal::new(2).unwrap(),
+    );
+    let wakes = Arc::new(Counter::default());
+    let waker = Waker::from(wakes.clone());
+    let mut cx = Context::from_waker(&waker);
+    assert_eq!(
+        driver
+            .drive_registered_with_retry(&registry, &mut cx, &clock, &timer, Duration::ZERO)
+            .1,
+        Err(ErrorCode::InvalidInput)
+    );
+    let blocker = timer.try_sleep_until(now + interval).unwrap();
+    let before = wakes.0.load(Ordering::SeqCst);
+    assert_eq!(
+        driver
+            .drive_registered_with_retry(&registry, &mut cx, &clock, &timer, interval)
+            .1,
+        Err(ErrorCode::Capacity)
+    );
+    assert_eq!(wakes.0.load(Ordering::SeqCst), before);
+    drop(blocker);
+    assert!(
+        driver
+            .drive_registered_with_retry(&registry, &mut cx, &clock, &timer, interval)
+            .1
+            .is_ok()
+    );
+    assert!(timer.try_sleep_until(now + interval).is_err());
+    clock.advance(Duration::from_millis(500)).unwrap();
+    timer.advance_to(now + Duration::from_millis(500)).unwrap();
+    let before = wakes.0.load(Ordering::SeqCst);
+    for _ in 0..3 {
+        assert!(
+            driver
+                .drive_registered_with_retry(&registry, &mut cx, &clock, &timer, interval)
+                .1
+                .is_ok()
+        );
+    }
+    assert_eq!(wakes.0.load(Ordering::SeqCst), before);
+    registry.shutdown();
+    driver.close();
+    assert!(!driver.snapshot().is_drained());
+    clock.advance(Duration::from_millis(500)).unwrap();
+    timer.advance_to(now + interval).unwrap();
+    assert!(wakes.0.load(Ordering::SeqCst) > before);
+    assert!(
+        driver
+            .drive_registered_with_retry(&registry, &mut cx, &clock, &timer, interval)
+            .1
+            .is_ok()
+    );
+    assert!(timer.try_sleep_until(now + interval * 2).is_err());
+    let before = wakes.0.load(Ordering::SeqCst);
+    drop(held);
+    clock.advance(interval).unwrap();
+    timer.advance_to(now + interval * 2).unwrap();
+    assert!(wakes.0.load(Ordering::SeqCst) > before);
+    let (turn, scheduled) =
+        driver.drive_registered_with_retry(&registry, &mut cx, &clock, &timer, interval);
+    assert_eq!(scheduled, Ok(()));
+    assert_eq!(turn.registry.workers_reaped, 1);
+    assert!(driver.snapshot().is_drained());
+    assert!(timer.try_sleep_until(now + interval * 3).is_ok());
+}

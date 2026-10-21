@@ -6,7 +6,7 @@ use super::{
         AcknowledgementTracker, DeliveryObligationId, FinalizationJournal, PreparedObligations,
         PreparedObligationsAbortError,
     },
-    admission::DeadlineFuture,
+    admission::{DeadlineFuture, DeadlineTimer},
     completion::{PendingDeliveryError, RetainedDelivery},
     supervisor::{DeliverySupervisionSnapshot, DeliverySupervisor, SupervisionStep},
     tracking_recovery::{TrackingRecovery, TrackingRecoveryPass},
@@ -66,6 +66,7 @@ pub enum RegistryWorkerSyncError {
 pub struct DeliveryDriver {
     closed: bool,
     completion_waiter: Option<Waker>,
+    retry_timer: Option<DeadlineFuture>,
     supervisor: DeliverySupervisor,
     tracker: AcknowledgementTracker,
     recovery: TrackingRecovery,
@@ -83,6 +84,7 @@ impl DeliveryDriver {
         Self {
             closed: false,
             completion_waiter: None,
+            retry_timer: None,
             supervisor,
             tracker,
             recovery,
@@ -236,6 +238,69 @@ impl DeliveryDriver {
             delivery,
             membership,
         }
+    }
+
+    /// Run one registered turn and maintain at most one retry timer. Notifications
+    /// do not postpone an existing deadline. Expiry never replays adapter calls:
+    /// the normal turn retries tracking, reporting handoff and worker maintenance.
+    /// The caller must keep using this entry point while retry scheduling is needed.
+    ///
+    /// A zero interval or timer admission failure is explicit, while independent
+    /// delivery progress still runs. The runtime must surface scheduling failure;
+    /// it must not immediately repoll it in a busy loop. Closing admission retains
+    /// the timer until every owned responsibility and payload charge has drained.
+    /// No missed-tick catch-up is performed after a delayed runtime turn.
+    pub fn drive_registered_with_retry(
+        &mut self,
+        registry: &super::router::RouterRegistry,
+        cx: &mut Context<'_>,
+        clock: &dyn crate::live::foundation::clock::MonotonicClock,
+        timer: &dyn DeadlineTimer,
+        interval: std::time::Duration,
+    ) -> (
+        RegisteredDeliveryDrive,
+        Result<(), crate::live::model::error::ErrorCode>,
+    ) {
+        use crate::live::model::error::ErrorCode;
+        let turn = self.drive_registered(registry, cx);
+        if self.closed && self.snapshot().is_drained() {
+            self.retry_timer = None;
+            return (turn, Ok(()));
+        }
+        if interval.is_zero() {
+            return (turn, Err(ErrorCode::InvalidInput));
+        }
+        if self
+            .retry_timer
+            .as_mut()
+            .is_some_and(|sleep| sleep.as_mut().poll(cx).is_ready())
+        {
+            // Release bounded timer capacity before trying to acquire it again.
+            self.retry_timer = None;
+        }
+        if self.retry_timer.is_none() {
+            let Some(deadline) = clock.now().checked_add(interval) else {
+                return (turn, Err(ErrorCode::Limit));
+            };
+            match timer.try_sleep_until(deadline) {
+                Ok(sleep) => self.retry_timer = Some(sleep),
+                Err(reason) => return (turn, Err(reason)),
+            }
+            // Arm the coordinator before returning. A timer already ready here
+            // (clock advance during registration) needs another bounded turn.
+            if self
+                .retry_timer
+                .as_mut()
+                .unwrap()
+                .as_mut()
+                .poll(cx)
+                .is_ready()
+            {
+                self.retry_timer = None;
+                cx.waker().wake_by_ref();
+            }
+        }
+        (turn, Ok(()))
     }
 
     /// A successfully correlated completion wakes the most recently polled
