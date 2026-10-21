@@ -13,6 +13,7 @@ pub mod queue;
 pub mod reporting;
 pub mod resolution;
 pub mod router;
+pub mod shutdown;
 pub mod snapshot;
 pub mod supervisor;
 pub mod tracking_recovery;

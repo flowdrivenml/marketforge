@@ -1421,3 +1421,62 @@ budget, destination registry and delivery shutdown. One coordinator per namespac
 is supported; this is a bounded poll primitive, not a spawned runtime or complete
 router. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Further autonomous
 implementation can safely continue. No acceptance or whole-project completion.
+
+## Continuation — composed cooperative router shutdown (2026-10-21)
+
+Status: Partial. Starting checkpoint `04ff888`, branch `codex/wp06-completion`.
+Inspected required campaign documents, current history/working tree, WP-10/11
+roadmap, registry, ordered admission/budget, namespaces, driver, supervisor and
+consumer witnesses. WP-10 remains next executable; completed work preserved.
+Only pre-existing untracked launcher `scripts/run-autonomous-codex.sh` preserved.
+
+Implemented registry shutdown queue/capacity closure after fencing membership
+and releasing both registry locks. Executor wakeups can re-enter observations
+and planning without deadlock. Already queued/consumer-owned payloads and capacity
+reservations remain charged; nothing is discarded or declared delivered.
+
+Added `RouterShutdownOwners` over the existing authoritative owners. Each call
+closes budget/namespaces/registry/delivery admission, observes all in-process
+responsibilities, checks deadline, then performs at most one bounded delivery
+turn. Expiry makes no adapter call or tracking retry. Repeated/resumed shutdown
+uses the same owners. `RouterDrainSnapshot` covers retired namespaces, pending
+cursor permits, global admission usage, registered queue/consumer-held capacity,
+waiters and the complete delivery drain predicate. It certifies no external
+consumer processing or crash durability. The runtime must still schedule turns
+for completions, reporting, transferred responsibility and bounded retries.
+
+Deterministic production-path witnesses cover reentrant shutdown wakeups,
+blocked capacity failure, queue closure, repeated closure, payload/charge
+preservation, deadline expiry/resume, cursor preparation rollback, empty tracker
+preparation ownership and consumer-held payloads after delivery drain.
+
+Verification (actual exit codes):
+- From engine/: `cargo test --locked --offline --no-default-features --features
+  live --test live_suite registry_shutdown_wakes`: exit 0, 1 passed.
+- Same command filtered by `router_shutdown`: final exit 0, 2 passed (new
+  composition witness and existing prepared commitment shutdown witness).
+- Root `./scripts/verify-live.sh full`: final exit 0; executes `cargo fmt --all
+  -- --check`, `cargo check --locked --offline --no-default-features --features
+  live --lib`, same flags with `cargo test --lib` (133 passed), `--test live_suite`
+  (438 passed, 2 opt-in ignored), `--doc` (1 passed). Final receipts:
+  `engine/target/live-verification/20261021T050018Z-2/`.
+- From engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: final exit 0. Existing dead-code warnings remain.
+- `git diff --check`: exit 0. Initial root Cargo formatting invocation failed
+  (no Cargo.toml); a later root-relative append invoked from engine failed before
+  writes. Corrected working directories. First composition-test compilation
+  exited 101 due to private CancellationToken import; fixed to foundation export.
+  All final checks above pass. No assertions weakened.
+
+Changed: `engine/src/live/routing/{router,shutdown,mod}.rs`,
+`engine/tests/live/router.rs`, STATUS.md and this ledger. Checkpoint: local commit
+carrying this entry. No push, database/exchange traffic, dependency/lockfile,
+ignored configuration or Python/historical execution changes. SQL/performance
+opt-ins and historical-only test execution unavailable/not rerun; no claims for
+those gates or the historical zero-stream baseline.
+
+Remaining acceptance ledger: production EventRouterPort ordered composition,
+runtime scheduling/retry integration, native metrics/control binding. Shutdown
+composition now exists but needs binding in that owner and ultimately WP-24.
+Earlier WP-05/06/07/09 gates persist. WP-11–29 remain pending; no package accepted
+or overall completion claimed. Further autonomous WP-10 work can safely continue.

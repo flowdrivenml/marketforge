@@ -690,18 +690,28 @@ impl RouterRegistry {
         })
     }
 
-    /// Prevent future registrations, removals, and plans.
-    ///
-    /// Existing plans remain valid snapshots but are not
-    /// automatically authorized to commit after shutdown.
+    /// Fence membership/plans and close every registered queue and capacity
+    /// manager. Existing payloads and reservations retain their charges until
+    /// explicitly drained or released; closure proves no delivery guarantee.
     pub fn shutdown(&self) {
-        let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
-        let mut state = self
-            .state
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-        state.shutting_down = true;
+        let queues: Vec<_> = {
+            let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
+            let mut state = self
+                .state
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.shutting_down = true;
+            state
+                .destinations
+                .values()
+                .filter_map(|entry| entry.queue.clone())
+                .collect()
+        };
+        // Queue/capacity shutdown invokes arbitrary executor wakers. Membership
+        // is already fenced, so callbacks may safely inspect this registry.
+        for queue in queues {
+            queue.shutdown();
+        }
     }
 
     /// Owned observation from the authoritative registry. Membership and revision

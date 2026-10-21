@@ -39,6 +39,26 @@
 
 ### Autonomous continuation — 2026-10-21
 
+
+Latest continuation composes WP-10 cooperative router shutdown across the existing
+namespace registry, admission budget, destination registry and delivery driver.
+Registry shutdown now closes queue/capacity admission outside registry locks;
+queued and transferred payloads retain their charges. Combined drain observations
+include pending cursor permits, admission charges, registered queue capacity and
+all delivery responsibilities. Expiry fences admission without retrying tracking
+or calling adapters; the same owners resume under a later deadline.
+Final verification exits 0: formatting, Live check, 133 library / 438 integration
+(2 opt-in ignored) / 1 doctest; Live+historical compilation exits 0. Receipts:
+`engine/target/live-verification/20261021T050018Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort ordered
+owner, runtime wakeup/retry scheduling and native metrics/control binding remain.
+The shutdown coordinator is integrated with real production owners in deterministic
+tests, not yet a running daemon. Earlier WP-05/06/07/09 gates persist; WP-11–29
+pending. Safe autonomous continuation remains possible. Checkpoint: local commit
+carrying this entry and matching WP-10 evidence. Preserved untracked launcher;
+no push, SQL/exchange traffic, historical/Python changes, dependencies or ignored
+configuration changes.
+
 Latest continuation adds wake-driven WP-10 admission namespace shutdown. Closing
 waits for outstanding cursor permits (including retired namespaces); commit/abort
 wakes a bounded replacement-aware coordinator without rewinding accepted progress.
