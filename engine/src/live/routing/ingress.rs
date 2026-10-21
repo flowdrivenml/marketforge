@@ -45,6 +45,91 @@ pub enum IngressOutcome {
 }
 
 impl IngressOutcome {
+    /// Return attached repairs to the existing delivery owners. Each update is
+    /// attempted once; rejected ownership stays in this outcome in original order.
+    /// Count mismatches lack a trustworthy reservation mapping and are untouched.
+    /// Successful transfer is not proof that the repair or delivery completed.
+    pub(crate) fn reconcile_tracking(
+        &mut self,
+        tracker: &mut super::acknowledgement::AcknowledgementTracker,
+        recovery: &mut super::tracking_recovery::TrackingRecovery,
+    ) -> TrackingHandoff {
+        use super::router::{TrackedFanoutResult, UnresolvedTrackingUpdate};
+        let Self::Required {
+            required:
+                super::ordered::OrderedCommitOutcome::Tracked(TrackedFanoutResult::RecoveryPending {
+                    batch,
+                    tracking,
+                    ..
+                }),
+            ..
+        } = self
+        else {
+            return TrackingHandoff::default();
+        };
+        let Ok(result) = tracking else {
+            return TrackingHandoff {
+                mapping_blocked: true,
+                ..TrackingHandoff::default()
+            };
+        };
+        let range = super::acknowledgement::DeliveryCursorRange::new(
+            batch.first_cursor().clone(),
+            batch.last_cursor().clone(),
+        )
+        .expect("EventBatch validates its cursor range");
+        let mut report = TrackingHandoff::default();
+        let mut index = 0;
+        while index < result.unresolved.len() {
+            let update = result.unresolved.remove(index);
+            let rejected = match update {
+                UnresolvedTrackingUpdate::ApplyFailure {
+                    destination,
+                    failure,
+                } => {
+                    match recovery.apply_or_retain(
+                        tracker,
+                        failure.acknowledgement,
+                        failure.reservation,
+                    ) {
+                        Ok(_) => None,
+                        Err(failure) => Some(UnresolvedTrackingUpdate::ApplyFailure {
+                            destination,
+                            failure,
+                        }),
+                    }
+                }
+                UnresolvedTrackingUpdate::MissingObligation {
+                    destination,
+                    status,
+                    reservation,
+                } => {
+                    match recovery.retain_unresolved(
+                        destination,
+                        range.clone(),
+                        status,
+                        reservation,
+                    ) {
+                        Ok(()) => None,
+                        Err(failure) => Some(UnresolvedTrackingUpdate::MissingObligation {
+                            destination: failure.destination,
+                            status: failure.status,
+                            reservation: failure.reservation,
+                        }),
+                    }
+                }
+            };
+            if let Some(update) = rejected {
+                result.unresolved.insert(index, update);
+                index += 1;
+                report.retained += 1;
+            } else {
+                report.transferred += 1;
+            }
+        }
+        report
+    }
+
     /// Whether the producer outcome still owns tracking-repair reservations.
     /// A reporter must transfer these to a recovery owner before acknowledging
     /// the record. Already transferred recovery work remains independently owned.
@@ -66,6 +151,14 @@ impl IngressOutcome {
             _ => false,
         }
     }
+}
+
+/// Ownership handoff only; transferred repairs may still require intervention.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TrackingHandoff {
+    pub transferred: usize,
+    pub retained: usize,
+    pub mapping_blocked: bool,
 }
 
 /// Construction-time binding to the same owners used by runtime delivery,

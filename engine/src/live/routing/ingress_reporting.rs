@@ -196,6 +196,38 @@ pub trait IngressReporter {
     ) -> Result<(), super::reporting::ReportingError>;
 }
 
+/// Restore tracking ownership before passing the complete outcome to the
+/// runtime's reporting policy. The driver lock is nonwaiting and released before
+/// invoking that policy. Recovery transfer is idempotent across reporting retries;
+/// foreign or ambiguous reservations keep the record charged for intervention.
+pub struct TrackingIngressReporter<'a, R> {
+    pub delivery: &'a Mutex<super::driver::DeliveryDriver>,
+    pub reporter: R,
+}
+
+impl<R: IngressReporter> IngressReporter for TrackingIngressReporter<'_, R> {
+    fn report(
+        &mut self,
+        batch: &EventBatch,
+        outcome: &mut IngressOutcome,
+    ) -> Result<(), super::reporting::ReportingError> {
+        use super::reporting::ReportingError;
+        // Inspect even an empty count-mismatch result: it requires explicit
+        // intervention despite retaining no reservation in the producer record.
+        let handoff = {
+            let mut driver = self.delivery.try_lock().map_err(|error| match error {
+                std::sync::TryLockError::WouldBlock => ReportingError::TemporarilyUnavailable,
+                std::sync::TryLockError::Poisoned(_) => ReportingError::PermanentFailure,
+            })?;
+            driver.reconcile_ingress_tracking(outcome)
+        };
+        if handoff.mapping_blocked || handoff.retained != 0 {
+            return Err(ReportingError::PermanentFailure);
+        }
+        self.reporter.report(batch, outcome)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IngressReportingStep {
     Idle,

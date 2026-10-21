@@ -136,6 +136,16 @@ impl DeliveryDriver {
         Ok((&mut self.tracker, &mut self.recovery))
     }
 
+    /// Reconcile producer-owned tracking repairs using the same owners as
+    /// delivery supervision. Also allowed after closure: shutdown fences new
+    /// admissions, but cannot waive already accepted repair responsibility.
+    pub fn reconcile_ingress_tracking(
+        &mut self,
+        outcome: &mut super::ingress::IngressOutcome,
+    ) -> super::ingress::TrackingHandoff {
+        outcome.reconcile_tracking(&mut self.tracker, &mut self.recovery)
+    }
+
     /// Attach a registry worker to the existing authoritative delivery owners.
     /// Shutdown fencing is enforced by the owned scheduler. Errors return the
     /// worker intact, including queue lease and any pending operation.

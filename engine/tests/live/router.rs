@@ -3740,6 +3740,255 @@ mod ingress_witnesses {
     }
 
     #[test]
+    fn tracking_ingress_reporter_integrates_charged_consumer_and_driver() {
+        use marketforge_engine::live::{
+            model::delivery::DeliveryStatus,
+            routing::{
+                ingress_reporting::{
+                    IngressOutcomes, IngressReporter, IngressReportingConsumer,
+                    IngressReportingStep, TrackingIngressReporter,
+                },
+                reporting::ReportingError,
+                router::{RecoveryTrackingResult, UnresolvedTrackingUpdate},
+            },
+        };
+        struct Inject(Option<IngressOutcome>);
+        impl IngressReporter for Inject {
+            fn report(
+                &mut self,
+                _: &EventBatch,
+                outcome: &mut IngressOutcome,
+            ) -> Result<(), ReportingError> {
+                *outcome = self.0.take().unwrap();
+                Err(ReportingError::TemporarilyUnavailable)
+            }
+        }
+        struct Observe<'a> {
+            driver: &'a Mutex<DeliveryDriver>,
+            calls: usize,
+        }
+        impl IngressReporter for Observe<'_> {
+            fn report(
+                &mut self,
+                _: &EventBatch,
+                outcome: &mut IngressOutcome,
+            ) -> Result<(), ReportingError> {
+                // The handoff lock must be released before invoking runtime code.
+                let driver = self.driver.try_lock().unwrap();
+                assert_eq!(driver.snapshot().recovery.unresolved_outcomes, 1);
+                assert!(!outcome.retains_tracking_recovery());
+                self.calls += 1;
+                if self.calls == 1 {
+                    Err(ReportingError::TemporarilyUnavailable)
+                } else {
+                    Ok(())
+                }
+            }
+        }
+        let fixture = Fixture::new();
+        let _queue = fixture.queue(1, DeliveryPolicy::Required);
+        let journal = IngressOutcomes::new(ResourceUsage {
+            items: 1,
+            bytes: 100_000,
+        })
+        .unwrap();
+        ready(journal.admit(&fixture.ingress(), batch(), context())).unwrap();
+        let reservation = fixture
+            .driver
+            .lock()
+            .unwrap()
+            .admission_owners()
+            .unwrap()
+            .1
+            .reserve()
+            .unwrap();
+        let mut inject = Inject(Some(IngressOutcome::Required {
+            required: OrderedCommitOutcome::Tracked(TrackedFanoutResult::RecoveryPending {
+                batch: batch(),
+                committed: vec![],
+                failed: vec![],
+                tracking: Ok(RecoveryTrackingResult {
+                    errors: vec![],
+                    unresolved: vec![UnresolvedTrackingUpdate::MissingObligation {
+                        destination: DestinationId(1),
+                        status: DeliveryStatus::Pending,
+                        reservation,
+                    }],
+                }),
+            }),
+            optional: None,
+        }));
+        let mut consumer = IngressReportingConsumer::default();
+        let mut cx = Context::from_waker(Waker::noop());
+        assert_eq!(
+            consumer.process_one(&journal, &mut inject, &mut cx),
+            IngressReportingStep::Retained(ReportingError::TemporarilyUnavailable)
+        );
+        let charged = journal.snapshot().usage;
+        let mut reporter = TrackingIngressReporter {
+            delivery: &fixture.driver,
+            reporter: Observe {
+                driver: &fixture.driver,
+                calls: 0,
+            },
+        };
+        let mut guard = fixture.driver.lock().unwrap();
+        assert_eq!(
+            consumer.process_one(&journal, &mut reporter, &mut cx),
+            IngressReportingStep::Retained(ReportingError::TemporarilyUnavailable)
+        );
+        assert_eq!(journal.snapshot().usage, charged);
+        assert_eq!(reporter.reporter.calls, 0);
+        guard.close();
+        drop(guard);
+        assert_eq!(
+            consumer.process_one(&journal, &mut reporter, &mut cx),
+            IngressReportingStep::Retained(ReportingError::TemporarilyUnavailable)
+        );
+        assert_eq!(journal.snapshot().usage, charged);
+        assert_eq!(
+            consumer.process_one(&journal, &mut reporter, &mut cx),
+            IngressReportingStep::Reported
+        );
+        assert_eq!(reporter.reporter.calls, 2);
+        assert!(journal.poll_shutdown(&mut cx).is_ready());
+        assert_eq!(
+            fixture
+                .driver
+                .lock()
+                .unwrap()
+                .snapshot()
+                .recovery
+                .unresolved_outcomes,
+            1
+        );
+    }
+
+    #[test]
+    fn ingress_tracking_handoff_preserves_foreign_repairs_and_shutdown_ownership() {
+        use marketforge_engine::live::{
+            model::delivery::DeliveryStatus,
+            routing::{
+                acknowledgement::{
+                    DeliveryAcknowledgement, DeliveryCursorRange, DeliveryObligationId,
+                },
+                router::{RecoveryTrackingResult, UnresolvedTrackingUpdate},
+                tracking_recovery::{
+                    TrackingApplyError, TrackingApplyFailure, TrackingRecoveryCapacity,
+                },
+            },
+        };
+        let fixture = Fixture::new();
+        let queue = fixture.queue(1, DeliveryPolicy::Required);
+        let mut outcome = ready(fixture.ingress().admit(batch(), context())).unwrap();
+        assert_eq!(
+            fixture
+                .driver
+                .lock()
+                .unwrap()
+                .reconcile_ingress_tracking(&mut outcome),
+            Default::default()
+        );
+        let foreign = TrackingRecoveryCapacity::new(1).unwrap();
+        let mut driver = fixture.driver.lock().unwrap();
+        let (_, recovery) = driver.admission_owners().unwrap();
+        let reservations = recovery.reserve_batch(2).unwrap();
+        let mut reservations = reservations.into_iter();
+        let range = DeliveryCursorRange::new(
+            batch().first_cursor().clone(),
+            batch().last_cursor().clone(),
+        )
+        .unwrap();
+        // Controlled reporting-boundary fault: actual reservations from the
+        // production driver, plus a foreign reservation that must stay attached.
+        outcome = IngressOutcome::Required {
+            required: OrderedCommitOutcome::Tracked(TrackedFanoutResult::RecoveryPending {
+                batch: batch(),
+                committed: vec![],
+                failed: vec![],
+                tracking: Ok(RecoveryTrackingResult {
+                    errors: vec![],
+                    unresolved: vec![
+                        UnresolvedTrackingUpdate::MissingObligation {
+                            destination: DestinationId(9),
+                            status: DeliveryStatus::Pending,
+                            reservation: foreign.reserve().unwrap(),
+                        },
+                        UnresolvedTrackingUpdate::MissingObligation {
+                            destination: DestinationId(1),
+                            status: DeliveryStatus::Pending,
+                            reservation: reservations.next().unwrap(),
+                        },
+                        UnresolvedTrackingUpdate::ApplyFailure {
+                            destination: DestinationId(2),
+                            failure: TrackingApplyFailure {
+                                reason: TrackingApplyError::ForeignReservation,
+                                acknowledgement: DeliveryAcknowledgement {
+                                    obligation: DeliveryObligationId(u64::MAX),
+                                    destination: DestinationId(2),
+                                    range,
+                                    status: DeliveryStatus::Pending,
+                                },
+                                reservation: reservations.next().unwrap(),
+                            },
+                        },
+                    ],
+                }),
+            }),
+            optional: None,
+        };
+        driver.close();
+        let handoff = driver.reconcile_ingress_tracking(&mut outcome);
+        assert_eq!(handoff.transferred, 2);
+        assert_eq!(handoff.retained, 1);
+        assert!(!handoff.mapping_blocked);
+        assert!(outcome.retains_tracking_recovery());
+        let snapshot = driver.snapshot();
+        assert_eq!(snapshot.recovery.pending_updates, 1);
+        assert_eq!(snapshot.recovery.unresolved_outcomes, 1);
+        assert!(!snapshot.is_drained());
+        assert_eq!(foreign.occupied(), 1);
+        let retry = driver.reconcile_ingress_tracking(&mut outcome);
+        assert_eq!(retry.transferred, 0);
+        assert_eq!(retry.retained, 1);
+        assert_eq!(driver.snapshot(), snapshot);
+        assert!(queue.try_dequeue().is_some());
+        // Releasing the producer record cannot release driver-owned repairs.
+        drop(outcome);
+        assert_eq!(foreign.occupied(), 0);
+        assert_eq!(driver.snapshot().recovery, snapshot.recovery);
+    }
+
+    #[test]
+    fn ingress_tracking_handoff_does_not_guess_mismatched_mapping() {
+        use marketforge_engine::live::routing::router::RecoveryTrackingFailure;
+        let fixture = Fixture::new();
+        let mut driver = fixture.driver.lock().unwrap();
+        let (_, recovery) = driver.admission_owners().unwrap();
+        let mut outcome = IngressOutcome::Required {
+            required: OrderedCommitOutcome::Tracked(TrackedFanoutResult::RecoveryPending {
+                batch: batch(),
+                committed: vec![],
+                failed: vec![],
+                tracking: Err(RecoveryTrackingFailure::ReservationCountMismatch {
+                    expected: 2,
+                    actual: 1,
+                    reservations: recovery.reserve_batch(1).unwrap(),
+                }),
+            }),
+            optional: None,
+        };
+        let before = driver.snapshot();
+        for _ in 0..2 {
+            let report = driver.reconcile_ingress_tracking(&mut outcome);
+            assert!(report.mapping_blocked);
+            assert_eq!(report.transferred, 0);
+            assert!(outcome.retains_tracking_recovery());
+            assert_eq!(driver.snapshot(), before);
+        }
+    }
+
+    #[test]
     fn ingress_reporting_success_cannot_release_owned_tracking_repairs() {
         use marketforge_engine::live::routing::{
             ingress_reporting::{
