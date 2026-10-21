@@ -903,3 +903,100 @@ fn registry_claim_next_worker_orders_active_ids_and_skips_existing_leases() {
     // Closed membership can still be claimed by the shutdown coordinator.
     assert!(registry.claim_next_worker().unwrap().is_some());
 }
+
+#[test]
+fn registry_membership_notifications_replace_waiter_and_wake_outside_fences() {
+    use marketforge_engine::live::routing::{
+        destination::DestinationCapacity, queue::DestinationQueue,
+    };
+    use std::{
+        sync::atomic::{AtomicUsize, Ordering},
+        task::{Context, Poll, Wake, Waker},
+    };
+    struct Observer {
+        registry: Arc<RouterRegistry>,
+        wakes: AtomicUsize,
+    }
+    impl Wake for Observer {
+        fn wake(self: Arc<Self>) {
+            // Both read and exclusive commitment paths may re-enter on wake.
+            let snapshot = self.registry.snapshot();
+            let _ = self.registry.plan(&batch());
+            if let Some(entry) = snapshot.destinations.first() {
+                let result = self.registry.register(destination(
+                    entry.descriptor.id.0,
+                    entry.descriptor.kind,
+                    entry.descriptor.policy,
+                ));
+                assert!(matches!(
+                    result,
+                    Err(RouterRegistryError::DuplicateDestination
+                        | RouterRegistryError::ShuttingDown)
+                ));
+            }
+            assert_eq!(snapshot.revision, self.registry.revision());
+            self.wakes.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let registry = Arc::new(RouterRegistry::with_destination_limit(2).unwrap());
+    let old = Arc::new(Observer {
+        registry: registry.clone(),
+        wakes: AtomicUsize::new(0),
+    });
+    let current = Arc::new(Observer {
+        registry: registry.clone(),
+        wakes: AtomicUsize::new(0),
+    });
+    let old_waker = Waker::from(old.clone());
+    let current_waker = Waker::from(current.clone());
+    let mut old_cx = Context::from_waker(&old_waker);
+    let mut cx = Context::from_waker(&current_waker);
+    assert!(registry.poll_membership_change(0, &mut old_cx).is_pending());
+    assert!(registry.poll_membership_change(0, &mut cx).is_pending());
+    assert!(registry.poll_membership_change(0, &mut cx).is_pending());
+    let adapter = destination(1, DestinationKind::Publication, DeliveryPolicy::Required);
+    registry.register(adapter.clone()).unwrap();
+    assert_eq!(old.wakes.load(Ordering::SeqCst), 0);
+    assert_eq!(current.wakes.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        registry.poll_membership_change(0, &mut cx),
+        Poll::Ready(Ok(1))
+    );
+    assert!(registry.poll_membership_change(1, &mut cx).is_pending());
+    assert_eq!(
+        registry.register(adapter),
+        Err(RouterRegistryError::DuplicateDestination)
+    );
+    assert_eq!(
+        registry.unregister(DestinationId(99)),
+        Err(RouterRegistryError::UnknownDestination)
+    );
+    assert_eq!(current.wakes.load(Ordering::SeqCst), 1);
+    registry.unregister(DestinationId(1)).unwrap();
+    assert_eq!(current.wakes.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        registry.poll_membership_change(1, &mut cx),
+        Poll::Ready(Ok(2))
+    );
+    assert!(registry.poll_membership_change(2, &mut cx).is_pending());
+    assert_eq!(registry.reap_retired(), 1);
+    assert_eq!(current.wakes.load(Ordering::SeqCst), 2);
+    let adapter = destination(2, DestinationKind::Publication, DeliveryPolicy::Required);
+    let queue =
+        DestinationQueue::new(DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap());
+    registry.register_queue(adapter, queue).unwrap();
+    assert_eq!(current.wakes.load(Ordering::SeqCst), 3);
+    assert_eq!(
+        registry.poll_membership_change(2, &mut cx),
+        Poll::Ready(Ok(3))
+    );
+    assert!(registry.poll_membership_change(3, &mut cx).is_pending());
+    registry.shutdown();
+    assert_eq!(current.wakes.load(Ordering::SeqCst), 4);
+    assert_eq!(
+        registry.poll_membership_change(3, &mut cx),
+        Poll::Ready(Err(RouterRegistryError::ShuttingDown))
+    );
+    registry.shutdown();
+    assert_eq!(current.wakes.load(Ordering::SeqCst), 4);
+}

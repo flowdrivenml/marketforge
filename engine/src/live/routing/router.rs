@@ -359,6 +359,7 @@ struct RouterRegistryState {
     max_destinations: usize,
     revision: u64,
     shutting_down: bool,
+    membership_waiter: Option<std::task::Waker>,
 }
 
 /// Thread-safe destination registry.
@@ -459,6 +460,7 @@ impl RouterRegistry {
                 max_destinations: 1024,
                 revision: 0,
                 shutting_down: false,
+                membership_waiter: None,
             }),
             commitment: Mutex::new(()),
         }
@@ -524,6 +526,12 @@ impl RouterRegistry {
         );
 
         state.revision = next_revision;
+        let waiter = state.membership_waiter.take();
+        drop(state);
+        drop(_commitment);
+        if let Some(waiter) = waiter {
+            waiter.wake();
+        }
 
         Ok(())
     }
@@ -666,6 +674,12 @@ impl RouterRegistry {
         );
 
         state.revision = next_revision;
+        let waiter = state.membership_waiter.take();
+        drop(state);
+        drop(_commitment);
+        if let Some(waiter) = waiter {
+            waiter.wake();
+        }
 
         Ok(())
     }
@@ -675,7 +689,7 @@ impl RouterRegistry {
     /// payloads and still support worker claims for draining. Retired instances
     /// consume the same bounded registry slots until explicitly reaped.
     pub fn unregister(&self, id: DestinationId) -> Result<(), RouterRegistryError> {
-        let queue = {
+        let (queue, waiter) = {
             let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
             let mut state = self.state.write().unwrap_or_else(|e| e.into_inner());
             if state.shutting_down {
@@ -692,11 +706,14 @@ impl RouterRegistry {
             let queue = entry.queue.clone();
             state.retired.push(entry);
             state.revision = next_revision;
-            queue
+            (queue, state.membership_waiter.take())
         };
         // Arbitrary executor callbacks must run outside both registry locks.
         if let Some(queue) = queue {
             queue.shutdown();
+        }
+        if let Some(waiter) = waiter {
+            waiter.wake();
         }
         Ok(())
     }
@@ -785,25 +802,60 @@ impl RouterRegistry {
     /// manager. Existing payloads and reservations retain their charges until
     /// explicitly drained or released; closure proves no delivery guarantee.
     pub fn shutdown(&self) {
-        let queues: Vec<_> = {
+        let (queues, waiter) = {
             let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
             let mut state = self
                 .state
                 .write()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             state.shutting_down = true;
-            state
+            let waiter = state.membership_waiter.take();
+            let queues: Vec<_> = state
                 .destinations
                 .values()
                 .chain(state.retired.iter())
                 .filter_map(|entry| entry.queue.clone())
-                .collect()
+                .collect();
+            (queues, waiter)
         };
         // Queue/capacity shutdown invokes arbitrary executor wakers. Membership
         // is already fenced, so callbacks may safely inspect this registry.
         for queue in queues {
             queue.shutdown();
         }
+        if let Some(waiter) = waiter {
+            waiter.wake();
+        }
+    }
+
+    /// Wait for routing membership to differ from an observed revision. Checking
+    /// and registration share the membership fence, so a concurrent mutation
+    /// cannot be missed. One runtime coordinator is supported; polling with a
+    /// different waker replaces the previous waiter without growing resources.
+    /// Failed mutations and retired-slot reaping do not change routing revision.
+    /// Shutdown returns ShuttingDown, including when the revision is unchanged.
+    /// Notification proves membership change only, never delivery or durability.
+    pub fn poll_membership_change(
+        &self,
+        observed_revision: u64,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<u64, RouterRegistryError>> {
+        use std::task::Poll;
+        let mut state = self.state.write().unwrap_or_else(|e| e.into_inner());
+        if state.shutting_down {
+            return Poll::Ready(Err(RouterRegistryError::ShuttingDown));
+        }
+        if state.revision != observed_revision {
+            return Poll::Ready(Ok(state.revision));
+        }
+        if state
+            .membership_waiter
+            .as_ref()
+            .is_none_or(|w| !w.will_wake(cx.waker()))
+        {
+            state.membership_waiter = Some(cx.waker().clone());
+        }
+        Poll::Pending
     }
 
     /// Fence membership and register the coordinator on outstanding payload
