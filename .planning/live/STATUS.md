@@ -39,6 +39,23 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Final verification: formatting, Live check, 130 library tests, 393 integration
+tests (2 opt-in ignored), 1 doctest, and combined Live+historical compilation all
+exit 0. Receipts: `engine/target/live-verification/20261021T040223Z-3/`.
+Local checkpoint: commit carrying this continuation and its evidence.
+
+This continuation adds bounded ordered optional-only queue attempts. Required
+sinks cannot be bypassed; empty registries and cancelled/budget-exhausted calls
+reject with the original batch and preserve the frontier. Completed best-effort
+attempts report every queue failure and advance order even on total overload;
+this is an attempt outcome, not proof of delivery. Two deterministic consumer
+witnesses cover these cases and real queue identity/readback. WP-10 remains
+Partial: production owner, workers, completion/recovery lifetime, snapshots and
+shutdown composition are still pending. Next executable work is WP-10; WP-11–29
+remain pending and earlier WP-05/06/07/09 gates remain open. Further autonomous
+implementation can safely continue. See the WP-10 evidence continuation below.
+
+
 Checkpoint `2fba098` adds ordered nonwaiting best-effort fan-out. Full/closed
 optional queues produce individual outcomes without capacity waiters; required
 tracking is preserved and the namespace order permit covers optional writes.

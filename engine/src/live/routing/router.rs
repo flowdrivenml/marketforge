@@ -326,6 +326,7 @@ pub struct BestEffortFanout {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BestEffortError {
+    Context(crate::live::ports::routing::RoutingAdmissionFailure),
     InvalidPlan(FanoutCommitmentError),
     MissingQueue(DestinationId),
 }
@@ -369,6 +370,15 @@ impl RouterRegistry {
         plan: &RoutingPlan,
         batch: &EventBatch,
     ) -> Result<BestEffortFanout, BestEffortError> {
+        self.try_best_effort_checked(plan, batch, || Ok(()))
+    }
+
+    pub(crate) fn try_best_effort_checked(
+        &self,
+        plan: &RoutingPlan,
+        batch: &EventBatch,
+        check: impl FnOnce() -> Result<(), crate::live::ports::routing::RoutingAdmissionFailure>,
+    ) -> Result<BestEffortFanout, BestEffortError> {
         let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
         let state = self.state.read().unwrap_or_else(|e| e.into_inner());
         let invalid = |reason| BestEffortError::InvalidPlan(reason);
@@ -398,6 +408,7 @@ impl RouterRegistry {
                 return Err(BestEffortError::MissingQueue(entry.descriptor.id));
             }
         }
+        check().map_err(BestEffortError::Context)?;
         let mut result = BestEffortFanout {
             queued: Vec::with_capacity(plan.best_effort.len()),
             failed: Vec::new(),

@@ -252,3 +252,75 @@ impl OrderedAdmissionBudget {
         Ok(prepared)
     }
 }
+
+/// Optional-only attempt: every queue outcome is explicit, including total
+/// overload. A completed attempt advances order without promising delivery.
+#[derive(Debug)]
+#[must_use = "inspect individual queue failures"]
+pub enum OptionalOrderedOutcome {
+    Attempted(super::router::BestEffortFanout),
+    Rejected {
+        batch: EventBatch,
+        reason: OptionalOrderedError,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptionalOrderedError {
+    Preparation(OrderedPreparationError),
+    RequiredDestinations,
+    Commitment(super::router::BestEffortError),
+}
+
+impl OrderedAdmissionBudget {
+    /// Nonwaiting optional-only path. Required destinations can never be
+    /// bypassed through this entry point. An empty registry rejects explicitly
+    /// and preserves the frontier; no discard-without-subscribers policy is
+    /// inferred here.
+    pub fn try_optional_only(
+        &self,
+        registry: &RouterRegistry,
+        namespaces: &AdmissionNamespaces,
+        batch: EventBatch,
+        context: AdmissionContext,
+        clock: &dyn MonotonicClock,
+    ) -> OptionalOrderedOutcome {
+        let attempt = || -> Result<_, OptionalOrderedError> {
+            let prep = OptionalOrderedError::Preparation;
+            check(&context, clock).map_err(|e| prep(OrderedPreparationError::Context(e)))?;
+            let bytes = batch
+                .retained_size_bytes()
+                .map_err(|_| prep(OrderedPreparationError::Budget(ErrorCode::Capacity)))?;
+            let _reservation = self
+                .budget
+                .reserve(ResourceUsage {
+                    items: batch.len(),
+                    bytes: usize::try_from(bytes)
+                        .map_err(|_| prep(OrderedPreparationError::Budget(ErrorCode::Capacity)))?,
+                })
+                .map_err(|e| prep(OrderedPreparationError::Budget(e)))?;
+            let cursor = batch.first_cursor();
+            let namespace = namespaces
+                .get(&cursor.stream_id, cursor.log_epoch)
+                .map_err(|e| prep(OrderedPreparationError::Namespace(e)))?;
+            let order = namespace
+                .prepare(&batch)
+                .map_err(|e| prep(OrderedPreparationError::Order(e)))?;
+            let plan = registry
+                .plan(&batch)
+                .map_err(|e| prep(OrderedPreparationError::Registry(e)))?;
+            if !plan.required.is_empty() {
+                return Err(OptionalOrderedError::RequiredDestinations);
+            }
+            let result = registry
+                .try_best_effort_checked(&plan, &batch, || check(&context, clock))
+                .map_err(OptionalOrderedError::Commitment)?;
+            order.commit();
+            Ok(result)
+        };
+        match attempt() {
+            Ok(result) => OptionalOrderedOutcome::Attempted(result),
+            Err(reason) => OptionalOrderedOutcome::Rejected { batch, reason },
+        }
+    }
+}

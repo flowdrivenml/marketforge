@@ -2743,3 +2743,170 @@ fn optional_fanout_does_not_run_after_cancelled_required_commitment() {
     assert_eq!(optional.unwrap().unwrap().queued.len(), 1);
     assert!(queue.try_dequeue().is_some());
 }
+
+#[test]
+fn optional_only_ordered_attempt_and_rejections_preserve_ownership() {
+    use marketforge_engine::live::{
+        foundation::{SystemMonotonicClock, resources::ResourceUsage},
+        routing::{
+            namespaces::AdmissionNamespaces,
+            ordered::{OptionalOrderedError, OptionalOrderedOutcome, OrderedAdmissionBudget},
+        },
+    };
+    let registry = RouterRegistry::new();
+    let batch = obligation_test_batch();
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    namespaces.register(batch.first_cursor().clone()).unwrap();
+    let order = namespaces
+        .get(
+            &batch.first_cursor().stream_id,
+            batch.first_cursor().log_epoch,
+        )
+        .unwrap();
+    let budget = OrderedAdmissionBudget::new(ResourceUsage {
+        items: 100,
+        bytes: 1_000_000,
+    })
+    .unwrap();
+    assert!(matches!(
+        budget.try_optional_only(
+            &registry,
+            &namespaces,
+            batch.clone(),
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            &SystemMonotonicClock
+        ),
+        OptionalOrderedOutcome::Rejected { .. }
+    ));
+    let queue = add_optional_queue(&registry, 1);
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    let result = budget.try_optional_only(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        AdmissionContext::without_deadline(cancel),
+        &SystemMonotonicClock,
+    );
+    let OptionalOrderedOutcome::Rejected {
+        batch: returned, ..
+    } = result
+    else {
+        panic!("cancel ignored")
+    };
+    assert!(Arc::ptr_eq(&returned.events()[0], &batch.events()[0]));
+    assert_eq!(order.next().unwrap(), *batch.first_cursor());
+    assert!(queue.try_dequeue().is_none());
+    let (required, required_batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let required_namespaces = AdmissionNamespaces::new(1).unwrap();
+    required_namespaces
+        .register(required_batch.first_cursor().clone())
+        .unwrap();
+    assert!(matches!(
+        budget.try_optional_only(
+            &required,
+            &required_namespaces,
+            required_batch,
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            &SystemMonotonicClock
+        ),
+        OptionalOrderedOutcome::Rejected {
+            reason: OptionalOrderedError::RequiredDestinations,
+            ..
+        }
+    ));
+    assert!(
+        required
+            .peek_queue(DestinationId(1))
+            .unwrap()
+            .try_dequeue()
+            .is_none()
+    );
+    while queue.try_enqueue(batch.clone()).is_ok() {}
+    let result = budget.try_optional_only(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        &SystemMonotonicClock,
+    );
+    let OptionalOrderedOutcome::Attempted(result) = result else {
+        panic!("optional attempt rejected")
+    };
+    assert!(result.queued.is_empty());
+    assert_eq!(result.failed.len(), 1);
+    assert_eq!(queue.capacity().usage().waiting_operations, 0);
+    assert_eq!(order.next().unwrap().offset, batch.last_cursor().offset + 1);
+    assert_eq!(budget.usage(), ResourceUsage::default());
+    assert!(matches!(
+        budget.try_optional_only(
+            &registry,
+            &namespaces,
+            batch,
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            &SystemMonotonicClock
+        ),
+        OptionalOrderedOutcome::Rejected { .. }
+    ));
+}
+
+#[test]
+fn optional_only_ordered_success_budget_and_shutdown() {
+    use marketforge_engine::live::{
+        foundation::{SystemMonotonicClock, resources::ResourceUsage},
+        routing::{
+            namespaces::AdmissionNamespaces,
+            ordered::{OptionalOrderedOutcome, OrderedAdmissionBudget},
+        },
+    };
+    let registry = RouterRegistry::new();
+    let queue = add_optional_queue(&registry, 1);
+    let batch = obligation_test_batch();
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    namespaces.register(batch.first_cursor().clone()).unwrap();
+    let tiny = OrderedAdmissionBudget::new(ResourceUsage { items: 1, bytes: 1 }).unwrap();
+    assert!(matches!(
+        tiny.try_optional_only(
+            &registry,
+            &namespaces,
+            batch.clone(),
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            &SystemMonotonicClock
+        ),
+        OptionalOrderedOutcome::Rejected { .. }
+    ));
+    assert_eq!(tiny.usage(), ResourceUsage::default());
+    assert!(queue.try_dequeue().is_none());
+    let budget = OrderedAdmissionBudget::new(ResourceUsage {
+        items: 100,
+        bytes: 1_000_000,
+    })
+    .unwrap();
+    let OptionalOrderedOutcome::Attempted(result) = budget.try_optional_only(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        &SystemMonotonicClock,
+    ) else {
+        panic!("healthy queue rejected")
+    };
+    assert_eq!(result.queued.len(), 1);
+    assert!(result.failed.is_empty());
+    let queued = queue.try_dequeue().unwrap();
+    assert!(Arc::ptr_eq(&queued.batch().events()[0], &batch.events()[0]));
+    assert_eq!(budget.usage(), ResourceUsage::default());
+    budget.close();
+    assert!(matches!(
+        budget.try_optional_only(
+            &registry,
+            &namespaces,
+            batch,
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            &SystemMonotonicClock
+        ),
+        OptionalOrderedOutcome::Rejected { .. }
+    ));
+}

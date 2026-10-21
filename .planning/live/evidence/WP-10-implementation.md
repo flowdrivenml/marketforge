@@ -261,3 +261,55 @@ Completion correlation, owner-lifetime recovery/payload retention, observations
 and deadline shutdown remain incomplete; earlier foundational gates are unchanged.
 No package accepted. Next authorized/executable work: WP-10 completion. Further
 autonomous implementation is safe. Checkpoint: `2fba098` (optional fan-out, witnesses and evidence).
+
+## Continuation — bounded optional-only ordered attempts (2026-10-21)
+
+Status: Partial. Baseline `1fcd282`, branch `codex/wp06-completion`;
+pre-existing untracked `scripts/run-autonomous-codex.sh` preserved. Read campaign
+instructions, decisions, status and roadmap; inspected current ordered admission,
+registry, cursor frontier and consumer tests. WP-10 remains next executable.
+
+Implemented:
+- `OrderedAdmissionBudget::try_optional_only` bounds retained count/bytes and
+  takes the authoritative registered namespace permit. No capacity waiters or
+  retry buffer are allocated. Required destinations explicitly reject this path.
+- Optional registry commitment validates its plan, then checks cancellation and
+  deadline under the commitment fence immediately before queue writes.
+- Empty registries reject without consuming cursors. Completed optional attempts
+  advance order and return every queue failure, including total overload. This
+  records an attempted best-effort delivery, never durability or processing.
+- Rejections return the immutable original batch; all paths release global
+  reservations and uncommitted order permits. Tests cover no subscribers,
+  cancellation, required-sink bypass prevention, byte exhaustion, healthy queue
+  readback/shared identity, total overload, stale frontier and closed budget.
+
+Verification: commands from engine/ unless stated. Focused
+`cargo test --locked --offline --no-default-features --features live --test
+live_suite optional_only_ordered`: exit 0, 1 passed at first witness revision;
+second witness verified in final complete suite. Initial edit used a wrong
+relative test path, then compile attempts exposed an incorrectly placed enum
+variant and fixture helper assumptions; corrected without weakening assertions.
+A complete gate run also caught formatting after restoring enum order; formatted
+and reran final gates. These failed attempts are not pass evidence.
+
+Final root `./scripts/verify-live.sh full` runs `cargo fmt --all -- --check`,
+`cargo check --locked --offline --no-default-features --features live --lib`,
+`cargo test --locked --offline --no-default-features --features live --lib`,
+same test command with `--test live_suite`, and same with `--doc`.
+Final results: all five gates exit 0; 130 library, 393 integration (2 opt-in
+ignored), 1 doctest. Receipts:
+`engine/target/live-verification/20261021T040223Z-3/`.
+Combined `cargo check --locked --offline --no-default-features --features
+live,historical`: exit 0; receipt
+`engine/target/live-verification/optional-only-combined-check.log`.
+`git diff --check`: exit 0. Existing dead-code warning remains.
+
+Changed: routing/{ordered,router}.rs, tests/live/router_obligations.rs, STATUS.md
+and this ledger. No SQL/exchange access, Python/historical execution changes,
+dependency/lockfile changes, ignored configuration edits or push. Opt-in SQL,
+performance and historical baseline tests were not rerun.
+
+Remaining: production EventRouterPort owner, worker/completion/recovery lifetime,
+observations and deadline shutdown composition. No-subscriber discard policy is
+not introduced. Earlier foundational gates remain open. No package accepted.
+Next authorized executable work: WP-10 completion; safe to continue autonomously.
