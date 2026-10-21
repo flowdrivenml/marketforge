@@ -415,7 +415,15 @@ impl DeliveryDriver {
         let (turn, scheduling) =
             self.drive_registered_with_retry(registry, cx, clock, timer, interval);
         let reporting = consumer.process_one(&mut self.journal, clock);
-        if matches!(reporting, Ok(ReportingStep::Reported)) {
+        // Deferring or escalating one record also advances the eligible scan.
+        // Another ready record must not wait for a retry timer (which may have
+        // failed admission). The subsequent Idle turn parks without self-waking.
+        if matches!(
+            reporting,
+            Ok(ReportingStep::Reported
+                | ReportingStep::RetryScheduled
+                | ReportingStep::PermanentlyFailed)
+        ) {
             cx.waker().wake_by_ref();
         }
         if self.closed && self.snapshot().is_drained() {
