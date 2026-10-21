@@ -2348,3 +2348,303 @@ fn registered_router_shutdown_delivers_committed_queues_through_completion_and_r
     assert!(owners.snapshot().is_drained());
     assert_eq!(owners.snapshot().delivery.tracked_obligations, 0);
 }
+
+#[test]
+fn reporting_router_shutdown_preserves_retry_and_timer_failure_until_drain() {
+    use marketforge_engine::live::{
+        foundation::{CancellationToken, clock::ManualClock, resources::ResourceUsage},
+        model::delivery::{DeliveryStage, DeliveryStatus},
+        ports::routing::DestinationCompletion,
+        routing::{
+            acknowledgement::{
+                AcknowledgementTracker, FinalizationJournal, FinalizationRecord,
+                FinalizationRetryPolicy,
+            },
+            admission::{AdmissionContext, DeadlineFuture, DeadlineTimer},
+            destination::DestinationCapacity,
+            driver::DeliveryDriver,
+            namespaces::AdmissionNamespaces,
+            ordered::{OrderedAdmissionBudget, OrderedCommitOutcome},
+            queue::DestinationQueue,
+            reporting::{
+                FinalizationReporter, FinalizationReportingConsumer, ReportingError, ReportingStep,
+            },
+            shutdown::{ReportingRouterShutdownStep, RouterShutdownOwners},
+            supervisor::{DeliverySupervisor, SupervisionStep},
+            tracking_recovery::TrackingRecovery,
+            worker::DestinationWorkers,
+        },
+    };
+    use std::{
+        future::Future,
+        num::NonZeroUsize,
+        task::{Context, Poll, Waker},
+        time::{Duration, Instant},
+    };
+    struct Reporter(Arc<std::sync::atomic::AtomicUsize>);
+    impl FinalizationReporter for Reporter {
+        fn report(&self, _: &FinalizationRecord) -> Result<(), ReportingError> {
+            if self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                Err(ReportingError::TemporarilyUnavailable)
+            } else {
+                Ok(())
+            }
+        }
+    }
+    struct FullTimer;
+    impl DeadlineTimer for FullTimer {
+        fn sleep_until(&self, _: Instant) -> DeadlineFuture {
+            panic!("must use bounded admission")
+        }
+        fn try_sleep_until(
+            &self,
+            _: Instant,
+        ) -> Result<DeadlineFuture, marketforge_engine::live::model::error::ErrorCode> {
+            Err(marketforge_engine::live::model::error::ErrorCode::Capacity)
+        }
+    }
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let consumer = FinalizationReportingConsumer::new(
+        Reporter(calls.clone()),
+        Duration::from_secs(1),
+        FinalizationRetryPolicy::new(Duration::from_secs(1), Duration::from_secs(1), 3).unwrap(),
+    )
+    .unwrap();
+    let registry = RouterRegistry::new();
+    for id in [1, 2] {
+        let adapter = destination(id, DestinationKind::Publication, DeliveryPolicy::Required);
+        let queue = DestinationQueue::new(
+            DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap(),
+        );
+        registry.register_queue(adapter, queue).unwrap();
+    }
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    namespaces.register(batch().first_cursor().clone()).unwrap();
+    let budget = OrderedAdmissionBudget::new(ResourceUsage {
+        items: 10,
+        bytes: 100_000,
+    })
+    .unwrap();
+    let clock = Arc::new(ManualClock::new(Instant::now(), 0));
+    let mut cx = Context::from_waker(Waker::noop());
+    let mut future = Box::pin(budget.prepare(
+        &registry,
+        &namespaces,
+        batch(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        clock.clone(),
+        None,
+    ));
+    let Poll::Ready(Ok(prepared)) = future.as_mut().poll(&mut cx) else {
+        panic!("available capacity")
+    };
+    drop(future);
+    let limit = NonZeroUsize::new(1).unwrap();
+    let mut delivery = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(2).unwrap(),
+        TrackingRecovery::new(2).unwrap(),
+        FinalizationJournal::new(2).unwrap(),
+    );
+    let Ok((OrderedCommitOutcome::Tracked(_), _)) = delivery.commit_ordered(prepared) else {
+        panic!("commit required delivery")
+    };
+    assert_eq!(delivery.snapshot().tracked_obligations, 2);
+    assert!(delivery.snapshot().workers.workers.is_empty());
+    let mut owners = RouterShutdownOwners {
+        namespaces: &namespaces,
+        admission: &budget,
+        destinations: &registry,
+        delivery: &mut delivery,
+    };
+    let mut deadline: DeadlineFuture = Box::pin(std::future::pending());
+    let mut expired: DeadlineFuture = Box::pin(std::future::ready(()));
+    assert!(matches!(
+        owners.drive_registered_reporting(
+            &mut cx,
+            &mut expired,
+            clock.as_ref(),
+            &FullTimer,
+            Duration::from_secs(1),
+            &consumer
+        ),
+        ReportingRouterShutdownStep::DeadlineReached
+    ));
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert!(owners.snapshot().delivery.workers.workers.is_empty());
+    let mut retries = 0;
+    let mut scheduling_failures = 0;
+    let mut completions = Vec::new();
+    let mut reported = 0;
+    let mut drained = false;
+    // Finite deterministic scheduler: two queues exceed the one-worker bound.
+    for _ in 0..16 {
+        clock.advance(Duration::from_secs(1)).unwrap();
+        match owners.drive_registered_reporting(
+            &mut cx,
+            &mut deadline,
+            clock.as_ref(),
+            &FullTimer,
+            Duration::from_secs(1),
+            &consumer,
+        ) {
+            ReportingRouterShutdownStep::Drained => {
+                drained = true;
+                break;
+            }
+            ReportingRouterShutdownStep::DeadlineReached => panic!("pending deadline"),
+            ReportingRouterShutdownStep::Step {
+                delivery: turn,
+                scheduling,
+                reporting,
+            } => {
+                if scheduling.is_err() {
+                    scheduling_failures += 1;
+                }
+                match reporting.unwrap() {
+                    ReportingStep::Reported => reported += 1,
+                    ReportingStep::RetryScheduled => retries += 1,
+                    ReportingStep::Idle => {}
+                    ReportingStep::PermanentlyFailed => panic!("retry should succeed"),
+                }
+                if let Poll::Ready(SupervisionStep::Retained(_)) = &turn.delivery.delivery {
+                    let id = owners.snapshot().delivery.workers.workers[0].0;
+                    assert!(!completions.contains(&id));
+                    owners
+                        .delivery
+                        .apply_completion(&DestinationCompletion {
+                            destination: id,
+                            through: batch().last_cursor().clone(),
+                            status: DeliveryStatus::Progress(DeliveryStage::Delivered),
+                        })
+                        .unwrap();
+                    completions.push(id);
+                }
+                // Terminal output owns its payload charge until dropped.
+                drop(turn);
+            }
+        }
+    }
+    assert!(drained);
+    assert_eq!(completions, vec![DestinationId(1), DestinationId(2)]);
+    assert_eq!(reported, 2);
+    assert_eq!(retries, 1);
+    assert!(scheduling_failures > 0);
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3);
+    assert!(owners.snapshot().is_drained());
+    assert_eq!(owners.snapshot().delivery.tracked_obligations, 0);
+}
+
+#[test]
+fn reporting_router_shutdown_releases_timer_when_empty_delivery_closes() {
+    use marketforge_engine::live::{
+        foundation::{clock::ManualClock, resources::ResourceUsage},
+        routing::{
+            acknowledgement::{
+                AcknowledgementTracker, FinalizationJournal, FinalizationRecord,
+                FinalizationRetryPolicy,
+            },
+            admission::{DeadlineFuture, DeadlineTimer},
+            driver::DeliveryDriver,
+            namespaces::AdmissionNamespaces,
+            ordered::OrderedAdmissionBudget,
+            reporting::{FinalizationReporter, FinalizationReportingConsumer, ReportingError},
+            shutdown::{ReportingRouterShutdownStep, RouterShutdownOwners},
+            supervisor::DeliverySupervisor,
+            tracking_recovery::TrackingRecovery,
+            worker::DestinationWorkers,
+        },
+    };
+    use std::{
+        future::Future,
+        num::NonZeroUsize,
+        pin::Pin,
+        sync::atomic::{AtomicUsize, Ordering},
+        task::{Context, Poll, Waker},
+        time::{Duration, Instant},
+    };
+    struct Sleep(Arc<AtomicUsize>);
+    impl Future for Sleep {
+        type Output = ();
+        fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<()> {
+            Poll::Pending
+        }
+    }
+    impl Drop for Sleep {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    struct Timer(Arc<AtomicUsize>);
+    impl DeadlineTimer for Timer {
+        fn sleep_until(&self, _: Instant) -> DeadlineFuture {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Box::pin(Sleep(self.0.clone()))
+        }
+    }
+    struct Reporter;
+    impl FinalizationReporter for Reporter {
+        fn report(&self, _: &FinalizationRecord) -> Result<(), ReportingError> {
+            panic!("no obligations")
+        }
+    }
+    let slots = Arc::new(AtomicUsize::new(0));
+    let registry = RouterRegistry::new();
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    let budget = OrderedAdmissionBudget::new(ResourceUsage {
+        items: 1,
+        bytes: 1000,
+    })
+    .unwrap();
+    let limit = NonZeroUsize::new(1).unwrap();
+    let mut delivery = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(1).unwrap(),
+        TrackingRecovery::new(1).unwrap(),
+        FinalizationJournal::new(1).unwrap(),
+    );
+    let consumer = FinalizationReportingConsumer::new(
+        Reporter,
+        Duration::from_secs(1),
+        FinalizationRetryPolicy::new(Duration::from_secs(1), Duration::from_secs(1), 1).unwrap(),
+    )
+    .unwrap();
+    let mut owners = RouterShutdownOwners {
+        namespaces: &namespaces,
+        admission: &budget,
+        destinations: &registry,
+        delivery: &mut delivery,
+    };
+    let clock = ManualClock::new(Instant::now(), 0);
+    let mut cx = Context::from_waker(Waker::noop());
+    let mut deadline: DeadlineFuture = Box::pin(std::future::pending());
+    let turn = owners.drive_registered_reporting(
+        &mut cx,
+        &mut deadline,
+        &clock,
+        &Timer(slots.clone()),
+        Duration::from_secs(1),
+        &consumer,
+    );
+    assert!(matches!(
+        turn,
+        ReportingRouterShutdownStep::Step {
+            scheduling: Ok(()),
+            ..
+        }
+    ));
+    assert!(owners.snapshot().is_drained());
+    assert_eq!(slots.load(Ordering::SeqCst), 0);
+    assert!(matches!(
+        owners.drive_registered_reporting(
+            &mut cx,
+            &mut deadline,
+            &clock,
+            &Timer(slots.clone()),
+            Duration::from_secs(1),
+            &consumer
+        ),
+        ReportingRouterShutdownStep::Drained
+    ));
+    assert_eq!(slots.load(Ordering::SeqCst), 0);
+}

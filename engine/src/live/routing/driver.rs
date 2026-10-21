@@ -392,6 +392,11 @@ impl DeliveryDriver {
     pub fn close(&mut self) {
         self.closed = true;
         self.supervisor.close();
+        // Shutdown may close immediately after a reporting turn allocated its
+        // maintenance timer. A drained owner has no reason to retain that slot.
+        if self.snapshot().is_drained() {
+            self.retry_timer = None;
+        }
     }
 
     /// Fence worker queues and check all owned delivery responsibilities, not

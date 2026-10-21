@@ -93,6 +93,20 @@ pub enum RegisteredRouterShutdownStep {
     Step(RegisteredDeliveryDrive),
 }
 
+/// A shutdown turn preserves delivery, timer and reporting outcomes separately.
+#[derive(Debug)]
+#[must_use]
+pub enum ReportingRouterShutdownStep {
+    Drained,
+    DeadlineReached,
+    Step {
+        delivery: RegisteredDeliveryDrive,
+        scheduling: Result<(), crate::live::model::error::ErrorCode>,
+        reporting:
+            Result<super::reporting::ReportingStep, super::reporting::ReportingCoordinatorError>,
+    },
+}
+
 /// Borrows the real owners rather than constructing parallel lifecycle state.
 pub struct RouterShutdownOwners<'a> {
     pub namespaces: &'a AdmissionNamespaces,
@@ -101,6 +115,53 @@ pub struct RouterShutdownOwners<'a> {
     pub delivery: &'a mut DeliveryDriver,
 }
 impl RouterShutdownOwners<'_> {
+    /// Fence admission, reconcile one queue, and process at most one terminal
+    /// report using the driver's existing timer and journal. Deadline expiry
+    /// performs no delivery, timer allocation or reporter call. Failed reporting
+    /// retains journal ownership; scheduling failure remains independently visible.
+    /// The caller must retain these owners and continue servicing completions.
+    #[allow(clippy::too_many_arguments)]
+    pub fn drive_registered_reporting<R: super::reporting::FinalizationReporter>(
+        &mut self,
+        cx: &mut Context<'_>,
+        deadline: &mut DeadlineFuture,
+        clock: &dyn crate::live::foundation::MonotonicClock,
+        timer: &dyn super::admission::DeadlineTimer,
+        interval: std::time::Duration,
+        consumer: &super::reporting::FinalizationReportingConsumer<R>,
+    ) -> ReportingRouterShutdownStep {
+        let _ = self.admission.poll_shutdown(cx);
+        let _ = self.namespaces.poll_shutdown(cx);
+        let _ = self.destinations.poll_shutdown(cx);
+        if self.snapshot().is_drained() {
+            return ReportingRouterShutdownStep::Drained;
+        }
+        if deadline.as_mut().poll(cx).is_ready() {
+            return ReportingRouterShutdownStep::DeadlineReached;
+        }
+        let (delivery, scheduling, reporting) = self.delivery.drive_registered_reporting(
+            self.destinations,
+            cx,
+            clock,
+            timer,
+            interval,
+            consumer,
+        );
+        self.close_reconciled_delivery(&delivery, cx);
+        ReportingRouterShutdownStep::Step {
+            delivery,
+            scheduling,
+            reporting,
+        }
+    }
+
+    fn close_reconciled_delivery(&mut self, turn: &RegisteredDeliveryDrive, cx: &Context<'_>) {
+        if !self.delivery.is_closed() && turn.registry.attachment == Ok(false) {
+            self.delivery.close();
+            cx.waker().wake_by_ref();
+        }
+    }
+
     /// Fence admission immediately, then reconcile at most one unclaimed queue
     /// and run one delivery turn. The driver stays open for worker attachment
     /// until the closed registry has no unclaimed queues. This also permits
@@ -125,11 +186,7 @@ impl RouterShutdownOwners<'_> {
             return RegisteredRouterShutdownStep::DeadlineReached;
         }
         let turn = self.delivery.drive_registered(self.destinations, cx);
-        if !self.delivery.is_closed() && turn.registry.attachment == Ok(false) {
-            self.delivery.close();
-            // Observe closure/drain on another bounded turn even for empty IO.
-            cx.waker().wake_by_ref();
-        }
+        self.close_reconciled_delivery(&turn, cx);
         RegisteredRouterShutdownStep::Step(turn)
     }
 
