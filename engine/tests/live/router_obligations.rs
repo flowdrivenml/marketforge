@@ -3145,3 +3145,166 @@ fn namespace_snapshot_bounds_order_retirement_rollback_and_exhaustion() {
     );
     assert!(!sample.namespaces[0].retired);
 }
+
+#[test]
+fn commitment_owner_fence_rejects_omission_substitution_and_descriptor_forgery() {
+    use marketforge_engine::live::routing::{
+        destination::DestinationCapacity, queue::DestinationQueue,
+    };
+    for mutation in 0..5 {
+        let (registry, batch, mut tracker, mut plan, prepared, obligations) = validation_fixture();
+        drop(prepared);
+        tracker.abort_prepared(obligations).unwrap();
+        let foreign = DestinationQueue::new(
+            DestinationCapacity::new(plan.required[0].descriptor.capacity, 10).unwrap(),
+        );
+        match mutation {
+            0 => {
+                plan.required.pop();
+            }
+            1 => {
+                plan.required[0].queue = Some(foreign.clone());
+            }
+            2 => {
+                plan.required[0].descriptor.policy = DeliveryPolicy::Durable;
+            }
+            3 => {
+                plan.required[0].descriptor.kind = DestinationKind::Retention;
+            }
+            4 => {
+                plan.required[1] = plan.required[0].clone();
+            }
+            _ => unreachable!(),
+        }
+        let prepared = ready(FanoutAdmissionCoordinator::prepare(
+            &plan,
+            &batch,
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            None,
+        ))
+        .unwrap();
+        let obligations = prepare_routing_obligations(&mut tracker, &plan).unwrap();
+        let mut recovery = TrackingRecovery::new(10).unwrap();
+        let outcome = FanoutCommitmentCoordinator::commit_tracked_with_recovery(
+            &registry,
+            &mut tracker,
+            &mut recovery,
+            &plan,
+            prepared,
+            obligations,
+            batch.clone(),
+        );
+        assert!(
+            matches!(outcome, TrackedFanoutResult::Rejected {
+            batch: ref returned,
+            reason: TrackedFanoutError::Precommit(FanoutCommitmentError::DestinationMismatch),
+        } if returned == &batch),
+            "mutation {mutation}: {outcome:?}"
+        );
+        assert!(tracker.is_empty());
+        assert!(foreign.try_dequeue().is_none());
+        assert_eq!(foreign.capacity().usage().occupied_events, 0);
+        for id in [1, 2] {
+            let queue = registry.peek_queue(DestinationId(id)).unwrap();
+            assert!(queue.try_dequeue().is_none());
+            assert_eq!(queue.capacity().usage().occupied_events, 0);
+        }
+    }
+}
+
+#[test]
+fn commitment_owner_fence_applies_to_untracked_and_optional_entry_points() {
+    use marketforge_engine::live::routing::router::{BestEffortError, FanoutCommitResult};
+    let (registry, batch, mut tracker, mut plan, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    plan.required.pop();
+    let prepared = ready(FanoutAdmissionCoordinator::prepare(
+        &plan,
+        &batch,
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        None,
+    ))
+    .unwrap();
+    assert!(
+        matches!(FanoutCommitmentCoordinator::commit(&registry, prepared, batch.clone()),
+        FanoutCommitResult::Rejected(rejection)
+        if rejection.reason == FanoutCommitmentError::DestinationMismatch && rejection.batch == batch)
+    );
+    for id in [1, 2] {
+        assert!(
+            registry
+                .peek_queue(DestinationId(id))
+                .unwrap()
+                .try_dequeue()
+                .is_none()
+        );
+    }
+    let optional = RouterRegistry::new();
+    let first = add_optional_queue(&optional, 1);
+    let second = add_optional_queue(&optional, 2);
+    let mut plan = optional.plan(&batch).unwrap();
+    plan.best_effort.pop();
+    assert_eq!(
+        optional.try_best_effort(&plan, &batch).unwrap_err(),
+        BestEffortError::InvalidPlan(FanoutCommitmentError::DestinationMismatch)
+    );
+    assert!(first.try_dequeue().is_none());
+    assert!(second.try_dequeue().is_none());
+    // An untouched authoritative plan still transfers the shared batch to both.
+    let plan = optional.plan(&batch).unwrap();
+    assert_eq!(
+        optional
+            .try_best_effort(&plan, &batch)
+            .unwrap()
+            .queued
+            .len(),
+        2
+    );
+    for queue in [first, second] {
+        let queued = queue.try_dequeue().unwrap();
+        assert!(Arc::ptr_eq(&queued.batch().events()[0], &batch.events()[0]));
+    }
+}
+
+#[test]
+fn commitment_owner_fence_rejects_obligation_policy_changed_after_preparation() {
+    for recovery_aware in [false, true] {
+        let (registry, batch, mut tracker, mut plan, prepared, obligations) = validation_fixture();
+        tracker.abort_prepared(obligations).unwrap();
+        // Both the public plan and obligations agree on the forged policy;
+        // only the prepared owner retains the actual registered descriptor.
+        plan.required[0].descriptor.policy = DeliveryPolicy::Durable;
+        let obligations = prepare_routing_obligations(&mut tracker, &plan).unwrap();
+        let result = if recovery_aware {
+            FanoutCommitmentCoordinator::commit_tracked_with_recovery(
+                &registry,
+                &mut tracker,
+                &mut TrackingRecovery::new(10).unwrap(),
+                &plan,
+                prepared,
+                obligations,
+                batch.clone(),
+            )
+        } else {
+            FanoutCommitmentCoordinator::commit_tracked(
+                &registry,
+                &mut tracker,
+                &plan,
+                prepared,
+                obligations,
+                batch.clone(),
+            )
+        };
+        assert!(matches!(result, TrackedFanoutResult::Rejected {
+            reason: TrackedFanoutError::Validation(RoutingObligationValidationError::DeliveryPolicyMismatch),
+            batch: ref returned,
+        } if returned == &batch));
+        assert!(tracker.is_empty());
+        for id in [1, 2] {
+            let queue = registry.peek_queue(DestinationId(id)).unwrap();
+            assert!(queue.try_dequeue().is_none());
+            assert_eq!(queue.capacity().usage().occupied_events, 0);
+        }
+    }
+}

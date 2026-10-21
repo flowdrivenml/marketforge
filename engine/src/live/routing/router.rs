@@ -208,6 +208,7 @@ pub struct FanoutCommitmentRejection {
 #[derive(Debug)]
 pub struct PreparedDestination {
     id: DestinationId,
+    descriptor: DestinationDescriptor,
     queue: DestinationQueue,
     reservation: CapacityReservation,
 }
@@ -392,6 +393,15 @@ impl RouterRegistry {
             return Err(invalid(FanoutCommitmentError::CursorMismatch));
         }
         // Validate the entire public plan before the first irreversible write.
+        if plan.best_effort.len()
+            != state
+                .destinations
+                .values()
+                .filter(|entry| entry.descriptor.policy == DeliveryPolicy::BestEffort)
+                .count()
+        {
+            return Err(invalid(FanoutCommitmentError::DestinationMismatch));
+        }
         let mut seen = std::collections::HashSet::new();
         for entry in &plan.best_effort {
             let Some(current) = state.destinations.get(&entry.descriptor.id) else {
@@ -758,6 +768,7 @@ impl FanoutAdmissionCoordinator {
                 AsyncCapacityAdmission::Reserved(reservation) => {
                     prepared.push(PreparedDestination {
                         id,
+                        descriptor: required.descriptor,
                         queue: queue.clone(),
                         reservation,
                     });
@@ -1360,12 +1371,39 @@ impl FanoutCommitmentCoordinator {
             return Err(FanoutCommitmentError::NoRequiredDestinations);
         }
 
+        Self::validate_prepared_owners(&state, prepared)
+    }
+
+    /// A public plan is untrusted input. Every required registered owner must
+    /// appear exactly once, with its actual descriptor and queue instance.
+    fn validate_prepared_owners(
+        state: &RouterRegistryState,
+        prepared: &PreparedFanout,
+    ) -> Result<(), FanoutCommitmentError> {
+        let expected = state
+            .destinations
+            .values()
+            .filter(|entry| entry.descriptor.policy != DeliveryPolicy::BestEffort)
+            .count();
+        if expected != prepared.destinations.len() {
+            return Err(FanoutCommitmentError::DestinationMismatch);
+        }
+        let mut seen = std::collections::HashSet::with_capacity(expected);
         for destination in &prepared.destinations {
-            if !state.destinations.contains_key(&destination.id) {
+            let Some(current) = state.destinations.get(&destination.id) else {
+                return Err(FanoutCommitmentError::DestinationMismatch);
+            };
+            if !seen.insert(destination.id)
+                || current.descriptor.policy == DeliveryPolicy::BestEffort
+                || current.descriptor != destination.descriptor
+                || !current
+                    .queue
+                    .as_ref()
+                    .is_some_and(|queue| queue.same_owner(&destination.queue))
+            {
                 return Err(FanoutCommitmentError::DestinationMismatch);
             }
         }
-
         Ok(())
     }
     fn commit_locked(
@@ -1411,13 +1449,8 @@ impl FanoutCommitmentCoordinator {
         // The registry state is retained under the read lock.
         // The commitment mutex prevents router-controlled changes.
 
-        for destination in &prepared.destinations {
-            if !state.destinations.contains_key(&destination.id) {
-                return FanoutCommitResult::Rejected(FanoutCommitmentRejection {
-                    batch,
-                    reason: FanoutCommitmentError::DestinationMismatch,
-                });
-            }
+        if let Err(reason) = Self::validate_prepared_owners(&state, &prepared) {
+            return FanoutCommitResult::Rejected(FanoutCommitmentRejection { batch, reason });
         }
 
         let through = batch.last_cursor().clone();
@@ -1745,6 +1778,18 @@ pub fn validate_routing_obligations(
         }
 
         if obligation.policy != planned.descriptor.policy {
+            return Err(RoutingObligationValidationError::DeliveryPolicyMismatch);
+        }
+
+        let owner = prepared
+            .destinations
+            .iter()
+            .find(|entry| entry.id == destination_id)
+            .ok_or(RoutingObligationValidationError::MissingObligation)?;
+        if obligation.kind != owner.descriptor.kind {
+            return Err(RoutingObligationValidationError::DestinationKindMismatch);
+        }
+        if obligation.policy != owner.descriptor.policy {
             return Err(RoutingObligationValidationError::DeliveryPolicyMismatch);
         }
 

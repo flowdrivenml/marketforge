@@ -145,6 +145,11 @@ pub struct DestinationQueue {
 }
 
 impl DestinationQueue {
+    /// Queue ownership identity, independent of equal capacity settings.
+    pub(crate) fn same_owner(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+
     pub fn new(capacity: DestinationCapacity) -> Self {
         Self {
             inner: Arc::new(QueueInner {
