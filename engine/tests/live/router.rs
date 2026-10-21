@@ -1518,3 +1518,58 @@ fn closed_driver_returns_ordered_preparation_without_commitment() {
     assert!(order.snapshot().pending_last.is_none());
     assert_eq!(order.next(), Some(batch().first_cursor().clone()));
 }
+
+#[test]
+fn router_observation_requires_closed_admission_and_has_no_runtime_effects() {
+    use marketforge_engine::live::{
+        foundation::resources::ResourceUsage,
+        routing::{
+            acknowledgement::{AcknowledgementTracker, FinalizationJournal},
+            driver::DeliveryDriver,
+            namespaces::AdmissionNamespaces,
+            ordered::OrderedAdmissionBudget,
+            shutdown::RouterDrainSnapshot,
+            supervisor::DeliverySupervisor,
+            tracking_recovery::TrackingRecovery,
+            worker::DestinationWorkers,
+        },
+    };
+    use std::num::NonZeroUsize;
+    let registry = RouterRegistry::new();
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    let limit = ResourceUsage {
+        items: 2,
+        bytes: 100_000,
+    };
+    let budget = OrderedAdmissionBudget::new(limit).unwrap();
+    let one = NonZeroUsize::new(1).unwrap();
+    let mut delivery = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(one), one),
+        AcknowledgementTracker::new(1).unwrap(),
+        TrackingRecovery::new(1).unwrap(),
+        FinalizationJournal::new(1).unwrap(),
+    );
+    let before = RouterDrainSnapshot::observe(&namespaces, &budget, &registry, &delivery);
+    assert_eq!(before.admission_limit, limit);
+    assert_eq!(before.admission_usage, ResourceUsage::default());
+    assert!(!before.admission_closed);
+    assert!(!before.is_drained());
+    assert_eq!(
+        before,
+        RouterDrainSnapshot::observe(&namespaces, &budget, &registry, &delivery)
+    );
+    assert!(!delivery.is_closed());
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    assert!(namespaces.poll_shutdown(&mut cx).is_ready());
+    registry.shutdown();
+    delivery.close();
+    // Every other owner is closed and empty. Empty admission is still open.
+    let open = RouterDrainSnapshot::observe(&namespaces, &budget, &registry, &delivery);
+    assert!(open.delivery.is_drained());
+    assert!(!open.is_drained());
+    budget.close();
+    let closed = RouterDrainSnapshot::observe(&namespaces, &budget, &registry, &delivery);
+    assert!(closed.admission_closed);
+    assert!(closed.is_drained());
+    assert!(!open.admission_closed); // Earlier observations are owned and stable.
+}

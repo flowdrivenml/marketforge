@@ -16,15 +16,37 @@ use std::task::Context;
 pub struct RouterDrainSnapshot {
     pub namespaces: AdmissionNamespacesSnapshot,
     pub admission_usage: ResourceUsage,
+    pub admission_limit: ResourceUsage,
+    pub admission_closed: bool,
     pub destinations: RouterSnapshot,
     pub delivery: DeliverySupervisionSnapshot,
 }
 impl RouterDrainSnapshot {
+    /// Read-only bounded observation for control/runtime consumers. Individual
+    /// owners are observed consistently; this is not a cross-owner transaction.
+    /// Sampling neither closes admission nor polls adapters or delivery work.
+    pub fn observe(
+        namespaces: &AdmissionNamespaces,
+        admission: &OrderedAdmissionBudget,
+        destinations: &RouterRegistry,
+        delivery: &DeliveryDriver,
+    ) -> Self {
+        let budget = admission.snapshot();
+        Self {
+            namespaces: namespaces.snapshot(),
+            admission_usage: budget.usage,
+            admission_limit: budget.limit,
+            admission_closed: budget.closed,
+            destinations: destinations.snapshot(),
+            delivery: delivery.snapshot(),
+        }
+    }
     /// Closure and all in-process responsibilities must clear, including
     /// retired namespaces and externally held queue permits. No durability or
     /// end-consumer processing guarantee is established by this observation.
     pub fn is_drained(&self) -> bool {
-        self.namespaces.shutting_down
+        self.admission_closed
+            && self.namespaces.shutting_down
             && self
                 .namespaces
                 .namespaces
@@ -70,12 +92,12 @@ pub struct RouterShutdownOwners<'a> {
 }
 impl RouterShutdownOwners<'_> {
     pub fn snapshot(&self) -> RouterDrainSnapshot {
-        RouterDrainSnapshot {
-            namespaces: self.namespaces.snapshot(),
-            admission_usage: self.admission.usage(),
-            destinations: self.destinations.snapshot(),
-            delivery: self.delivery.snapshot(),
-        }
+        RouterDrainSnapshot::observe(
+            self.namespaces,
+            self.admission,
+            self.destinations,
+            self.delivery,
+        )
     }
 
     /// Close admissions even on expiry. Expiry does not call adapters or retry

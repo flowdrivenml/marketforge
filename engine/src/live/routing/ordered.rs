@@ -218,6 +218,10 @@ impl OrderedAdmissionBudget {
         self.budget.usage()
     }
 
+    pub fn snapshot(&self) -> crate::live::foundation::resources::ResourceBudgetSnapshot {
+        self.budget.snapshot()
+    }
+
     /// Stop new preparations without revoking already acquired responsibility.
     /// Runtime shutdown must also close namespaces and cancel waiting contexts.
     pub fn close(&self) {

@@ -11,6 +11,13 @@ pub struct ResourceUsage {
     pub items: usize,
     pub bytes: usize,
 }
+/// One consistent observation of mandatory accounting, independent of metrics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResourceBudgetSnapshot {
+    pub limit: ResourceUsage,
+    pub usage: ResourceUsage,
+    pub closed: bool,
+}
 #[derive(Debug)]
 struct State {
     limit: ResourceUsage,
@@ -66,6 +73,14 @@ impl ResourceBudget {
     pub fn usage(&self) -> ResourceUsage {
         self.0.lock().unwrap_or_else(|e| e.into_inner()).used
     }
+    pub fn snapshot(&self) -> ResourceBudgetSnapshot {
+        let state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        ResourceBudgetSnapshot {
+            limit: state.limit,
+            usage: state.used,
+            closed: state.closed,
+        }
+    }
     /// Stop new admission without revoking outstanding obligations.
     pub fn close(&self) {
         self.0.lock().unwrap_or_else(|e| e.into_inner()).closed = true;
@@ -120,6 +135,32 @@ impl Drop for ResourceReservation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn snapshot_preserves_limits_closure_and_outstanding_charges() {
+        let limit = ResourceUsage { items: 2, bytes: 8 };
+        let budget = ResourceBudget::new(limit).unwrap();
+        let initial = budget.snapshot();
+        assert_eq!(initial.limit, limit);
+        assert_eq!(initial.usage, ResourceUsage::default());
+        assert!(!initial.closed);
+        let amount = ResourceUsage { items: 1, bytes: 4 };
+        let reservation = budget.reserve(amount).unwrap();
+        budget.close();
+        let held = budget.snapshot();
+        assert_eq!(held.usage, amount);
+        assert!(held.closed);
+        assert_eq!(held.limit, limit);
+        assert!(matches!(
+            budget.reserve(amount),
+            Err(ErrorCode::Unavailable)
+        ));
+        drop(reservation);
+        assert_eq!(budget.snapshot().usage, ResourceUsage::default());
+        assert!(budget.snapshot().closed);
+        assert_eq!(held.usage, amount);
+        assert!(!initial.closed);
+    }
+
     #[test]
     fn shutdown_wakes_latest_coordinator_only_after_final_charge_outside_lock() {
         use std::sync::atomic::{AtomicUsize, Ordering};
