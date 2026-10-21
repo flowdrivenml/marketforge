@@ -900,8 +900,8 @@ fn registry_claim_next_worker_orders_active_ids_and_skips_existing_leases() {
     assert!(registry.claim_worker(DestinationId(1)).is_ok());
     drop(second);
     registry.shutdown();
-    // Closed membership can still be claimed by the shutdown coordinator.
-    assert!(registry.claim_next_worker().unwrap().is_some());
+    // Closed and fully drained queues need no replacement worker.
+    assert!(registry.claim_next_worker().unwrap().is_none());
 }
 
 #[test]
@@ -1727,4 +1727,277 @@ fn router_observation_requires_closed_admission_and_has_no_runtime_effects() {
     assert!(closed.admission_closed);
     assert!(closed.is_drained());
     assert!(!open.admission_closed); // Earlier observations are owned and stable.
+}
+
+#[test]
+fn registered_router_shutdown_reconciles_capacity_before_closing_delivery() {
+    use marketforge_engine::live::{
+        foundation::resources::ResourceUsage,
+        routing::{
+            acknowledgement::{AcknowledgementTracker, FinalizationJournal},
+            admission::DeadlineFuture,
+            destination::DestinationCapacity,
+            driver::{DeliveryDriver, RegistryWorkerSyncError},
+            namespaces::AdmissionNamespaces,
+            ordered::OrderedAdmissionBudget,
+            queue::DestinationQueue,
+            shutdown::{RegisteredRouterShutdownStep, RouterShutdownOwners},
+            supervisor::DeliverySupervisor,
+            tracking_recovery::TrackingRecovery,
+            worker::{DestinationWorkers, WorkerRegistrationError},
+        },
+    };
+    use std::{
+        num::NonZeroUsize,
+        sync::atomic::{AtomicUsize, Ordering},
+        task::{Context, Wake, Waker},
+    };
+    #[derive(Default)]
+    struct Counter(AtomicUsize);
+    impl Wake for Counter {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let registry = RouterRegistry::new();
+    let mut queues = Vec::new();
+    for id in [1, 2] {
+        let adapter = destination(id, DestinationKind::Publication, DeliveryPolicy::Required);
+        let queue = DestinationQueue::new(
+            DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap(),
+        );
+        registry.register_queue(adapter, queue.clone()).unwrap();
+        queues.push(queue);
+    }
+    queues[0].try_enqueue(batch()).unwrap();
+    let held = queues[0].try_dequeue().unwrap();
+    queues[1].try_enqueue(batch()).unwrap();
+    let held_second = queues[1].try_dequeue().unwrap();
+    // Exercise retired queues before the active registry, with only one slot.
+    registry.unregister(DestinationId(1)).unwrap();
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    namespaces.register(batch().first_cursor().clone()).unwrap();
+    let budget = OrderedAdmissionBudget::new(ResourceUsage {
+        items: 10,
+        bytes: 100_000,
+    })
+    .unwrap();
+    let limit = NonZeroUsize::new(1).unwrap();
+    let mut delivery = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(2).unwrap(),
+        TrackingRecovery::new(2).unwrap(),
+        FinalizationJournal::new(2).unwrap(),
+    );
+    let mut owners = RouterShutdownOwners {
+        namespaces: &namespaces,
+        admission: &budget,
+        destinations: &registry,
+        delivery: &mut delivery,
+    };
+    let counter = Arc::new(Counter::default());
+    let waker = Waker::from(counter.clone());
+    let mut cx = Context::from_waker(&waker);
+    let mut expired: DeadlineFuture = Box::pin(std::future::ready(()));
+    assert!(matches!(
+        owners.drive_registered(&mut cx, &mut expired),
+        RegisteredRouterShutdownStep::DeadlineReached
+    ));
+    let snapshot = owners.snapshot();
+    assert!(
+        snapshot.admission_closed
+            && snapshot.namespaces.shutting_down
+            && snapshot.destinations.shutting_down
+    );
+    assert!(snapshot.delivery.workers.workers.is_empty());
+    assert!(!owners.delivery.is_closed());
+    assert!(!snapshot.is_drained());
+    let mut later: DeadlineFuture = Box::pin(std::future::pending());
+    let RegisteredRouterShutdownStep::Step(turn) = owners.drive_registered(&mut cx, &mut later)
+    else {
+        panic!("attach retired queue")
+    };
+    assert_eq!(turn.registry.attachment, Ok(true));
+    assert_eq!(
+        owners.snapshot().delivery.workers.workers[0].0,
+        DestinationId(1)
+    );
+    drop(turn);
+    let before = counter.0.load(Ordering::SeqCst);
+    for _ in 0..2 {
+        let RegisteredRouterShutdownStep::Step(turn) = owners.drive_registered(&mut cx, &mut later)
+        else {
+            panic!("retain capacity responsibility")
+        };
+        assert_eq!(
+            turn.registry.attachment,
+            Err(RegistryWorkerSyncError::Scheduler(
+                WorkerRegistrationError::Full
+            ))
+        );
+        assert!(turn.delivery.delivery.is_pending());
+        assert!(!owners.delivery.is_closed());
+    }
+    assert_eq!(counter.0.load(Ordering::SeqCst), before);
+    drop(held);
+    let RegisteredRouterShutdownStep::Step(turn) = owners.drive_registered(&mut cx, &mut later)
+    else {
+        panic!("reconcile after charge release")
+    };
+    assert_eq!(turn.registry.workers_reaped, 1);
+    assert_eq!(turn.registry.retired_reaped, 1);
+    assert_eq!(turn.registry.attachment, Ok(true));
+    assert_eq!(
+        owners.snapshot().delivery.workers.workers[0].0,
+        DestinationId(2)
+    );
+    assert!(!owners.delivery.is_closed());
+    drop(turn);
+    drop(held_second);
+    let before = counter.0.load(Ordering::SeqCst);
+    let RegisteredRouterShutdownStep::Step(turn) = owners.drive_registered(&mut cx, &mut later)
+    else {
+        panic!("finish reconciliation")
+    };
+    assert_eq!(turn.registry.attachment, Ok(false));
+    assert!(owners.delivery.is_closed());
+    assert!(counter.0.load(Ordering::SeqCst) > before);
+    drop(turn);
+    assert!(matches!(
+        owners.drive_registered(&mut cx, &mut later),
+        RegisteredRouterShutdownStep::Drained
+    ));
+    assert!(matches!(
+        owners.drive_registered(&mut cx, &mut expired),
+        RegisteredRouterShutdownStep::Drained
+    ));
+    assert!(
+        queues
+            .iter()
+            .all(|queue| queue.observe().capacity.occupied_events == 0)
+    );
+}
+
+#[test]
+fn registered_router_shutdown_delivers_committed_queues_through_completion_and_reporting() {
+    use marketforge_engine::live::{
+        foundation::{CancellationToken, clock::ManualClock, resources::ResourceUsage},
+        model::delivery::{DeliveryStage, DeliveryStatus},
+        ports::routing::DestinationCompletion,
+        routing::{
+            acknowledgement::{AcknowledgementTracker, FinalizationJournal},
+            admission::{AdmissionContext, DeadlineFuture},
+            destination::DestinationCapacity,
+            driver::DeliveryDriver,
+            namespaces::AdmissionNamespaces,
+            ordered::{OrderedAdmissionBudget, OrderedCommitOutcome},
+            queue::DestinationQueue,
+            shutdown::{RegisteredRouterShutdownStep, RouterShutdownOwners},
+            supervisor::{DeliverySupervisor, SupervisionStep},
+            tracking_recovery::TrackingRecovery,
+            worker::DestinationWorkers,
+        },
+    };
+    use std::{
+        future::Future,
+        num::NonZeroUsize,
+        task::{Context, Poll, Waker},
+        time::{Duration, Instant},
+    };
+    let registry = RouterRegistry::new();
+    for id in [1, 2] {
+        let adapter = destination(id, DestinationKind::Publication, DeliveryPolicy::Required);
+        let queue = DestinationQueue::new(
+            DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap(),
+        );
+        registry.register_queue(adapter, queue).unwrap();
+    }
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    namespaces.register(batch().first_cursor().clone()).unwrap();
+    let budget = OrderedAdmissionBudget::new(ResourceUsage {
+        items: 10,
+        bytes: 100_000,
+    })
+    .unwrap();
+    let clock = Arc::new(ManualClock::new(Instant::now(), 0));
+    let mut cx = Context::from_waker(Waker::noop());
+    let mut future = Box::pin(budget.prepare(
+        &registry,
+        &namespaces,
+        batch(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        clock.clone(),
+        None,
+    ));
+    let Poll::Ready(Ok(prepared)) = future.as_mut().poll(&mut cx) else {
+        panic!("available capacity")
+    };
+    drop(future);
+    let limit = NonZeroUsize::new(1).unwrap();
+    let mut delivery = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(2).unwrap(),
+        TrackingRecovery::new(2).unwrap(),
+        FinalizationJournal::new(2).unwrap(),
+    );
+    let Ok((OrderedCommitOutcome::Tracked(_), _)) = delivery.commit_ordered(prepared) else {
+        panic!("commit required delivery")
+    };
+    assert_eq!(delivery.snapshot().tracked_obligations, 2);
+    assert!(delivery.snapshot().workers.workers.is_empty());
+    let mut owners = RouterShutdownOwners {
+        namespaces: &namespaces,
+        admission: &budget,
+        destinations: &registry,
+        delivery: &mut delivery,
+    };
+    let mut deadline: DeadlineFuture = Box::pin(std::future::pending());
+    let mut completions = Vec::new();
+    let mut reported = 0;
+    let mut drained = false;
+    // Finite deterministic scheduler: two queues exceed the one-worker bound.
+    for _ in 0..12 {
+        match owners.drive_registered(&mut cx, &mut deadline) {
+            RegisteredRouterShutdownStep::Drained => {
+                drained = true;
+                break;
+            }
+            RegisteredRouterShutdownStep::DeadlineReached => panic!("pending deadline"),
+            RegisteredRouterShutdownStep::Step(turn) => {
+                if let Poll::Ready(SupervisionStep::Retained(_)) = &turn.delivery.delivery {
+                    let id = owners.snapshot().delivery.workers.workers[0].0;
+                    assert!(!completions.contains(&id));
+                    owners
+                        .delivery
+                        .apply_completion(&DestinationCompletion {
+                            destination: id,
+                            through: batch().last_cursor().clone(),
+                            status: DeliveryStatus::Progress(DeliveryStage::Delivered),
+                        })
+                        .unwrap();
+                    completions.push(id);
+                }
+                // Terminal output owns its payload charge until dropped.
+                drop(turn);
+                if let Some(claim) = owners
+                    .delivery
+                    .journal_mut()
+                    .claim_next(clock.as_ref(), Duration::from_secs(1))
+                    .unwrap()
+                {
+                    owners
+                        .delivery
+                        .journal_mut()
+                        .acknowledge(claim.record.obligation.id, claim.token, clock.as_ref())
+                        .unwrap();
+                    reported += 1;
+                }
+            }
+        }
+    }
+    assert!(drained);
+    assert_eq!(completions, vec![DestinationId(1), DestinationId(2)]);
+    assert_eq!(reported, 2);
+    assert!(owners.snapshot().is_drained());
+    assert_eq!(owners.snapshot().delivery.tracked_obligations, 0);
 }

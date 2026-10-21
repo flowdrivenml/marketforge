@@ -2,7 +2,7 @@
 //! Runtime scheduling retains responsibility for completions and retry timers.
 use super::{
     admission::DeadlineFuture,
-    driver::{DeliveryDrive, DeliveryDriver},
+    driver::{DeliveryDrive, DeliveryDriver, RegisteredDeliveryDrive},
     namespaces::{AdmissionNamespaces, AdmissionNamespacesSnapshot},
     ordered::OrderedAdmissionBudget,
     router::RouterRegistry,
@@ -83,6 +83,16 @@ pub enum RouterShutdownStep {
     Step(DeliveryDrive),
 }
 
+#[derive(Debug)]
+#[must_use]
+pub enum RegisteredRouterShutdownStep {
+    Drained,
+    DeadlineReached,
+    /// Includes attachment/capacity failures; retain the owners and arrange a
+    /// notification or bounded retry rather than spinning on a blocked turn.
+    Step(RegisteredDeliveryDrive),
+}
+
 /// Borrows the real owners rather than constructing parallel lifecycle state.
 pub struct RouterShutdownOwners<'a> {
     pub namespaces: &'a AdmissionNamespaces,
@@ -91,6 +101,38 @@ pub struct RouterShutdownOwners<'a> {
     pub delivery: &'a mut DeliveryDriver,
 }
 impl RouterShutdownOwners<'_> {
+    /// Fence admission immediately, then reconcile at most one unclaimed queue
+    /// and run one delivery turn. The driver stays open for worker attachment
+    /// until the closed registry has no unclaimed queues. This also permits
+    /// capacity-limited schedulers to drain and reap workers between attachments.
+    ///
+    /// Expiry does not attach workers or poll adapters. Keep these owners alive
+    /// to resume with another deadline; reporting and correlated completion
+    /// remain the runtime's responsibility. Existing externally claimed queues
+    /// must still be driven by their owner and remain visible in the snapshot.
+    pub fn drive_registered(
+        &mut self,
+        cx: &mut Context<'_>,
+        deadline: &mut DeadlineFuture,
+    ) -> RegisteredRouterShutdownStep {
+        let _ = self.admission.poll_shutdown(cx);
+        let _ = self.namespaces.poll_shutdown(cx);
+        let _ = self.destinations.poll_shutdown(cx);
+        if self.snapshot().is_drained() {
+            return RegisteredRouterShutdownStep::Drained;
+        }
+        if deadline.as_mut().poll(cx).is_ready() {
+            return RegisteredRouterShutdownStep::DeadlineReached;
+        }
+        let turn = self.delivery.drive_registered(self.destinations, cx);
+        if !self.delivery.is_closed() && turn.registry.attachment == Ok(false) {
+            self.delivery.close();
+            // Observe closure/drain on another bounded turn even for empty IO.
+            cx.waker().wake_by_ref();
+        }
+        RegisteredRouterShutdownStep::Step(turn)
+    }
+
     pub fn snapshot(&self) -> RouterDrainSnapshot {
         RouterDrainSnapshot::observe(
             self.namespaces,
@@ -100,6 +142,8 @@ impl RouterShutdownOwners<'_> {
         )
     }
 
+    /// Requires all registry queues to have been attached before entry; use
+    /// `drive_registered` when shutdown must reconcile unclaimed queues.
     /// Close admissions even on expiry. Expiry does not call adapters or retry
     /// tracking. Retain these owners to resume under a subsequent deadline.
     /// Namespace/worker/capacity wakeups notify the coordinator; reporting and

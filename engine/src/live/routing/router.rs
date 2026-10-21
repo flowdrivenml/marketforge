@@ -606,6 +606,8 @@ impl RouterRegistry {
     /// deterministic order. The scan is bounded by the registry destination limit.
     /// Direct adapters without queues are not worker candidates. No adapter code
     /// is invoked under the membership fence. Existing worker leases are skipped.
+    /// During shutdown, fully drained queues are skipped: reaping their worker
+    /// must not immediately recreate it and prevent shutdown convergence.
     pub fn claim_next_worker(
         &self,
     ) -> Result<Option<super::worker::DestinationWorker>, RegistryWorkerError> {
@@ -617,6 +619,18 @@ impl RouterRegistry {
             let Some(queue) = entry.queue.clone() else {
                 continue;
             };
+            if state.shutting_down {
+                let observation = queue.observe();
+                if observation.queue.closed
+                    && observation.queue.queued_batches == 0
+                    && observation.capacity.shutting_down
+                    && observation.capacity.occupied_events == 0
+                    && observation.capacity.occupied_bytes == 0
+                    && observation.capacity.waiting_operations == 0
+                {
+                    continue;
+                }
+            }
             match DestinationWorker::from_registered(
                 queue,
                 entry.destination.clone(),
