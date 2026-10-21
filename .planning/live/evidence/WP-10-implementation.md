@@ -260,5 +260,4 @@ and no-subscriber admission remain unsupported by the required coordinator.
 Completion correlation, owner-lifetime recovery/payload retention, observations
 and deadline shutdown remain incomplete; earlier foundational gates are unchanged.
 No package accepted. Next authorized/executable work: WP-10 completion. Further
-autonomous implementation is safe. Checkpoint: implementation commit containing
-this report (hash recorded in the following documentation checkpoint).
+autonomous implementation is safe. Checkpoint: `2fba098` (optional fan-out, witnesses and evidence).

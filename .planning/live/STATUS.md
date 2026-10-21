@@ -39,7 +39,7 @@
 
 ### Autonomous continuation — 2026-10-21
 
-Latest continuation adds ordered nonwaiting best-effort fan-out. Full/closed
+Checkpoint `2fba098` adds ordered nonwaiting best-effort fan-out. Full/closed
 optional queues produce individual outcomes without capacity waiters; required
 tracking is preserved and the namespace order permit covers optional writes.
 Three deterministic consumer witnesses pass. Final full Live verification exits
