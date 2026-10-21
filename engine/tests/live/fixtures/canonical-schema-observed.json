@@ -1,0 +1,641 @@
+{
+  "columns": [
+    {
+      "column_name": "stream_id",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 1,
+      "table_name": "event_identities",
+      "udt_name": "text"
+    },
+    {
+      "column_name": "log_epoch",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "numeric_precision": 20,
+      "numeric_scale": 0,
+      "ordinal_position": 2,
+      "table_name": "event_identities",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "event_offset",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "numeric_precision": 20,
+      "numeric_scale": 0,
+      "ordinal_position": 3,
+      "table_name": "event_identities",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "registered_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 4,
+      "table_name": "event_identities",
+      "udt_name": "timestamptz"
+    },
+    {
+      "column_name": "stream_id",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 1,
+      "table_name": "events",
+      "udt_name": "text"
+    },
+    {
+      "column_name": "log_epoch",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "numeric_precision": 20,
+      "numeric_scale": 0,
+      "ordinal_position": 2,
+      "table_name": "events",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "event_offset",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "numeric_precision": 20,
+      "numeric_scale": 0,
+      "ordinal_position": 3,
+      "table_name": "events",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "record_version",
+      "data_type": "smallint",
+      "is_nullable": "NO",
+      "numeric_precision": 16,
+      "numeric_scale": 0,
+      "ordinal_position": 4,
+      "table_name": "events",
+      "udt_name": "int2"
+    },
+    {
+      "column_name": "payload_kind",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 5,
+      "table_name": "events",
+      "udt_name": "text"
+    },
+    {
+      "column_name": "exchange_timestamp_ns",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "numeric_precision": 20,
+      "numeric_scale": 0,
+      "ordinal_position": 6,
+      "table_name": "events",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "received_timestamp_ns",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "numeric_precision": 20,
+      "numeric_scale": 0,
+      "ordinal_position": 7,
+      "table_name": "events",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "book_generation",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "numeric_precision": 20,
+      "numeric_scale": 0,
+      "ordinal_position": 8,
+      "table_name": "events",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "event_record",
+      "data_type": "jsonb",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 9,
+      "table_name": "events",
+      "udt_name": "jsonb"
+    },
+    {
+      "column_name": "recorded_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 10,
+      "table_name": "events",
+      "udt_name": "timestamptz"
+    },
+    {
+      "column_name": "stream_id",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 1,
+      "table_name": "l2_levels",
+      "udt_name": "text"
+    },
+    {
+      "column_name": "log_epoch",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "numeric_precision": 20,
+      "numeric_scale": 0,
+      "ordinal_position": 2,
+      "table_name": "l2_levels",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "event_offset",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "numeric_precision": 20,
+      "numeric_scale": 0,
+      "ordinal_position": 3,
+      "table_name": "l2_levels",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "level_ordinal",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "numeric_precision": 32,
+      "numeric_scale": 0,
+      "ordinal_position": 4,
+      "table_name": "l2_levels",
+      "udt_name": "int4"
+    },
+    {
+      "column_name": "side",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 5,
+      "table_name": "l2_levels",
+      "udt_name": "text"
+    },
+    {
+      "column_name": "action",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 6,
+      "table_name": "l2_levels",
+      "udt_name": "text"
+    },
+    {
+      "column_name": "price",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 7,
+      "table_name": "l2_levels",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "quantity_base",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 8,
+      "table_name": "l2_levels",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "quantity_quote",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 9,
+      "table_name": "l2_levels",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "quantity_contracts",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 10,
+      "table_name": "l2_levels",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "order_count",
+      "data_type": "numeric",
+      "is_nullable": "YES",
+      "numeric_precision": 20,
+      "numeric_scale": 0,
+      "ordinal_position": 11,
+      "table_name": "l2_levels",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "stream_id",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 1,
+      "table_name": "recording_coverage",
+      "udt_name": "text"
+    },
+    {
+      "column_name": "log_epoch",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "numeric_precision": 20,
+      "numeric_scale": 0,
+      "ordinal_position": 2,
+      "table_name": "recording_coverage",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "first_offset",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "numeric_precision": 20,
+      "numeric_scale": 0,
+      "ordinal_position": 3,
+      "table_name": "recording_coverage",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "last_offset",
+      "data_type": "numeric",
+      "is_nullable": "NO",
+      "numeric_precision": 20,
+      "numeric_scale": 0,
+      "ordinal_position": 4,
+      "table_name": "recording_coverage",
+      "udt_name": "numeric"
+    },
+    {
+      "column_name": "verified_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 5,
+      "table_name": "recording_coverage",
+      "udt_name": "timestamptz"
+    },
+    {
+      "column_name": "stream_id",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 1,
+      "table_name": "streams",
+      "udt_name": "text"
+    },
+    {
+      "column_name": "instrument_id",
+      "data_type": "bigint",
+      "is_nullable": "YES",
+      "numeric_precision": 64,
+      "numeric_scale": 0,
+      "ordinal_position": 2,
+      "table_name": "streams",
+      "udt_name": "int8"
+    },
+    {
+      "column_name": "stream_kind",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 3,
+      "table_name": "streams",
+      "udt_name": "text"
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO",
+      "numeric_precision": null,
+      "numeric_scale": null,
+      "ordinal_position": 4,
+      "table_name": "streams",
+      "udt_name": "timestamptz"
+    }
+  ],
+  "constraints": [
+    {
+      "definition": "NOT NULL event_offset",
+      "name": "event_identities_event_offset_not_null",
+      "table_name": "event_identities"
+    },
+    {
+      "definition": "NOT NULL log_epoch",
+      "name": "event_identities_log_epoch_not_null",
+      "table_name": "event_identities"
+    },
+    {
+      "definition": "PRIMARY KEY (stream_id, log_epoch, event_offset)",
+      "name": "event_identities_pkey",
+      "table_name": "event_identities"
+    },
+    {
+      "definition": "NOT NULL registered_at",
+      "name": "event_identities_registered_at_not_null",
+      "table_name": "event_identities"
+    },
+    {
+      "definition": "FOREIGN KEY (stream_id) REFERENCES live_canonical.streams(stream_id)",
+      "name": "event_identities_stream_id_fkey",
+      "table_name": "event_identities"
+    },
+    {
+      "definition": "NOT NULL stream_id",
+      "name": "event_identities_stream_id_not_null",
+      "table_name": "event_identities"
+    },
+    {
+      "definition": "CHECK (((log_epoch >= (0)::numeric) AND (log_epoch < '18446744073709551616'::numeric)))",
+      "name": "identity_epoch_uint64",
+      "table_name": "event_identities"
+    },
+    {
+      "definition": "CHECK (((event_offset >= (0)::numeric) AND (event_offset < '18446744073709551616'::numeric)))",
+      "name": "identity_offset_uint64",
+      "table_name": "event_identities"
+    },
+    {
+      "definition": "CHECK ((((payload_kind = 'l2'::text) AND (book_generation IS NOT NULL)) OR ((payload_kind = 'trade'::text) AND (book_generation IS NULL))))",
+      "name": "events_book_generation_kind",
+      "table_name": "events"
+    },
+    {
+      "definition": "CHECK (((book_generation IS NULL) OR ((book_generation >= (0)::numeric) AND (book_generation < '18446744073709551616'::numeric))))",
+      "name": "events_book_generation_uint64",
+      "table_name": "events"
+    },
+    {
+      "definition": "NOT NULL event_offset",
+      "name": "events_event_offset_not_null",
+      "table_name": "events"
+    },
+    {
+      "definition": "NOT NULL event_record",
+      "name": "events_event_record_not_null",
+      "table_name": "events"
+    },
+    {
+      "definition": "NOT NULL log_epoch",
+      "name": "events_log_epoch_not_null",
+      "table_name": "events"
+    },
+    {
+      "definition": "CHECK ((payload_kind = ANY (ARRAY['trade'::text, 'l2'::text])))",
+      "name": "events_payload_kind_check",
+      "table_name": "events"
+    },
+    {
+      "definition": "NOT NULL payload_kind",
+      "name": "events_payload_kind_not_null",
+      "table_name": "events"
+    },
+    {
+      "definition": "PRIMARY KEY (stream_id, log_epoch, event_offset)",
+      "name": "events_pkey",
+      "table_name": "events"
+    },
+    {
+      "definition": "NOT NULL received_timestamp_ns",
+      "name": "events_received_timestamp_ns_not_null",
+      "table_name": "events"
+    },
+    {
+      "definition": "CHECK (((received_timestamp_ns >= (0)::numeric) AND (received_timestamp_ns < '18446744073709551616'::numeric)))",
+      "name": "events_received_timestamp_uint64",
+      "table_name": "events"
+    },
+    {
+      "definition": "CHECK ((jsonb_typeof(event_record) = 'object'::text))",
+      "name": "events_record_object",
+      "table_name": "events"
+    },
+    {
+      "definition": "CHECK ((record_version = 1))",
+      "name": "events_record_version",
+      "table_name": "events"
+    },
+    {
+      "definition": "NOT NULL record_version",
+      "name": "events_record_version_not_null",
+      "table_name": "events"
+    },
+    {
+      "definition": "NOT NULL recorded_at",
+      "name": "events_recorded_at_not_null",
+      "table_name": "events"
+    },
+    {
+      "definition": "FOREIGN KEY (stream_id, log_epoch, event_offset) REFERENCES live_canonical.event_identities(stream_id, log_epoch, event_offset)",
+      "name": "events_stream_id_log_epoch_event_offset_fkey",
+      "table_name": "events"
+    },
+    {
+      "definition": "NOT NULL stream_id",
+      "name": "events_stream_id_not_null",
+      "table_name": "events"
+    },
+    {
+      "definition": "CHECK (((exchange_timestamp_ns IS NULL) OR ((exchange_timestamp_ns >= (0)::numeric) AND (exchange_timestamp_ns < '18446744073709551616'::numeric))))",
+      "name": "events_timestamp_uint64",
+      "table_name": "events"
+    },
+    {
+      "definition": "CHECK ((level_ordinal >= 0))",
+      "name": "l2_level_ordinal_nonnegative",
+      "table_name": "l2_levels"
+    },
+    {
+      "definition": "CHECK ((action = ANY (ARRAY['set'::text, 'delete'::text])))",
+      "name": "l2_levels_action_check",
+      "table_name": "l2_levels"
+    },
+    {
+      "definition": "NOT NULL action",
+      "name": "l2_levels_action_not_null",
+      "table_name": "l2_levels"
+    },
+    {
+      "definition": "NOT NULL event_offset",
+      "name": "l2_levels_event_offset_not_null",
+      "table_name": "l2_levels"
+    },
+    {
+      "definition": "NOT NULL level_ordinal",
+      "name": "l2_levels_level_ordinal_not_null",
+      "table_name": "l2_levels"
+    },
+    {
+      "definition": "NOT NULL log_epoch",
+      "name": "l2_levels_log_epoch_not_null",
+      "table_name": "l2_levels"
+    },
+    {
+      "definition": "PRIMARY KEY (stream_id, log_epoch, event_offset, level_ordinal)",
+      "name": "l2_levels_pkey",
+      "table_name": "l2_levels"
+    },
+    {
+      "definition": "NOT NULL price",
+      "name": "l2_levels_price_not_null",
+      "table_name": "l2_levels"
+    },
+    {
+      "definition": "CHECK ((side = ANY (ARRAY['bid'::text, 'ask'::text])))",
+      "name": "l2_levels_side_check",
+      "table_name": "l2_levels"
+    },
+    {
+      "definition": "NOT NULL side",
+      "name": "l2_levels_side_not_null",
+      "table_name": "l2_levels"
+    },
+    {
+      "definition": "FOREIGN KEY (stream_id, log_epoch, event_offset) REFERENCES live_canonical.events(stream_id, log_epoch, event_offset) ON DELETE CASCADE",
+      "name": "l2_levels_stream_id_log_epoch_event_offset_fkey",
+      "table_name": "l2_levels"
+    },
+    {
+      "definition": "NOT NULL stream_id",
+      "name": "l2_levels_stream_id_not_null",
+      "table_name": "l2_levels"
+    },
+    {
+      "definition": "CHECK (((order_count IS NULL) OR ((order_count >= (0)::numeric) AND (order_count < '18446744073709551616'::numeric))))",
+      "name": "l2_order_count_uint64",
+      "table_name": "l2_levels"
+    },
+    {
+      "definition": "CHECK (((log_epoch >= (0)::numeric) AND (log_epoch < '18446744073709551616'::numeric)))",
+      "name": "coverage_epoch_uint64",
+      "table_name": "recording_coverage"
+    },
+    {
+      "definition": "CHECK (((first_offset >= (0)::numeric) AND (last_offset >= first_offset) AND (last_offset < '18446744073709551616'::numeric)))",
+      "name": "coverage_offsets_uint64",
+      "table_name": "recording_coverage"
+    },
+    {
+      "definition": "NOT NULL first_offset",
+      "name": "recording_coverage_first_offset_not_null",
+      "table_name": "recording_coverage"
+    },
+    {
+      "definition": "NOT NULL last_offset",
+      "name": "recording_coverage_last_offset_not_null",
+      "table_name": "recording_coverage"
+    },
+    {
+      "definition": "NOT NULL log_epoch",
+      "name": "recording_coverage_log_epoch_not_null",
+      "table_name": "recording_coverage"
+    },
+    {
+      "definition": "PRIMARY KEY (stream_id, log_epoch, first_offset)",
+      "name": "recording_coverage_pkey",
+      "table_name": "recording_coverage"
+    },
+    {
+      "definition": "FOREIGN KEY (stream_id) REFERENCES live_canonical.streams(stream_id)",
+      "name": "recording_coverage_stream_id_fkey",
+      "table_name": "recording_coverage"
+    },
+    {
+      "definition": "NOT NULL stream_id",
+      "name": "recording_coverage_stream_id_not_null",
+      "table_name": "recording_coverage"
+    },
+    {
+      "definition": "NOT NULL verified_at",
+      "name": "recording_coverage_verified_at_not_null",
+      "table_name": "recording_coverage"
+    },
+    {
+      "definition": "NOT NULL created_at",
+      "name": "streams_created_at_not_null",
+      "table_name": "streams"
+    },
+    {
+      "definition": "CHECK ((length(btrim(stream_id)) > 0))",
+      "name": "streams_identity_nonempty",
+      "table_name": "streams"
+    },
+    {
+      "definition": "FOREIGN KEY (instrument_id) REFERENCES catalog.instruments(id)",
+      "name": "streams_instrument_id_fkey",
+      "table_name": "streams"
+    },
+    {
+      "definition": "PRIMARY KEY (stream_id)",
+      "name": "streams_pkey",
+      "table_name": "streams"
+    },
+    {
+      "definition": "NOT NULL stream_id",
+      "name": "streams_stream_id_not_null",
+      "table_name": "streams"
+    },
+    {
+      "definition": "CHECK ((stream_kind = ANY (ARRAY['trade'::text, 'l2'::text, 'derived'::text])))",
+      "name": "streams_stream_kind_check",
+      "table_name": "streams"
+    },
+    {
+      "definition": "NOT NULL stream_kind",
+      "name": "streams_stream_kind_not_null",
+      "table_name": "streams"
+    }
+  ],
+  "database": "marketforge",
+  "permissions": [
+    {
+      "select": true,
+      "table": "event_identities"
+    },
+    {
+      "select": true,
+      "table": "events"
+    },
+    {
+      "select": true,
+      "table": "l2_levels"
+    },
+    {
+      "select": true,
+      "table": "recording_coverage"
+    },
+    {
+      "select": true,
+      "table": "streams"
+    }
+  ],
+  "role": "marketforge",
+  "transaction_read_only": "on"
+}
