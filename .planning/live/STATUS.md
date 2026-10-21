@@ -40,6 +40,20 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest continuation adds bounded automatic terminal handoff with
+`PendingDeliveries::finalize_next_into`: incomplete obligations are skipped,
+one terminal payload is transferred per call, and journal/tracking failures
+preserve retained payloads. Full checks exit 0: 132 library, 425 integration
+(2 ignored), 1 doctest, formatting/Live check and Live+historical check.
+Receipts: `engine/target/live-verification/20261021T043959Z-2/`.
+WP-10 remains Partial and next executable; production EventRouterPort owner,
+recovery scheduling, supervision, metrics/control and whole-router shutdown
+remain. Earlier foundation gates and WP-11–29 remain outstanding. Safe to
+continue autonomously. No SQL/exchange traffic or push. Checkpoint: local
+commit carrying this entry; pre-existing untracked launcher preserved.
+
+
+
 Latest continuation adds bounded WP-10 `PendingDeliveries`: automatic exact
 worker-outcome/obligation correlation, independent completion ingestion, retained
 payload ownership through failed finalization and explicit recovery transfer.

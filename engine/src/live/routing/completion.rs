@@ -339,6 +339,39 @@ impl PendingDeliveries {
         }
     }
 
+    /// Transfer at most one terminal payload, scanning the bounded collection.
+    /// Incomplete obligations do not block unrelated terminal deliveries. Any
+    /// tracking or journal error leaves all payloads owned here for retry.
+    /// `None` means no retained obligation is terminal, not successful drain.
+    pub fn finalize_next_into(
+        &mut self,
+        tracker: &mut AcknowledgementTracker,
+        journal: &mut FinalizationJournal,
+    ) -> Result<Option<FinalizedDelivery>, FinalizationHandoffError> {
+        for index in 0..self.deliveries.len() {
+            let delivery = &self.deliveries[index];
+            if tracker.obligation(delivery.obligation.id) != Some(&delivery.obligation) {
+                return Err(FinalizationHandoffError::Acknowledgement(
+                    AcknowledgementError::UnknownObligation,
+                ));
+            }
+            match tracker.finalize_into(delivery.obligation.id, journal) {
+                Ok(outcome) => {
+                    let delivery = self.deliveries.remove(index);
+                    return Ok(Some(FinalizedDelivery {
+                        outcome,
+                        payload: delivery.outcome.payload,
+                    }));
+                }
+                Err(FinalizationHandoffError::Acknowledgement(
+                    AcknowledgementError::IncompleteObligation,
+                )) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(None)
+    }
+
     /// Explicit recovery transfer leaves the authoritative obligation tracked.
     pub fn take_for_recovery(&mut self, id: DeliveryObligationId) -> Option<RetainedDelivery> {
         let index = self

@@ -1157,7 +1157,7 @@ fn pending_deliveries_rejection_and_full_journal_preserve_recovery_ownership() {
         .unwrap();
     let mut full = FinalizationJournal::new(1).unwrap();
     tracker.finalize_into(other.id, &mut full).unwrap();
-    assert!(pending.finalize_into(id, &mut tracker, &mut full).is_err());
+    assert!(pending.finalize_next_into(&mut tracker, &mut full).is_err());
     assert_eq!(pending.len(), 1);
     assert_eq!(
         tracker.status(id),
@@ -1166,11 +1166,73 @@ fn pending_deliveries_rejection_and_full_journal_preserve_recovery_ownership() {
     assert!(!worker.snapshot().is_drained());
     let mut available = FinalizationJournal::new(1).unwrap();
     let finalized = pending
-        .finalize_into(id, &mut tracker, &mut available)
+        .finalize_next_into(&mut tracker, &mut available)
+        .unwrap()
         .unwrap();
     assert!(pending.is_empty());
     assert!(tracker.is_empty());
     assert!(!worker.snapshot().is_drained());
     drop(finalized);
     assert!(worker.snapshot().is_drained());
+}
+
+#[test]
+fn pending_deliveries_scan_skips_incomplete_and_transfers_terminal_payload() {
+    use marketforge_engine::live::{
+        model::delivery::DeliveryStatus,
+        routing::{
+            acknowledgement::{DeliveryAcknowledgement, DeliveryObligationId, FinalizationJournal},
+            completion::PendingDeliveries,
+        },
+    };
+    let (worker, first, mut tracker) = retained_fixture(0);
+    let (other_worker, mut second, _) = retained_fixture(0);
+    let mut obligation = tracker.obligation(DeliveryObligationId(1)).unwrap().clone();
+    obligation.id = DeliveryObligationId(2);
+    obligation.destination = DestinationId(8);
+    second.descriptor.id = obligation.destination;
+    if let WorkerAdmissionResult::Valid(DestinationAdmission::Accepted { destination, .. }) =
+        &mut second.admission
+    {
+        *destination = obligation.destination;
+    } else {
+        panic!("fixture must accept admission");
+    }
+    tracker.register(obligation.clone()).unwrap();
+    let mut pending = PendingDeliveries::new(std::num::NonZeroUsize::new(2).unwrap());
+    let first_id = pending.ingest(first, &tracker).unwrap();
+    let second_id = pending.ingest(second, &tracker).unwrap();
+    let mut journal = FinalizationJournal::new(1).unwrap();
+    assert!(
+        pending
+            .finalize_next_into(&mut tracker, &mut journal)
+            .unwrap()
+            .is_none()
+    );
+    tracker
+        .acknowledge(DeliveryAcknowledgement {
+            obligation: second_id,
+            destination: obligation.destination,
+            range: obligation.range,
+            status: DeliveryStatus::Failed(DeliveryFailure::Unavailable),
+        })
+        .unwrap();
+    let terminal = pending
+        .finalize_next_into(&mut tracker, &mut journal)
+        .unwrap()
+        .unwrap();
+    assert_eq!(pending.len(), 1);
+    assert!(pending.get(first_id).is_some());
+    assert!(pending.get(second_id).is_none());
+    assert_eq!(tracker.len(), 1);
+    assert!(!other_worker.snapshot().is_drained());
+    drop(terminal);
+    assert!(other_worker.snapshot().is_drained());
+    assert!(!worker.snapshot().is_drained());
+    assert!(
+        pending
+            .finalize_next_into(&mut tracker, &mut journal)
+            .unwrap()
+            .is_none()
+    );
 }

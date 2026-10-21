@@ -1026,3 +1026,47 @@ collection does not spawn a runtime or source completion evidence; authentic
 observations still arrive through destination adapters/supervision. Earlier
 WP-05/06/07/09 gates persist, WP-11–29 pending. No package acceptance claimed.
 Further autonomous WP-10 work can safely continue.
+
+## Continuation — bounded terminal discovery (2026-10-21)
+
+Status: Partial. Baseline `37d94c6`, branch `codex/wp06-completion`; only
+pre-existing untracked `scripts/run-autonomous-codex.sh`, preserved. Read the
+campaign instructions, decisions, current status/evidence and WP-10/11 roadmap;
+inspected actual tracker finalization and worker consumers. WP-10 remains next.
+
+Implemented `PendingDeliveries::finalize_next_into`: bounded scan through actual
+retained deliveries, skips incomplete obligations, transfers at most one terminal
+payload per invocation. Existing tracker policy remains authoritative. No extra
+index, payload allocation, invented completion, task or retry. Tracking/journal
+errors preserve all payloads; full journal can be retried. `None` means no terminal
+payload, not successful drain. Successful transfer preserves remaining order.
+
+New deterministic production-interface witness covers two charged workers,
+incomplete-before-terminal selection, no-terminal reporting, terminal transfer,
+independent tracker ownership and capacity release only after payload drop.
+Existing rejection/full-journal recovery witness now exercises automatic handoff.
+
+Verification:
+- engine/: `cargo test --locked --offline --no-default-features --features live
+  --test live_suite pending_deliveries`: exit 0, 4 passed, 423 filtered out.
+- Root `./scripts/verify-live.sh full`: exit 0. Exact gates: `cargo fmt --all --
+  --check`; `cargo check --locked --offline --no-default-features --features live
+  --lib`; equivalent test flags with `--lib` (132 passed), `--test live_suite`
+  (425 passed, 2 opt-in ignored), `--doc` (1 passed). Receipts:
+  `engine/target/live-verification/20261021T043959Z-2/`.
+- engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; existing dead-code warnings.
+- Root `git diff --check`: exit 0.
+- Initial test append used a root-relative path from engine/ and failed before
+  writing; corrected path and reran with the new test executing. No test failures.
+
+Changed: `engine/src/live/routing/completion.rs`,
+`engine/tests/live/destination_worker.rs`, STATUS.md and this ledger. Checkpoint:
+local commit carrying this entry. No database/exchange access, Python/historical
+code edits, dependencies, ignored configuration edits or push. SQL/performance
+opt-in gates and historical baseline tests not rerun; no claims for those gates.
+
+Remaining: production EventRouterPort owner, recovery scheduling, supervision,
+native metrics/control binding and whole-router shutdown. Earlier WP-05/06/07/09
+completion gates persist; WP-11–29 pending. No package acceptance claimed.
+Further autonomous implementation can safely continue in WP-10.
