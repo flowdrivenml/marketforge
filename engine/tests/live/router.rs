@@ -3137,6 +3137,13 @@ mod ingress_witnesses {
         );
         let mut consumer =
             ScheduledIngressReporting::new(interval, NonZeroUsize::new(2).unwrap()).unwrap();
+        let initial = consumer.snapshot(&journal);
+        assert_eq!(initial.journal.usage, charged);
+        assert!(!initial.pending);
+        assert!(!initial.is_drained());
+        assert_eq!(initial.attempts, 0);
+        assert_eq!(initial.retry_interval, interval);
+        assert_eq!(initial.max_attempts.get(), 2);
         let mut reporter = Reporter {
             calls: 0,
             result: Err(ReportingError::TemporarilyUnavailable),
@@ -3147,6 +3154,13 @@ mod ingress_witnesses {
             consumer.poll_step(&journal, &mut reporter, &mut cx, &clock, &FullTimer),
             Err(ErrorCode::Capacity)
         );
+        let retry = consumer.snapshot(&journal);
+        assert!(retry.pending);
+        assert_eq!(retry.attempts, 1);
+        assert!(retry.retry_at.is_some());
+        assert!(!retry.timer_retained);
+        assert!(!retry.escalation_required);
+        assert_eq!(consumer.snapshot(&journal), retry);
         assert_eq!(reporter.calls, 1);
         assert_eq!(journal.snapshot().usage, charged);
         assert_eq!(
@@ -3160,6 +3174,7 @@ mod ingress_witnesses {
                 .is_pending()
         );
         assert_eq!(reporter.calls, 1);
+        assert!(consumer.snapshot(&journal).timer_retained);
         journal.close();
         clock.advance(interval).unwrap();
         // Clock expiry retires even a permanently pending fake timer.
@@ -3169,6 +3184,12 @@ mod ingress_witnesses {
                 .unwrap(),
             Poll::Ready(ScheduledIngressStep::EscalationRequired)
         );
+        let blocked = consumer.snapshot(&journal);
+        assert!(blocked.escalation_required);
+        assert_eq!(blocked.attempts, 2);
+        assert!(!blocked.timer_retained);
+        assert!(blocked.retry_at.is_none());
+        assert!(!blocked.is_drained());
         reporter.result = Ok(());
         assert_eq!(
             consumer
@@ -3180,7 +3201,13 @@ mod ingress_witnesses {
         assert!(journal.poll_shutdown(&mut cx).is_pending());
         let transferred = consumer.take_pending().unwrap();
         assert_eq!(journal.snapshot().usage, charged);
+        let transferred_state = consumer.snapshot(&journal);
+        assert!(!transferred_state.pending);
+        assert!(!transferred_state.escalation_required);
+        assert_eq!(transferred_state.attempts, 0);
+        assert!(!transferred_state.is_drained());
         drop(transferred);
+        assert!(consumer.snapshot(&journal).is_drained());
         assert!(journal.poll_shutdown(&mut cx).is_ready());
         assert_eq!(
             consumer
@@ -3424,6 +3451,12 @@ mod ingress_witnesses {
         assert_eq!(reporter.0, 1);
         assert!(transferred.is_some());
         assert_eq!(journal.snapshot().usage.items, 1);
+        let observed = owners.complete_snapshot(&journal, &ingress);
+        assert!(observed.delivery.is_drained());
+        assert!(!observed.ingress.pending);
+        assert_eq!(observed.ingress.journal.usage.items, 1);
+        assert!(!observed.is_drained());
+        assert_eq!(owners.complete_snapshot(&journal, &ingress), observed);
         // Delivery has drained, but the transferred producer obligation still blocks completion.
         assert!(matches!(
             owners.drive_complete_reporting(
@@ -3442,6 +3475,7 @@ mod ingress_witnesses {
         drop(deadline);
         assert!(polls.load(std::sync::atomic::Ordering::SeqCst) > 0);
         drop(transferred);
+        assert!(owners.complete_snapshot(&journal, &ingress).is_drained());
         // A completed drain takes precedence without polling an already consumed deadline.
         assert!(matches!(
             owners.drive_complete_reporting(

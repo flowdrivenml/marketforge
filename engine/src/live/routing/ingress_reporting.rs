@@ -257,6 +257,28 @@ pub struct ScheduledIngressReporting {
     blocked: bool,
 }
 
+/// Read-only scheduler observation. Journal usage includes queued, preparing,
+/// pending and externally transferred records; it is not a durability measure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IngressReportingSnapshot {
+    pub journal: ResourceBudgetSnapshot,
+    pub pending: bool,
+    pub attempts: usize,
+    pub max_attempts: std::num::NonZeroUsize,
+    pub retry_interval: std::time::Duration,
+    pub retry_at: Option<std::time::Instant>,
+    pub timer_retained: bool,
+    pub escalation_required: bool,
+}
+
+impl IngressReportingSnapshot {
+    /// A closed empty journal proves all charged reports have been released.
+    /// Destination delivery and recovery retain their independent obligations.
+    pub fn is_drained(&self) -> bool {
+        self.journal.closed && self.journal.usage == ResourceUsage::default() && !self.pending
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScheduledIngressStep {
     Idle,
@@ -273,6 +295,22 @@ pub enum IngressReportingShutdownStep {
 }
 
 impl ScheduledIngressReporting {
+    /// Observes existing owners without polling timers, handlers or shutdown.
+    /// The scheduler is exclusively borrowed; journal accounting is sampled under
+    /// its own lock and does not form a transaction with other router owners.
+    pub fn snapshot(&self, journal: &IngressOutcomes) -> IngressReportingSnapshot {
+        IngressReportingSnapshot {
+            journal: journal.snapshot(),
+            pending: self.pending().is_some(),
+            attempts: self.attempts,
+            max_attempts: self.max_attempts,
+            retry_interval: self.interval,
+            retry_at: self.retry_at,
+            timer_retained: self.timer.is_some(),
+            escalation_required: self.blocked,
+        }
+    }
+
     /// Fence new admissions and perform at most one reporting turn. Registers
     /// for release of reservations held by preparing admissions or escalated
     /// records as well as new outcomes. One coordinator must own shutdown polling.

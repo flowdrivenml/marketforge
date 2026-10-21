@@ -73,6 +73,19 @@ impl RouterDrainSnapshot {
     }
 }
 
+/// Complete local drain observation, including producer-report ownership.
+/// Samples owners individually; this is not a cross-owner transaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompleteRouterDrainSnapshot {
+    pub delivery: RouterDrainSnapshot,
+    pub ingress: super::ingress_reporting::IngressReportingSnapshot,
+}
+impl CompleteRouterDrainSnapshot {
+    pub fn is_drained(&self) -> bool {
+        self.delivery.is_drained() && self.ingress.is_drained()
+    }
+}
+
 #[derive(Debug)]
 #[must_use]
 pub enum RouterShutdownStep {
@@ -130,6 +143,18 @@ pub struct RouterShutdownOwners<'a> {
     pub delivery: &'a mut DeliveryDriver,
 }
 impl RouterShutdownOwners<'_> {
+    /// Pure observation: does not fence admission or advance any work.
+    pub fn complete_snapshot(
+        &self,
+        journal: &super::ingress_reporting::IngressOutcomes,
+        ingress: &super::ingress_reporting::ScheduledIngressReporting,
+    ) -> CompleteRouterDrainSnapshot {
+        CompleteRouterDrainSnapshot {
+            delivery: self.snapshot(),
+            ingress: ingress.snapshot(journal),
+        }
+    }
+
     /// Fence every admission owner before testing the deadline. A complete drain
     /// requires both delivery and all charged producer reports, including reports
     /// transferred for escalation. Each turn runs at most one handler of each
