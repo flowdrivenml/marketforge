@@ -6,6 +6,12 @@
 **Implementation language:** Rust
 **Target:** Complete the approved MarketForge Live v1 implementation
 
+**Current assignment boundary (2026-10-21):** WP-05 authoritative documentation
+reconciliation only. No implementation, tests, schemas, configuration or dependency
+changes; no new package starts. Create one local documentation checkpoint, do not
+push, then stop. This explicit assignment overrides the broader execution sequence
+for the current task; later implementation requires renewed task authorization.
+
 ---
 
 ## 1. Mission 
@@ -110,6 +116,38 @@ Use available permissions; do not bypass sandbox restrictions.
 ## 4. Current Implementation Baseline
 
 The repository already contains substantial MarketForge Live work.
+
+### WP-05 identity/metadata authority and current integration boundary
+
+DEC-035–038 now record user-approved Option A, existing PostgreSQL catalog
+metadata authority, full lookup/classification and identity safety. They supersede
+old uncertainty about which metadata source/family mechanism to use; they do not
+settle OPEN-006–011 (removal/history/non-reuse, reintroduction, allocation,
+historical bindings, activation freshness, concrete SQL adapter package).
+
+Verified implementation checkpoint `63f2526` supplies bounded identity evidence,
+prospective validation, checked derived boundaries and immutable metadata fixtures.
+See [WP-05 evidence](evidence/WP-05-implementation.md) and the authoritative
+[documentation reconciliation](evidence/wp05-documentation-reconciliation.md).
+WP-05 remains **Partial — Not Accepted**, not ReadyForReview. Available model
+contracts are not proof of actual compiler, SQL, registry or daemon integration.
+
+| Package | Preserved responsibility / next consumer obligation |
+|---|---|
+| WP-05 | Domain identity, mapping and metadata-resolution contracts; expose missing historical proof and unresolved lifecycle rather than invent reuse permission. |
+| WP-07 | Approved service-port integration of model contracts; no automatic frozen-port change or concrete adapter assignment. |
+| WP-09 | Configuration compilation, identity checks against authoritative current/retained state and durable acceptance; reuse the journal/worker/service and pass committed plans onward. |
+| WP-11 | Operational registration, canonical dedup, transient allocation, independent demand ownership and restart reconstruction from validated committed configuration. |
+| WP-12 | Exchange-profile compilation, catalog/protocol integration and verified native normalization capability; this does not settle concrete SQL adapter ownership. |
+| WP-23 | Derived semantic compilation and execution, including checked generation boundaries; WP-09 consumes validated results. |
+| WP-24 | Runtime composition/reconciliation through actual owners, committed persistent reconstruction and applied/adopted observations. |
+
+The read-only PostgreSQL adapter package is explicitly unassigned (OPEN-011);
+activation freshness is OPEN-010. Earlier implementation evidence assigning the
+adapter to WP-12 is not an accepted architectural decision. Do not move obligations
+or change the approved package order to make WP-05/WP-09 appear complete. Early
+contract witnesses can use deterministic fixtures; actual production integration
+must separately prove approved ports, economics, provenance and lifecycle behavior.
 
 ### Current WP-10 disposition
 
@@ -232,15 +270,20 @@ implemented consumer. Working Rust code stays with its current owner/module.
 #### WP-09 — Configuration acceptance
 
 - **Behavior/reuse:** Complete validated, durably accepted desired revisions and
-  impact/boundary plans through `ConfigurationCompilerPort`,
-  `ConfigurationStorePort` and `ConfigurationApplyPort`. Reuse WP-10's registry
+  impact/boundary plans through `ConfigurationCompilerPort` and
+  `ConfigurationStorePort`; hand committed plans to WP-24's
+  `ConfigurationApplyPort`. Reuse WP-10's registry
   revision/instance fencing and measurement boundary as application targets
   **through the WP-24 reconciler**, not direct pre-persistence router mutation.
-- **Remaining/prerequisites:** Finish the semantic compiler, static-spec loading,
-  revision service and bounded worker integration already missing in WP-09. Use
-  WP-05/06/07 contracts, verified metadata/capability inputs and WP-08 foundations;
-  keep unresolved C01/economic validation fail-closed. A candidate/local journal
-  alone is not a complete configuration service.
+- **Remaining/prerequisites:** Reuse the existing composed compiler/store/worker
+  and history/management service (WP-09 remains Partial). Complete draft schema
+  mappings, semantic/economic/resource validation and impact plans; integrate
+  WP-05 canonical identity/candidate checks and immutable full-tuple metadata
+  through approved WP-07 ports. Use WP-06 contracts/WP-08 foundations and verified
+  WP-12 capabilities/WP-23 semantic results. Keep missing metadata and identity
+  history explicit; OPEN-006–011 are not automatic reuse/freshness/adapter policies.
+  The PostgreSQL authority/classification choice is resolved (DEC-036/037), while
+  production port/adapter integration remains unverified.
 - **Acceptance/boundary:** Test invalid proposals, failed/uncertain persistence,
   conflicting revisions and restore-as-new-revision with zero premature router
   effects; verify affected-resource plans and admission/measurement boundaries

@@ -277,7 +277,7 @@ Complete the following decisions before their first production consumer. The pur
 
 | Contract | Required decision before acceptance | Witnesses / first blocking consumers |
 |---|---|---|
-| C01 Identity and metadata | Stable source/derived identity; canonical key normalization; persistent identity mapping; economic metadata provisioning and versioning | Registry, compiler, recording and restart fixtures |
+| C01 Identity and metadata | Stable source/derived identity and distinct IDs; canonical key normalization; Option A persistent mapping; economic metadata provisioning/versioning via the full catalog tuple with exact values/provenance; open removal/reuse/freshness/adapter decisions explicit | Registry, compiler, recording and restart fixtures; DEC-035–038 / OPEN-006–011 |
 | C02 Generations | Allocation/fencing points; counter exhaustion; process-instance scope versus restart-persistent identities; candidate/current generations | Connection, subscription replacement, recovery and snapshot consumers |
 | C03 Event grouping and provenance | Trade versus grouped depth; immutable payload ownership; no-op depth outcomes; initialization boundary; optional native sequence fields; REST/replay/derived provenance without fabricated WebSocket origins | Router, retention codec, recorder encoder, derived consumer |
 | C04 Delivery and admission | Batch ownership; accepted versus queued versus committed; per-destination policies; partial fan-out failure; cursor allocation boundary; bounded admission and cancellation | In-memory destination and failure-injecting destination with the same contract |
@@ -413,6 +413,24 @@ Fix identified feature/import baseline issues in explicit bounded tasks. Registe
 
 Implement source/derived keys and identity mapping, demand tokens/owners, lifecycle dimensions, generation fencing and checked exhaustion, cursor comparison, typed failures, operation identity, revision types and resolved policy values. Preserve semantic identity independently of connection assignment and recording settings. Establish restart-safe identity/epoch storage interfaces and test implementations before code emits persistent cursor identities.
 
+Approved Option A reuses committed configuration revisions/the existing journal
+for persistent source/derived IDs; do not build another identity database/journal.
+WP-05 owns domain mapping and typed read-only metadata resolution contracts,
+including immutable validated economics/provenance using existing financial types.
+The existing PostgreSQL catalog is authoritative without schema changes; resolve
+the complete `(exchange, symbol, instrument_type, market_category)` tuple with the
+five approved pairs in Document 02 §3.3/DEC-037. Normalization economics are
+conditional on selected semantics, not a universal derivative multiplier rule.
+
+Verified checkpoint `63f2526` provides canonical key checks, current/retained
+identity evidence, pure prospective validation, generation boundaries and metadata
+fixtures. It does not implement WP-09 enforcement, operational registry/runtime
+reconstruction or a production PostgreSQL adapter. WP-07 owns port integration;
+concrete adapter package ownership remains OPEN-011. WP-05 is **Partial**, not
+ReadyForReview or Accepted: OPEN-006–009 retain removal/reintroduction, history
+proof, allocation and historical-binding questions. Freshness policy is OPEN-010.
+Do not present permanent non-reuse, UUIDs or tombstones as accepted mechanisms.
+
 Keep source, connection, subscription, book, recovery, coverage and health states separate. Define authoritative desired/applied/adopted revision scope rather than interchanging names. Incompatible cursor namespaces must not receive a fictitious total order.
 
 **Acceptance:** identity/dedup/property tests, stale-generation and exhaustion tests, serialization fixtures where needed, and model-only consumer compilation. Unresolved identity representations must be settled here, not inside a recorder or TUI task.
@@ -436,6 +454,12 @@ Before freezing, implement the small consumer witnesses: a sink with failure inj
 **Sources:** Documents 01–03, 05/05.1, 12–14; C07–C12.
 
 Implement narrow transport, registry, processing/recovery, configuration, retention/recording, publication and observation contracts. Resolve the exact Control API vocabulary centrally, including recovery and transient-demand operations that are only conceptual in older examples. Freeze request/operation correlation, validation errors, authorization, completion objectives and version behavior.
+
+Bind the WP-05 model-level identity/metadata contracts into approved service-port
+interfaces without treating their existence as an automatic frozen-port change.
+Preserve full-tuple errors, immutable exact economics and provenance. Concrete
+read-only PostgreSQL adapter ownership (OPEN-011) and activation freshness policy
+(OPEN-010) must remain explicit; neither is assigned by service-port integration.
 
 Define the full v1 snapshot/metric needs of all five TUI views now. Include required lifecycle/demand/readiness/coverage distinctions, unavailable measurements, per-component revisions/generations and resource budgets. Define factory/constructor dependency bundles and shutdown/update command boundaries.
 
@@ -463,6 +487,17 @@ Build TOML/schema loading, explicit inheritance, semantic/capability/resource va
 
 Persist accepted contents and revision identity together with the required synchronization/recovery behavior. Publish only committed desired state. Implement history/rollback-as-new-revision and query/diff/status operations. Runtime execution of plans remains the reconciler's responsibility.
 
+Enforce WP-05 canonical mapping/candidate identity requirements against committed
+current/retained state during compilation and durable acceptance. A pure candidate
+check neither reserves a revision nor authorizes reuse; conflicts must be checked
+against the authoritative revision used by persistence. RetainedSuffix evidence
+cannot prove earlier bindings. Consume immutable full-tuple metadata through
+approved ports; the historical JSON catalog is not the approved production
+metadata authority. Reuse existing candidate/DAG/journal/worker/service code;
+required semantic/impact/native integration remains incomplete. WP-23 supplies
+derived semantic compilation; WP-09 validates/accepts its results. No runtime
+registry mutation belongs here, and concrete SQL adapter ownership remains OPEN-011.
+
 **Acceptance:** invalid proposals have no effects; failed persistence has no runtime mutation; concurrent revisions conflict correctly; independent-demand semantics survive persistent changes; only affected resources appear in plans. Test all approved hot settings and the correct next-batch/admission/measurement boundaries.
 
 **Delegation:** Qwen can implement schema parsing and explicit validators. GPT owns persistence, concurrent acceptance and reconciliation contract review.
@@ -489,6 +524,14 @@ Implement semantic source deduplication, stable logical registration, explicit i
 
 Use atomic coordination for removal versus new demand and protected dependencies. Persistent deactivation must not stop a source still required elsewhere. Restart reconstruction restores persistent requirements, not obsolete transient handles or native resources.
 
+Reconstruct assigned persistent source/derived IDs from validated committed
+configuration (Option A), including disabled declarations, using WP-05 mapping
+evidence under WP-24 composition. The registry owns operational registration,
+transient allocation and independent demand, not a second persistent identity
+journal. Missing history/reintroduction does not authorize reuse (OPEN-006–009).
+Logical ID allocation (OPEN-008) remains distinct from DemandId allocation
+(OPEN-002) and LogEpoch allocation.
+
 **Acceptance:** concurrent equivalent acquisitions produce one source; releasing one claim preserves others; stale completions cannot reverse newer intent; failed removal preserves claims; topology cycles are rejected. Test with command-port implementations before the real connection manager is bound.
 
 **Delegation:** GPT owns races and lifecycle semantics. Qwen can implement exact indexes, snapshot projections and deterministic cases.
@@ -498,6 +541,14 @@ Use atomic coordination for removal versus new demand and protected dependencies
 **Sources:** Documents 03, 04 and 06; existing format/normalization primitives.
 
 Build profile discovery/versioning, capability validation, topic/ack templates, message classification, compiled selectors and typed native-record extraction. Resolve instrument economics before activation; no per-event database/catalog lookup or TOML interpretation. Preserve strings/precise numeric tokens where exact decimal semantics require them.
+
+Consume WP-05 immutable validated metadata using the full catalog tuple and
+approved classification/quantity types; verify actual channel/native-field
+normalization capabilities separately from metadata validity. Missing economics
+required by selected normalization must block activation. Catalog/protocol
+integration belongs here; the concrete read-only PostgreSQL adapter's package
+owner remains OPEN-011, not automatically WP-12. Activation freshness policy
+remains OPEN-010. Neither open decision is satisfied by deterministic fixtures.
 
 Inventory all intended profile behaviors before closing generic interfaces. At minimum, exercise contrasting fixtures for range/REST-bridged depth, server snapshot/reset behavior, and checksum-sensitive behavior. These are design coverage categories, not an assertion that current exchange details have been verified. Check applicable primary exchange documentation when implementing each real profile.
 
@@ -637,6 +688,12 @@ Implement currency/instrument graph resolution and eligible conversion, shared r
 
 Use the existing router/retention/recording/publication ports for derived output. Full derived instrumentation and capability-aware health inputs are part of this package; no source processor signature changes should be needed.
 
+WP-23 owns derived semantic compilation/execution and supplies validated results
+for WP-09 configuration acceptance. Keep DerivedStreamId distinct from
+DerivedGeneration; use WP-05 checked boundary/fencing contracts for semantic
+replacement. Removing a declaration does not authorize reuse or erase dependent
+owners/historical output bindings (OPEN-006–009).
+
 **Acceptance:** compatible historical/live ordering/conversion fixtures; equal-timestamp late arrival; idle/source failure and reintroduction; reference gap/staleness; inverse path and rounding; DAG/replacement/demand release; independent output identity and storage/replay. A derived failure must not corrupt a healthy source.
 
 **Delegation:** GPT leads ordering and financial semantics. Qwen works on fixed graph operations, metadata projections and reviewed tests.
@@ -648,6 +705,13 @@ Use the existing router/retention/recording/publication ports for derived output
 **Sources:** Documents 01, 03, 07 and 13.
 
 Turn the incrementally maintained composition root into the real daemon: CLI/root resolution, immutable construction, selected optional services, local logging, configuration recovery, identity/epoch initialization, startup reconciliation, supervised task ownership, readiness/convergence reporting, service signals and finite shutdown. Replace the existing print-only `run()` entry point with explicit success/failure and cleanup behavior.
+
+Startup consumes validated committed declarations/the existing configuration
+journal as the persistent identity authority, reconstructing registrations through
+WP-11 rather than allocating replacements or another identity store. Metadata
+port/adapter binding must respect OPEN-010/011; runtime composition does not
+silently decide freshness or concrete adapter package ownership. Missing historical
+identity evidence remains observable for restart/replay, not permission to reuse.
 
 Implement dependency-safe updates: persistent intent versus demand, recording toggles at declared cursor boundaries, source/derived changes, approved hot settings and per-resource revision tracking. Reconciliation must be idempotent and stale results cannot reverse a newer accepted revision. Unavailable exchanges do not invalidate persisted configuration.
 

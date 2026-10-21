@@ -4,7 +4,7 @@
 **Language:** Rust (edition 2024)  
 **Crate:** `marketforge-engine`  
 **Status:** Active implementation  
-**Last updated:** 2026-10-20
+**Last updated:** 2026-10-21
 
 ---
 
@@ -633,18 +633,20 @@ The Stream Registry should receive validated acquisition requirements.
 
 ## DEC-014 — Perpetual market-family ambiguity
 
-**Status:** Unresolved
+**Status:** Resolution mechanism approved — DEC-036/DEC-037; missing inputs remain unresolved
 
-The existing `InstrumentIdentity` representation may not distinguish
-linear from inverse perpetual contracts when `contract_kind` is absent.
+The original ambiguity remains real when `InstrumentIdentity.contract_kind`
+is absent. The user has now approved the existing PostgreSQL catalog and the
+complete lookup tuple as the authority for resolving explicit linear/inverse
+families (DEC-036/DEC-037). Profiles/configuration express acquisition requirements;
+they do not invent or override missing catalog economics/classification.
 
-Do not assume all perpetual instruments are linear.
-
-The configuration compiler must resolve this using authoritative catalog,
-exchange profile, or configuration information.
-
-Do not change the historical instrument catalog schema without an approved
-design decision.
+Do not assume all perpetual instruments are linear or infer a family from a
+symbol/exchange. Missing, ambiguous or conflicting authoritative metadata must
+reject activation or report unresolved metadata. Do not change the historical
+instrument catalog schema. Concrete adapter ownership and activation freshness
+policy remain OPEN-011 and OPEN-010 respectively; neither is decided by this
+classification resolution. DEC-015 through DEC-018 remain unchanged.
 
 ---
 
@@ -1062,17 +1064,124 @@ sequences, and book generation where required for reconstruction.
 
 ---
 
+## DEC-035 — Persistent identity authority is committed configuration (Option A)
+
+**Status:** Accepted architecture, explicitly approved by the user (2026-10-21)
+
+Persistent source and derived declarations, including their assigned IDs, live
+in committed configuration revisions. The existing configuration journal remains
+the durable authority; do not add a separate persistent identity database or
+journal. WP-05 owns the mapping/validation contract, WP-09 compilation and durable
+acceptance, WP-11 operational registration/reconstruction, and WP-24 composition
+and reconciliation. The registry reconstructs persistent identities from validated
+committed configuration; transient allocation/demand reconstruction remains WP-11.
+
+Source identity is independent of recording, metrics, recovery, subscribers and
+connection assignment. Source/derived IDs are distinct types/namespaces and must
+not collide in shared logical identity use. Derived definitions retain explicit
+semantic generation boundaries. LogEpoch allocation remains independent of the
+logical StreamId/DerivedStreamId and of lifecycle generations.
+
+Verified WP-05 evidence is bounded by available committed state/history; Option A
+is not a permanent tombstone or all-time ID non-reuse mechanism. OPEN-006–009
+retain the unresolved removal/reintroduction/historical-binding questions.
+
+## DEC-036 — Existing PostgreSQL catalog is authoritative instrument metadata
+
+**Status:** Accepted architecture, explicitly approved by the user (2026-10-21)
+
+Reuse `catalog.exchanges`, `catalog.instruments`, `catalog.instrument_specs` and
+`catalog.instrument_api_raw` without changing their schema. Do not use
+`catalog.instrument_metrics` as authoritative contract economics. Existing Python
+catalog models and historical normalization rules are compatibility references;
+Python orchestration is not authoritative for the new Live architecture.
+
+Resolve outside the market-data hot path through typed read-only contracts and
+immutable validated metadata. Preserve exact Decimal values, quantity encodings,
+contract value/asset, tick size, quantity step/available limits, base/quote/settlement
+assets, catalog IDs, fetched-at provenance and available version/freshness
+information. Do not manufacture absent economics, timestamps or versions.
+The historical JSON/currency catalog alone is not proof of complete Live economics.
+
+`model::metadata::MetadataResolver` and its deterministic in-memory implementation
+are verified WP-05 contracts, not a frozen WP-07 service port or a production SQL
+adapter. WP-07 owns approved port integration; WP-09 owns compilation acceptance;
+WP-12 owns catalog/protocol and native-normalization integration. Which downstream
+package implements the concrete read-only PostgreSQL adapter remains OPEN-011.
+Preserving timestamps/checking an explicit age bound does not select a freshness
+policy (OPEN-010).
+
+## DEC-037 — Complete catalog classification and conditional normalization economics
+
+**Status:** Accepted architecture, explicitly approved by the user (2026-10-21)
+
+Lookup identity is `(exchange, symbol, instrument_type, market_category)`, never
+exchange/symbol alone. Approved initial combinations are:
+
+| instrument_type | market_category | Existing InstrumentKind | ContractKind |
+|---|---|---|---|
+| spot | spot | Spot | None |
+| perpetual | linear | Perpetual | Linear |
+| perpetual | inverse | Perpetual | Inverse |
+| future | linear | Future | Linear |
+| future | inverse | Future | Inverse |
+
+Reject or report missing, ambiguous, unsupported or conflicting classifications;
+options/unknown combinations are not approved for initial activation. Never infer
+families from exchange names/symbol suffixes. Reuse InstrumentIdentity,
+InstrumentKind, ContractKind, InstrumentSpec, QuantityEncoding and Decimal.
+
+Metadata validity (identity, classification, required fields, exact economic
+representations and required positive tick size) is separate from selected
+normalization capability. Preserve Base/Quote/Contracts encodings. A multiplier
+is mandatory only when required by the selected normalization semantics; do not
+universally require one for every derivative, or invent a missing multiplier or
+settlement rule. Economic preconditions alone do not certify an exchange/channel's
+native field units or protocol support; WP-12 verifies those capabilities and
+WP-23 owns derived semantic compilation/execution, consumed by WP-09 acceptance.
+
+## DEC-038 — Logical identity safety without an invented permanent reuse policy
+
+**Status:** Accepted safety constraint and preference; mechanism/lifecycle open
+
+A logical identifier must not silently change semantic meaning. The user prefers
+non-reuse across different semantic streams. Reject reassignment/semantic
+collisions when current authoritative state or retained revision history proves
+them. Source/derived identity and semantic generation are not interchangeable.
+An existing derived stream's validated semantic replacement uses its explicit
+generation boundary; this does not authorize ID reuse after permanent removal.
+
+Permanent non-reuse, UUID allocation, same-ID/same-definition reintroduction and
+historical binding retention after removal are not accepted mechanisms or
+implemented guarantees. Missing history is not permission to reuse an ID. Do not
+add permanent tombstones or another identity persistence owner. See OPEN-006–009;
+WP-05 remains Partial until its mandatory identity lifecycle question is resolved.
+
+**Implementation evidence, not additional architectural authority:** checkpoint
+`63f2526`, [WP-05 matrix](evidence/WP-05-implementation.md), provides canonical key
+validation, bounded current/retained identity evidence, pure candidate checks,
+checked derived-generation boundaries and immutable full-tuple metadata fixtures.
+`FromInitialRevision` versus `RetainedSuffix`, reintroduction reports and explicit
+incomplete-proof errors do not authorize reuse or prove downstream integration.
+
+---
+
 # 9. Known Open Decisions
 
 These items must not be silently resolved by implementation guesses.
 
 ## OPEN-001 — Perpetual contract-family resolution
 
-Determine the authoritative mechanism for distinguishing linear and
-inverse perpetual instruments when the existing catalog identity does
-not provide this information.
+**Status:** Authority/classification mechanism resolved by DEC-014/036/037.
 
-**Owner:** Configuration/compiler integration.
+The existing PostgreSQL catalog's complete lookup tuple supplies explicit family
+classification. Do not reopen the choice of authority or guess absent metadata.
+Missing/conflicting inputs remain rejection/unresolved conditions, not a policy
+to fill them. Port/compiler adoption is still downstream integration work;
+freshness and concrete adapter ownership are separately OPEN-010/OPEN-011.
+
+**Affected consumers:** WP-07/09/12/23/24. This resolution does not mark any package
+Accepted or claim that a production PostgreSQL adapter exists.
 
 ## OPEN-002 — DemandId allocation and restart behavior
 
@@ -1110,6 +1219,79 @@ The shared historical `TradeBatchBuilder` is a reusable payload builder;
 it is not a complete Live-event persistence format.
 
 **Owner:** Live Retention.
+
+## OPEN-006 — Identity non-reuse after configuration history pruning
+
+**Status:** Unresolved architectural decision; blocks mandatory WP-05 identity closure.
+How can non-reuse be proved when earlier declarations/bindings have left bounded
+committed history? Option A remains accepted; no permanent tombstone, separate
+identity journal or retention extension has been approved. Current/retained
+conflicts reject; absence of evidence must not authorize reuse.
+
+**Affected consumers:** WP-05 contract, WP-09 acceptance, WP-11 allocation,
+WP-24 restart, and retained-event/replay/recording consumers. A fresh LogEpoch
+protects its cursor namespace, not an unknown historical StreamId-to-key binding.
+
+## OPEN-007 — Same-ID, identical-definition reintroduction after removal
+
+**Status:** Unresolved architectural decision.
+May a removed source/derived declaration return under the same ID and identical
+semantic definition, and with which lifecycle/generation conditions? Verified
+WP-05 evidence reports known reintroductions; it does not grant reuse permission.
+
+**Affected consumers:** WP-09 restore/acceptance, WP-11 registration/demand,
+WP-23 derived generations and WP-24 reconciliation. Disabling a declaration is
+not permanent removal and does not erase independent demand.
+
+## OPEN-008 — Logical identifier allocation mechanism
+
+**Status:** Unresolved architectural decision.
+Should persistent/transient logical IDs use UUIDs or another non-reusable
+allocation mechanism? String wrappers/serialization and a preference for
+non-reuse do not decide this. This is distinct from OPEN-002 DemandId allocation
+and from durable LogEpoch allocation; no UUID dependency is approved here.
+
+**Affected consumers:** WP-05 identity representation, WP-09 persistent
+acceptance, WP-11 operational/transient allocation and WP-24 reconstruction.
+
+## OPEN-009 — Historical identity bindings after declaration removal
+
+**Status:** Unresolved architectural decision.
+How do retained events, replay clients and recorded rows preserve their original
+semantic binding after declarations/history are removed? A current mapping must
+not reinterpret older data. Configuration removal does not delete retained events,
+recorded rows or independently owned demand, and a new epoch/generation does not
+authorize reassignment of an old logical ID.
+
+**Affected consumers:** WP-05/09/11/23/24 and retention, recording and publication
+(WP-20/21/22). Restart/replay must report missing binding evidence instead of
+claiming permanent identity restoration or silently rebinding it.
+
+## OPEN-010 — Metadata freshness policy before activation
+
+**Status:** Unresolved architectural decision.
+What reference time, maximum age, refresh/failure behavior and available version
+consistency are required before activation? WP-05 preserves provenance and can
+check an explicit caller-supplied age bound; it does not choose a universal TTL
+or activation policy, or invent unavailable catalog-wide versions.
+
+**Affected consumers:** WP-07 ports, WP-09 compilation, WP-12 catalog/protocol
+integration, WP-23 semantic compilation and WP-24 startup/controlled refresh.
+
+## OPEN-011 — Concrete read-only PostgreSQL metadata adapter ownership
+
+**Status:** Unresolved package ownership decision.
+Which downstream package implements/verifies the actual read-only adapter to the
+existing catalog? WP-05 owns only domain resolution contracts/fixtures; WP-07
+owns service-port integration; WP-09 consumes validated metadata; WP-12 owns
+catalog/protocol integration. These boundaries do not automatically assign the
+concrete SQL adapter to WP-12, WP-09 or any other package. Earlier implementation
+evidence suggesting a concrete WP-12 assignment does not establish approval.
+
+**Affected consumers:** WP-07/09/12/23/24. Resolve the owner before adapter work;
+require complete-tuple, unambiguous read-only hydration, exact economics and
+provenance tests in the authorized isolated environment. No production database
+access or schema change is authorized by this decision register entry.
 
 ---
 

@@ -37,6 +37,33 @@
 
 ## Current Development Position
 
+### WP-05 authoritative documentation reconciliation — 2026-10-21
+
+Documentation-only reconciliation records user-approved DEC-035–038 and updates
+DEC-014/OPEN-001 to distinguish resolved catalog authority/classification from
+missing inputs and downstream integration. OPEN-006–011 explicitly preserve
+history-pruning/non-reuse, identical reintroduction, allocation, historical
+bindings, activation freshness and concrete read-only SQL adapter ownership.
+The latter package is **unassigned**: earlier WP-05 evidence suggesting WP-12
+concrete adapter ownership is superseded by the current user-approved boundary.
+WP-12 still owns catalog/protocol integration; WP-07 service ports, WP-09
+compilation/durable identity enforcement, WP-11 operational reconstruction,
+WP-23 derived semantic compilation/execution and WP-24 reconciliation are retained.
+Earlier WP-09 notes about unresolved metadata authority/family mechanism are
+historical: that architectural choice is resolved, while actual port/adapter
+adoption and remaining acceptance functionality are still incomplete.
+
+The five architecture documents, decision register and execution plan now
+separate accepted architecture, verified checkpoint `63f2526` contracts and pending
+integration. [Reconciliation report](evidence/wp05-documentation-reconciliation.md)
+records changed sections, contradictions and validation. **WP-05 remains Partial,
+not ReadyForReview or Accepted.** No implementation/test/schema/configuration/
+dependency changes or new Rust test results are claimed. Preserve the existing
+config-validator blank line and untracked runner script. One documentation-only
+local checkpoint; no push. **Stop after reconciliation; no next package authorized.**
+The earlier implementation assignment notes below are historical context.
+
+
 ### WP-05 identity and metadata contracts — 2026-10-21
 
 **WP-05 remains Partial — Not Accepted.** The authoritative
