@@ -39,6 +39,25 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest implementation checkpoint `077a78a` adds one bounded replacement-aware
+journal capacity notification, armed by DeliveryDriver before polling. Successful
+report acknowledgement or accepted escalation transfer wakes the current
+coordinator; rejected operations preserve the waiter. Resolution notification runs
+after the sink commitment lock is released. Deterministic production-path tests
+cover reporting after close, rejected acknowledgement, replacement, failed/double
+resolution, and reentrant sink observation.
+Final verification exits 0: formatting, Live check, 134 library / 451 integration
+(2 opt-in ignored) / 1 doctest, Live+historical check. Receipts:
+`engine/target/live-verification/20261021T052449Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort ordered
+composition, bounded retry timer scheduling and native metrics/control integration
+remain. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Further autonomous
+implementation can safely continue. No SQL/exchange access, push, Python/historical
+execution edits, dependency or ignored configuration changes. Pre-existing
+untracked launcher preserved. See [WP-10 evidence](evidence/WP-10-implementation.md).
+No acceptance claimed.
+
+
 Latest checkpoint `8f7a2d5` adds one bounded, replaceable completion waiter to
 DeliveryDriver. Successful correlated completion wakes the latest coordinator;
 failed correlation preserves it, including while the closed driver drains.

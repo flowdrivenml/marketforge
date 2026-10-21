@@ -1854,3 +1854,58 @@ External payload release and reporting still need notifications or retry timers;
 completion notification is an in-process coordinator primitive, not a daemon.
 Earlier WP-05/06/07/09 gates persist; WP-11–29 remain pending. Further autonomous
 implementation can safely continue. No acceptance or project completion claimed.
+
+
+## Continuation — terminal reporting capacity notification (2026-10-21)
+
+Status: Partial. Starting checkpoint `8b77401`; branch `codex/wp06-completion`.
+Inspected AGENTS.md, autonomous plan, decisions, status, roadmap WP-10/11,
+current history and actual driver/journal/reporting/resolution consumers.
+WP-10 remains next executable; did not restart completed work. Preserved
+pre-existing untracked scripts/run-autonomous-codex.sh.
+
+Implementation checkpoint: `077a78a`. FinalizationJournal now owns at most one
+replaceable coordinator waker. DeliveryDriver arms it before recovery/supervision.
+Successful reporting acknowledgement or committed escalation resolution consumes
+and wakes it. Failed operations leave it armed; reporting remains available after
+admission closes. Resolution wakes after releasing the resolution-sink commitment
+guard so a callback can safely observe that sink. No new queue, executor, tracker,
+reporting policy, event identity or durability promise.
+
+Acceptance ledger: real ordered-fanout/retained-delivery witness now checks
+reporting wake after close, failed acknowledgement without wake, successful record
+removal and journal count. New resolution lifecycle test checks coordinator
+replacement, failed resolution retaining the waiter/record, successful transfer,
+reentrant sink observation (lock released), rejected double commit, and downstream
+claimability. This is in-process scheduling integration, not a running daemon.
+
+Verification (commands from engine/ unless marked root; all final exits 0):
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite registered_driver: 3 passed.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite journal_capacity_notification: 1 passed.
+- Root ./scripts/verify-live.sh full: cargo fmt --all -- --check; cargo check
+  --locked --offline --no-default-features --features live --lib; cargo test
+  with the same flags and --lib (134 passed), --test live_suite (451 passed,
+  2 opt-in ignored), --doc (1 passed). Final receipts:
+  engine/target/live-verification/20261021T052449Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings remain.
+- Root git diff --check: exit 0 before checkpoint.
+- Earlier full check also passed (450 integration tests) before the new resolution
+  test was added; final full suite above supersedes it. Exploratory rg paths for
+  nonexistent acknowledgement/journal test files returned errors; corrected by
+  locating existing reporting/resolution tests. No compiler or test failures.
+
+Changed: engine/src/live/routing/acknowledgement.rs, routing/driver.rs,
+engine/tests/live/router.rs, resolution_lifecycle.rs, STATUS.md and this ledger.
+No database/exchange traffic, push, dependency/lockfile, ignored configuration,
+Python or historical execution changes. SQL/performance opt-ins and historical-only
+suite not run; historical zero-stream baseline not rechecked. Documentation
+checkpoint is the commit carrying this entry.
+
+Remaining: production EventRouterPort ordered composition; bounded retry timer
+scheduling (failed tracking/reporting and external payload release); native
+metrics/control integration. Actual reporting retries still require runtime
+scheduling. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Further safe
+autonomous work remains authorized. No package acceptance/project completion claimed.
