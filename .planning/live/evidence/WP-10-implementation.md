@@ -2016,3 +2016,60 @@ Documentation checkpoint is the commit carrying this entry.
 Earlier WP-05/06/07/09 gates remain; WP-11–29 pending. Next authorized executable
 package: WP-10 completion. Further autonomous implementation can safely continue.
 No package acceptance or entire-project completion claimed.
+
+
+## Continuation — ordered commitment through delivery owner (2026-10-21)
+
+Status: Partial. Starting HEAD `2e3dec0`, branch `codex/wp06-completion`;
+pre-existing untracked `scripts/run-autonomous-codex.sh` preserved. Reviewed
+repository instructions, autonomous plan, decisions, current status, roadmap
+WP-05–11 and existing ordered/driver/registry/consumer implementations.
+Next executable package remains WP-10; completed work was preserved.
+
+Implementation checkpoint: `0b0de81`. `DeliveryDriver::commit_ordered` connects
+ordered commitment and optional fan-out to its existing authoritative tracker and
+recovery owner without exposing mutable ownership. Closure returns both the typed
+error and original preparation before mutation. The caller retains capacity and
+ordering responsibility until it drops that preparation. Existing ordered checks,
+tracking reservations and partial outcomes are preserved rather than remapped to
+success. This is synchronous commitment composition, not EventRouterPort or an
+executor; existing preparation/context/resource limits remain mandatory.
+
+Acceptance ledger:
+- Implemented: ordered commitment through delivery owner, optional outcome
+  propagation, shutdown fencing with ownership-preserving rejection.
+- Consumer witness: existing registered driver test now commits through this
+  method, then supervises the actual queue, correlates completion, finalizes and
+  reports using the same driver owners.
+- Negative witness: preparation acquired before driver close is returned intact;
+  no obligations appear, frontier stays unchanged, pending order responsibility
+  remains until returned preparation is dropped, then releases.
+- Missing: production EventRouterPort admission, concrete runtime/reporting and
+  native metrics/control integration. No package acceptance claimed.
+
+Verification (commands from engine/ unless marked root):
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite driver_: exit 0, 11 passed, 446 filtered out.
+- Root ./scripts/verify-live.sh full: exit 0. cargo fmt --all -- --check;
+  cargo check --locked --offline --no-default-features --features live --lib;
+  cargo test with same flags --lib (134 passed), --test live_suite (455 passed,
+  2 opt-in ignored), --doc (1 passed). Receipts:
+  engine/target/live-verification/20261021T053147Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings remain.
+- Root git diff --check: exit 0 before implementation checkpoint.
+- Initial test append used a root-relative path while in engine/ and failed without
+  modifying a file. The subsequent filtered run passed 10 existing tests; the
+  corrected append and final receipts above include the new witness. No compiler
+  or behavioral failures. No SQL tests or exchange traffic. Historical-only suite
+  and historical zero-stream baseline were not rechecked.
+
+Changed files: engine/src/live/routing/driver.rs, engine/tests/live/router.rs,
+.planning/live/STATUS.md and this evidence ledger. No Python/historical execution,
+dependency/lockfile, ignored configuration, database or system changes. No push.
+Documentation checkpoint is the commit containing this entry.
+
+Remaining packages: WP-10 Partial; earlier WP-05/06/07/09 gates unchanged;
+WP-11–29 pending. Next authorized executable package: WP-10 completion.
+Further autonomous implementation can safely continue. The service and project
+are not complete.

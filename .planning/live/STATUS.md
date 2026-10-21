@@ -39,6 +39,22 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest implementation checkpoint `0b0de81` connects ordered commitment directly
+through `DeliveryDriver::commit_ordered`, using its authoritative tracker/recovery
+owners and returning required plus optional outcomes. Closed owners return the
+original preparation before any mutation; dropping it releases the order permit.
+The existing registered-delivery/completion/reporting witness now uses this path.
+Verification exits 0: formatting, Live check, 134 library / 455 integration
+(2 opt-in ignored) / 1 doctest, combined Live+historical check. Receipts:
+`engine/target/live-verification/20261021T053147Z-2/`.
+WP-10 remains Partial and next executable: EventRouterPort admission composition,
+concrete runtime/reporting integration and native metrics/control integration
+remain. Earlier WP-05/06/07/09 gates persist; WP-11–29 remain pending.
+Further autonomous implementation is safe. No SQL/exchange access, push,
+Python/historical execution changes, dependencies or ignored configuration edits.
+Pre-existing untracked launcher preserved. See WP-10 evidence; no acceptance claim.
+
+
 Latest checkpoint `358c34e` connects terminal reporting to timed delivery turns
 through `DeliveryDriver::drive_registered_reporting`. One turn processes at most
 one authoritative journal record; temporary failures keep their retry deadline,
