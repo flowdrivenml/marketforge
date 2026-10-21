@@ -1,20 +1,14 @@
 # MarketForge Live — Autonomous Implementation Plan
 
-**Status:** Standing execution policy; current assignment is planning reconciliation only
+**Status:** Active execution policy
 **Execution model:** One Codex agent, sequential work packages
 **Project:** MarketForge Live
 **Implementation language:** Rust
 **Target:** Complete the approved MarketForge Live v1 implementation
 
-**Current assignment (2026-10-21):** Reconcile WP-10 consumer responsibilities,
-update planning/status and the requested reconciliation report, create one local
-planning checkpoint, then stop. This assignment authorizes no implementation or
-next-package execution; it overrides automatic continuation for this task.
-
 ---
 
-## 1. Mission
-
+## 1. Mission 
 Implement MarketForge Live according to the accepted architecture,
 implementation roadmap, and recorded decisions.
 
@@ -209,7 +203,7 @@ production implementations as verified.
 | 24 | Runtime composition | Daemon, supervision, reconciliation |
 | 25 | Control server/client | Versioned management protocol |
 | 26 | Ratatui client | Five management views |
-| 27 | Metrics exporter | Optional read-only Prometheus adapter |
+| 27 | Native observability integration | Internal metrics, diagnostics, health, snapshots, and read-only API integration |
 | 28 | Exchange certification | Verification of supported exchange families |
 | 29 | Hardening and release | Fault testing, performance, deployment |
 
