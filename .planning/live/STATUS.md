@@ -39,6 +39,21 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest continuation adds ordered nonwaiting best-effort fan-out. Full/closed
+optional queues produce individual outcomes without capacity waiters; required
+tracking is preserved and the namespace order permit covers optional writes.
+Three deterministic consumer witnesses pass. Final full Live verification exits
+0: 130 library, 391 integration (2 opt-in ignored), 1 doctest; formatting, Live
+check and combined Live+historical check also exit 0. Receipts:
+`engine/target/live-verification/20261021T035844Z-2/`.
+WP-10 remains Partial: production owner/worker/completion/recovery lifetime,
+no-subscriber policies, observations and shutdown composition remain. Earlier
+WP-05/06/07/09 gates remain open; WP-11–29 are pending. Further autonomous WP-10
+implementation can safely continue. No SQL, exchange, historical, Python,
+dependency or ignored configuration changes; pre-existing launcher preserved.
+See WP-10 evidence for the checkpoint and exact checks.
+
+
 Latest continuation adds `OrderedAdmissionBudget`: global event-count and retained-
 byte limits are acquired before destination waiting and held through prepared
 commitment/drop. Exhaustion explicitly rejects without a hidden waiter queue;

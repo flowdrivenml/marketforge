@@ -81,6 +81,21 @@ fn check(
 }
 
 impl<'a> OrderedFanout<'a> {
+    /// Attempt optional queues only after required responsibility transferred.
+    /// Optional rejection never rewinds required commitment or its cursor.
+    pub fn commit_with_best_effort(
+        self,
+        tracker: &mut AcknowledgementTracker,
+        recovery: &mut TrackingRecovery,
+    ) -> (
+        OrderedCommitOutcome,
+        Option<Result<super::router::BestEffortFanout, super::router::BestEffortError>>,
+    ) {
+        let mut optional = None;
+        let required = self.commit_inner(tracker, recovery, Some(&mut optional));
+        (required, optional)
+    }
+
     /// Resolve the pre-registered authoritative frontier. An incoming batch
     /// cannot implicitly establish or reset a namespace.
     pub async fn prepare_registered(
@@ -137,6 +152,17 @@ impl<'a> OrderedFanout<'a> {
         tracker: &mut AcknowledgementTracker,
         recovery: &mut TrackingRecovery,
     ) -> OrderedCommitOutcome {
+        self.commit_inner(tracker, recovery, None)
+    }
+
+    fn commit_inner(
+        self,
+        tracker: &mut AcknowledgementTracker,
+        recovery: &mut TrackingRecovery,
+        optional: Option<
+            &mut Option<Result<super::router::BestEffortFanout, super::router::BestEffortError>>,
+        >,
+    ) -> OrderedCommitOutcome {
         if let Err(reason) = check(&self.context, self.clock.as_ref()) {
             return OrderedCommitOutcome::Rejected {
                 batch: self.batch,
@@ -152,6 +178,7 @@ impl<'a> OrderedFanout<'a> {
                 };
             }
         };
+        let optional_batch = optional.as_ref().map(|_| self.batch.clone());
         let result = FanoutCommitmentCoordinator::commit_tracked_with_recovery_checked(
             self.registry,
             tracker,
@@ -163,6 +190,9 @@ impl<'a> OrderedFanout<'a> {
             || check(&self.context, self.clock.as_ref()),
         );
         if !matches!(result, TrackedFanoutResult::Rejected { .. }) {
+            if let (Some(output), Some(batch)) = (optional, optional_batch) {
+                *output = Some(self.registry.try_best_effort(&self.plan, &batch));
+            }
             self.order.commit();
         }
         OrderedCommitOutcome::Tracked(result)

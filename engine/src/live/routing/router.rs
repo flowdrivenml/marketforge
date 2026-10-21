@@ -317,6 +317,19 @@ impl RoutingPlan {
     }
 }
 
+/// Best-effort queue admission only; no delivery or durability receipt is implied.
+#[derive(Debug)]
+pub struct BestEffortFanout {
+    pub queued: Vec<CommittedDestination>,
+    pub failed: Vec<FailedDestinationCommitment>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BestEffortError {
+    InvalidPlan(FanoutCommitmentError),
+    MissingQueue(DestinationId),
+}
+
 /// Destination registration and planning errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RouterRegistryError {
@@ -348,6 +361,67 @@ pub struct RouterRegistry {
 }
 
 impl RouterRegistry {
+    /// Try each optional queue once, without registering capacity waiters.
+    /// The registry fence prevents removal/replacement during commitment.
+    /// A full or closed subscriber cannot delay any other destination.
+    pub fn try_best_effort(
+        &self,
+        plan: &RoutingPlan,
+        batch: &EventBatch,
+    ) -> Result<BestEffortFanout, BestEffortError> {
+        let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
+        let state = self.state.read().unwrap_or_else(|e| e.into_inner());
+        let invalid = |reason| BestEffortError::InvalidPlan(reason);
+        if state.shutting_down {
+            return Err(invalid(FanoutCommitmentError::ShuttingDown));
+        }
+        if state.revision != plan.registry_revision {
+            return Err(invalid(FanoutCommitmentError::RegistryChanged));
+        }
+        if batch.first_cursor() != &plan.first_cursor || batch.last_cursor() != &plan.last_cursor {
+            return Err(invalid(FanoutCommitmentError::CursorMismatch));
+        }
+        // Validate the entire public plan before the first irreversible write.
+        let mut seen = std::collections::HashSet::new();
+        for entry in &plan.best_effort {
+            let Some(current) = state.destinations.get(&entry.descriptor.id) else {
+                return Err(invalid(FanoutCommitmentError::DestinationMismatch));
+            };
+            if !seen.insert(entry.descriptor.id)
+                || current.descriptor != entry.descriptor
+                || entry.descriptor.policy != DeliveryPolicy::BestEffort
+                || !Arc::ptr_eq(&current.destination, &entry.destination)
+            {
+                return Err(invalid(FanoutCommitmentError::DestinationMismatch));
+            }
+            if current.queue.is_none() {
+                return Err(BestEffortError::MissingQueue(entry.descriptor.id));
+            }
+        }
+        let mut result = BestEffortFanout {
+            queued: Vec::with_capacity(plan.best_effort.len()),
+            failed: Vec::new(),
+        };
+        for entry in &plan.best_effort {
+            // Use the authoritative registered queue, never a caller's clone.
+            let queue = state.destinations[&entry.descriptor.id]
+                .queue
+                .as_ref()
+                .unwrap();
+            match queue.try_enqueue(batch.clone()) {
+                Ok(()) => result.queued.push(CommittedDestination {
+                    id: entry.descriptor.id,
+                    through: batch.last_cursor().clone(),
+                }),
+                Err(rejection) => result.failed.push(FailedDestinationCommitment {
+                    id: entry.descriptor.id,
+                    reason: rejection.reason,
+                }),
+            }
+        }
+        Ok(result)
+    }
+
     pub fn new() -> Self {
         Self {
             state: RwLock::new(RouterRegistryState {

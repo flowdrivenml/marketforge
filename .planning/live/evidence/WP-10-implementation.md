@@ -206,3 +206,59 @@ completion/recovery ownership, best-effort/no-subscriber policies, native
 observations and deadline shutdown remain incomplete. No package acceptance
 asserted. Earlier foundational blockers remain unchanged. Checkpoint: commit
 carrying this report; further independent WP-10 work can safely continue.
+
+
+## Continuation — isolated optional queue fan-out (2026-10-21)
+
+Status: Partial. Baseline `00d9990`, branch `codex/wp06-completion`; only
+pre-existing untracked `scripts/run-autonomous-codex.sh`, preserved. Inspected
+AGENTS, authorized plan, decisions, current status, roadmap WP-10 and current
+routing/queue/port implementations and consumers. WP-10 remains next executable.
+
+Implemented:
+- Nonwaiting optional queue fan-out validates cursor range, registry revision,
+  destination identity/policy and duplicate IDs before any write, under the
+  existing registry commitment fence. Writes use authoritative registered queues.
+- Each full/closed optional destination reports its own queue failure; other
+  destinations still run. No asynchronous capacity waiter or unbounded retry
+  buffer is created. Immutable batch/event sharing and queue count/byte limits
+  remain authoritative. Results mean queued, never durable/consumer-processed.
+- Ordered commitment can compose this fan-out after required responsibility
+  transfer, retaining the namespace permit and global preparation charge through
+  optional writes. Required rejection skips optional writes; optional failure
+  cannot roll back accepted required cursors. Registry mutation between phases
+  explicitly rejects the optional plan rather than writing to stale owners.
+- Three real consumer witnesses cover full/closed/healthy queues together,
+  required queue readback, shared Arc event identity, zero optional waiters,
+  stale/duplicate/shutdown plan rejection with no writes, and cancellation plus
+  same-frontier retry. Fixtures use deterministic local queues, no sleeps.
+
+Verification (engine/ unless noted; all final commands exit 0):
+- Focused `cargo test --locked --offline --no-default-features --features live
+  --test live_suite optional_fanout`: initial two witnesses passed; final third
+  witness included in complete suite below. An initial test append used the wrong
+  relative path and failed before writing; corrected before final verification.
+  The accompanying initial zero-match test invocation is not counted as evidence.
+- Root `./scripts/verify-live.sh full`: five passing gates, exact commands
+  `cargo fmt --all -- --check`; `cargo check --locked --offline
+  --no-default-features --features live --lib`; `cargo test --locked --offline
+  --no-default-features --features live --lib` (130 passed); same with
+  `--test live_suite` (391 passed, 2 opt-in ignored); same with `--doc` (1 passed).
+  Final receipts: `engine/target/live-verification/20261021T035844Z-2/`.
+- `cargo check --locked --offline --no-default-features --features live,historical`:
+  exit 0, receipt `engine/target/live-verification/optional-combined-check.log`.
+- Root `git diff --check`: exit 0. Existing dead-code warning remains.
+
+Changed: routing/{router,ordered}.rs, tests/live/router_obligations.rs, STATUS.md
+and this ledger. No SQL, external exchange, Python, historical execution,
+dependency/lockfile, ignored configuration or user-launcher changes. Opt-in SQL,
+performance and historical baseline tests were not rerun. No push.
+
+Limitations: this composes queue policy through the existing ordered coordinator;
+production EventRouterPort owner and workers are still pending. Optional-only
+and no-subscriber admission remain unsupported by the required coordinator.
+Completion correlation, owner-lifetime recovery/payload retention, observations
+and deadline shutdown remain incomplete; earlier foundational gates are unchanged.
+No package accepted. Next authorized/executable work: WP-10 completion. Further
+autonomous implementation is safe. Checkpoint: implementation commit containing
+this report (hash recorded in the following documentation checkpoint).
