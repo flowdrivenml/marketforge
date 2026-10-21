@@ -2890,3 +2890,59 @@ lockfile, Python/historical execution or launcher edits. No push. Changed:
 engine/src/live/routing/ingress_reporting.rs, engine/tests/live/router.rs,
 STATUS.md and this ledger. Safe autonomous continuation remains possible;
 no package acceptance or project-completion claim.
+
+## Continuation — bounded ingress reporting retry scheduling (2026-10-21)
+
+Status: Partial. Next executable: WP-10. Initial HEAD `51ef451`, branch
+`codex/wp06-completion`; preserved pre-existing untracked launcher
+`scripts/run-autonomous-codex.sh`. Inspected instructions, campaign plan,
+decisions, status, relevant WP-05–11 roadmap requirements and actual ingress,
+journal, reporting, deadline and driver consumers. No completed work restarted.
+Implementation checkpoint: `f607c06`; documentation checkpoint carries this entry.
+
+Acceptance ledger:
+- ScheduledIngressReporting composes the existing charged reporting consumer,
+  authoritative monotonic clock and bounded DeadlineTimer port. Each turn invokes
+  at most one handler; pending retries reuse one retained timer. Nonzero interval
+  and finite attempt budget are explicit construction policy.
+- Temporary handler failure retains the original record until retry time. Timer
+  capacity failures preserve the original deadline; early readiness is an explicit
+  adapter error. The clock retires due timers even when the adapter stays pending.
+  A deadline crossing during fresh timer polling schedules one further turn.
+- Permanent failure, attempt exhaustion and handler unwind retain responsibility
+  for explicit escalation. Subsequent polls do not re-invoke the blocked handler.
+  take_pending transfers the actual charged record and retires timer state.
+  Closing admission does not waive unresolved reporting or resource accounting.
+- Two deterministic actual-ingress witnesses cover zero interval, temporary retry
+  then success, exhausted attempts, permanent failure, handler unwind, timer
+  exhaustion, early readiness, pending/due timer behavior, journal closure and
+  delayed drain while transferred ownership remains charged. Reporting success
+  leaves real destination delivery independent.
+- Remaining: concrete runtime reporting/recovery policy and handlers, full lifecycle
+  composition and Control integration. This cooperative scheduler is not a running
+  daemon, durable journal, recovery integration or package acceptance. Earlier
+  WP-05/06/07/09 gates persist; WP-11–29 pending. Safe continuation remains possible.
+
+Verification (engine/ unless root stated):
+- cargo fmt --manifest-path engine/Cargo.toml --all (root): exit 0.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite scheduled_ingress_reporting: final exit 0, 2 passed / 480 filtered.
+- ./scripts/verify-live.sh full (root): exit 0; exact commands: cargo fmt --all --
+  --check; cargo check --locked --offline --no-default-features --features live
+  --lib; cargo test with the same flags --lib (135 passed), --test live_suite
+  (480 passed, 2 opt-in ignored), --doc (1 passed). Receipts:
+  engine/target/live-verification/20261021T062445Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings remain.
+- git diff --check (root): exit 0 before implementation checkpoint.
+- Initial focused compilation exited 101 for a missing test ErrorCode import;
+  corrected, final focused and full suites pass. Exploratory reads of nonexistent
+  scheduling/time/deadline files were corrected by locating actual deadline ports
+  in routing/admission.rs. No unresolved test failures.
+- SQL/performance opt-in and historical-only suites not run; historical zero-stream
+  baseline not rechecked. No database/exchange access or durability claim.
+
+Changed: engine/src/live/routing/ingress_reporting.rs, engine/tests/live/router.rs,
+STATUS.md and this ledger. No Python/historical execution, dependency/lockfile,
+ignored configuration or launcher modifications. No push. No package marked
+Accepted and no entire-project completion claim.

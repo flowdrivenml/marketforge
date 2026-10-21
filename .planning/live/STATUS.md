@@ -39,6 +39,22 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest implementation checkpoint `f607c06` adds bounded scheduled ingress reporting:
+one retained retry timer, finite handler attempts, explicit escalation after permanent
+failure/exhaustion/unwind, and charged ownership transfer. Timer admission faults
+and early readiness preserve the record/deadline; authoritative time retires pending
+timers when due. Closure preserves retry policy and unresolved charges.
+Verification exits 0: formatting, Live check, 135 library / 480 integration passes
+(2 opt-in ignored) / 1 doctest, plus Live+historical check. Receipts:
+`engine/target/live-verification/20261021T062445Z-2/`.
+WP-10 remains Partial and next executable: concrete reporting/recovery policy,
+runtime lifecycle and Control composition remain. Earlier WP-05/06/07/09 gates
+persist; WP-11–29 pending. Safe autonomous continuation remains possible.
+No SQL/exchange access, Python/historical execution, dependency/lockfile or ignored
+configuration changes. Pre-existing untracked launcher preserved. No push or
+acceptance claim. See WP-10 implementation evidence.
+
+
 Latest checkpoint `14c7643` adds explicit ingress-outcome draining: closes admission,
 returns retained records, and reports completion only after all charges release.
 A cancelled preparing admission wakes the drain coordinator even if it produces
