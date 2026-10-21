@@ -38,3 +38,5 @@ pub(crate) mod wp06_contracts;
 
 pub(crate) mod c06_recording;
 pub(crate) mod wp07_contracts;
+
+pub(crate) mod c06_postgres;
