@@ -3294,6 +3294,172 @@ mod ingress_witnesses {
     }
 
     #[test]
+    fn complete_router_shutdown_preserves_independent_reporting_ownership() {
+        use marketforge_engine::live::routing::{
+            acknowledgement::{FinalizationRecord, FinalizationRetryPolicy},
+            admission::{DeadlineFuture, DeadlineTimer},
+            ingress_reporting::{IngressOutcomes, IngressReporter, ScheduledIngressReporting},
+            reporting::{FinalizationReporter, FinalizationReportingConsumer, ReportingError},
+            shutdown::{CompleteRouterShutdownStep, RouterShutdownOwners},
+        };
+        use marketforge_engine::live::{
+            model::delivery::{DeliveryStage, DeliveryStatus},
+            ports::routing::DestinationCompletion,
+        };
+        use std::time::Duration;
+        struct Timer;
+        impl DeadlineTimer for Timer {
+            fn sleep_until(&self, _: Instant) -> DeadlineFuture {
+                Box::pin(std::future::pending())
+            }
+        }
+        struct FinalReporter;
+        impl FinalizationReporter for FinalReporter {
+            fn report(&self, _: &FinalizationRecord) -> Result<(), ReportingError> {
+                Ok(())
+            }
+        }
+        struct ProducerReporter(usize);
+        impl IngressReporter for ProducerReporter {
+            fn report(
+                &mut self,
+                _: &EventBatch,
+                _: &mut IngressOutcome,
+            ) -> Result<(), ReportingError> {
+                self.0 += 1;
+                Err(ReportingError::TemporarilyUnavailable)
+            }
+        }
+        let fixture = Fixture::new();
+        fixture.queue(1, DeliveryPolicy::Required);
+        let journal = IngressOutcomes::new(ResourceUsage {
+            items: 1,
+            bytes: 100_000,
+        })
+        .unwrap();
+        ready(journal.admit(&fixture.ingress(), batch(), context())).unwrap();
+        let final_reports = FinalizationReportingConsumer::new(
+            FinalReporter,
+            Duration::from_secs(1),
+            FinalizationRetryPolicy::new(Duration::from_secs(1), Duration::from_secs(1), 2)
+                .unwrap(),
+        )
+        .unwrap();
+        let mut ingress =
+            ScheduledIngressReporting::new(Duration::from_secs(1), NonZeroUsize::new(1).unwrap())
+                .unwrap();
+        let mut reporter = ProducerReporter(0);
+        let mut driver = fixture.driver.lock().unwrap();
+        let mut owners = RouterShutdownOwners {
+            namespaces: &fixture.namespaces,
+            admission: &fixture.budget,
+            destinations: &fixture.registry,
+            delivery: &mut driver,
+        };
+        let mut cx = Context::from_waker(Waker::noop());
+        let mut expired: DeadlineFuture = Box::pin(std::future::ready(()));
+        assert!(matches!(
+            owners.drive_complete_reporting(
+                &mut cx,
+                &mut expired,
+                fixture.clock.as_ref(),
+                &Timer,
+                Duration::from_secs(1),
+                &final_reports,
+                &journal,
+                &mut ingress,
+                &mut reporter,
+            ),
+            CompleteRouterShutdownStep::DeadlineReached
+        ));
+        assert!(journal.snapshot().closed);
+        assert!(owners.snapshot().admission_closed);
+        assert!(owners.snapshot().destinations.shutting_down);
+        assert_eq!(reporter.0, 0);
+        assert!(owners.snapshot().delivery.workers.workers.is_empty());
+        let polls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = polls.clone();
+        let mut deadline: DeadlineFuture = Box::pin(std::future::poll_fn(move |_| {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Poll::Pending
+        }));
+        let mut transferred = None;
+        for turn_number in 1..=16 {
+            let turn = owners.drive_complete_reporting(
+                &mut cx,
+                &mut deadline,
+                fixture.clock.as_ref(),
+                &Timer,
+                Duration::from_secs(1),
+                &final_reports,
+                &journal,
+                &mut ingress,
+                &mut reporter,
+            );
+            assert_eq!(polls.load(std::sync::atomic::Ordering::SeqCst), turn_number);
+            assert!(matches!(turn, CompleteRouterShutdownStep::Step { .. }));
+            drop(turn);
+            if ingress.pending().is_some() {
+                transferred = ingress.take_pending();
+            }
+            let snapshot = owners.snapshot();
+            if snapshot.delivery.tracked_obligations > 0
+                && !snapshot.delivery.workers.workers.is_empty()
+            {
+                owners
+                    .delivery
+                    .apply_completion(&DestinationCompletion {
+                        destination: DestinationId(1),
+                        through: batch().last_cursor().clone(),
+                        status: DeliveryStatus::Progress(DeliveryStage::Delivered),
+                    })
+                    .unwrap();
+            }
+            if owners.snapshot().is_drained() {
+                break;
+            }
+            fixture.clock.advance(Duration::from_secs(1)).unwrap();
+        }
+        assert!(owners.snapshot().is_drained());
+        assert_eq!(reporter.0, 1);
+        assert!(transferred.is_some());
+        assert_eq!(journal.snapshot().usage.items, 1);
+        // Delivery has drained, but the transferred producer obligation still blocks completion.
+        assert!(matches!(
+            owners.drive_complete_reporting(
+                &mut cx,
+                &mut deadline,
+                fixture.clock.as_ref(),
+                &Timer,
+                Duration::from_secs(1),
+                &final_reports,
+                &journal,
+                &mut ingress,
+                &mut reporter,
+            ),
+            CompleteRouterShutdownStep::Step { .. }
+        ));
+        drop(deadline);
+        assert!(polls.load(std::sync::atomic::Ordering::SeqCst) > 0);
+        drop(transferred);
+        // A completed drain takes precedence without polling an already consumed deadline.
+        assert!(matches!(
+            owners.drive_complete_reporting(
+                &mut cx,
+                &mut expired,
+                fixture.clock.as_ref(),
+                &Timer,
+                Duration::from_secs(1),
+                &final_reports,
+                &journal,
+                &mut ingress,
+                &mut reporter,
+            ),
+            CompleteRouterShutdownStep::Drained
+        ));
+    }
+
+    #[test]
     fn scheduled_ingress_shutdown_retains_deadline_retry_and_transferred_charges() {
         use marketforge_engine::live::{
             foundation::clock::ManualClock,

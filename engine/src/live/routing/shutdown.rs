@@ -107,6 +107,21 @@ pub enum ReportingRouterShutdownStep {
     },
 }
 
+/// Delivery and producer reporting retain independent outcomes and ownership.
+#[derive(Debug)]
+#[must_use]
+pub enum CompleteRouterShutdownStep {
+    Drained,
+    DeadlineReached,
+    Step {
+        delivery: ReportingRouterShutdownStep,
+        ingress: Result<
+            std::task::Poll<super::ingress_reporting::ScheduledIngressStep>,
+            crate::live::model::error::ErrorCode,
+        >,
+    },
+}
+
 /// Borrows the real owners rather than constructing parallel lifecycle state.
 pub struct RouterShutdownOwners<'a> {
     pub namespaces: &'a AdmissionNamespaces,
@@ -115,6 +130,50 @@ pub struct RouterShutdownOwners<'a> {
     pub delivery: &'a mut DeliveryDriver,
 }
 impl RouterShutdownOwners<'_> {
+    /// Fence every admission owner before testing the deadline. A complete drain
+    /// requires both delivery and all charged producer reports, including reports
+    /// transferred for escalation. Each turn runs at most one handler of each
+    /// kind. An ingress retry/error never prevents independent delivery progress.
+    /// The deadline is polled once before the bounded turn; retain all owners on
+    /// expiry. This establishes neither durable reporting nor recovery completion.
+    #[allow(clippy::too_many_arguments)]
+    pub fn drive_complete_reporting<R: super::reporting::FinalizationReporter>(
+        &mut self,
+        cx: &mut Context<'_>,
+        deadline: &mut DeadlineFuture,
+        clock: &dyn crate::live::foundation::MonotonicClock,
+        timer: &dyn super::admission::DeadlineTimer,
+        interval: std::time::Duration,
+        consumer: &super::reporting::FinalizationReportingConsumer<R>,
+        journal: &super::ingress_reporting::IngressOutcomes,
+        ingress: &mut super::ingress_reporting::ScheduledIngressReporting,
+        reporter: &mut impl super::ingress_reporting::IngressReporter,
+    ) -> CompleteRouterShutdownStep {
+        let _ = self.admission.poll_shutdown(cx);
+        let _ = self.namespaces.poll_shutdown(cx);
+        let _ = self.destinations.poll_shutdown(cx);
+        let ingress_drained = journal.poll_shutdown(cx).is_ready() && ingress.pending().is_none();
+        if self.snapshot().is_drained() && ingress_drained {
+            return CompleteRouterShutdownStep::Drained;
+        }
+        if deadline.as_mut().poll(cx).is_ready() {
+            return CompleteRouterShutdownStep::DeadlineReached;
+        }
+        // The outer deadline gates the complete turn. Do not poll a possibly
+        // one-shot deadline a second time through the delivery-only coordinator.
+        let mut turn_deadline: DeadlineFuture = Box::pin(std::future::pending());
+        let delivery = self.drive_registered_reporting(
+            cx,
+            &mut turn_deadline,
+            clock,
+            timer,
+            interval,
+            consumer,
+        );
+        let ingress = ingress.poll_step(journal, reporter, cx, clock, timer);
+        CompleteRouterShutdownStep::Step { delivery, ingress }
+    }
+
     /// Fence admission, reconcile one queue, and process at most one terminal
     /// report using the driver's existing timer and journal. Deadline expiry
     /// performs no delivery, timer allocation or reporter call. Failed reporting
