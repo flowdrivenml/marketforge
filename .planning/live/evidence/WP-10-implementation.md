@@ -1810,3 +1810,47 @@ or a bounded retry timer; failed tracking passes must not be busy-polled. Synchr
 all queues before closing the driver; this method is not deadline shutdown.
 Earlier WP-05/06/07/09 gates remain open and WP-11–29 remain pending. Further
 independent autonomous WP-10 work is safe. No package or project acceptance claimed.
+
+
+## Continuation — completion coordinator notification (2026-10-21)
+
+Status: Partial. Starting checkpoint `912fb94`, branch `codex/wp06-completion`.
+Inspected repository instructions, autonomous plan, decision register, current
+status/history/evidence, roadmap WP-10/11 and actual delivery/admission consumers.
+Next executable remains WP-10. Preserved untracked scripts/run-autonomous-codex.sh.
+
+Implementation checkpoint: `8f7a2d5`. DeliveryDriver now retains at most one
+replaceable coordinator waker, armed before delivery polling. Successful correlated
+completion takes and wakes it; failed correlation leaves it armed. Completions
+coalesce until another drive. Closing admission preserves completion progress.
+No new task, queue, tracker, durability guarantee or financial policy introduced.
+The existing real ordered-fanout consumer witness now also exercises invalid
+correlation without wake, coordinator replacement, completion after close, correct
+coordinator wake and subsequent terminal finalization/charged payload release.
+
+Verification (actual exits, commands from engine/ unless noted):
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite registered_driver: exit 0, 3 passed.
+- Root ./scripts/verify-live.sh full: exit 0. Runs cargo fmt --all -- --check;
+  cargo check --locked --offline --no-default-features --features live --lib;
+  cargo test with the same flags and --lib (134 passed), --test live_suite
+  (450 passed, 2 opt-in ignored), --doc (1 passed). Receipts:
+  engine/target/live-verification/20261021T052247Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings remain.
+- Root git diff --check: exit 0. No behavioral test failures. A reconnaissance
+  rg for rust-version returned no match (exit 1), not a verification failure.
+  Only a doc comment changed after full checks.
+
+Changed: engine/src/live/routing/driver.rs, engine/tests/live/router.rs,
+STATUS.md and this ledger. No SQL/exchange traffic, push, dependency/lockfile,
+ignored configuration or Python/historical execution edits. SQL/performance
+opt-ins and historical-only tests not run; historical zero-stream baseline not
+rechecked. Documentation checkpoint is the commit carrying this entry.
+
+Remaining ledger: production EventRouterPort ordered composition, runtime
+reporting and bounded retry timer scheduling, native metrics/control binding.
+External payload release and reporting still need notifications or retry timers;
+completion notification is an in-process coordinator primitive, not a daemon.
+Earlier WP-05/06/07/09 gates persist; WP-11–29 remain pending. Further autonomous
+implementation can safely continue. No acceptance or project completion claimed.

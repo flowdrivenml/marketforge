@@ -39,6 +39,22 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest checkpoint `8f7a2d5` adds one bounded, replaceable completion waiter to
+DeliveryDriver. Successful correlated completion wakes the latest coordinator;
+failed correlation preserves it, including while the closed driver drains.
+The real ordered-fanout/retained-delivery witness proves replacement, rejected
+correlation, shutdown completion and subsequent terminal payload release.
+Verification exits 0: formatting, Live check, 134 library / 450 integration
+(2 opt-in ignored) / 1 doctest, Live+historical check. Receipts:
+`engine/target/live-verification/20261021T052247Z-2/`.
+WP-10 remains Partial and next executable: EventRouterPort ordered composition,
+reporting/retry timer scheduling and native metrics/control integration remain.
+WP-05/06/07/09 gates persist; WP-11–29 pending. Further autonomous work is safe.
+No SQL/exchange access, push, Python/historical execution edits, dependency or
+ignored configuration changes. Pre-existing untracked launcher preserved.
+See [WP-10 evidence](evidence/WP-10-implementation.md). No acceptance claimed.
+
+
 Latest continuation checkpoint `cd7f74f` composes registry maintenance, delivery,
 and membership notification in `DeliveryDriver::drive_registered`. Each turn
 attaches at most one queue, runs one existing recovery/supervision turn, and arms
