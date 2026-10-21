@@ -185,3 +185,43 @@ fn iterative_graph_handles_long_chains_without_recursive_stack_growth() {
     }
     assert_eq!(dependency_order(&config, 1001, 1000).unwrap().len(), 1001);
 }
+
+#[test]
+fn spot_mismatch_is_definite_while_derivative_family_remains_unresolved() {
+    use marketforge_engine::{
+        job::InstrumentKind,
+        live::model::identity::{MarketKind, ValidationIssueKind},
+    };
+    for kind in [InstrumentKind::Perpetual, InstrumentKind::Future] {
+        let mut source = source("invalid-spot");
+        source.key.instrument.instrument_kind = kind;
+        source.key.instrument.contract_kind = None;
+        source.key.market = MarketKind::Spot;
+        assert!(source.key.validate().has_definite_failures());
+        assert!(
+            source
+                .key
+                .validate()
+                .issues
+                .iter()
+                .any(|i| i.kind == ValidationIssueKind::MarketKindMismatch)
+        );
+        assert!(
+            build_candidate(
+                &base(),
+                &changes(vec![ConfigChange::RegisterSource {
+                    definition: source.clone()
+                }]),
+                100,
+                100
+            )
+            .is_err()
+        );
+        source.key.market = MarketKind::Linear;
+        assert!(!source.key.validate().has_definite_failures());
+        assert_eq!(
+            source.key.validate().unresolved_classifications().count(),
+            1
+        );
+    }
+}

@@ -140,3 +140,14 @@ C12 production adapter decision as a prerequisite for WP-07 acceptance rather
 than before its first real adapter consumer, that gate remains open; this report
 does not infer an approved driver/runtime choice from illustrative library lists.
 The user retains final acceptance.
+
+## Autonomous reconciliation follow-up
+
+The real WP-08 NativeMetricHandle now implements both frozen observation ports
+and is consumed by the actual InstrumentedOwner constructor witness. Internal
+ObservationAdmission adds explicit Rejected(ErrorCode) and SampledOut outcomes,
+so stale/invalid observations and deliberate timing sampling are not mislabeled
+as capacity drops. No serialized Control API vocabulary or framing changed.
+The shared sanitized desired-state fixture replaces a duplicate builder without
+weakening assertions. C12 production network/TLS/SQL selection remains OPEN;
+this follow-up is not adapter certification or formal acceptance.

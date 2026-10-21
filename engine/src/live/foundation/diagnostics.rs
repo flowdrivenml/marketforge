@@ -232,6 +232,20 @@ impl LocalDiagnosticWorker {
             dropped: std::sync::atomic::AtomicU64::new(0),
         })
     }
+    pub fn last_error(&self) -> Option<ErrorCode> {
+        self.state.0.lock().unwrap_or_else(|e| e.into_inner()).error
+    }
+    pub fn dropped_records(&self) -> u64 {
+        self.dropped
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .saturating_add(
+                self.state
+                    .0
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .rejected,
+            )
+    }
     pub fn enqueue(
         &self,
         event: &DiagnosticEvent,

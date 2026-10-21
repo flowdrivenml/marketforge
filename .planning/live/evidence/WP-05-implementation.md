@@ -28,3 +28,10 @@ is a verified repair, not a claim that every WP-05 requirement is finished.
 Next work: complete independent foundational reconciliation and WP-08 primitives
 while keeping localized identity/adapter/database gates explicit.
 Checkpoint: commit carrying this report (see Git history).
+
+Reopened through the WP-09 consumer: perpetual/future instruments with an absent
+family were incorrectly treated as merely ambiguous even when the requested
+market was Spot. Spot is now a definite mismatch; Linear/Inverse ambiguity stays
+unresolved under DEC-014. A production candidate-construction regression test
+proves rejection without changing canonical catalog or financial semantics.
+Final campaign full run: exit 0, 130 library / 376 integration / 1 doctest.

@@ -154,3 +154,11 @@ concurrent protected cleanup, or full idempotent retry/reconciliation SQL. Those
 gates remain open, as does the canonical signed timestamp/schema conflict. The
 previous read-only authorization blocker is superseded for the isolated DB.
 Checkpoint: commit carrying this addendum, see Git history.
+
+The isolated witness was strengthened with a 28-place fractional price and
+quantity, plus asserted fixture cleanup. Both exact decimals survive SQL NUMERIC
+readback and canonical reconstruction; the test exits 0 with 1 passed. Cleanup
+success is now asserted before test success rather than relying only on Drop.
+
+Final isolated SQL receipt: `engine/target/live-verification/campaign-final-1792553404735277127/results.json` (SQL command exit 0;
+1 passed, 377 filtered). The test guards identity/role on every libpq session.

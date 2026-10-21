@@ -18,12 +18,19 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DistributionSource {
+    None,
+    Local,
+    External,
+}
 #[derive(Clone)]
 struct Series {
     metric: MetricId,
     measurement: Measurement<MetricValue>,
     received: Option<Instant>,
     histogram: BoundedHistogram,
+    distribution_source: DistributionSource,
     counter: u64,
     overflow: bool,
 }
@@ -142,6 +149,7 @@ impl NativeMetrics {
                         },
                         received: None,
                         histogram: BoundedHistogram::default(),
+                        distribution_source: DistributionSource::None,
                         counter: 0,
                         overflow: false,
                     })
@@ -419,6 +427,11 @@ impl NativeMetricHandle {
             if s.overflow {
                 return Err(ErrorCode::Limit);
             }
+            if s.distribution_source == DistributionSource::External {
+                return Err(ErrorCode::InvalidInput);
+            }
+            s.distribution_source = DistributionSource::Local;
+
             if let Err(e) = s.histogram.observe(value) {
                 s.overflow = true;
                 s.measurement = Measurement::Unavailable {
@@ -497,6 +510,16 @@ impl ScopedMetricsPort for NativeMetricHandle {
                     return Err(ErrorCode::InvalidInput);
                 }
                 s.counter = *new;
+            }
+            if let Measurement::Available {
+                value: MetricValue::Distribution(_),
+                ..
+            } = &measurement
+            {
+                if s.distribution_source == DistributionSource::Local {
+                    return Err(ErrorCode::InvalidInput);
+                }
+                s.distribution_source = DistributionSource::External;
             }
             s.measurement = measurement;
             Ok(())
@@ -724,6 +747,39 @@ mod tests {
         assert_eq!(
             next.increment(MetricId::FailedTasksTotal, 1, 0),
             Err(ErrorCode::StaleGeneration)
+        );
+    }
+    #[test]
+    fn raw_histogram_samples_cannot_silently_replace_external_summary() {
+        let (_, registry, old) = setup(true);
+        let h = registry
+            .register(binding(2, 0, vec![MetricId::RuntimeSchedulerDelay]))
+            .unwrap();
+        drop(old);
+        registry
+            .configure(&crate::live::model::configuration::MetricsSettings {
+                enabled: true,
+                detailed_timing: true,
+                snapshot_interval_ns: 1,
+                timing_sample_one_in: 1,
+            })
+            .unwrap();
+        let mut histogram = BoundedHistogram::default();
+        histogram.observe(7).unwrap();
+        h.record(
+            MetricId::RuntimeSchedulerDelay,
+            Measurement::Available {
+                value: MetricValue::Distribution(histogram.snapshot()),
+                observed_at_ns: 0,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            h.observe_ns(MetricId::RuntimeSchedulerDelay, 8, 0),
+            Err(ErrorCode::InvalidInput)
+        );
+        assert!(
+            matches!(&registry.snapshot(Duration::from_secs(1))[0].measurement,Measurement::Available {value:MetricValue::Distribution(summary),..} if summary.count==1)
         );
     }
     #[test]

@@ -84,18 +84,31 @@ fn insert(row: &StoredEvent, stream: &str) -> String {
     }
     query
 }
-struct Fixture(String);
+struct Fixture {
+    id: String,
+    live: bool,
+}
+impl Fixture {
+    fn cleanup(&mut self) -> Result<(), String> {
+        if !self.live {
+            return Ok(());
+        }
+        let stream = quote(&self.id);
+        sql(&format!(
+            "BEGIN; DELETE FROM live_canonical.recording_coverage WHERE stream_id={stream}; DELETE FROM live_canonical.events WHERE stream_id={stream}; DELETE FROM live_canonical.event_identities WHERE stream_id={stream}; DELETE FROM live_canonical.streams WHERE stream_id={stream}; COMMIT;"
+        ))?;
+        self.live = false;
+        Ok(())
+    }
+}
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let stream = quote(&self.0);
-        let cleanup = format!(
-            "BEGIN; DELETE FROM live_canonical.recording_coverage WHERE stream_id={stream}; DELETE FROM live_canonical.events WHERE stream_id={stream}; DELETE FROM live_canonical.event_identities WHERE stream_id={stream}; DELETE FROM live_canonical.streams WHERE stream_id={stream}; COMMIT;"
-        );
-        if let Err(error) = sql(&cleanup) {
+        if let Err(error) = self.cleanup() {
             eprintln!("isolated fixture cleanup failed: {error}");
         }
     }
 }
+
 #[test]
 #[ignore = "requires explicitly authorized isolated PostgreSQL database and psql"]
 fn real_group_commit_exact_readback_retry_conflict_and_atomic_rollback() {
@@ -106,6 +119,12 @@ fn real_group_commit_exact_readback_retry_conflict_and_atomic_rollback() {
         .into_fields();
     fields.cursor.stream_id = StreamId(id.clone());
     fields.provenance.source_stream = StreamId(id.clone());
+    if let marketforge_engine::live::model::LivePayload::L2Group(group) = &mut fields.payload {
+        group.grouped_levels[0].price = "1.2345678901234567890123456789".parse().unwrap();
+        group.grouped_levels[0].quantity_base =
+            Some("0.0000000000000000000000000001".parse().unwrap());
+    }
+
     let event = fields.try_into().unwrap();
     let row = StoredEvent::encode(
         &event,
@@ -123,7 +142,7 @@ fn real_group_commit_exact_readback_retry_conflict_and_atomic_rollback() {
         "INSERT INTO live_canonical.streams(stream_id,stream_kind) VALUES ({stream},'l2');"
     ))
     .unwrap();
-    let _fixture = Fixture(id);
+    let mut fixture = Fixture { id, live: true };
     sql(&format!("BEGIN; {1} INSERT INTO live_canonical.recording_coverage(stream_id,log_epoch,first_offset,last_offset) VALUES ({stream},1,{0},{0}); COMMIT;", u64::MAX, insert(&row,&stream))).unwrap();
     let raw = sql(&format!("SELECT jsonb_build_object('event',jsonb_build_object('cursor',jsonb_build_object('stream_id',e.stream_id,'log_epoch',e.log_epoch,'offset',e.event_offset),'record_version',e.record_version,'payload_kind',e.payload_kind,'exchange_timestamp_ns',e.exchange_timestamp_ns,'received_timestamp_ns',e.received_timestamp_ns,'book_generation',e.book_generation,'event_record',e.event_record),'levels',(SELECT jsonb_agg(jsonb_build_object('cursor',jsonb_build_object('stream_id',l.stream_id,'log_epoch',l.log_epoch,'offset',l.event_offset),'level_ordinal',l.level_ordinal,'side',l.side,'action',l.action,'price',l.price::text,'quantity_base',l.quantity_base::text,'quantity_quote',l.quantity_quote::text,'quantity_contracts',l.quantity_contracts::text,'order_count',l.order_count) ORDER BY l.level_ordinal) FROM live_canonical.l2_levels l WHERE l.stream_id=e.stream_id AND l.log_epoch=e.log_epoch AND l.event_offset=e.event_offset)) FROM live_canonical.events e WHERE e.stream_id={stream};")).unwrap();
     let decoded: StoredEvent = serde_json::from_str(raw.trim()).unwrap();
@@ -145,4 +164,13 @@ fn real_group_commit_exact_readback_retry_conflict_and_atomic_rollback() {
     assert!(sql(&format!("BEGIN; {statements} COMMIT;")).is_err());
     assert_eq!(sql(&format!("SELECT count(*) FROM live_canonical.event_identities WHERE stream_id={stream} AND event_offset=0;")).unwrap().trim(), "0");
     assert_eq!(sql(&format!("SELECT count(*) FROM live_canonical.recording_coverage WHERE stream_id={stream} AND first_offset={0} AND last_offset={0};",u64::MAX)).unwrap().trim(), "1");
+    fixture.cleanup().unwrap();
+    assert_eq!(
+        sql(&format!(
+            "SELECT count(*) FROM live_canonical.streams WHERE stream_id={stream};"
+        ))
+        .unwrap()
+        .trim(),
+        "0"
+    );
 }

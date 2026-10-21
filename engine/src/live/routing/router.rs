@@ -94,6 +94,7 @@ pub enum FanoutCommitResult {
 }
 
 #[derive(Debug)]
+#[must_use = "delivery and recovery outcomes retain required ownership"]
 pub enum TrackedFanoutResult {
     Complete {
         through: StreamCursor,
@@ -110,6 +111,14 @@ pub enum TrackedFanoutResult {
         batch: EventBatch,
         reason: TrackedFanoutError,
     },
+    /// Irreversible destination results exist, while tracking responsibility is
+    /// retained by recovery or returned here with its original reservations.
+    RecoveryPending {
+        batch: EventBatch,
+        committed: Vec<CommittedDestination>,
+        failed: Vec<FailedDestinationCommitment>,
+        tracking: Result<RecoveryTrackingResult, RecoveryTrackingFailure>,
+    },
     AcknowledgementFailed {
         batch: EventBatch,
         committed: Vec<CommittedDestination>,
@@ -118,7 +127,7 @@ pub enum TrackedFanoutResult {
     },
 }
 #[derive(Debug)]
-enum RecoveryTrackingFailure {
+pub enum RecoveryTrackingFailure {
     ReservationCountMismatch {
         expected: usize,
         actual: usize,
@@ -126,9 +135,9 @@ enum RecoveryTrackingFailure {
     },
 }
 #[derive(Debug)]
-struct RecoveryTrackingResult {
-    errors: Vec<RecoveryTrackingError>,
-    unresolved: Vec<UnresolvedTrackingUpdate>,
+pub struct RecoveryTrackingResult {
+    pub errors: Vec<RecoveryTrackingError>,
+    pub unresolved: Vec<UnresolvedTrackingUpdate>,
 }
 /// Tracking update errors produced when acknowledgement correlation
 /// fails for one or more destinations.
@@ -152,7 +161,7 @@ pub enum TrackingUpdateError {
 ///
 /// Both variants retain their capacity reservations.
 #[derive(Debug)]
-enum UnresolvedTrackingUpdate {
+pub enum UnresolvedTrackingUpdate {
     ApplyFailure {
         destination: DestinationId,
         failure: TrackingApplyFailure,
@@ -166,7 +175,7 @@ enum UnresolvedTrackingUpdate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum RecoveryTrackingError {
+pub enum RecoveryTrackingError {
     MissingObligation {
         destination: DestinationId,
     },
@@ -311,6 +320,7 @@ impl RoutingPlan {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RouterRegistryError {
     DuplicateDestination,
+    DestinationCapacity,
     UnknownDestination,
     InvalidDestinationPolicy,
     InvalidCapacity,
@@ -322,6 +332,7 @@ pub enum RouterRegistryError {
 
 struct RouterRegistryState {
     destinations: HashMap<DestinationId, RegisteredDestination>,
+    max_destinations: usize,
     revision: u64,
     shutting_down: bool,
 }
@@ -340,11 +351,24 @@ impl RouterRegistry {
         Self {
             state: RwLock::new(RouterRegistryState {
                 destinations: HashMap::new(),
+                max_destinations: 1024,
                 revision: 0,
                 shutting_down: false,
             }),
             commitment: Mutex::new(()),
         }
+    }
+    pub fn with_destination_limit(max_destinations: usize) -> Result<Self, RouterRegistryError> {
+        if max_destinations == 0 {
+            return Err(RouterRegistryError::InvalidCapacity);
+        }
+        let registry = Self::new();
+        registry
+            .state
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .max_destinations = max_destinations;
+        Ok(registry)
     }
     pub fn register_queue(
         &self,
@@ -375,6 +399,9 @@ impl RouterRegistry {
 
         if state.destinations.contains_key(&descriptor.id) {
             return Err(RouterRegistryError::DuplicateDestination);
+        }
+        if state.destinations.len() >= state.max_destinations {
+            return Err(RouterRegistryError::DestinationCapacity);
         }
 
         let next_revision = state
@@ -420,6 +447,7 @@ impl RouterRegistry {
         let descriptor = destination.descriptor();
 
         validate_descriptor(&descriptor)?;
+        let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
 
         let mut state = self
             .state
@@ -432,6 +460,9 @@ impl RouterRegistry {
 
         if state.destinations.contains_key(&descriptor.id) {
             return Err(RouterRegistryError::DuplicateDestination);
+        }
+        if state.destinations.len() >= state.max_destinations {
+            return Err(RouterRegistryError::DestinationCapacity);
         }
 
         let next_revision = state
@@ -459,6 +490,7 @@ impl RouterRegistry {
     ///
     /// This does not cancel already accepted delivery obligations.
     pub fn unregister(&self, id: DestinationId) -> Result<(), RouterRegistryError> {
+        let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
         let mut state = self
             .state
             .write()
@@ -536,6 +568,7 @@ impl RouterRegistry {
     /// Existing plans remain valid snapshots but are not
     /// automatically authorized to commit after shutdown.
     pub fn shutdown(&self) {
+        let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
         let mut state = self
             .state
             .write()
@@ -713,8 +746,8 @@ impl FanoutCommitmentCoordinator {
     /// Recovery capacity is reserved before any irreversible
     /// queue commitment.
     ///
-    /// This entry point will become the authoritative production
-    /// commitment path once recovery ownership is integrated.
+    /// Activates obligations before queue writes and transfers every failed
+    /// tracking update into recovery or an explicitly owned return value.
     pub fn commit_tracked_with_recovery(
         registry: &RouterRegistry,
         tracker: &mut AcknowledgementTracker,
@@ -798,26 +831,114 @@ impl FanoutCommitmentCoordinator {
             };
         }
 
-        // All precommit checks passed.
-        //
-        // Do not activate obligations or enqueue events yet.
-        // The next stage will connect these operations while
-        // preserving recovery ownership.
-
-        drop(reservations);
-
-        match tracker.abort_prepared(obligations) {
-            Ok(()) => TrackedFanoutResult::Rejected {
+        // Build all correlation state before the first queue can accept work.
+        if let Err(error) = Self::validate_commitment_mapping(&prepared, obligations.obligations())
+        {
+            return match tracker.abort_prepared(obligations) {
+                Ok(()) => TrackedFanoutResult::Rejected {
+                    batch,
+                    reason: TrackedFanoutError::Validation(error),
+                },
+                Err(_) => TrackedFanoutResult::Rejected {
+                    batch,
+                    reason: TrackedFanoutError::RollbackFailed,
+                },
+            };
+        }
+        let templates =
+            match Self::prepare_acknowledgement_templates(&prepared, obligations.obligations()) {
+                Ok(templates) => templates,
+                Err(error) => {
+                    return match tracker.abort_prepared(obligations) {
+                        Ok(()) => TrackedFanoutResult::Rejected {
+                            batch,
+                            reason: TrackedFanoutError::Validation(error),
+                        },
+                        Err(_) => TrackedFanoutResult::Rejected {
+                            batch,
+                            reason: TrackedFanoutError::RollbackFailed,
+                        },
+                    };
+                }
+            };
+        let range = DeliveryCursorRange::new(plan.first_cursor.clone(), plan.last_cursor.clone())
+            .expect("validated routing range");
+        let handle = match Self::try_begin_tracked_commitment(tracker, plan, &prepared, obligations)
+        {
+            Ok(handle) => handle,
+            Err(failure) => {
+                if let Some(prepared) = failure.obligations {
+                    if tracker.abort_prepared(prepared).is_err() {
+                        return TrackedFanoutResult::Rejected {
+                            batch,
+                            reason: TrackedFanoutError::RollbackFailed,
+                        };
+                    }
+                }
+                return TrackedFanoutResult::Rejected {
+                    batch,
+                    reason: failure.reason,
+                };
+            }
+        };
+        let outcome = Self::commit_locked(registry, prepared, batch.clone());
+        let (committed, failed, rejection) = match outcome {
+            FanoutCommitResult::Complete { committed, .. } => (committed, Vec::new(), None),
+            FanoutCommitResult::Partial(partial) => (partial.committed, partial.failed, None),
+            FanoutCommitResult::Rejected(rejection) => {
+                // Defensive path: no queue accepted. Active obligations still
+                // receive terminal failures through the reserved recovery path.
+                let failed = handle
+                    .obligations()
+                    .iter()
+                    .map(|o| FailedDestinationCommitment {
+                        id: o.destination,
+                        reason: QueueError::Closed,
+                    })
+                    .collect();
+                (Vec::new(), failed, Some(rejection.reason))
+            }
+        };
+        let tracking = Self::apply_tracking_updates_with_recovery(
+            tracker,
+            recovery,
+            &templates,
+            &committed,
+            &failed,
+            reservations,
+            &range,
+        );
+        match tracking {
+            Ok(updates) if updates.errors.is_empty() && updates.unresolved.is_empty() => {}
+            tracking => {
+                return TrackedFanoutResult::RecoveryPending {
+                    batch,
+                    committed,
+                    failed,
+                    tracking,
+                };
+            }
+        }
+        if let Some(reason) = rejection {
+            return TrackedFanoutResult::Rejected {
                 batch,
-                reason: TrackedFanoutError::ObligationCommitment,
-            },
-
-            Err(_) => TrackedFanoutResult::Rejected {
+                reason: TrackedFanoutError::Precommit(reason),
+            };
+        }
+        if failed.is_empty() {
+            TrackedFanoutResult::Complete {
+                through: batch.last_cursor().clone(),
+                committed,
+            }
+        } else {
+            TrackedFanoutResult::Partial {
                 batch,
-                reason: TrackedFanoutError::RollbackFailed,
-            },
+                committed,
+                failed,
+            }
         }
     }
+
     /// Prepare recovery capacity for a tracked fan-out.
     ///
     /// Validates registry state and recovery capacity before
@@ -882,7 +1003,7 @@ impl FanoutCommitmentCoordinator {
     fn apply_tracking_updates_with_recovery(
         tracker: &mut AcknowledgementTracker,
         recovery: &mut TrackingRecovery,
-        obligation_map: &HashMap<DestinationId, DeliveryObligation>,
+        templates: &HashMap<DestinationId, DeliveryAcknowledgement>,
         committed: &[CommittedDestination],
         failed: &[FailedDestinationCommitment],
         reservations: Vec<TrackingRecoveryReservation>,
@@ -921,7 +1042,7 @@ impl FanoutCommitmentCoordinator {
             }));
 
         for ((destination_id, status), reservation) in outcomes.zip(reservations) {
-            let Some(obligation) = obligation_map.get(&destination_id) else {
+            let Some(template) = templates.get(&destination_id) else {
                 errors.push(RecoveryTrackingError::MissingObligation {
                     destination: destination_id,
                 });
@@ -943,12 +1064,8 @@ impl FanoutCommitmentCoordinator {
 
                 continue;
             };
-            let acknowledgement = DeliveryAcknowledgement {
-                obligation: obligation.id,
-                destination: obligation.destination,
-                range: obligation.range.clone(),
-                status,
-            };
+            let mut acknowledgement = template.clone();
+            acknowledgement.status = status;
 
             match recovery.apply_or_retain(tracker, acknowledgement, reservation) {
                 Ok(TrackingApplyOutcome::Applied) => {}

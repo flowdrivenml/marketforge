@@ -70,3 +70,15 @@ metrics registry/histogram/aggregation/health; observation admission outcomes;
 router wait-capacity conversion; deterministic foundation/support tests.
 No Python, historical execution, dependency, lockfile, ignored profile, or
 production database changes. Next authorized package: WP-09.
+
+Follow-up consumer repair: mixing externally supplied latency summaries and
+local raw histogram observations is now rejected rather than silently resetting
+the distribution. A production-handle regression test passes. Diagnostic worker
+error/drop counters can be queried during operation, before shutdown. Final
+campaign full run: exit 0, 130 library / 376 integration / 1 doctest.
+
+Final feature/opt-in receipts: `engine/target/live-verification/campaign-final-1792553404735277127/results.json`. Base library and
+combined Live+historical+TUI all-target checks exit 0; real PostgreSQL witness 1/1
+and release overhead baseline 1/1 pass. Latest 100000-operation baseline:
+counters 2562051 ns, timing sampled 1/10 760120 ns, disabled 22121 ns;
+1000 two-series snapshots 68692 ns. Variation from the earlier run is expected.

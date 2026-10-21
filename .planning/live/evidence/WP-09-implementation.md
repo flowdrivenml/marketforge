@@ -55,3 +55,8 @@ data, or ignored profile contents changed. Changed: config compiler/validation/
 store and exports; shared fixture and configuration tests. Checkpoint: commit
 carrying this report. Next independent authorized component: WP-10 (its explicit
 prerequisites are event/delivery contracts and observability); WP-09 remains open.
+
+Follow-up source validation regression and shared-fixture warning cleanup are
+included in the final full run: exit 0, 130 library / 376 integration / 1 doctest
+(`20261021T032801Z-2`). The journal was not represented as a complete async
+ConfigurationStorePort implementation; that worker integration remains pending.

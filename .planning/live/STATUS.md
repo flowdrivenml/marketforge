@@ -10,11 +10,11 @@
 | WP-03 | Extract compatible storage, arithmetic and UI primitives | Accepted | WP-03A-DWP-03B-parquet-contract.md, WP-03D-shared-parquet-primitives.md, WP-03E-shared-trade-builder.md |
 | WP-04 | Finalize dependency and feature wiring | Accepted | WP-04D.md — feature/build verification |
 | WP-05 | Implement domain identity, lifecycle and policy types | Partial — reconciliation underway | WP-04A, WP-04A.1–A.3, WP-04B, WP-04B.1 — identity, validation, lifecycle, demand |
-| WP-06 | Freeze and implement event/delivery/replay contracts | Independent contracts implemented; C06 real database gates BLOCKED | [Independent contracts](evidence/wp06-independent-contracts.md), [Observed C06 mapping and blockers](evidence/wp06-c06-connected.md) |
+| WP-06 | Freeze and implement event/delivery/replay contracts | Partial — basic real C06 witness passes; signed timestamp and fault gates remain | [Independent contracts](evidence/wp06-independent-contracts.md), [Observed C06 mapping and blockers](evidence/wp06-c06-connected.md) |
 | WP-07 | Freeze service ports, management and observation surfaces | Contract implementation review pending; C12 adapter decision OPEN | [Contract implementation and witnesses](evidence/wp07-contracts.md) |
 | WP-08 | Implement foundations and real native observability | ReadyForReview | [Implementation ledger](evidence/WP-08-implementation.md) |
 | WP-09 | Implement the Configuration System | Partial — candidates/DAG/journal verified; semantic compiler and service pending | [Implementation ledger](evidence/WP-09-implementation.md) |
-| WP-10 | Implement the canonical event router | In Progress — Early Implementation | Routing, admission, acknowledgement, commitment, and recovery code; passing Live tests |
+| WP-10 | Implement the canonical event router | Partial — real recovery-aware fan-out repaired; production owner pending | [Implementation ledger](evidence/WP-10-implementation.md) |
 | WP-11 | Implement source registry and dependency ownership | Pending | — |
 | WP-12 | Implement exchange-profile and format compilation | Pending | — |
 | WP-13 | Implement WebSocket Connection Manager | Pending | — |
@@ -38,6 +38,25 @@
 ## Current Development Position
 
 ### Autonomous continuation — 2026-10-21
+
+Final cross-feature / opt-in receipts are in
+`engine/target/live-verification/campaign-final-1792553404735277127/results.json`.
+All four commands exit 0: base library check, Live+historical+TUI all-target check,
+isolated PostgreSQL witness (1 test), release measurement baseline (1 test).
+Historical library retains its independently rechecked 151/1 baseline result.
+No production data, Python, historical execution, dependency/lockfile or ignored
+exchange configuration changes; no remote push.
+
+
+Latest verified milestones: `50f1009` (WP-08 ReadyForReview), `ba5ad39`
+(WP-09 candidates/DAG and durable journal, Partial). WP-10 recovery-aware fan-out
+now commits queues and preserves tracking responsibility, with explicit partial
+outcomes, bounded registry and checked stream-order permits. WP-10 remains
+Partial: production admit/worker/recovery/snapshot/shutdown composition is not
+implemented. Final Live full run exits 0: 130 library / 376 integration / 1 doc;
+2 opt-in tests are separate. Source identity validation additionally rejects a
+definite derivative-versus-Spot mismatch without resolving OPEN-001 by guess.
+
 
 Checkpoint `50f1009` completes WP-08 primitives as ReadyForReview. WP-09 now has
 verified candidate changes, iterative bounded DAG validation and a real bounded
@@ -121,8 +140,9 @@ Do not mark WP-05 Accepted until its formal criteria have been verified.
 
 ### WP-06 — Event, Delivery and Replay Contracts
 
-Status: Independent contracts implemented; overall WP-06 remains BLOCKED at
-real C06 database witnesses and signed timestamp representability.
+Status: Partial. Independent contracts and the isolated real grouped transaction/
+readback/rollback witness pass. Signed timestamp representability and broader
+commit-fault/protected-cleanup verification remain open.
 
 The immutable events, typed provenance, checked source cursor acceptance,
 restart-safe epoch journal, exact versioned DTOs, protected replay and bounded
@@ -141,9 +161,11 @@ protected reads and cleanup guards. Twelve new contract tests pass. The observed
 SQL unsigned timestamp CHECKs cannot represent negative canonical timestamps;
 the mapping explicitly rejects those without changing canonical validity.
 
-Real transaction/commit-fault/retry/cleanup witnesses remain BLOCKED under the
-user's read-only authorization. The old schema proposal is retained as historical
-evidence; no migration option is assumed approved.
+The former read-only authorization gate is superseded for the isolated test DB.
+Basic real transactions, exact fractional readback, duplicate rejection, atomic
+rollback and fixture cleanup now pass. Production-driver commit faults and
+concurrent protected cleanup remain unverified; no migration option is assumed
+approved. The old schema proposal is retained as historical evidence.
 
 Evidence: [independent contracts](evidence/wp06-independent-contracts.md),
 [filesystem journal audit](evidence/wp06-epoch-journal-audit.md),
@@ -217,13 +239,11 @@ Implementation remains incomplete.
 
 Known outstanding work:
 
-- Complete operational commit_tracked_with_recovery().
-- Integrate recovery reservations with irreversible queue commitment.
-- Ensure all failed tracking updates remain recovery-owned.
-- Eliminate placeholder commitment behavior.
+- Integrate the repaired operational commit_tracked_with_recovery() into the production owner.
+- Retain owned tracking failures and required delivery payloads through real recovery lifetime.
 - Consolidate transitional commitment APIs.
 - Prevent production routing from bypassing obligation tracking.
-- Implement per-stream cursor ordering.
+- Wire the tested StreamAdmissionOrder into production per-stream admission.
 - Implement the canonical production EventRouterPort::admit() path.
 - Integrate the router with its production runtime owner.
 - Complete end-to-end routing and recovery tests.

@@ -1716,3 +1716,129 @@ fn recovery_aware_commitment_rejects_insufficient_capacity() {
         assert_eq!(queue.snapshot().queued_batches, 0);
     }
 }
+
+#[test]
+fn recovery_aware_commitment_queues_and_tracks_every_destination() {
+    let (registry, batch, mut tracker, plan, prepared, obligations) = validation_fixture();
+    let original = batch.clone();
+    let ids: Vec<_> = obligations.obligations().iter().map(|o| o.id).collect();
+    let mut recovery = TrackingRecovery::new(2).unwrap();
+    let outcome = FanoutCommitmentCoordinator::commit_tracked_with_recovery(
+        &registry,
+        &mut tracker,
+        &mut recovery,
+        &plan,
+        prepared,
+        obligations,
+        batch,
+    );
+    assert!(
+        matches!(outcome,TrackedFanoutResult::Complete {ref through,ref committed} if through==original.last_cursor() && committed.len()==2)
+    );
+    assert_eq!(recovery.occupied(), 0);
+    for id in ids {
+        assert_eq!(
+            tracker.status(id),
+            Some(DeliveryStatus::Progress(DeliveryStage::Queued))
+        );
+    }
+    for destination in [DestinationId(1), DestinationId(2)] {
+        assert_eq!(
+            registry
+                .peek_queue(destination)
+                .unwrap()
+                .snapshot()
+                .queued_batches,
+            1
+        );
+    }
+}
+#[test]
+fn recovery_aware_partial_fanout_preserves_success_and_terminal_failure() {
+    let (registry, batch, mut tracker, plan, prepared, obligations) = validation_fixture();
+    let mapped: Vec<_> = obligations
+        .obligations()
+        .iter()
+        .map(|o| (o.destination, o.id))
+        .collect();
+    registry.peek_queue(DestinationId(2)).unwrap().close();
+    let mut recovery = TrackingRecovery::new(2).unwrap();
+    let outcome = FanoutCommitmentCoordinator::commit_tracked_with_recovery(
+        &registry,
+        &mut tracker,
+        &mut recovery,
+        &plan,
+        prepared,
+        obligations,
+        batch.clone(),
+    );
+    assert!(
+        matches!(outcome,TrackedFanoutResult::Partial {batch:ref returned,ref committed,ref failed} if returned==&batch && committed.len()==1 && failed.len()==1 && failed[0].id==DestinationId(2))
+    );
+    assert_eq!(recovery.occupied(), 0);
+    for (destination, id) in mapped {
+        assert_eq!(
+            tracker.status(id),
+            Some(if destination == DestinationId(1) {
+                DeliveryStatus::Progress(DeliveryStage::Queued)
+            } else {
+                DeliveryStatus::Failed(DeliveryFailure::Unavailable)
+            })
+        );
+    }
+}
+
+#[test]
+fn ordered_frontier_drop_gap_namespace_and_exhaustion() {
+    use marketforge_engine::live::routing::cursor::{CursorOrderError, StreamAdmissionOrder};
+    let batch =
+        EventBatch::new(vec![l2_event("ordered", 1, 10), l2_event("ordered", 1, 11)]).unwrap();
+    let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+    let permit = order.prepare(&batch).unwrap();
+    assert!(matches!(order.prepare(&batch), Err(CursorOrderError::Busy)));
+    drop(permit);
+    assert_eq!(order.next(), Some(batch.first_cursor().clone()));
+    order.prepare(&batch).unwrap().commit();
+    assert_eq!(order.next().unwrap().offset, 12);
+    assert!(matches!(order.prepare(&batch), Err(CursorOrderError::Gap)));
+    let wrong_epoch = EventBatch::new(vec![l2_event("ordered", 2, 12)]).unwrap();
+    assert!(matches!(
+        order.prepare(&wrong_epoch),
+        Err(CursorOrderError::Namespace)
+    ));
+    let gap =
+        EventBatch::new(vec![l2_event("ordered", 1, 12), l2_event("ordered", 1, 14)]).unwrap();
+    assert!(matches!(order.prepare(&gap), Err(CursorOrderError::Gap)));
+    let final_batch = EventBatch::new(vec![l2_event("last", 1, u64::MAX)]).unwrap();
+    let final_order = StreamAdmissionOrder::new(final_batch.first_cursor().clone()).unwrap();
+    final_order.prepare(&final_batch).unwrap().commit();
+    assert_eq!(final_order.next(), None);
+    assert!(matches!(
+        final_order.prepare(&final_batch),
+        Err(CursorOrderError::Exhausted)
+    ));
+}
+
+#[test]
+fn router_destination_registration_is_bounded_and_rejection_preserves_revision() {
+    use marketforge_engine::live::routing::router::RouterRegistryError;
+    let registry = RouterRegistry::with_destination_limit(1).unwrap();
+    registry
+        .register(obligation_test_destination(
+            1,
+            DestinationKind::Recording,
+            DeliveryPolicy::Required,
+        ))
+        .unwrap();
+    let revision = registry.revision();
+    assert_eq!(
+        registry.register(obligation_test_destination(
+            2,
+            DestinationKind::Recording,
+            DeliveryPolicy::Required
+        )),
+        Err(RouterRegistryError::DestinationCapacity)
+    );
+    assert_eq!(registry.revision(), revision);
+    assert_eq!(registry.destination_count(), 1);
+}

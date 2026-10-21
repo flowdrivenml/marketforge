@@ -125,7 +125,7 @@ pub enum ValidationIssueKind {
     /// metadata. The catalog does not distinguish linear from inverse
     /// for this instrument kind; the ambiguity must be resolved manually.
     ///
-    /// Examples: `InstrumentKind::Perpetual` (contract_kind always None)
+    /// Examples: `InstrumentKind::Perpetual` (family provisioning remains unresolved)
     /// or `InstrumentKind::Future` with contract_kind missing.
     /// This is an **unresolved classification**, not a definite user error.
     MarketKindAmbiguous,
@@ -217,21 +217,21 @@ impl SourceStreamKey {
                 }
             }
             crate::job::InstrumentKind::Perpetual => {
-                // Perpetuals lack contract_kind in InstrumentIdentity
-                // (always None due to #[serde(default)]). We cannot
-                // determine whether the market family is Linear or
-                // Inverse from the instrument identity alone.
-                // This is a known catalog schema gap, not a user error.
-                issues.push(ValidationIssue {
-                    kind: ValidationIssueKind::MarketKindAmbiguous,
-                    detail: format!(
-                        "instrument_kind=Perpetual has no contract_kind; \
-                         market family (Linear vs Inverse) cannot be determined \
-                         from instrument identity. market={:?}. \
-                         This is a catalog schema gap, not a user error.",
-                        self.market
-                    ),
-                });
+                if self.market == MarketKind::Spot {
+                    issues.push(ValidationIssue {
+                        kind: ValidationIssueKind::MarketKindMismatch,
+                        detail: "a perpetual instrument cannot use the spot market family".into(),
+                    });
+                } else {
+                    // Family provisioning remains the compiler's OPEN-001
+                    // responsibility. Do not infer linear versus inverse.
+                    issues.push(ValidationIssue {
+                        kind: ValidationIssueKind::MarketKindAmbiguous,
+                        detail:
+                            "perpetual market family requires authoritative compiler resolution"
+                                .into(),
+                    });
+                }
             }
             crate::job::InstrumentKind::Future => {
                 if let Some(contract_kind) = self.instrument.contract_kind {
@@ -249,6 +249,11 @@ impl SourceStreamKey {
                             ),
                         });
                     }
+                } else if self.market == MarketKind::Spot {
+                    issues.push(ValidationIssue {
+                        kind: ValidationIssueKind::MarketKindMismatch,
+                        detail: "a futures instrument cannot use the spot market family".into(),
+                    });
                 } else {
                     // Future without contract_kind — ambiguous.
                     issues.push(ValidationIssue {
