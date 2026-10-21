@@ -1680,3 +1680,70 @@ and registry-worker synchronization/retired reaping, native metrics/control bind
 These lifecycle APIs are real composition primitives, not a running router daemon.
 Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. No acceptance or entire
 project completion claimed. Further autonomous WP-10 implementation is safe.
+
+
+## Continuation — registry reconciliation and membership wakeups (2026-10-21)
+
+Status: Partial. Starting checkpoint `6e07aae`, branch `codex/wp06-completion`.
+Inspected AGENTS, autonomous plan, decisions, status, roadmap WP-10/11, distribution
+requirements, existing ordered admission, registry, driver/supervisor, worker,
+shutdown and real consumer witnesses. WP-10 remains next executable; completed
+work preserved. Initial untracked `scripts/run-autonomous-codex.sh` untouched.
+
+Implemented:
+- `RouterRegistry::claim_next_worker`: destination-limit-bounded scan, retired
+  instances before sorted active IDs, skipping direct adapters and existing
+  exclusive leases. Frozen descriptors avoid adapter callbacks under locks.
+- `DeliveryDriver::sync_registry`: reap closed/drained workers and retired registry
+  entries, attach at most one fresh worker, report counts and explicit failures.
+  Failed scheduler insertion releases only the unpolled fresh lease: no dequeue,
+  adapter operation or payload/charge loss. Existing workers remain owned.
+  Closed driver permits reaping and rejects attachment.
+- `RouterRegistry::poll_membership_change`: revision comparison and one replaceable
+  coordinator waiter share the membership fence. Successful registration/removal
+  and shutdown extract the waiter and wake outside both locks. Failed changes
+  leave it armed; retired-slot reaping does not change routing revision. Repeated
+  shutdown is idempotent. Notification establishes no delivery/durability evidence.
+
+Three deterministic witnesses exercise actual registry/driver/queues: retired
+charge fences, same-ID replacement, full scheduler and fresh-lease retry, queued
+payload preservation, deterministic active claims, existing lease exclusion,
+direct adapters, closed-driver attachment rejection, replacement wakers, repeated
+polls, failed mutation without wake, register_queue, removal, unchanged-revision
+shutdown and reentrant read/commitment callbacks. No arbitrary sleeps/services.
+
+Verification (actual exits):
+- From engine/: `cargo test --locked --offline --no-default-features --features
+  live --test live_suite registry_`: final exit 0, 15 passed. Initial compile exit
+  101: DestinationId lacks Ord; sorted its existing u64 value, no contract change.
+- Same flags with filter `registry_membership_notifications`: exit 0, 1 passed;
+  subsequent full suite includes strengthened commitment reentrancy assertions.
+- Root `./scripts/verify-live.sh full`: final exit 0. Executes `cargo fmt --all
+  -- --check`; `cargo check --locked --offline --no-default-features --features
+  live --lib`; `cargo test` with those same flags and `--lib` (134 passed),
+  `--test live_suite` (447 passed, 2 opt-in ignored), `--doc` (1 passed).
+  Final receipts: `engine/target/live-verification/20261021T051603Z-2/`.
+  Earlier reconciliation-only full run also passed (446 integration tests):
+  `engine/target/live-verification/20261021T051417Z-2/`.
+- From engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0 after each implementation increment; existing dead-code
+  warnings remain. Root `git diff --check`: exit 0 before checkpoints.
+- SQL/performance opt-ins and historical-only test execution not run. No claim
+  on those gates or the historical zero-stream baseline.
+
+Changed: `engine/src/live/routing/{driver,router}.rs`,
+`engine/tests/live/router.rs`, STATUS.md and this ledger.
+Implementation checkpoints: `51bd142` (bounded registry/driver reconciliation),
+`b12bf59` (membership notification). Evidence checkpoint: commit carrying this
+entry. No push, database/exchange access, Python/historical execution edits,
+dependency/lockfile or ignored configuration changes.
+
+Remaining acceptance ledger: production EventRouterPort ordered composition,
+runtime orchestration of worker/recovery/completion/reporting wakeups and bounded
+retries, native metrics/control binding. Runtime must synchronize workers before
+closing the driver; closed-driver maintenance deliberately cannot attach new
+workers. Membership notification supports one coordinator and does not signal
+external payload release or completion; those owners retain their own wakeups.
+These are integrated production composition primitives, not a running daemon.
+Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Next authorized executable
+package: WP-10. Further autonomous implementation is safe. No acceptance claimed.

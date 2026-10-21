@@ -40,6 +40,28 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest continuation adds bounded registry-to-delivery worker reconciliation and
+wake-driven routing membership observation. One maintenance turn reaps drained
+workers/retired slots and attaches at most one unclaimed queue, retired first;
+capacity rejection releases only the fresh lease and preserves queued payloads.
+One replacement-aware registry waiter wakes outside both membership/commitment
+locks on registration, removal or shutdown. Three new deterministic witnesses
+cover capacity retry, retired/replacement ownership, deterministic claims, failed
+mutations, waiter replacement and reentrant callbacks.
+Final verification exits 0: formatting, Live check, 134 library / 447 integration
+(2 opt-in ignored) / 1 doctest, plus Live+historical compilation. Receipts:
+`engine/target/live-verification/20261021T051603Z-2/`.
+Implementation checkpoints: `51bd142` (worker reconciliation), `b12bf59`
+(membership notification). See [WP-10 evidence](evidence/WP-10-implementation.md).
+WP-10 remains Partial and next executable: production EventRouterPort ordered
+composition, runtime retry/wakeup orchestration and native metrics/control binding.
+WP-05/06/07/09 open gates persist; WP-11–29 pending. Further autonomous work can
+safely continue. No push, SQL/exchange traffic, Python/historical execution edits,
+dependency or ignored configuration changes. Pre-existing untracked launcher
+preserved. No package acceptance or project completion claimed.
+
+
+
 Latest continuation exposes bounded dynamic worker registration and drained-worker
 reaping through WP-10's authoritative DeliverySupervisor/DeliveryDriver. Capacity
 and shutdown failures return the complete worker; held payload charges fence
