@@ -143,7 +143,11 @@ impl DeliveryDriver {
         &mut self,
         outcome: &mut super::ingress::IngressOutcome,
     ) -> super::ingress::TrackingHandoff {
-        outcome.reconcile_tracking(&mut self.tracker, &mut self.recovery)
+        let handoff = outcome.reconcile_tracking(&mut self.tracker, &mut self.recovery);
+        if handoff.transferred != 0 {
+            self.notify_progress();
+        }
+        handoff
     }
 
     /// Inspect the oldest uncorrelated result without transferring its charge.
@@ -162,8 +166,24 @@ impl DeliveryDriver {
         &mut self,
         obligation: DeliveryObligationId,
     ) -> super::tracking_recovery::TrackingRecoveryOutcome {
-        self.recovery
-            .reconcile_next_unresolved(&mut self.tracker, obligation)
+        let outcome = self
+            .recovery
+            .reconcile_next_unresolved(&mut self.tracker, obligation);
+        if matches!(
+            outcome,
+            super::tracking_recovery::TrackingRecoveryOutcome::Recovered { .. }
+        ) {
+            self.notify_progress();
+        }
+        outcome
+    }
+
+    /// Coalesce externally supplied progress until the next coordinator turn.
+    /// Failed or unchanged repair attempts must preserve the registered waiter.
+    fn notify_progress(&mut self) {
+        if let Some(waiter) = self.completion_waiter.take() {
+            waiter.wake();
+        }
     }
 
     /// Attach a registry worker to the existing authoritative delivery owners.

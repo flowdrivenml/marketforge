@@ -3741,6 +3741,15 @@ mod ingress_witnesses {
 
     #[test]
     fn closed_driver_reconciles_transferred_ingress_tracking_against_known_obligation() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::task::Wake;
+        #[derive(Default)]
+        struct Counter(AtomicUsize);
+        impl Wake for Counter {
+            fn wake(self: Arc<Self>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
         use marketforge_engine::live::{
             model::delivery::{DeliveryStage, DeliveryStatus},
             routing::{
@@ -3787,10 +3796,23 @@ mod ingress_witnesses {
             optional: None,
         };
         driver.close();
+        let counter = Arc::new(Counter::default());
+        let waker = Waker::from(counter.clone());
+        let mut cx = Context::from_waker(&waker);
+        let _ = driver.drive(&mut cx);
         assert_eq!(
             driver.reconcile_ingress_tracking(&mut outcome).transferred,
             1
         );
+        assert_eq!(counter.0.load(Ordering::SeqCst), 1);
+        // A second handoff cannot repeat the notification. Rearm for explicit
+        // reconciliation, which must preserve the waiter on rejection.
+        assert_eq!(
+            driver.reconcile_ingress_tracking(&mut outcome).transferred,
+            0
+        );
+        assert_eq!(counter.0.load(Ordering::SeqCst), 1);
+        let _ = driver.drive(&mut cx);
         drop(outcome);
         let retained = driver.next_unresolved_tracking().unwrap();
         assert_eq!(retained.destination(), DestinationId(1));
@@ -3804,16 +3826,19 @@ mod ingress_witnesses {
             }
         );
         assert_eq!(driver.snapshot(), before);
+        assert_eq!(counter.0.load(Ordering::SeqCst), 1);
         assert_eq!(
             driver.reconcile_unresolved_tracking(id),
             TrackingRecoveryOutcome::Recovered { remaining: 0 }
         );
+        assert_eq!(counter.0.load(Ordering::SeqCst), 2);
         assert!(driver.next_unresolved_tracking().is_none());
         assert!(driver.snapshot().recovery.is_drained());
         assert_eq!(
             driver.reconcile_unresolved_tracking(id),
             TrackingRecoveryOutcome::Empty
         );
+        assert_eq!(counter.0.load(Ordering::SeqCst), 2);
         // Queued repair does not discharge the independent delivery obligation.
         assert_eq!(driver.snapshot().tracked_obligations, 1);
         assert!(!driver.snapshot().is_drained());
@@ -3946,6 +3971,15 @@ mod ingress_witnesses {
 
     #[test]
     fn ingress_tracking_handoff_preserves_foreign_repairs_and_shutdown_ownership() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::task::Wake;
+        #[derive(Default)]
+        struct Counter(AtomicUsize);
+        impl Wake for Counter {
+            fn wake(self: Arc<Self>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
         use marketforge_engine::live::{
             model::delivery::DeliveryStatus,
             routing::{
@@ -4018,8 +4052,16 @@ mod ingress_witnesses {
             optional: None,
         };
         driver.close();
+        let previous = Arc::new(Counter::default());
+        let current = Arc::new(Counter::default());
+        let previous_waker = Waker::from(previous.clone());
+        let current_waker = Waker::from(current.clone());
+        let _ = driver.drive(&mut Context::from_waker(&previous_waker));
+        let _ = driver.drive(&mut Context::from_waker(&current_waker));
         let handoff = driver.reconcile_ingress_tracking(&mut outcome);
         assert_eq!(handoff.transferred, 2);
+        assert_eq!(previous.0.load(Ordering::SeqCst), 0);
+        assert_eq!(current.0.load(Ordering::SeqCst), 1);
         assert_eq!(handoff.retained, 1);
         assert!(!handoff.mapping_blocked);
         assert!(outcome.retains_tracking_recovery());
@@ -4032,6 +4074,15 @@ mod ingress_witnesses {
         assert_eq!(retry.transferred, 0);
         assert_eq!(retry.retained, 1);
         assert_eq!(driver.snapshot(), snapshot);
+        assert_eq!(current.0.load(Ordering::SeqCst), 1);
+        // A foreign-only retry neither wakes nor consumes the new waiter.
+        let _ = driver.drive(&mut Context::from_waker(&current_waker));
+        let before_retry = current.0.load(Ordering::SeqCst);
+        assert_eq!(
+            driver.reconcile_ingress_tracking(&mut outcome).transferred,
+            0
+        );
+        assert_eq!(current.0.load(Ordering::SeqCst), before_retry);
         assert!(queue.try_dequeue().is_some());
         // Releasing the producer record cannot release driver-owned repairs.
         drop(outcome);
