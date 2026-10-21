@@ -39,6 +39,23 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest implementation checkpoint `10ad5d0` closes a generic ingress-reporting
+acknowledgement gap: an unresolved reservation-count mapping now retains its
+charged record even when the returned reservation list is empty. Explicit handler
+handoff remains necessary. The existing production-consumer witness covers all
+three repair/mismatch cases, repeated false acknowledgement, shutdown retention,
+and explicit transfer. Full verification exits 0: formatting, Live check,
+135 library / 488 integration passes (2 opt-in ignored) / 1 doctest, and
+Live+historical check. Receipts:
+`engine/target/live-verification/20261021T064838Z-2/`.
+WP-10 remains Partial and next executable; concrete outcome/recovery policy,
+runtime lifecycle and Control composition remain. Earlier WP-05/06/07/09 gates
+persist; WP-11–29 pending. Further autonomous implementation can safely continue.
+No database/exchange access, dependency/lockfile, Python/historical execution or
+ignored configuration edits. Pre-existing untracked launcher preserved; no push.
+See [WP-10 evidence](evidence/WP-10-implementation.md).
+
+
 
 Latest implementation checkpoints `d1dd223` and `535fb81` connect producer-owned
 tracking repairs to the authoritative delivery owners and expose explicit

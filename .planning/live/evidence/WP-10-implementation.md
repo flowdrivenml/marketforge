@@ -3216,3 +3216,54 @@ Changed: engine/src/live/routing/{driver,ingress,ingress_reporting}.rs,
 engine/tests/live/router.rs, STATUS.md and this ledger. No Python/historical
 execution, dependencies, lockfile, ignored configuration or launcher changes.
 No push. Further autonomous work can safely continue within recorded gates.
+
+
+### 2026-10-21 — Empty reservation mismatch cannot acknowledge reporting
+
+Status: Partial. Next executable package: WP-10. Initial HEAD `9a5bb1e`,
+branch `codex/wp06-completion`; pre-existing untracked
+`scripts/run-autonomous-codex.sh` preserved. Read repository/campaign policy,
+decisions, current status, WP-09/10/11 roadmap entries and latest WP-10 evidence;
+inspected actual ingress, reporting, driver, shutdown observations and consumer
+witnesses. No completed package restarted. Checkpoint: `10ad5d0`.
+
+Acceptance ledger:
+- IngressOutcome::requires_tracking_intervention distinguishes unresolved mapping
+  responsibility from actual retained reservations. Count mismatch stays blocked
+  even when its reservation list is empty; retains_tracking_recovery continues
+  to describe reservation ownership accurately.
+- The generic charged reporting consumer now refuses success for either condition.
+  Previously only TrackingIngressReporter rejected empty mismatches; other handlers
+  could acknowledge and release the sole reporting record. No financial identity,
+  delivery guarantee, architecture or wire changes.
+- Extended deterministic actual-ingress/consumer fault witness covers unresolved
+  repair, nonempty mismatch and empty mismatch; repeated false success retains
+  journal charge and prevents shutdown completion. Explicit transfer to the test
+  reporting owner permits release, with destination delivery still independent.
+  This is controlled fault injection, not a naturally reproduced tracking fault.
+- Remaining: concrete full outcome/recovery policy, runtime supervision/lifecycle
+  and Control composition. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending.
+  No acceptance or project completion claim. Safe autonomous continuation remains.
+
+Verification (engine/ unless root stated), all exit 0:
+- cargo fmt --manifest-path engine/Cargo.toml --all (root).
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite ingress_reporting_success_cannot_release_owned_tracking_repairs:
+  1 passed / 489 filtered; three fixture cases executed inside the test.
+- ./scripts/verify-live.sh full (root): cargo fmt --all -- --check;
+  cargo check --locked --offline --no-default-features --features live --lib;
+  cargo test with those flags --lib (135 passed), --test live_suite (488 passed,
+  2 opt-in ignored), --doc (1 passed). Receipts:
+  engine/target/live-verification/20261021T064838Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical.
+  Existing dead-code warnings remain.
+- git diff --check (root), before implementation checkpoint.
+No SQL/performance opt-in or historical-only suite run; historical zero-stream
+baseline not rechecked. An exploratory router glob search returned exit 2;
+actual routing paths were then inspected. No compiler/test failures.
+
+Changed: engine/src/live/routing/{ingress,ingress_reporting}.rs,
+engine/tests/live/router.rs, STATUS.md and this ledger. No SQL/exchange requests,
+Python/historical execution, dependency/lockfile, ignored configuration or launcher
+edits. No push. Next authorized package remains WP-10 until its remaining scope
+and prerequisite gates permit progression.
