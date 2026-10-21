@@ -74,6 +74,26 @@ pub struct DeliveryDriver {
 }
 
 impl DeliveryDriver {
+    /// Commit ordered admission against the same owners used by delivery turns.
+    /// Shutdown rejects before obligations or queues change and returns all
+    /// prepared responsibility intact. No mutable owner escapes this operation.
+    #[allow(clippy::result_large_err)]
+    pub fn commit_ordered<'a>(
+        &mut self,
+        prepared: super::ordered::OrderedFanout<'a>,
+    ) -> Result<
+        (
+            super::ordered::OrderedCommitOutcome,
+            Option<Result<super::router::BestEffortFanout, super::router::BestEffortError>>,
+        ),
+        (DeliveryAdmissionError, super::ordered::OrderedFanout<'a>),
+    > {
+        if self.closed {
+            return Err((DeliveryAdmissionError::Closed, prepared));
+        }
+        Ok(prepared.commit_with_best_effort(&mut self.tracker, &mut self.recovery))
+    }
+
     /// Transfer the authoritative owners, including any existing responsibilities.
     pub fn new(
         supervisor: DeliverySupervisor,

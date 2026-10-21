@@ -1247,11 +1247,11 @@ fn registered_driver_advances_tracked_delivery_without_inventing_completion() {
         panic!("capacity available")
     };
     drop(preparation);
-    let (tracker, recovery) = driver.admission_owners().unwrap();
-    assert!(matches!(
-        prepared.commit(tracker, recovery),
-        OrderedCommitOutcome::Tracked(_)
-    ));
+    let Ok((required, optional)) = driver.commit_ordered(prepared) else {
+        panic!("open delivery owner accepts ordered commitment")
+    };
+    assert!(matches!(required, OrderedCommitOutcome::Tracked(_)));
+    assert!(optional.unwrap().unwrap().queued.is_empty());
     let turn = driver.drive_registered(&registry, &mut cx);
     assert!(matches!(
         turn.delivery.delivery,
@@ -1442,4 +1442,79 @@ fn registered_driver_retry_timer_is_bounded_and_drains_external_payload_charge()
     assert_eq!(turn.registry.workers_reaped, 1);
     assert!(driver.snapshot().is_drained());
     assert!(timer.try_sleep_until(now + interval * 3).is_ok());
+}
+
+#[test]
+fn closed_driver_returns_ordered_preparation_without_commitment() {
+    use marketforge_engine::live::{
+        foundation::{cancellation::CancellationToken, clock::ManualClock},
+        routing::{
+            acknowledgement::{AcknowledgementTracker, FinalizationJournal},
+            admission::AdmissionContext,
+            cursor::StreamAdmissionOrder,
+            destination::DestinationCapacity,
+            driver::DeliveryDriver,
+            ordered::OrderedFanout,
+            queue::DestinationQueue,
+            supervisor::DeliverySupervisor,
+            tracking_recovery::TrackingRecovery,
+            worker::DestinationWorkers,
+        },
+    };
+    use std::{
+        future::Future,
+        num::NonZeroUsize,
+        sync::atomic::{AtomicUsize, Ordering},
+        task::{Context, Poll, Wake, Waker},
+        time::Instant,
+    };
+    #[derive(Default)]
+    struct Counter(AtomicUsize);
+    impl Wake for Counter {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let registry = RouterRegistry::new();
+    let adapter = destination(1, DestinationKind::Publication, DeliveryPolicy::Required);
+    let queue =
+        DestinationQueue::new(DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap());
+    registry.register_queue(adapter, queue).unwrap();
+    let limit = NonZeroUsize::new(1).unwrap();
+    let mut driver = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(2).unwrap(),
+        TrackingRecovery::new(2).unwrap(),
+        FinalizationJournal::new(2).unwrap(),
+    );
+    let wakes = Arc::new(Counter::default());
+    let waker = Waker::from(wakes.clone());
+    let mut cx = Context::from_waker(&waker);
+    let order = StreamAdmissionOrder::new(batch().first_cursor().clone()).unwrap();
+    let mut preparation = Box::pin(OrderedFanout::prepare(
+        &registry,
+        &order,
+        batch(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        Arc::new(ManualClock::new(Instant::now(), 0)),
+        None,
+    ));
+    let Poll::Ready(Ok(prepared)) = preparation.as_mut().poll(&mut cx) else {
+        panic!("capacity available")
+    };
+    drop(preparation);
+    driver.close();
+    let Err((reason, prepared)) = driver.commit_ordered(prepared) else {
+        panic!("closed owner must reject")
+    };
+    assert_eq!(
+        reason,
+        marketforge_engine::live::routing::driver::DeliveryAdmissionError::Closed
+    );
+    assert_eq!(driver.snapshot().tracked_obligations, 0);
+    assert_eq!(order.next(), Some(batch().first_cursor().clone()));
+    assert!(order.snapshot().pending_last.is_some());
+    drop(prepared);
+    assert!(order.snapshot().pending_last.is_none());
+    assert_eq!(order.next(), Some(batch().first_cursor().clone()));
 }
