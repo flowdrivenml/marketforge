@@ -3002,3 +3002,54 @@ Changed: engine/src/live/routing/ingress_reporting.rs, engine/tests/live/router.
 STATUS.md and this ledger. No Python/historical execution, dependency/lockfile,
 ignored configuration or launcher modifications. No push. Safe autonomous
 continuation remains possible; the complete campaign remains unfinished.
+
+
+### 2026-10-21 — Combined delivery and producer-reporting shutdown
+
+Status: Partial. Implementation checkpoint: `15b85ef`.
+
+Initial inventory: branch `codex/wp06-completion`, HEAD `fdb2652`; pre-existing
+modified `engine/src/live/routing/shutdown.rs` and untracked
+`scripts/run-autonomous-codex.sh`. Preserved the existing coordinator patch,
+formatted it and added its real consumer witness; launcher remains untouched.
+No other writer observed in the process namespace.
+
+Requirements/outcomes:
+- Combined coordinator fences budget, namespaces, destination registry and ingress
+  journal before expiry. Both existing reporting owners retain their independent
+  results; no parallel delivery/recovery state is introduced.
+- Exactly one outer deadline poll gates each bounded turn. Expiry performs no
+  worker attachment or reporting. Completed drain takes precedence over expiry.
+- Delivery continues while ingress reporting requires escalation. Transferred
+  producer records remain charged and prevent complete drain until released.
+- Deterministic witness uses actual admission, registered queue, driver, correlated
+  destination completion and reporting owners. It asserts closure, zero expired
+  handler calls, one deadline poll per active turn, delivery drain with retained
+  producer responsibility, and final completion after release.
+- This does not implement runtime recovery policy, durable reporting, full daemon
+  lifecycle or Control composition. Those remain open. Earlier WP-05/06/07/09
+  gates persist; WP-11–29 pending. No acceptance or project completion claim.
+
+Verification (engine/ unless root stated):
+- cargo fmt --manifest-path engine/Cargo.toml --all (root): exit 0.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite complete_router_shutdown: final exit 0, 1 passed / 484 filtered.
+  Initial two executions exited 101 for missing fixture imports and a non-static
+  counter capture; fixed using explicit imports and an owned atomic counter.
+- ./scripts/verify-live.sh full (root): exit 0. Commands: cargo fmt --all --
+  --check; cargo check --locked --offline --no-default-features --features live
+  --lib; cargo test with those feature/locking flags --lib (135 passed),
+  --test live_suite (483 passed, 2 opt-in ignored), --doc (1 passed).
+  Receipts: engine/target/live-verification/20261021T063204Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings remain.
+- After the full run, strengthened the test to assert exactly one outer deadline
+  poll per turn; focused witness (1 passed) and cargo fmt --check exit 0 again.
+- git diff --check (root): exit 0 before checkpoint.
+- SQL/performance opt-in and historical-only tests not run; historical zero-stream
+  baseline not rechecked. No SQL/exchange requests or durability claim.
+
+Changed: engine/src/live/routing/shutdown.rs, engine/tests/live/router.rs,
+STATUS.md and this ledger. No Python/historical execution, dependency/lockfile,
+ignored configuration or launcher edits. No push. Next executable package remains
+WP-10; safe autonomous continuation remains possible within the recorded gates.

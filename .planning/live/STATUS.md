@@ -40,6 +40,25 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest implementation checkpoint `15b85ef` preserves and verifies the pre-existing
+uncommitted combined router shutdown coordinator. Delivery and producer reporting
+run bounded turns under one deadline poll; completion waits for both independent
+owners, including transferred escalation records. A deterministic production-path
+witness confirms expiry fencing without handler calls, delivery progress while
+producer reporting escalates, exact one deadline poll per turn, and delayed drain
+until the transferred charge releases.
+Verification exits 0: full Live gates (135 library, 483 integration passed,
+2 opt-in ignored, 1 doctest) and Live+historical check. Receipts:
+`engine/target/live-verification/20261021T063204Z-2/`. After strengthening the
+poll-count assertion, the focused witness (1 passed) and formatting pass again.
+WP-10 remains Partial and next executable; concrete runtime recovery/reporting
+policy, lifecycle and Control composition remain. Earlier WP-05/06/07/09 gates
+persist; WP-11–29 remain pending. Further autonomous work can safely continue.
+No database/exchange access, historical/Python execution, dependencies or ignored
+configuration edits. Untracked launcher preserved. No push or acceptance claim.
+See the WP-10 ledger for the complete verification limits and initial test fixes.
+
+
 Latest implementation checkpoint `4054511` adds deadline-aware scheduled ingress
 reporting shutdown. Admission is fenced immediately; retry state and charged
 records survive expiry and escalation. Completion waits for preparing admissions
