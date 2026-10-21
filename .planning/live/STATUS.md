@@ -40,6 +40,22 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest continuation adds WP-10 reconciliation of retained uncorrelated destination
+outcomes against the authoritative acknowledgement tracker. Unknown obligations,
+wrong destination/range and regressing progress preserve the outcome and capacity;
+valid progress releases only the recovery reservation, preserving obligation
+finalization responsibility. Two deterministic consumer witnesses pass. Full
+Live verification exits 0: 132 library / 403 integration (2 opt-in ignored) /
+1 doctest, formatting and Live compilation. Combined Live+historical compilation
+exits 0. Receipts: `engine/target/live-verification/20261021T041624Z-3/`.
+WP-10 remains Partial and next executable: production owner, workers, payload
+lifetime, metrics/control integration and deadline shutdown remain. Earlier
+WP-05/06/07/09 gates persist; WP-11–29 pending. Safe autonomous implementation
+can continue. No SQL/exchange access, Python/historical/dependency/ignored-config
+changes or push. Pre-existing untracked launcher preserved. Checkpoint: local
+commit containing this entry; details in WP-10 evidence.
+
+
 Latest continuation bounds WP-10 recovery batch allocation before allocating from
 caller-supplied counts. Oversized/usize::MAX requests reject without panic or
 capacity mutation; fallible allocation and existing reservation rollback remain

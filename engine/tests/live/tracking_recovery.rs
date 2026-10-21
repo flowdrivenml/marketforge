@@ -565,3 +565,139 @@ fn recovery_batch_rejects_unbounded_counts_before_allocation() {
     drop(all);
     assert_eq!(recovery.occupied(), 0);
 }
+
+#[test]
+fn unresolved_reconciliation_validates_identity_before_releasing_capacity() {
+    let mut recovery = TrackingRecovery::new(2).unwrap();
+    let mut tracker = AcknowledgementTracker::new(4).unwrap();
+    let ack = acknowledgement();
+    let queued = DeliveryStatus::Progress(DeliveryStage::Queued);
+    for _ in 0..2 {
+        let reservation = recovery.reserve().unwrap();
+        recovery
+            .retain_unresolved(ack.destination, ack.range.clone(), queued, reservation)
+            .unwrap();
+    }
+    assert_eq!(recovery.next_unresolved().unwrap().range(), &ack.range);
+    assert_eq!(
+        recovery.next_unresolved().unwrap().destination(),
+        ack.destination
+    );
+    assert_eq!(recovery.next_unresolved().unwrap().status(), queued);
+    assert_eq!(
+        recovery.reconcile_next_unresolved(&mut tracker, ack.obligation),
+        TrackingRecoveryOutcome::RetryRequired {
+            error: AcknowledgementError::UnknownObligation,
+            remaining: 2,
+        }
+    );
+    for (id, destination, range, error) in [
+        (
+            2,
+            DestinationId(8),
+            ack.range.clone(),
+            AcknowledgementError::DestinationMismatch,
+        ),
+        (
+            3,
+            ack.destination,
+            DeliveryCursorRange::new(ack.range.first.clone(), ack.range.first.clone()).unwrap(),
+            AcknowledgementError::RangeMismatch,
+        ),
+    ] {
+        tracker
+            .register(DeliveryObligation {
+                id: DeliveryObligationId(id),
+                destination,
+                range,
+                kind: DestinationKind::Recording,
+                policy: DeliveryPolicy::Required,
+            })
+            .unwrap();
+        assert_eq!(
+            recovery.reconcile_next_unresolved(&mut tracker, DeliveryObligationId(id)),
+            TrackingRecoveryOutcome::RetryRequired {
+                error,
+                remaining: 2
+            }
+        );
+        assert_eq!(
+            tracker.status(DeliveryObligationId(id)),
+            Some(DeliveryStatus::Pending)
+        );
+        assert_eq!(recovery.occupied(), 2);
+    }
+    tracker
+        .register(DeliveryObligation {
+            id: ack.obligation,
+            destination: ack.destination,
+            range: ack.range,
+            kind: DestinationKind::Recording,
+            policy: DeliveryPolicy::Required,
+        })
+        .unwrap();
+    for remaining in [1, 0] {
+        assert_eq!(
+            recovery.reconcile_next_unresolved(&mut tracker, ack.obligation),
+            TrackingRecoveryOutcome::Recovered { remaining }
+        );
+        assert_eq!(recovery.occupied(), remaining);
+        assert_eq!(tracker.status(ack.obligation), Some(queued));
+    }
+    assert!(recovery.next_unresolved().is_none());
+    assert_eq!(
+        recovery.reconcile_next_unresolved(&mut tracker, ack.obligation),
+        TrackingRecoveryOutcome::Empty
+    );
+    // Queue progress does not retire the required delivery obligation.
+    assert_eq!(tracker.len(), 3);
+}
+
+#[test]
+fn unresolved_reconciliation_preserves_regressing_outcome_and_pending_updates() {
+    let mut recovery = TrackingRecovery::new(2).unwrap();
+    let mut tracker = AcknowledgementTracker::new(1).unwrap();
+    let mut ack = acknowledgement();
+    tracker
+        .register(DeliveryObligation {
+            id: ack.obligation,
+            destination: ack.destination,
+            range: ack.range.clone(),
+            kind: DestinationKind::Recording,
+            policy: DeliveryPolicy::Required,
+        })
+        .unwrap();
+    ack.status = DeliveryStatus::Progress(DeliveryStage::Queued);
+    tracker.acknowledge(ack.clone()).unwrap();
+    let reservation = recovery.reserve().unwrap();
+    recovery
+        .retain_unresolved(
+            ack.destination,
+            ack.range.clone(),
+            DeliveryStatus::Pending,
+            reservation,
+        )
+        .unwrap();
+    let reservation = recovery.reserve().unwrap();
+    recovery.retain(ack.clone(), reservation).unwrap();
+    assert_eq!(
+        recovery.reconcile_next_unresolved(&mut tracker, ack.obligation),
+        TrackingRecoveryOutcome::RetryRequired {
+            error: AcknowledgementError::ProgressRegression,
+            remaining: 1,
+        }
+    );
+    assert_eq!(recovery.occupied(), 2);
+    assert_eq!(recovery.unresolved_len(), 1);
+    assert_eq!(recovery.len(), 1);
+    assert_eq!(tracker.status(ack.obligation), Some(ack.status));
+    assert_eq!(
+        recovery.retry_next(&mut tracker),
+        TrackingRecoveryOutcome::Recovered { remaining: 0 }
+    );
+    assert_eq!(recovery.occupied(), 1);
+    assert_eq!(
+        recovery.next_unresolved().unwrap().status(),
+        DeliveryStatus::Pending
+    );
+}

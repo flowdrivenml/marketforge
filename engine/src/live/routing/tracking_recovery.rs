@@ -3,6 +3,7 @@ use crate::live::routing::acknowledgement::AcknowledgementError;
 use crate::live::routing::acknowledgement::AcknowledgementTracker;
 use crate::live::routing::acknowledgement::DeliveryAcknowledgement;
 use crate::live::routing::acknowledgement::DeliveryCursorRange;
+use crate::live::routing::acknowledgement::DeliveryObligationId;
 use crate::live::routing::destination::{CapacityError, CapacityReservation, DestinationCapacity};
 use crate::live::{model::delivery::DeliveryStatus, ports::routing::DestinationId};
 use std::collections::VecDeque;
@@ -261,6 +262,45 @@ impl TrackingRecovery {
     }
     pub fn unresolved_len(&self) -> usize {
         self.unresolved.len()
+    }
+
+    /// Inspect the oldest uncorrelated outcome without transferring responsibility.
+    pub fn next_unresolved(&self) -> Option<&UnresolvedRecoveryOutcome> {
+        self.unresolved.front()
+    }
+
+    /// Reconcile the oldest uncorrelated outcome with a known obligation.
+    ///
+    /// The authoritative tracker checks destination, complete cursor range and
+    /// progress semantics before either owner releases responsibility. Rejection
+    /// leaves the outcome and its reservation intact. Success releases only the
+    /// recovery slot; terminal obligation finalization remains the tracker's job.
+    pub fn reconcile_next_unresolved(
+        &mut self,
+        tracker: &mut AcknowledgementTracker,
+        obligation: DeliveryObligationId,
+    ) -> TrackingRecoveryOutcome {
+        let Some(outcome) = self.unresolved.front() else {
+            return TrackingRecoveryOutcome::Empty;
+        };
+        let acknowledgement = DeliveryAcknowledgement {
+            obligation,
+            destination: outcome.destination,
+            range: outcome.range.clone(),
+            status: outcome.status,
+        };
+        match tracker.acknowledge(acknowledgement) {
+            Ok(()) => {
+                self.unresolved.pop_front();
+                TrackingRecoveryOutcome::Recovered {
+                    remaining: self.unresolved.len(),
+                }
+            }
+            Err(error) => TrackingRecoveryOutcome::RetryRequired {
+                error,
+                remaining: self.unresolved.len(),
+            },
+        }
     }
     /// Validate reservations intended for one tracked fan-out.
     ///
