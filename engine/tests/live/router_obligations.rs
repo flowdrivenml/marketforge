@@ -3012,3 +3012,136 @@ fn router_snapshot_has_bounded_sorted_owned_membership() {
     assert!(!before.shutting_down);
     assert_eq!(before.destinations.len(), 2);
 }
+
+#[test]
+fn namespace_snapshot_reports_inflight_shutdown_without_claiming_completion() {
+    use marketforge_engine::live::{
+        foundation::{SystemMonotonicClock, resources::ResourceUsage},
+        routing::{
+            namespaces::AdmissionNamespaces,
+            ordered::{OrderedAdmissionBudget, OrderedCommitOutcome},
+        },
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    namespaces.register(batch.first_cursor().clone()).unwrap();
+    let budget = OrderedAdmissionBudget::new(ResourceUsage {
+        items: 100,
+        bytes: 1_000_000,
+    })
+    .unwrap();
+    let admission = ready(budget.prepare(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ))
+    .unwrap();
+    let pending = namespaces.snapshot();
+    assert_eq!(
+        pending.namespaces[0].order.next.as_ref(),
+        Some(batch.first_cursor())
+    );
+    assert_eq!(
+        pending.namespaces[0].order.pending_last.as_ref(),
+        Some(batch.last_cursor())
+    );
+    namespaces.shutdown();
+    let stopped = namespaces.snapshot();
+    assert!(stopped.shutting_down);
+    assert!(stopped.namespaces[0].order.closed);
+    assert!(stopped.namespaces[0].order.pending_last.is_some());
+    // Closing namespace admission preserves an already prepared responsibility.
+    let mut recovery = TrackingRecovery::new(10).unwrap();
+    assert!(matches!(
+        admission.commit(&mut tracker, &mut recovery),
+        OrderedCommitOutcome::Tracked(TrackedFanoutResult::Complete { .. })
+    ));
+    let finished = namespaces.snapshot();
+    assert!(finished.namespaces[0].order.pending_last.is_none());
+    assert_eq!(
+        finished.namespaces[0].order.next.as_ref().unwrap().offset,
+        batch.last_cursor().offset + 1
+    );
+    // Actual queue readback still has work; admission quiescence is not delivery.
+    assert!(
+        registry
+            .peek_queue(DestinationId(1))
+            .unwrap()
+            .try_dequeue()
+            .is_some()
+    );
+    assert!(!tracker.is_empty());
+    assert!(pending.namespaces[0].order.pending_last.is_some());
+    assert!(!pending.shutting_down);
+}
+
+#[test]
+fn namespace_snapshot_bounds_order_retirement_rollback_and_exhaustion() {
+    use marketforge_engine::live::routing::namespaces::{AdmissionNamespaces, NamespaceError};
+    let namespaces = AdmissionNamespaces::new(3).unwrap();
+    assert!(namespaces.snapshot().namespaces.is_empty());
+    for (name, epoch, offset) in [("z", 1, 0), ("a", 2, 0), ("a", 1, u64::MAX)] {
+        namespaces
+            .register(StreamCursor::new(
+                StreamId(name.into()),
+                LogEpoch(epoch),
+                offset,
+            ))
+            .unwrap();
+    }
+    assert_eq!(
+        namespaces.register(cursor(0)),
+        Err(NamespaceError::Capacity)
+    );
+    let sample = namespaces.snapshot();
+    assert_eq!(sample.limit, 3);
+    assert_eq!(
+        sample
+            .namespaces
+            .iter()
+            .map(|n| (n.order.stream_id.0.as_str(), n.order.log_epoch.0))
+            .collect::<Vec<_>>(),
+        vec![("a", 1), ("a", 2), ("z", 1)]
+    );
+    let order = namespaces.get(&StreamId("a".into()), LogEpoch(1)).unwrap();
+    let batch = EventBatch::new(vec![l2_event("a", 1, u64::MAX)]).unwrap();
+    let permit = order.prepare(&batch).unwrap();
+    assert_eq!(
+        order.snapshot().pending_last.as_ref(),
+        Some(batch.last_cursor())
+    );
+    drop(permit);
+    assert!(order.snapshot().pending_last.is_none());
+    assert_eq!(order.snapshot().next.as_ref(), Some(batch.first_cursor()));
+    order.prepare(&batch).unwrap().commit();
+    let exhausted = order.snapshot();
+    assert!(exhausted.next.is_none());
+    assert!(exhausted.pending_last.is_none());
+    assert!(!exhausted.closed);
+    namespaces
+        .retire(&StreamId("a".into()), LogEpoch(1))
+        .unwrap();
+    let retired = namespaces.snapshot();
+    assert!(retired.namespaces[0].retired);
+    assert!(retired.namespaces[0].order.closed);
+    assert!(retired.namespaces[0].order.next.is_none());
+    assert_eq!(
+        namespaces.register(batch.first_cursor().clone()),
+        Err(NamespaceError::AlreadyRegistered)
+    );
+    namespaces.shutdown();
+    namespaces.shutdown();
+    assert!(
+        namespaces
+            .snapshot()
+            .namespaces
+            .iter()
+            .all(|n| n.order.closed)
+    );
+    assert!(!sample.namespaces[0].retired);
+}

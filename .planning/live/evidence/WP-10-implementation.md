@@ -366,3 +366,56 @@ control snapshot/metrics criterion. Earlier foundational gates are unchanged.
 WP-10 is not ReadyForReview or Accepted. WP-11–29 remain pending. Next authorized
 executable work is WP-10 completion; further autonomous implementation is safe.
 Checkpoint: local commit containing this continuation, implementation and tests.
+
+
+## Continuation — owned namespace admission observations (2026-10-21)
+
+Status: Partial. Baseline `4b6d7c7`, branch `codex/wp06-completion`, only
+pre-existing untracked `scripts/run-autonomous-codex.sh`, preserved. Inspected
+instructions, autonomous plan, decisions, status, roadmap WP-10, actual admission,
+namespace ownership, destination observations, reporting and router port consumers.
+Next executable package remains WP-10; completed work retained.
+
+Implemented:
+- `StreamAdmissionOrder::snapshot` samples authoritative namespace, next cursor,
+  optional inclusive pending end cursor and closed state under its owner lock.
+  Pending state stores an offset, adding no allocation per admission. Drop
+  clears preparation; commitment advances once, including explicit exhaustion.
+- `AdmissionNamespaces::snapshot` owns bounded, sorted membership observations
+  with registry limit, shutdown and retirement tombstones. Existing clones
+  cannot reset retired frontiers. Each entry is consistent, while independent
+  frontier completions can occur between samples; no global transaction claimed.
+- Two deterministic production-interface witnesses cover real ordered tracked
+  preparation, namespace shutdown while prepared, commitment and queue readback,
+  pending obligations after admission quiescence, owned snapshot independence,
+  rollback, sorted epochs, bounded membership, retirement and u64 exhaustion.
+  No sleeps or external services. These are admission observations, not
+  durability, delivery, consumer progress or completed runtime shutdown.
+
+Verification (engine/ unless stated):
+- `cargo test --locked --offline --no-default-features --features live --test
+  live_suite namespace_snapshot`: exit 0, 2 passed / 397 filtered out.
+- Root `./scripts/verify-live.sh full`: exit 0, five gates. Exact commands:
+  `cargo fmt --all -- --check`; `cargo check --locked --offline
+  --no-default-features --features live --lib`; `cargo test --locked --offline
+  --no-default-features --features live --lib` (130 passed); same test flags
+  with `--test live_suite` (397 passed, 2 opt-in ignored); with `--doc`
+  (1 passed). Receipts: `engine/target/live-verification/20261021T040735Z-2/`.
+- `cargo check --locked --offline --no-default-features --features live,historical`:
+  exit 0. Existing dead-code warnings remain.
+- Initial edit attempt used a root-relative path from engine/ and failed before
+  writing; corrected before verification. No failed test is counted as passing.
+
+Changed: `engine/src/live/routing/{cursor,namespaces}.rs`,
+`engine/tests/live/router_obligations.rs`, STATUS.md and this ledger.
+No SQL/exchange requests, historical/Python/dependency/lockfile or ignored
+configuration changes; no push. Opt-in SQL/performance and historical baseline
+tests were not rerun; no such verification claimed.
+
+Remaining acceptance ledger: production EventRouterPort owner, bounded workers,
+completion/recovery and payload lifetime, metrics/control projection and finite
+deadline shutdown composition remain. Snapshots expose pending admission but do
+not retain outstanding delivery responsibility for a future runtime owner.
+Earlier foundational gates unchanged. No package accepted; WP-11–29 pending.
+Next authorized executable work: WP-10 completion. Safe to continue autonomously.
+Checkpoint: local commit carrying this implementation and evidence.

@@ -39,6 +39,24 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest continuation adds bounded owned namespace/frontier observations from the
+actual admission owner, including pending cursor ranges, closure, retired
+namespaces and offset exhaustion. Two deterministic witnesses verify real
+ordered preparation/commitment, shutdown while prepared, queued outstanding work,
+rollback and exhaustion. Full verification exits 0: formatting, Live check,
+130 library / 397 integration (2 opt-in ignored) / 1 doctest; combined
+Live+historical compilation exits 0. Receipts:
+`engine/target/live-verification/20261021T040735Z-2/`.
+WP-10 remains Partial; namespace observations do not establish worker completion
+or a complete deadline shutdown. Production EventRouterPort owner, worker and
+completion/recovery lifetime, metrics/control binding and shutdown composition
+remain. Earlier WP-05/06/07/09 gates remain open; WP-11–29 remain pending.
+Next executable authorized work: WP-10 completion. Autonomous work can safely
+continue. No database/exchange requests, historical/Python/dependency/config
+changes or push. Pre-existing untracked launcher preserved. Checkpoint: local
+commit containing this entry and its matching WP-10 evidence continuation.
+
+
 Latest continuation adds real owned router/destination snapshots, sorted and bounded
 by the authoritative registry limit. Queue observations distinguish queued depth
 from capacity retained by reservations and consumer-held batches; closure and

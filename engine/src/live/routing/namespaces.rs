@@ -2,7 +2,7 @@
 //! from the authoritative source/log lifecycle, never from the arriving batch.
 use std::{collections::HashMap, sync::Mutex};
 
-use super::cursor::{CursorOrderError, StreamAdmissionOrder};
+use super::cursor::{AdmissionOrderSnapshot, CursorOrderError, StreamAdmissionOrder};
 use crate::live::model::{
     cursor::{LogEpoch, StreamCursor},
     identity::StreamId,
@@ -17,6 +17,21 @@ pub enum NamespaceError {
     Unknown,
     Retired,
     Shutdown,
+}
+
+/// Bounded owned namespace observation; retired entries remain tombstones.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamespaceSnapshot {
+    pub order: AdmissionOrderSnapshot,
+    pub retired: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdmissionNamespacesSnapshot {
+    pub limit: usize,
+    pub shutting_down: bool,
+    /// Sorted by stream ID then epoch, including retired namespaces.
+    pub namespaces: Vec<NamespaceSnapshot>,
 }
 
 #[derive(Debug)]
@@ -122,6 +137,33 @@ impl AdmissionNamespaces {
         state.shutdown = true;
         for entry in state.entries.values() {
             entry.order.close();
+        }
+    }
+
+    /// Membership is sampled under the registry lock; each frontier is sampled
+    /// under its own owner lock. Concurrent completions may occur between entries.
+    /// No adapter callbacks or delivery claims are involved.
+    pub fn snapshot(&self) -> AdmissionNamespacesSnapshot {
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let mut namespaces: Vec<_> = state
+            .entries
+            .values()
+            .map(|entry| NamespaceSnapshot {
+                order: entry.order.snapshot(),
+                retired: entry.retired,
+            })
+            .collect();
+        namespaces.sort_by(|a, b| {
+            a.order
+                .stream_id
+                .0
+                .cmp(&b.order.stream_id.0)
+                .then_with(|| a.order.log_epoch.0.cmp(&b.order.log_epoch.0))
+        });
+        AdmissionNamespacesSnapshot {
+            limit: self.limit,
+            shutting_down: state.shutdown,
+            namespaces,
         }
     }
 
