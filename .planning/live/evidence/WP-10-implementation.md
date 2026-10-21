@@ -2292,3 +2292,59 @@ STATUS.md and this evidence ledger. No Python/historical execution, dependency,
 lockfile, ignored configuration or system edits. No push. Documentation checkpoint
 is the commit carrying this entry. WP-10 remains Partial; WP-11–29 pending.
 Further autonomous implementation can safely continue with WP-10 composition.
+
+## Continuation — bounded registered router shutdown (2026-10-21)
+
+Status: Partial. Initial HEAD `34a36b9`, branch `codex/wp06-completion`;
+only pre-existing untracked `scripts/run-autonomous-codex.sh`, preserved.
+Reviewed AGENTS, autonomous plan, decisions, status, WP-10/11 roadmap and
+actual ordered admission, registry, driver, supervisor and shutdown consumers.
+Next executable package remains WP-10; completed functionality retained.
+
+Implementation checkpoint: `de3f4df`.
+
+Acceptance ledger:
+- Added `RouterShutdownOwners::drive_registered`: close admission, namespaces
+  and registry immediately; check deadline before worker attachment or adapter
+  polling; reconcile at most one queue and perform one existing delivery turn.
+- Delivery remains open for worker attachment until no unclaimed queues remain.
+  Capacity errors remain explicit and do not self-wake. Successful attachment,
+  delivery progress and final driver closure schedule bounded continuation.
+- Fixed convergence defect exposed by tests: automatic registry claims now skip
+  closed, fully drained queues during shutdown, preventing reaping/recreation
+  loops. Open registry acquisition and explicit queue claims remain available.
+- Existing `drive` documents its pre-synchronized-worker requirement. Registered
+  shutdown preserves external completion, reporting and retry responsibilities;
+  it does not invent end-consumer processing, durability or a running daemon.
+- Two real production-path witnesses cover retired-first attachment, one-worker
+  capacity exhaustion, external charge release, no busy wake, deadline/resume,
+  empty-owner closure, and two committed required queues delivered sequentially
+  through correlated completion and terminal journal acknowledgement.
+- Existing claim test now verifies no automatic worker is created for completely
+  drained closed queues; its open registry ordering/lease assertions remain.
+- Missing: production EventRouterPort facade, concrete runtime/reporter binding,
+  scheduled instrumentation and full Control integration. Earlier contract/config
+  gates persist. No package acceptance claimed; WP-11–29 remain pending.
+
+Verification (engine/ unless stated):
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite registered_router_shutdown: final exit 0, 2 passed, 460 filtered out.
+  Initial runs failed the convergence assertions (first 0/1, then 0/2 passed).
+  Investigated the reap/reclaim loop and fixed production queue selection; final
+  assertions prove both complete drains. No tests ignored to obtain success.
+- Root ./scripts/verify-live.sh full: exit 0, all five gates. Commands:
+  cargo fmt --all -- --check; cargo check --locked --offline --no-default-features
+  --features live --lib; cargo test with same flags --lib (135 passed),
+  --test live_suite (460 passed, 2 opt-in ignored), --doc (1 passed).
+  Receipts: engine/target/live-verification/20261021T054648Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings remain.
+- Root git diff --check: exit 0 before implementation checkpoint.
+- No SQL/performance opt-in or historical-only test run; historical zero-stream
+  baseline not rechecked. No database/exchange access, dependency/lockfile changes,
+  ignored configuration edits, Python/historical execution changes or push.
+
+Changed: engine/src/live/routing/{router,shutdown}.rs,
+engine/tests/live/router.rs, STATUS.md and this ledger. Documentation checkpoint
+is the commit carrying this entry. Further autonomous implementation can safely
+continue with WP-10 composition; the approved v1 service is not complete.

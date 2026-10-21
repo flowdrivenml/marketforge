@@ -39,6 +39,26 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest implementation checkpoint `de3f4df` adds bounded registered router shutdown:
+admission/namespaces/registry close immediately; delivery remains attachable until
+unclaimed queues have reconciled. Capacity-limited schedulers drain/reap between
+attachments. Closed fully drained queues are skipped to prevent worker recreation
+from blocking convergence. Deadline expiry performs no attachment or adapter poll;
+owners remain resumable. Two deterministic witnesses cover capacity exhaustion,
+retired/active queues, externally held charges, no busy wakes, expiry/resume and
+two committed required destinations through a one-worker scheduler with explicit
+completion/report acknowledgement.
+Verification exits 0: formatting, Live check, 135 library / 460 integration
+(2 opt-in ignored) / 1 doctest, Live+historical check. Receipts:
+`engine/target/live-verification/20261021T054648Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort composition,
+concrete runtime/reporter integration, scheduled instrumentation and full Control
+binding. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Further autonomous
+implementation can safely continue. No SQL/exchange access, push, Python/historical
+execution, dependency or ignored configuration changes. Pre-existing untracked
+launcher preserved. See WP-10 evidence; no acceptance/project completion claimed.
+
+
 Latest implementation checkpoint `baf09d3` connects ordered commitment to the
 parked delivery coordinator. Accepted responsibility wakes the latest drive
 waiter once, including tracking-recovery work that cannot rely on queue wakeups.
