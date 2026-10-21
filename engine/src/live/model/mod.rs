@@ -43,3 +43,6 @@ pub mod replay;
 
 pub mod acquisition;
 pub mod observation;
+
+pub mod metadata;
+pub mod persistent_identity;

@@ -50,3 +50,6 @@ pub(crate) mod destination_worker;
 pub(crate) mod router_runtime;
 
 pub(crate) mod wp09_service;
+
+pub(crate) mod wp05_identity;
+pub(crate) mod wp05_metadata;

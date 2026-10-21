@@ -9,7 +9,7 @@
 | WP-02 | Make shared depth/domain models available safely | Accepted | WP-02A-depth-event-sharing.md, WP-02B-trade-sharing.md |
 | WP-03 | Extract compatible storage, arithmetic and UI primitives | Accepted | WP-03A-DWP-03B-parquet-contract.md, WP-03D-shared-parquet-primitives.md, WP-03E-shared-trade-builder.md |
 | WP-04 | Finalize dependency and feature wiring | Accepted | WP-04D.md — feature/build verification |
-| WP-05 | Implement domain identity, lifecycle and policy types | Partial — reconciliation underway | WP-04A, WP-04A.1–A.3, WP-04B, WP-04B.1 — identity, validation, lifecycle, demand |
+| WP-05 | Implement domain identity, lifecycle and policy types | Partial — identity/metadata contracts verified; removed-ID lifecycle/history scope unresolved | [Implementation matrix](evidence/WP-05-implementation.md) |
 | WP-06 | Freeze and implement event/delivery/replay contracts | Partial — basic real C06 witness passes; signed timestamp and fault gates remain | [Independent contracts](evidence/wp06-independent-contracts.md), [Observed C06 mapping and blockers](evidence/wp06-c06-connected.md) |
 | WP-07 | Freeze service ports, management and observation surfaces | Contract implementation review pending; C12 adapter decision OPEN | [Contract implementation and witnesses](evidence/wp07-contracts.md) |
 | WP-08 | Implement foundations and real native observability | ReadyForReview | [Implementation ledger](evidence/WP-08-implementation.md) |
@@ -36,6 +36,44 @@
 | WP-29 | Hardening, reproducibility and release | Pending | — |
 
 ## Current Development Position
+
+### WP-05 identity and metadata contracts — 2026-10-21
+
+**WP-05 remains Partial — Not Accepted.** The authoritative
+[requirement/code/test matrix](evidence/WP-05-implementation.md) supersedes earlier
+WP-05 reconciliation notes. Implemented immutable persistent identity evidence
+from committed configuration revisions, canonical key/dedup and retained-history
+reassignment checks, pure pre-commit validation, derived semantic generation
+boundaries, and a typed read-only full-tuple metadata resolver with deterministic
+snapshot fixtures. Metadata reuses existing financial types, preserves exact
+values/provenance, and separates validity from normalization economic needs.
+Explicit perpetual families now validate; absent families remain unresolved.
+
+The user reaffirmed Option A and the unresolved permanent-removal/reintroduction
+policy. No identity database/journal or permanent tombstones were introduced.
+Current/retained mappings are verified; bounded history cannot prove bindings
+before its missing parent. Known reintroduction is reported, not authorized.
+This unresolved architectural decision keeps WP-05 Partial; its cursor/retained
+history/replay/restart consequences are explicit in the evidence report.
+
+WP-07 port binding, WP-09 durable enforcement/metadata adoption, WP-11 operational
+registration/demand, WP-12 production metadata/protocol adapter integration,
+WP-23 derived execution and WP-24 reconciliation remain their owners' work.
+No PostgreSQL adapter/database access or production integration was fabricated.
+Accepted decisions and historical instrument/catalog/job code are unchanged.
+Existing FileRevisionJournal/FileEpochStore remain their respective authorities.
+No frozen consumer implementation required changes; only test registration and
+WP-05 models/exports were changed. Full Live verification exits 0:
+137 library / 542 integration passed (2 ignored) / 1 doctest. Nineteen focused
+WP-05 tests, 2 generation/cursor and 18 FileEpochStore tests pass. Live+historical,
+Live+TUI and base-library compilation exit 0. Exact commands and final receipts
+`engine/target/live-verification/20261021T125212Z-2/` are in the report.
+
+Preserve/exclude the pre-existing config validator blank line and untracked
+runner script. Local checkpoint only, no push. **Current scope and stopping point:
+WP-05 only. No next package is authorized.** The older assignment notes below
+are historical context and do not supersede this scope.
+
 
 ### WP-09 configuration implementation — 2026-10-21
 

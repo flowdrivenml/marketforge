@@ -206,34 +206,17 @@ impl SourceStreamKey {
         // 2. MarketKind against instrument identity metadata
         match self.instrument.instrument_kind {
             crate::job::InstrumentKind::Spot => {
-                if self.market != MarketKind::Spot {
+                if self.market != MarketKind::Spot || self.instrument.contract_kind.is_some() {
                     issues.push(ValidationIssue {
                         kind: ValidationIssueKind::MarketKindMismatch,
                         detail: format!(
-                            "instrument_kind=Spot requires MarketKind::Spot, got {:?}",
+                            "instrument_kind=Spot requires MarketKind::Spot and no contract_kind, got {:?}",
                             self.market
                         ),
                     });
                 }
             }
-            crate::job::InstrumentKind::Perpetual => {
-                if self.market == MarketKind::Spot {
-                    issues.push(ValidationIssue {
-                        kind: ValidationIssueKind::MarketKindMismatch,
-                        detail: "a perpetual instrument cannot use the spot market family".into(),
-                    });
-                } else {
-                    // Family provisioning remains the compiler's OPEN-001
-                    // responsibility. Do not infer linear versus inverse.
-                    issues.push(ValidationIssue {
-                        kind: ValidationIssueKind::MarketKindAmbiguous,
-                        detail:
-                            "perpetual market family requires authoritative compiler resolution"
-                                .into(),
-                    });
-                }
-            }
-            crate::job::InstrumentKind::Future => {
+            crate::job::InstrumentKind::Perpetual | crate::job::InstrumentKind::Future => {
                 if let Some(contract_kind) = self.instrument.contract_kind {
                     let expected = match contract_kind {
                         crate::job::ContractKind::Linear => MarketKind::Linear,
@@ -243,7 +226,7 @@ impl SourceStreamKey {
                         issues.push(ValidationIssue {
                             kind: ValidationIssueKind::MarketKindMismatch,
                             detail: format!(
-                                "instrument_kind=Future(contract_kind={:?}) \
+                                "derivative instrument(contract_kind={:?}) \
                                  requires MarketKind::{:?}, got {:?}",
                                 contract_kind, expected, self.market
                             ),
@@ -252,14 +235,14 @@ impl SourceStreamKey {
                 } else if self.market == MarketKind::Spot {
                     issues.push(ValidationIssue {
                         kind: ValidationIssueKind::MarketKindMismatch,
-                        detail: "a futures instrument cannot use the spot market family".into(),
+                        detail: "a derivative instrument cannot use the spot market family".into(),
                     });
                 } else {
                     // Future without contract_kind — ambiguous.
                     issues.push(ValidationIssue {
                         kind: ValidationIssueKind::MarketKindAmbiguous,
                         detail: format!(
-                            "instrument_kind=Future with contract_kind=None: \
+                            "derivative instrument with contract_kind=None: \
                              market family cannot be determined. \
                              market={:?}",
                             self.market
@@ -346,3 +329,31 @@ pub struct StreamId(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct DerivedStreamId(pub String);
+
+impl SourceStreamKey {
+    /// Canonical acquisition identity at compilation/registration boundaries.
+    /// The venue spelling comes from the existing Exchange enum. Native symbols
+    /// are preserved verbatim; neither symbol suffixes nor aliases infer family.
+    pub fn canonicalized(&self) -> Result<Self, super::error::ErrorCode> {
+        use super::error::ErrorCode;
+        if self.instrument.symbol.is_empty()
+            || self.instrument.symbol.trim() != self.instrument.symbol
+        {
+            return Err(ErrorCode::InvalidInput);
+        }
+        let issues = self.validate();
+        if issues.has_definite_failures() {
+            return Err(ErrorCode::InvalidInput);
+        }
+        if issues.unresolved_classifications().next().is_some() {
+            return Err(ErrorCode::Dependency);
+        }
+        let mut key = self.clone();
+        key.instrument.exchange = serde_json::to_value(self.exchange)
+            .map_err(|_| ErrorCode::Internal)?
+            .as_str()
+            .ok_or(ErrorCode::Internal)?
+            .to_owned();
+        Ok(key)
+    }
+}
