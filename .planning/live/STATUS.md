@@ -39,6 +39,26 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest implementation checkpoint `e364dac` integrates bounded terminal reporting
+and delivery retry scheduling into registered router shutdown, using the existing
+driver/journal/registry owners. Admission closes before work; expiry performs no
+adapter, timer allocation or reporter call. Queue reconciliation remains bounded;
+temporary reporting failure and timer exhaustion preserve responsibility. Closing
+an already-drained driver now releases its retained maintenance timer.
+Two deterministic production-path witnesses cover two required queues through
+one worker, correlated completions, reporting retry, timer exhaustion, expiry and
+resume, and exact timer resource release on empty shutdown.
+Final verification: formatting, Live check, 135 library tests, 463 integration
+passes (2 opt-in ignored), 1 doctest, and Live+historical check all exit 0.
+Receipts: `engine/target/live-verification/20261021T060056Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort facade,
+concrete runtime/reporter and Control composition remain. Earlier WP-05/06/07/09
+gates persist; WP-11–29 remain pending. Further autonomous implementation can
+safely continue. No SQL/exchange access, dependency/lockfile, ignored config or
+Python/historical execution changes. Pre-existing untracked launcher preserved.
+See the WP-10 implementation ledger for commands and limitations.
+
+
 Latest continuation fixes metric deadline crossings during pending timer polls.
 The authoritative clock is now checked after either poll outcome, for both the
 initial and replacement timer; due timers are released before observation.

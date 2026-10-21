@@ -2565,3 +2565,55 @@ Python/historical execution changes or push.
 Changed: engine/src/live/routing/metrics.rs, engine/tests/live/router.rs,
 STATUS.md and this ledger. Checkpoint: commit carrying this entry. Further
 autonomous WP-10 implementation can safely continue.
+
+
+## Continuation — registered shutdown reporting composition (2026-10-21)
+
+Status: Partial. Initial HEAD `8496ef2`, branch `codex/wp06-completion`.
+Preserved pre-existing untracked `scripts/run-autonomous-codex.sh`. Inspected
+AGENTS, autonomous plan, decisions, status, WP-09–11 roadmap and current
+router/ordered/driver/namespace/shutdown/reporting sources and consumer tests.
+Next executable remains WP-10; no completed work restarted.
+Implementation checkpoint: `e364dac`; evidence checkpoint carries this entry.
+
+Acceptance ledger:
+- Added RouterShutdownOwners::drive_registered_reporting with separate delivery,
+  scheduling and reporting results. It fences the authoritative owners before
+  checking the deadline, then reconciles one queue and processes at most one
+  report using the existing driver timer and journal. No parallel owner added.
+- Deadline expiry performs no adapter/reporter call or timer allocation. Owners
+  remain resumable; temporary reporting failure retains retry responsibility.
+  Timer capacity failures remain visible alongside independent delivery progress.
+- Shared queue-reconciliation closure logic preserves the capacity-limited worker
+  lifecycle. DeliveryDriver::close releases its timer when already drained.
+- Two deterministic witnesses exercise actual ordered admission, required fanout,
+  one-worker/two-queue shutdown, correlated completion, temporary reporting retry,
+  exhausted timer admission, deadline/resume, and exact timer release on closure.
+- Remaining: production EventRouterPort facade, concrete runtime/reporter and
+  Control composition; earlier domain/delivery/management/config gates persist.
+  This cooperative integration does not establish a running daemon or acceptance.
+
+Verification (engine/ unless root noted):
+- cargo fmt --manifest-path engine/Cargo.toml --all (root): exit 0.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite reporting_router_shutdown: exit 0, 2 passed / 463 filtered out.
+- ./scripts/verify-live.sh full (root): exit 0. Exact commands: cargo fmt --all --
+  --check; cargo check --locked --offline --no-default-features --features live
+  --lib; cargo test with the same feature flags --lib (135 passed), --test
+  live_suite (463 passed, 2 opt-in ignored), --doc (1 passed).
+  Final receipts: engine/target/live-verification/20261021T060056Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings remain.
+- git diff --check (root): exit 0 before implementation checkpoint.
+- Earlier full verification before timer-release refinement also passed (135/462/1;
+  receipts 20261021T060005Z-2). Initial test-edit helper invoked unavailable `python`
+  (shell reported command not found); rerun with python3 succeeded. The initial
+  filtered test command executed zero tests and is not counted as verification.
+- SQL/performance opt-in and historical-only suites not run; historical zero-stream
+  baseline not rechecked. No database/exchange access, dependency/lockfile,
+  ignored configuration, Python/historical execution changes or push.
+
+Changed: engine/src/live/routing/{driver,shutdown}.rs,
+engine/tests/live/router.rs, STATUS.md and this ledger. WP-11–29 remain pending.
+Further autonomous WP-10 implementation can safely continue. No package marked
+Accepted and no complete-service claim.
