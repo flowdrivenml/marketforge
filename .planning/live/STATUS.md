@@ -39,6 +39,20 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest implementation checkpoint `5cd2a74` fixes metric deadline crossings during
+polling: readiness is followed by an authoritative clock check before rearming
+or rejecting an early-ready timer. The existing native collector witness covers
+crossings in both the initial and replacement poll, with exact timer counts and
+next cadence. Verification exits 0: formatting, Live check, 135 library / 460
+integration (2 opt-in ignored) / 1 doctest, combined Live+historical check.
+Receipts: `engine/target/live-verification/20261021T055304Z-3/`.
+WP-10 remains Partial and next executable: production EventRouterPort facade,
+concrete runtime/reporter and Control composition remain. WP-05/06/07/09 gates
+persist; WP-11–29 pending. Further autonomous implementation can safely continue.
+No SQL/exchange access, push, Python/historical execution, dependencies or ignored
+configuration edits. Pre-existing untracked launcher preserved.
+
+
 Latest checkpoint `a8114ea` binds router metric cadence to the existing deadline
 port. One retained timer is reused across polls and dropped on reconfiguration,
 disabling or due sampling. Capacity failures preserve the boundary; early-ready
