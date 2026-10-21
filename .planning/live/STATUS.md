@@ -40,6 +40,25 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest continuation bounds WP-10 prepared transaction ownership (including empty
+transactions) before allocator mutation, and adds owned `DeliverySupervisor`
+observations for worker charges, retained/blocked payloads, obligation/preparation
+counts, recovery reservations and terminal reporting. The delivery drain predicate
+requires all those responsibilities to clear; it does not certify whole-router
+shutdown or external durability. Full verification exits 0: 133 library,
+429 integration (2 opt-in ignored), 1 doctest, formatting/Live check and combined
+Live+historical compilation. Receipts:
+`engine/target/live-verification/20261021T044555Z-2/`.
+WP-10 remains Partial and next executable; production EventRouterPort owner,
+recovery scheduling/lifecycle, native metrics/control binding and complete router
+shutdown remain. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending.
+Further autonomous implementation can safely continue. Checkpoint: local commit
+carrying this entry and the matching WP-10 evidence. Existing untracked launcher
+preserved; no push, SQL/exchange traffic, Python/historical code, dependencies or
+ignored configuration edits.
+
+
+
 Latest continuation adds WP-10 `DeliverySupervisor`: bounded real worker polling,
 automatic obligation correlation, retained completion and terminal journal handoff,
 explicit charged invalid-response recovery, and resumable deadline shutdown.

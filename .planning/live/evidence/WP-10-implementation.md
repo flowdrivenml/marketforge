@@ -1131,3 +1131,72 @@ certify router-wide fairness under exhausted supervision capacity, restart
 durability or full service operation. Earlier WP-05/06/07/09 gates persist;
 WP-11–29 pending. Next authorized executable work: WP-10. Further autonomous
 implementation can safely continue; no package acceptance claimed.
+
+
+## Continuation — bounded prepared ownership and supervision observations (2026-10-21)
+
+Status: Partial. Baseline `3a4a9b6`, branch `codex/wp06-completion`; only initial
+untracked file was `scripts/run-autonomous-codex.sh`, preserved. Read repository
+and authorized campaign instructions, decisions, status, roadmap WP-10/11,
+latest package evidence and relevant Document 08 delivery/resource/shutdown
+requirements. Inspected actual admission, tracker, supervisor, worker and recovery
+owners. WP-10 remains next; completed implementation was preserved.
+
+Implemented:
+- Prepared transactions share the configured tracker count ceiling independently
+  of obligation occupancy. Empty transactions retain real commitment tokens and
+  previously bypassed that limit entirely. Both preparation entry points now
+  reject at the ceiling before allocation/ID mutation. Abort and commitment free
+  transaction capacity; direct registration behavior remains unchanged.
+- `DeliverySupervisionSnapshot` reads actual worker resources, retained capacity,
+  blocked outcome error, authoritative obligation/prepared counts, recovery
+  reservation/queue counts, journal occupancy/capacity and escalated count.
+  It owns bounded observations and creates no new owner or canonical state.
+- Its delivery drain predicate requires worker closure/resource release and no
+  retained, blocked, tracked, prepared, recovery or reporting responsibility.
+  Resource-only `resources_drained` retains its documented semantics. A full
+  journal or transferred payload cannot become a false successful delivery drain.
+
+Deterministic witnesses use production tracker/worker/supervisor interfaces:
+empty and nonempty spec preparations reject without consuming IDs at the limit;
+abort/commit restore capacity; open versus closed empty workers; empty prepared
+transaction; live recovery reservation; immutable prior observations; actual
+worker completion and terminal handoff retaining payload charges, followed by
+payload release while independent journal reporting remains outstanding.
+
+Verification (engine/ unless stated):
+- `cargo test --locked --offline --no-default-features --features live --lib
+  empty_preparations`: final exit 0, 1 passed / 132 filtered out.
+- `cargo test --locked --offline --no-default-features --features live --test
+  live_suite delivery_supervisor`: final exit 0, 4 passed / 427 filtered out.
+- Root `./scripts/verify-live.sh full`: exit 0. Exact gates: `cargo fmt --all --
+  --check`; `cargo check --locked --offline --no-default-features --features live
+  --lib`; equivalent test flags with `--lib` (133 passed), `--test live_suite`
+  (429 passed, 2 opt-in ignored), `--doc` (1 passed). Receipts:
+  `engine/target/live-verification/20261021T044555Z-2/`.
+- `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; log `engine/target/wp10-supervision-observation-combined.log`.
+- Root `git diff --check`: exit 0 before checkpoint.
+- Initial focused command exited 101: a patch matched the wrong repeated method
+  context, placing an accessor on PreparedObligations; corrected its owner.
+  Subsequent focused run exited 101 with 1 regression failing because a capacity
+  guard matched register_batch instead of prepare_obligations. Moved the guard,
+  preserving direct registration semantics, and reran focused/full gates above.
+  Assertions were not weakened. Existing dead-code warnings remain.
+
+Changed: `engine/src/live/routing/{acknowledgement,supervisor}.rs`,
+`engine/tests/live/destination_worker.rs`, STATUS.md and this ledger. Checkpoint:
+local commit carrying this entry. No SQL/exchange traffic, Python/historical
+execution changes, dependency/lockfile or ignored configuration edits; no push.
+SQL/performance opt-in tests and historical baseline execution not rerun; no
+claims for those gates.
+
+Acceptance ledger remains Partial: production EventRouterPort owner/ordered
+composition, recovery scheduling/lifecycle, native metrics/control binding and
+complete router shutdown remain. The snapshot is a delivery-owner observation,
+not a control transport or metrics collector; admission namespaces and outer
+runtime lifecycle are outside its drain predicate. Caller must supply the same
+authoritative tracker/recovery/journal under the enclosing owner fence. Earlier
+WP-05/06/07/09 gates persist; WP-11–29 pending. Next authorized executable work:
+WP-10. Further autonomous implementation can safely continue. No acceptance
+or entire-project completion claimed.

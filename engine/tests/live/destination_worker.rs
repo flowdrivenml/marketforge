@@ -1299,9 +1299,22 @@ fn delivery_supervisor_drives_real_worker_completion_and_charged_terminal_handof
     assert_eq!(supervisor.pending_len(), 0);
     assert!(tracker.is_empty());
     assert_eq!(journal.len(), 1);
+    let recovery =
+        marketforge_engine::live::routing::tracking_recovery::TrackingRecovery::new(1).unwrap();
+    let charged = supervisor.snapshot(&tracker, &recovery, &journal);
+    assert_eq!(charged.retained_deliveries, 0);
+    assert_eq!(charged.tracked_obligations, 0);
+    assert_eq!(charged.journal_records, 1);
+    assert_eq!(charged.journal_remaining, 0);
+    assert!(!charged.workers.is_drained());
+    assert!(!charged.is_drained());
     assert!(!supervisor.resources_drained());
     drop(delivery);
     assert!(supervisor.resources_drained());
+    let reporting = supervisor.snapshot(&tracker, &recovery, &journal);
+    assert!(reporting.workers.is_drained());
+    assert!(!reporting.is_drained()); // Reporting responsibility still exists.
+    assert!(!charged.workers.is_drained()); // Owned observation is unchanged.
     assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
 }
 
@@ -1410,4 +1423,49 @@ fn delivery_supervisor_shutdown_deadline_preserves_unstarted_payload_for_resumpt
     assert!(tracker.is_empty());
     assert_eq!(journal.len(), 1); // Reporting is independently retained.
     assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn delivery_supervisor_snapshot_distinguishes_empty_transactions_and_recovery_reservations() {
+    use marketforge_engine::live::routing::{
+        acknowledgement::{AcknowledgementTracker, FinalizationJournal},
+        supervisor::DeliverySupervisor,
+        tracking_recovery::TrackingRecovery,
+        worker::DestinationWorkers,
+    };
+    let workers = DestinationWorkers::new(std::num::NonZeroUsize::new(1).unwrap());
+    let mut supervisor = DeliverySupervisor::new(workers, std::num::NonZeroUsize::new(1).unwrap());
+    let mut tracker = AcknowledgementTracker::new(1).unwrap();
+    let recovery = TrackingRecovery::new(1).unwrap();
+    let journal = FinalizationJournal::new(1).unwrap();
+    assert!(
+        !supervisor
+            .snapshot(&tracker, &recovery, &journal)
+            .is_drained()
+    );
+    supervisor.close();
+    let empty = supervisor.snapshot(&tracker, &recovery, &journal);
+    assert!(empty.is_drained());
+    assert_eq!(empty.obligation_limit, 1);
+    assert_eq!(empty.retained_limit, 1);
+    let prepared = tracker.prepare_obligations(vec![]).unwrap();
+    let preparing = supervisor.snapshot(&tracker, &recovery, &journal);
+    assert_eq!(preparing.tracked_obligations, 0);
+    assert_eq!(preparing.prepared_transactions, 1);
+    assert!(!preparing.is_drained());
+    tracker.abort_prepared(prepared).unwrap();
+    let reservation = recovery.reserve().unwrap();
+    let reserved = supervisor.snapshot(&tracker, &recovery, &journal);
+    assert_eq!(reserved.recovery.pending_updates, 0);
+    assert_eq!(reserved.recovery.reserved_updates, 1);
+    assert!(!reserved.is_drained());
+    drop(reservation);
+    assert!(
+        supervisor
+            .snapshot(&tracker, &recovery, &journal)
+            .is_drained()
+    );
+    assert!(empty.is_drained());
+    assert!(!preparing.is_drained());
+    assert!(!reserved.is_drained());
 }

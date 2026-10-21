@@ -1075,6 +1075,12 @@ impl AcknowledgementTracker {
     pub fn obligation(&self, id: DeliveryObligationId) -> Option<&DeliveryObligation> {
         self.obligations.get(&id).map(|tracked| &tracked.obligation)
     }
+
+    /// Includes empty prepared transactions, which still own a commitment token.
+    /// Bounded by the same configured limit as delivery obligations.
+    pub fn prepared_transactions(&self) -> usize {
+        self.transaction_state.len()
+    }
     pub fn len(&self) -> usize {
         self.obligations.len()
     }
@@ -1093,7 +1099,9 @@ impl AcknowledgementTracker {
         &mut self,
         obligations: Vec<DeliveryObligation>,
     ) -> Result<PreparedObligations, AcknowledgementError> {
-        if obligations.len() > self.remaining_capacity() {
+        if obligations.len() > self.remaining_capacity()
+            || self.transaction_state.len() >= self.max_obligations
+        {
             return Err(AcknowledgementError::CapacityExceeded);
         }
 
@@ -1143,7 +1151,9 @@ impl AcknowledgementTracker {
         specs: Vec<DeliveryObligationSpec>,
     ) -> Result<PreparedObligations, AcknowledgementError> {
         // Capacity must be checked before any mutation.
-        if specs.len() > self.remaining_capacity() {
+        if specs.len() > self.remaining_capacity()
+            || self.transaction_state.len() >= self.max_obligations
+        {
             return Err(AcknowledgementError::CapacityExceeded);
         }
 
@@ -1600,6 +1610,42 @@ mod transaction_integrity_tests {
         tracker.begin_commitment(prepared).unwrap();
         assert!(tracker.transaction_state.is_empty());
         assert!(tracker.is_empty());
+    }
+
+    #[test]
+    fn empty_preparations_are_bounded_and_release_capacity_without_consuming_ids_on_failure() {
+        let mut tracker = AcknowledgementTracker::new(1).unwrap();
+        let first = tracker.prepare_obligations(vec![]).unwrap();
+        let next_id = tracker.next_id;
+        assert_eq!(tracker.prepared_transactions(), 1);
+        assert_eq!(
+            tracker.prepare_obligations(vec![]).unwrap_err(),
+            AcknowledgementError::CapacityExceeded
+        );
+        assert_eq!(
+            tracker.prepare_obligation_specs(vec![]).unwrap_err(),
+            AcknowledgementError::CapacityExceeded
+        );
+        let cursor = StreamCursor::new(StreamId("bounded".into()), LogEpoch(1), 0);
+        let spec = DeliveryObligationSpec {
+            destination: DestinationId(1),
+            range: DeliveryCursorRange::new(cursor.clone(), cursor).unwrap(),
+            kind: DestinationKind::Recording,
+            policy: DeliveryPolicy::Required,
+        };
+        assert_eq!(
+            tracker.prepare_obligation_specs(vec![spec]).unwrap_err(),
+            AcknowledgementError::CapacityExceeded
+        );
+        assert!(tracker.is_empty());
+        assert_eq!(tracker.next_id, next_id);
+        assert_eq!(tracker.prepared_transactions(), 1);
+        tracker.abort_prepared(first).unwrap();
+        let second = tracker.prepare_obligation_specs(vec![]).unwrap();
+        tracker.begin_commitment(second).unwrap();
+        assert_eq!(tracker.prepared_transactions(), 0);
+        let third = tracker.prepare_obligations(vec![]).unwrap();
+        tracker.abort_prepared(third).unwrap();
     }
     // Transaction integrity tests go here.
 }

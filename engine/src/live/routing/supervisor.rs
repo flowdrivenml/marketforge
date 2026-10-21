@@ -6,6 +6,7 @@ use super::{
         AcknowledgementTracker, DeliveryObligationId, FinalizationHandoffError, FinalizationJournal,
     },
     completion::{FinalizedDelivery, PendingDeliveries, PendingDeliveryError, RetainedDelivery},
+    tracking_recovery::{TrackingRecovery, TrackingRecoverySnapshot},
     worker::{DestinationWorkers, WorkerOutcome, WorkersSnapshot},
 };
 use crate::live::ports::routing::DestinationCompletion;
@@ -28,6 +29,38 @@ pub enum SupervisionShutdownStep {
     Step(SupervisionStep),
     ResourcesDrained,
     DeadlineReached,
+}
+
+/// Owned observations from the real delivery owners. This does not establish
+/// admission-namespace closure, external durability or complete router shutdown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeliverySupervisionSnapshot {
+    pub workers: WorkersSnapshot,
+    pub retained_deliveries: usize,
+    pub retained_limit: usize,
+    pub blocked_outcome: Option<PendingDeliveryError>,
+    pub tracked_obligations: usize,
+    pub obligation_limit: usize,
+    pub prepared_transactions: usize,
+    pub recovery: TrackingRecoverySnapshot,
+    pub journal_records: usize,
+    pub journal_remaining: usize,
+    pub escalated_records: usize,
+}
+
+impl DeliverySupervisionSnapshot {
+    /// Worker closure and every delivery responsibility must be resolved.
+    /// In particular, an empty obligation map cannot hide prepared empty
+    /// transactions, and transferred payload charges remain visible in workers.
+    pub fn is_drained(&self) -> bool {
+        self.workers.is_drained()
+            && self.retained_deliveries == 0
+            && self.blocked_outcome.is_none()
+            && self.tracked_obligations == 0
+            && self.prepared_transactions == 0
+            && self.recovery.is_drained()
+            && self.journal_records == 0
+    }
 }
 
 /// Owns worker calls, retained deliveries and at most one uncorrelated outcome.
@@ -128,6 +161,30 @@ impl DeliverySupervisor {
     }
     pub fn workers_snapshot(&self) -> WorkersSnapshot {
         self.workers.snapshot()
+    }
+
+    /// Call while holding the enclosing owner's tracker/recovery/journal fence.
+    /// Queue observations remain individually synchronized; this is observational
+    /// and must not replace the authoritative admission and lifecycle fences.
+    pub fn snapshot(
+        &self,
+        tracker: &AcknowledgementTracker,
+        recovery: &TrackingRecovery,
+        journal: &FinalizationJournal,
+    ) -> DeliverySupervisionSnapshot {
+        DeliverySupervisionSnapshot {
+            workers: self.workers.snapshot(),
+            retained_deliveries: self.pending.len(),
+            retained_limit: self.pending.capacity(),
+            blocked_outcome: self.blocked.as_ref().map(|(error, _)| *error),
+            tracked_obligations: tracker.len(),
+            obligation_limit: tracker.capacity(),
+            prepared_transactions: tracker.prepared_transactions(),
+            recovery: recovery.snapshot(),
+            journal_records: journal.len(),
+            journal_remaining: journal.remaining_capacity(),
+            escalated_records: journal.escalated_count(),
+        }
     }
 
     /// Fence admission while preserving every in-flight call and retained charge.
