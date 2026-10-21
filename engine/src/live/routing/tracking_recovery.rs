@@ -141,6 +141,24 @@ impl PendingTrackingUpdate {
         self.reservation.reservation.events()
     }
 }
+/// Owned observation of recovery responsibilities, including reservations held
+/// by prepared fan-outs that have not yet produced an outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrackingRecoverySnapshot {
+    pub pending_updates: usize,
+    pub unresolved_outcomes: usize,
+    pub reserved_updates: usize,
+    pub available_updates: usize,
+}
+
+impl TrackingRecoverySnapshot {
+    /// Recovery is drained only when no retained or in-flight responsibility exists.
+    /// This says nothing about destination processing or obligation finalization.
+    pub fn is_drained(&self) -> bool {
+        self.pending_updates == 0 && self.unresolved_outcomes == 0 && self.reserved_updates == 0
+    }
+}
+
 /// Bounded in-process storage for failed tracking updates.
 ///
 /// Capacity is accounted for by the reservations owned
@@ -351,10 +369,24 @@ impl TrackingRecovery {
         Ok(())
     }
 
+    /// Observe all recovery ownership without releasing reservations.
+    pub fn snapshot(&self) -> TrackingRecoverySnapshot {
+        let occupied = self.occupied();
+        TrackingRecoverySnapshot {
+            pending_updates: self.pending.len(),
+            unresolved_outcomes: self.unresolved.len(),
+            reserved_updates: occupied - self.pending.len() - self.unresolved.len(),
+            available_updates: self.capacity.capacity.limits().max_pending_events - occupied,
+        }
+    }
+
+    /// Number of correlated pending updates; excludes unresolved outcomes.
     pub fn len(&self) -> usize {
         self.pending.len()
     }
 
+    /// Whether the correlated pending-update queue is empty. Use snapshot().is_drained()
+    /// when deciding whether all recovery responsibility has drained.
     pub fn is_empty(&self) -> bool {
         self.pending.is_empty()
     }

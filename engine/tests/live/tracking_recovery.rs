@@ -701,3 +701,50 @@ fn unresolved_reconciliation_preserves_regressing_outcome_and_pending_updates() 
         DeliveryStatus::Pending
     );
 }
+
+#[test]
+fn recovery_drain_observation_includes_inflight_and_uncorrelated_responsibility() {
+    let mut recovery = TrackingRecovery::new(3).unwrap();
+    let mut tracker = AcknowledgementTracker::new(2).unwrap();
+    assert!(recovery.snapshot().is_drained());
+    let inflight = recovery.reserve().unwrap();
+    let pending = recovery.reserve().unwrap();
+    let unresolved = recovery.reserve().unwrap();
+    let ack = acknowledgement();
+    recovery.retain(ack.clone(), pending).unwrap();
+    recovery
+        .retain_unresolved(ack.destination, ack.range.clone(), ack.status, unresolved)
+        .unwrap();
+    let observed = recovery.snapshot();
+    assert_eq!(observed.pending_updates, 1);
+    assert_eq!(observed.unresolved_outcomes, 1);
+    assert_eq!(observed.reserved_updates, 1);
+    assert_eq!(observed.available_updates, 0);
+    assert!(!observed.is_drained());
+    assert!(matches!(
+        recovery.retry_next(&mut tracker),
+        TrackingRecoveryOutcome::RetryRequired { .. }
+    ));
+    assert_eq!(recovery.snapshot(), observed);
+    tracker
+        .register(DeliveryObligation {
+            id: ack.obligation,
+            destination: ack.destination,
+            range: ack.range,
+            kind: DestinationKind::Recording,
+            policy: DeliveryPolicy::Required,
+        })
+        .unwrap();
+    recovery.retry_next(&mut tracker);
+    assert!(recovery.is_empty());
+    assert!(!recovery.snapshot().is_drained());
+    recovery.reconcile_next_unresolved(&mut tracker, ack.obligation);
+    assert_eq!(recovery.snapshot().reserved_updates, 1);
+    assert!(!recovery.snapshot().is_drained());
+    drop(inflight);
+    assert!(recovery.snapshot().is_drained());
+    assert_eq!(recovery.snapshot().available_updates, 3);
+    assert_eq!(tracker.len(), 1);
+    // Owned observations remain valid after subsequent progress.
+    assert_eq!(observed.unresolved_outcomes, 1);
+}

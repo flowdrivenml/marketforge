@@ -40,6 +40,23 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest continuation adds WP-10 owned recovery drain observations covering correlated
+updates, unresolved outcomes and in-flight reservations. Queue-specific len/is_empty
+semantics are preserved and documented; shutdown consumers can use the complete
+snapshot instead. A deterministic real-owner witness covers rejected retry,
+reconciliation, reservation release and independent obligation lifetime.
+Full Live verification exits 0: 132 library / 404 integration (2 opt-in ignored) /
+1 doctest, formatting and Live compilation; Live+historical compilation exits 0.
+Receipts: `engine/target/live-verification/20261021T041749Z-2/`.
+WP-10 remains Partial and next executable: production owner, workers, payload
+lifetime, metrics/control binding and deadline shutdown remain. Earlier
+WP-05/06/07/09 gates persist; WP-11–29 pending. Safe autonomous implementation
+can continue. No SQL/exchange access, Python/historical/dependency/ignored-config
+changes or push. Pre-existing untracked launcher preserved. Checkpoint: local
+commit carrying this entry and matching WP-10 evidence.
+
+
+
 Latest continuation adds WP-10 reconciliation of retained uncorrelated destination
 outcomes against the authoritative acknowledgement tracker. Unknown obligations,
 wrong destination/range and regressing progress preserve the outcome and capacity;
