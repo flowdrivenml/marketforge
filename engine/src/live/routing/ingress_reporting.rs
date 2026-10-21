@@ -244,3 +244,144 @@ impl IngressReportingConsumer {
         }
     }
 }
+
+/// Bounded retry policy for the single charged ingress-reporting record.
+/// Exhaustion and permanent failure require an explicit runtime intervention.
+pub struct ScheduledIngressReporting {
+    consumer: IngressReportingConsumer,
+    interval: std::time::Duration,
+    max_attempts: std::num::NonZeroUsize,
+    attempts: usize,
+    retry_at: Option<std::time::Instant>,
+    timer: Option<super::admission::DeadlineFuture>,
+    blocked: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScheduledIngressStep {
+    Idle,
+    Reported,
+    RetryScheduled,
+    EscalationRequired,
+}
+
+impl ScheduledIngressReporting {
+    pub fn new(
+        interval: std::time::Duration,
+        max_attempts: std::num::NonZeroUsize,
+    ) -> Result<Self, ErrorCode> {
+        if interval.is_zero() {
+            return Err(ErrorCode::InvalidInput);
+        }
+        Ok(Self {
+            consumer: IngressReportingConsumer::default(),
+            interval,
+            max_attempts,
+            attempts: 0,
+            retry_at: None,
+            timer: None,
+            blocked: false,
+        })
+    }
+
+    pub fn pending(&self) -> Option<&IngressRecord> {
+        self.consumer.pending()
+    }
+
+    /// Transfer unresolved ownership for explicit escalation; retire its timer.
+    pub fn take_pending(&mut self) -> Option<IngressRecord> {
+        self.reset();
+        self.consumer.take_pending()
+    }
+
+    fn reset(&mut self) {
+        self.attempts = 0;
+        self.retry_at = None;
+        self.timer = None;
+        self.blocked = false;
+    }
+
+    /// One handler call at most. Pending retries reuse one bounded timer.
+    /// Timer faults retain the record and deadline; callers must arrange another
+    /// poll after a scheduling error. No self-wakes or implicit escalation drops.
+    /// Closure does not bypass retry policy or release unresolved records.
+    pub fn poll_step(
+        &mut self,
+        journal: &IngressOutcomes,
+        reporter: &mut impl IngressReporter,
+        cx: &mut Context<'_>,
+        clock: &dyn crate::live::foundation::clock::MonotonicClock,
+        timer: &dyn super::admission::DeadlineTimer,
+    ) -> Result<Poll<ScheduledIngressStep>, ErrorCode> {
+        if self.blocked {
+            return Ok(Poll::Ready(ScheduledIngressStep::EscalationRequired));
+        }
+        if let Some(deadline) = self.retry_at {
+            if clock.now() < deadline {
+                if self.timer.is_none() {
+                    self.timer = Some(timer.try_sleep_until(deadline)?);
+                }
+                let ready = self
+                    .timer
+                    .as_mut()
+                    .expect("installed above")
+                    .as_mut()
+                    .poll(cx)
+                    .is_ready();
+                // The authoritative clock wins even if an adapter stays pending.
+                if clock.now() < deadline {
+                    if ready {
+                        self.timer = None;
+                        return Err(ErrorCode::InvalidInput);
+                    }
+                    return Ok(Poll::Pending);
+                }
+            }
+            self.timer = None;
+            self.retry_at = None;
+        }
+        // Mark intervention required before invoking arbitrary handler code.
+        // Unwind therefore preserves ownership without an automatic retry loop.
+        self.blocked = true;
+        match self.consumer.process_one(journal, reporter, cx) {
+            IngressReportingStep::Idle => {
+                self.reset();
+                Ok(Poll::Ready(ScheduledIngressStep::Idle))
+            }
+            IngressReportingStep::Reported => {
+                self.reset();
+                Ok(Poll::Ready(ScheduledIngressStep::Reported))
+            }
+            IngressReportingStep::Retained(error) => {
+                self.attempts += 1;
+                if error == super::reporting::ReportingError::PermanentFailure
+                    || self.attempts >= self.max_attempts.get()
+                {
+                    return Ok(Poll::Ready(ScheduledIngressStep::EscalationRequired));
+                }
+                let Some(deadline) = clock.now().checked_add(self.interval) else {
+                    return Err(ErrorCode::Limit);
+                };
+                self.retry_at = Some(deadline);
+                self.blocked = false;
+                // Arm now so a caller can park immediately after this turn.
+                self.timer = Some(timer.try_sleep_until(deadline)?);
+                let ready = self
+                    .timer
+                    .as_mut()
+                    .expect("installed above")
+                    .as_mut()
+                    .poll(cx)
+                    .is_ready();
+                if clock.now() >= deadline {
+                    self.timer = None;
+                    cx.waker().wake_by_ref();
+                } else if ready {
+                    self.timer = None;
+                    return Err(ErrorCode::InvalidInput);
+                }
+                Ok(Poll::Ready(ScheduledIngressStep::RetryScheduled))
+            }
+        }
+    }
+}
