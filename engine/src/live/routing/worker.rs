@@ -201,3 +201,129 @@ impl DestinationWorker {
         }
     }
 }
+
+/// Bounded runtime scheduling owner for exclusive destination workers.
+/// Each poll visits at most `limit` workers and transfers at most one outcome.
+/// Slow adapters retain their operation while unrelated workers make progress.
+/// The supervisor must correlate and retain returned outcomes; this owner does
+/// not turn destination admission into completion or durability evidence.
+pub struct DestinationWorkers {
+    workers: Vec<DestinationWorker>,
+    limit: usize,
+    next: usize,
+    closed: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkerRegistrationError {
+    Closed,
+    Full,
+    DuplicateDestination,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkersSnapshot {
+    pub closed: bool,
+    pub limit: usize,
+    pub workers: Vec<(crate::live::ports::routing::DestinationId, WorkerSnapshot)>,
+}
+impl WorkersSnapshot {
+    /// Includes charges transferred to outcome consumers. Does not establish
+    /// that independent delivery obligations or tracking recovery are drained.
+    pub fn is_drained(&self) -> bool {
+        self.closed && self.workers.iter().all(|(_, worker)| worker.is_drained())
+    }
+}
+impl DestinationWorkers {
+    pub fn new(limit: std::num::NonZeroUsize) -> Self {
+        Self {
+            workers: Vec::new(),
+            limit: limit.get(),
+            next: 0,
+            closed: false,
+        }
+    }
+
+    /// Failure returns the complete owner, including any pending adapter call.
+    #[allow(clippy::result_large_err)]
+    pub fn insert(
+        &mut self,
+        worker: DestinationWorker,
+    ) -> Result<(), (WorkerRegistrationError, DestinationWorker)> {
+        let error = if self.closed {
+            Some(WorkerRegistrationError::Closed)
+        } else if self
+            .workers
+            .iter()
+            .any(|existing| existing.descriptor.id == worker.descriptor.id)
+        {
+            Some(WorkerRegistrationError::DuplicateDestination)
+        } else if self.workers.len() == self.limit {
+            Some(WorkerRegistrationError::Full)
+        } else {
+            None
+        };
+        if let Some(error) = error {
+            return Err((error, worker));
+        }
+        self.workers.push(worker);
+        Ok(())
+    }
+
+    /// Round-robin polling prevents a continuously ready destination starving
+    /// another. Pending calls and queue waiters receive the supervisor's waker.
+    /// Cancelling a polling future leaves every operation owned by this set.
+    pub fn poll_outcome(&mut self, cx: &mut Context<'_>) -> Poll<WorkerOutcome> {
+        let count = self.workers.len();
+        for _ in 0..count {
+            let index = self.next;
+            self.next = (index + 1) % count;
+            if self.workers[index].poll_next(cx) == Poll::Ready(WorkerStep::OutcomeReady) {
+                return Poll::Ready(self.workers[index].take_outcome().expect("ready outcome"));
+            }
+        }
+        Poll::Pending
+    }
+
+    /// Establish the admission fence for all owned queues. Continue polling to
+    /// drain; a deadline must return this owner to its supervisor, not drop it.
+    pub fn close(&mut self) {
+        self.closed = true;
+        for worker in &self.workers {
+            worker.close();
+        }
+    }
+
+    /// Retire only a closed, fully drained worker. In-flight operations, queued
+    /// batches and externally retained payload charges prevent removal.
+    pub fn remove_drained(
+        &mut self,
+        id: crate::live::ports::routing::DestinationId,
+    ) -> Option<DestinationWorker> {
+        let index = self.workers.iter().position(|worker| {
+            let snapshot = worker.snapshot();
+            worker.descriptor.id == id && snapshot.closed && snapshot.is_drained()
+        })?;
+        let worker = self.workers.remove(index);
+        // Preserve the next worker's identity when an earlier slot is removed.
+        if index < self.next {
+            self.next -= 1;
+        }
+        if self.next >= self.workers.len() {
+            self.next = 0;
+        }
+        Some(worker)
+    }
+
+    pub fn snapshot(&self) -> WorkersSnapshot {
+        WorkersSnapshot {
+            closed: self.closed,
+            limit: self.limit,
+            workers: self
+                .workers
+                .iter()
+                .map(|worker| (worker.descriptor.id, worker.snapshot()))
+                .collect(),
+        }
+    }
+}

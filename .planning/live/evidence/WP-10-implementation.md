@@ -797,3 +797,59 @@ Remaining: production EventRouterPort owner, runtime scheduling composition,
 completion/recovery correlation and payload ownership, native metrics/control
 binding and finite deadline shutdown. Earlier WP-05/06/07/09 gates unchanged;
 WP-11–29 pending. No acceptance claimed. Further autonomous WP-10 work is safe.
+
+
+## Continuation — bounded fair destination worker scheduling (2026-10-21)
+
+Status: Partial. Baseline `8a16109`, branch `codex/wp06-completion`.
+Initial inventory: only pre-existing untracked `scripts/run-autonomous-codex.sh`,
+preserved. Inspected campaign instructions/plan, decisions, status, roadmap WP-10,
+Document 08 ownership/shutdown boundaries, worker/queue/snapshot and frozen ports.
+WP-10 remains the next executable package; completed work was retained.
+
+Implemented `DestinationWorkers`, a bounded runtime scheduling owner of actual
+exclusive destination workers. Each poll visits at most the configured worker
+limit and transfers at most one charged outcome. Round-robin progression avoids
+starvation; pending adapters retain calls and payloads while other workers run.
+The existing queue and adapter wakers schedule progress; no background tasks or
+hidden outcome queues were added. Duplicate/full/closed insertion returns the
+entire rejected worker. Close fences every owned queue. Retirement requires a
+closed worker with no queued/in-flight/outcome/external payload charges. Removal
+preserves the next polling position. Owned bounded snapshots expose worker states.
+
+Two deterministic production-interface witnesses exercise two real queues and
+adapters, slow-adapter isolation, FIFO successor handling, fairness, duplicate and
+capacity rejection, idle enqueue wakeup, shutdown admission fencing, invalid
+response preservation, pending-call supervisor handoff without resubmission,
+external outcome charges preventing false drain, closed insertion and empty-set
+polling. Adapter acceptance still does not update delivery/durability evidence.
+
+Verification (all exit 0):
+- engine/: `cargo test --locked --offline --no-default-features --features live
+  --test live_suite destination_worker_scheduler`: 2 passed, 416 filtered out.
+- Root `./scripts/verify-live.sh full`: `cargo fmt --all -- --check`;
+  `cargo check --locked --offline --no-default-features --features live --lib`;
+  `cargo test --locked --offline --no-default-features --features live --lib`
+  (132 passed); same flags with `--test live_suite` (416 passed, 2 opt-in ignored);
+  with `--doc` (1 passed). Receipts:
+  `engine/target/live-verification/20261021T042852Z-2/`.
+- engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; log `engine/target/wp10-scheduler-combined.log`.
+  Existing warnings retained.
+- Root `git diff --check`: exit 0.
+
+Changed: `engine/src/live/routing/worker.rs`,
+`engine/tests/live/destination_worker.rs`, STATUS.md and this ledger.
+Checkpoint: local commit carrying this entry. No SQL/exchange traffic,
+Python/historical execution changes, dependencies/lockfile or ignored configuration
+changes; no push. Opt-in SQL/performance and historical baseline not rerun.
+
+Remaining acceptance ledger: production EventRouterPort owner, completion/recovery
+correlation and payload retention, runtime task supervision, native metrics/control
+binding and finite deadline shutdown. Scheduler close is an admission fence, not
+a complete shutdown; polling for outcomes remains Pending when no outcome exists,
+and the supervisor must inspect drain observations independently. Independent
+tracker/recovery obligations are outside the worker snapshot's drain claim.
+A supervisor must retain owners and outcomes at deadlines rather than drop them.
+Earlier WP-05/06/07/09 gates remain unchanged; WP-11–29 pending. No acceptance
+claimed. Further autonomous WP-10 work is safe.

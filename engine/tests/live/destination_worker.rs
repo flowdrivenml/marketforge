@@ -84,11 +84,14 @@ impl EventDestinationPort for Adapter {
     }
 }
 fn fixture(mode: u8) -> (DestinationQueue, Arc<Adapter>, DestinationWorker) {
+    fixture_id(mode, 7)
+}
+fn fixture_id(mode: u8, id: u64) -> (DestinationQueue, Arc<Adapter>, DestinationWorker) {
     let capacity = DeliveryCapacity::new(4, 100_000).unwrap();
     let queue = DestinationQueue::new(DestinationCapacity::new(capacity, 1).unwrap());
     let adapter = Arc::new(Adapter {
         descriptor: DestinationDescriptor {
-            id: DestinationId(7),
+            id: DestinationId(id),
             kind: DestinationKind::Recording,
             policy: DeliveryPolicy::Durable,
             capacity,
@@ -580,4 +583,88 @@ fn destination_worker_queue_waiter_replacement_reserved_insert_and_release() {
         worker.poll_next(&mut Context::from_waker(&new_waker)),
         Poll::Ready(WorkerStep::Idle)
     );
+}
+
+#[test]
+fn destination_worker_scheduler_is_fair_bounded_and_retains_slow_calls() {
+    use marketforge_engine::live::routing::worker::{DestinationWorkers, WorkerRegistrationError};
+    let mut workers = DestinationWorkers::new(std::num::NonZeroUsize::new(2).unwrap());
+    let (slow_queue, slow, slow_worker) = fixture_id(0, 1);
+    let (fast_queue, fast, fast_worker) = fixture_id(0, 2);
+    slow_queue.try_enqueue(batch(10)).unwrap();
+    fast_queue.try_enqueue(batch(10)).unwrap();
+    fast_queue.try_enqueue(batch(12)).unwrap();
+    assert!(workers.insert(slow_worker).is_ok());
+    assert!(workers.insert(fast_worker).is_ok());
+    let (_, _, duplicate) = fixture_id(0, 1);
+    let (reason, duplicate) = workers.insert(duplicate).err().unwrap();
+    assert_eq!(reason, WorkerRegistrationError::DuplicateDestination);
+    drop(duplicate);
+    let (_, _, overflow) = fixture_id(0, 3);
+    let (reason, overflow) = workers.insert(overflow).err().unwrap();
+    assert_eq!(reason, WorkerRegistrationError::Full);
+    drop(overflow);
+    let waker = Waker::from(Arc::new(WakeCount::default()));
+    let mut cx = Context::from_waker(&waker);
+    fast.release();
+    let Poll::Ready(first) = workers.poll_outcome(&mut cx) else {
+        panic!("fast adapter blocked");
+    };
+    assert_eq!(first.descriptor.id, DestinationId(2));
+    assert_eq!(slow.calls.load(Ordering::SeqCst), 1);
+    slow.release();
+    let Poll::Ready(second) = workers.poll_outcome(&mut cx) else {
+        panic!("slow adapter starved");
+    };
+    assert_eq!(second.descriptor.id, DestinationId(1));
+    assert_eq!(slow.calls.load(Ordering::SeqCst), 1);
+    let Poll::Ready(third) = workers.poll_outcome(&mut cx) else {
+        panic!("successor missing");
+    };
+    assert_eq!(third.descriptor.id, DestinationId(2));
+    assert_eq!(third.payload.batch(), &batch(12));
+    workers.close();
+    assert!(workers.remove_drained(DestinationId(1)).is_none());
+    assert!(!workers.snapshot().is_drained());
+    drop((first, second, third));
+    assert!(workers.snapshot().is_drained());
+    assert!(workers.remove_drained(DestinationId(1)).is_some());
+    assert!(workers.remove_drained(DestinationId(2)).is_some());
+    assert!(workers.poll_outcome(&mut cx).is_pending());
+    let (_, _, late) = fixture_id(0, 4);
+    let (reason, _) = workers.insert(late).err().unwrap();
+    assert_eq!(reason, WorkerRegistrationError::Closed);
+}
+
+#[test]
+fn destination_worker_scheduler_wakes_and_preserves_pending_shutdown_ownership() {
+    use marketforge_engine::live::routing::worker::DestinationWorkers;
+    let mut workers = DestinationWorkers::new(std::num::NonZeroUsize::new(1).unwrap());
+    let (queue, adapter, worker) = fixture(2);
+    assert!(workers.insert(worker).is_ok());
+    let wakes = Arc::new(WakeCount::default());
+    let waker = Waker::from(wakes.clone());
+    let mut cx = Context::from_waker(&waker);
+    assert!(workers.poll_outcome(&mut cx).is_pending());
+    queue.try_enqueue(batch(10)).unwrap();
+    assert_eq!(wakes.0.load(Ordering::SeqCst), 1);
+    assert!(workers.poll_outcome(&mut cx).is_pending());
+    workers.close();
+    assert!(!workers.snapshot().is_drained());
+    assert!(workers.remove_drained(DestinationId(7)).is_none());
+    assert!(queue.try_enqueue(batch(12)).is_err());
+    // A supervisor can retain the whole scheduler at a deadline, then resume.
+    let mut retained = workers;
+    adapter.release();
+    let Poll::Ready(outcome) = retained.poll_outcome(&mut cx) else {
+        panic!("lost pending call");
+    };
+    assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        outcome.admission,
+        WorkerAdmissionResult::InvalidResponse(_)
+    ));
+    assert!(!retained.snapshot().is_drained());
+    drop(outcome);
+    assert!(retained.snapshot().is_drained());
 }
