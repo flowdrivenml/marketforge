@@ -39,6 +39,21 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Checkpoint `48bb475` fixes parked delivery coordination after explicit recovery
+transfer: successful retained or uncorrelated outcome transfers wake one turn;
+empty lookups preserve the waiter. The original payload charge and independent
+tracking obligation survive transfer, including after closure. Regression failed
+before the fix and passes with production behavior. Full Live verification exits
+0: formatting, Live check, 135 library / 491 integration (2 opt-in ignored) /
+1 doctest; Live+historical compilation also exits 0. Receipts:
+`engine/target/live-verification/20261021T070036Z-7/`.
+WP-10 remains Partial and next executable: concrete outcome/recovery policy,
+runtime lifecycle and Control composition remain. WP-05/06/07/09 gates persist;
+WP-11–29 pending. Further autonomous implementation can safely continue.
+No SQL/exchange access, Python/historical code, dependency/lockfile, ignored
+configuration or launcher changes. No push. See the WP-10 evidence ledger.
+
+
 Checkpoint `6e10fc5` adds explicit in-place retry of escalated ingress reporting.
 The charged original record stays with the coordinator; intervention resets only
 its bounded attempt cycle and wakes one turn. Idle/deferred/already-rearmed

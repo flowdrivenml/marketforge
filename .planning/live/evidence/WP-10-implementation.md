@@ -3427,3 +3427,54 @@ engine/tests/live/router.rs, STATUS.md and this ledger. No database/exchange
 requests, Python/historical execution, dependencies/lockfile, ignored configuration
 or pre-existing launcher changes. No push. Further autonomous WP-10 work can
 safely continue within recorded gates.
+
+
+### 2026-10-21 — Notify delivery coordination on recovery transfer
+
+Status: Partial. Next executable package: WP-10. Initial HEAD `a58b70b`, branch
+`codex/wp06-completion`; pre-existing untracked `scripts/run-autonomous-codex.sh`
+preserved. Inspected campaign plan, decisions, status, WP-10 roadmap,
+distribution requirements and actual supervisor/driver/completion/reporting
+consumers. No completed package restarted. Implementation checkpoint: `48bb475`.
+
+Acceptance ledger:
+- Successful `DeliveryDriver::take_for_recovery` and
+  `take_blocked_for_recovery` now notify the registered coordinator once, because
+  they remove a supervision blocker or free a retained-delivery slot.
+- Empty or unknown lookups preserve the pending notification. Shutdown closure
+  does not suppress progress notifications for existing responsibility.
+- New production consumer witness parks at retained capacity, rejects unknown
+  transfers, closes admission, transfers the actual correlated obligation and
+  checks exact wake count, original cursor, unchanged obligation and payload
+  charge, and absence of false drain after external payload release.
+- Existing membership-race/uncorrelated-payload witness additionally verifies
+  successful blocked transfer notification and empty-transfer coalescing.
+- Remaining: complete concrete outcome/recovery policy, runtime supervision and
+  lifecycle, Control composition. External payload release still needs runtime
+  notification or a retry timer. No crash durability or complete daemon claim.
+  Earlier foundational gates remain; WP-11–29 remain pending.
+
+Verification:
+- Initial regression command (root): cargo test --locked --offline
+  --no-default-features --features live --test live_suite
+  recovery_transfer_wakes_parked --manifest-path engine/Cargo.toml:
+  Cargo exit 101, 0 passed / 1 failed / 492 filtered. Expected wake increment was
+  absent. Receipt: /tmp/live-transfer-before.log. Shell wrapper ended with tail
+  (exit 0); Cargo failure is recorded from its actual test output.
+- root: cargo fmt --manifest-path engine/Cargo.toml --all: exit 0.
+- root: ./scripts/verify-live.sh full: exit 0. Runs engine/ cargo fmt --all --
+  --check; cargo check --locked --offline --no-default-features --features live
+  --lib; cargo test with those feature flags --lib (135 passed), --test live_suite
+  (491 passed / 2 opt-in ignored), --doc (1 passed). All five gates pass.
+  Receipts: engine/target/live-verification/20261021T070036Z-7/.
+- engine/: cargo check --locked --offline --no-default-features --features
+  live,historical: exit 0; existing warnings. /tmp/live-transfer-combined.log.
+- root: git diff --check: exit 0 before checkpoint.
+Historical-only baseline not rerun; prior 151 passed / 1 zero-stream failure
+remains recorded. No SQL, exchange, performance or soak verification claimed.
+
+Changed: engine/src/live/routing/driver.rs, engine/tests/live/router.rs,
+STATUS.md and this ledger. Documentation checkpoint carries this entry.
+No SQL/exchange access, Python/historical execution, dependencies/lockfile,
+ignored configuration or launcher changes. No push. Further autonomous WP-10
+implementation can safely continue within recorded gates.
