@@ -164,6 +164,21 @@ impl IngressOutcomes {
     pub fn poll_shutdown(&self, cx: &mut Context<'_>) -> Poll<()> {
         self.budget.poll_shutdown(cx)
     }
+
+    /// Fence admission and drain records through one shutdown coordinator.
+    /// `None` means all reservations have been released, including admissions
+    /// still preparing and records held outside the journal. A pending result
+    /// registers for both newly recorded outcomes and final charge release.
+    /// This shares the single shutdown waiter with `poll_shutdown`; use one
+    /// coordinator for both operations, rather than independent tasks.
+    pub fn poll_drain(&self, cx: &mut Context<'_>) -> Poll<Option<IngressRecord>> {
+        // Register before checking the queue: a cancelled in-flight admission
+        // may release the last charge without ever producing a journal record.
+        if self.budget.poll_shutdown(cx).is_ready() {
+            return Poll::Ready(None);
+        }
+        self.poll_next(cx).map(Some)
+    }
 }
 
 /// Runtime handler for a complete ingress outcome. Success means this handler

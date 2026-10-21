@@ -3259,14 +3259,51 @@ mod ingress_witnesses {
         ));
         assert_eq!(latest.0.load(Ordering::SeqCst), 1);
         assert_eq!(shutdown.0.load(Ordering::SeqCst), 0);
-        let record = match journal.poll_next(&mut latest_cx) {
-            Poll::Ready(record) => record,
+        let record = match journal.poll_drain(&mut shutdown_cx) {
+            Poll::Ready(Some(record)) => record,
             _ => panic!("reserved admission lost after closure"),
         };
         assert_eq!(fixture.next(), 3);
+        assert!(journal.poll_drain(&mut shutdown_cx).is_pending());
         drop(record);
         assert_eq!(shutdown.0.load(Ordering::SeqCst), 1);
         assert!(journal.poll_shutdown(&mut shutdown_cx).is_ready());
+    }
+
+    #[test]
+    fn recorded_ingress_drain_wakes_when_pending_admission_is_dropped() {
+        use marketforge_engine::live::routing::ingress_reporting::IngressOutcomes;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::task::Wake;
+        #[derive(Default)]
+        struct Counter(AtomicUsize);
+        impl Wake for Counter {
+            fn wake(self: Arc<Self>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        let fixture = Fixture::new();
+        let queue = fixture.queue(1, DeliveryPolicy::Required);
+        queue.try_enqueue(batch()).unwrap();
+        let initial_cursor = fixture.next();
+        let ingress = fixture.ingress();
+        let journal = IngressOutcomes::new(ResourceUsage {
+            items: 1,
+            bytes: 100_000,
+        })
+        .unwrap();
+        let counter = Arc::new(Counter::default());
+        let waker = Waker::from(counter.clone());
+        let mut cx = Context::from_waker(&waker);
+        let mut admission = Box::pin(journal.admit(&ingress, batch(), context()));
+        assert!(admission.as_mut().poll(&mut cx).is_pending());
+        assert!(journal.poll_drain(&mut cx).is_pending());
+        assert!(journal.snapshot().closed);
+        drop(admission);
+        assert_eq!(counter.0.load(Ordering::SeqCst), 1);
+        assert!(matches!(journal.poll_drain(&mut cx), Poll::Ready(None)));
+        assert_eq!(fixture.next(), initial_cursor);
+        assert_eq!(queue.snapshot().queued_batches, 1);
     }
 
     #[test]
