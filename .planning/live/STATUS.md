@@ -12,7 +12,7 @@
 | WP-05 | Implement domain identity, lifecycle and policy types | Partial — reconciliation underway | WP-04A, WP-04A.1–A.3, WP-04B, WP-04B.1 — identity, validation, lifecycle, demand |
 | WP-06 | Freeze and implement event/delivery/replay contracts | Independent contracts implemented; C06 real database gates BLOCKED | [Independent contracts](evidence/wp06-independent-contracts.md), [Observed C06 mapping and blockers](evidence/wp06-c06-connected.md) |
 | WP-07 | Freeze service ports, management and observation surfaces | Contract implementation review pending; C12 adapter decision OPEN | [Contract implementation and witnesses](evidence/wp07-contracts.md) |
-| WP-08 | Implement foundations and real native observability | Pending | — |
+| WP-08 | Implement foundations and real native observability | InProgress | [Implementation ledger](evidence/WP-08-implementation.md) |
 | WP-09 | Implement the Configuration System | Pending | — |
 | WP-10 | Implement the canonical event router | In Progress — Early Implementation | Routing, admission, acknowledgement, commitment, and recovery code; passing Live tests |
 | WP-11 | Implement source registry and dependency ownership | Pending | — |
@@ -38,6 +38,15 @@
 ## Current Development Position
 
 ### Autonomous continuation — 2026-10-21
+
+Checkpoints: `6c58c37` (WP-05 checked generations/cursors), `5b97f54`
+(WP-06 real isolated PostgreSQL grouped transaction/readback/rollback witness).
+WP-08 now has tested clocks, count/byte budgets, bounded task admission, scoped
+native metrics, histogram, aggregation, capability health and redacted local
+diagnostics. Latest full verification: 113 library, 363 integration, 1 doctest;
+all gates exit 0. PostgreSQL opt-in witness separately passed 1/1. WP-08 remains
+InProgress with explicit remaining requirements in its evidence report.
+
 
 Authorized scope is now WP-05 through WP-29, sequentially, one writer, local
 commits permitted and no remote pushes. Initial branch `codex/wp06-completion`
