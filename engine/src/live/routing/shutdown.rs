@@ -239,7 +239,11 @@ impl RouterShutdownOwners<'_> {
         }
     }
 
-    fn close_reconciled_delivery(&mut self, turn: &RegisteredDeliveryDrive, cx: &Context<'_>) {
+    pub(super) fn close_reconciled_delivery(
+        &mut self,
+        turn: &RegisteredDeliveryDrive,
+        cx: &Context<'_>,
+    ) {
         if !self.delivery.is_closed() && turn.registry.attachment == Ok(false) {
             self.delivery.close();
             cx.waker().wake_by_ref();

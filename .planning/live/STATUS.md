@@ -14,7 +14,7 @@
 | WP-07 | Freeze service ports, management and observation surfaces | Contract implementation review pending; C12 adapter decision OPEN | [Contract implementation and witnesses](evidence/wp07-contracts.md) |
 | WP-08 | Implement foundations and real native observability | ReadyForReview | [Implementation ledger](evidence/WP-08-implementation.md) |
 | WP-09 | Implement the Configuration System | Partial — candidates/DAG/journal verified; semantic compiler and service pending | [Implementation ledger](evidence/WP-09-implementation.md) |
-| WP-10 | Implement the canonical event router | Partial — recorded producer port integrated; runtime/Control composition pending | [Implementation ledger](evidence/WP-10-implementation.md) |
+| WP-10 | Implement the canonical event router | Partial — owned router composed; configuration/concrete consumers pending | [Implementation ledger](evidence/WP-10-implementation.md) |
 | WP-11 | Implement source registry and dependency ownership | Pending | — |
 | WP-12 | Implement exchange-profile and format compilation | Pending | — |
 | WP-13 | Implement WebSocket Connection Manager | Pending | — |
@@ -38,6 +38,29 @@
 ## Current Development Position
 
 ### Autonomous continuation — 2026-10-21
+
+Recovered interrupted resolution.rs work in checkpoint `824e972`; both new
+identity exhaustion tests and 52 resolution integration tests pass. Completed a
+comprehensive WP-10 acceptance/dependency audit in the authoritative report.
+The owned RouterRuntime now joins existing admission, delivery, ingress/terminal
+reporting, metrics and shutdown; its Arc-compatible producer uses the existing
+RouterPort. Failed payloads and optional outcomes retain original queue charges
+until explicit consumer transfer. Optional worker responses no longer poison
+required-obligation correlation. Eight actual composed-router witnesses pass.
+Final full Live verification exits 0: 137 library / 500 integration passed
+(2 opt-in ignored) / 1 doctest; receipts
+`engine/target/live-verification/20261021T110956Z-2/`.
+Live+historical, Live+TUI and base compilation exit 0. Historical-only baseline rechecked:
+151 passed / 1 failed (`rejects_empty_streams`), unchanged historical source;
+receipts `engine/target/live-verification/20261021T110756Z-2/`.
+WP-10 remains **Partial**, not ReadyForReview: committed configuration destination
+reconciliation and concrete operational reporting/recovery consumers remain;
+daemon/Control bindings are later WP-24/25 consumers. WP-05/06/07/09 gates persist.
+No new architectural decision is requested. Next authorized work remains WP-10;
+WP-11 has not started. See [current acceptance checklist](evidence/WP-10-implementation.md).
+No database/exchange access, Python/historical execution edits, dependencies,
+lockfile or ignored configuration changes. Untracked launcher preserved; no push.
+
 
 
 Checkpoint `0c240eb` contains terminal reporting adapter unwind as permanent

@@ -19,6 +19,9 @@ use std::task::{Context, Poll};
 #[must_use]
 pub enum SupervisionStep {
     Retained(DeliveryObligationId),
+    /// Optional queue attempts have no required-delivery obligation. Preserve
+    /// the exact outcome for reporting without poisoning required correlation.
+    BestEffort(WorkerOutcome),
     Finalized(FinalizedDelivery),
     CapacityBlocked,
     OutcomeBlocked(PendingDeliveryError),
@@ -123,6 +126,9 @@ impl DeliverySupervisor {
             Poll::Pending => return Poll::Pending,
             Poll::Ready(outcome) => outcome,
         };
+        if outcome.descriptor.policy == crate::live::model::delivery::DeliveryPolicy::BestEffort {
+            return Poll::Ready(SupervisionStep::BestEffort(outcome));
+        }
         match self.pending.ingest(outcome, tracker) {
             Ok(id) => match self.pending.apply_admission(id, tracker) {
                 Ok(()) => Poll::Ready(SupervisionStep::Retained(id)),

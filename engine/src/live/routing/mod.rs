@@ -16,6 +16,7 @@ pub mod queue;
 pub mod reporting;
 pub mod resolution;
 pub mod router;
+pub mod runtime;
 pub mod shutdown;
 pub mod snapshot;
 pub mod supervisor;

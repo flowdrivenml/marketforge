@@ -310,7 +310,11 @@ impl DeliveryDriver {
         let membership = registry.poll_membership_change(revision, cx);
         let progressed = matches!(
             delivery.delivery,
-            Poll::Ready(SupervisionStep::Retained(_) | SupervisionStep::Finalized(_))
+            Poll::Ready(
+                SupervisionStep::Retained(_)
+                    | SupervisionStep::Finalized(_)
+                    | SupervisionStep::BestEffort(_)
+            )
         );
         if maintenance.attachment == Ok(true)
             || progressed

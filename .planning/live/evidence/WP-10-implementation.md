@@ -2,6 +2,109 @@
 
 Status: Partial. Date: 2026-10-21. No production router readiness claimed.
 
+## Current acceptance checklist — owned runtime milestone (2026-10-21)
+
+Status: **Partial**, not ReadyForReview. Recovery checkpoint: `824e972`.
+
+Implemented and verified:
+- Preserved interrupted resolution identity patch: exhaustion is permanent,
+  invalid capacity consumes no identity, concurrent constructors cannot reuse IDs.
+- Owned `RouterRuntime` composes existing registry, namespaces, admission budget,
+  delivery driver, ingress/finalization reporting and native metric sampler.
+  `RouterHandle` implements the owned `Arc<dyn EventRouterPort>` required by
+  source/derived runtime dependencies, delegating to the existing RouterPort.
+- Validated ownership transfer rejects insufficient worker slots/missing queues
+  and returns original resources. New registrations reserve scheduler slots;
+  live and retired instances count, preventing stalled optional adapters from
+  consuming another sink's slot. Existing registry instance fencing remains.
+- Delivery fence is released before ingress tracking handoff/reporting. Shutdown
+  reuses existing reconciled-driver closure, fences producer admission before
+  deadline checks, and retains unclaimed queues and in-flight obligations.
+- Failed finalized payloads stay runtime-owned with original count/byte charges
+  until explicit recovery transfer. Reporting success alone cannot release them.
+  Runtime exposes charged ingress, failed payload, optional outcome and blocked
+  correlation transfers, tracking repair and explicit reporting retry operations.
+- Composition revealed/fixed optional worker responses being correlated against
+  nonexistent required obligations. Optional outcomes now bypass that tracker,
+  remain charged for reporting, and never poison required delivery correlation.
+  Accepted, rejected and malformed optional responses are covered.
+- Eight composed tests cover owned producer admission, immutable Arc identity,
+  worker call, actual completion/finalization/reporting, metrics, expired admission,
+  no destinations (explicit rejection without frontier advance), ordered optional
+  admission, optional stall/error isolation, deadline/resumed shutdown, charged
+  recovery transfer, scheduler bounds and rejected ownership transfer.
+
+Implemented but not yet fully integrated / missing production functionality:
+- Committed configuration-to-destination projection/reconciliation and its desired
+  versus applied revision observations; current register/unregister APIs operate
+  real adapters but do not claim a committed configuration workflow.
+- Concrete local operational reporting and recovery consumers. Supplied frozen
+  reporter contracts and explicit charged transfer APIs work; the daemon still
+  must bind actual consumers and supervise their retained outcomes. Test consumers
+  are evidence of the router composition, not production recovery certification.
+- Daemon/Control service binding remains absent (WP-24/25 consumers). The owned
+  router and native snapshots now exist, but runtime builder/services are still
+  scaffolds and no complete daemon integration is claimed.
+- Remaining tests: committed configuration/revision races, concrete consumer
+  acceptance/recovery traces and owner lifecycle fault cases through those bindings.
+
+Dependencies / blockers:
+- WP-05 supplies cursor/source identities; stable persistent source mapping and
+  unresolved perpetual classification remain source/compiler consumer gates.
+- WP-06 supplies event/delivery stages; C06 signed timestamps/SQL fault gates block
+  recording claims, not independent in-process router composition.
+- WP-07 supplies owned runtime ports and observations; C12 infrastructure adapter
+  selection is still open. Do not fabricate concrete executor/SQL adapters.
+- WP-09 has candidates/DAG/local revision journal, but no complete semantic compiler,
+  configuration service or committed destination projection. Router cannot claim
+  end-to-end durable configuration reconciliation from a candidate.
+- No new router-specific architectural conflict established. Known prerequisite
+  gates remain; this milestone does not resolve or waive them. Recovery transfer
+  establishes local responsibility, never repair, durability or recovered coverage.
+- Next authorized work: WP-10 production configuration/consumer integration;
+  WP-11 not started or asserted prerequisite-complete.
+
+Verification receipts (Cargo commands from engine/):
+- `cargo fmt --check`: exit 0 on recovery patch.
+- `cargo test --locked --offline --no-default-features --features live --lib
+  live::routing::resolution::tests`: exit 0, 2 passed.
+- Same flags `--test live_suite resolution`: exit 0, 52 passed.
+- Same flags `--test live_suite composed_router`: final exit 0, 8 passed.
+  Earlier six-test run had 5 pass/1 fail: new test incorrectly expected no-sink
+  acceptance. Existing contract rejects NoDestinations; witness corrected to
+  verify explicit rejection, unchanged frontier and subsequent optional admission.
+- `./scripts/verify-live.sh full`: exit 0, all five gates; 137 library,
+  500 integration passed / 2 opt-in ignored, 1 doctest. Final receipts:
+  `engine/target/live-verification/20261021T110956Z-2/`.
+- `cargo check --locked --offline --no-default-features --features live,historical`:
+  exit 0; `/tmp/wp10-owned-combined.log`. Existing dead-code warnings.
+- `cargo check --locked --offline --no-default-features --features live,monitor-tui`:
+  exit 0 on final code; `/tmp/wp10-owned-tui.log`.
+- `cargo check --locked --offline --no-default-features`: exit 0;
+  `/tmp/wp10-owned-base.log`.
+- `./scripts/verify-live.sh historical`: wrapper exit 1, cargo exit 101;
+  151 passed / 1 failed, existing `historical::merge::resources::tests::rejects_empty_streams`
+  assertion at historical/merge/execution/shared/resources.rs:180. Historical code
+  is feature-isolated and untouched. Receipts:
+  `engine/target/live-verification/20261021T110756Z-2/`.
+- Two edit/verification invocations used the wrong working directory. One test-file
+  write failed before writing, and root Cargo invocations found no Cargo.toml;
+  corrected paths/cwd and used actual final nonzero test receipts above.
+- `git diff --check`: exit 0 before checkpoint.
+
+Changed paths: routing/{resolution,runtime,supervisor,driver,shutdown,mod}.rs;
+engine/tests/live/{router_runtime,mod}.rs; STATUS.md and this report.
+No SQL, real-exchange, performance or soak execution. No Python/historical code,
+dependencies, lockfile, ignored configuration or launcher edits. No push.
+
+Working-tree note: after verification, `.gitignore` was externally changed to
+comment out its rules (not modified by this implementation), exposing generated
+engine/target artifacts as untracked. Preserved this unrelated edit and launcher;
+only explicit WP-10 paths are staged. No generated artifacts are checkpointed.
+
+Historical implementation log follows; earlier remaining-work lists describe
+those checkpoints, not the current checklist above.
+
 Requirements inspected: roadmap WP-10; current routing ports, registry, queues,
 acknowledgement tracker, recovery capacity, finalization and their consumers.
 Existing implementation is preserved rather than replaced.
