@@ -40,6 +40,23 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest continuation integrates independent same-ID retired/replacement workers into
+WP-10's bounded scheduler. Closed old instances can drain alongside replacements;
+two open instances remain rejected. A production registry/scheduler witness covers
+capacity rejection with returned ownership, round-robin outcomes, retained charges,
+closed-only removal, registry reaping and replacement preservation.
+Full verification exits 0: formatting, Live check, 134 library / 443 integration
+(2 opt-in ignored) / 1 doctest; Live+historical check exits 0. Receipts:
+`engine/target/live-verification/20261021T050911Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort ordered
+composition, runtime scheduling/retries/retired reaping and native metrics/control
+binding. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Further autonomous
+implementation can safely continue. Checkpoint: local commit carrying this entry
+and matching WP-10 evidence. Pre-existing untracked launcher preserved. No push,
+SQL/exchange traffic, Python/historical execution, dependencies or ignored config edits.
+
+
+
 Latest continuation retains unregistered WP-10 destinations in a bounded retired
 set. Removed queues close outside registry locks, remain observable and drainable
 through exclusive retired-worker claims, and keep queued/reserved/consumer-held

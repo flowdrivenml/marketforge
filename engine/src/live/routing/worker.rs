@@ -255,6 +255,9 @@ impl DestinationWorkers {
     }
 
     /// Failure returns the complete owner, including any pending adapter call.
+    /// Closed retired instances may coexist with an independent same-ID replacement.
+    /// Two open instances with the same ID remain a registration error; queue
+    /// leases independently enforce one consumer per actual queue.
     #[allow(clippy::result_large_err)]
     pub fn insert(
         &mut self,
@@ -262,11 +265,11 @@ impl DestinationWorkers {
     ) -> Result<(), (WorkerRegistrationError, DestinationWorker)> {
         let error = if self.closed {
             Some(WorkerRegistrationError::Closed)
-        } else if self
-            .workers
-            .iter()
-            .any(|existing| existing.descriptor.id == worker.descriptor.id)
-        {
+        } else if self.workers.iter().any(|existing| {
+            existing.descriptor.id == worker.descriptor.id
+                && (existing.queue.same_owner(&worker.queue)
+                    || (!existing.snapshot().closed && !worker.snapshot().closed))
+        }) {
             Some(WorkerRegistrationError::DuplicateDestination)
         } else if self.workers.len() == self.limit {
             Some(WorkerRegistrationError::Full)

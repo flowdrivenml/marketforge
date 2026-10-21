@@ -1582,3 +1582,47 @@ Remaining acceptance ledger: production EventRouterPort ordered composition,
 runtime retries/retired-drain/reaping integration, native metrics/control binding.
 WP-05/06/07/09 gates remain; WP-11–29 pending. No package accepted and no overall
 completion claim. Further autonomous WP-10 work can safely continue.
+
+
+## Continuation — schedule retired and replacement instances together (2026-10-21)
+
+Status: Partial. Starting checkpoint `00d3db1`, branch `codex/wp06-completion`.
+Read repository/campaign instructions, decision register, status, WP-10/11 roadmap
+and latest evidence; inspected actual registry, queue, scheduler and consumer tests.
+Next executable remains WP-10. Preserved untracked `scripts/run-autonomous-codex.sh`.
+
+Fixed scheduler integration with registry retirement: duplicate destination IDs are
+permitted when at least one independent queue is closed. Two open instances remain
+rejected, queue identity and exclusive leases protect dequeue ownership, and all
+instances still consume scheduler slots. Registration errors return the full worker.
+Existing closed/drained-only removal preserves charged retired owners and open
+replacements. No external delivery/durability is inferred from draining.
+
+New deterministic production registry/scheduler witness covers active-first capacity
+rejection, returned retired ownership, retired-first successful coexistence, both
+outcome transfers, payload-charge fencing of removal/reaping, independent replacement
+preservation and final closed scheduler drain. Existing duplicate-open, fairness,
+slow-adapter and resource-bound tests remain unchanged and pass in the full suite.
+
+Verification (actual commands/exit codes):
+- From engine/: `cargo test --locked --offline --no-default-features --features live
+  --test live_suite registry_retired_and_replacement_workers_share_bounded_scheduler`:
+  exit 0, 1 passed.
+- Root `./scripts/verify-live.sh full`: exit 0. Runs `cargo fmt --all -- --check`,
+  `cargo check --locked --offline --no-default-features --features live --lib`,
+  `cargo test` with the same locked/offline/feature flags and `--lib` (134 passed),
+  `--test live_suite` (443 passed, 2 opt-in ignored), `--doc` (1 passed).
+  Receipts: `engine/target/live-verification/20261021T050911Z-2/`.
+- From engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; existing dead-code warnings only.
+- Root `git diff --check`: exit 0 before checkpoint.
+SQL/performance opt-ins and historical-only test execution not run; no claim on
+those gates or the historical zero-stream baseline. No failed behavioral checks.
+
+Changed: `engine/src/live/routing/worker.rs`, `engine/tests/live/router.rs`,
+STATUS.md and this ledger. Checkpoint: local commit carrying this entry.
+No push, SQL/exchange traffic, Python/historical execution edits, dependency/lockfile
+or ignored-configuration changes. This is an incremental verified WP-10 checkpoint,
+not package acceptance. Remaining: production EventRouterPort ordered composition,
+runtime retry/retired-drain/reaping scheduling and native metrics/control binding.
+WP-05/06/07/09 gates persist; WP-11–29 pending. Further autonomous work is safe.

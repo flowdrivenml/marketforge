@@ -557,6 +557,72 @@ fn registry_retirement_preserves_payloads_bounds_and_replacement_independence() 
 }
 
 #[test]
+fn registry_retired_and_replacement_workers_share_bounded_scheduler() {
+    use marketforge_engine::live::routing::{
+        destination::DestinationCapacity,
+        queue::DestinationQueue,
+        worker::{DestinationWorkers, WorkerRegistrationError},
+    };
+    use std::{
+        num::NonZeroUsize,
+        task::{Context, Poll, Waker},
+    };
+    let registry = RouterRegistry::with_destination_limit(2).unwrap();
+    let adapter = destination(1, DestinationKind::Publication, DeliveryPolicy::Required);
+    let old =
+        DestinationQueue::new(DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap());
+    registry
+        .register_queue(adapter.clone(), old.clone())
+        .unwrap();
+    old.try_enqueue(batch()).unwrap();
+    registry.unregister(DestinationId(1)).unwrap();
+    let replacement =
+        DestinationQueue::new(DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap());
+    registry
+        .register_queue(adapter, replacement.clone())
+        .unwrap();
+    replacement.try_enqueue(batch()).unwrap();
+    let mut workers = DestinationWorkers::new(NonZeroUsize::new(1).unwrap());
+    assert!(
+        workers
+            .insert(registry.claim_worker(DestinationId(1)).unwrap())
+            .is_ok()
+    );
+    let retired = registry.claim_retired_worker(DestinationId(1)).unwrap();
+    let (reason, retired) = workers.insert(retired).err().unwrap();
+    assert_eq!(reason, WorkerRegistrationError::Full);
+    // Failed registration returns the exclusive retired owner intact.
+    let active = workers;
+    let mut workers = DestinationWorkers::new(NonZeroUsize::new(2).unwrap());
+    assert!(workers.insert(retired).is_ok());
+    drop(active);
+    assert!(
+        workers
+            .insert(registry.claim_worker(DestinationId(1)).unwrap())
+            .is_ok()
+    );
+    let mut cx = Context::from_waker(Waker::noop());
+    let Poll::Ready(first) = workers.poll_outcome(&mut cx) else {
+        panic!("retired queue stalled")
+    };
+    let Poll::Ready(second) = workers.poll_outcome(&mut cx) else {
+        panic!("replacement queue stalled")
+    };
+    assert_eq!(first.descriptor.id, second.descriptor.id);
+    assert_eq!(registry.reap_retired(), 0);
+    assert!(workers.remove_drained(DestinationId(1)).is_none());
+    drop(first);
+    assert!(workers.remove_drained(DestinationId(1)).is_some());
+    assert_eq!(registry.reap_retired(), 1);
+    assert_eq!(workers.snapshot().workers.len(), 1);
+    assert!(!workers.snapshot().workers[0].1.closed);
+    workers.close();
+    assert!(!workers.snapshot().is_drained());
+    drop(second);
+    assert!(workers.snapshot().is_drained());
+}
+
+#[test]
 fn registry_retirement_wakes_waiters_outside_locks_and_retains_reservations() {
     use marketforge_engine::live::routing::{
         destination::{CapacityError, DestinationCapacity},
