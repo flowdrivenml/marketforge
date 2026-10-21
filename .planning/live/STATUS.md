@@ -39,6 +39,25 @@
 
 ### Autonomous continuation — 2026-10-21
 
+
+Latest implementation checkpoint `0c23ac0` adds a bounded ingress reporting
+consumer over the existing charged journal records. Temporary/permanent handler
+failures and handler unwind retain the pending record; successful handling releases
+its charge. Explicit escalation transfers the same charged record, and mutable
+outcome access permits recovery reservations to be reconciled without cloning or
+releasing record accounting. Each turn handles at most one record; runtime owns
+retry scheduling and concrete reporting/recovery policy.
+Full verification exits 0: formatting, Live check, 135 library / 477 integration
+passes (2 opt-in ignored) / 1 doctest, plus Live+historical check. Receipts:
+`engine/target/live-verification/20261021T061849Z-2/`.
+WP-10 remains Partial and next executable: concrete runtime reporting/recovery
+handlers, scheduling, full lifecycle and Control composition remain. This adds a
+consumer mechanism, not a running runtime or completed recovery integration.
+Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Further autonomous WP-10
+implementation can safely continue. No SQL/exchange access, Python/historical
+execution edits, dependency/lockfile or ignored configuration changes; preserved
+untracked launcher; no push. See WP-10 implementation evidence.
+
 Latest checkpoint `abc3f59` exposes the existing ingress through EventRouterPort,
 with mandatory bounded outcome retention before returning a receipt. Only complete
 required queue admission or a completed optional-only attempt returns Accepted;

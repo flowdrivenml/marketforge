@@ -2793,3 +2793,56 @@ Changed: engine/src/live/routing/{port,ingress_reporting,mod}.rs,
 engine/tests/live/router.rs, STATUS.md and this ledger. No dependency/lockfile,
 Python/historical execution, ignored configuration or launcher modifications.
 No push, package acceptance or project completion claim.
+
+
+## Continuation — charged ingress reporting consumer (2026-10-21)
+
+Status: Partial. Next executable: WP-10. Initial HEAD `2bf6170`, branch
+`codex/wp06-completion`; preserved untracked `scripts/run-autonomous-codex.sh`.
+Inspected repository instructions, campaign plan, decisions, status, relevant
+WP-05–11 roadmap entries, current journal/ingress/ordering/reporting consumers.
+No completed package restarted. Implementation checkpoint: `0c23ac0`.
+
+Acceptance ledger:
+- IngressReportingConsumer transfers at most one existing charged record from
+  IngressOutcomes and invokes a handler without a journal/driver lock. A failed
+  handler retains the actual record ahead of later records; temporary/permanent
+  failure never acknowledges or releases its resource charge. Successful handling
+  releases the record only after the handler has accounted for its outcomes.
+- Pending ownership is installed before calling the handler, preserving the record
+  if a handler unwinds. take_pending explicitly transfers that charged record for
+  escalation or replacement. Mutable outcome access allows recovery reservations
+  to move to their responsible consumer without cloning or releasing record bounds.
+- Two deterministic actual-ingress witnesses cover required queue commitment,
+  temporary/permanent failures, retained shutdown charge, escalation transfer,
+  handler unwind, retry after closure, success release, idle no-op, and the fact
+  that reporting success leaves the real destination queue's delivery independent.
+- Remaining: concrete runtime handlers for reporting/recovery, bounded runtime
+  retry/escalation scheduling, lifecycle and Control composition. The handler
+  contract requires unresolved responsibility remain represented on failure;
+  this mechanism cannot enforce arbitrary handler correctness. No durable journal,
+  running daemon or complete WP-10 acceptance is claimed. Earlier WP-05/06/07/09
+  gates persist; WP-11–29 pending. Further autonomous implementation is safe.
+
+Verification (engine/ unless root indicated):
+- cargo fmt --manifest-path engine/Cargo.toml --all (root): exit 0.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite ingress_reporting_consumer: exit 0, 1 passed / 477 filtered before
+  the second witness was added; both witnesses pass in the final complete suite.
+- ./scripts/verify-live.sh full (root): exit 0. Exact gates: cargo fmt --all --
+  --check; cargo check --locked --offline --no-default-features --features live
+  --lib; cargo test with those flags --lib (135 passed), --test live_suite
+  (477 passed, 2 opt-in ignored), --doc (1 passed). Receipts:
+  engine/target/live-verification/20261021T061849Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings remain.
+- git diff --check (root): exit 0 before implementation checkpoint.
+- No failed compiler/test commands. Two exploratory rg commands referenced absent
+  filenames; the existing router.rs definitions were then inspected. SQL,
+  performance and historical-only suites not run; historical zero-stream baseline
+  not rechecked. No SQL/exchange access or durability claim.
+
+Changed: engine/src/live/routing/ingress_reporting.rs,
+engine/tests/live/router.rs, STATUS.md and this ledger. No Python/historical
+execution, ignored configuration, dependency/lockfile, launcher modifications or
+push. No package marked Accepted or entire-project completion claimed.
