@@ -39,6 +39,25 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest checkpoint `001633c` adds bounded periodic delivery maintenance through
+`DeliveryDriver::drive_registered_with_retry`. One owned timer survives unrelated
+notifications without postponement, releases capacity before rearming, and remains
+active while a closed driver has outstanding payload charges. Zero intervals and
+timer capacity/registration errors are explicit; independent delivery turns still
+run. The real queue/worker witness exercises timer exhaustion, no busy wake,
+expiry/rearm and shutdown after external payload release.
+Verification exits 0: formatting, Live check, 134 library / 452 integration
+(2 opt-in ignored) / 1 doctest, combined Live+historical check. Receipts:
+`engine/target/live-verification/20261021T052731Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort composition,
+actual reporting retries and native metrics/control integration remain. The timer
+schedules maintenance and reporting handoff, not an external reporter or daemon.
+Earlier WP-05/06/07/09 gates persist; WP-11–29 remain pending. Further autonomous
+implementation is safe. No database/exchange traffic, push, historical/Python,
+dependency or ignored configuration changes. Pre-existing launcher preserved.
+See [WP-10 evidence](evidence/WP-10-implementation.md). No acceptance claimed.
+
+
 Latest implementation checkpoint `077a78a` adds one bounded replacement-aware
 journal capacity notification, armed by DeliveryDriver before polling. Successful
 report acknowledgement or accepted escalation transfer wakes the current

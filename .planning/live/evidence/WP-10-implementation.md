@@ -1909,3 +1909,57 @@ scheduling (failed tracking/reporting and external payload release); native
 metrics/control integration. Actual reporting retries still require runtime
 scheduling. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Further safe
 autonomous work remains authorized. No package acceptance/project completion claimed.
+
+
+## Continuation — bounded delivery maintenance timer (2026-10-21)
+
+Status: Partial. Starting checkpoint `d7e38f6`, branch `codex/wp06-completion`.
+Reconciled instructions, autonomous plan, decisions, status, roadmap WP-10/11,
+latest evidence and actual ordered admission/delivery/queue/timer consumers.
+WP-10 remains next executable. Preserved untracked scripts/run-autonomous-codex.sh.
+
+Implementation checkpoint: `001633c`. The existing DeliveryDriver now offers
+`drive_registered_with_retry`, performing one real bounded registered turn while
+owning at most one timer through the existing DeadlineTimer/MonotonicClock ports.
+Unrelated turns do not move its deadline; expiration releases its reservation
+before rearming. There is no missed-tick catch-up or adapter resubmission. Timer
+registration errors and invalid zero intervals are explicit without suppressing
+independent delivery progress. Closed drivers retain scheduling while payload
+charges or other responsibilities remain, then cancel the timer on complete drain.
+
+Acceptance witness: a real registered destination queue transfers a charged batch
+to an external consumer. Deterministic clock/timer exercise zero interval, exhausted
+timer capacity, continued worker attachment, repeated turns without busy wakes or
+deadline postponement, timer expiry/rearm with capacity one, closed-driver charge
+retention, and eventual worker reaping/drain after the consumer releases its batch.
+No arbitrary sleeps, network requests or parallel test-only delivery algorithm.
+
+Verification (commands from engine/ unless marked root):
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite registered_driver_retry_timer: exit 0, 1 passed.
+- Root ./scripts/verify-live.sh full: exit 0. Runs cargo fmt --all -- --check;
+  cargo check --locked --offline --no-default-features --features live --lib;
+  cargo test with those same feature flags and --lib (134 passed), --test live_suite
+  (452 passed, 2 opt-in ignored), --doc (1 passed). Exact receipts:
+  engine/target/live-verification/20261021T052731Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; pre-existing dead-code warnings remain.
+- Root git diff --check: exit 0 before implementation checkpoint.
+- Initial test-file append used a root-relative path while already in engine/ and
+  failed (no file changed). Its following filtered command ran zero tests and is
+  not counted as verification. Corrected append and the 1-test/full receipts above
+  supersede that attempt. No compiler or behavioral test failures.
+
+Changed: engine/src/live/routing/driver.rs, engine/tests/live/router.rs, STATUS.md
+and this package ledger. No SQL/exchange access, push, dependencies/lockfile,
+ignored configuration or Python/historical execution changes. Opt-in SQL/performance
+and historical-only tests not run; historical zero-stream baseline not rechecked.
+Documentation checkpoint is the commit carrying this entry.
+
+Remaining: production EventRouterPort ordered admission/runtime composition,
+actual external reporting retries, native metrics/control integration. The runtime
+must consistently poll the timed entry point, surface timer admission failure, and
+supply a functioning timer. This is in-process maintenance scheduling, not daemon
+composition or durable recovery. Earlier WP-05/06/07/09 gates remain; WP-11–29
+pending. Next authorized package: WP-10 completion. Further autonomous work can
+safely continue. No package acceptance or project completion claimed.
