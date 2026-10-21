@@ -4117,7 +4117,7 @@ mod ingress_witnesses {
                 Ok(())
             }
         }
-        for mismatch in [false, true] {
+        for (mismatch, empty) in [(false, false), (true, false), (true, true)] {
             let fixture = Fixture::new();
             let queue = fixture.queue(1, DeliveryPolicy::Required);
             let journal = IngressOutcomes::new(ResourceUsage {
@@ -4127,12 +4127,12 @@ mod ingress_witnesses {
             .unwrap();
             ready(journal.admit(&fixture.ingress(), batch(), context())).unwrap();
             let capacity = TrackingRecoveryCapacity::new(1).unwrap();
-            let reservation = capacity.reserve().unwrap();
+            let reservation = (!empty).then(|| capacity.reserve().unwrap());
             let tracking = if mismatch {
                 Err(RecoveryTrackingFailure::ReservationCountMismatch {
                     expected: 2,
-                    actual: 1,
-                    reservations: vec![reservation],
+                    actual: usize::from(!empty),
+                    reservations: reservation.into_iter().collect(),
                 })
             } else {
                 Ok(RecoveryTrackingResult {
@@ -4140,7 +4140,7 @@ mod ingress_witnesses {
                     unresolved: vec![UnresolvedTrackingUpdate::MissingObligation {
                         destination: DestinationId(1),
                         status: marketforge_engine::live::model::delivery::DeliveryStatus::Pending,
-                        reservation,
+                        reservation: reservation.unwrap(),
                     }],
                 })
             };
@@ -4166,7 +4166,7 @@ mod ingress_witnesses {
                     IngressReportingStep::Retained(ReportingError::PermanentFailure)
                 );
                 assert_eq!(journal.snapshot().usage, charged);
-                assert_eq!(capacity.occupied(), 1);
+                assert_eq!(capacity.occupied(), usize::from(!empty));
                 assert!(journal.poll_shutdown(&mut cx).is_pending());
             }
             reporter.transfer = true;
@@ -4176,7 +4176,7 @@ mod ingress_witnesses {
             );
             assert!(journal.poll_shutdown(&mut cx).is_ready());
             // Reporting drain never implies repair completion or delivery.
-            assert_eq!(capacity.occupied(), 1);
+            assert_eq!(capacity.occupied(), usize::from(!empty));
             assert!(queue.try_dequeue().is_some());
             drop(reporter.transferred.take());
             assert_eq!(capacity.occupied(), 0);

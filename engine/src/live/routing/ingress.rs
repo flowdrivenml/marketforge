@@ -130,6 +130,25 @@ impl IngressOutcome {
         report
     }
 
+    /// Unresolved reservations or an ambiguous mapping require explicit handoff.
+    /// A count mismatch remains blocked even when no reservations were returned:
+    /// absence of a charge is not evidence that the tracking result is resolved.
+    pub fn requires_tracking_intervention(&self) -> bool {
+        self.retains_tracking_recovery()
+            || matches!(
+                self,
+                Self::Required {
+                    required: OrderedCommitOutcome::Tracked(
+                        super::router::TrackedFanoutResult::RecoveryPending {
+                            tracking: Err(_),
+                            ..
+                        }
+                    ),
+                    ..
+                }
+            )
+    }
+
     /// Whether the producer outcome still owns tracking-repair reservations.
     /// A reporter must transfer these to a recovery owner before acknowledging
     /// the record. Already transferred recovery work remains independently owned.
