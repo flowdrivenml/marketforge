@@ -24,6 +24,16 @@ pub struct DeliveryDrive {
     pub delivery: Poll<SupervisionStep>,
 }
 
+/// One bounded runtime turn using the authoritative registry and delivery owners.
+/// Membership errors are observations, not proof that delivery has drained.
+#[derive(Debug)]
+#[must_use]
+pub struct RegisteredDeliveryDrive {
+    pub registry: RegistryWorkerSync,
+    pub delivery: DeliveryDrive,
+    pub membership: Poll<Result<u64, super::router::RouterRegistryError>>,
+}
+
 #[derive(Debug)]
 #[must_use]
 pub enum DeliveryShutdown {
@@ -176,6 +186,43 @@ impl DeliveryDriver {
             .supervisor
             .poll_step(cx, &mut self.tracker, &mut self.journal);
         DeliveryDrive { recovery, delivery }
+    }
+
+    /// Reconcile at most one queue, run one delivery turn, then arm membership
+    /// observation against the revision captured before either operation. This
+    /// closes the race with membership changes during adapter polling.
+    ///
+    /// Successful attachment, retention and finalization schedule another bounded
+    /// turn. Capacity/correlation/reporting failures and failed tracking retries
+    /// never self-wake: the runtime must arrange completion/reporting notifications
+    /// and a bounded retry timer. External payload release also needs a runtime
+    /// notification or timer. Worker futures and idle queues register this waker.
+    /// This is a cooperative scheduling primitive, not a deadline shutdown path;
+    /// close admission and synchronize all queues before closing the driver.
+    pub fn drive_registered(
+        &mut self,
+        registry: &super::router::RouterRegistry,
+        cx: &mut Context<'_>,
+    ) -> RegisteredDeliveryDrive {
+        let revision = registry.revision();
+        let maintenance = self.sync_registry(registry);
+        let delivery = self.drive(cx);
+        let membership = registry.poll_membership_change(revision, cx);
+        let progressed = matches!(
+            delivery.delivery,
+            Poll::Ready(SupervisionStep::Retained(_) | SupervisionStep::Finalized(_))
+        );
+        if maintenance.attachment == Ok(true)
+            || progressed
+            || matches!(membership, Poll::Ready(Ok(_)))
+        {
+            cx.waker().wake_by_ref();
+        }
+        RegisteredDeliveryDrive {
+            registry: maintenance,
+            delivery,
+            membership,
+        }
     }
 
     pub fn apply_completion(

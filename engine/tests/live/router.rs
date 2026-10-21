@@ -1000,3 +1000,289 @@ fn registry_membership_notifications_replace_waiter_and_wake_outside_fences() {
     registry.shutdown();
     assert_eq!(current.wakes.load(Ordering::SeqCst), 4);
 }
+
+#[test]
+fn registered_driver_bounds_reconciliation_and_avoids_capacity_shutdown_spins() {
+    use marketforge_engine::live::routing::{
+        acknowledgement::{AcknowledgementTracker, FinalizationJournal},
+        destination::DestinationCapacity,
+        driver::{DeliveryDriver, RegistryWorkerSyncError},
+        queue::DestinationQueue,
+        supervisor::DeliverySupervisor,
+        tracking_recovery::TrackingRecovery,
+        worker::{DestinationWorkers, WorkerRegistrationError},
+    };
+    use std::{
+        num::NonZeroUsize,
+        sync::atomic::{AtomicUsize, Ordering},
+        task::{Context, Poll, Wake, Waker},
+    };
+    #[derive(Default)]
+    struct Counter(AtomicUsize);
+    impl Wake for Counter {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let registry = RouterRegistry::new();
+    for id in [1, 2] {
+        let adapter = destination(id, DestinationKind::Publication, DeliveryPolicy::Required);
+        let queue = DestinationQueue::new(
+            DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap(),
+        );
+        registry.register_queue(adapter, queue).unwrap();
+    }
+    let limit = NonZeroUsize::new(1).unwrap();
+    let mut driver = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(2).unwrap(),
+        TrackingRecovery::new(2).unwrap(),
+        FinalizationJournal::new(2).unwrap(),
+    );
+    let wakes = Arc::new(Counter::default());
+    let waker = Waker::from(wakes.clone());
+    let mut cx = Context::from_waker(&waker);
+    let turn = driver.drive_registered(&registry, &mut cx);
+    assert_eq!(turn.registry.attachment, Ok(true));
+    assert!(turn.delivery.delivery.is_pending());
+    assert!(turn.membership.is_pending());
+    assert_eq!(driver.snapshot().workers.workers.len(), 1);
+    assert_eq!(wakes.0.load(Ordering::SeqCst), 1);
+    for _ in 0..2 {
+        let turn = driver.drive_registered(&registry, &mut cx);
+        assert_eq!(
+            turn.registry.attachment,
+            Err(RegistryWorkerSyncError::Scheduler(
+                WorkerRegistrationError::Full
+            ))
+        );
+        assert!(turn.delivery.delivery.is_pending());
+    }
+    assert_eq!(wakes.0.load(Ordering::SeqCst), 1);
+    // Rejected attachment released the fresh lease.
+    drop(registry.claim_worker(DestinationId(2)).unwrap());
+    registry.unregister(DestinationId(1)).unwrap();
+    assert!(wakes.0.load(Ordering::SeqCst) > 1);
+    let turn = driver.drive_registered(&registry, &mut cx);
+    assert_eq!(turn.registry.workers_reaped, 1);
+    assert_eq!(turn.registry.retired_reaped, 1);
+    assert_eq!(turn.registry.attachment, Ok(true));
+    assert_eq!(driver.snapshot().workers.workers[0].0, DestinationId(2));
+    registry.shutdown();
+    driver.close();
+    let before = wakes.0.load(Ordering::SeqCst);
+    for _ in 0..2 {
+        let turn = driver.drive_registered(&registry, &mut cx);
+        assert_eq!(
+            turn.registry.attachment,
+            Err(RegistryWorkerSyncError::Closed)
+        );
+        assert_eq!(
+            turn.membership,
+            Poll::Ready(Err(RouterRegistryError::ShuttingDown))
+        );
+    }
+    assert_eq!(wakes.0.load(Ordering::SeqCst), before);
+    assert!(driver.snapshot().is_drained());
+}
+
+#[test]
+fn registered_driver_catches_adapter_membership_race_and_retains_uncorrelated_payload() {
+    use marketforge_engine::live::routing::{
+        acknowledgement::{AcknowledgementTracker, FinalizationJournal},
+        destination::DestinationCapacity,
+        driver::DeliveryDriver,
+        queue::DestinationQueue,
+        supervisor::{DeliverySupervisor, SupervisionStep},
+        tracking_recovery::TrackingRecovery,
+        worker::DestinationWorkers,
+    };
+    use std::{
+        num::NonZeroUsize,
+        sync::atomic::{AtomicUsize, Ordering},
+        task::{Context, Poll, Wake, Waker},
+    };
+    #[derive(Default)]
+    struct Counter(AtomicUsize);
+    impl Wake for Counter {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    struct ChangingAdapter {
+        registry: Arc<RouterRegistry>,
+        descriptor: DestinationDescriptor,
+        calls: Arc<AtomicUsize>,
+    }
+    impl EventDestinationPort for ChangingAdapter {
+        fn descriptor(&self) -> DestinationDescriptor {
+            self.descriptor
+        }
+        fn admit<'a>(&'a self, batch: EventBatch) -> RoutingFuture<'a, DestinationAdmission> {
+            Box::pin(async move {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                self.registry
+                    .register(destination(
+                        2,
+                        DestinationKind::Publication,
+                        DeliveryPolicy::BestEffort,
+                    ))
+                    .unwrap();
+                DestinationAdmission::Accepted {
+                    destination: self.descriptor.id,
+                    through: batch.last_cursor().clone(),
+                }
+            })
+        }
+    }
+    let registry = Arc::new(RouterRegistry::new());
+    let calls = Arc::new(AtomicUsize::new(0));
+    let adapter = Arc::new(ChangingAdapter {
+        registry: registry.clone(),
+        calls: calls.clone(),
+        descriptor: destination(1, DestinationKind::Publication, DeliveryPolicy::Required)
+            .descriptor(),
+    });
+    let queue =
+        DestinationQueue::new(DestinationCapacity::new(adapter.descriptor.capacity, 1).unwrap());
+    registry.register_queue(adapter, queue.clone()).unwrap();
+    // Fault injection: queue an event without the mandatory tracking obligation.
+    queue.try_enqueue(batch()).unwrap();
+    let limit = NonZeroUsize::new(2).unwrap();
+    let mut driver = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(2).unwrap(),
+        TrackingRecovery::new(2).unwrap(),
+        FinalizationJournal::new(2).unwrap(),
+    );
+    let wakes = Arc::new(Counter::default());
+    let waker = Waker::from(wakes.clone());
+    let mut cx = Context::from_waker(&waker);
+    let turn = driver.drive_registered(&registry, &mut cx);
+    assert_eq!(turn.membership, Poll::Ready(Ok(registry.revision())));
+    assert!(matches!(
+        turn.delivery.delivery,
+        Poll::Ready(SupervisionStep::OutcomeBlocked(_))
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(!driver.snapshot().workers.workers[0].1.is_drained());
+    let before = wakes.0.load(Ordering::SeqCst);
+    let turn = driver.drive_registered(&registry, &mut cx);
+    assert!(turn.membership.is_pending());
+    assert!(matches!(
+        turn.delivery.delivery,
+        Poll::Ready(SupervisionStep::OutcomeBlocked(_))
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(wakes.0.load(Ordering::SeqCst), before);
+    registry.unregister(DestinationId(2)).unwrap();
+    assert_eq!(wakes.0.load(Ordering::SeqCst), before + 1);
+    let (_, retained) = driver.take_blocked_for_recovery().unwrap();
+    assert_eq!(
+        retained.payload.batch().first_cursor(),
+        batch().first_cursor()
+    );
+    drop(retained);
+    assert!(driver.snapshot().workers.workers[0].1.is_drained());
+}
+
+#[test]
+fn registered_driver_advances_tracked_delivery_without_inventing_completion() {
+    use marketforge_engine::live::{
+        foundation::{cancellation::CancellationToken, clock::ManualClock},
+        model::delivery::{DeliveryStage, DeliveryStatus},
+        ports::routing::DestinationCompletion,
+        routing::{
+            acknowledgement::{AcknowledgementTracker, FinalizationJournal},
+            admission::AdmissionContext,
+            cursor::StreamAdmissionOrder,
+            destination::DestinationCapacity,
+            driver::DeliveryDriver,
+            ordered::{OrderedCommitOutcome, OrderedFanout},
+            queue::DestinationQueue,
+            supervisor::{DeliverySupervisor, SupervisionStep},
+            tracking_recovery::TrackingRecovery,
+            worker::DestinationWorkers,
+        },
+    };
+    use std::{
+        future::Future,
+        num::NonZeroUsize,
+        sync::atomic::{AtomicUsize, Ordering},
+        task::{Context, Poll, Wake, Waker},
+        time::Instant,
+    };
+    #[derive(Default)]
+    struct Counter(AtomicUsize);
+    impl Wake for Counter {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let registry = RouterRegistry::new();
+    let adapter = destination(1, DestinationKind::Publication, DeliveryPolicy::Required);
+    let queue =
+        DestinationQueue::new(DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap());
+    registry.register_queue(adapter, queue).unwrap();
+    let limit = NonZeroUsize::new(1).unwrap();
+    let mut driver = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(2).unwrap(),
+        TrackingRecovery::new(2).unwrap(),
+        FinalizationJournal::new(2).unwrap(),
+    );
+    let wakes = Arc::new(Counter::default());
+    let waker = Waker::from(wakes.clone());
+    let mut cx = Context::from_waker(&waker);
+    let order = StreamAdmissionOrder::new(batch().first_cursor().clone()).unwrap();
+    let mut preparation = Box::pin(OrderedFanout::prepare(
+        &registry,
+        &order,
+        batch(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        Arc::new(ManualClock::new(Instant::now(), 0)),
+        None,
+    ));
+    let Poll::Ready(Ok(prepared)) = preparation.as_mut().poll(&mut cx) else {
+        panic!("capacity available")
+    };
+    drop(preparation);
+    let (tracker, recovery) = driver.admission_owners().unwrap();
+    assert!(matches!(
+        prepared.commit(tracker, recovery),
+        OrderedCommitOutcome::Tracked(_)
+    ));
+    let turn = driver.drive_registered(&registry, &mut cx);
+    assert!(matches!(
+        turn.delivery.delivery,
+        Poll::Ready(SupervisionStep::Retained(_))
+    ));
+    assert_eq!(driver.snapshot().retained_deliveries, 1);
+    let before = wakes.0.load(Ordering::SeqCst);
+    let turn = driver.drive_registered(&registry, &mut cx);
+    assert!(matches!(
+        turn.delivery.delivery,
+        Poll::Ready(SupervisionStep::CapacityBlocked)
+    ));
+    assert_eq!(wakes.0.load(Ordering::SeqCst), before);
+    assert_eq!(driver.snapshot().tracked_obligations, 1);
+    driver
+        .apply_completion(&DestinationCompletion {
+            destination: DestinationId(1),
+            through: batch().last_cursor().clone(),
+            status: DeliveryStatus::Progress(DeliveryStage::Delivered),
+        })
+        .unwrap();
+    let turn = driver.drive_registered(&registry, &mut cx);
+    assert!(matches!(
+        turn.delivery.delivery,
+        Poll::Ready(SupervisionStep::Finalized(_))
+    ));
+    assert_eq!(wakes.0.load(Ordering::SeqCst), before + 1);
+    // The returned terminal record still owns payload capacity until released.
+    assert!(!driver.snapshot().workers.workers[0].1.is_drained());
+    drop(turn);
+    assert!(driver.snapshot().workers.workers[0].1.is_drained());
+    assert_eq!(driver.snapshot().tracked_obligations, 0);
+    assert_eq!(driver.snapshot().journal_records, 1);
+}
