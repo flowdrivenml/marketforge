@@ -102,3 +102,55 @@ Full wrapper `./scripts/verify-live.sh full`: exit 0, five gates. Raw receipts:
 - `git diff --check`: exit 0.
 
 Checkpoint: `133b72e` (ordered tracked fan-out and verification evidence). No push. Next authorized: WP-10 completion.
+
+
+## Continuation — bounded namespace ownership (2026-10-21)
+
+Status: Partial. Next executable package remains WP-10. Baseline branch
+`codex/wp06-completion`, HEAD `5607784`; only pre-existing untracked
+`scripts/run-autonomous-codex.sh`, preserved. Earlier implementations were
+inspected and retained. No package acceptance is asserted.
+
+Implemented:
+- `AdmissionNamespaces` owns bounded explicit `(StreamId, LogEpoch)` frontiers;
+  arriving batches cannot establish or reset them. Concurrent registration has
+  one winner. Independent epochs share no frontier state.
+- Retirement and shutdown close all cloned admission handles. An existing permit
+  may finish or drop; retirement never rolls back responsibility. No replacement
+  owner is created for that namespace. Retired entries remain bounded tombstones
+  to prevent same-epoch offset reuse. Lifetime capacity exhaustion fails closed.
+- `OrderedFanout::prepare_registered` resolves the authoritative registered
+  frontier and uses the existing real ordered/tracked queue commitment path.
+- Three deterministic consumer witnesses exercise real two-destination queue
+  admission/readback, shared-frontier exclusion, unknown namespace rejection,
+  duplicate registration, stale handles, invalid identities/limits, bounded
+  tombstones, independent epochs, inflight retirement, idempotent shutdown and
+  barrier-controlled concurrent registration. No sleeps or external services.
+
+Verification (all exit 0):
+- From engine/: `cargo test --locked --offline --no-default-features --features
+  live --test live_suite registered_namespace`: 3 passed / 385 filtered out.
+- From repository root: `./scripts/verify-live.sh full`: five gates;
+  `cargo fmt --all -- --check`, `cargo check --locked --offline
+  --no-default-features --features live --lib`, library tests (130 passed),
+  live_suite (386 passed / 2 opt-in ignored), doctests (1 passed).
+  Raw receipts: `engine/target/live-verification/20261021T035235Z-2/`.
+- From engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; raw receipt
+  `engine/target/live-verification/namespace-combined-check.log`.
+- `git diff --check`: exit 0. Existing dead-code warnings remain.
+
+Changed paths: routing/{cursor,mod,namespaces,ordered}.rs,
+engine/tests/live/router_obligations.rs, STATUS.md and this ledger.
+No dependencies, lockfile, Python, historical execution, ignored configuration,
+production data or external exchange changes. No SQL fixtures were required or
+run; the opt-in PostgreSQL/performance tests were not rerun.
+
+Limitations: runtime-local ownership only, not a restart journal or persisted
+namespace reclamation policy. Integration with the production EventRouterPort
+owner is still pending. Required worker/completion correlation, bounded global
+scheduling, owner-lifetime recovery/payload retention, best-effort/no-subscriber
+policies, native metrics/snapshots and deadline shutdown remain incomplete.
+Earlier WP-05/06/07/09 gates remain open. Further independent WP-10 work is safe;
+WP-11 prerequisites are not declared satisfied. Checkpoint: implementation commit
+carrying this section (identifier recorded in the subsequent status checkpoint).

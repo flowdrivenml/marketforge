@@ -10,12 +10,14 @@ pub enum CursorOrderError {
     Gap,
     Exhausted,
     InvalidIdentity,
+    Closed,
 }
 #[derive(Debug)]
 struct State {
     namespace: StreamCursor,
     next: Option<u64>,
     pending: bool,
+    closed: bool,
 }
 #[derive(Debug, Clone)]
 pub struct StreamAdmissionOrder {
@@ -38,6 +40,7 @@ impl StreamAdmissionOrder {
                 next: Some(first.offset),
                 namespace: first,
                 pending: false,
+                closed: false,
             })),
         })
     }
@@ -45,6 +48,9 @@ impl StreamAdmissionOrder {
     /// a caller's bounded scheduling/cancellation policy owns any retry.
     pub fn prepare(&self, batch: &EventBatch) -> Result<CursorOrderPermit, CursorOrderError> {
         let mut state = self.state.try_lock().map_err(|_| CursorOrderError::Busy)?;
+        if state.closed {
+            return Err(CursorOrderError::Closed);
+        }
         if state.pending {
             return Err(CursorOrderError::Busy);
         }
@@ -69,6 +75,12 @@ impl StreamAdmissionOrder {
             committed: false,
         })
     }
+    /// Fence all future admissions through every clone. Existing permits retain
+    /// their responsibility and may still finish; closing never rewinds a cursor.
+    pub fn close(&self) {
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).closed = true;
+    }
+
     pub fn next(&self) -> Option<StreamCursor> {
         let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state.next.map(|offset| {

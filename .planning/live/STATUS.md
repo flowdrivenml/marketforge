@@ -39,6 +39,23 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest continuation adds bounded explicit cursor namespace ownership and
+`OrderedFanout::prepare_registered`, preserving the existing real tracked
+fan-out. Retirement/shutdown fence cloned handles; bounded tombstones prevent
+same-namespace frontier resets. Three new deterministic witnesses pass, including
+concurrent registration and real destination queue readback. Full verification
+exits 0: 130 library / 386 integration (2 opt-in ignored) / 1 doctest, formatting
+and Live check; Live+historical compilation also exits 0. Receipts:
+`engine/target/live-verification/20261021T035235Z-2/`.
+WP-10 remains Partial; production owner, global scheduling, destination workers,
+completion/recovery ownership, best-effort policies and snapshots remain. This
+runtime-local registry does not claim restart durability. WP-05/06/07/09 open
+gates remain. Next authorized work: WP-10 completion; WP-11–29 remain pending.
+No SQL/exchange requests, historical execution, Python, dependencies, ignored
+configuration or user launcher changes. Further autonomous WP-10 work is safe.
+See [WP-10 ledger](evidence/WP-10-implementation.md).
+
+
 Checkpoint `133b72e` adds WP-10 `OrderedFanout`: the real required-destination capacity,
 order permit, obligation activation and recovery-aware queue commitment now
 compose through one cancellation/deadline-fenced operation. Dropping a prepared

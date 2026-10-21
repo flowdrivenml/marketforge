@@ -2259,3 +2259,165 @@ fn ordered_fanout_rechecks_deadline_inside_commitment_fence() {
         );
     }
 }
+
+#[test]
+fn registered_namespace_routes_without_resetting_frontier() {
+    use marketforge_engine::live::{
+        foundation::SystemMonotonicClock,
+        routing::{
+            cursor::CursorOrderError,
+            namespaces::{AdmissionNamespaces, NamespaceError},
+            ordered::{OrderedCommitOutcome, OrderedFanout, OrderedPreparationError},
+        },
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let namespaces = AdmissionNamespaces::new(2).unwrap();
+    let context = || AdmissionContext::without_deadline(CancellationToken::new());
+    assert!(matches!(
+        ready(OrderedFanout::prepare_registered(
+            &registry,
+            &namespaces,
+            batch.clone(),
+            context(),
+            Arc::new(SystemMonotonicClock),
+            None
+        )),
+        Err(OrderedPreparationError::Namespace(NamespaceError::Unknown))
+    ));
+    let first = batch.first_cursor().clone();
+    namespaces.register(first.clone()).unwrap();
+    let order = namespaces.get(&first.stream_id, first.log_epoch).unwrap();
+    let admission = ready(OrderedFanout::prepare_registered(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        context(),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ))
+    .unwrap();
+    assert!(matches!(order.prepare(&batch), Err(CursorOrderError::Busy)));
+    let mut recovery = TrackingRecovery::new(10).unwrap();
+    assert!(matches!(
+        admission.commit(&mut tracker, &mut recovery),
+        OrderedCommitOutcome::Tracked(TrackedFanoutResult::Complete { .. })
+    ));
+    assert_eq!(order.next().unwrap().offset, batch.last_cursor().offset + 1);
+    assert_eq!(
+        namespaces.register(first.clone()),
+        Err(NamespaceError::AlreadyRegistered)
+    );
+    assert!(matches!(order.prepare(&batch), Err(CursorOrderError::Gap)));
+    for id in [1, 2] {
+        assert!(
+            registry
+                .peek_queue(DestinationId(id))
+                .unwrap()
+                .try_dequeue()
+                .is_some()
+        );
+    }
+    namespaces
+        .retire(&first.stream_id, first.log_epoch)
+        .unwrap();
+    assert!(matches!(
+        order.prepare(&batch),
+        Err(CursorOrderError::Closed)
+    ));
+    assert!(matches!(
+        namespaces.get(&first.stream_id, first.log_epoch),
+        Err(NamespaceError::Retired)
+    ));
+    assert_eq!(
+        namespaces.register(first),
+        Err(NamespaceError::AlreadyRegistered)
+    );
+}
+
+#[test]
+fn registered_namespace_budget_shutdown_and_inflight_retirement() {
+    use marketforge_engine::live::routing::{
+        cursor::CursorOrderError,
+        namespaces::{AdmissionNamespaces, NamespaceError},
+    };
+    assert!(matches!(
+        AdmissionNamespaces::new(0),
+        Err(NamespaceError::InvalidLimit)
+    ));
+    let (_, batch, _, _, _, _) = validation_fixture();
+    let first = batch.first_cursor().clone();
+    let namespaces = AdmissionNamespaces::new(2).unwrap();
+    let mut invalid = first.clone();
+    invalid.stream_id = StreamId(String::new());
+    assert_eq!(
+        namespaces.register(invalid),
+        Err(NamespaceError::InvalidCursor(
+            CursorOrderError::InvalidIdentity
+        ))
+    );
+    namespaces.register(first.clone()).unwrap();
+    let old = namespaces.get(&first.stream_id, first.log_epoch).unwrap();
+    let permit = old.prepare(&batch).unwrap();
+    namespaces
+        .retire(&first.stream_id, first.log_epoch)
+        .unwrap();
+    // Retirement cannot roll back an operation already holding its permit.
+    permit.commit();
+    assert_eq!(old.next().unwrap().offset, batch.last_cursor().offset + 1);
+    assert!(matches!(old.prepare(&batch), Err(CursorOrderError::Closed)));
+    let mut second = first.clone();
+    second.log_epoch = LogEpoch(first.log_epoch.0 + 1);
+    namespaces.register(second.clone()).unwrap();
+    let current = namespaces.get(&second.stream_id, second.log_epoch).unwrap();
+    let mut third = second.clone();
+    third.log_epoch = LogEpoch(second.log_epoch.0 + 1);
+    assert_eq!(
+        namespaces.register(third.clone()),
+        Err(NamespaceError::Capacity)
+    );
+    assert_eq!(namespaces.registered_count(), 2);
+    assert_eq!(current.next(), Some(second));
+    namespaces.shutdown();
+    namespaces.shutdown();
+    assert!(matches!(
+        current.prepare(&batch),
+        Err(CursorOrderError::Closed)
+    ));
+    assert!(matches!(
+        namespaces.get(&first.stream_id, first.log_epoch),
+        Err(NamespaceError::Shutdown)
+    ));
+    assert_eq!(namespaces.register(third), Err(NamespaceError::Shutdown));
+}
+
+#[test]
+fn registered_namespace_concurrent_registration_has_one_owner() {
+    use marketforge_engine::live::routing::namespaces::{AdmissionNamespaces, NamespaceError};
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    let barrier = std::sync::Barrier::new(2);
+    let results = std::thread::scope(|scope| {
+        let tasks: Vec<_> = (0..2)
+            .map(|_| {
+                scope.spawn(|| {
+                    barrier.wait();
+                    namespaces.register(cursor(10))
+                })
+            })
+            .collect();
+        tasks
+            .into_iter()
+            .map(|task| task.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|r| **r == Err(NamespaceError::AlreadyRegistered))
+            .count(),
+        1
+    );
+    assert_eq!(namespaces.registered_count(), 1);
+}

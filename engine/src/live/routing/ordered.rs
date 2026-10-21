@@ -7,6 +7,7 @@ use super::{
     acknowledgement::{AcknowledgementError, AcknowledgementTracker},
     admission::{AdmissionContext, DeadlineTimer},
     cursor::{CursorOrderError, CursorOrderPermit, StreamAdmissionOrder},
+    namespaces::{AdmissionNamespaces, NamespaceError},
     router::{
         FanoutAdmissionCoordinator, FanoutCommitmentCoordinator, FanoutPreparationError,
         PreparedFanout, RouterRegistry, RouterRegistryError, RoutingPlan, TrackedFanoutResult,
@@ -25,6 +26,7 @@ pub enum OrderedPreparationError {
     Order(CursorOrderError),
     Registry(RouterRegistryError),
     Capacity(FanoutPreparationError),
+    Namespace(NamespaceError),
 }
 
 /// Owns capacity and the exclusive namespace permit; has no tracker side effects
@@ -73,6 +75,24 @@ fn check(
 }
 
 impl<'a> OrderedFanout<'a> {
+    /// Resolve the pre-registered authoritative frontier. An incoming batch
+    /// cannot implicitly establish or reset a namespace.
+    pub async fn prepare_registered(
+        registry: &'a RouterRegistry,
+        namespaces: &AdmissionNamespaces,
+        batch: EventBatch,
+        context: AdmissionContext,
+        clock: Arc<dyn MonotonicClock>,
+        timer: Option<&dyn DeadlineTimer>,
+    ) -> Result<Self, OrderedPreparationError> {
+        check(&context, clock.as_ref()).map_err(OrderedPreparationError::Context)?;
+        let cursor = batch.first_cursor();
+        let order = namespaces
+            .get(&cursor.stream_id, cursor.log_epoch)
+            .map_err(OrderedPreparationError::Namespace)?;
+        Self::prepare(registry, &order, batch, context, clock, timer).await
+    }
+
     pub async fn prepare(
         registry: &'a RouterRegistry,
         order: &StreamAdmissionOrder,
