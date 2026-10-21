@@ -39,6 +39,21 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest continuation adds wake-driven WP-10 admission namespace shutdown. Closing
+waits for outstanding cursor permits (including retired namespaces); commit/abort
+wakes a bounded replacement-aware coordinator without rewinding accepted progress.
+Full verification exits 0: formatting, Live check, 133 library / 436 integration
+(2 opt-in ignored) / 1 doctest; Live+historical compilation exits 0. Receipts:
+`engine/target/live-verification/20261021T045558Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort ordered
+composition, runtime retry scheduling, metrics/control binding and composition of
+namespace/budget/registry/delivery shutdown remain. Earlier WP-05/06/07/09 gates
+persist; WP-11–29 pending. Safe autonomous continuation remains possible.
+Checkpoint: local commit carrying this entry and matching WP-10 ledger.
+Pre-existing untracked launcher preserved. No push, SQL/exchange traffic,
+Python/historical execution edits, dependency or ignored-configuration changes.
+
+
 Latest continuation fences WP-10 delivery-driver admission on explicit close and
 shutdown, including deadline expiry and already-drained owners. New admissions
 return `DeliveryAdmissionError::Closed`; a restricted abort operation releases

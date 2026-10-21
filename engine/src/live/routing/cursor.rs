@@ -3,6 +3,7 @@
 //! expected cursor from the authoritative source lifecycle.
 use crate::live::{model::cursor::StreamCursor, ports::routing::EventBatch};
 use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll, Waker};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CursorOrderError {
     Busy,
@@ -18,6 +19,7 @@ struct State {
     next: Option<u64>,
     pending: Option<u64>,
     closed: bool,
+    drain_waiter: Option<Waker>,
 }
 /// Admission responsibility only; this does not establish downstream completion.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,6 +55,7 @@ impl StreamAdmissionOrder {
                 namespace: first,
                 pending: None,
                 closed: false,
+                drain_waiter: None,
             })),
         })
     }
@@ -91,6 +94,28 @@ impl StreamAdmissionOrder {
     /// their responsibility and may still finish; closing never rewinds a cursor.
     pub fn close(&self) {
         self.state.lock().unwrap_or_else(|e| e.into_inner()).closed = true;
+    }
+
+    /// Fence admission and wait for the existing permit to commit or abort.
+    /// One shutdown coordinator may poll this owner; a later poll replaces its
+    /// bounded waiter. Cancellation retains at most one waker, cleared on drain.
+    /// Readiness concerns admission only, never destination delivery.
+    pub fn poll_shutdown(&self, cx: &mut Context<'_>) -> Poll<()> {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.closed = true;
+        if state.pending.is_none() {
+            state.drain_waiter = None;
+            Poll::Ready(())
+        } else {
+            if !state
+                .drain_waiter
+                .as_ref()
+                .is_some_and(|w| w.will_wake(cx.waker()))
+            {
+                state.drain_waiter = Some(cx.waker().clone());
+            }
+            Poll::Pending
+        }
     }
 
     pub fn snapshot(&self) -> AdmissionOrderSnapshot {
@@ -135,12 +160,23 @@ impl CursorOrderPermit {
         state.next = self.last.offset.checked_add(1);
         state.pending = None;
         self.committed = true;
+        let waiter = state.drain_waiter.take();
+        drop(state);
+        if let Some(waiter) = waiter {
+            waiter.wake();
+        }
     }
 }
 impl Drop for CursorOrderPermit {
     fn drop(&mut self) {
         if !self.committed {
-            self.state.lock().unwrap_or_else(|e| e.into_inner()).pending = None;
+            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            state.pending = None;
+            let waiter = state.drain_waiter.take();
+            drop(state);
+            if let Some(waiter) = waiter {
+                waiter.wake();
+            }
         }
     }
 }

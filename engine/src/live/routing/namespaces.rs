@@ -140,6 +140,25 @@ impl AdmissionNamespaces {
         }
     }
 
+    /// Close every namespace and register the sole shutdown coordinator on
+    /// outstanding permits. Registration remains fenced after cancellation.
+    /// Poll every entry so all pending permits can wake the coordinator.
+    pub fn poll_shutdown(&self, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.shutdown = true;
+        let mut drained = true;
+        for entry in state.entries.values() {
+            if entry.order.poll_shutdown(cx).is_pending() {
+                drained = false;
+            }
+        }
+        if drained {
+            std::task::Poll::Ready(())
+        } else {
+            std::task::Poll::Pending
+        }
+    }
+
     /// Membership is sampled under the registry lock; each frontier is sampled
     /// under its own owner lock. Concurrent completions may occur between entries.
     /// No adapter callbacks or delivery claims are involved.

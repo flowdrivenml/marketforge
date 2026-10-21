@@ -3308,3 +3308,87 @@ fn commitment_owner_fence_rejects_obligation_policy_changed_after_preparation() 
         }
     }
 }
+
+#[test]
+fn namespace_shutdown_waits_for_commit_and_abort_and_replaces_waiter() {
+    use marketforge_engine::live::routing::{
+        cursor::CursorOrderError,
+        namespaces::{AdmissionNamespaces, NamespaceError},
+    };
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use std::task::{Context, Wake, Waker};
+    struct Counter(AtomicUsize);
+    impl Wake for Counter {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let (_, batch, _, _, _, _) = validation_fixture();
+    for commit in [false, true] {
+        let namespaces = AdmissionNamespaces::new(1).unwrap();
+        let first = batch.first_cursor().clone();
+        namespaces.register(first.clone()).unwrap();
+        let order = namespaces.get(&first.stream_id, first.log_epoch).unwrap();
+        let permit = order.prepare(&batch).unwrap();
+        namespaces
+            .retire(&first.stream_id, first.log_epoch)
+            .unwrap();
+        let old = Arc::new(Counter(AtomicUsize::new(0)));
+        let new = Arc::new(Counter(AtomicUsize::new(0)));
+        let old_waker = Waker::from(old.clone());
+        let new_waker = Waker::from(new.clone());
+        assert!(
+            namespaces
+                .poll_shutdown(&mut Context::from_waker(&old_waker))
+                .is_pending()
+        );
+        assert!(
+            namespaces
+                .poll_shutdown(&mut Context::from_waker(&new_waker))
+                .is_pending()
+        );
+        assert_eq!(
+            namespaces.register(first.clone()),
+            Err(NamespaceError::Shutdown)
+        );
+        assert!(matches!(
+            order.prepare(&batch),
+            Err(CursorOrderError::Closed)
+        ));
+        if commit {
+            permit.commit();
+        } else {
+            drop(permit);
+        }
+        assert_eq!(old.0.load(Ordering::SeqCst), 0);
+        assert_eq!(new.0.load(Ordering::SeqCst), 1);
+        assert!(
+            namespaces
+                .poll_shutdown(&mut Context::from_waker(&new_waker))
+                .is_ready()
+        );
+        assert!(
+            namespaces
+                .poll_shutdown(&mut Context::from_waker(&new_waker))
+                .is_ready()
+        );
+        assert_eq!(
+            order.next().unwrap().offset,
+            if commit {
+                batch.last_cursor().offset + 1
+            } else {
+                first.offset
+            }
+        );
+        assert_eq!(new.0.load(Ordering::SeqCst), 1);
+    }
+    let empty = AdmissionNamespaces::new(1).unwrap();
+    assert!(
+        empty
+            .poll_shutdown(&mut Context::from_waker(Waker::noop()))
+            .is_ready()
+    );
+}

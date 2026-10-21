@@ -1372,3 +1372,52 @@ owned namespaces, budgets or registry. It does not certify a complete router or
 external durability. Earlier WP-05/06/07/09 gates remain; WP-11–29 pending. Safe
 independent autonomous WP-10 implementation can continue. No acceptance or overall
 completion claimed.
+
+
+## Continuation — wake-driven namespace drain (2026-10-21)
+
+Status: Partial. Starting checkpoint `83a2106`, branch `codex/wp06-completion`.
+Inspected working tree/history, required campaign documents, WP-10/11 roadmap,
+current cursor, namespace, driver, ordered admission and consumer witnesses.
+Only pre-existing untracked `scripts/run-autonomous-codex.sh`; preserved.
+WP-10 remains next executable; no completed package restarted.
+
+Implemented `StreamAdmissionOrder::poll_shutdown` and
+`AdmissionNamespaces::poll_shutdown`. Both fence new admission and distinguish
+closed state from outstanding preparation responsibility. Each namespace holds at
+most one shutdown waker; replacement updates the coordinator, and permit commit
+or abort clears and wakes it outside the cursor lock. Registry polling visits
+all bounded entries, including retired namespaces. Cancellation does not reopen
+admission or release permits; a later coordinator can resume. Commit advances
+the frontier; abort preserves it. Readiness proves admission drain only.
+
+A deterministic production-owner witness covers commit/abort, retired namespace
+responsibility, replacement wakers, repeated drain, closed admission/registration,
+frontier preservation and empty registry. No sleeps or external services.
+
+Verification (actual exit codes):
+- From engine/: `cargo test --locked --offline --no-default-features --features
+  live --test live_suite namespace_shutdown`: exit 0, 1 passed.
+- Root `./scripts/verify-live.sh full`: exit 0. Commands: `cargo fmt --all --
+  --check`; `cargo check --locked --offline --no-default-features --features live
+  --lib`; same flags with `cargo test --lib` (133 passed), `--test live_suite`
+  (436 passed, 2 opt-in ignored), `--doc` (1 passed). Receipts:
+  `engine/target/live-verification/20261021T045558Z-2/`.
+- From engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0. Existing dead-code warnings remain.
+- Root `git diff --check`: exit 0. SQL/performance opt-ins and historical test
+  execution not rerun; no claim for those gates. An initial test append used a
+  root-relative path from engine/ and failed before writing; corrected path,
+  then focused and full checks passed.
+
+Changed: `engine/src/live/routing/{cursor,namespaces}.rs`,
+`engine/tests/live/router_obligations.rs`, STATUS.md and this ledger.
+Checkpoint: local commit carrying this entry. No push, database/exchange access,
+Python/historical execution changes, dependencies or ignored configuration edits.
+
+Remaining: production EventRouterPort ordered owner, runtime wakeup/retry
+scheduling, metrics/control integration and composition of admission namespace,
+budget, destination registry and delivery shutdown. One coordinator per namespace
+is supported; this is a bounded poll primitive, not a spawned runtime or complete
+router. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Further autonomous
+implementation can safely continue. No acceptance or whole-project completion.
