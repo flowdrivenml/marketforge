@@ -754,3 +754,46 @@ control binding and finite deadline shutdown composition remain. Worker close/
 snapshot is not complete runtime shutdown; dropping a pending owner is abandonment,
 not a successful delivery or drain. Earlier WP-05/06/07/09 gates remain unchanged;
 WP-11–29 pending. No package accepted. Further autonomous WP-10 work is safe.
+
+
+## Continuation — wake-driven destination queue consumption (2026-10-21)
+
+Status: Partial. Baseline `c9e817f`, branch `codex/wp06-completion`.
+Initial inventory: only pre-existing untracked `scripts/run-autonomous-codex.sh`,
+preserved. Read instructions, autonomous plan, decisions, status, WP-10/11 roadmap
+and actual queue/worker/port/tracker consumers. Next executable remains WP-10.
+
+Implemented `DestinationWorker::poll_next` for awaiting queue activity and adapter
+progress without an idle busy loop. Queue inspection and single-waker registration
+share the insertion lock, preventing lost notifications. Both reserved and direct
+insertion wake after releasing the queue lock; closure wakes an idle worker and
+preserves queued drain. Lease destruction clears its retained waiter before a new
+owner claims the queue. Existing nonwaiting poll_admission behavior is preserved.
+Two deterministic production-interface witnesses cover waker replacement, both
+insertion paths, closed empty queues, lease replacement, continued adapter calls
+and payload charges retained through outcome handoff. No background task or full
+runtime scheduling/shutdown implementation is claimed.
+
+Verification (all final commands exit 0):
+- Root `./scripts/verify-live.sh full`: `cargo fmt --all -- --check`;
+  `cargo check --locked --offline --no-default-features --features live --lib`;
+  `cargo test --locked --offline --no-default-features --features live --lib`
+  (132 passed); same flags with `--test live_suite` (414 passed, 2 opt-in ignored);
+  with `--doc` (1 passed). Receipts:
+  `engine/target/live-verification/20261021T042629Z-7/`.
+- engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; existing warnings remain.
+- Root `git diff --check`: exit 0.
+- Initial edit command used an incorrect working directory and failed before
+  writing; corrected immediately. No test/assertion weakening.
+
+Changed: routing/{queue,worker}.rs, tests/live/destination_worker.rs, STATUS.md
+and this ledger. Checkpoint: local commit containing this continuation.
+No SQL/exchange traffic, historical/Python execution changes, dependency/lockfile
+or ignored configuration changes; no push. SQL/performance/historical baseline
+execution not rerun; no new claims for those gates.
+
+Remaining: production EventRouterPort owner, runtime scheduling composition,
+completion/recovery correlation and payload ownership, native metrics/control
+binding and finite deadline shutdown. Earlier WP-05/06/07/09 gates unchanged;
+WP-11–29 pending. No acceptance claimed. Further autonomous WP-10 work is safe.

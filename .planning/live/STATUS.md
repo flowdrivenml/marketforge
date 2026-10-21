@@ -39,6 +39,24 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest continuation adds wake-driven WP-10 destination queue consumption through
+`DestinationWorker::poll_next`: one bounded waiter per exclusive lease, atomic
+queue inspection/registration, enqueue and close wakeups outside the queue lock,
+and waiter cleanup on owner release. Existing nonwaiting polling remains intact.
+Two deterministic witnesses cover both insertion paths, replacement wakers,
+closed drain, pending adapter retention and transferred payload accounting.
+Full Live verification exits 0: formatting, Live check, 132 library / 414
+integration (2 opt-in ignored) / 1 doctest. Live+historical compilation exits 0.
+Receipts: `engine/target/live-verification/20261021T042629Z-7/`.
+WP-10 remains Partial and next executable: production EventRouterPort owner,
+runtime scheduling composition, completion/recovery correlation and payload
+ownership, native metrics/control binding and finite deadline shutdown remain.
+Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Safe autonomous work
+can continue. No SQL/exchange traffic, Python/historical execution, dependencies,
+ignored configuration changes or push. Pre-existing untracked launcher preserved.
+Checkpoint: local commit carrying this entry and matching WP-10 evidence.
+
+
 
 Latest continuation binds WP-10 workers to the actual registered adapter, frozen
 descriptor and queue under the membership fence. Eight worker witnesses now cover

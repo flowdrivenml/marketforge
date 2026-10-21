@@ -19,6 +19,7 @@ use crate::live::{
 use std::{
     collections::VecDeque,
     sync::{Arc, Mutex},
+    task::{Context, Poll, Waker},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,6 +97,7 @@ struct QueueState {
     batches: VecDeque<QueuedBatch>,
     closed: bool,
     worker_claimed: bool,
+    worker_waiter: Option<Waker>,
 }
 
 #[derive(Debug)]
@@ -151,6 +153,26 @@ pub(crate) struct QueueWorkerLease {
 }
 
 impl QueueWorkerLease {
+    /// Register under the insertion lock to prevent lost wakeups.
+    pub(crate) fn poll_dequeue(&self, cx: &mut Context<'_>) -> Poll<Option<QueuedBatch>> {
+        let mut state = self
+            .queue
+            .inner
+            .state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if let Some(batch) = state.batches.pop_front() {
+            state.worker_waiter = None;
+            return Poll::Ready(Some(batch));
+        }
+        if state.closed {
+            state.worker_waiter = None;
+            return Poll::Ready(None);
+        }
+        state.worker_waiter = Some(cx.waker().clone());
+        Poll::Pending
+    }
+
     pub(crate) fn dequeue(&self) -> Option<QueuedBatch> {
         self.queue
             .inner
@@ -164,12 +186,17 @@ impl QueueWorkerLease {
 
 impl Drop for QueueWorkerLease {
     fn drop(&mut self) {
-        self.queue
-            .inner
-            .state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .worker_claimed = false;
+        let waiter = {
+            let mut state = self
+                .queue
+                .inner
+                .state
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            state.worker_claimed = false;
+            state.worker_waiter.take()
+        };
+        drop(waiter);
     }
 }
 
@@ -319,6 +346,11 @@ impl DestinationQueue {
             permit: reservation.commit(),
         });
 
+        let waiter = state.worker_waiter.take();
+        drop(state);
+        if let Some(waiter) = waiter {
+            waiter.wake();
+        }
         Ok(())
     }
     /// Attempt immediate admission.
@@ -376,6 +408,11 @@ impl DestinationQueue {
 
         // Queue insertion is the admission commitment boundary.
         state.batches.push_back(QueuedBatch { batch, permit });
+        let waiter = state.worker_waiter.take();
+        drop(state);
+        if let Some(waiter) = waiter {
+            waiter.wake();
+        }
 
         Ok(())
     }
@@ -411,6 +448,11 @@ impl DestinationQueue {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         state.closed = true;
+        let waiter = state.worker_waiter.take();
+        drop(state);
+        if let Some(waiter) = waiter {
+            waiter.wake();
+        }
     }
 
     /// Shut down the queue and its capacity manager.

@@ -511,3 +511,73 @@ fn destination_worker_drops_adapter_before_charge_and_consumer_lease() {
     let remainder = queue.try_dequeue().unwrap();
     assert_eq!(remainder.batch().first_cursor().offset, 12);
 }
+
+#[test]
+fn destination_worker_waits_for_queue_activity_and_closed_drain() {
+    let (queue, adapter, mut worker) = fixture(0);
+    let wakes = Arc::new(WakeCount::default());
+    let waker = Waker::from(wakes.clone());
+    let mut cx = Context::from_waker(&waker);
+    assert_eq!(worker.poll_next(&mut cx), Poll::Pending);
+    assert_eq!(worker.poll_next(&mut cx), Poll::Pending);
+    queue.try_enqueue(batch(10)).unwrap();
+    assert_eq!(wakes.0.load(Ordering::SeqCst), 1);
+    assert_eq!(worker.poll_next(&mut cx), Poll::Pending);
+    worker.close();
+    assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+    adapter.release();
+    assert_eq!(
+        worker.poll_next(&mut cx),
+        Poll::Ready(WorkerStep::OutcomeReady)
+    );
+    let outcome = worker.take_outcome().unwrap();
+    assert_eq!(worker.poll_next(&mut cx), Poll::Ready(WorkerStep::Idle));
+    assert!(!worker.snapshot().is_drained());
+    drop(outcome);
+    assert!(worker.snapshot().is_drained());
+}
+
+#[test]
+fn destination_worker_queue_waiter_replacement_reserved_insert_and_release() {
+    use marketforge_engine::live::model::memory::RetainedSize;
+    let (queue, adapter, mut worker) = fixture(0);
+    let old = Arc::new(WakeCount::default());
+    let new = Arc::new(WakeCount::default());
+    let old_waker = Waker::from(old.clone());
+    let new_waker = Waker::from(new.clone());
+    assert_eq!(
+        worker.poll_next(&mut Context::from_waker(&old_waker)),
+        Poll::Pending
+    );
+    assert_eq!(
+        worker.poll_next(&mut Context::from_waker(&new_waker)),
+        Poll::Pending
+    );
+    let payload = batch(10);
+    let reservation = queue
+        .capacity()
+        .try_reserve(payload.len(), payload.retained_size_bytes().unwrap())
+        .unwrap();
+    queue.enqueue_reserved(payload, reservation).unwrap();
+    assert_eq!(old.0.load(Ordering::SeqCst), 0);
+    assert_eq!(new.0.load(Ordering::SeqCst), 1);
+    drop(worker);
+    // A new lease can drain the original queue without inheriting its old waiter.
+    let mut worker = DestinationWorker::new(queue.clone(), adapter).unwrap();
+    assert_eq!(
+        worker.poll_next(&mut Context::from_waker(&new_waker)),
+        Poll::Pending
+    );
+    drop(worker);
+    let mut worker = DestinationWorker::new(queue.clone(), fixture(0).1).unwrap();
+    assert_eq!(
+        worker.poll_next(&mut Context::from_waker(&new_waker)),
+        Poll::Pending
+    );
+    worker.close();
+    assert_eq!(new.0.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        worker.poll_next(&mut Context::from_waker(&new_waker)),
+        Poll::Ready(WorkerStep::Idle)
+    );
+}

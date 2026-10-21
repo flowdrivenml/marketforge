@@ -112,11 +112,29 @@ impl DestinationWorker {
     /// explicitly transferred, so a slow outcome consumer applies bounded pressure.
     /// Polling never waits for a new queue item; Idle requires runtime rescheduling.
     pub fn poll_admission(&mut self, cx: &mut Context<'_>) -> Poll<WorkerStep> {
+        self.poll_admission_inner(cx, false)
+    }
+
+    /// Await queue activity and adapter progress. Empty closed queues return Idle;
+    /// transferred payload charges still prevent full drain.
+    pub fn poll_next(&mut self, cx: &mut Context<'_>) -> Poll<WorkerStep> {
+        self.poll_admission_inner(cx, true)
+    }
+
+    fn poll_admission_inner(&mut self, cx: &mut Context<'_>, wait: bool) -> Poll<WorkerStep> {
         if self.outcome.is_some() {
             return Poll::Ready(WorkerStep::OutcomeReady);
         }
         if self.payload.is_none() {
-            let Some(payload) = self.lease.dequeue() else {
+            let next = if wait {
+                match self.lease.poll_dequeue(cx) {
+                    Poll::Pending => return Poll::Pending,
+                    Poll::Ready(next) => next,
+                }
+            } else {
+                self.lease.dequeue()
+            };
+            let Some(payload) = next else {
                 return Poll::Ready(WorkerStep::Idle);
             };
             let destination = self.destination.clone();
