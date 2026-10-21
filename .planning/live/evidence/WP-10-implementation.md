@@ -1200,3 +1200,58 @@ authoritative tracker/recovery/journal under the enclosing owner fence. Earlier
 WP-05/06/07/09 gates persist; WP-11–29 pending. Next authorized executable work:
 WP-10. Further autonomous implementation can safely continue. No acceptance
 or entire-project completion claimed.
+
+
+## Continuation — independent bounded tracking recovery pass (2026-10-21)
+
+Status: Partial. Baseline `4647155`, branch `codex/wp06-completion`; initial
+working tree contained only untracked `scripts/run-autonomous-codex.sh`, preserved.
+Reconciled campaign status, roadmap WP-10 prerequisites/acceptance, latest
+checkpoint and actual router, ordered admission, supervisor and recovery owners.
+WP-10 remains next executable; no completed component restarted.
+
+Implemented `TrackingRecovery::retry_pass` and owned `TrackingRecoveryPass`
+observations. Each initially pending update is attempted at most once. Failed
+entries keep their original order and reservations. An earlier failed update
+fences later updates for that obligation; independent obligations can progress.
+Success releases only its recovery reservation, not delivery/finalization
+responsibility. Uncorrelated outcomes and in-flight reservations remain untouched.
+The pass performs no IO, sleep, retry loop or allocation. Work is bounded by
+configured capacity, with a prefix scan per retained entry (quadratic worst case).
+Existing single-entry FIFO retry API remains available without changed semantics.
+
+Deterministic production witnesses: empty pass; unknown obligation followed by a
+valid independent obligation and blocked successor; registration then successful
+retry of retained updates; in-flight reservation still preventing recovery drain;
+invalid destination followed by an otherwise valid update for the same obligation;
+repeated failed passes preserve charges and do not bypass that predecessor.
+
+Verification (engine/ except root script/diff):
+- `cargo test --locked --offline --no-default-features --features live --test
+  live_suite recovery_pass`: exit 0, 1 passed before the second witness was added;
+  `engine/target/wp10-recovery-pass-focused.log`.
+- Root `./scripts/verify-live.sh full`: final exit 0, formatting, Live compilation,
+  133 library tests, 431 integration tests passed / 2 opt-in ignored, 1 doctest.
+  Exact commands and complete receipts:
+  `engine/target/live-verification/20261021T044817Z-7/`.
+  Earlier full run also passed (430 integration), receipts
+  `engine/target/live-verification/20261021T044752Z-3/`.
+- `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; `engine/target/wp10-recovery-pass-combined.log`.
+- Root `git diff --check`: exit 0 before checkpoint. Existing dead-code warnings
+  remain. SQL/performance opt-in tests and historical test execution not rerun.
+
+Changed: `engine/src/live/routing/tracking_recovery.rs`,
+`engine/tests/live/tracking_recovery.rs`, STATUS.md and this evidence ledger.
+Local checkpoint: commit carrying this entry; no push. No database access,
+exchange traffic, Python/historical code edits, dependencies/lockfile changes,
+or ignored configuration edits.
+
+Remaining acceptance ledger: production EventRouterPort owner and ordered
+composition, automatic recovery scheduling/lifecycle, native metrics/control
+binding and complete router shutdown remain. The pass is a production recovery
+primitive exercised through the real tracker, not an automatically scheduled
+runtime or crash-durable recovery mechanism. Callers must schedule it without
+busy polling. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Next
+authorized executable package remains WP-10; safe autonomous work can continue.
+No package acceptance or overall completion claimed.

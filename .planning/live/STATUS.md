@@ -40,6 +40,21 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest continuation adds a capacity-bounded WP-10 tracking recovery pass:
+independent obligations progress past a failed update, while successors of the
+same obligation remain fenced and failed updates retain order and charges.
+Full verification exits 0: 133 library, 431 integration (2 opt-in ignored),
+1 doctest, formatting and Live check. Receipts:
+`engine/target/live-verification/20261021T044817Z-7/`.
+Live+historical compilation also exits 0. WP-10 remains Partial and next
+executable: production EventRouterPort owner, automatic runtime recovery
+scheduling, native metrics/control binding and whole-router shutdown remain.
+Earlier WP-05/06/07/09 gates and WP-11–29 remain outstanding. Safe autonomous
+continuation remains possible. Checkpoint: local commit carrying this entry.
+Untracked launcher preserved; no push, SQL/exchange traffic, Python/historical
+code, dependencies or ignored configuration edits. See WP-10 evidence.
+
+
 Latest continuation bounds WP-10 prepared transaction ownership (including empty
 transactions) before allocator mutation, and adds owned `DeliverySupervisor`
 observations for worker charges, retained/blocked payloads, obligation/preparation

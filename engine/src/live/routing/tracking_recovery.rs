@@ -32,6 +32,16 @@ pub enum TrackingRecoveryOutcome {
         remaining: usize,
     },
 }
+
+/// Result of one capacity-bounded pass, without discarding failed updates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TrackingRecoveryPass {
+    pub attempted: usize,
+    pub recovered: usize,
+    pub blocked_by_predecessor: usize,
+    pub remaining: usize,
+    pub first_error: Option<AcknowledgementError>,
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrackingRecoveryValidationError {
     CountMismatch,
@@ -240,6 +250,44 @@ impl TrackingRecovery {
                 }
             }
         }
+    }
+
+    /// Try each initially retained update at most once. A failed obligation does
+    /// not block independent obligations, but its later updates cannot overtake
+    /// it. Failed entries retain their original order and capacity reservations.
+    /// Work is bounded by configured recovery capacity (with a bounded prefix
+    /// scan per entry); no retry loop, allocation, IO or automatic wakeup occurs.
+    /// Uncorrelated outcomes still require explicit reconciliation.
+    pub fn retry_pass(&mut self, tracker: &mut AcknowledgementTracker) -> TrackingRecoveryPass {
+        let mut report = TrackingRecoveryPass::default();
+        let mut index = 0;
+        while index < self.pending.len() {
+            let update = &self.pending[index];
+            let id = update.acknowledgement.obligation;
+            if self
+                .pending
+                .iter()
+                .take(index)
+                .any(|earlier| earlier.acknowledgement.obligation == id)
+            {
+                report.blocked_by_predecessor += 1;
+                index += 1;
+                continue;
+            }
+            report.attempted += 1;
+            match tracker.acknowledge(update.acknowledgement.clone()) {
+                Ok(()) => {
+                    self.pending.remove(index);
+                    report.recovered += 1;
+                }
+                Err(error) => {
+                    report.first_error.get_or_insert(error);
+                    index += 1;
+                }
+            }
+        }
+        report.remaining = self.pending.len();
+        report
     }
 
     pub fn retain_unresolved(
