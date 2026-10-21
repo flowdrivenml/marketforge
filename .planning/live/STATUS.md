@@ -39,6 +39,20 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest checkpoint `14c7643` adds explicit ingress-outcome draining: closes admission,
+returns retained records, and reports completion only after all charges release.
+A cancelled preparing admission wakes the drain coordinator even if it produces
+no record; a committed reserved admission and consumer-held record delay completion.
+Verification exits 0: formatting, Live check, 135 library / 478 integration passes
+(2 opt-in ignored) / 1 doctest, Live+historical check. Receipts:
+`engine/target/live-verification/20261021T062135Z-3/`.
+WP-10 remains Partial and next executable; concrete reporting/recovery policy,
+scheduling and runtime/Control composition remain. Earlier WP-05/06/07/09 gates
+persist; WP-11–29 pending. Safe autonomous continuation remains possible.
+No SQL/exchange access or Python/historical execution changes; untracked launcher
+preserved. See WP-10 evidence. No push or acceptance claim.
+
+
 
 Latest implementation checkpoint `0c23ac0` adds a bounded ingress reporting
 consumer over the existing charged journal records. Temporary/permanent handler

@@ -2846,3 +2846,47 @@ Changed: engine/src/live/routing/ingress_reporting.rs,
 engine/tests/live/router.rs, STATUS.md and this ledger. No Python/historical
 execution, ignored configuration, dependency/lockfile, launcher modifications or
 push. No package marked Accepted or entire-project completion claimed.
+
+
+## Continuation — ingress outcome drain lifecycle (2026-10-21)
+
+Status: Partial. Initial HEAD `4c29b4e`, branch `codex/wp06-completion`;
+pre-existing untracked scripts/run-autonomous-codex.sh preserved. Inspected
+instructions, plan, decisions, current status/evidence, WP-10/11 roadmap and
+actual resource/journal/reporting/ingress consumers. Next executable is WP-10.
+Implementation checkpoint: `14c7643`.
+
+Implemented IngressOutcomes::poll_drain using the existing resource owner and
+journal waiter. It fences admission and returns records until all reservations
+release, including pending admissions and externally held records. Registering
+the shutdown waiter before queue inspection prevents lost cancellation wakeups.
+Single shutdown coordinator is explicit; no extra waiter queue or state owner.
+Actual-ingress tests exercise pending admission drop with unchanged cursor and
+queue, commitment after closure, and delayed completion while a record is held.
+
+Verification (engine/ unless stated):
+- cargo fmt --manifest-path engine/Cargo.toml --all (root): exit 0.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite recorded_ingress: final exit 0, 4 passed / 476 filtered.
+- ./scripts/verify-live.sh full (root): exit 0; cargo fmt --all -- --check,
+  cargo check --locked --offline --no-default-features --features live --lib,
+  cargo test with those flags --lib (135 passed), --test live_suite (478 passed,
+  2 opt-in ignored), --doc (1 passed). Receipts:
+  engine/target/live-verification/20261021T062135Z-3/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings remain.
+- git diff --check: exit 0 before checkpoint.
+- Initial focused compile exited 101 for incorrect QueueSnapshot field name;
+  corrected to queued_batches. Next focused test failed due to incorrect assumed
+  initial cursor; now captures the real initial frontier and asserts preservation.
+  An overlapping first full verification exited 1 on that same test assertion;
+  final full verification passes. No unresolved test failures.
+
+Remaining: concrete reporting/recovery policy and retry scheduling, runtime and
+Control composition; earlier WP-05/06/07/09 gates persist. WP-11–29 pending.
+No SQL/performance/historical-only suites run; historical zero-stream baseline
+not rechecked. No database/exchange access, ignored configuration, dependencies,
+lockfile, Python/historical execution or launcher edits. No push. Changed:
+engine/src/live/routing/ingress_reporting.rs, engine/tests/live/router.rs,
+STATUS.md and this ledger. Safe autonomous continuation remains possible;
+no package acceptance or project-completion claim.
