@@ -40,6 +40,23 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest continuation adds bounded WP-10 `PendingDeliveries`: automatic exact
+worker-outcome/obligation correlation, independent completion ingestion, retained
+payload ownership through failed finalization and explicit recovery transfer.
+Unknown, ambiguous and duplicate matches fail closed with the original charge.
+The real registered ordered fan-out witness now uses this owner end to end.
+Full verification exits 0: formatting, Live check, 132 library / 424 integration
+(2 opt-in ignored) / 1 doctest; Live+historical check exits 0. Final receipts:
+`engine/target/live-verification/20261021T043756Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort owner,
+recovery scheduling, runtime supervision, native metrics/control binding and
+whole-router shutdown remain. Earlier WP-05/06/07/09 gates persist; WP-11–29
+pending. Further autonomous WP-10 work is safe. No SQL/exchange traffic,
+Python/historical execution, dependency/ignored-config changes or push.
+Pre-existing untracked launcher preserved. Checkpoint: local commit carrying this
+entry and the matching WP-10 ledger continuation.
+
+
 Latest continuation connects WP-10 destination worker outcomes to authoritative
 obligations with `RetainedDelivery`. Binding validates descriptor, exact cursor
 range and actual admission response. Correlated completions use existing tracker

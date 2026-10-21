@@ -966,3 +966,63 @@ This explicit single-payload owner does not supply a runtime supervisor or compl
 WP-10 acceptance. The caller still supplies an existing obligation ID and authentic
 destination observations. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending.
 Further autonomous WP-10 implementation can safely continue. No acceptance claimed.
+
+
+## Continuation — bounded automatic delivery correlation (2026-10-21)
+
+Status: Partial. Baseline `88a87e2`, branch `codex/wp06-completion`. Initial
+inventory: only pre-existing untracked `scripts/run-autonomous-codex.sh`, preserved.
+Read AGENTS, autonomous plan, status/evidence, decisions, roadmap WP-10/11 and
+Document 08 distribution requirements; inspected tracker, worker and real ordered
+fan-out consumers. Next executable package remains WP-10.
+
+Implemented `PendingDeliveries`, a bounded owner of actual `RetainedDelivery`
+payloads. It correlates exact destination descriptor and full cursor range against
+the authoritative bounded tracker without caller-supplied obligation IDs or a
+second registration index. Unknown/ambiguous/duplicate matches and capacity or
+allocation failure return the original charged outcome. Binding still validates
+actual adapter admission. Ingestion invents no progress. Independently observed
+completions resolve by destination/full through cursor, reject ambiguity and use
+the original progress rules. Failed terminal journal handoff restores the charged
+owner without reallocation; success transfers the payload to the caller. Explicit
+recovery transfer preserves the independent authoritative obligation. Scans are
+bounded by configured tracker/collection capacities; queue byte/event charges
+remain held throughout. Dropping an owner is abandonment, not successful drain.
+
+Three deterministic production-interface tests exercise automatic successful
+correlation, full collection and preserved payloads, unknown/ambiguous/duplicate
+registrations, wrong completion destination, progress regression, insufficient
+durability, rejected admission, full journal retry and explicit recovery transfer.
+The existing real registered ordered fan-out/worker witness now uses this owner
+through admission, committed versus durable completion and terminal journal
+handoff. Queue drain remains false until terminal payload release. No sleeps,
+external services or test-only alternative state machines.
+
+Verification (final commands all exit 0):
+- engine/: `cargo test --locked --offline --no-default-features --features live
+  --test live_suite pending_deliveries`: 3 passed, 423 filtered out.
+- Root `./scripts/verify-live.sh full`: `cargo fmt --all -- --check`;
+  `cargo check --locked --offline --no-default-features --features live --lib`;
+  same flags with `cargo test ... --lib` (132 passed), `--test live_suite`
+  (424 passed, 2 opt-in ignored), `--doc` (1 passed). Final receipts:
+  `engine/target/live-verification/20261021T043756Z-2/`.
+- engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; log `engine/target/wp10-pending-combined.log`.
+- Root `git diff --check`: exit 0 before checkpoint.
+- Initial edit script assertion failed before writing; corrected the insertion
+  anchor. No compiler/test failures or weakened assertions.
+Existing unused recovery-reservation warning remains. Opt-in SQL/performance and
+historical baseline execution not rerun; no new claims for these gates.
+
+Changed: `engine/src/live/routing/{acknowledgement,completion}.rs`,
+`engine/tests/live/destination_worker.rs`, STATUS.md and this ledger. Checkpoint:
+local commit carrying this continuation. No SQL/exchange traffic, Python or
+historical execution changes, dependencies/lockfile or ignored configuration
+changes; no push.
+
+Remaining: production EventRouterPort owner, recovery scheduling, runtime
+supervision, native metrics/control integration and whole-router shutdown. The
+collection does not spawn a runtime or source completion evidence; authentic
+observations still arrive through destination adapters/supervision. Earlier
+WP-05/06/07/09 gates persist, WP-11–29 pending. No package acceptance claimed.
+Further autonomous WP-10 work can safely continue.

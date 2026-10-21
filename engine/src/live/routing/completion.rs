@@ -191,3 +191,160 @@ impl RetainedDelivery {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingDeliveryError {
+    Full,
+    AllocationFailed,
+    UnknownObligation,
+    AmbiguousObligation,
+    DuplicateObligation,
+    Completion(CompletionError),
+}
+
+/// Bounded supervisor-owned payloads awaiting independent destination evidence.
+/// Tracker metadata and progress remain authoritative. Scans are bounded by the
+/// configured tracker/collection capacities; no secondary cursor index is kept.
+#[derive(Debug)]
+#[must_use = "retain pending payloads through completion or explicit recovery transfer"]
+pub struct PendingDeliveries {
+    limit: std::num::NonZeroUsize,
+    deliveries: Vec<RetainedDelivery>,
+}
+
+impl PendingDeliveries {
+    pub fn new(limit: std::num::NonZeroUsize) -> Self {
+        Self {
+            limit,
+            deliveries: Vec::new(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.deliveries.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.deliveries.is_empty()
+    }
+    pub fn capacity(&self) -> usize {
+        self.limit.get()
+    }
+
+    pub fn get(&self, id: DeliveryObligationId) -> Option<&RetainedDelivery> {
+        self.deliveries
+            .iter()
+            .find(|delivery| delivery.obligation.id == id)
+    }
+
+    /// Correlate against the real tracker. Ambiguity fails closed rather than
+    /// selecting an arbitrary registration. Errors return the charged outcome.
+    #[allow(clippy::result_large_err)]
+    pub fn ingest(
+        &mut self,
+        outcome: WorkerOutcome,
+        tracker: &AcknowledgementTracker,
+    ) -> Result<DeliveryObligationId, (PendingDeliveryError, WorkerOutcome)> {
+        let correlate = || {
+            if self.len() == self.capacity() {
+                return Err(PendingDeliveryError::Full);
+            }
+            let mut matches = tracker.obligations().filter(|obligation| {
+                obligation.destination == outcome.descriptor.id
+                    && obligation.kind == outcome.descriptor.kind
+                    && obligation.policy == outcome.descriptor.policy
+                    && &obligation.range.first == outcome.payload.batch().first_cursor()
+                    && &obligation.range.last == outcome.payload.batch().last_cursor()
+            });
+            let id = matches
+                .next()
+                .ok_or(PendingDeliveryError::UnknownObligation)?
+                .id;
+            if matches.next().is_some() {
+                return Err(PendingDeliveryError::AmbiguousObligation);
+            }
+            if self.get(id).is_some() {
+                return Err(PendingDeliveryError::DuplicateObligation);
+            }
+            Ok(id)
+        };
+        let id = match correlate() {
+            Ok(id) => id,
+            Err(error) => return Err((error, outcome)),
+        };
+        if self.deliveries.try_reserve(1).is_err() {
+            return Err((PendingDeliveryError::AllocationFailed, outcome));
+        }
+        let delivery = RetainedDelivery::bind(outcome, id, tracker)
+            .map_err(|(error, outcome)| (PendingDeliveryError::Completion(error), outcome))?;
+        self.deliveries.push(delivery);
+        Ok(id)
+    }
+
+    /// Ingestion does not advance progress; applying rejection is explicit.
+    pub fn apply_admission(
+        &self,
+        id: DeliveryObligationId,
+        tracker: &mut AcknowledgementTracker,
+    ) -> Result<(), PendingDeliveryError> {
+        self.get(id)
+            .ok_or(PendingDeliveryError::UnknownObligation)?
+            .apply_admission(tracker)
+            .map_err(PendingDeliveryError::Completion)
+    }
+
+    pub fn apply_completion(
+        &self,
+        tracker: &mut AcknowledgementTracker,
+        completion: &DestinationCompletion,
+    ) -> Result<DeliveryObligationId, PendingDeliveryError> {
+        let mut matches = self.deliveries.iter().filter(|delivery| {
+            delivery.obligation.destination == completion.destination
+                && delivery.obligation.range.last == completion.through
+        });
+        let delivery = matches
+            .next()
+            .ok_or(PendingDeliveryError::UnknownObligation)?;
+        if matches.next().is_some() {
+            return Err(PendingDeliveryError::AmbiguousObligation);
+        }
+        delivery
+            .apply_completion(tracker, completion)
+            .map_err(PendingDeliveryError::Completion)?;
+        Ok(delivery.obligation.id)
+    }
+
+    /// Failed handoff restores the charged owner. Successful handoff transfers
+    /// payload release/recovery responsibility to the caller, independently of
+    /// the journal's terminal reporting responsibility.
+    pub fn finalize_into(
+        &mut self,
+        id: DeliveryObligationId,
+        tracker: &mut AcknowledgementTracker,
+        journal: &mut FinalizationJournal,
+    ) -> Result<FinalizedDelivery, FinalizationHandoffError> {
+        let index = self
+            .deliveries
+            .iter()
+            .position(|delivery| delivery.obligation.id == id)
+            .ok_or(FinalizationHandoffError::Acknowledgement(
+                AcknowledgementError::UnknownObligation,
+            ))?;
+        let delivery = self.deliveries.swap_remove(index);
+        match delivery.finalize_into(tracker, journal) {
+            Ok(finalized) => Ok(finalized),
+            Err((error, delivery)) => {
+                self.deliveries.push(delivery);
+                Err(error)
+            }
+        }
+    }
+
+    /// Explicit recovery transfer leaves the authoritative obligation tracked.
+    pub fn take_for_recovery(&mut self, id: DeliveryObligationId) -> Option<RetainedDelivery> {
+        let index = self
+            .deliveries
+            .iter()
+            .position(|delivery| delivery.obligation.id == id)?;
+        Some(self.deliveries.swap_remove(index))
+    }
+}

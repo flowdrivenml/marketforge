@@ -1067,6 +1067,10 @@ impl AcknowledgementTracker {
             .map(|tracked| tracked.status)
     }
 
+    pub(crate) fn obligations(&self) -> impl Iterator<Item = &DeliveryObligation> {
+        self.obligations.values().map(|tracked| &tracked.obligation)
+    }
+
     /// Immutable correlation metadata from the authoritative registration.
     pub fn obligation(&self, id: DeliveryObligationId) -> Option<&DeliveryObligation> {
         self.obligations.get(&id).map(|tracked| &tracked.obligation)

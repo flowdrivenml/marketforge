@@ -355,21 +355,26 @@ fn destination_worker_registered_ordered_fanout_preserves_obligation_stages() {
     );
     use marketforge_engine::live::{
         ports::routing::DestinationCompletion,
-        routing::{acknowledgement::FinalizationJournal, completion::RetainedDelivery},
+        routing::{acknowledgement::FinalizationJournal, completion::PendingDeliveries},
     };
-    let delivery = RetainedDelivery::bind(outcome, DeliveryObligationId(1), &tracker).unwrap();
-    delivery.apply_admission(&mut tracker).unwrap();
+    let mut deliveries = PendingDeliveries::new(std::num::NonZeroUsize::new(1).unwrap());
+    let id = deliveries.ingest(outcome, &tracker).unwrap();
+    assert_eq!(id, DeliveryObligationId(1));
+    deliveries.apply_admission(id, &mut tracker).unwrap();
     assert_eq!(
         tracker.status(DeliveryObligationId(1)),
         Some(DeliveryStatus::Progress(DeliveryStage::Queued))
     );
     let mut journal = FinalizationJournal::new(1).unwrap();
-    let (_, delivery) = delivery
-        .finalize_into(&mut tracker, &mut journal)
-        .unwrap_err();
+    assert!(
+        deliveries
+            .finalize_into(id, &mut tracker, &mut journal)
+            .is_err()
+    );
+    assert_eq!(deliveries.len(), 1);
     assert!(journal.is_empty());
     assert!(!worker.snapshot().is_drained());
-    delivery
+    deliveries
         .apply_completion(
             &mut tracker,
             &DestinationCompletion {
@@ -379,12 +384,15 @@ fn destination_worker_registered_ordered_fanout_preserves_obligation_stages() {
             },
         )
         .unwrap();
-    let (_, delivery) = delivery
-        .finalize_into(&mut tracker, &mut journal)
-        .unwrap_err();
+    assert!(
+        deliveries
+            .finalize_into(id, &mut tracker, &mut journal)
+            .is_err()
+    );
+    assert_eq!(deliveries.len(), 1);
     assert!(journal.is_empty());
     assert!(!worker.snapshot().is_drained());
-    delivery
+    deliveries
         .apply_completion(
             &mut tracker,
             &DestinationCompletion {
@@ -394,7 +402,10 @@ fn destination_worker_registered_ordered_fanout_preserves_obligation_stages() {
             },
         )
         .unwrap();
-    let finalized = delivery.finalize_into(&mut tracker, &mut journal).unwrap();
+    let finalized = deliveries
+        .finalize_into(id, &mut tracker, &mut journal)
+        .unwrap();
+    assert!(deliveries.is_empty());
     assert_eq!(journal.len(), 1);
     assert!(tracker.is_empty());
     assert!(!worker.snapshot().is_drained());
@@ -1014,4 +1025,152 @@ fn retained_delivery_does_not_trust_forged_valid_admission_label() {
         assert!(worker.snapshot().is_drained());
         assert_eq!(tracker.len(), 1);
     }
+}
+
+#[test]
+fn pending_deliveries_correlate_complete_and_retain_failed_handoffs() {
+    use marketforge_engine::live::{
+        model::delivery::{DeliveryStage, DeliveryStatus},
+        ports::routing::DestinationCompletion,
+        routing::{
+            acknowledgement::{DeliveryObligationId, FinalizationJournal},
+            completion::{PendingDeliveries, PendingDeliveryError},
+        },
+    };
+    let (worker, outcome, mut tracker) = retained_fixture(0);
+    let mut pending = PendingDeliveries::new(std::num::NonZeroUsize::new(1).unwrap());
+    let id = pending.ingest(outcome, &tracker).unwrap();
+    assert_eq!(id, DeliveryObligationId(1));
+    pending.apply_admission(id, &mut tracker).unwrap();
+    assert_eq!(
+        tracker.status(id),
+        Some(DeliveryStatus::Progress(DeliveryStage::Queued))
+    );
+    let mut journal = FinalizationJournal::new(1).unwrap();
+    assert!(
+        pending
+            .finalize_into(id, &mut tracker, &mut journal)
+            .is_err()
+    );
+    assert_eq!(pending.len(), 1);
+    assert!(!worker.snapshot().is_drained());
+    let (other_worker, other_outcome, _) = retained_fixture(0);
+    let (error, other_outcome) = pending.ingest(other_outcome, &tracker).unwrap_err();
+    assert_eq!(error, PendingDeliveryError::Full);
+    assert!(!other_worker.snapshot().is_drained());
+    let mut completion = DestinationCompletion {
+        destination: DestinationId(999),
+        through: pending
+            .get(id)
+            .unwrap()
+            .payload()
+            .batch()
+            .last_cursor()
+            .clone(),
+        status: DeliveryStatus::Progress(DeliveryStage::Durable),
+    };
+    assert_eq!(
+        pending.apply_completion(&mut tracker, &completion),
+        Err(PendingDeliveryError::UnknownObligation)
+    );
+    completion.destination = DestinationId(7);
+    assert_eq!(pending.apply_completion(&mut tracker, &completion), Ok(id));
+    completion.status = DeliveryStatus::Progress(DeliveryStage::Queued);
+    assert!(pending.apply_completion(&mut tracker, &completion).is_err());
+    assert_eq!(
+        tracker.status(id),
+        Some(DeliveryStatus::Progress(DeliveryStage::Durable))
+    );
+    let finalized = pending
+        .finalize_into(id, &mut tracker, &mut journal)
+        .unwrap();
+    assert!(pending.is_empty());
+    assert!(tracker.is_empty());
+    assert_eq!(journal.len(), 1);
+    assert!(!worker.snapshot().is_drained());
+    drop(finalized);
+    assert!(worker.snapshot().is_drained());
+    drop(other_outcome);
+    assert!(other_worker.snapshot().is_drained());
+}
+
+#[test]
+fn pending_deliveries_reject_ambiguous_unknown_and_duplicate_obligations() {
+    use marketforge_engine::live::routing::{
+        acknowledgement::{AcknowledgementTracker, DeliveryObligationId},
+        completion::{PendingDeliveries, PendingDeliveryError},
+    };
+    let (worker, outcome, mut tracker) = retained_fixture(0);
+    let mut pending = PendingDeliveries::new(std::num::NonZeroUsize::new(2).unwrap());
+    let empty = AcknowledgementTracker::new(1).unwrap();
+    let (error, outcome) = pending.ingest(outcome, &empty).unwrap_err();
+    assert_eq!(error, PendingDeliveryError::UnknownObligation);
+    assert!(pending.is_empty());
+    assert!(!worker.snapshot().is_drained());
+    let mut duplicate = tracker.obligation(DeliveryObligationId(1)).unwrap().clone();
+    duplicate.id = DeliveryObligationId(2);
+    tracker.register(duplicate).unwrap();
+    let (error, outcome) = pending.ingest(outcome, &tracker).unwrap_err();
+    assert_eq!(error, PendingDeliveryError::AmbiguousObligation);
+    let (_, second, clean_tracker) = retained_fixture(0);
+    let id = pending.ingest(outcome, &clean_tracker).unwrap();
+    let (error, second) = pending.ingest(second, &clean_tracker).unwrap_err();
+    assert_eq!(error, PendingDeliveryError::DuplicateObligation);
+    assert_eq!(pending.len(), 1);
+    assert!(
+        pending
+            .take_for_recovery(DeliveryObligationId(999))
+            .is_none()
+    );
+    let retained = pending.take_for_recovery(id).unwrap();
+    assert!(pending.is_empty());
+    assert_eq!(clean_tracker.len(), 1);
+    assert!(!worker.snapshot().is_drained());
+    drop(retained);
+    assert!(worker.snapshot().is_drained());
+    drop(second);
+}
+
+#[test]
+fn pending_deliveries_rejection_and_full_journal_preserve_recovery_ownership() {
+    use marketforge_engine::live::{
+        model::delivery::DeliveryStatus,
+        routing::{
+            acknowledgement::{DeliveryAcknowledgement, DeliveryObligationId, FinalizationJournal},
+            completion::PendingDeliveries,
+        },
+    };
+    let (worker, outcome, mut tracker) = retained_fixture(1);
+    let mut pending = PendingDeliveries::new(std::num::NonZeroUsize::new(1).unwrap());
+    let id = pending.ingest(outcome, &tracker).unwrap();
+    pending.apply_admission(id, &mut tracker).unwrap();
+    let mut other = tracker.obligation(id).unwrap().clone();
+    other.id = DeliveryObligationId(2);
+    tracker.register(other.clone()).unwrap();
+    tracker
+        .acknowledge(DeliveryAcknowledgement {
+            obligation: other.id,
+            destination: other.destination,
+            range: other.range,
+            status: DeliveryStatus::Failed(DeliveryFailure::Rejected),
+        })
+        .unwrap();
+    let mut full = FinalizationJournal::new(1).unwrap();
+    tracker.finalize_into(other.id, &mut full).unwrap();
+    assert!(pending.finalize_into(id, &mut tracker, &mut full).is_err());
+    assert_eq!(pending.len(), 1);
+    assert_eq!(
+        tracker.status(id),
+        Some(DeliveryStatus::Failed(DeliveryFailure::Unavailable))
+    );
+    assert!(!worker.snapshot().is_drained());
+    let mut available = FinalizationJournal::new(1).unwrap();
+    let finalized = pending
+        .finalize_into(id, &mut tracker, &mut available)
+        .unwrap();
+    assert!(pending.is_empty());
+    assert!(tracker.is_empty());
+    assert!(!worker.snapshot().is_drained());
+    drop(finalized);
+    assert!(worker.snapshot().is_drained());
 }
