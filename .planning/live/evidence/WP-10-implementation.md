@@ -313,3 +313,56 @@ Remaining: production EventRouterPort owner, worker/completion/recovery lifetime
 observations and deadline shutdown composition. No-subscriber discard policy is
 not introduced. Earlier foundational gates remain open. No package accepted.
 Next authorized executable work: WP-10 completion; safe to continue autonomously.
+
+
+## Continuation — authoritative owned destination observations (2026-10-21)
+
+Status: Partial. Baseline `fa272e7`, branch `codex/wp06-completion`.
+Read AGENTS, autonomous plan, decisions, STATUS and WP-10 roadmap; inspected real
+registry, queues, capacity owner, ordering and consumer witnesses. WP-10 remains
+the next executable package. Pre-existing untracked launcher preserved.
+
+Implemented:
+- Public owned RouterSnapshot/DestinationSnapshot from the actual registry,
+  consistent membership/revision under its read lock, bounded by its configured
+  destination limit, deterministic ID ordering, explicit registry shutdown.
+- QueueObservation samples queue state and capacity in queue-to-capacity lock
+  order, excluding insertion/dequeue during the sample. Occupancy includes
+  reserved and consumer-held resources and is explicitly distinct from queue
+  depth. Adapter-only registrations report None, never fabricated zero depth.
+- No adapter callbacks or second mutable resource owner. Registry observations
+  are not a global transaction across independent destination consumers; they
+  cannot establish delivery, durability, readiness or historical coverage.
+- Two deterministic production-interface witnesses exercise reserved capacity,
+  enqueue/dequeue, retained consumer capacity, shutdown/drain, owned snapshots,
+  empty/bounded/sorted membership, rejection, removal and revision changes.
+
+Verification (engine/ unless stated):
+- Focused `cargo test --locked --offline --no-default-features --features live
+  --test live_suite router_snapshot`: exit 0, 2 passed. Initial test append used
+  a root-relative path from engine/ and failed before writing; accompanying
+  zero-match run is not pass evidence. Corrected and executed both witnesses.
+- Root `./scripts/verify-live.sh full`: exit 0. Exact commands:
+  `cargo fmt --all -- --check`; `cargo check --locked --offline
+  --no-default-features --features live --lib`; `cargo test --locked --offline
+  --no-default-features --features live --lib` (130 passed); same test flags with
+  `--test live_suite` (395 passed, 2 opt-in ignored); with `--doc` (1 passed).
+  Receipts: `engine/target/live-verification/20261021T040447Z-2/`.
+- `cargo check --locked --offline --no-default-features --features live,historical`:
+  exit 0. Existing dead-code warnings remain.
+- Root `git diff --check`: exit 0.
+
+Changed: routing/{mod,queue,router,snapshot}.rs, tests/live/router_obligations.rs,
+STATUS.md and this ledger. No SQL, external exchanges, Python/historical execution,
+dependencies/lockfile or ignored configuration changes. No push. Opt-in SQL,
+performance and historical baseline tests not rerun.
+
+Remaining acceptance ledger: ordered bounded tracked fan-out and optional queue
+attempts retained; concrete destination observations now implemented. Production
+EventRouterPort owner, bounded worker scheduling, completion/recovery lifetime,
+native metrics/control-port projection and deadline shutdown composition remain
+unverified/unimplemented. These observations alone do not satisfy the full
+control snapshot/metrics criterion. Earlier foundational gates are unchanged.
+WP-10 is not ReadyForReview or Accepted. WP-11–29 remain pending. Next authorized
+executable work is WP-10 completion; further autonomous implementation is safe.
+Checkpoint: local commit containing this continuation, implementation and tests.

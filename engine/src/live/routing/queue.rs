@@ -82,6 +82,15 @@ pub struct QueueSnapshot {
     pub closed: bool,
 }
 
+/// One queue observation taken with insertion/dequeue excluded. Capacity includes
+/// reservations and consumer-held batches, so it must not be called queue depth.
+/// Independent capacity releases may occur immediately after this observation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueueObservation {
+    pub queue: QueueSnapshot,
+    pub capacity: super::destination::CapacityUsage,
+}
+
 #[derive(Debug, Default)]
 struct QueueState {
     batches: VecDeque<QueuedBatch>,
@@ -392,6 +401,10 @@ impl DestinationQueue {
     }
 
     pub fn snapshot(&self) -> QueueSnapshot {
+        self.observe().queue
+    }
+
+    pub fn observe(&self) -> QueueObservation {
         let state = self
             .inner
             .state
@@ -406,11 +419,15 @@ impl DestinationQueue {
             queued_bytes += item.bytes();
         }
 
-        QueueSnapshot {
-            queued_batches: state.batches.len(),
-            queued_events,
-            queued_bytes,
-            closed: state.closed,
+        QueueObservation {
+            queue: QueueSnapshot {
+                queued_batches: state.batches.len(),
+                queued_events,
+                queued_bytes,
+                closed: state.closed,
+            },
+            // Preserve insertion's queue -> capacity lock order.
+            capacity: self.inner.capacity.usage(),
         }
     }
 

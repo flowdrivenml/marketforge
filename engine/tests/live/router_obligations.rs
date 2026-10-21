@@ -2910,3 +2910,105 @@ fn optional_only_ordered_success_budget_and_shutdown() {
         OptionalOrderedOutcome::Rejected { .. }
     ));
 }
+
+#[test]
+fn router_snapshot_distinguishes_queue_depth_from_reserved_and_inflight_capacity() {
+    use marketforge_engine::live::{
+        model::memory::RetainedSize,
+        routing::{destination::DestinationCapacity, queue::DestinationQueue},
+    };
+    let registry = RouterRegistry::with_destination_limit(2).unwrap();
+    let destination =
+        obligation_test_destination(2, DestinationKind::Recording, DeliveryPolicy::Required);
+    let queue = DestinationQueue::new(
+        DestinationCapacity::new(destination.descriptor().capacity, 2).unwrap(),
+    );
+    registry.register_queue(destination, queue.clone()).unwrap();
+    let batch = obligation_test_batch();
+    let bytes = batch.retained_size_bytes().unwrap();
+    let reservation = queue.capacity().try_reserve(batch.len(), bytes).unwrap();
+    let sample = registry.snapshot().destinations[0].queue.unwrap();
+    assert_eq!(sample.queue.queued_events, 0);
+    assert_eq!(sample.capacity.occupied_events, batch.len());
+    drop(reservation);
+    queue.try_enqueue(batch.clone()).unwrap();
+    let queued = registry.snapshot();
+    let sample = queued.destinations[0].queue.unwrap();
+    assert_eq!(sample.queue.queued_events, batch.len());
+    assert_eq!(sample.queue.queued_bytes, bytes);
+    assert_eq!(sample.capacity.occupied_bytes, bytes);
+    let held = queue.try_dequeue().unwrap();
+    let sample = registry.snapshot().destinations[0].queue.unwrap();
+    assert_eq!(sample.queue.queued_batches, 0);
+    assert_eq!(sample.capacity.occupied_bytes, bytes);
+    queue.shutdown();
+    let closed = registry.snapshot().destinations[0].queue.unwrap();
+    assert!(closed.queue.closed);
+    assert!(closed.capacity.shutting_down);
+    assert_eq!(closed.capacity.occupied_bytes, bytes);
+    drop(held);
+    assert_eq!(
+        registry.snapshot().destinations[0]
+            .queue
+            .unwrap()
+            .capacity
+            .occupied_bytes,
+        0
+    );
+    assert_eq!(
+        queued.destinations[0].queue.unwrap().queue.queued_bytes,
+        bytes
+    );
+}
+
+#[test]
+fn router_snapshot_has_bounded_sorted_owned_membership() {
+    let registry = RouterRegistry::with_destination_limit(2).unwrap();
+    assert!(registry.snapshot().destinations.is_empty());
+    for id in [8, 3] {
+        registry
+            .register(obligation_test_destination(
+                id,
+                DestinationKind::Recording,
+                DeliveryPolicy::Required,
+            ))
+            .unwrap();
+    }
+    let before = registry.snapshot();
+    assert_eq!(before.destination_limit, 2);
+    assert_eq!(before.revision, 2);
+    assert_eq!(
+        before
+            .destinations
+            .iter()
+            .map(|entry| entry.descriptor.id.0)
+            .collect::<Vec<_>>(),
+        vec![3, 8]
+    );
+    assert!(
+        before
+            .destinations
+            .iter()
+            .all(|entry| entry.queue.is_none())
+    );
+    assert!(
+        registry
+            .register(obligation_test_destination(
+                9,
+                DestinationKind::Recording,
+                DeliveryPolicy::Required
+            ))
+            .is_err()
+    );
+    assert_eq!(registry.snapshot(), before);
+    registry.unregister(DestinationId(3)).unwrap();
+    let removed = registry.snapshot();
+    assert_eq!(removed.revision, 3);
+    assert_eq!(removed.destinations.len(), 1);
+    registry.shutdown();
+    let stopped = registry.snapshot();
+    assert!(stopped.shutting_down);
+    assert_eq!(stopped.destinations, removed.destinations);
+    assert!(!before.shutting_down);
+    assert_eq!(before.destinations.len(), 2);
+}

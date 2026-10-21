@@ -39,6 +39,22 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest continuation adds real owned router/destination snapshots, sorted and bounded
+by the authoritative registry limit. Queue observations distinguish queued depth
+from capacity retained by reservations and consumer-held batches; closure and
+capacity shutdown remain distinct. Two deterministic consumer witnesses pass.
+Final verification exits 0: formatting, Live check, 130 library / 395 integration
+(2 opt-in ignored) / 1 doctest; combined Live+historical compilation also exits 0.
+Receipts: `engine/target/live-verification/20261021T040447Z-2/`.
+WP-10 remains Partial: production EventRouterPort owner, workers, completion and
+recovery lifetime, metrics/control-port binding and deadline shutdown composition
+remain. Earlier WP-05/06/07/09 gates remain open; WP-11–29 remain pending.
+Next authorized executable work remains WP-10; safe autonomous work can continue.
+No SQL/exchange access, historical/Python/dependency/ignored-config changes or
+push. Pre-existing untracked launcher preserved. Checkpoint: the local commit
+carrying this entry and the matching WP-10 evidence continuation.
+
+
 Final verification: formatting, Live check, 130 library tests, 393 integration
 tests (2 opt-in ignored), 1 doctest, and combined Live+historical compilation all
 exit 0. Receipts: `engine/target/live-verification/20261021T040223Z-3/`.

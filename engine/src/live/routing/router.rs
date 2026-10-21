@@ -663,6 +663,28 @@ impl RouterRegistry {
         state.shutting_down = true;
     }
 
+    /// Owned observation from the authoritative registry. Membership and revision
+    /// are consistent; individual queue samples are observational, not a global
+    /// transaction across independent consumers. No adapter callbacks run here.
+    pub fn snapshot(&self) -> super::snapshot::RouterSnapshot {
+        let state = self.state.read().unwrap_or_else(|e| e.into_inner());
+        let mut destinations: Vec<_> = state
+            .destinations
+            .values()
+            .map(|entry| super::snapshot::DestinationSnapshot {
+                descriptor: entry.descriptor,
+                queue: entry.queue.as_ref().map(DestinationQueue::observe),
+            })
+            .collect();
+        destinations.sort_unstable_by_key(|entry| entry.descriptor.id.0);
+        super::snapshot::RouterSnapshot {
+            revision: state.revision,
+            shutting_down: state.shutting_down,
+            destination_limit: state.max_destinations,
+            destinations,
+        }
+    }
+
     pub fn revision(&self) -> u64 {
         self.state
             .read()
