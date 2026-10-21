@@ -39,6 +39,25 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest checkpoint `358c34e` connects terminal reporting to timed delivery turns
+through `DeliveryDriver::drive_registered_reporting`. One turn processes at most
+one authoritative journal record; temporary failures keep their retry deadline,
+permanent failures remain escalated, and reporting continues after admission
+closes. Successful reporting wakes continued work and releases the retry timer on
+complete drain. Scheduling failures remain explicit alongside reporting outcomes.
+Two deterministic integration witnesses cover retry/no-spin/drain and permanent
+failure retention during timer-capacity exhaustion.
+Final verification exits 0: formatting, Live check, 134 library / 454 integration
+(2 opt-in ignored) / 1 doctest; combined Live+historical check also exits 0.
+Receipts: `engine/target/live-verification/20261021T052956Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort ordered
+composition, concrete reporting/runtime integration and native metrics/control
+integration remain. Earlier WP-05/06/07/09 gates persist; WP-11–29 remain pending.
+Further autonomous implementation is safe. No database/exchange traffic, push,
+Python/historical execution, dependency or ignored configuration changes.
+Pre-existing untracked launcher preserved. See WP-10 evidence; no acceptance claimed.
+
+
 Latest checkpoint `001633c` adds bounded periodic delivery maintenance through
 `DeliveryDriver::drive_registered_with_retry`. One owned timer survives unrelated
 notifications without postponement, releases capacity before rearming, and remains

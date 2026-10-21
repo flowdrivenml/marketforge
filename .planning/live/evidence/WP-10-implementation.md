@@ -1963,3 +1963,56 @@ supply a functioning timer. This is in-process maintenance scheduling, not daemo
 composition or durable recovery. Earlier WP-05/06/07/09 gates remain; WP-11–29
 pending. Next authorized package: WP-10 completion. Further autonomous work can
 safely continue. No package acceptance or project completion claimed.
+
+## Continuation — terminal reporting in timed delivery turns (2026-10-21)
+
+Status: Partial. Starting checkpoint `08b02d0`, branch `codex/wp06-completion`.
+Inspected instructions, autonomous plan, decisions, status, WP-10 prerequisites
+and acceptance, current delivery/reporting/worker/journal consumers and tests.
+Next executable package remains WP-10. Existing untracked launcher preserved.
+
+Implementation checkpoint: `358c34e`. `DeliveryDriver::drive_registered_reporting`
+composes existing timed registered maintenance with the existing reporting
+consumer against the same owned journal. Each turn processes at most one record.
+Deferred temporary failures do not self-wake/retry early; permanent failures stay
+escalated. Reporting is independent of timer registration success and continues
+while closed. Successful reporting schedules continued progress; complete closed
+owner drain cancels its timer immediately. No second tracker/journal or reporter
+policy was introduced. Reporter calls must remain bounded/nonblocking/idempotent;
+this synchronous port cannot preempt a handler or prove external durability.
+
+Acceptance ledger for this continuation:
+- Implemented: bounded reporting/delivery composition, explicit independent timer
+  errors, retry eligibility, escalation retention, closed-owner reporting/drain.
+- Witnesses: real finalization journal populated through tracker failure and
+  finalization; manual timer/clock; temporary failure then success after deadline;
+  no premature handler calls or busy wakes; permanent failure under exhausted
+  timer capacity remains inspectable and prevents false shutdown success.
+- Still missing for package acceptance: production EventRouterPort ordered
+  admission composition, concrete reporter/runtime integration, native metrics
+  and control snapshot integration. This change does not certify the daemon.
+
+Verification (all final exits 0):
+- From engine/: cargo test --locked --offline --no-default-features --features live
+  --test live_suite registered_reporting: initial witness 1 passed. It initially
+  emitted two unused-Result warnings; both fixed by asserting clock/timer success.
+- Root ./scripts/verify-live.sh full: cargo fmt --all -- --check; cargo check
+  --locked --offline --no-default-features --features live --lib; cargo test with
+  those same flags and --lib (134 passed), --test live_suite (454 passed, 2 opt-in
+  ignored), --doc (1 passed). Final receipts:
+  engine/target/live-verification/20261021T052956Z-2/.
+- From engine/: cargo check --locked --offline --no-default-features --features
+  live,historical: exit 0, existing dead-code warnings only.
+- Root git diff --check: exit 0 before implementation checkpoint.
+- Earlier full run passed 453 integration tests before the second witness; final
+  receipts supersede that run. No compiler or behavioral test failures.
+
+Changed: engine/src/live/routing/driver.rs, engine/tests/live/reporting.rs,
+STATUS.md and this ledger. No SQL/exchange access, remote push, dependency/lockfile,
+ignored configuration or Python/historical execution changes. Opt-in SQL/performance
+and historical-only suites not run; historical zero-stream baseline not rechecked.
+Documentation checkpoint is the commit carrying this entry.
+
+Earlier WP-05/06/07/09 gates remain; WP-11–29 pending. Next authorized executable
+package: WP-10 completion. Further autonomous implementation can safely continue.
+No package acceptance or entire-project completion claimed.
