@@ -463,6 +463,11 @@ impl ScheduledIngressReporting {
             }
             IngressReportingStep::Reported => {
                 self.reset();
+                // Outcomes may have queued before this coordinator registered
+                // a waiter. Charge release only notifies shutdown at zero usage;
+                // it cannot schedule the rest of an existing backlog. Request
+                // one more bounded turn, which parks if no outcome remains.
+                cx.waker().wake_by_ref();
                 Ok(Poll::Ready(ScheduledIngressStep::Reported))
             }
             IngressReportingStep::Retained(error) => {

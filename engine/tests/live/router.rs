@@ -3321,6 +3321,112 @@ mod ingress_witnesses {
     }
 
     #[test]
+    fn scheduled_ingress_reporting_drains_backlog_without_external_notifications() {
+        use marketforge_engine::live::routing::{
+            admission::{DeadlineFuture, DeadlineTimer},
+            ingress_reporting::{
+                IngressOutcomes, IngressReporter, ScheduledIngressReporting, ScheduledIngressStep,
+            },
+            reporting::ReportingError,
+        };
+        use std::{
+            sync::atomic::{AtomicUsize, Ordering},
+            task::Wake,
+            time::Duration,
+        };
+        struct Counter(AtomicUsize);
+        impl Wake for Counter {
+            fn wake(self: Arc<Self>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        struct NoTimer;
+        impl DeadlineTimer for NoTimer {
+            fn sleep_until(&self, _: Instant) -> DeadlineFuture {
+                panic!("successful reporting must not require a retry timer")
+            }
+        }
+        struct Reporter(Vec<u64>);
+        impl IngressReporter for Reporter {
+            fn report(
+                &mut self,
+                batch: &EventBatch,
+                _: &mut IngressOutcome,
+            ) -> Result<(), ReportingError> {
+                self.0.push(batch.first_cursor().offset);
+                Ok(())
+            }
+        }
+        for closed in [false, true] {
+            let fixture = Fixture::new();
+            let queue = fixture.queue(1, DeliveryPolicy::BestEffort);
+            let journal = IngressOutcomes::new(ResourceUsage {
+                items: 3,
+                bytes: 100_000,
+            })
+            .unwrap();
+            // All admissions finish before the reporting coordinator runs.
+            // The third optional destination enqueue overflows; its complete
+            // producer outcome still belongs in this ordered reporting trace.
+            for offset in 1..=3 {
+                let batch = EventBatch::new(vec![l2_event("router-source", 1, offset)]).unwrap();
+                ready(journal.admit(&fixture.ingress(), batch, context())).unwrap();
+            }
+            if closed {
+                journal.close();
+            }
+            let counter = Arc::new(Counter(AtomicUsize::new(0)));
+            let waker = Waker::from(counter.clone());
+            let mut cx = Context::from_waker(&waker);
+            let mut scheduler = ScheduledIngressReporting::new(
+                Duration::from_secs(1),
+                NonZeroUsize::new(1).unwrap(),
+            )
+            .unwrap();
+            let mut reporter = Reporter(Vec::new());
+            for remaining in (0..3).rev() {
+                counter.0.store(0, Ordering::SeqCst);
+                assert_eq!(
+                    scheduler
+                        .poll_step(
+                            &journal,
+                            &mut reporter,
+                            &mut cx,
+                            fixture.clock.as_ref(),
+                            &NoTimer,
+                        )
+                        .unwrap(),
+                    Poll::Ready(ScheduledIngressStep::Reported)
+                );
+                assert_eq!(journal.snapshot().usage.items, remaining);
+                assert_eq!(
+                    counter.0.load(Ordering::SeqCst),
+                    1,
+                    "successful reporting must schedule the next bounded turn"
+                );
+            }
+            assert_eq!(reporter.0, vec![1, 2, 3]);
+            counter.0.store(0, Ordering::SeqCst);
+            assert_eq!(
+                scheduler
+                    .poll_step(
+                        &journal,
+                        &mut reporter,
+                        &mut cx,
+                        fixture.clock.as_ref(),
+                        &NoTimer,
+                    )
+                    .unwrap(),
+                Poll::Ready(ScheduledIngressStep::Idle)
+            );
+            assert_eq!(counter.0.load(Ordering::SeqCst), 0, "idle must park");
+            assert!(!scheduler.snapshot(&journal).timer_retained);
+            // Reporting progress does not discharge destination payload ownership.
+            assert_eq!(queue.observe().queue.queued_batches, 2);
+        }
+    }
+
+    #[test]
     fn complete_router_shutdown_preserves_independent_reporting_ownership() {
         use marketforge_engine::live::routing::{
             acknowledgement::{FinalizationRecord, FinalizationRetryPolicy},
