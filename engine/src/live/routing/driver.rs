@@ -37,6 +37,22 @@ pub enum DeliveryAdmissionError {
     Closed,
 }
 
+/// One bounded membership maintenance turn; no adapter operation is polled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use]
+pub struct RegistryWorkerSync {
+    pub workers_reaped: usize,
+    pub retired_reaped: usize,
+    pub attachment: Result<bool, RegistryWorkerSyncError>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegistryWorkerSyncError {
+    Closed,
+    Registry(super::router::RegistryWorkerError),
+    Scheduler(WorkerRegistrationError),
+}
+
 pub struct DeliveryDriver {
     closed: bool,
     supervisor: DeliverySupervisor,
@@ -88,6 +104,41 @@ impl DeliveryDriver {
     /// separately; neither operation establishes delivery completion.
     pub fn reap_drained_workers(&mut self) -> usize {
         self.supervisor.reap_drained_workers()
+    }
+
+    /// Reap drained ownership and attach at most one unclaimed registry queue.
+    /// Repeat on membership change or after a charge is released, not in a busy
+    /// loop after capacity failure. Retired queues take precedence over new ones.
+    /// A rejected fresh worker has never dequeued or polled an adapter: releasing
+    /// its lease leaves every payload and charge in the original registry queue.
+    /// Existing workers and their operations are never replaced or dropped here.
+    /// Shutdown permits reaping but fences new attachment.
+    pub fn sync_registry(
+        &mut self,
+        registry: &super::router::RouterRegistry,
+    ) -> RegistryWorkerSync {
+        let workers_reaped = self.reap_drained_workers();
+        let retired_reaped = registry.reap_retired();
+        let attachment =
+            if self.closed {
+                Err(RegistryWorkerSyncError::Closed)
+            } else {
+                match registry.claim_next_worker() {
+                    Ok(Some(worker)) => self.insert_worker(worker).map(|()| true).map_err(
+                        |(reason, fresh_worker)| {
+                            drop(fresh_worker);
+                            RegistryWorkerSyncError::Scheduler(reason)
+                        },
+                    ),
+                    Ok(None) => Ok(false),
+                    Err(reason) => Err(RegistryWorkerSyncError::Registry(reason)),
+                }
+            };
+        RegistryWorkerSync {
+            workers_reaped,
+            retired_reaped,
+            attachment,
+        }
     }
 
     pub fn is_closed(&self) -> bool {

@@ -594,6 +594,34 @@ impl RouterRegistry {
         Err(error)
     }
 
+    /// Claim one unowned queue, retired instances first, then active IDs in
+    /// deterministic order. The scan is bounded by the registry destination limit.
+    /// Direct adapters without queues are not worker candidates. No adapter code
+    /// is invoked under the membership fence. Existing worker leases are skipped.
+    pub fn claim_next_worker(
+        &self,
+    ) -> Result<Option<super::worker::DestinationWorker>, RegistryWorkerError> {
+        use super::worker::{DestinationWorker, WorkerCreationError};
+        let state = self.state.read().unwrap_or_else(|e| e.into_inner());
+        let mut active: Vec<_> = state.destinations.values().collect();
+        active.sort_by_key(|entry| entry.descriptor.id.0);
+        for entry in state.retired.iter().chain(active.into_iter()) {
+            let Some(queue) = entry.queue.clone() else {
+                continue;
+            };
+            match DestinationWorker::from_registered(
+                queue,
+                entry.destination.clone(),
+                entry.descriptor,
+            ) {
+                Ok(worker) => return Ok(Some(worker)),
+                Err(WorkerCreationError::AlreadyClaimed) => continue,
+                Err(reason) => return Err(RegistryWorkerError::Worker(reason)),
+            }
+        }
+        Ok(None)
+    }
+
     /// Register one destination instance.
     ///
     /// Multiple instances of the same destination kind are allowed,

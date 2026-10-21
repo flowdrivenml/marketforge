@@ -800,3 +800,106 @@ fn registry_retirement_bounds_repeated_same_id_instances_and_releases_each_charg
     assert!(registry.poll_shutdown(&mut cx).is_ready());
     assert_eq!(registry.reap_retired(), 1);
 }
+
+#[test]
+fn delivery_driver_sync_registry_preserves_capacity_blocked_queues_and_reaps_retirement() {
+    use marketforge_engine::live::routing::{
+        acknowledgement::{AcknowledgementTracker, FinalizationJournal},
+        destination::DestinationCapacity,
+        driver::{DeliveryDriver, RegistryWorkerSyncError},
+        queue::DestinationQueue,
+        supervisor::DeliverySupervisor,
+        tracking_recovery::TrackingRecovery,
+        worker::{DestinationWorkers, WorkerRegistrationError},
+    };
+    use std::num::NonZeroUsize;
+    let registry = RouterRegistry::with_destination_limit(3).unwrap();
+    let first_adapter = destination(1, DestinationKind::Publication, DeliveryPolicy::Required);
+    let first = DestinationQueue::new(
+        DestinationCapacity::new(first_adapter.descriptor().capacity, 1).unwrap(),
+    );
+    registry
+        .register_queue(first_adapter.clone(), first.clone())
+        .unwrap();
+    first.try_enqueue(batch()).unwrap();
+    // Hold the real charge externally so maintenance cannot reap this instance.
+    let held = first.try_dequeue().unwrap();
+    registry.unregister(DestinationId(1)).unwrap();
+    let replacement = DestinationQueue::new(
+        DestinationCapacity::new(first_adapter.descriptor().capacity, 1).unwrap(),
+    );
+    registry
+        .register_queue(first_adapter, replacement.clone())
+        .unwrap();
+    replacement.try_enqueue(batch()).unwrap();
+    let limit = NonZeroUsize::new(1).unwrap();
+    let mut driver = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(2).unwrap(),
+        TrackingRecovery::new(2).unwrap(),
+        FinalizationJournal::new(2).unwrap(),
+    );
+    let turn = driver.sync_registry(&registry);
+    assert_eq!(turn.attachment, Ok(true));
+    assert_eq!(turn.retired_reaped, 0);
+    assert!(driver.snapshot().workers.workers[0].1.closed);
+    let turn = driver.sync_registry(&registry);
+    assert_eq!(turn.workers_reaped, 0);
+    assert_eq!(
+        turn.attachment,
+        Err(RegistryWorkerSyncError::Scheduler(
+            WorkerRegistrationError::Full
+        ))
+    );
+    // Rejected fresh lease was released, with the original queued payload intact.
+    let retry = registry.claim_worker(DestinationId(1)).unwrap();
+    assert_eq!(retry.snapshot().queued_batches, 1);
+    drop(retry);
+    drop(held);
+    let turn = driver.sync_registry(&registry);
+    assert_eq!(turn.workers_reaped, 1);
+    assert_eq!(turn.retired_reaped, 1);
+    assert_eq!(turn.attachment, Ok(true));
+    assert!(!driver.snapshot().workers.workers[0].1.closed);
+    assert_eq!(driver.snapshot().workers.workers[0].1.queued_batches, 1);
+    assert_eq!(driver.sync_registry(&registry).attachment, Ok(false));
+    driver.close();
+    let turn = driver.sync_registry(&registry);
+    assert_eq!(turn.attachment, Err(RegistryWorkerSyncError::Closed));
+    assert_eq!(turn.workers_reaped, 0);
+    assert_eq!(replacement.observe().queue.queued_batches, 1);
+}
+
+#[test]
+fn registry_claim_next_worker_orders_active_ids_and_skips_existing_leases() {
+    use marketforge_engine::live::routing::{
+        destination::DestinationCapacity, queue::DestinationQueue,
+    };
+    let registry = RouterRegistry::with_destination_limit(3).unwrap();
+    // Direct adapters have no queue and must not block queue reconciliation.
+    registry
+        .register(destination(
+            0,
+            DestinationKind::Publication,
+            DeliveryPolicy::Required,
+        ))
+        .unwrap();
+    for id in [2, 1] {
+        let adapter = destination(id, DestinationKind::Publication, DeliveryPolicy::Required);
+        let queue = DestinationQueue::new(
+            DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap(),
+        );
+        registry.register_queue(adapter, queue).unwrap();
+    }
+    let first = registry.claim_next_worker().unwrap().unwrap();
+    assert!(registry.claim_worker(DestinationId(1)).is_err());
+    let second = registry.claim_next_worker().unwrap().unwrap();
+    assert!(registry.claim_worker(DestinationId(2)).is_err());
+    assert!(registry.claim_next_worker().unwrap().is_none());
+    drop(first);
+    assert!(registry.claim_worker(DestinationId(1)).is_ok());
+    drop(second);
+    registry.shutdown();
+    // Closed membership can still be claimed by the shutdown coordinator.
+    assert!(registry.claim_next_worker().unwrap().is_some());
+}
