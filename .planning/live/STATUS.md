@@ -39,6 +39,22 @@
 
 ### Autonomous continuation — 2026-10-21
 
+This continuation fixes delivery retry scheduling against the authoritative clock.
+Early-ready timer adapters return InvalidInput without coordinator self-wakes;
+pending timers are retired when due, and deadline crossings inside fresh polls
+schedule exactly one bounded turn. Deterministic production-driver witnesses
+pass (2 focused tests). Full Live verification exits 0: formatting, Live check,
+135 library / 461 integration (2 opt-in ignored) / 1 doctest; Live+historical
+compilation also exits 0. Receipts:
+`engine/target/live-verification/20261021T055511Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort facade,
+concrete runtime/reporter and Control composition remain. WP-05/06/07/09 open
+gates persist; WP-11–29 pending. Further autonomous implementation can safely
+continue. No database/exchange access, Python/historical execution edits,
+dependency or ignored configuration changes. Pre-existing launcher preserved.
+Checkpoint: commit carrying this entry and the WP-10 evidence continuation.
+
+
 Latest implementation checkpoint `5cd2a74` fixes metric deadline crossings during
 polling: readiness is followed by an authoritative clock check before rearming
 or rejecting an early-ready timer. The existing native collector witness covers

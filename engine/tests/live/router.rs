@@ -1472,6 +1472,126 @@ fn registered_driver_retry_timer_is_bounded_and_drains_external_payload_charge()
 }
 
 #[test]
+fn registered_driver_retry_uses_clock_and_rejects_early_timers_without_busy_wakes() {
+    use marketforge_engine::live::{
+        foundation::{
+            clock::{ManualClock, MonotonicClock},
+            deadline::ManualDeadlineTimer,
+        },
+        model::error::ErrorCode,
+        routing::{
+            acknowledgement::{AcknowledgementTracker, FinalizationJournal},
+            admission::{DeadlineFuture, DeadlineTimer},
+            driver::DeliveryDriver,
+            supervisor::DeliverySupervisor,
+            tracking_recovery::TrackingRecovery,
+            worker::DestinationWorkers,
+        },
+    };
+    use std::{
+        num::NonZeroUsize,
+        sync::atomic::{AtomicUsize, Ordering},
+        task::{Context, Wake, Waker},
+        time::{Duration, Instant},
+    };
+    struct Counter(AtomicUsize);
+    impl Wake for Counter {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    struct Early;
+    impl DeadlineTimer for Early {
+        fn sleep_until(&self, _: Instant) -> DeadlineFuture {
+            Box::pin(async {})
+        }
+    }
+    struct Crossing(Arc<ManualClock>);
+    impl DeadlineTimer for Crossing {
+        fn sleep_until(&self, _: Instant) -> DeadlineFuture {
+            let clock = self.0.clone();
+            Box::pin(async move {
+                clock.advance(Duration::from_secs(1)).unwrap();
+            })
+        }
+    }
+    let now = Instant::now();
+    let interval = Duration::from_secs(1);
+    let clock = Arc::new(ManualClock::new(now, 0));
+    let timer = ManualDeadlineTimer::new(now, 1).unwrap();
+    let registry = RouterRegistry::new();
+    let limit = NonZeroUsize::new(1).unwrap();
+    let mut driver = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(2).unwrap(),
+        TrackingRecovery::new(2).unwrap(),
+        FinalizationJournal::new(2).unwrap(),
+    );
+    let wakes = Arc::new(Counter(AtomicUsize::new(0)));
+    let waker = Waker::from(wakes.clone());
+    let mut cx = Context::from_waker(&waker);
+    for _ in 0..3 {
+        assert_eq!(
+            driver
+                .drive_registered_with_retry(&registry, &mut cx, clock.as_ref(), &Early, interval)
+                .1,
+            Err(ErrorCode::InvalidInput)
+        );
+    }
+    assert_eq!(wakes.0.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        driver
+            .drive_registered_with_retry(&registry, &mut cx, clock.as_ref(), &timer, interval)
+            .1,
+        Ok(())
+    );
+    // An already retained timer may also report early. Its charge is released.
+    timer.advance_to(now + interval).unwrap();
+    let before = wakes.0.load(Ordering::SeqCst);
+    assert_eq!(
+        driver
+            .drive_registered_with_retry(&registry, &mut cx, clock.as_ref(), &timer, interval)
+            .1,
+        Err(ErrorCode::InvalidInput)
+    );
+    assert_eq!(wakes.0.load(Ordering::SeqCst), before);
+    // The authoritative clock reaching the boundary retires a pending future,
+    // even when the timer adapter's timeline has stopped advancing.
+    clock.advance(interval).unwrap();
+    assert_eq!(
+        driver
+            .drive_registered_with_retry(&registry, &mut cx, clock.as_ref(), &timer, interval)
+            .1,
+        Ok(())
+    );
+    clock.advance(interval).unwrap();
+    assert_eq!(
+        driver
+            .drive_registered_with_retry(&registry, &mut cx, clock.as_ref(), &timer, interval)
+            .1,
+        Ok(())
+    );
+    assert!(timer.try_sleep_until(clock.now() + interval).is_err());
+    assert_eq!(wakes.0.load(Ordering::SeqCst), before);
+    // Expiry during a fresh poll schedules exactly one further bounded turn.
+    clock.advance(interval).unwrap();
+    assert_eq!(
+        driver
+            .drive_registered_with_retry(
+                &registry,
+                &mut cx,
+                clock.as_ref(),
+                &Crossing(clock.clone()),
+                interval
+            )
+            .1,
+        Ok(())
+    );
+    assert_eq!(wakes.0.load(Ordering::SeqCst), before + 1);
+    assert!(timer.try_sleep_until(clock.now() + interval).is_ok());
+}
+
+#[test]
 fn closed_driver_returns_ordered_preparation_without_commitment() {
     use marketforge_engine::live::{
         foundation::{cancellation::CancellationToken, clock::ManualClock},

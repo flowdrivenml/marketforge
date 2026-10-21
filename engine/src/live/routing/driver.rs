@@ -66,7 +66,7 @@ pub enum RegistryWorkerSyncError {
 pub struct DeliveryDriver {
     closed: bool,
     completion_waiter: Option<Waker>,
-    retry_timer: Option<DeadlineFuture>,
+    retry_timer: Option<(std::time::Instant, DeadlineFuture)>,
     supervisor: DeliverySupervisor,
     tracker: AcknowledgementTracker,
     recovery: TrackingRecovery,
@@ -283,6 +283,8 @@ impl DeliveryDriver {
     /// it must not immediately repoll it in a busy loop. Closing admission retains
     /// the timer until every owned responsibility and payload charge has drained.
     /// No missed-tick catch-up is performed after a delayed runtime turn.
+    /// Early timer readiness returns InvalidInput without self-waking; the
+    /// authoritative clock also retires a timer that remains pending when due.
     pub fn drive_registered_with_retry(
         &mut self,
         registry: &super::router::RouterRegistry,
@@ -303,34 +305,34 @@ impl DeliveryDriver {
         if interval.is_zero() {
             return (turn, Err(ErrorCode::InvalidInput));
         }
-        if self
-            .retry_timer
-            .as_mut()
-            .is_some_and(|sleep| sleep.as_mut().poll(cx).is_ready())
-        {
-            // Release bounded timer capacity before trying to acquire it again.
-            self.retry_timer = None;
+        if let Some((deadline, sleep)) = self.retry_timer.as_mut() {
+            // Timer readiness is not proof that the authoritative clock reached
+            // its boundary. Reject a broken/early adapter without self-waking.
+            let ready = sleep.as_mut().poll(cx).is_ready();
+            let due = clock.now() >= *deadline;
+            if ready || due {
+                self.retry_timer = None;
+                if !due {
+                    return (turn, Err(ErrorCode::InvalidInput));
+                }
+            }
         }
         if self.retry_timer.is_none() {
             let Some(deadline) = clock.now().checked_add(interval) else {
                 return (turn, Err(ErrorCode::Limit));
             };
-            match timer.try_sleep_until(deadline) {
-                Ok(sleep) => self.retry_timer = Some(sleep),
+            let mut sleep = match timer.try_sleep_until(deadline) {
+                Ok(sleep) => sleep,
                 Err(reason) => return (turn, Err(reason)),
-            }
-            // Arm the coordinator before returning. A timer already ready here
-            // (clock advance during registration) needs another bounded turn.
-            if self
-                .retry_timer
-                .as_mut()
-                .unwrap()
-                .as_mut()
-                .poll(cx)
-                .is_ready()
-            {
-                self.retry_timer = None;
+            };
+            let ready = sleep.as_mut().poll(cx).is_ready();
+            // Check after polling: time may cross the boundary inside the poll.
+            if clock.now() >= deadline {
                 cx.waker().wake_by_ref();
+            } else if ready {
+                return (turn, Err(ErrorCode::InvalidInput));
+            } else {
+                self.retry_timer = Some((deadline, sleep));
             }
         }
         (turn, Ok(()))

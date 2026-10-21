@@ -2481,3 +2481,48 @@ Verification (engine/ unless root stated):
 Changed: engine/src/live/routing/metrics.rs, engine/tests/live/router.rs,
 STATUS.md and this ledger. Documentation checkpoint is the commit carrying this
 entry. No push. Further autonomous WP-10 implementation can safely continue.
+
+
+## Continuation — authoritative delivery retry deadlines (2026-10-21)
+
+Status: Partial. Initial HEAD `7d4558b`, branch `codex/wp06-completion`;
+pre-existing untracked scripts/run-autonomous-codex.sh preserved. Inspected
+campaign instructions, decisions, status, WP-10/11 roadmap, routing port,
+ordered budget, shutdown, driver, metrics and existing consumer tests.
+Next executable remains WP-10. Checkpoint: commit carrying this entry.
+
+Acceptance ledger:
+- DeliveryDriver retains the requested retry deadline alongside its bounded
+  future. Every ready poll is checked against the authoritative monotonic clock.
+  Early readiness returns InvalidInput and releases the timer without self-waking.
+- Due pending timers release their charge even if the timer timeline lags. Fresh
+  timers crossing their deadline inside polling schedule exactly one further
+  bounded turn. Notifications still preserve existing deadlines; no catch-up loop.
+- Added a deterministic production-driver witness for initial/retained early
+  readiness, no busy wakes, stopped adapter timeline, capacity release/replacement
+  and clock crossing during polling. Existing real queued-payload shutdown and
+  timer-capacity witness remains passing.
+- Remaining: EventRouterPort facade, concrete runtime/reporter and Control
+  composition; earlier foundational/config gates persist. This scheduling repair
+  does not establish a running daemon or complete WP-10 acceptance.
+
+Verification (engine/ unless root stated):
+- cargo fmt --manifest-path engine/Cargo.toml --all (root): exit 0.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite registered_driver_retry: exit 0; 2 passed / 461 filtered out.
+- Root ./scripts/verify-live.sh full: exit 0. Exact gates: cargo fmt --all --
+  --check; cargo check --locked --offline --no-default-features --features live
+  --lib; cargo test with same flags --lib (135 passed), --test live_suite
+  (461 passed, 2 opt-in ignored), --doc (1 passed). Full receipts:
+  engine/target/live-verification/20261021T055511Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings remain.
+- Root git diff --check: exit 0.
+- No failed verification commands. SQL/performance opt-in and historical-only
+  suites not run; historical zero-stream baseline not rechecked. No SQL/exchange
+  access, dependency/lockfile or ignored configuration changes.
+
+Changed: engine/src/live/routing/driver.rs, engine/tests/live/router.rs,
+STATUS.md and this ledger. No Python/historical execution changes or push.
+WP-11–29 remain pending; further autonomous WP-10 work can safely continue.
+No package marked Accepted and no project completion claimed.
