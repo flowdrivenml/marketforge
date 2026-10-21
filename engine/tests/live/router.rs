@@ -1266,6 +1266,23 @@ fn registered_driver_advances_tracked_delivery_without_inventing_completion() {
     ));
     assert_eq!(wakes.0.load(Ordering::SeqCst), before);
     assert_eq!(driver.snapshot().tracked_obligations, 1);
+    // Rejected correlation preserves the armed completion notification.
+    assert!(
+        driver
+            .apply_completion(&DestinationCompletion {
+                destination: DestinationId(999),
+                through: batch().last_cursor().clone(),
+                status: DeliveryStatus::Progress(DeliveryStage::Delivered),
+            })
+            .is_err()
+    );
+    assert_eq!(wakes.0.load(Ordering::SeqCst), before);
+    // A later polling coordinator replaces the earlier one.
+    let replacement = Arc::new(Counter::default());
+    let replacement_waker = Waker::from(replacement.clone());
+    let mut replacement_cx = Context::from_waker(&replacement_waker);
+    drop(driver.drive_registered(&registry, &mut replacement_cx));
+    driver.close();
     driver
         .apply_completion(&DestinationCompletion {
             destination: DestinationId(1),
@@ -1273,12 +1290,15 @@ fn registered_driver_advances_tracked_delivery_without_inventing_completion() {
             status: DeliveryStatus::Progress(DeliveryStage::Delivered),
         })
         .unwrap();
-    let turn = driver.drive_registered(&registry, &mut cx);
+    assert_eq!(replacement.0.load(Ordering::SeqCst), 1);
+    assert_eq!(wakes.0.load(Ordering::SeqCst), before);
+    let turn = driver.drive_registered(&registry, &mut replacement_cx);
     assert!(matches!(
         turn.delivery.delivery,
         Poll::Ready(SupervisionStep::Finalized(_))
     ));
-    assert_eq!(wakes.0.load(Ordering::SeqCst), before + 1);
+    assert_eq!(replacement.0.load(Ordering::SeqCst), 2);
+    assert_eq!(wakes.0.load(Ordering::SeqCst), before);
     // The returned terminal record still owns payload capacity until released.
     assert!(!driver.snapshot().workers.workers[0].1.is_drained());
     drop(turn);

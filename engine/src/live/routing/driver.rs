@@ -13,7 +13,7 @@ use super::{
     worker::{DestinationWorker, WorkerOutcome, WorkerRegistrationError},
 };
 use crate::live::ports::routing::DestinationCompletion;
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, Waker};
 
 /// One bounded recovery pass followed by at most one supervision step.
 /// Recovery errors remain observable even when delivery work is pending.
@@ -65,6 +65,7 @@ pub enum RegistryWorkerSyncError {
 
 pub struct DeliveryDriver {
     closed: bool,
+    completion_waiter: Option<Waker>,
     supervisor: DeliverySupervisor,
     tracker: AcknowledgementTracker,
     recovery: TrackingRecovery,
@@ -81,6 +82,7 @@ impl DeliveryDriver {
     ) -> Self {
         Self {
             closed: false,
+            completion_waiter: None,
             supervisor,
             tracker,
             recovery,
@@ -181,6 +183,15 @@ impl DeliveryDriver {
     /// release a terminal payload in this same turn. Independent worker work
     /// continues even when some recovery updates cannot yet be applied.
     pub fn drive(&mut self, cx: &mut Context<'_>) -> DeliveryDrive {
+        // One replaceable coordinator, bounded independently of obligation count.
+        // Arm before polling so completions between turns cannot lose the wake.
+        if self
+            .completion_waiter
+            .as_ref()
+            .is_none_or(|waiter| !waiter.will_wake(cx.waker()))
+        {
+            self.completion_waiter = Some(cx.waker().clone());
+        }
         let recovery = self.recovery.retry_pass(&mut self.tracker);
         let delivery = self
             .supervisor
@@ -194,8 +205,9 @@ impl DeliveryDriver {
     ///
     /// Successful attachment, retention and finalization schedule another bounded
     /// turn. Capacity/correlation/reporting failures and failed tracking retries
-    /// never self-wake: the runtime must arrange completion/reporting notifications
-    /// and a bounded retry timer. External payload release also needs a runtime
+    /// never self-wake: the runtime must arrange reporting notifications
+    /// and a bounded retry timer. Correlated completions wake the last drive waker.
+    /// External payload release also needs a runtime
     /// notification or timer. Worker futures and idle queues register this waker.
     /// This is a cooperative scheduling primitive, not a deadline shutdown path;
     /// close admission and synchronize all queues before closing the driver.
@@ -225,12 +237,21 @@ impl DeliveryDriver {
         }
     }
 
+    /// A successfully correlated completion wakes the most recently polled
+    /// coordinator once. Rejected completions neither consume nor wake it.
+    /// This also applies while draining a closed driver; completion is progress,
+    /// not new admission. Further completions coalesce until the next drive.
     pub fn apply_completion(
         &mut self,
         completion: &DestinationCompletion,
     ) -> Result<DeliveryObligationId, PendingDeliveryError> {
-        self.supervisor
-            .apply_completion(&mut self.tracker, completion)
+        let id = self
+            .supervisor
+            .apply_completion(&mut self.tracker, completion)?;
+        if let Some(waiter) = self.completion_waiter.take() {
+            waiter.wake();
+        }
+        Ok(id)
     }
 
     pub fn close(&mut self) {
