@@ -39,6 +39,24 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Checkpoint `6e10fc5` adds explicit in-place retry of escalated ingress reporting.
+The charged original record stays with the coordinator; intervention resets only
+its bounded attempt cycle and wakes one turn. Idle/deferred/already-rearmed
+coordinators reject intervention without changing accounting or retry deadlines.
+Deterministic witnesses cover exhaustion, permanent failure, handler unwind,
+closed-journal drain and independent required destination payload ownership.
+Full Live verification exits 0: formatting, check, 135 library / 490 integration
+passes (2 opt-in ignored) / 1 doctest. Final strengthened scheduler assertions pass
+3/3; Live+historical compilation exits 0. Receipts:
+`engine/target/live-verification/20261021T065806Z-2/`.
+WP-10 remains Partial and next executable: concrete outcome/recovery policy,
+runtime lifecycle and Control composition remain. Earlier WP-05/06/07/09 gates
+persist; WP-11–29 remain pending. Further autonomous implementation is safe.
+Historical-only baseline was not rerun; the prior 151/1 finding remains recorded.
+No SQL/exchange access, Python/historical execution, dependency/lockfile, ignored
+configuration or launcher changes. No push. See WP-10 evidence.
+
+
 Checkpoint `ac00c84` fixes ingress-reporting backlog scheduling: each successful
 scheduled reporting turn requests one more bounded turn, so prequeued outcomes
 cannot stall waiting for unrelated admission/delivery activity. The next idle turn

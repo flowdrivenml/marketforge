@@ -3376,3 +3376,54 @@ or launcher edits. No push.
 Changed: engine/src/live/routing/ingress_reporting.rs,
 engine/tests/live/router.rs, STATUS.md and this ledger. Documentation checkpoint
 is the commit carrying this entry. Next authorized work remains WP-10.
+
+
+### 2026-10-21 — Retry escalated ingress reports in place
+
+Status: Partial. Next executable: WP-10. Initial HEAD `9e36fb9`, branch
+`codex/wp06-completion`; pre-existing untracked launcher preserved. Inspected
+AGENTS, autonomous plan, decisions, status, roadmap WP-10, distribution failure
+requirements and actual ingress, driver, reporting, supervisor and shutdown
+consumers. No completed package restarted. Checkpoint: `6e10fc5`.
+
+Acceptance ledger:
+- Added explicit `ScheduledIngressReporting::retry_escalated`. Runtime can retry
+  the original owned report after attempt exhaustion, permanent handler failure
+  or unwind, without transferring/dropping its charged record. It resets only
+  scheduler state, preserves journal closure and schedules one bounded turn.
+- Idle, deferred and already-rearmed coordinators return false. Ordinary polling
+  cannot bypass escalation. A handler success still passes the existing tracking
+  intervention guard; this operation itself acknowledges or repairs nothing.
+- New real-ingress witness repeats one-attempt exhaustion/intervention cycles,
+  checks exact wake count, original batch, unchanged event/byte charge and eventual
+  closed-journal drain. Required destination payload remains independently owned.
+  Strengthened existing witnesses reject acceleration of a deferred retry and
+  recover in place after permanent failure and controlled handler unwind.
+- Remaining: concrete complete outcome/recovery policy, runtime supervision and
+  lifecycle, Control composition. Earlier WP-05/06/07/09 gates persist; WP-11–29
+  pending. No acceptance, crash durability or complete daemon claim.
+
+Verification:
+- root: cargo fmt --manifest-path engine/Cargo.toml --all: exit 0.
+- root: cargo test --manifest-path engine/Cargo.toml --locked --offline
+  --no-default-features --features live --test live_suite ingress_escalation_retry:
+  exit 0, 1 passed / 491 filtered.
+- root: ./scripts/verify-live.sh full: exit 0. Runs engine/ cargo fmt --all --
+  --check; cargo check --locked --offline --no-default-features --features live
+  --lib; cargo test with identical flags --lib (135 passed), --test live_suite
+  (490 passed / 2 opt-in ignored), --doc (1 passed). Receipts:
+  engine/target/live-verification/20261021T065806Z-2/.
+- After final strengthening of existing assertions, engine/: cargo test --locked
+  --offline --no-default-features --features live --test live_suite
+  scheduled_ingress_reporting: exit 0, 3 passed / 489 filtered.
+- engine/: cargo check --locked --offline --no-default-features --features
+  live,historical: exit 0. Existing dead-code warnings remain.
+- root: git diff --check: exit 0 before checkpoint.
+No compiler/test failures. No SQL/performance/soak verification; historical-only
+baseline not rerun (prior 151 passed / 1 zero-stream failure remains recorded).
+
+Changed: engine/src/live/routing/ingress_reporting.rs,
+engine/tests/live/router.rs, STATUS.md and this ledger. No database/exchange
+requests, Python/historical execution, dependencies/lockfile, ignored configuration
+or pre-existing launcher changes. No push. Further autonomous WP-10 work can
+safely continue within recorded gates.
