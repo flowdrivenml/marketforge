@@ -167,7 +167,16 @@ impl TrackingRecovery {
         &self,
         count: usize,
     ) -> Result<Vec<TrackingRecoveryReservation>, CapacityError> {
-        let mut reservations = Vec::with_capacity(count);
+        // Reject before allocating: public callers may supply arbitrary counts,
+        // including counts whose Vec layout would overflow. Availability is a
+        // preflight only; individual reservations still enforce shared capacity.
+        if count > self.available() {
+            return Err(CapacityError::Full);
+        }
+        let mut reservations = Vec::new();
+        reservations
+            .try_reserve_exact(count)
+            .map_err(|_| CapacityError::AccountingOverflow)?;
 
         for _ in 0..count {
             reservations.push(self.reserve()?);

@@ -520,3 +520,48 @@ worker scheduling, completion/recovery payload lifetime, metrics/control binding
 and deadline shutdown composition remain incomplete. Earlier WP-05/06/07/09
 gates persist; WP-11–29 pending. No acceptance claimed. Further autonomous
 WP-10 implementation can safely continue.
+
+
+## Continuation — bounded recovery batch allocation (2026-10-21)
+
+Status: Partial. Baseline `e86acf7`, branch `codex/wp06-completion`.
+Initial inventory: pre-existing untracked `scripts/run-autonomous-codex.sh` only,
+preserved. Instructions, autonomous plan, decisions, current status/evidence,
+roadmap WP-10/11, bounded distribution requirements and actual recovery consumers
+were inspected. Next executable package remains WP-10.
+
+`TrackingRecovery::reserve_batch` previously allocated a Vec directly from an
+unchecked public count, permitting layout-overflow panic before capacity checks.
+It now preflights available bounded slots before allocation, uses fallible
+allocation and retains per-reservation enforcement/rollback. No acknowledgement,
+financial, durability or accepted identity semantics change. One deterministic
+consumer witness covers usize::MAX, over-limit/occupied rejection without state
+mutation, zero slots, exact capacity and reservation release. Existing fanout
+consumers use this same production method through prepare_batch.
+
+Verification (engine/ unless noted):
+- `cargo test --locked --offline --no-default-features --features live --test
+  live_suite recovery_batch_rejects_unbounded_counts_before_allocation`: exit 0,
+  1 passed / 402 filtered out.
+- Root `./scripts/verify-live.sh full`: exit 0, all five gates. Commands:
+  `cargo fmt --all -- --check`; `cargo check --locked --offline
+  --no-default-features --features live --lib`; `cargo test --locked --offline
+  --no-default-features --features live --lib` (132 passed); same test flags
+  with `--test live_suite` (401 passed, 2 opt-in ignored); with `--doc`
+  (1 passed). Receipts: `engine/target/live-verification/20261021T041427Z-2/`.
+- `cargo check --locked --offline --no-default-features --features live,historical`:
+  exit 0, existing dead-code warnings remain.
+- Root `git diff --check`: exit 0.
+- An initial append used an engine-relative path from engine/ and failed before
+  writing; corrected path immediately. No source/test assertion was weakened.
+
+Changed files: `engine/src/live/routing/tracking_recovery.rs`,
+`engine/tests/live/tracking_recovery.rs`, STATUS.md and this ledger.
+No SQL/exchange traffic, Python/historical execution, dependencies/lockfile,
+ignored configuration changes or push. Opt-in SQL/performance/historical
+baseline tests not rerun. Checkpoint: commit containing this continuation.
+
+Remaining acceptance ledger: production EventRouterPort owner, bounded workers,
+completion/recovery payload lifetime, metrics/control integration and deadline
+shutdown remain incomplete. Earlier WP-05/06/07/09 gates persist; WP-11–29
+pending. No acceptance claimed. Further autonomous WP-10 work can safely continue.

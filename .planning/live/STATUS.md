@@ -39,6 +39,23 @@
 
 ### Autonomous continuation — 2026-10-21
 
+
+Latest continuation bounds WP-10 recovery batch allocation before allocating from
+caller-supplied counts. Oversized/usize::MAX requests reject without panic or
+capacity mutation; fallible allocation and existing reservation rollback remain
+in effect. A deterministic production-interface witness covers occupied, empty,
+exact-capacity and released batches. Full Live verification exits 0: 132 library,
+401 integration (2 opt-in ignored), 1 doctest, formatting and Live compilation.
+Combined Live+historical compilation exits 0. Receipts:
+`engine/target/live-verification/20261021T041427Z-2/`.
+WP-10 remains Partial and next executable; production owner, workers,
+completion/recovery payload lifetime, metrics/control binding and deadline
+shutdown remain. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending.
+Further autonomous implementation is safe. No SQL/exchange access, historical,
+Python, dependency or ignored-config changes; pre-existing launcher preserved.
+Checkpoint: local commit containing this entry and matching WP-10 evidence.
+
+
 Latest checkpoint `b18da9c` repairs atomic WP-10 obligation preparation:
 duplicate IDs reject before mutation rather than panicking, specification ID
 exhaustion/collision preserves the allocator, and empty preparations retain a

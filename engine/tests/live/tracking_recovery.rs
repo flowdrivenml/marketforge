@@ -539,3 +539,29 @@ fn unresolved_retention_failure_preserves_cursor_identity() {
     assert_eq!(recovery_a.occupied(), 0);
     assert_eq!(recovery_b.unresolved_len(), 0);
 }
+
+#[test]
+fn recovery_batch_rejects_unbounded_counts_before_allocation() {
+    use marketforge_engine::live::routing::destination::CapacityError;
+    let recovery = TrackingRecovery::new(2).unwrap();
+    for count in [3, usize::MAX] {
+        assert_eq!(
+            recovery.reserve_batch(count).unwrap_err(),
+            CapacityError::Full
+        );
+        assert_eq!(recovery.occupied(), 0);
+    }
+    let held = recovery.reserve().unwrap();
+    assert_eq!(recovery.reserve_batch(2).unwrap_err(), CapacityError::Full);
+    assert_eq!(recovery.occupied(), 1);
+    let remaining = recovery.prepare_batch(1).unwrap();
+    assert_eq!(recovery.available(), 0);
+    assert!(recovery.prepare_batch(0).unwrap().is_empty());
+    drop(remaining);
+    drop(held);
+    assert_eq!(recovery.available(), 2);
+    let all = recovery.prepare_batch(2).unwrap();
+    assert_eq!(all.len(), 2);
+    drop(all);
+    assert_eq!(recovery.occupied(), 0);
+}
