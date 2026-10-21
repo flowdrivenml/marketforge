@@ -192,6 +192,7 @@ impl DeliveryDriver {
         {
             self.completion_waiter = Some(cx.waker().clone());
         }
+        self.journal.arm_capacity_notification(cx.waker());
         let recovery = self.recovery.retry_pass(&mut self.tracker);
         let delivery = self
             .supervisor

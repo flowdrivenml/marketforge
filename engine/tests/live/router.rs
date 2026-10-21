@@ -1305,4 +1305,30 @@ fn registered_driver_advances_tracked_delivery_without_inventing_completion() {
     assert!(driver.snapshot().workers.workers[0].1.is_drained());
     assert_eq!(driver.snapshot().tracked_obligations, 0);
     assert_eq!(driver.snapshot().journal_records, 1);
+    // Reporting through the authoritative journal wakes the latest coordinator,
+    // even after close; rejected acknowledgements preserve the notification.
+    let clock = ManualClock::new(Instant::now(), 0);
+    let claim = driver
+        .journal_mut()
+        .claim_next(&clock, std::time::Duration::from_secs(1))
+        .unwrap()
+        .unwrap();
+    let before = replacement.0.load(Ordering::SeqCst);
+    assert!(
+        driver
+            .journal_mut()
+            .acknowledge(
+                marketforge_engine::live::routing::acknowledgement::DeliveryObligationId(u64::MAX),
+                claim.token,
+                &clock
+            )
+            .is_err()
+    );
+    assert_eq!(replacement.0.load(Ordering::SeqCst), before);
+    driver
+        .journal_mut()
+        .acknowledge(claim.record.obligation.id, claim.token, &clock)
+        .unwrap();
+    assert_eq!(replacement.0.load(Ordering::SeqCst), before + 1);
+    assert_eq!(driver.snapshot().journal_records, 0);
 }

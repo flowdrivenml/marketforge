@@ -333,6 +333,7 @@ pub struct FinalizationJournal {
     capacity: usize,
     next_claim_token: Option<u64>,
     next_resolution_token: Option<u64>,
+    capacity_waiter: Option<std::task::Waker>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -372,8 +373,28 @@ impl FinalizationJournal {
             capacity,
             next_claim_token: Some(1),
             next_resolution_token: Some(1),
+            capacity_waiter: None,
             id: FinalizationJournalId(id),
         })
+    }
+
+    /// Arm one replaceable coordinator for the next successful record removal.
+    /// Failed acknowledgement/resolution preserves the notification. The caller
+    /// owns scheduling; this does not retry reporting or certify durability.
+    pub fn arm_capacity_notification(&mut self, waker: &std::task::Waker) {
+        if self
+            .capacity_waiter
+            .as_ref()
+            .is_none_or(|old| !old.will_wake(waker))
+        {
+            self.capacity_waiter = Some(waker.clone());
+        }
+    }
+
+    fn notify_capacity_release(&mut self) {
+        if let Some(waiter) = self.capacity_waiter.take() {
+            waiter.wake();
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -544,6 +565,8 @@ impl FinalizationJournal {
             .mark_journal_committed()
             .expect("validated sink commitment state");
 
+        drop(guard);
+        self.notify_capacity_release();
         debug_assert_eq!(removed.record, expected.record);
 
         Ok(expected)
@@ -740,6 +763,7 @@ impl FinalizationJournal {
             .remove(position)
             .expect("verified journal position");
 
+        self.notify_capacity_release();
         Ok(entry.record)
     }
 
