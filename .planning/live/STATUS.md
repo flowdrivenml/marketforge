@@ -39,6 +39,23 @@
 
 ### Autonomous continuation — 2026-10-21
 
+
+Latest implementation checkpoint `c4639c0` prevents ingress reporting success
+from releasing records that still own unresolved tracking-repair reservations.
+Both unresolved-update and reservation-count-mismatch outcomes remain charged
+and report permanent failure until explicitly transferred. A deterministic
+actual-ingress witness verifies repeated false success, shutdown retention,
+transfer and independent repair/destination ownership.
+Verification exits 0: formatting, Live check, 135 library / 484 integration
+passes (2 opt-in ignored) / 1 doctest, and Live+historical check. Receipts:
+`engine/target/live-verification/20261021T063849Z-2/`.
+WP-10 remains Partial and next executable: concrete reporting/recovery policy,
+runtime lifecycle and Control composition remain. Earlier WP-05/06/07/09 gates
+persist; WP-11–29 remain pending. Further autonomous work can safely continue.
+No database/exchange access, Python/historical execution, dependency/lockfile,
+ignored configuration or launcher edits. No push or acceptance claim.
+
+
 Latest implementation checkpoint `8bee678` adds read-only producer reporting
 snapshots and a combined router drain observation. Actual owner state exposes
 attempt budget, retry deadline/timer, escalation and charged journal resources.

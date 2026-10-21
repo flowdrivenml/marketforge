@@ -3099,3 +3099,54 @@ Remaining: concrete reporting/recovery policy and handlers, full runtime lifecyc
 and Control wire composition; earlier WP-05/06/07/09 gates persist. WP-11–29
 pending. Safe autonomous continuation remains possible. No push, acceptance or
 project completion claim.
+
+
+### 2026-10-21 — Retain reports with attached tracking-repair ownership
+
+Status: Partial. Implementation checkpoint: `c4639c0`. Initial HEAD `b3e6039`,
+branch `codex/wp06-completion`; only pre-existing untracked
+`scripts/run-autonomous-codex.sh`, preserved. Inspected campaign instructions,
+status/evidence, decisions, WP-10/11 roadmap and current ingress, receipt,
+reporting, scheduler and tracking-recovery owners. WP-10 remains next executable.
+
+Requirements/outcomes:
+- IngressOutcome exposes whether a RecoveryPending result still contains
+  unresolved tracking updates or mismatched tracking reservations. Already
+  transferred recovery remains independently owned.
+- IngressReportingConsumer refuses a handler's success while those resources
+  remain attached: returns PermanentFailure and retains the original charged
+  record. Existing scheduled reporting consequently requires escalation rather
+  than silently dropping reservations or automatically retrying permanent faults.
+- One deterministic production-ingress regression exercises both reservation
+  forms, repeated false success, retained journal/repair accounting and shutdown
+  blocking. Explicit transfer permits report release while the external repair
+  charge and actual destination queue remain independent.
+- The reporting boundary test injects a controlled fault using real recovery
+  capacity reservations; it does not claim to cause a natural tracking fault.
+  The consumer cannot validate ownership moved out by arbitrary handler code.
+  Concrete runtime recovery policy, lifecycle and Control composition remain
+  open. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending.
+
+Verification (engine/ unless root stated):
+- cargo fmt --all: exit 0.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite ingress_reporting_success_cannot_release_owned_tracking_repairs:
+  final exit 0, 1 passed / 485 filtered. Initial compile exit 101 from incorrect
+  test DeliveryStatus path/variant; corrected to model::delivery::DeliveryStatus::Pending.
+- ./scripts/verify-live.sh full (root): exit 0. Exact gates: cargo fmt --all --
+  --check; cargo check --locked --offline --no-default-features --features live
+  --lib; cargo test with those flags --lib (135 passed), --test live_suite
+  (484 passed, 2 opt-in ignored), --doc (1 passed). Receipts:
+  engine/target/live-verification/20261021T063849Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings persist.
+- git diff --check (root): exit 0 before implementation checkpoint.
+- A subsequent edit only clarifies the reporter contract documentation.
+  SQL/performance opt-in and historical-only tests not run; historical zero-stream
+  baseline not rechecked. No database/exchange access or durability claim.
+
+Changed: engine/src/live/routing/{ingress,ingress_reporting}.rs,
+engine/tests/live/router.rs, STATUS.md and this ledger. No Python/historical
+execution, dependency/lockfile, ignored configuration or launcher edits. No push.
+Safe autonomous implementation can continue; no package accepted or project
+completion claimed.
