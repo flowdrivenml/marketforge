@@ -1921,6 +1921,7 @@ fn router_observation_requires_closed_admission_and_has_no_runtime_effects() {
         clock: Arc<marketforge_engine::live::foundation::clock::ManualClock>,
         calls: AtomicUsize,
         advance_on: usize,
+        pending: bool,
         interval: Duration,
     }
     impl DeadlineTimer for AdvancingTimer {
@@ -1929,14 +1930,18 @@ fn router_observation_requires_closed_admission_and_has_no_runtime_effects() {
             let clock = self.clock.clone();
             let interval = self.interval;
             let advance = call == self.advance_on;
+            let pending = self.pending;
             Box::pin(async move {
                 if advance {
                     clock.advance(interval).unwrap();
+                    if pending {
+                        std::future::pending::<()>().await;
+                    }
                 }
             })
         }
     }
-    for advance_on in [1, 2] {
+    for (advance_on, pending) in [(1, false), (2, false), (1, true), (2, true)] {
         use marketforge_engine::live::foundation::clock::MonotonicClock;
         let deadline = clock.now() + interval;
         sampler.schedule(Some(deadline));
@@ -1944,6 +1949,7 @@ fn router_observation_requires_closed_admission_and_has_no_runtime_effects() {
             clock: clock.clone(),
             calls: AtomicUsize::new(0),
             advance_on,
+            pending,
             interval,
         };
         assert!(matches!(

@@ -2526,3 +2526,42 @@ Changed: engine/src/live/routing/driver.rs, engine/tests/live/router.rs,
 STATUS.md and this ledger. No Python/historical execution changes or push.
 WP-11–29 remain pending; further autonomous WP-10 work can safely continue.
 No package marked Accepted and no project completion claimed.
+
+
+## Continuation — pending metric timer boundary (2026-10-21)
+
+Status: Partial. Initial HEAD e96f1b7, branch codex/wp06-completion; preserved
+pre-existing untracked scripts/run-autonomous-codex.sh. Read AGENTS, campaign
+plan, decisions, status, WP-10/11 roadmap and current router/port/metric sources.
+Next executable remains WP-10; no completed package restarted.
+
+Implemented: RouterMetricSampler checks the authoritative clock after pending
+as well as ready timer polls. This covers initial and replacement futures.
+Due replacement futures are explicitly dropped before collecting observations.
+A pending adapter cannot strand a deadline crossed during its poll. Extended the
+actual native collector witness to exercise ready/pending crossings at both
+poll positions, exact allocation counts, next cadence and no busy wakes.
+
+Verification (engine/ unless stated):
+- cargo fmt --manifest-path engine/Cargo.toml --all (root): exit 0.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite router_observation_requires: exit 0, 1 passed / 462 filtered out.
+- ./scripts/verify-live.sh full (root): exit 0; formatting, Live library check,
+  135 library tests, 461 integration tests (2 opt-in ignored), 1 doctest passed.
+  Receipts: engine/target/live-verification/20261021T055653Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings remain.
+- After explicit replacement-future release, repeated focused witness: exit 0,
+  1 passed / 462 filtered; cargo fmt --check: exit 0.
+- git diff --check (root): exit 0 before checkpoint.
+
+Remaining: production EventRouterPort facade, concrete runtime/reporter and
+Control composition; earlier foundational/configuration gates persist. WP-11–29
+remain pending. No package acceptance or complete-service claim. SQL, performance
+and historical-only tests not run; historical zero-stream baseline not rechecked.
+No database/exchange access, dependency/lockfile, ignored configuration,
+Python/historical execution changes or push.
+
+Changed: engine/src/live/routing/metrics.rs, engine/tests/live/router.rs,
+STATUS.md and this ledger. Checkpoint: commit carrying this entry. Further
+autonomous WP-10 implementation can safely continue.

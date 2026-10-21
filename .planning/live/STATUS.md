@@ -39,6 +39,21 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest continuation fixes metric deadline crossings during pending timer polls.
+The authoritative clock is now checked after either poll outcome, for both the
+initial and replacement timer; due timers are released before observation.
+The real native collector witness covers all four ready/pending crossing cases.
+Verification: full Live gates exit 0 (135 library, 461 integration, 2 opt-in
+ignored, 1 doctest), Live+historical check exit 0. Receipts:
+`engine/target/live-verification/20261021T055653Z-2/`. After explicit replacement
+timer release was added, focused witness (1 passed) and formatting exit 0.
+WP-10 remains Partial and next executable; facade/runtime/reporter/Control
+composition remains. Earlier WP-05/06/07/09 gates and WP-11–29 remain.
+Further autonomous work can safely continue. No SQL/exchange access or
+Python/historical execution changes. Pre-existing untracked launcher preserved.
+Checkpoint: commit carrying this entry; see WP-10 implementation ledger.
+
+
 This continuation fixes delivery retry scheduling against the authoritative clock.
 Early-ready timer adapters return InvalidInput without coordinator self-wakes;
 pending timers are retired when due, and deadline crossings inside fresh polls

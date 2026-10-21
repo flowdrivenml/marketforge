@@ -132,23 +132,26 @@ impl RouterMetricSampler {
                 Err(error) => return Poll::Ready(Err(error)),
             }
         }
-        if self.timer.as_mut().unwrap().1.as_mut().poll(cx).is_ready() {
+        let ready = self.timer.as_mut().unwrap().1.as_mut().poll(cx).is_ready();
+        let now = clock.now();
+        if now >= deadline {
+            return Poll::Ready(self.sample_due(now, wall, metrics, observe));
+        }
+        if ready {
             self.timer = None;
-            let now = clock.now();
-            if now >= deadline {
-                return Poll::Ready(self.sample_due(now, wall, metrics, observe));
-            }
             // The clock, rather than timer readiness, decides the boundary.
             // Register a replacement once; an early-ready adapter cannot spin.
             let mut wait = match timer.try_sleep_until(deadline) {
                 Ok(wait) => wait,
                 Err(error) => return Poll::Ready(Err(error)),
             };
-            if wait.as_mut().poll(cx).is_ready() {
-                let now = clock.now();
-                if now >= deadline {
-                    return Poll::Ready(self.sample_due(now, wall, metrics, observe));
-                }
+            let ready = wait.as_mut().poll(cx).is_ready();
+            let now = clock.now();
+            if now >= deadline {
+                drop(wait);
+                return Poll::Ready(self.sample_due(now, wall, metrics, observe));
+            }
+            if ready {
                 return Poll::Ready(Err(ErrorCode::InvalidInput));
             }
             self.timer = Some((deadline, wait));
