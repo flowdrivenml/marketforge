@@ -1234,7 +1234,33 @@ fn registered_driver_advances_tracked_delivery_without_inventing_completion() {
     let wakes = Arc::new(Counter::default());
     let waker = Waker::from(wakes.clone());
     let mut cx = Context::from_waker(&waker);
+    // Park the coordinator before admission; commitment must schedule a turn
+    // even if subsequent work is tracking recovery rather than queue delivery.
+    let _ = driver.drive(&mut cx);
+    let admission_wakes = wakes.0.load(Ordering::SeqCst);
     let order = StreamAdmissionOrder::new(batch().first_cursor().clone()).unwrap();
+    let cancelled = CancellationToken::new();
+    let mut rejected_preparation = Box::pin(OrderedFanout::prepare(
+        &registry,
+        &order,
+        batch(),
+        AdmissionContext::without_deadline(cancelled.clone()),
+        Arc::new(ManualClock::new(Instant::now(), 0)),
+        None,
+    ));
+    let Poll::Ready(Ok(rejected_prepared)) = rejected_preparation.as_mut().poll(&mut cx) else {
+        panic!("capacity available before cancellation")
+    };
+    drop(rejected_preparation);
+    cancelled.cancel();
+    let Ok((rejected, optional)) = driver.commit_ordered(rejected_prepared) else {
+        panic!("owner remains open")
+    };
+    assert!(matches!(rejected, OrderedCommitOutcome::Rejected { .. }));
+    assert!(optional.is_none());
+    assert_eq!(wakes.0.load(Ordering::SeqCst), admission_wakes);
+    assert_eq!(driver.snapshot().tracked_obligations, 0);
+    // A rejected commitment preserves both the frontier and coordinator waiter.
     let mut preparation = Box::pin(OrderedFanout::prepare(
         &registry,
         &order,
@@ -1250,6 +1276,7 @@ fn registered_driver_advances_tracked_delivery_without_inventing_completion() {
     let Ok((required, optional)) = driver.commit_ordered(prepared) else {
         panic!("open delivery owner accepts ordered commitment")
     };
+    assert_eq!(wakes.0.load(Ordering::SeqCst), admission_wakes + 1);
     assert!(matches!(required, OrderedCommitOutcome::Tracked(_)));
     assert!(optional.unwrap().unwrap().queued.is_empty());
     let turn = driver.drive_registered(&registry, &mut cx);

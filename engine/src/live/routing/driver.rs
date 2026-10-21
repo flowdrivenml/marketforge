@@ -91,7 +91,20 @@ impl DeliveryDriver {
         if self.closed {
             return Err((DeliveryAdmissionError::Closed, prepared));
         }
-        Ok(prepared.commit_with_best_effort(&mut self.tracker, &mut self.recovery))
+        let result = prepared.commit_with_best_effort(&mut self.tracker, &mut self.recovery);
+        // Queue notifications alone are insufficient: partial commitment can
+        // leave tracking repair work even when no worker is waiting on a queue.
+        // Rejections create no new responsibility and must preserve the waiter.
+        if matches!(
+            &result.0,
+            super::ordered::OrderedCommitOutcome::Tracked(outcome)
+                if !matches!(outcome, super::router::TrackedFanoutResult::Rejected { .. })
+        ) {
+            if let Some(waiter) = self.completion_waiter.take() {
+                waiter.wake();
+            }
+        }
+        Ok(result)
     }
 
     /// Transfer the authoritative owners, including any existing responsibilities.
