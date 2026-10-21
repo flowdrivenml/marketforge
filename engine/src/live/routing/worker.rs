@@ -234,6 +234,16 @@ impl WorkersSnapshot {
         self.closed && self.workers.iter().all(|(_, worker)| worker.is_drained())
     }
 }
+/// A shutdown step never discards workers or transferred payload responsibility.
+/// Drained covers worker resources only, not independent delivery obligations.
+#[derive(Debug)]
+#[must_use]
+pub enum WorkerShutdownStep {
+    Outcome(WorkerOutcome),
+    Drained,
+    DeadlineReached,
+}
+
 impl DestinationWorkers {
     pub fn new(limit: std::num::NonZeroUsize) -> Self {
         Self {
@@ -283,6 +293,38 @@ impl DestinationWorkers {
             }
         }
         Poll::Pending
+    }
+
+    /// Fence admission and drive bounded drain until the supplied deadline fires.
+    /// Keep the same deadline future across polls. Its waker must fire at expiry;
+    /// use the bounded DeadlineTimer port to register it before entering shutdown.
+    /// At expiry no new adapter call is started. The entire scheduler remains
+    /// owned by the caller for observation, recovery or later resumed draining.
+    /// Returned outcomes retain capacity and must be correlated by the supervisor.
+    /// External payload release need not wake this call; poll again after handling
+    /// an outcome. The deadline guarantees wakeup even if external charges remain.
+    pub fn poll_shutdown(
+        &mut self,
+        cx: &mut Context<'_>,
+        deadline: &mut super::admission::DeadlineFuture,
+    ) -> Poll<WorkerShutdownStep> {
+        if !self.closed {
+            self.close();
+        }
+        if self
+            .workers
+            .iter()
+            .all(|worker| worker.snapshot().is_drained())
+        {
+            return Poll::Ready(WorkerShutdownStep::Drained);
+        }
+        if deadline.as_mut().poll(cx).is_ready() {
+            return Poll::Ready(WorkerShutdownStep::DeadlineReached);
+        }
+        match self.poll_outcome(cx) {
+            Poll::Ready(outcome) => Poll::Ready(WorkerShutdownStep::Outcome(outcome)),
+            Poll::Pending => Poll::Pending,
+        }
     }
 
     /// Establish the admission fence for all owned queues. Continue polling to

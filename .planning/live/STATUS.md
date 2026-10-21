@@ -39,6 +39,23 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest continuation adds WP-10 deadline-driven destination worker shutdown:
+admission is fenced, each poll transfers at most one charged outcome, expiry
+retains pending calls/queued payloads and later drain resumes without resubmission.
+Two deterministic timer/production-worker witnesses pass. Full Live verification
+exits 0: formatting, Live check, 132 library / 418 integration (2 opt-in ignored)
+/ 1 doctest. Live+historical compilation exits 0. Receipts:
+`engine/target/live-verification/20261021T043100Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort owner,
+completion/recovery correlation and payload ownership, runtime supervision and
+native metrics/control binding remain. Worker drain does not establish independent
+obligation/recovery drain. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending.
+Further autonomous WP-10 implementation is safe. No SQL/exchange traffic,
+Python/historical execution changes, dependencies or ignored config changes;
+no push. Existing untracked launcher preserved. Checkpoint: local commit carrying
+this entry and matching WP-10 evidence.
+
+
 Latest continuation adds bounded WP-10 `DestinationWorkers` scheduling over the
 real exclusive workers: round-robin outcome handoff, slow-adapter isolation,
 owner-preserving registration failures, close fencing and drained-only retirement.

@@ -668,3 +668,96 @@ fn destination_worker_scheduler_wakes_and_preserves_pending_shutdown_ownership()
     drop(outcome);
     assert!(retained.snapshot().is_drained());
 }
+
+#[test]
+fn destination_worker_shutdown_deadline_retains_pending_and_queued_work() {
+    use marketforge_engine::live::{
+        foundation::deadline::ManualDeadlineTimer,
+        routing::{
+            admission::DeadlineTimer,
+            worker::{DestinationWorkers, WorkerShutdownStep},
+        },
+    };
+    let now = std::time::Instant::now();
+    let expiry = now + std::time::Duration::from_secs(1);
+    let timer = ManualDeadlineTimer::new(now, 1).unwrap();
+    let mut deadline = timer.try_sleep_until(expiry).unwrap();
+    let (queue, adapter, worker) = fixture(0);
+    queue.try_enqueue(batch(10)).unwrap();
+    queue.try_enqueue(batch(12)).unwrap();
+    let mut workers = DestinationWorkers::new(std::num::NonZeroUsize::new(1).unwrap());
+    assert!(workers.insert(worker).is_ok());
+    let wakes = Arc::new(WakeCount::default());
+    let waker = Waker::from(wakes.clone());
+    let mut cx = Context::from_waker(&waker);
+    assert!(workers.poll_shutdown(&mut cx, &mut deadline).is_pending());
+    assert!(queue.try_enqueue(batch(14)).is_err());
+    assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+    timer.advance_to(expiry).unwrap();
+    assert!(wakes.0.load(Ordering::SeqCst) > 0);
+    assert!(matches!(
+        workers.poll_shutdown(&mut cx, &mut deadline),
+        Poll::Ready(WorkerShutdownStep::DeadlineReached)
+    ));
+    assert_eq!(workers.snapshot().workers[0].1.queued_batches, 1);
+    assert!(!workers.snapshot().is_drained());
+    adapter.release();
+    assert!(matches!(
+        workers.poll_shutdown(&mut cx, &mut deadline),
+        Poll::Ready(WorkerShutdownStep::DeadlineReached)
+    ));
+    drop(deadline);
+    let mut resumed = timer
+        .try_sleep_until(expiry + std::time::Duration::from_secs(1))
+        .unwrap();
+    let Poll::Ready(WorkerShutdownStep::Outcome(first)) =
+        workers.poll_shutdown(&mut cx, &mut resumed)
+    else {
+        panic!("lost pending call")
+    };
+    assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+    let Poll::Ready(WorkerShutdownStep::Outcome(second)) =
+        workers.poll_shutdown(&mut cx, &mut resumed)
+    else {
+        panic!("lost queued successor")
+    };
+    assert_eq!(second.payload.batch(), &batch(12));
+    assert!(workers.poll_shutdown(&mut cx, &mut resumed).is_pending());
+    drop((first, second));
+    assert!(matches!(
+        workers.poll_shutdown(&mut cx, &mut resumed),
+        Poll::Ready(WorkerShutdownStep::Drained)
+    ));
+}
+
+#[test]
+fn destination_worker_shutdown_expiry_fences_new_adapter_calls() {
+    use marketforge_engine::live::{
+        foundation::deadline::ManualDeadlineTimer,
+        routing::{
+            admission::DeadlineTimer,
+            worker::{DestinationWorkers, WorkerShutdownStep},
+        },
+    };
+    let now = std::time::Instant::now();
+    let timer = ManualDeadlineTimer::new(now, 1).unwrap();
+    let mut deadline = timer.try_sleep_until(now).unwrap();
+    let (queue, adapter, worker) = fixture(0);
+    queue.try_enqueue(batch(10)).unwrap();
+    let mut workers = DestinationWorkers::new(std::num::NonZeroUsize::new(1).unwrap());
+    assert!(workers.insert(worker).is_ok());
+    let waker = Waker::from(Arc::new(WakeCount::default()));
+    let mut cx = Context::from_waker(&waker);
+    assert!(matches!(
+        workers.poll_shutdown(&mut cx, &mut deadline),
+        Poll::Ready(WorkerShutdownStep::DeadlineReached)
+    ));
+    assert_eq!(adapter.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(workers.snapshot().workers[0].1.queued_batches, 1);
+    let mut empty = DestinationWorkers::new(std::num::NonZeroUsize::new(1).unwrap());
+    assert!(matches!(
+        empty.poll_shutdown(&mut cx, &mut deadline),
+        Poll::Ready(WorkerShutdownStep::Drained)
+    ));
+    assert!(empty.snapshot().is_drained());
+}

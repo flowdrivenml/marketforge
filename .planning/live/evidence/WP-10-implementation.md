@@ -853,3 +853,55 @@ tracker/recovery obligations are outside the worker snapshot's drain claim.
 A supervisor must retain owners and outcomes at deadlines rather than drop them.
 Earlier WP-05/06/07/09 gates remain unchanged; WP-11–29 pending. No acceptance
 claimed. Further autonomous WP-10 work is safe.
+
+
+## Continuation — deadline-driven destination worker shutdown (2026-10-21)
+
+Status: Partial. Baseline `18dfe31`, branch `codex/wp06-completion`.
+Initial working tree: only pre-existing untracked `scripts/run-autonomous-codex.sh`,
+preserved. Read repository/campaign instructions, decisions, current status,
+WP-10/11 roadmap and real worker/queue/deadline consumers. Next executable WP-10.
+
+Implemented `DestinationWorkers::poll_shutdown` through the existing bounded
+DeadlineTimer future contract. First poll fences every queue; each poll visits a
+bounded worker set and returns at most one charged outcome. Pending operations
+remain owned across polling cancellation or deadline expiry. An expired deadline
+prevents starting or consuming adapter calls; a fresh deadline permits later
+resumption without resubmission. Fully drained closed worker resources report
+Drained, including an empty scheduler, even if the deadline has expired.
+External payload charges prevent false drain. Callers must retain the deadline
+future across polls and poll after processing/releasing an outcome; external
+charge release alone need not wake the scheduler, while deadline expiry does.
+Independent acknowledgement/recovery obligations still require supervisor checks.
+No full router shutdown or delivery/durability guarantee is claimed.
+
+Two deterministic production-interface tests cover timer wakeup, expired deadline
+before dequeue, pending adapter retention, queued successor preservation, admission
+fencing, expired deadline with a now-ready response, resumed drain without repeated
+adapter admission, externally retained outcomes and empty closed drain.
+
+Verification, final commands all exit 0:
+- engine/: `cargo test --locked --offline --no-default-features --features live
+  --test live_suite destination_worker_shutdown`: 2 passed, 418 filtered out.
+- Root `./scripts/verify-live.sh full`: `cargo fmt --all -- --check`;
+  `cargo check --locked --offline --no-default-features --features live --lib`;
+  `cargo test --locked --offline --no-default-features --features live --lib`
+  (132 passed); same flags with `--test live_suite` (418 passed, 2 opt-in ignored);
+  with `--doc` (1 passed). Receipts:
+  `engine/target/live-verification/20261021T043100Z-2/`.
+- engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; `engine/target/wp10-shutdown-combined.log`.
+- Root `git diff --check`: exit 0.
+- Initial test append used the wrong working directory and failed before writing;
+  corrected immediately. Existing unused recovery-reservation warning remains.
+
+Changed: routing/worker.rs, tests/live/destination_worker.rs, STATUS.md and this
+ledger. Checkpoint: local commit carrying this entry. No SQL/exchange access,
+Python/historical execution changes, dependencies/lockfile or ignored config
+changes; no push. Opt-in SQL/performance and historical baseline execution were
+not rerun; no new claims for those gates.
+
+Remaining: production EventRouterPort owner, completion/recovery correlation and
+payload retention, runtime supervision, native metrics/control integration and
+whole-router deadline shutdown composition. Earlier WP-05/06/07/09 gates remain;
+WP-11–29 pending. No acceptance claimed. Safe autonomous work can continue on WP-10.
