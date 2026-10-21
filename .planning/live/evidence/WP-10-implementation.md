@@ -419,3 +419,61 @@ not retain outstanding delivery responsibility for a future runtime owner.
 Earlier foundational gates unchanged. No package accepted; WP-11–29 pending.
 Next authorized executable work: WP-10 completion. Safe to continue autonomously.
 Checkpoint: local commit carrying this implementation and evidence.
+
+
+## Continuation — authoritative destination commitment fence (2026-10-21)
+
+Status: Partial. Implementation checkpoint `3155b01`; baseline `0f914d4`,
+branch `codex/wp06-completion`. Initial inventory contained only pre-existing
+untracked `scripts/run-autonomous-codex.sh`, preserved. Inspected AGENTS.md,
+autonomous plan, decisions, STATUS, roadmap WP-10 and actual plan, admission,
+queue, cursor, snapshot and tracker consumers. WP-10 remains next executable.
+
+Requirements and outcomes:
+- Every registered required/durable destination must be represented exactly
+  once before queue writes or obligation activation. Public plan mutations
+  previously allowed omission, duplicate membership and unrelated queues.
+  Shared precommit validation now checks complete required membership, descriptor
+  equality and actual queue ownership identity under the registry fence.
+- A prepared destination retains its descriptor. Obligation validation compares
+  policy/kind to both the public plan and retained descriptor, preventing a
+  mutually consistent forged plan/obligation pair after preparation.
+- Optional fan-out validates complete optional membership before the first write;
+  every selected subscriber receives an explicit attempt outcome. Existing
+  revision, shutdown, cancellation and capacity behavior remains tested.
+- Rejection returns the original batch and rolls back prepared obligations and
+  reservations. Deterministic production-interface witnesses cover omitted and
+  duplicate required owners, substituted queues, forged policy/kind, mutation
+  after preparation, untracked commitment and omitted optional membership.
+  Untouched optional plans demonstrate shared Arc identity in real queue reads.
+
+Verification (engine/ unless noted):
+- `cargo test --locked --offline --no-default-features --features live --test
+  live_suite commitment_owner_fence`: exit 0, 3 passed / 399 filtered out.
+  Initial compile failed (exit 101) because the new test used `used_events`;
+  corrected to the actual `occupied_events` field, with assertions preserved.
+- Root `./scripts/verify-live.sh full`: exit 0, all five gates. Exact commands:
+  `cargo fmt --all -- --check`; `cargo check --locked --offline
+  --no-default-features --features live --lib`; `cargo test --locked --offline
+  --no-default-features --features live --lib` (130 passed); same test flags
+  with `--test live_suite` (400 passed, 2 opt-in ignored); with `--doc`
+  (1 passed). Final receipts:
+  `engine/target/live-verification/20261021T041111Z-2/`.
+- `cargo check --locked --offline --no-default-features --features live,historical`:
+  exit 0; existing dead-code warnings remain. No historical execution changes.
+- Root `git diff --check`: exit 0 before implementation checkpoint.
+
+Changed implementation: `engine/src/live/routing/{queue,router}.rs`,
+`engine/tests/live/router_obligations.rs`. Documentation: STATUS.md and this
+ledger. No SQL, production data, exchange requests, Python/historical execution,
+lockfile/dependency or ignored configuration changes; no push. Opt-in SQL,
+performance and historical baseline tests were not rerun; no such claims made.
+
+Remaining acceptance ledger: ordered tracked fan-out, budgets and owned
+observations remain implemented; required membership/queue owner validation now
+covers concrete commitment entry points. Production EventRouterPort service,
+bounded workers, completion/recovery payload lifetime, metrics/control projection
+and deadline shutdown composition remain incomplete. No package is marked
+Accepted or ReadyForReview by this continuation. Earlier WP-05/06/07/09 gates
+remain open; WP-11–29 remain pending. Next authorized executable package is
+WP-10 completion. Further autonomous implementation can safely continue.

@@ -39,6 +39,25 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Checkpoint `3155b01` closes a WP-10 commitment ownership gap: public plans can no
+longer omit/duplicate required destinations, substitute an unrelated queue, or
+forge the registered descriptor. Obligations also match the descriptor retained
+at preparation; optional fan-out rejects omitted optional membership before any
+write. Three deterministic witnesses pass across tracked, recovery-aware,
+untracked and optional entry points, with actual queue identity/readback and
+reservation rollback. Full verification exits 0: formatting, Live check,
+130 library / 400 integration (2 opt-in ignored) / 1 doctest; Live+historical
+compilation exits 0. Receipts:
+`engine/target/live-verification/20261021T041111Z-2/`.
+WP-10 remains Partial: production EventRouterPort owner, bounded workers,
+completion/recovery payload lifetime, metrics/control projection and deadline
+shutdown composition remain. Earlier WP-05/06/07/09 gates remain open;
+WP-11–29 are pending. Next executable authorized package: WP-10. Further
+autonomous implementation can safely continue. No SQL, exchange, historical,
+Python, dependency or ignored configuration changes. Existing untracked launcher
+preserved. See [WP-10 evidence](evidence/WP-10-implementation.md).
+
+
 Latest continuation adds bounded owned namespace/frontier observations from the
 actual admission owner, including pending cursor ranges, closure, retired
 namespaces and offset exhaustion. Two deterministic witnesses verify real
