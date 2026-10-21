@@ -2395,3 +2395,49 @@ Changed: engine/src/live/routing/metrics.rs, engine/tests/live/router.rs,
 STATUS.md and this ledger. Documentation checkpoint is the commit carrying this
 entry. No Python/historical execution changes or push. Further autonomous work
 can safely continue with WP-10 composition. The approved v1 service is incomplete.
+
+## Continuation — deadline-port metric binding (2026-10-21)
+
+Status: Partial. Initial HEAD `86c1927`, branch `codex/wp06-completion`;
+pre-existing untracked scripts/run-autonomous-codex.sh preserved. Read campaign
+instructions, plan, decisions, status and WP-10/11 roadmap; inspected current
+admission, ordered routing, supervisor, metrics and runtime port consumers.
+Next executable remains WP-10. Implementation checkpoint: `a8114ea`.
+
+Acceptance ledger:
+- RouterMetricSampler::poll_sample composes authoritative monotonic checks and
+  existing bounded DeadlineTimer admission. One timer is retained across polls;
+  reconfiguration, disabling and due sampling release it. No detached tasks.
+- Timer admission errors preserve the measurement boundary and return explicitly;
+  runtime owns retry scheduling. Early readiness rearms at most once; a second
+  early-ready future returns InvalidInput without sampling or self-waking.
+- Extended real collector/owner witness verifies pending timer reuse, disabled
+  sampling, capacity rejection, early readiness and due sampling. Prior metrics,
+  generation, wall failure, overflow and owner nonmutation assertions remain.
+- Remaining: production EventRouterPort facade preserving partial/recovery
+  responsibility, concrete runtime/reporter and Control composition. This polling
+  interface requires a runtime caller and does not claim independently scheduled
+  metrics or complete WP-10. Earlier contract/config gates remain open.
+
+Verification (engine/ unless root stated):
+- cargo fmt --all: exit 0.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite router_observation_requires: exit 0, 1 passed / 461 filtered out.
+- Root ./scripts/verify-live.sh full: exit 0, five gates:
+  cargo fmt --all -- --check; cargo check --locked --offline --no-default-features
+  --features live --lib; cargo test with same flags --lib (135 passed),
+  --test live_suite (460 passed, 2 opt-in ignored), --doc (1 passed).
+  Receipts: engine/target/live-verification/20261021T055127Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0, existing dead-code warnings remain.
+- Root git diff --check: exit 0 before checkpoint.
+- Initial test-edit script used an incorrect relative path and failed before
+  writing; rerun from root succeeded. A receipt-tail command referenced a missing
+  log name (exit 1); actual verification logs above establish all results.
+- No SQL/opt-in/performance or historical-only suite run; historical zero-stream
+  baseline not rechecked. No SQL/exchange access or dependency/lockfile changes.
+
+Changed: engine/src/live/routing/metrics.rs, engine/tests/live/router.rs,
+STATUS.md and this ledger. No Python/historical execution or ignored config
+changes, no push. Further autonomous WP-10 implementation can safely continue;
+WP-11–29 remain pending. No package acceptance or project completion claimed.

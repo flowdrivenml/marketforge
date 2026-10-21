@@ -39,6 +39,22 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest checkpoint `a8114ea` binds router metric cadence to the existing deadline
+port. One retained timer is reused across polls and dropped on reconfiguration,
+disabling or due sampling. Capacity failures preserve the boundary; early-ready
+adapters cannot sample early or spin. The real native collector witness covers
+pending reuse, disabling, timer rejection, early readiness and due sampling.
+Full verification exits 0: formatting, Live check, 135 library / 460 integration
+(2 opt-in ignored) / 1 doctest; combined Live+historical compilation exits 0.
+Receipts: `engine/target/live-verification/20261021T055127Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort facade,
+concrete runtime/reporter binding and full Control integration. This cooperative
+poll binding does not constitute a running runtime. Earlier WP-05/06/07/09 gates
+persist; WP-11–29 pending. Further autonomous implementation can safely continue.
+No SQL/exchange access, push, historical/Python execution, dependency or ignored
+configuration changes. Pre-existing untracked launcher preserved.
+
+
 Latest implementation checkpoint `3e006a9` adds a cooperative bounded router metric
 sampling cadence. Disabled/early turns construct no snapshots; delayed turns emit
 one current sample without catch-up bursts. Wall/collector errors consume the
