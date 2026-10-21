@@ -2617,3 +2617,57 @@ Changed: engine/src/live/routing/{driver,shutdown}.rs,
 engine/tests/live/router.rs, STATUS.md and this ledger. WP-11–29 remain pending.
 Further autonomous WP-10 implementation can safely continue. No package marked
 Accepted and no complete-service claim.
+
+
+## Continuation — contextual producer ingress (2026-10-21)
+
+Status: Partial. Next executable: WP-10. Initial HEAD `b5eb87f`, branch
+`codex/wp06-completion`; pre-existing untracked `scripts/run-autonomous-codex.sh`
+preserved. Inspected campaign instructions, decisions, current status/evidence,
+WP-10/11 roadmap, routing contracts and actual order/registry/driver/shutdown
+implementations and consumer tests. No completed work restarted.
+Implementation checkpoint: `2200236`; evidence checkpoint carries this entry.
+
+Acceptance ledger:
+- RouterIngress binds existing registry, namespace, admission-budget and delivery
+  owners at construction. It composes required and optional paths without a
+  second tracker, namespace owner, executor or obligation store.
+- The one delivery driver is never locked across capacity waiting. Nonwaiting
+  lock admission returns explicit busy/poisoned/closed errors with the original
+  immutable batch. Losing driver availability after preparation drops all
+  reservations and the order permit without advancing the cursor.
+- Detailed required, optional and recovery results are retained in the returned
+  must-use outcome. Ingress does not project partial delivery into rejection,
+  completion or durability. The caller still owns reporting and recovery results.
+- Four deterministic production-path witnesses cover required queue admission,
+  immutable Arc sharing, overloaded optional queues, optional-only attempts,
+  empty membership, contention, cancellation, admission-budget exhaustion,
+  driver accessibility during a capacity wait, drop rollback, driver closure
+  during waiting, and retry of the identical batch after cancellation. The
+  admission future is also checked to be Send.
+- Remaining: EventRouterPort adapter with bounded outcome reporting ownership,
+  concrete runtime/reporter and Control composition. This is a detailed producer
+  entry point, not a running daemon or package acceptance. Earlier WP-05/06/07/09
+  gates remain; WP-11–29 remain pending. Further autonomous work is safe.
+
+Verification (engine/ unless root stated):
+- cargo fmt --manifest-path engine/Cargo.toml --all (root): exit 0.
+- cargo check --locked --offline --no-default-features --features live: exit 0.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite ingress_: exit 0, 4 passed / 465 filtered out (earlier 3-witness
+  iteration also passed, 3 / 465 filtered).
+- ./scripts/verify-live.sh full (root): exit 0; exact gates: cargo fmt --all --
+  --check; cargo check --locked --offline --no-default-features --features live
+  --lib; cargo test with the same flags --lib (135 passed), --test live_suite
+  (467 passed, 2 opt-in ignored), --doc (1 passed). Receipts:
+  engine/target/live-verification/20261021T060526Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings remain.
+- git diff --check (root): exit 0 before implementation checkpoint.
+- No failed verification commands. No SQL/performance opt-in or historical-only
+  tests run; historical zero-stream baseline not rechecked. No SQL/exchange
+  access, dependencies/lockfile, ignored config, Python/historical execution
+  changes or push.
+
+Changed: engine/src/live/routing/{ingress,mod}.rs,
+engine/tests/live/router.rs, STATUS.md and this ledger.

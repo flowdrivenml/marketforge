@@ -39,6 +39,25 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest implementation checkpoint `2200236` adds contextual producer ingress over
+the existing registry, namespaces, budget and delivery driver. No driver lock is
+held across capacity waits; nonwaiting commitment contention returns the batch
+and releases preparation resources. Required, optional and tracking-recovery
+outcomes remain explicit. Four deterministic consumer witnesses cover immutable
+batch sharing, optional overload, cancellation, bounded admission, drop rollback,
+closure during waiting, contention, empty membership and retry of the same cursor.
+Full verification exits 0: formatting, Live check, 135 library / 467 integration
+passes (2 opt-in ignored) / 1 doctest, and Live+historical check. Receipts:
+`engine/target/live-verification/20261021T060526Z-2/`.
+WP-10 remains Partial and next executable. The detailed ingress requires callers
+to retain/report outcomes; the simple EventRouterPort adapter, concrete runtime/
+reporter and Control composition remain. WP-05/06/07/09 gates persist; WP-11–29
+remain pending. Further autonomous work can safely continue. No SQL/exchange
+access, ignored configuration, dependency/lockfile or Python/historical execution
+changes. Pre-existing untracked launcher preserved. No push or acceptance claim.
+See WP-10 evidence for exact commands and limitations.
+
+
 Latest implementation checkpoint `e364dac` integrates bounded terminal reporting
 and delivery retry scheduling into registered router shutdown, using the existing
 driver/journal/registry owners. Admission closes before work; expiry performs no
