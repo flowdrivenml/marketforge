@@ -2648,3 +2648,306 @@ fn reporting_router_shutdown_releases_timer_when_empty_delivery_closes() {
     ));
     assert_eq!(slots.load(Ordering::SeqCst), 0);
 }
+
+mod ingress_witnesses {
+    use super::*;
+    use marketforge_engine::live::{
+        foundation::{
+            cancellation::CancellationToken, clock::ManualClock, resources::ResourceUsage,
+        },
+        routing::{
+            acknowledgement::{AcknowledgementTracker, FinalizationJournal},
+            admission::AdmissionContext,
+            destination::DestinationCapacity,
+            driver::DeliveryDriver,
+            ingress::{IngressError, IngressOutcome, RouterIngress},
+            namespaces::AdmissionNamespaces,
+            ordered::{OptionalOrderedOutcome, OrderedAdmissionBudget, OrderedCommitOutcome},
+            queue::DestinationQueue,
+            router::TrackedFanoutResult,
+            supervisor::DeliverySupervisor,
+            tracking_recovery::TrackingRecovery,
+            worker::DestinationWorkers,
+        },
+    };
+    use std::{
+        future::Future,
+        num::NonZeroUsize,
+        sync::Mutex,
+        task::{Context, Poll, Waker},
+        time::Instant,
+    };
+
+    struct Fixture {
+        registry: RouterRegistry,
+        namespaces: AdmissionNamespaces,
+        budget: OrderedAdmissionBudget,
+        driver: Mutex<DeliveryDriver>,
+        clock: Arc<ManualClock>,
+    }
+    impl Fixture {
+        fn new() -> Self {
+            let limit = NonZeroUsize::new(2).unwrap();
+            let namespaces = AdmissionNamespaces::new(1).unwrap();
+            namespaces.register(batch().first_cursor().clone()).unwrap();
+            Self {
+                registry: RouterRegistry::new(),
+                namespaces,
+                budget: OrderedAdmissionBudget::new(ResourceUsage {
+                    items: 2,
+                    bytes: 100_000,
+                })
+                .unwrap(),
+                driver: Mutex::new(DeliveryDriver::new(
+                    DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+                    AcknowledgementTracker::new(4).unwrap(),
+                    TrackingRecovery::new(4).unwrap(),
+                    FinalizationJournal::new(4).unwrap(),
+                )),
+                clock: Arc::new(ManualClock::new(Instant::now(), 0)),
+            }
+        }
+        fn queue(&self, id: u64, policy: DeliveryPolicy) -> DestinationQueue {
+            let adapter = Arc::new(TestDestination {
+                descriptor: DestinationDescriptor {
+                    id: DestinationId(id),
+                    kind: DestinationKind::Publication,
+                    policy,
+                    capacity: DeliveryCapacity::new(2, 100_000).unwrap(),
+                },
+            });
+            let queue = DestinationQueue::new(
+                DestinationCapacity::new(adapter.descriptor().capacity, 2).unwrap(),
+            );
+            self.registry
+                .register_queue(adapter, queue.clone())
+                .unwrap();
+            queue
+        }
+        fn ingress(&self) -> RouterIngress<'_> {
+            RouterIngress {
+                registry: &self.registry,
+                namespaces: &self.namespaces,
+                budget: &self.budget,
+                delivery: &self.driver,
+                clock: self.clock.clone(),
+                timer: None,
+            }
+        }
+        fn next(&self) -> u64 {
+            self.namespaces.snapshot().namespaces[0]
+                .order
+                .next
+                .as_ref()
+                .unwrap()
+                .offset
+        }
+    }
+    fn context() -> AdmissionContext {
+        AdmissionContext::without_deadline(CancellationToken::new())
+    }
+    fn ready<F: Future>(future: F) -> F::Output {
+        let mut future = std::pin::pin!(future);
+        match future
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        {
+            Poll::Ready(value) => value,
+            Poll::Pending => panic!("expected immediate admission result"),
+        }
+    }
+
+    #[test]
+    fn ingress_composes_required_and_optional_without_claiming_completion() {
+        let fixture = Fixture::new();
+        let required = fixture.queue(1, DeliveryPolicy::Required);
+        let optional = fixture.queue(2, DeliveryPolicy::BestEffort);
+        // Optional overload must not prevent required admission.
+        optional.try_enqueue(batch()).unwrap();
+        let ingress = fixture.ingress();
+        let original = batch();
+        let outcome = ready(ingress.admit(original.clone(), context())).unwrap();
+        let IngressOutcome::Required {
+            required: result,
+            optional,
+        } = outcome
+        else {
+            panic!("required destination participates")
+        };
+        assert!(matches!(
+            result,
+            OrderedCommitOutcome::Tracked(TrackedFanoutResult::Complete { .. })
+        ));
+        let optional = optional.unwrap().unwrap();
+        assert!(optional.queued.is_empty());
+        assert_eq!(optional.failed.len(), 1);
+        assert_eq!(fixture.next(), 3);
+        assert_eq!(fixture.budget.usage(), ResourceUsage::default());
+        assert_eq!(
+            fixture
+                .driver
+                .lock()
+                .unwrap()
+                .snapshot()
+                .tracked_obligations,
+            1
+        );
+        let delivery = required.try_dequeue().unwrap();
+        assert!(Arc::ptr_eq(
+            &delivery.batch().events()[0],
+            &original.events()[0]
+        ));
+        assert_eq!(delivery.batch().last_cursor(), batch().last_cursor());
+        // No destination completion was fabricated by ingress.
+        assert_eq!(
+            fixture
+                .driver
+                .lock()
+                .unwrap()
+                .snapshot()
+                .retained_deliveries,
+            0
+        );
+    }
+
+    #[test]
+    fn ingress_wait_releases_driver_and_rolls_back_on_drop_or_owner_closure() {
+        let fixture = Fixture::new();
+        let queue = fixture.queue(1, DeliveryPolicy::Required);
+        queue.try_enqueue(batch()).unwrap();
+        let held = queue.try_dequeue().unwrap();
+        let ingress = fixture.ingress();
+        let mut future = Box::pin(ingress.admit(batch(), context()));
+        fn assert_send<T: Send>(_: &T) {}
+        assert_send(&future);
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(future.as_mut().poll(&mut cx).is_pending());
+        assert_eq!(fixture.budget.usage().items, 2);
+        assert!(fixture.driver.try_lock().is_ok());
+        assert!(
+            fixture.namespaces.snapshot().namespaces[0]
+                .order
+                .pending_last
+                .is_some()
+        );
+        drop(future);
+        assert_eq!(fixture.budget.usage(), ResourceUsage::default());
+        assert!(
+            fixture.namespaces.snapshot().namespaces[0]
+                .order
+                .pending_last
+                .is_none()
+        );
+        assert_eq!(fixture.next(), 1);
+        let mut future = Box::pin(ingress.admit(batch(), context()));
+        assert!(future.as_mut().poll(&mut cx).is_pending());
+        fixture.driver.lock().unwrap().close();
+        drop(held);
+        let Poll::Ready(Err(rejected)) = future.as_mut().poll(&mut cx) else {
+            panic!("closed driver rejects after capacity resumes")
+        };
+        assert_eq!(rejected.reason, IngressError::DriverClosed);
+        assert_eq!(rejected.batch, batch());
+        assert_eq!(fixture.next(), 1);
+        assert_eq!(fixture.budget.usage(), ResourceUsage::default());
+        assert!(queue.try_dequeue().is_none());
+        assert_eq!(
+            fixture
+                .driver
+                .lock()
+                .unwrap()
+                .snapshot()
+                .tracked_obligations,
+            0
+        );
+    }
+
+    #[test]
+    fn ingress_wait_cancellation_and_budget_exhaustion_keep_frontier_retryable() {
+        let fixture = Fixture::new();
+        let queue = fixture.queue(1, DeliveryPolicy::Required);
+        queue.try_enqueue(batch()).unwrap();
+        let held = queue.try_dequeue().unwrap();
+        let ingress = fixture.ingress();
+        let cancellation = CancellationToken::new();
+        let mut waiting = Box::pin(ingress.admit(
+            batch(),
+            AdmissionContext::without_deadline(cancellation.clone()),
+        ));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(waiting.as_mut().poll(&mut cx).is_pending());
+        let rejected = ready(ingress.admit(batch(), context())).unwrap_err();
+        assert!(matches!(
+            rejected.reason,
+            IngressError::Preparation(
+                marketforge_engine::live::routing::ordered::OrderedPreparationError::Budget(_)
+            )
+        ));
+        assert_eq!(fixture.budget.usage().items, 2);
+        cancellation.cancel();
+        let Poll::Ready(Err(rejected)) = waiting.as_mut().poll(&mut cx) else {
+            panic!("cancellation finishes without freeing destination capacity")
+        };
+        assert!(matches!(rejected.reason, IngressError::Preparation(_)));
+        assert_eq!(fixture.budget.usage(), ResourceUsage::default());
+        assert_eq!(fixture.next(), 1);
+        drop(waiting);
+        drop(held);
+        // The same batch remains admissible after the cancelled attempt.
+        assert!(matches!(
+            ready(ingress.admit(rejected.batch, context())).unwrap(),
+            IngressOutcome::Required {
+                required: OrderedCommitOutcome::Tracked(TrackedFanoutResult::Complete { .. }),
+                ..
+            }
+        ));
+        assert_eq!(fixture.next(), 3);
+        assert_eq!(fixture.budget.usage(), ResourceUsage::default());
+    }
+
+    #[test]
+    fn ingress_optional_and_early_failures_preserve_explicit_outcomes() {
+        let fixture = Fixture::new();
+        let ingress = fixture.ingress();
+        let no_destinations = ready(ingress.admit(batch(), context())).unwrap_err();
+        assert!(matches!(
+            no_destinations.reason,
+            IngressError::Preparation(_)
+        ));
+        let optional = fixture.queue(1, DeliveryPolicy::BestEffort);
+        let guard = fixture.driver.lock().unwrap();
+        assert_eq!(
+            ready(ingress.admit(batch(), context())).unwrap_err().reason,
+            IngressError::DriverBusy
+        );
+        drop(guard);
+        assert_eq!(fixture.next(), 1);
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        let outcome =
+            ready(ingress.admit(batch(), AdmissionContext::without_deadline(cancelled))).unwrap();
+        assert!(matches!(
+            outcome,
+            IngressOutcome::Optional(OptionalOrderedOutcome::Rejected { .. })
+        ));
+        assert_eq!(fixture.next(), 1);
+        assert!(optional.try_dequeue().is_none());
+        optional.try_enqueue(batch()).unwrap();
+        let outcome = ready(ingress.admit(batch(), context())).unwrap();
+        let IngressOutcome::Optional(OptionalOrderedOutcome::Attempted(attempt)) = outcome else {
+            panic!("optional-only overload is an explicit attempted outcome")
+        };
+        assert!(attempt.queued.is_empty());
+        assert_eq!(attempt.failed.len(), 1);
+        assert_eq!(fixture.next(), 3);
+        assert_eq!(
+            fixture
+                .driver
+                .lock()
+                .unwrap()
+                .snapshot()
+                .tracked_obligations,
+            0
+        );
+    }
+}
