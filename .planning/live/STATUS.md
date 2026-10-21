@@ -39,7 +39,7 @@
 
 ### Autonomous continuation — 2026-10-21
 
-Continuation adds WP-10 `OrderedFanout`: the real required-destination capacity,
+Checkpoint `133b72e` adds WP-10 `OrderedFanout`: the real required-destination capacity,
 order permit, obligation activation and recovery-aware queue commitment now
 compose through one cancellation/deadline-fenced operation. Dropping a prepared
 operation or waiting future releases reservations and the stream permit without

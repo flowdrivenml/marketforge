@@ -101,5 +101,4 @@ Full wrapper `./scripts/verify-live.sh full`: exit 0, five gates. Raw receipts:
   PostgreSQL/performance fixtures were not rerun in this continuation.
 - `git diff --check`: exit 0.
 
-Checkpoint: local commit carrying this continuation; exact identifier recorded
-in STATUS.md after commitment. No push. Next authorized: WP-10 completion.
+Checkpoint: `133b72e` (ordered tracked fan-out and verification evidence). No push. Next authorized: WP-10 completion.
