@@ -33,3 +33,8 @@ pub mod tracking_recovery;
 pub(crate) mod trades;
 pub(crate) mod transport;
 pub(crate) mod tui;
+
+pub(crate) mod wp06_contracts;
+
+pub(crate) mod c06_recording;
+pub(crate) mod wp07_contracts;

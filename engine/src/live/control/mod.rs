@@ -1,13 +1,14 @@
-//! Planned module: src/live/control.
+//! Versioned management contracts and bounded codec. Runtime sessions/server
+//! remain owned by WP-25.
 
-// Document 17 scaffolding: declarations only; implementations are not complete.
+// Private runtime modules remain scaffolded; public modules are WP-07 contracts.
 pub(crate) mod authorization;
 pub(crate) mod client;
 pub(crate) mod dispatch;
-pub(crate) mod framing;
+pub mod framing;
 pub(crate) mod notification;
-pub(crate) mod operation;
-pub(crate) mod protocol;
+pub mod operation;
+pub mod protocol;
 pub(crate) mod query;
 pub(crate) mod server;
 pub(crate) mod session;

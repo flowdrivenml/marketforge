@@ -10,3 +10,5 @@ pub(crate) mod shutdown;
 
 pub use cancellation::{CancellationToken, Cancelled};
 pub use clock::{MonotonicClock, SystemMonotonicClock};
+
+pub use filesystem::FileEpochStore;

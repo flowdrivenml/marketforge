@@ -6,7 +6,9 @@ use marketforge_engine::{
         cursor::{
             BookGeneration, ConnectionGeneration, LogEpoch, StreamCursor, SubscriptionGeneration,
         },
-        envelope::{EventProvenance, EventTiming, LiveEvent, LiveL2Group, LivePayload},
+        envelope::{
+            EventOrigin, EventProvenance, EventTiming, LiveEvent, LiveL2Group, LivePayload,
+        },
         identity::StreamId,
     },
 };
@@ -33,8 +35,10 @@ pub fn l2_event(stream: &str, epoch: u64, offset: u64) -> Arc<LiveEvent> {
 
     let provenance = EventProvenance {
         source_stream: stream_id,
-        connection_generation: ConnectionGeneration(1),
-        subscription_generation: SubscriptionGeneration(1),
+        origin: EventOrigin::WebSocket {
+            connection_generation: ConnectionGeneration(1),
+            subscription_generation: SubscriptionGeneration(1),
+        },
         native_sequence: None,
         native_trade_id: None,
         book_generation: Some(BookGeneration(1)),

@@ -36,6 +36,9 @@ impl EventBatch {
             return Err(EventBatchError::Empty);
         }
 
+        for event in &events {
+            event.check().map_err(EventBatchError::InvalidEvent)?;
+        }
         for pair in events.windows(2) {
             let previous = &pair[0].cursor;
             let current = &pair[1].cursor;
@@ -77,6 +80,7 @@ pub enum EventBatchError {
     Empty,
     MixedNamespace,
     NonIncreasingCursor,
+    InvalidEvent(crate::live::model::envelope::LiveEventError),
 }
 
 /// Identity assigned to one registered destination instance.
