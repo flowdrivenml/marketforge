@@ -3161,6 +3161,11 @@ mod ingress_witnesses {
         assert!(!retry.timer_retained);
         assert!(!retry.escalation_required);
         assert_eq!(consumer.snapshot(&journal), retry);
+        assert!(
+            !consumer.retry_escalated(&cx),
+            "deferred retry cannot be accelerated"
+        );
+        assert_eq!(consumer.snapshot(&journal), retry);
         assert_eq!(reporter.calls, 1);
         assert_eq!(journal.snapshot().usage, charged);
         assert_eq!(
@@ -3314,10 +3319,143 @@ mod ingress_witnesses {
             } else {
                 assert_eq!(step, Poll::Ready(ScheduledIngressStep::EscalationRequired));
                 assert_eq!(reporter.calls, 1);
-                drop(consumer.take_pending().unwrap());
+                assert!(consumer.retry_escalated(&cx));
+                assert_eq!(journal.snapshot().usage.items, 1);
+                assert_eq!(
+                    consumer
+                        .poll_step(&journal, &mut reporter, &mut cx, &clock, &Timer)
+                        .unwrap(),
+                    Poll::Ready(ScheduledIngressStep::Reported)
+                );
+                assert_eq!(reporter.calls, 2);
+                assert!(consumer.pending().is_none());
             }
             assert!(journal.poll_shutdown(&mut cx).is_ready());
         }
+    }
+
+    #[test]
+    fn ingress_escalation_retry_preserves_charge_and_bounded_attempts() {
+        use marketforge_engine::live::routing::{
+            admission::{DeadlineFuture, DeadlineTimer},
+            ingress_reporting::{
+                IngressOutcomes, IngressReporter, ScheduledIngressReporting, ScheduledIngressStep,
+            },
+            reporting::ReportingError,
+        };
+        use std::{
+            sync::atomic::{AtomicUsize, Ordering},
+            task::Wake,
+            time::Duration,
+        };
+        struct Counter(AtomicUsize);
+        impl Wake for Counter {
+            fn wake(self: Arc<Self>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        struct NoTimer;
+        impl DeadlineTimer for NoTimer {
+            fn sleep_until(&self, _: Instant) -> DeadlineFuture {
+                panic!("one-attempt cycles never allocate a timer")
+            }
+        }
+        struct Reporter {
+            calls: usize,
+            fail: bool,
+        }
+        impl IngressReporter for Reporter {
+            fn report(
+                &mut self,
+                _: &EventBatch,
+                _: &mut IngressOutcome,
+            ) -> Result<(), ReportingError> {
+                self.calls += 1;
+                if self.fail {
+                    Err(ReportingError::TemporarilyUnavailable)
+                } else {
+                    Ok(())
+                }
+            }
+        }
+        let fixture = Fixture::new();
+        let queue = fixture.queue(1, DeliveryPolicy::Required);
+        let journal = IngressOutcomes::new(ResourceUsage {
+            items: 1,
+            bytes: 100_000,
+        })
+        .unwrap();
+        ready(journal.admit(&fixture.ingress(), batch(), context())).unwrap();
+        journal.close();
+        let charged = journal.snapshot().usage;
+        let counter = Arc::new(Counter(AtomicUsize::new(0)));
+        let waker = Waker::from(counter.clone());
+        let mut cx = Context::from_waker(&waker);
+        let mut scheduler =
+            ScheduledIngressReporting::new(Duration::from_secs(1), NonZeroUsize::new(1).unwrap())
+                .unwrap();
+        let mut reporter = Reporter {
+            calls: 0,
+            fail: true,
+        };
+        assert!(!scheduler.retry_escalated(&cx));
+        for calls in 1..=2 {
+            assert_eq!(
+                scheduler
+                    .poll_step(
+                        &journal,
+                        &mut reporter,
+                        &mut cx,
+                        fixture.clock.as_ref(),
+                        &NoTimer
+                    )
+                    .unwrap(),
+                Poll::Ready(ScheduledIngressStep::EscalationRequired)
+            );
+            assert_eq!(reporter.calls, calls);
+            assert_eq!(scheduler.snapshot(&journal).attempts, 1);
+            assert_eq!(journal.snapshot().usage, charged);
+            assert_eq!(scheduler.pending().unwrap().batch(), &batch());
+            // Merely polling escalation never invokes the handler again.
+            assert_eq!(
+                scheduler
+                    .poll_step(
+                        &journal,
+                        &mut reporter,
+                        &mut cx,
+                        fixture.clock.as_ref(),
+                        &NoTimer
+                    )
+                    .unwrap(),
+                Poll::Ready(ScheduledIngressStep::EscalationRequired)
+            );
+            assert_eq!(reporter.calls, calls);
+            counter.0.store(0, Ordering::SeqCst);
+            assert!(scheduler.retry_escalated(&cx));
+            assert_eq!(counter.0.load(Ordering::SeqCst), 1);
+            assert!(!scheduler.retry_escalated(&cx));
+            assert_eq!(counter.0.load(Ordering::SeqCst), 1);
+            assert_eq!(scheduler.snapshot(&journal).attempts, 0);
+            assert_eq!(journal.snapshot().usage, charged);
+            assert!(!scheduler.snapshot(&journal).is_drained());
+        }
+        reporter.fail = false;
+        assert_eq!(
+            scheduler
+                .poll_step(
+                    &journal,
+                    &mut reporter,
+                    &mut cx,
+                    fixture.clock.as_ref(),
+                    &NoTimer
+                )
+                .unwrap(),
+            Poll::Ready(ScheduledIngressStep::Reported)
+        );
+        assert_eq!(reporter.calls, 3);
+        assert!(scheduler.snapshot(&journal).is_drained());
+        assert!(!scheduler.retry_escalated(&cx));
+        assert_eq!(queue.try_dequeue().unwrap().batch(), &batch());
     }
 
     #[test]

@@ -401,6 +401,20 @@ impl ScheduledIngressReporting {
         self.consumer.pending()
     }
 
+    /// Explicit runtime intervention after escalation or handler unwind. Retain
+    /// the original charged record and begin a fresh bounded attempt cycle.
+    /// This does not acknowledge the outcome, repair tracking or reopen ingress.
+    /// Deferred retries and idle coordinators cannot be accelerated through it.
+    /// A successful intervention schedules one turn on the supplied coordinator.
+    pub fn retry_escalated(&mut self, cx: &Context<'_>) -> bool {
+        if !self.blocked || self.consumer.pending().is_none() {
+            return false;
+        }
+        self.reset();
+        cx.waker().wake_by_ref();
+        true
+    }
+
     /// Transfer unresolved ownership for explicit escalation; retire its timer.
     pub fn take_pending(&mut self) -> Option<IngressRecord> {
         self.reset();
