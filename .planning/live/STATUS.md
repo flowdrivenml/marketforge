@@ -39,6 +39,23 @@
 
 ### Autonomous continuation — 2026-10-21
 
+
+Checkpoint `f962ba2` closes the registered delivery scheduling gap after an
+external recovery owner releases payload capacity. The existing capacity owner
+retains one replacement-aware observer, armed before driver maintenance and
+inspection; active and retired queues notify outside their capacity lock even
+after closure. Latest-waker, retirement, preserved obligation and idle-no-spin
+witnesses pass. Full Live verification exits 0: formatting, check, 135 library /
+491 integration (2 opt-in ignored) / 1 doctest; Live+historical compilation exits
+0. Receipts: `engine/target/live-verification/20261021T070346Z-3/`.
+The final strengthened focused witness passes 1/1 (both queue cases).
+WP-10 remains Partial and next executable: complete concrete outcome/recovery
+policy, runtime lifecycle and Control composition remain. WP-05/06/07/09 gates
+persist; WP-11–29 pending. Further autonomous implementation can safely continue.
+No SQL/exchange access, Python/historical execution edits, dependency/lockfile or
+ignored configuration changes. Untracked launcher preserved; no push. See WP-10
+implementation evidence.
+
 Checkpoint `48bb475` fixes parked delivery coordination after explicit recovery
 transfer: successful retained or uncorrelated outcome transfers wake one turn;
 empty lookups preserve the waiter. The original payload charge and independent

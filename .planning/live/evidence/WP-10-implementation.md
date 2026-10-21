@@ -3478,3 +3478,53 @@ STATUS.md and this ledger. Documentation checkpoint carries this entry.
 No SQL/exchange access, Python/historical execution, dependencies/lockfile,
 ignored configuration or launcher changes. No push. Further autonomous WP-10
 implementation can safely continue within recorded gates.
+
+
+### 2026-10-21 — Schedule progress after external payload release
+
+Status: Partial. Next executable: WP-10. Initial HEAD `6017785`, branch
+`codex/wp06-completion`; pre-existing untracked launcher preserved. Read AGENTS,
+autonomous plan, decisions, status, roadmap and current capacity, queue, registry,
+driver and recovery consumer paths. No completed package restarted.
+Implementation checkpoint: `f962ba2`.
+
+Acceptance ledger:
+- Each existing DestinationCapacity owns one replacement-aware release observer,
+  separate from bounded admission waiters and shutdown drain notification.
+  Permit release takes the observer under the accounting mutex and wakes outside
+  it, including after closure. No new owner, capacity charge or success stage.
+- Registered delivery arms active and retired queue capacity before maintenance
+  and inspection; later membership changes use the existing revision waiter.
+  External recovery release can therefore schedule worker/retired-entry reaping
+  without requiring an unrelated admission or timer. Direct nonregistered drive
+  still relies on its caller for registry lifecycle scheduling.
+- Production consumer regression covers active and retired queues, a recovery
+  transfer after driver closure, latest coordinator replacement, exact one wake
+  after external release, unchanged independent tracking obligation, and idle
+  polling without self-waking. Released payload is not claimed as delivery.
+- Remaining: complete concrete outcome/recovery policy, runtime lifecycle and
+  Control composition. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending.
+  No package acceptance, durability or complete daemon claim.
+
+Verification:
+- engine/: cargo fmt --all: exit 0.
+- engine/: cargo test --locked --offline --no-default-features --features live
+  --test live_suite recovery_transfer_wakes_parked: exit 0, 1 passed / 492 filtered.
+  Repeated after strengthening to exercise active and retired queues: same result.
+- root: ./scripts/verify-live.sh full: exit 0, five gates passed: formatting,
+  Live library check, library tests (135 passed), live_suite (491 passed,
+  2 opt-in ignored), doctests (1 passed). Receipts:
+  engine/target/live-verification/20261021T070346Z-3/.
+- engine/: cargo check --locked --offline --no-default-features --features
+  live,historical: exit 0, existing warnings. /tmp/live-release-combined.log.
+- root: git diff --check: exit 0 before checkpoint.
+Initial edit script used the engine cwd with root-relative paths and failed before
+writing; a subsequent test-edit uniqueness assertion failed after production
+edits, corrected by restricting to the named test. No compiler/test failures.
+Historical-only baseline not rerun; prior 151/1 zero-stream failure remains.
+No SQL, exchange, soak or performance verification claimed.
+
+Changed: engine/src/live/routing/{destination,driver,router}.rs,
+engine/tests/live/router.rs, STATUS.md and this ledger. No Python/historical
+execution, dependency/lockfile, ignored configuration or launcher changes.
+No push. Further autonomous WP-10 implementation can safely continue.
