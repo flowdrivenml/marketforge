@@ -3584,3 +3584,53 @@ Changed: engine/src/live/routing/driver.rs, engine/tests/live/reporting.rs,
 STATUS.md and this evidence ledger. No Python/historical execution, dependencies,
 lockfile, ignored configuration or launcher edits. No push. Further autonomous
 WP-10 implementation can safely continue within recorded gates.
+
+
+### 2026-10-21 — Contain terminal reporting handler unwind
+
+Status: Partial. Next executable: WP-10. Initial HEAD `386d900`, branch
+`codex/wp06-completion`; only pre-existing untracked file was
+`scripts/run-autonomous-codex.sh`, preserved. Inspected AGENTS, autonomous plan,
+decisions, status, WP-05–11 roadmap and current terminal/ingress reporting,
+journal, registered driver and downstream recovery/resolution consumers.
+Implementation checkpoint: `0c240eb`.
+
+Acceptance ledger:
+- Terminal reporting contains unwind only around the adapter invocation and
+  treats it as the existing PermanentFailure result. Journal lease/token
+  validation still applies; journal errors propagate without releasing records.
+  Aborting processes cannot be contained. No crash-durability claim.
+- With a valid claim, original outcome remains journal-owned and escalated;
+  unrelated ready reports progress through existing bounded driver scheduling.
+  No reporting success, market-data delivery or durability is manufactured.
+- Extended real registered-driver witness covers twelve scenarios: temporary,
+  permanent and unwinding handlers, open/closed driver, available/rejected timer
+  admission. Verifies record identity, journal charge, independent successful
+  acknowledgement, no idle wake loop, no retry after original lease expiry,
+  and successful explicit retry authorization of the retained panic record.
+- Remaining: complete concrete outcome/recovery policy, runtime lifecycle and
+  Control composition. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending.
+  No package acceptance or complete daemon claim.
+
+Verification (Cargo commands from engine/):
+- cargo test --locked --offline --no-default-features --features live
+  --test live_suite failed_reporting_schedules_one_progress_turn_without_spinning:
+  before fix exit 101, 0 passed / 1 failed / 493 filtered (injected handler panic);
+  after fix exit 0, 1 passed / 493 filtered. /tmp/live-unwind-{before,after}.log.
+  Final added expiry/reauthorization assertions verified by full suite below.
+- cargo fmt --all: exit 0.
+- root ./scripts/verify-live.sh full: exit 0, all five gates pass:
+  cargo fmt --all -- --check; cargo check --locked --offline --no-default-features
+  --features live --lib; cargo test with those flags --lib (135 passed),
+  --test live_suite (492 passed / 2 opt-in ignored), --doc (1 passed).
+  Receipts: engine/target/live-verification/20261021T071014Z-3/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0, existing warnings. /tmp/live-unwind-combined.log.
+- git diff --check: exit 0 before checkpoint.
+Historical-only baseline not rerun; previous 151 passed / 1 failed zero-stream
+finding remains. No SQL, exchange, performance or soak verification claimed.
+
+Changed: engine/src/live/routing/reporting.rs, engine/tests/live/reporting.rs,
+STATUS.md and this ledger. No Python/historical execution, dependency/lockfile,
+ignored configuration or launcher changes. No push. Further autonomous WP-10
+implementation can safely continue; no prerequisite bypass to WP-11 claimed.

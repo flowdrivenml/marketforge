@@ -39,6 +39,21 @@
 
 ### Autonomous continuation — 2026-10-21
 
+
+Checkpoint `0c240eb` contains terminal reporting adapter unwind as permanent
+reporting failure, retaining the original outcome for explicit intervention.
+The registered production-driver witness now covers twelve error/unwind,
+open/closed and timer-admission scenarios, continued independent reporting,
+no automatic retry after expiry and explicit reauthorization. Full Live gates
+exit 0: formatting, check, 135 library / 492 integration (2 opt-in ignored) /
+1 doctest; Live+historical compilation exits 0. Receipts:
+`engine/target/live-verification/20261021T071014Z-3/`.
+WP-10 remains Partial and next executable: complete concrete outcome/recovery
+policy, runtime lifecycle and Control composition. Earlier WP-05/06/07/09 gates
+persist; WP-11–29 pending. Further autonomous implementation can safely continue.
+No SQL/exchange access, Python/historical execution, dependency/lockfile or ignored
+configuration changes. Untracked launcher preserved; no push. See WP-10 evidence.
+
 Checkpoint `3dbf060` prevents ready terminal reports from parking after an earlier
 report is deferred or escalated. Each non-idle reporting transition requests one
 bounded follow-up turn; Idle does not self-wake. Eight deterministic scenarios
