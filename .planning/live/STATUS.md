@@ -14,7 +14,7 @@
 | WP-07 | Freeze service ports, management and observation surfaces | Contract implementation review pending; C12 adapter decision OPEN | [Contract implementation and witnesses](evidence/wp07-contracts.md) |
 | WP-08 | Implement foundations and real native observability | ReadyForReview | [Implementation ledger](evidence/WP-08-implementation.md) |
 | WP-09 | Implement the Configuration System | Partial — candidates/DAG/journal verified; semantic compiler and service pending | [Implementation ledger](evidence/WP-09-implementation.md) |
-| WP-10 | Implement the canonical event router | Partial — ordered tracked fan-out integrated; production owner pending | [Implementation ledger](evidence/WP-10-implementation.md) |
+| WP-10 | Implement the canonical event router | Partial — recorded producer port integrated; runtime/Control composition pending | [Implementation ledger](evidence/WP-10-implementation.md) |
 | WP-11 | Implement source registry and dependency ownership | Pending | — |
 | WP-12 | Implement exchange-profile and format compilation | Pending | — |
 | WP-13 | Implement WebSocket Connection Manager | Pending | — |
@@ -38,6 +38,26 @@
 ## Current Development Position
 
 ### Autonomous continuation — 2026-10-21
+
+Latest checkpoint `abc3f59` exposes the existing ingress through EventRouterPort,
+with mandatory bounded outcome retention before returning a receipt. Only complete
+required queue admission or a completed optional-only attempt returns Accepted;
+partial/uncertain required outcomes reject conservatively while retaining their
+identity and detailed outcomes. Rejection after partial commitment is not rollback;
+producers must reconcile the journal before retrying. Cancellation and relative
+per-call deadlines use the existing authoritative owners and clock.
+Five deterministic consumer witnesses pass, including real partial queue commitment,
+tracking-capacity rejection and dropped-wait rollback. Final full verification exits
+0: formatting, Live check, 135 library / 475 integration passes (2 opt-in ignored) /
+1 doctest. Live+historical check also exits 0. Receipts:
+`engine/target/live-verification/20261021T061603Z-2/`.
+WP-10 remains Partial and next executable: concrete runtime reporting/recovery
+consumer and Control composition remain. Earlier WP-05/06/07/09 gates persist;
+WP-11–29 pending. Further autonomous WP-10 implementation can safely continue.
+No SQL/exchange requests, Python/historical execution, dependency/lockfile or
+ignored configuration changes; untracked launcher preserved; no push.
+See the WP-10 ledger for exact commands, failed test iterations and limitations.
+
 
 Latest implementation checkpoint `9293c85` adds bounded ownership of contextual
 ingress outcomes for runtime reporting. Reporting capacity is reserved before

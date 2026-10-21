@@ -2731,3 +2731,65 @@ Changed: engine/src/live/routing/{ingress_reporting,mod}.rs,
 engine/tests/live/router.rs, STATUS.md and this evidence ledger.
 No Python/historical execution, dependency/lockfile, ignored configuration changes
 or push. No package marked Accepted and no project completion claim.
+
+
+## Continuation — recorded EventRouterPort facade (2026-10-21)
+
+Status: Partial. Next executable: WP-10. Initial HEAD `d994f7e`, branch
+`codex/wp06-completion`; pre-existing untracked launcher preserved. Inspected
+campaign instructions, plan, decisions, current status/evidence, WP-10/11 roadmap,
+producer contract and actual ingress/journal/order/driver consumers.
+Implementation checkpoint: `abc3f59`; documentation checkpoint carries this entry.
+
+Acceptance ledger:
+- RouterPort implements the actual EventRouterPort, reusing contextual ingress and
+  the existing bounded reporting journal. No second mutable router/tracker owner.
+- IngressOutcomes::admit_receipt computes the conservative projection and retains
+  the entire outcome synchronously before returning. Existing detailed journal
+  admission stays compatible. Capacity is acquired before queue commitment.
+- Complete required queue admission returns the original through cursor; optional
+  attempts can complete with overload, retained explicitly in the journal. Neither
+  receipt means delivery, consumer processing or durability. Partial/uncertain
+  required commitment never returns Accepted. Such a rejection is not rollback:
+  reconcile detailed outcomes before retrying; committed identity is not rewound.
+- Cancellation, relative per-call deadlines, overflowed deadline arithmetic,
+  bounded reporting, closed owners, empty membership and cursor failures have
+  explicit producer receipts. Runtime independently owns delivery and shutdown.
+- Five deterministic actual-port witnesses cover immutable queue/journal sharing,
+  reporting exhaustion and closure, invalid cursor retry, cancellation, immediate
+  deadlines, no destinations, optional overload, dropped waits, tracker exhaustion,
+  and partial required commitment. Fault injection closes one real queue only
+  after both real reservations exist; one queue remains committed and one fails.
+- Remaining: actual runtime reporting/recovery consumer (including consuming
+  returned recovery reservations), full owner lifecycle and Control composition.
+  The borrowed facade is not a running daemon or complete WP-10 acceptance.
+  Earlier WP-05/06/07/09 gates remain; WP-11–29 pending. Further autonomous work
+  can safely continue against the existing independent WP-10 prerequisites.
+
+Verification (engine/ unless root stated):
+- cargo fmt --manifest-path engine/Cargo.toml --all (root): exit 0.
+- cargo check --locked --offline --no-default-features --features live: exit 0.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite router_port_: final exit 0, 5 passed / 472 filtered out.
+- ./scripts/verify-live.sh full (root): exit 0; cargo fmt --all -- --check,
+  cargo check --locked --offline --no-default-features --features live --lib,
+  cargo test with those flags --lib (135 passed), --test live_suite (475 passed,
+  2 opt-in ignored), --doc (1 passed). Final receipts:
+  engine/target/live-verification/20261021T061603Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0. Existing dead-code warnings remain.
+- git diff --check (root): exit 0 before implementation checkpoint.
+- Earlier full verification also passed (135/474/1) at 061440Z-2. Initial focused
+  compile exited 101 for missing test Duration qualification, corrected. Partial
+  fault witness initially failed twice (exit 101): no deadline meant no clock
+  observation, then missing timer rejected preparation. Added explicit deadline
+  and controlled pending timer; the production assertions are retained and pass.
+  One exploratory rg used a nonexistent ordered* test filename; inspected actual
+  queue/capacity/clock APIs instead. No unresolved verification failures.
+- SQL/performance opt-in and historical-only tests not run; historical zero-stream
+  baseline not rechecked. No database/exchange access or new durability claim.
+
+Changed: engine/src/live/routing/{port,ingress_reporting,mod}.rs,
+engine/tests/live/router.rs, STATUS.md and this ledger. No dependency/lockfile,
+Python/historical execution, ignored configuration or launcher modifications.
+No push, package acceptance or project completion claim.
