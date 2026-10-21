@@ -7,7 +7,10 @@ use super::{
     },
     completion::{FinalizedDelivery, PendingDeliveries, PendingDeliveryError, RetainedDelivery},
     tracking_recovery::{TrackingRecovery, TrackingRecoverySnapshot},
-    worker::{DestinationWorkers, WorkerOutcome, WorkersSnapshot},
+    worker::{
+        DestinationWorker, DestinationWorkers, WorkerOutcome, WorkerRegistrationError,
+        WorkersSnapshot,
+    },
 };
 use crate::live::ports::routing::DestinationCompletion;
 use std::task::{Context, Poll};
@@ -78,6 +81,21 @@ impl DeliverySupervisor {
             pending: PendingDeliveries::new(limit),
             blocked: None,
         }
+    }
+
+    /// Add a newly claimed registry instance without replacing the delivery owner.
+    /// Failure preserves the complete worker for retry or explicit handoff.
+    #[allow(clippy::result_large_err)]
+    pub fn insert_worker(
+        &mut self,
+        worker: DestinationWorker,
+    ) -> Result<(), (WorkerRegistrationError, DestinationWorker)> {
+        self.workers.insert(worker)
+    }
+
+    /// Runtime maintenance after payload release; does not finalize obligations.
+    pub fn reap_drained_workers(&mut self) -> usize {
+        self.workers.reap_drained()
     }
 
     /// One bounded step: terminal handoff, or at most one worker outcome.

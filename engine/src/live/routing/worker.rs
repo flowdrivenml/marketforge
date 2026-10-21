@@ -360,6 +360,30 @@ impl DestinationWorkers {
         Some(worker)
     }
 
+    /// Release closed, fully drained instances in one capacity-bounded pass.
+    /// Open replacements and all outstanding payload charges remain owned.
+    /// This releases scheduler slots only; registry retirement and independent
+    /// delivery obligations must still be resolved by their respective owners.
+    pub fn reap_drained(&mut self) -> usize {
+        let before = self.workers.len();
+        let mut index = 0;
+        while index < self.workers.len() {
+            let snapshot = self.workers[index].snapshot();
+            if snapshot.closed && snapshot.is_drained() {
+                self.workers.remove(index);
+                if index < self.next {
+                    self.next -= 1;
+                }
+            } else {
+                index += 1;
+            }
+        }
+        if self.next >= self.workers.len() {
+            self.next = 0;
+        }
+        before - self.workers.len()
+    }
+
     pub fn snapshot(&self) -> WorkersSnapshot {
         WorkersSnapshot {
             closed: self.closed,

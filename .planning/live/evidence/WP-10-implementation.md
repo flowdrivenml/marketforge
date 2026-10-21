@@ -1626,3 +1626,57 @@ or ignored-configuration changes. This is an incremental verified WP-10 checkpoi
 not package acceptance. Remaining: production EventRouterPort ordered composition,
 runtime retry/retired-drain/reaping scheduling and native metrics/control binding.
 WP-05/06/07/09 gates persist; WP-11–29 pending. Further autonomous work is safe.
+
+
+## Continuation — dynamic supervised worker membership (2026-10-21)
+
+Status: Partial. Starting checkpoint `23db1c3`, branch `codex/wp06-completion`.
+Read AGENTS, campaign plan, decisions, status and roadmap WP-08–11; inspected real
+registry, worker, supervisor, driver, shutdown and consumer tests. Next executable
+remains WP-10. Preserved initial untracked `scripts/run-autonomous-codex.sh`.
+
+The composed delivery owner previously exposed no way to attach replacement or
+retired workers after construction, or release drained scheduler slots. Added
+owner-preserving `insert_worker` through DeliverySupervisor/DeliveryDriver and a
+capacity-bounded `reap_drained` scheduler pass exposed through both owners. Reaping
+requires closed queues and zero queued, pending-call, outcome and payload charges;
+open replacement instances survive. Registration retains existing duplicate/capacity
+checks and closed scheduler fence; errors return the complete worker. Scheduling
+position is adjusted when removed slots precede it. Registry reaping remains
+explicit and independent; neither reaping path finalizes delivery obligations.
+
+New deterministic real registry/driver witness: same-ID retired/replacement queues,
+externally held payloads, scheduler capacity rejection with intact returned worker,
+charge-fenced reaping, retry into released slot, open replacement preservation,
+idempotent reaping, closed scheduler drain and rejected post-close registration.
+No sleeps, SQL or exchanges. Existing worker fan-out/fairness tests remain passing.
+Initial witness attempted external dequeue after exclusive worker acquisition;
+corrected fixture order to hold payloads before acquisition, preserving production
+queue exclusivity. An initial edit script used the wrong working directory and
+made no changes; corrected path. No final failing checks.
+
+Verification (actual exits):
+- From engine/: `cargo test --locked --offline --no-default-features --features live
+  --test live_suite delivery_driver_reconciles_retired`: final exit 0, 1 passed.
+- Root `./scripts/verify-live.sh full`: final exit 0. Executes `cargo fmt --all
+  -- --check`; `cargo check --locked --offline --no-default-features --features
+  live --lib`; tests with same flags and `--lib` (134 passed), `--test live_suite`
+  (444 passed, 2 opt-in ignored), `--doc` (1 passed). Final receipts:
+  `engine/target/live-verification/20261021T051151Z-2/`.
+- From engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; existing dead-code warnings only.
+- Root `git diff --check`: exit 0 before checkpoint.
+SQL/performance opt-ins and historical-only execution not run; no claim on those
+gates or historical zero-stream baseline. Full suite rerun after strengthening
+capacity rejection/retry assertions; no production edits after combined check.
+
+Changed: `engine/src/live/routing/{worker,supervisor,driver}.rs`,
+`engine/tests/live/router.rs`, STATUS.md and this ledger. Checkpoint: local commit
+carrying this entry. No push, SQL/exchange traffic, Python/historical execution,
+dependency/lockfile or ignored configuration edits.
+
+Remaining: production EventRouterPort ordered composition, runtime wakeup/retry
+and registry-worker synchronization/retired reaping, native metrics/control binding.
+These lifecycle APIs are real composition primitives, not a running router daemon.
+Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. No acceptance or entire
+project completion claimed. Further autonomous WP-10 implementation is safe.

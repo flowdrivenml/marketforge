@@ -623,6 +623,71 @@ fn registry_retired_and_replacement_workers_share_bounded_scheduler() {
 }
 
 #[test]
+fn delivery_driver_reconciles_retired_workers_and_fences_shutdown() {
+    use marketforge_engine::live::routing::{
+        destination::DestinationCapacity,
+        queue::DestinationQueue,
+        worker::{DestinationWorkers, WorkerRegistrationError},
+    };
+    use std::num::NonZeroUsize;
+    let registry = RouterRegistry::with_destination_limit(2).unwrap();
+    let adapter = destination(1, DestinationKind::Publication, DeliveryPolicy::Required);
+    let old =
+        DestinationQueue::new(DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap());
+    registry
+        .register_queue(adapter.clone(), old.clone())
+        .unwrap();
+    old.try_enqueue(batch()).unwrap();
+    registry.unregister(DestinationId(1)).unwrap();
+    let replacement =
+        DestinationQueue::new(DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap());
+    registry
+        .register_queue(adapter, replacement.clone())
+        .unwrap();
+    replacement.try_enqueue(batch()).unwrap();
+    use marketforge_engine::live::routing::{
+        acknowledgement::{AcknowledgementTracker, FinalizationJournal},
+        driver::DeliveryDriver,
+        supervisor::DeliverySupervisor,
+        tracking_recovery::TrackingRecovery,
+    };
+    let limit = NonZeroUsize::new(1).unwrap();
+    let mut driver = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(2).unwrap(),
+        TrackingRecovery::new(2).unwrap(),
+        FinalizationJournal::new(2).unwrap(),
+    );
+    // Dequeue externally to isolate lifecycle accounting from correlation.
+    let first = old.try_dequeue().unwrap();
+    let second = replacement.try_dequeue().unwrap();
+    let retired = registry.claim_retired_worker(DestinationId(1)).unwrap();
+    let active = registry.claim_worker(DestinationId(1)).unwrap();
+    assert!(driver.insert_worker(retired).is_ok());
+    let (reason, active) = driver.insert_worker(active).err().unwrap();
+    assert_eq!(reason, WorkerRegistrationError::Full);
+    assert_eq!(driver.reap_drained_workers(), 0);
+    assert_eq!(registry.reap_retired(), 0);
+    drop(first);
+    assert_eq!(driver.reap_drained_workers(), 1);
+    assert_eq!(driver.reap_drained_workers(), 0);
+    assert_eq!(registry.reap_retired(), 1);
+    assert!(driver.insert_worker(active).is_ok());
+    assert_eq!(driver.snapshot().workers.workers.len(), 1);
+    assert!(!driver.snapshot().workers.workers[0].1.closed);
+    driver.close();
+    assert_eq!(driver.reap_drained_workers(), 0);
+    drop(second);
+    assert_eq!(driver.reap_drained_workers(), 1);
+    assert!(driver.snapshot().is_drained());
+    let worker = registry.claim_worker(DestinationId(1)).unwrap();
+    let (reason, worker) = driver.insert_worker(worker).err().unwrap();
+    assert_eq!(reason, WorkerRegistrationError::Closed);
+    drop(worker);
+    assert!(driver.snapshot().is_drained());
+}
+
+#[test]
 fn registry_retirement_wakes_waiters_outside_locks_and_retains_reservations() {
     use marketforge_engine::live::routing::{
         destination::{CapacityError, DestinationCapacity},

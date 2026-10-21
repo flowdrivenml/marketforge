@@ -10,7 +10,7 @@ use super::{
     completion::{PendingDeliveryError, RetainedDelivery},
     supervisor::{DeliverySupervisionSnapshot, DeliverySupervisor, SupervisionStep},
     tracking_recovery::{TrackingRecovery, TrackingRecoveryPass},
-    worker::WorkerOutcome,
+    worker::{DestinationWorker, WorkerOutcome, WorkerRegistrationError},
 };
 use crate::live::ports::routing::DestinationCompletion;
 use std::task::{Context, Poll};
@@ -71,6 +71,23 @@ impl DeliveryDriver {
             return Err(DeliveryAdmissionError::Closed);
         }
         Ok((&mut self.tracker, &mut self.recovery))
+    }
+
+    /// Attach a registry worker to the existing authoritative delivery owners.
+    /// Shutdown fencing is enforced by the owned scheduler. Errors return the
+    /// worker intact, including queue lease and any pending operation.
+    #[allow(clippy::result_large_err)]
+    pub fn insert_worker(
+        &mut self,
+        worker: DestinationWorker,
+    ) -> Result<(), (WorkerRegistrationError, DestinationWorker)> {
+        self.supervisor.insert_worker(worker)
+    }
+
+    /// Release only closed, drained scheduler instances. Call registry reaping
+    /// separately; neither operation establishes delivery completion.
+    pub fn reap_drained_workers(&mut self) -> usize {
+        self.supervisor.reap_drained_workers()
     }
 
     pub fn is_closed(&self) -> bool {

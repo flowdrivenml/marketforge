@@ -40,6 +40,24 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest continuation exposes bounded dynamic worker registration and drained-worker
+reaping through WP-10's authoritative DeliverySupervisor/DeliveryDriver. Capacity
+and shutdown failures return the complete worker; held payload charges fence
+reaping, and same-ID open replacements remain independent. One deterministic
+production-owner lifecycle witness covers capacity rejection/retry, retired charge
+release, replacement preservation, idempotent reaping and shutdown registration
+rejection. Full verification exits 0: formatting, Live check, 134 library / 444
+integration (2 opt-in ignored) / 1 doctest; Live+historical check exits 0. Receipts:
+`engine/target/live-verification/20261021T051151Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort ordered
+composition, runtime wakeup/retry/registry synchronization and native metrics/control
+binding. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Further autonomous
+implementation can safely continue. Checkpoint: local commit carrying this entry.
+Preserved pre-existing untracked launcher. No push, database/exchange traffic,
+Python/historical execution edits, dependency or ignored configuration changes.
+
+
+
 Latest continuation integrates independent same-ID retired/replacement workers into
 WP-10's bounded scheduler. Closed old instances can drain alongside replacements;
 two open instances remain rejected. A production registry/scheduler witness covers
