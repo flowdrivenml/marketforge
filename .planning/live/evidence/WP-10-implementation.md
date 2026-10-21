@@ -701,3 +701,56 @@ not rerun. Earlier foundational gates unchanged. Remaining: production router
 owner, registry-bound worker construction/scheduling, completion/recovery payload
 integration, metrics/control binding and deadline shutdown composition. WP-10 is
 not ReadyForReview or Accepted; WP-11–29 pending. Safe to continue autonomously.
+
+
+## Continuation — registry-bound destination workers (2026-10-21)
+
+Status: Partial. Baseline/worker checkpoint `bd48878`; branch
+`codex/wp06-completion`. Existing untracked launcher preserved. WP-10 remains
+next executable; no later package prerequisites have been bypassed.
+
+`RouterRegistry::claim_worker` now binds the actual registered adapter, queue and
+frozen descriptor under its membership read fence. Adapter code is not invoked
+while holding that fence. Missing destination/queue and duplicate consumer claims
+are explicit errors; closed registries permit retained queue draining. Retired
+workers retain their original queue, and cannot close or dequeue a replacement's
+queue. Struct destruction drops the adapter future before releasing payload
+capacity, and releases exclusive dequeue authority last.
+
+Four additional deterministic witnesses (eight total worker tests) exercise:
+- Real bounded ordered admission, obligation preparation/commitment, registered
+  worker admission, immutable payload readback and shutdown. Adapter acceptance
+  does not advance the tracker beyond Queued or finalize its Durable obligation.
+- Old/new same-ID registration isolation, wrong/missing membership and closed
+  registry draining.
+- Barrier-coordinated concurrent claims: exactly one consumer, with capacity and
+  membership authority retained until release.
+- Adapter future destruction observes both the original payload charge and
+  exclusive consumer lease still held; queued successor survives owner drop.
+
+Verification (all exit 0):
+- engine/: `cargo test --locked --offline --no-default-features --features live
+  --test live_suite destination_worker`: 6 passed initially, 7 passed after
+  concurrent claim coverage; all 8 execute in the final full suite.
+- Root `./scripts/verify-live.sh full`: `cargo fmt --all -- --check`;
+  `cargo check --locked --offline --no-default-features --features live --lib`;
+  `cargo test --locked --offline --no-default-features --features live --lib`
+  (132 passed); same test flags with `--test live_suite` (412 passed, 2 opt-in
+  ignored); with `--doc` (1 passed). Final receipts:
+  `engine/target/live-verification/20261021T042417Z-2/`.
+- engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0, existing dead-code warnings remain.
+- Root `git diff --check`: exit 0 before checkpoint.
+
+Changed: `engine/src/live/routing/{router,worker}.rs`,
+`engine/tests/live/destination_worker.rs`, STATUS.md and this ledger.
+Checkpoint: local commit carrying this continuation. No SQL/exchange traffic,
+Python/historical execution, dependencies/lockfile or ignored configuration
+changes; no push. Opt-in SQL/performance and historical baseline not rerun.
+
+Remaining acceptance ledger: production EventRouterPort owner, runtime scheduling,
+completion/recovery outcome correlation and payload ownership, native metrics/
+control binding and finite deadline shutdown composition remain. Worker close/
+snapshot is not complete runtime shutdown; dropping a pending owner is abandonment,
+not a successful delivery or drain. Earlier WP-05/06/07/09 gates remain unchanged;
+WP-11–29 pending. No package accepted. Further autonomous WP-10 work is safe.

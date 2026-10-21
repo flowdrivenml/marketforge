@@ -46,6 +46,13 @@ pub struct QueueDestination {
     pub descriptor: DestinationDescriptor,
     pub queue: DestinationQueue,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegistryWorkerError {
+    UnknownDestination,
+    MissingQueue,
+    Worker(super::worker::WorkerCreationError),
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FanoutPreparationError {
     NoRequiredDestinations,
@@ -531,6 +538,30 @@ impl RouterRegistry {
             .destinations
             .get(&id)
             .and_then(|entry| entry.queue.clone())
+    }
+
+    /// Claim the actual registered adapter/queue pair under its membership fence.
+    /// This also permits draining a closed registry. Replacements use independent
+    /// queues; an old worker retains only its original instance's responsibility.
+    pub fn claim_worker(
+        &self,
+        id: DestinationId,
+    ) -> Result<super::worker::DestinationWorker, RegistryWorkerError> {
+        let state = self.state.read().unwrap_or_else(|p| p.into_inner());
+        let entry = state
+            .destinations
+            .get(&id)
+            .ok_or(RegistryWorkerError::UnknownDestination)?;
+        let queue = entry
+            .queue
+            .clone()
+            .ok_or(RegistryWorkerError::MissingQueue)?;
+        super::worker::DestinationWorker::from_registered(
+            queue,
+            entry.destination.clone(),
+            entry.descriptor,
+        )
+        .map_err(RegistryWorkerError::Worker)
     }
     /// Register one destination instance.
     ///

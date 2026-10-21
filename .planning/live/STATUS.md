@@ -40,6 +40,25 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest continuation binds WP-10 workers to the actual registered adapter, frozen
+descriptor and queue under the membership fence. Eight worker witnesses now cover
+ordered tracked fan-out, concurrent exclusive claims, replacement isolation,
+shutdown drain, payload lifetime and adapter destruction before permit/lease release.
+Adapter acceptance leaves authoritative obligations at Queued, never fabricated
+Delivered/Committed/Durable. Worker checkpoint: `bd48878`; registry integration:
+local commit carrying this entry and the matching WP-10 evidence continuation.
+Final full Live verification exits 0: 132 library / 412 integration (2 opt-in
+ignored) / 1 doctest, formatting and Live compilation; Live+historical check exits 0.
+Receipts: `engine/target/live-verification/20261021T042417Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort owner,
+runtime worker scheduling, completion/recovery correlation and payload lifetime,
+metrics/control integration and finite deadline shutdown remain. Earlier
+WP-05/06/07/09 gates persist; WP-11–29 pending. Autonomous implementation can
+safely continue on WP-10. No SQL/exchange traffic, Python/historical execution,
+dependency/lockfile or ignored-config changes; no push. Existing untracked
+`scripts/run-autonomous-codex.sh` preserved.
+
+
 Latest continuation implements the WP-10 exclusive destination admission worker.
 It retains pending adapter calls, payloads and capacity across polling pauses;
 validates destination/cursor correlation; and transfers outcomes with charged

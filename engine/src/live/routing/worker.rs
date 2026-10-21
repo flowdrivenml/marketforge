@@ -68,10 +68,12 @@ pub struct DestinationWorker {
     destination: Arc<dyn EventDestinationPort>,
     descriptor: DestinationDescriptor,
     queue: DestinationQueue,
-    lease: QueueWorkerLease,
-    payload: Option<QueuedBatch>,
+    // Drop the adapter future before releasing its payload's capacity charge.
     operation: Option<RoutingFuture<'static, DestinationAdmission>>,
+    payload: Option<QueuedBatch>,
     outcome: Option<WorkerAdmissionResult>,
+    // Release dequeue authority only after the old operation has been dropped.
+    lease: QueueWorkerLease,
 }
 impl DestinationWorker {
     pub fn new(
@@ -79,6 +81,16 @@ impl DestinationWorker {
         destination: Arc<dyn EventDestinationPort>,
     ) -> Result<Self, WorkerCreationError> {
         let descriptor = destination.descriptor();
+        Self::from_registered(queue, destination, descriptor)
+    }
+
+    /// Uses the descriptor frozen by registration, without invoking adapter code
+    /// while the registry's membership fence is held.
+    pub(crate) fn from_registered(
+        queue: DestinationQueue,
+        destination: Arc<dyn EventDestinationPort>,
+        descriptor: DestinationDescriptor,
+    ) -> Result<Self, WorkerCreationError> {
         if queue.capacity().limits() != descriptor.capacity {
             return Err(WorkerCreationError::CapacityMismatch);
         }

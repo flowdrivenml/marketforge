@@ -265,3 +265,249 @@ fn destination_worker_slow_adapter_does_not_block_another_destination() {
     );
     drop(slow.take_outcome().unwrap());
 }
+
+#[test]
+fn destination_worker_registered_ordered_fanout_preserves_obligation_stages() {
+    use marketforge_engine::live::{
+        foundation::{CancellationToken, SystemMonotonicClock, resources::ResourceUsage},
+        model::delivery::{DeliveryStage, DeliveryStatus},
+        routing::{
+            acknowledgement::{AcknowledgementTracker, DeliveryObligationId},
+            admission::AdmissionContext,
+            namespaces::AdmissionNamespaces,
+            ordered::{OrderedAdmissionBudget, OrderedCommitOutcome},
+            router::{RegistryWorkerError, RouterRegistry, TrackedFanoutResult},
+            tracking_recovery::TrackingRecovery,
+        },
+    };
+    let (queue, adapter, initial_worker) = fixture(0);
+    drop(initial_worker);
+    let registry = RouterRegistry::new();
+    registry
+        .register_queue(adapter.clone(), queue.clone())
+        .unwrap();
+    assert!(matches!(
+        registry.claim_worker(DestinationId(99)),
+        Err(RegistryWorkerError::UnknownDestination)
+    ));
+    let mut worker = registry.claim_worker(DestinationId(7)).unwrap();
+    let original = batch(10);
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    namespaces
+        .register(original.first_cursor().clone())
+        .unwrap();
+    let budget = OrderedAdmissionBudget::new(ResourceUsage {
+        items: 4,
+        bytes: 100_000,
+    })
+    .unwrap();
+    let mut tracker = AcknowledgementTracker::new(2).unwrap();
+    let mut recovery = TrackingRecovery::new(2).unwrap();
+    let waker = Waker::from(Arc::new(WakeCount::default()));
+    let mut cx = Context::from_waker(&waker);
+    let mut preparing = Box::pin(budget.prepare(
+        &registry,
+        &namespaces,
+        original.clone(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ));
+    use std::future::Future;
+    let prepared = match preparing.as_mut().poll(&mut cx) {
+        Poll::Ready(Ok(prepared)) => prepared,
+        _ => panic!("local capacity must be immediately ready"),
+    };
+    drop(preparing);
+    assert!(matches!(
+        prepared.commit(&mut tracker, &mut recovery),
+        OrderedCommitOutcome::Tracked(TrackedFanoutResult::Complete { .. })
+    ));
+    assert_eq!(tracker.len(), 1);
+    assert_eq!(
+        tracker.status(DeliveryObligationId(1)),
+        Some(DeliveryStatus::Progress(DeliveryStage::Queued))
+    );
+    assert_eq!(worker.poll_admission(&mut cx), Poll::Pending);
+    registry.shutdown();
+    assert!(!worker.snapshot().is_drained());
+    adapter.release();
+    assert_eq!(
+        worker.poll_admission(&mut cx),
+        Poll::Ready(WorkerStep::OutcomeReady)
+    );
+    let outcome = worker.take_outcome().unwrap();
+    assert!(Arc::ptr_eq(
+        &outcome.payload.batch().events()[0],
+        &original.events()[0]
+    ));
+    assert_eq!(
+        outcome.payload.batch().last_cursor(),
+        original.last_cursor()
+    );
+    // No invented delivered/committed/durable observation from adapter admission.
+    assert_eq!(
+        tracker.status(DeliveryObligationId(1)),
+        Some(DeliveryStatus::Progress(DeliveryStage::Queued))
+    );
+    drop(outcome);
+    assert!(worker.snapshot().is_drained());
+    assert_eq!(tracker.len(), 1); // runtime must still own completion responsibility
+    assert!(recovery.snapshot().is_drained());
+}
+
+#[test]
+fn destination_worker_registration_replacement_fences_old_queue_ownership() {
+    use marketforge_engine::live::routing::router::{RegistryWorkerError, RouterRegistry};
+    let (queue, old_adapter, initial_worker) = fixture(0);
+    drop(initial_worker);
+    let registry = RouterRegistry::new();
+    registry
+        .register_queue(old_adapter.clone(), queue.clone())
+        .unwrap();
+    let mut old_worker = registry.claim_worker(DestinationId(7)).unwrap();
+    queue.try_enqueue(batch(10)).unwrap();
+    let waker = Waker::from(Arc::new(WakeCount::default()));
+    let mut cx = Context::from_waker(&waker);
+    assert_eq!(old_worker.poll_admission(&mut cx), Poll::Pending);
+    registry.unregister(DestinationId(7)).unwrap();
+    let (new_queue, new_adapter, initial_worker) = fixture(0);
+    drop(initial_worker);
+    registry
+        .register_queue(new_adapter.clone(), new_queue.clone())
+        .unwrap();
+    let mut new_worker = registry.claim_worker(DestinationId(7)).unwrap();
+    new_queue.try_enqueue(batch(12)).unwrap();
+    old_worker.close(); // only the retired instance is closed
+    assert!(!new_queue.snapshot().closed);
+    new_adapter.release();
+    assert_eq!(
+        new_worker.poll_admission(&mut cx),
+        Poll::Ready(WorkerStep::OutcomeReady)
+    );
+    let new_outcome = new_worker.take_outcome().unwrap();
+    assert_eq!(new_outcome.payload.batch().first_cursor().offset, 12);
+    assert_eq!(old_adapter.calls.load(Ordering::SeqCst), 1);
+    old_adapter.release();
+    assert_eq!(
+        old_worker.poll_admission(&mut cx),
+        Poll::Ready(WorkerStep::OutcomeReady)
+    );
+    let old_outcome = old_worker.take_outcome().unwrap();
+    assert_eq!(old_outcome.payload.batch().first_cursor().offset, 10);
+    drop(old_outcome);
+    drop(new_outcome);
+    assert!(old_worker.snapshot().is_drained());
+    assert!(new_worker.snapshot().is_drained());
+    registry.shutdown();
+    drop(new_worker);
+    assert!(registry.claim_worker(DestinationId(7)).is_ok()); // closed-queue drain is permitted
+    let no_queue = RouterRegistry::new();
+    no_queue.register(new_adapter).unwrap();
+    assert!(matches!(
+        no_queue.claim_worker(DestinationId(7)),
+        Err(RegistryWorkerError::MissingQueue)
+    ));
+}
+
+#[test]
+fn destination_worker_concurrent_registry_claim_has_one_owner() {
+    use marketforge_engine::live::routing::router::{RegistryWorkerError, RouterRegistry};
+    let (queue, adapter, initial_worker) = fixture(0);
+    drop(initial_worker);
+    let registry = RouterRegistry::new();
+    registry.register_queue(adapter, queue).unwrap();
+    let barrier = std::sync::Barrier::new(2);
+    let results = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                scope.spawn(|| {
+                    barrier.wait();
+                    registry.claim_worker(DestinationId(7))
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|r| matches!(
+                r,
+                Err(RegistryWorkerError::Worker(
+                    WorkerCreationError::AlreadyClaimed
+                ))
+            ))
+            .count(),
+        1
+    );
+    drop(results);
+    assert!(registry.claim_worker(DestinationId(7)).is_ok());
+}
+
+#[test]
+fn destination_worker_drops_adapter_before_charge_and_consumer_lease() {
+    use std::{future::Future, pin::Pin};
+    struct PendingCall {
+        queue: DestinationQueue,
+        dropped: Arc<AtomicBool>,
+    }
+    impl Future for PendingCall {
+        type Output = DestinationAdmission;
+        fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
+            Poll::Pending
+        }
+    }
+    impl Drop for PendingCall {
+        fn drop(&mut self) {
+            assert_eq!(self.queue.observe().capacity.occupied_events, 4);
+            assert_eq!(self.queue.snapshot().queued_events, 2);
+            assert!(self.queue.try_dequeue().is_none());
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+    struct DropAdapter {
+        descriptor: DestinationDescriptor,
+        queue: DestinationQueue,
+        dropped: Arc<AtomicBool>,
+    }
+    impl EventDestinationPort for DropAdapter {
+        fn descriptor(&self) -> DestinationDescriptor {
+            self.descriptor
+        }
+        fn admit<'a>(&'a self, _: EventBatch) -> RoutingFuture<'a, DestinationAdmission> {
+            Box::pin(PendingCall {
+                queue: self.queue.clone(),
+                dropped: self.dropped.clone(),
+            })
+        }
+    }
+    let (queue, adapter, worker) = fixture(0);
+    drop(worker);
+    let dropped = Arc::new(AtomicBool::new(false));
+    let mut worker = DestinationWorker::new(
+        queue.clone(),
+        Arc::new(DropAdapter {
+            descriptor: adapter.descriptor,
+            queue: queue.clone(),
+            dropped: dropped.clone(),
+        }),
+    )
+    .unwrap();
+    queue.try_enqueue(batch(10)).unwrap();
+    queue.try_enqueue(batch(12)).unwrap();
+    let waker = Waker::from(Arc::new(WakeCount::default()));
+    assert_eq!(
+        worker.poll_admission(&mut Context::from_waker(&waker)),
+        Poll::Pending
+    );
+    drop(worker); // abandonment remains explicit, never reported as successful drain
+    assert!(dropped.load(Ordering::SeqCst));
+    assert_eq!(queue.observe().capacity.occupied_events, 2);
+    let remainder = queue.try_dequeue().unwrap();
+    assert_eq!(remainder.batch().first_cursor().offset, 12);
+}
