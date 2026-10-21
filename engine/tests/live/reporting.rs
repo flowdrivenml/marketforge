@@ -690,25 +690,30 @@ fn failed_reporting_schedules_one_progress_turn_without_spinning() {
             }
         }
     }
-    struct Reporter(ReportingError, AtomicUsize);
+    struct Reporter(ReportingError, bool, AtomicUsize);
     impl FinalizationReporter for Reporter {
         fn report(&self, _: &FinalizationRecord) -> Result<(), ReportingError> {
-            if self.1.fetch_add(1, Ordering::SeqCst) == 0 {
+            if self.2.fetch_add(1, Ordering::SeqCst) == 0 {
+                assert!(!self.1, "injected reporting handler unwind");
                 Err(self.0)
             } else {
                 Ok(())
             }
         }
     }
-    for (failure, closed, timer_full) in [
-        (ReportingError::TemporarilyUnavailable, false, false),
-        (ReportingError::TemporarilyUnavailable, false, true),
-        (ReportingError::TemporarilyUnavailable, true, false),
-        (ReportingError::TemporarilyUnavailable, true, true),
-        (ReportingError::PermanentFailure, false, false),
-        (ReportingError::PermanentFailure, false, true),
-        (ReportingError::PermanentFailure, true, false),
-        (ReportingError::PermanentFailure, true, true),
+    for (failure, closed, timer_full, panics) in [
+        (ReportingError::TemporarilyUnavailable, false, false, false),
+        (ReportingError::TemporarilyUnavailable, false, true, false),
+        (ReportingError::TemporarilyUnavailable, true, false, false),
+        (ReportingError::TemporarilyUnavailable, true, true, false),
+        (ReportingError::PermanentFailure, false, false, false),
+        (ReportingError::PermanentFailure, false, true, false),
+        (ReportingError::PermanentFailure, true, false, false),
+        (ReportingError::PermanentFailure, true, true, false),
+        (ReportingError::PermanentFailure, false, false, true),
+        (ReportingError::PermanentFailure, false, true, true),
+        (ReportingError::PermanentFailure, true, false, true),
+        (ReportingError::PermanentFailure, true, true, true),
     ] {
         let limit = NonZeroUsize::new(1).unwrap();
         let mut driver = DeliveryDriver::new(
@@ -731,7 +736,7 @@ fn failed_reporting_schedules_one_progress_turn_without_spinning() {
         let waker = Waker::from(counter.clone());
         let mut cx = Context::from_waker(&waker);
         let consumer = FinalizationReportingConsumer::new(
-            Reporter(failure, AtomicUsize::new(0)),
+            Reporter(failure, panics, AtomicUsize::new(0)),
             Duration::from_secs(1),
             FinalizationRetryPolicy::new(Duration::from_secs(1), Duration::from_secs(1), 3)
                 .unwrap(),
@@ -795,5 +800,31 @@ fn failed_reporting_schedules_one_progress_turn_without_spinning() {
         );
         assert!(driver.journal_mut().contains(DeliveryObligationId(1)));
         assert!(!driver.journal_mut().contains(DeliveryObligationId(2)));
+        if panics {
+            let retained = driver.journal_mut().escalated_records();
+            assert_eq!(retained.len(), 1);
+            assert_eq!(
+                retained[0].reason,
+                FinalizationEscalation::PermanentReportingFailure
+            );
+            assert_eq!(retained[0].record.obligation.id, DeliveryObligationId(1));
+            // Expiry of the original lease cannot automatically repeat a handler
+            // whose side effects are unknown after unwind.
+            clock.advance(Duration::from_secs(60)).unwrap();
+            assert_eq!(
+                consumer.process_one(driver.journal_mut(), &clock),
+                Ok(ReportingStep::Idle)
+            );
+            assert_eq!(driver.journal_mut().escalated_records(), retained);
+            driver
+                .journal_mut()
+                .authorize_retry(DeliveryObligationId(1))
+                .unwrap();
+            assert_eq!(
+                consumer.process_one(driver.journal_mut(), &clock),
+                Ok(ReportingStep::Reported)
+            );
+            assert!(driver.journal_mut().is_empty());
+        }
     }
 }
