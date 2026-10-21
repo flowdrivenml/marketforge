@@ -69,6 +69,7 @@ pub enum TrackedFanoutError {
     RollbackFailed,
     Precommit(FanoutCommitmentError),
     RecoveryCapacityExhausted,
+    Context(crate::live::ports::routing::RoutingAdmissionFailure),
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoutingObligationValidationError {
@@ -757,6 +758,30 @@ impl FanoutCommitmentCoordinator {
         obligations: PreparedObligations,
         batch: EventBatch,
     ) -> TrackedFanoutResult {
+        Self::commit_tracked_with_recovery_checked(
+            registry,
+            tracker,
+            recovery,
+            plan,
+            prepared,
+            obligations,
+            batch,
+            || Ok(()),
+        )
+    }
+
+    /// Checks the caller's cancellation/deadline fence under the registry
+    /// commitment lock, after all preparation and before obligation activation.
+    pub(crate) fn commit_tracked_with_recovery_checked(
+        registry: &RouterRegistry,
+        tracker: &mut AcknowledgementTracker,
+        recovery: &mut TrackingRecovery,
+        plan: &RoutingPlan,
+        prepared: PreparedFanout,
+        obligations: PreparedObligations,
+        batch: EventBatch,
+        check: impl FnOnce() -> Result<(), crate::live::ports::routing::RoutingAdmissionFailure>,
+    ) -> TrackedFanoutResult {
         let _commitment = registry
             .commitment
             .lock()
@@ -863,6 +888,16 @@ impl FanoutCommitmentCoordinator {
             };
         let range = DeliveryCursorRange::new(plan.first_cursor.clone(), plan.last_cursor.clone())
             .expect("validated routing range");
+        if let Err(reason) = check() {
+            return TrackedFanoutResult::Rejected {
+                batch,
+                reason: if tracker.abort_prepared(obligations).is_ok() {
+                    TrackedFanoutError::Context(reason)
+                } else {
+                    TrackedFanoutError::RollbackFailed
+                },
+            };
+        }
         let handle = match Self::try_begin_tracked_commitment(tracker, plan, &prepared, obligations)
         {
             Ok(handle) => handle,

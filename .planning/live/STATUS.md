@@ -14,7 +14,7 @@
 | WP-07 | Freeze service ports, management and observation surfaces | Contract implementation review pending; C12 adapter decision OPEN | [Contract implementation and witnesses](evidence/wp07-contracts.md) |
 | WP-08 | Implement foundations and real native observability | ReadyForReview | [Implementation ledger](evidence/WP-08-implementation.md) |
 | WP-09 | Implement the Configuration System | Partial — candidates/DAG/journal verified; semantic compiler and service pending | [Implementation ledger](evidence/WP-09-implementation.md) |
-| WP-10 | Implement the canonical event router | Partial — real recovery-aware fan-out repaired; production owner pending | [Implementation ledger](evidence/WP-10-implementation.md) |
+| WP-10 | Implement the canonical event router | Partial — ordered tracked fan-out integrated; production owner pending | [Implementation ledger](evidence/WP-10-implementation.md) |
 | WP-11 | Implement source registry and dependency ownership | Pending | — |
 | WP-12 | Implement exchange-profile and format compilation | Pending | — |
 | WP-13 | Implement WebSocket Connection Manager | Pending | — |
@@ -38,6 +38,23 @@
 ## Current Development Position
 
 ### Autonomous continuation — 2026-10-21
+
+Continuation adds WP-10 `OrderedFanout`: the real required-destination capacity,
+order permit, obligation activation and recovery-aware queue commitment now
+compose through one cancellation/deadline-fenced operation. Dropping a prepared
+operation or waiting future releases reservations and the stream permit without
+creating obligations. The final deadline check runs inside the registry
+commitment fence; partial outcomes retain their payload and advance the frontier.
+WP-10 remains Partial: this is a required-sink coordinator, not the production
+EventRouterPort service or worker/recovery runtime. Next executable work remains
+WP-10 production owner, bounded scheduling and downstream completion integration.
+Final verification exits 0: formatting, Live check, 130 library / 383 integration
+(2 opt-in ignored) / 1 doctest, and Live+historical compilation. Receipts:
+`engine/target/live-verification/20261021T034918Z-2/`. Seven new deterministic
+coordinator witnesses pass. Further autonomous WP-10 implementation is safe;
+this continuation does not close its remaining acceptance requirements.
+Pre-existing untracked `scripts/run-autonomous-codex.sh` was preserved.
+
 
 Final cross-feature / opt-in receipts are in
 `engine/target/live-verification/campaign-final-1792553404735277127/results.json`.

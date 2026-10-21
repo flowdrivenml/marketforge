@@ -5,6 +5,7 @@ pub mod acknowledgement;
 pub mod admission;
 pub mod cursor;
 pub mod destination;
+pub mod ordered;
 pub mod queue;
 pub mod reporting;
 pub mod resolution;

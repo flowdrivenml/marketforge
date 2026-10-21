@@ -52,3 +52,54 @@ work remains WP-09/WP-10 completion; WP-11 follows satisfied prerequisites.
 
 Final cross-feature receipts: `engine/target/live-verification/campaign-final-1792553404735277127/results.json`. Both compilation
 gates exit 0; the two opt-in test commands each execute and pass one test.
+
+## Continuation — ordered tracked admission (2026-10-21)
+
+Status: Partial. Existing checkpoint `01f378f` preserved. Changed production
+paths: `routing/ordered.rs`, `routing/router.rs`, `routing/mod.rs`; consumer
+witnesses: `tests/live/router_obligations.rs`. No historical, Python, dependency,
+ignored configuration, database or external exchange changes.
+
+Implemented acceptance ledger:
+- Required/durable fan-out capacity preparation holds the authoritative
+  per-namespace order permit until synchronous tracked commitment.
+- The prepared operation is bound to its originating registry. No tracker
+  obligations are allocated while waiting, so dropping the future or prepared
+  operation releases resources without orphaning pending obligations.
+- Cancellation and injected-clock deadlines are checked before and after waiting,
+  before tracker preparation, and under the registry commitment lock immediately
+  before activation. Context rejection aborts obligations and releases recovery
+  reservations; exact obligation errors remain distinguishable.
+- Fully rejected precommit operations preserve the frontier. Complete, partial,
+  and owned recovery outcomes advance once, preserving immutable batch identity.
+- Seven deterministic witnesses exercise successful real queue readback,
+  overlapping admission, duplicate cursor rejection, cancellation, shutdown,
+  expired entry/final deadline, tracker pressure, dropping preparations and a
+  pending multi-sink reservation, and partial queue closure with payload retention.
+  No sleeps, exchanges or writable database fixtures are used.
+
+Remaining: production EventRouterPort owner and bounded global scheduling,
+namespace lifecycle registration, best-effort/no-subscriber policy composition,
+destination workers and completion correlation, owner-lifetime payload/recovery
+retention, native snapshots/metrics and deadline shutdown. No downstream package
+is asserted executable solely because this coordinator exists. Earlier WP-05/06
+and WP-09 unresolved gates remain as recorded in their own ledgers.
+
+Verification (from `engine/`, locked/offline):
+- `cargo fmt --all -- --check`: exit 0.
+- `cargo check --locked --offline --no-default-features --features live --lib`: exit 0.
+- `cargo test --locked --offline --no-default-features --features live --lib`:
+  exit 0, 130 passed.
+- `cargo test --locked --offline --no-default-features --features live --test live_suite`:
+  exit 0, 383 passed / 2 opt-in ignored. Includes all seven new witnesses.
+- `cargo test --locked --offline --no-default-features --features live --doc`:
+  exit 0, 1 passed.
+Full wrapper `./scripts/verify-live.sh full`: exit 0, five gates. Raw receipts:
+`engine/target/live-verification/20261021T034918Z-2/`.
+- `cargo check --locked --offline --no-default-features --features live,historical`:
+  exit 0. Existing dead-code warnings remain; historical tests and opt-in
+  PostgreSQL/performance fixtures were not rerun in this continuation.
+- `git diff --check`: exit 0.
+
+Checkpoint: local commit carrying this continuation; exact identifier recorded
+in STATUS.md after commitment. No push. Next authorized: WP-10 completion.

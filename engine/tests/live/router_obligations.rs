@@ -1842,3 +1842,420 @@ fn router_destination_registration_is_bounded_and_rejection_preserves_revision()
     assert_eq!(registry.revision(), revision);
     assert_eq!(registry.destination_count(), 1);
 }
+
+#[test]
+fn ordered_fanout_context_rejection_releases_capacity_without_obligations() {
+    use marketforge_engine::live::{
+        foundation::clock::ManualClock,
+        ports::routing::RoutingAdmissionFailure,
+        routing::{
+            cursor::StreamAdmissionOrder,
+            ordered::{OrderedCommitOutcome, OrderedFanout},
+        },
+    };
+    for cancel in [true, false] {
+        let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+        drop(prepared);
+        tracker.abort_prepared(obligations).unwrap();
+        let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+        let start = std::time::Instant::now();
+        let clock = Arc::new(ManualClock::new(start, 0));
+        let token = CancellationToken::new();
+        // A clock-only deadline test needs a timer only during reservation;
+        // use cancellation here and independently cover deadline at entry below.
+        let pending = ready(OrderedFanout::prepare(
+            &registry,
+            &order,
+            batch.clone(),
+            AdmissionContext::without_deadline(token.clone()),
+            clock,
+            None,
+        ))
+        .unwrap();
+        if cancel {
+            token.cancel();
+        } else {
+            registry.shutdown();
+        }
+        let mut recovery = TrackingRecovery::new(10).unwrap();
+        let outcome = pending.commit(&mut tracker, &mut recovery);
+        if cancel {
+            assert!(matches!(
+                outcome,
+                OrderedCommitOutcome::Rejected {
+                    reason:
+                        marketforge_engine::live::routing::ordered::OrderedCommitFailure::Context(
+                            RoutingAdmissionFailure::Cancelled
+                        ),
+                    ..
+                }
+            ));
+        } else {
+            assert!(matches!(
+                outcome,
+                OrderedCommitOutcome::Tracked(TrackedFanoutResult::Rejected { .. })
+            ));
+        }
+        assert_eq!(order.next(), Some(batch.first_cursor().clone()));
+        assert!(tracker.is_empty());
+        assert_eq!(recovery.occupied(), 0);
+        assert!(
+            registry
+                .peek_queue(DestinationId(1))
+                .unwrap()
+                .try_dequeue()
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn ordered_fanout_commits_real_queues_and_advances_once() {
+    use marketforge_engine::live::{
+        foundation::clock::SystemMonotonicClock,
+        routing::{
+            cursor::{CursorOrderError, StreamAdmissionOrder},
+            ordered::{OrderedCommitOutcome, OrderedFanout, OrderedPreparationError},
+        },
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+    let prepare = || {
+        OrderedFanout::prepare(
+            &registry,
+            &order,
+            batch.clone(),
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            Arc::new(SystemMonotonicClock),
+            None,
+        )
+    };
+    let pending = ready(prepare()).unwrap();
+    assert!(matches!(
+        ready(prepare()),
+        Err(OrderedPreparationError::Order(CursorOrderError::Busy))
+    ));
+    let mut recovery = TrackingRecovery::new(10).unwrap();
+    assert!(matches!(
+        pending.commit(&mut tracker, &mut recovery),
+        OrderedCommitOutcome::Tracked(TrackedFanoutResult::Complete { .. })
+    ));
+    assert_eq!(order.next().unwrap().offset, 12);
+    for id in [1, 2] {
+        let queued = registry
+            .peek_queue(DestinationId(id))
+            .unwrap()
+            .try_dequeue()
+            .unwrap();
+        assert_eq!(queued.batch(), &batch);
+    }
+    assert!(matches!(
+        ready(prepare()),
+        Err(OrderedPreparationError::Order(CursorOrderError::Gap))
+    ));
+}
+
+#[test]
+fn ordered_fanout_drop_and_expired_entry_preserve_frontier() {
+    use marketforge_engine::live::{
+        foundation::clock::ManualClock,
+        ports::routing::RoutingAdmissionFailure,
+        routing::{
+            cursor::StreamAdmissionOrder,
+            ordered::{OrderedFanout, OrderedPreparationError},
+        },
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+    let start = std::time::Instant::now();
+    let clock = Arc::new(ManualClock::new(start, 0));
+    let pending = ready(OrderedFanout::prepare(
+        &registry,
+        &order,
+        batch.clone(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        clock.clone(),
+        None,
+    ))
+    .unwrap();
+    drop(pending);
+    assert!(order.prepare(&batch).is_ok());
+    let result = ready(OrderedFanout::prepare(
+        &registry,
+        &order,
+        batch.clone(),
+        AdmissionContext::new(CancellationToken::new(), Some(start)),
+        clock,
+        None,
+    ));
+    assert!(matches!(
+        result,
+        Err(OrderedPreparationError::Context(
+            RoutingAdmissionFailure::DeadlineExceeded
+        ))
+    ));
+    assert!(tracker.is_empty());
+    assert_eq!(order.next(), Some(batch.first_cursor().clone()));
+}
+
+#[test]
+fn ordered_fanout_deadline_and_tracker_pressure_do_not_transfer_responsibility() {
+    use marketforge_engine::live::{
+        foundation::clock::ManualClock,
+        ports::routing::RoutingAdmissionFailure,
+        routing::{
+            admission::{DeadlineFuture, DeadlineTimer},
+            cursor::StreamAdmissionOrder,
+            ordered::{OrderedCommitOutcome, OrderedFanout},
+        },
+    };
+    // Capacity is immediately available. This timer deliberately stays pending;
+    // the injected monotonic clock independently witnesses the final check.
+    struct PendingTimer;
+    impl DeadlineTimer for PendingTimer {
+        fn sleep_until(&self, _: std::time::Instant) -> DeadlineFuture {
+            Box::pin(std::future::pending())
+        }
+    }
+    for expire in [true, false] {
+        let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+        drop(prepared);
+        tracker.abort_prepared(obligations).unwrap();
+        if !expire {
+            tracker = AcknowledgementTracker::new(1).unwrap();
+        }
+        let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+        let start = std::time::Instant::now();
+        let clock = Arc::new(ManualClock::new(start, 0));
+        let duration = std::time::Duration::from_secs(1);
+        let pending = ready(OrderedFanout::prepare(
+            &registry,
+            &order,
+            batch.clone(),
+            AdmissionContext::new(CancellationToken::new(), Some(start + duration)),
+            clock.clone(),
+            Some(&PendingTimer),
+        ))
+        .unwrap();
+        if expire {
+            clock.advance(duration).unwrap();
+        }
+        let mut recovery = TrackingRecovery::new(10).unwrap();
+        let expected = if expire {
+            marketforge_engine::live::routing::ordered::OrderedCommitFailure::Context(
+                RoutingAdmissionFailure::DeadlineExceeded,
+            )
+        } else {
+            marketforge_engine::live::routing::ordered::OrderedCommitFailure::Obligations(
+                AcknowledgementError::CapacityExceeded,
+            )
+        };
+        assert!(matches!(pending.commit(&mut tracker, &mut recovery),
+            OrderedCommitOutcome::Rejected { reason, .. } if reason == expected));
+        assert!(tracker.is_empty());
+        assert_eq!(order.next(), Some(batch.first_cursor().clone()));
+        for id in [1, 2] {
+            assert!(
+                registry
+                    .peek_queue(DestinationId(id))
+                    .unwrap()
+                    .try_dequeue()
+                    .is_none()
+            );
+        }
+        // Reservations are released, so a fresh preparation succeeds.
+        assert!(
+            ready(OrderedFanout::prepare(
+                &registry,
+                &order,
+                batch,
+                AdmissionContext::without_deadline(CancellationToken::new()),
+                clock,
+                None
+            ))
+            .is_ok()
+        );
+    }
+}
+
+#[test]
+fn ordered_fanout_partial_failure_advances_frontier_and_retains_payload() {
+    use marketforge_engine::live::{
+        foundation::clock::SystemMonotonicClock,
+        routing::{
+            cursor::StreamAdmissionOrder,
+            ordered::{OrderedCommitOutcome, OrderedFanout},
+        },
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+    let pending = ready(OrderedFanout::prepare(
+        &registry,
+        &order,
+        batch.clone(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ))
+    .unwrap();
+    registry.peek_queue(DestinationId(2)).unwrap().close();
+    let mut recovery = TrackingRecovery::new(10).unwrap();
+    match pending.commit(&mut tracker, &mut recovery) {
+        OrderedCommitOutcome::Tracked(TrackedFanoutResult::Partial {
+            batch: retained,
+            committed,
+            failed,
+        }) => {
+            assert_eq!(retained, batch);
+            assert_eq!(committed.len(), 1);
+            assert_eq!(failed.len(), 1);
+        }
+        outcome => panic!("expected explicit partial outcome: {outcome:?}"),
+    }
+    assert_eq!(order.next().unwrap().offset, 12);
+    assert_eq!(
+        registry
+            .peek_queue(DestinationId(1))
+            .unwrap()
+            .try_dequeue()
+            .unwrap()
+            .batch(),
+        &batch
+    );
+}
+
+#[test]
+fn ordered_fanout_dropped_wait_releases_prior_reservations_and_exclusive_order() {
+    use marketforge_engine::live::{
+        foundation::clock::SystemMonotonicClock,
+        routing::{cursor::StreamAdmissionOrder, ordered::OrderedFanout},
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let queue = registry.peek_queue(DestinationId(2)).unwrap();
+    // Exhaust only the second destination; the first reservation must be
+    // released when the preparation future is dropped while waiting.
+    for _ in 0..50 {
+        queue.try_enqueue(batch.clone()).unwrap();
+    }
+    let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+    let mut pending = Box::pin(OrderedFanout::prepare(
+        &registry,
+        &order,
+        batch.clone(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ));
+    let waker = Waker::from(Arc::new(NoopWake));
+    assert!(
+        pending
+            .as_mut()
+            .poll(&mut Context::from_waker(&waker))
+            .is_pending()
+    );
+    assert_eq!(
+        registry
+            .peek_queue(DestinationId(1))
+            .unwrap()
+            .capacity()
+            .usage()
+            .occupied_events,
+        2
+    );
+    drop(pending);
+    assert_eq!(
+        registry
+            .peek_queue(DestinationId(1))
+            .unwrap()
+            .capacity()
+            .usage()
+            .occupied_events,
+        0
+    );
+    assert_eq!(queue.capacity().usage().waiting_operations, 0);
+    assert!(order.prepare(&batch).is_ok());
+    assert!(tracker.is_empty());
+}
+
+#[test]
+fn ordered_fanout_rechecks_deadline_inside_commitment_fence() {
+    use marketforge_engine::live::{
+        foundation::MonotonicClock,
+        ports::routing::RoutingAdmissionFailure,
+        routing::{
+            admission::{DeadlineFuture, DeadlineTimer},
+            cursor::StreamAdmissionOrder,
+            ordered::{OrderedCommitOutcome, OrderedFanout},
+        },
+    };
+    struct FenceClock {
+        start: std::time::Instant,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+    impl MonotonicClock for FenceClock {
+        fn now(&self) -> std::time::Instant {
+            let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            // Preparation checks twice, commit checks once before acquiring the
+            // registry fence. Expiry is observed only at the final fence check.
+            if call < 3 {
+                self.start
+            } else {
+                self.start + std::time::Duration::from_secs(1)
+            }
+        }
+    }
+    struct PendingTimer;
+    impl DeadlineTimer for PendingTimer {
+        fn sleep_until(&self, _: std::time::Instant) -> DeadlineFuture {
+            Box::pin(std::future::pending())
+        }
+    }
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+    let start = std::time::Instant::now();
+    let pending = ready(OrderedFanout::prepare(
+        &registry,
+        &order,
+        batch.clone(),
+        AdmissionContext::new(
+            CancellationToken::new(),
+            Some(start + std::time::Duration::from_secs(1)),
+        ),
+        Arc::new(FenceClock {
+            start,
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        }),
+        Some(&PendingTimer),
+    ))
+    .unwrap();
+    let mut recovery = TrackingRecovery::new(10).unwrap();
+    assert!(matches!(
+        pending.commit(&mut tracker, &mut recovery),
+        OrderedCommitOutcome::Tracked(TrackedFanoutResult::Rejected {
+            reason: TrackedFanoutError::Context(RoutingAdmissionFailure::DeadlineExceeded),
+            ..
+        })
+    ));
+    assert!(tracker.is_empty());
+    assert_eq!(recovery.occupied(), 0);
+    assert_eq!(order.next(), Some(batch.first_cursor().clone()));
+    for id in [1, 2] {
+        assert!(
+            registry
+                .peek_queue(DestinationId(id))
+                .unwrap()
+                .try_dequeue()
+                .is_none()
+        );
+    }
+}
