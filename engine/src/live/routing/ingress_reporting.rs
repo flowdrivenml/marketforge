@@ -185,6 +185,9 @@ impl IngressOutcomes {
 /// has accounted for every result and transferred any recovery responsibility;
 /// it does not mean downstream delivery or durability. On error, mutations must
 /// leave unresolved responsibility in `outcome`. Handlers must tolerate retries.
+/// Success with tracking reservations still attached is treated as permanent
+/// failure. Handlers remain responsible for preserving any ownership they move
+/// out of the outcome; the consumer cannot validate an external recovery owner.
 pub trait IngressReporter {
     fn report(
         &mut self,
@@ -236,6 +239,12 @@ impl IngressReportingConsumer {
         }
         let record = self.pending.as_mut().expect("record loaded above");
         match reporter.report(&record.batch, &mut record.outcome) {
+            Ok(()) if record.outcome.retains_tracking_recovery() => {
+                // A handler acknowledgement cannot release repair reservations
+                // that demonstrably still belong to this record. Keep the
+                // charged record for explicit intervention, without retry spin.
+                IngressReportingStep::Retained(super::reporting::ReportingError::PermanentFailure)
+            }
             Ok(()) => {
                 self.pending.take();
                 IngressReportingStep::Reported

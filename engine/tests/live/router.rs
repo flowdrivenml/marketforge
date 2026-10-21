@@ -3740,6 +3740,121 @@ mod ingress_witnesses {
     }
 
     #[test]
+    fn ingress_reporting_success_cannot_release_owned_tracking_repairs() {
+        use marketforge_engine::live::routing::{
+            ingress_reporting::{
+                IngressOutcomes, IngressReporter, IngressReportingConsumer, IngressReportingStep,
+            },
+            reporting::ReportingError,
+            router::{RecoveryTrackingFailure, RecoveryTrackingResult, UnresolvedTrackingUpdate},
+            tracking_recovery::TrackingRecoveryCapacity,
+        };
+        struct Reporter {
+            injected: Option<IngressOutcome>,
+            transfer: bool,
+            transferred: Option<Result<RecoveryTrackingResult, RecoveryTrackingFailure>>,
+        }
+        impl IngressReporter for Reporter {
+            fn report(
+                &mut self,
+                _: &EventBatch,
+                outcome: &mut IngressOutcome,
+            ) -> Result<(), ReportingError> {
+                if let Some(injected) = self.injected.take() {
+                    // Controlled fault: the reporting boundary still owns a
+                    // real charged repair reservation when it claims success.
+                    *outcome = injected;
+                }
+                if self.transfer {
+                    let IngressOutcome::Required {
+                        required:
+                            OrderedCommitOutcome::Tracked(TrackedFanoutResult::RecoveryPending {
+                                tracking,
+                                ..
+                            }),
+                        ..
+                    } = outcome
+                    else {
+                        panic!("missing recovery outcome")
+                    };
+                    self.transferred = Some(std::mem::replace(
+                        tracking,
+                        Ok(RecoveryTrackingResult {
+                            errors: vec![],
+                            unresolved: vec![],
+                        }),
+                    ));
+                }
+                Ok(())
+            }
+        }
+        for mismatch in [false, true] {
+            let fixture = Fixture::new();
+            let queue = fixture.queue(1, DeliveryPolicy::Required);
+            let journal = IngressOutcomes::new(ResourceUsage {
+                items: 1,
+                bytes: 100_000,
+            })
+            .unwrap();
+            ready(journal.admit(&fixture.ingress(), batch(), context())).unwrap();
+            let capacity = TrackingRecoveryCapacity::new(1).unwrap();
+            let reservation = capacity.reserve().unwrap();
+            let tracking = if mismatch {
+                Err(RecoveryTrackingFailure::ReservationCountMismatch {
+                    expected: 2,
+                    actual: 1,
+                    reservations: vec![reservation],
+                })
+            } else {
+                Ok(RecoveryTrackingResult {
+                    errors: vec![],
+                    unresolved: vec![UnresolvedTrackingUpdate::MissingObligation {
+                        destination: DestinationId(1),
+                        status: marketforge_engine::live::model::delivery::DeliveryStatus::Pending,
+                        reservation,
+                    }],
+                })
+            };
+            let mut reporter = Reporter {
+                injected: Some(IngressOutcome::Required {
+                    required: OrderedCommitOutcome::Tracked(TrackedFanoutResult::RecoveryPending {
+                        batch: batch(),
+                        committed: vec![],
+                        failed: vec![],
+                        tracking,
+                    }),
+                    optional: None,
+                }),
+                transfer: false,
+                transferred: None,
+            };
+            let mut consumer = IngressReportingConsumer::default();
+            let mut cx = Context::from_waker(Waker::noop());
+            let charged = journal.snapshot().usage;
+            for _ in 0..2 {
+                assert_eq!(
+                    consumer.process_one(&journal, &mut reporter, &mut cx),
+                    IngressReportingStep::Retained(ReportingError::PermanentFailure)
+                );
+                assert_eq!(journal.snapshot().usage, charged);
+                assert_eq!(capacity.occupied(), 1);
+                assert!(journal.poll_shutdown(&mut cx).is_pending());
+            }
+            reporter.transfer = true;
+            assert_eq!(
+                consumer.process_one(&journal, &mut reporter, &mut cx),
+                IngressReportingStep::Reported
+            );
+            assert!(journal.poll_shutdown(&mut cx).is_ready());
+            // Reporting drain never implies repair completion or delivery.
+            assert_eq!(capacity.occupied(), 1);
+            assert!(queue.try_dequeue().is_some());
+            drop(reporter.transferred.take());
+            assert_eq!(capacity.occupied(), 0);
+        }
+    }
+
+    #[test]
     fn ingress_reporting_consumer_retains_failed_records_and_resource_charges() {
         use marketforge_engine::live::routing::{
             ingress_reporting::{

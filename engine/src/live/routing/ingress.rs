@@ -44,6 +44,30 @@ pub enum IngressOutcome {
     Optional(OptionalOrderedOutcome),
 }
 
+impl IngressOutcome {
+    /// Whether the producer outcome still owns tracking-repair reservations.
+    /// A reporter must transfer these to a recovery owner before acknowledging
+    /// the record. Already transferred recovery work remains independently owned.
+    pub fn retains_tracking_recovery(&self) -> bool {
+        use super::router::{RecoveryTrackingFailure, TrackedFanoutResult};
+        match self {
+            Self::Required {
+                required:
+                    super::ordered::OrderedCommitOutcome::Tracked(
+                        TrackedFanoutResult::RecoveryPending { tracking, .. },
+                    ),
+                ..
+            } => match tracking {
+                Ok(result) => !result.unresolved.is_empty(),
+                Err(RecoveryTrackingFailure::ReservationCountMismatch { reservations, .. }) => {
+                    !reservations.is_empty()
+                }
+            },
+            _ => false,
+        }
+    }
+}
+
 /// Construction-time binding to the same owners used by runtime delivery,
 /// shutdown and observations. The caller retains their lifecycle and scheduling.
 /// This is the detailed admission surface, not the lossy EventRouterPort adapter.
