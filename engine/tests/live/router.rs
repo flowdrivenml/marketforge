@@ -1683,6 +1683,118 @@ fn router_observation_requires_closed_admission_and_has_no_runtime_effects() {
     assert_eq!(overflow.next_deadline(), None);
     sampler.schedule(None);
     assert_eq!(sampler.next_deadline(), None);
+    use marketforge_engine::live::routing::admission::{DeadlineFuture, DeadlineTimer};
+    use std::{
+        sync::atomic::{AtomicUsize, Ordering},
+        task::{Context, Poll, Wake, Waker},
+    };
+    struct Timer {
+        calls: AtomicUsize,
+        mode: u8,
+    }
+    impl DeadlineTimer for Timer {
+        fn sleep_until(&self, _: Instant) -> DeadlineFuture {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.mode == 1 {
+                Box::pin(async {})
+            } else {
+                Box::pin(std::future::pending())
+            }
+        }
+        fn try_sleep_until(&self, at: Instant) -> Result<DeadlineFuture, ErrorCode> {
+            if self.mode == 2 {
+                Err(ErrorCode::Capacity)
+            } else {
+                Ok(self.sleep_until(at))
+            }
+        }
+    }
+    struct NoWake;
+    impl Wake for NoWake {
+        fn wake(self: Arc<Self>) {
+            panic!("no busy wake")
+        }
+    }
+    let waker = Waker::from(Arc::new(NoWake));
+    let mut cx = Context::from_waker(&waker);
+    let timer = Timer {
+        calls: AtomicUsize::new(0),
+        mode: 0,
+    };
+    sampler.schedule(Some(start + interval));
+    for _ in 0..2 {
+        assert!(
+            sampler
+                .poll_sample(
+                    &mut cx,
+                    clock.as_ref(),
+                    &timer,
+                    clock.as_ref(),
+                    &handle,
+                    || panic!("early snapshot")
+                )
+                .is_pending()
+        );
+    }
+    assert_eq!(timer.calls.load(Ordering::SeqCst), 1);
+    sampler.schedule(None);
+    assert!(matches!(
+        sampler.poll_sample(
+            &mut cx,
+            clock.as_ref(),
+            &timer,
+            clock.as_ref(),
+            &handle,
+            || panic!("disabled snapshot")
+        ),
+        Poll::Ready(Ok(None))
+    ));
+    sampler.schedule(Some(start + interval));
+    let failed = Timer {
+        calls: AtomicUsize::new(0),
+        mode: 2,
+    };
+    assert_eq!(
+        sampler.poll_sample(
+            &mut cx,
+            clock.as_ref(),
+            &failed,
+            clock.as_ref(),
+            &handle,
+            || panic!("timer failure")
+        ),
+        Poll::Ready(Err(ErrorCode::Capacity))
+    );
+    assert_eq!(sampler.next_deadline(), Some(start + interval));
+    let early = Timer {
+        calls: AtomicUsize::new(0),
+        mode: 1,
+    };
+    assert_eq!(
+        sampler.poll_sample(
+            &mut cx,
+            clock.as_ref(),
+            &early,
+            clock.as_ref(),
+            &handle,
+            || panic!("early timer")
+        ),
+        Poll::Ready(Err(ErrorCode::InvalidInput))
+    );
+    assert_eq!(early.calls.load(Ordering::SeqCst), 2);
+    sampler.schedule(Some(start));
+    assert!(matches!(
+        sampler.poll_sample(
+            &mut cx,
+            clock.as_ref(),
+            &timer,
+            clock.as_ref(),
+            &handle,
+            || before.clone()
+        ),
+        Poll::Ready(Ok(Some(_)))
+    ));
+    assert_eq!(timer.calls.load(Ordering::SeqCst), 1);
     let samples = metrics.snapshot(Duration::from_secs(1));
     assert_eq!(samples.len(), 6);
     for (i, sample) in samples.iter().enumerate() {

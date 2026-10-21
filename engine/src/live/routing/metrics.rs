@@ -66,6 +66,7 @@ impl RouterDrainSnapshot {
 pub struct RouterMetricSampler {
     interval: std::time::Duration,
     next: Option<std::time::Instant>,
+    timer: Option<(std::time::Instant, super::admission::DeadlineFuture)>,
 }
 
 pub type RouterMetricResults = [(MetricId, Result<ObservationAdmission, ErrorCode>); 6];
@@ -81,6 +82,7 @@ impl RouterMetricSampler {
         Ok(Self {
             interval,
             next: first,
+            timer: None,
         })
     }
 
@@ -91,6 +93,59 @@ impl RouterMetricSampler {
     /// Runtime configuration supplies the next measurement boundary explicitly.
     pub fn schedule(&mut self, first: Option<std::time::Instant>) {
         self.next = first;
+        self.timer = None;
+    }
+
+    /// Poll one runtime timer and sample when due on the authoritative clock.
+    /// Timer allocation failure is explicit; the runtime owns retry scheduling.
+    /// Reconfiguration drops the old timer before a replacement is admitted.
+    /// A timer waking early is rearmed without sampling or a self-wake loop.
+    pub fn poll_sample(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+        clock: &dyn crate::live::foundation::clock::MonotonicClock,
+        timer: &dyn super::admission::DeadlineTimer,
+        wall: &dyn crate::live::foundation::clock::WallClock,
+        metrics: &dyn ScopedMetricsPort,
+        observe: impl FnOnce() -> RouterDrainSnapshot,
+    ) -> std::task::Poll<Result<Option<RouterMetricResults>, ErrorCode>> {
+        use std::task::Poll;
+        let Some(deadline) = self.next else {
+            self.timer = None;
+            return Poll::Ready(Ok(None));
+        };
+        let now = clock.now();
+        if now >= deadline {
+            self.timer = None;
+            return Poll::Ready(self.sample_due(now, wall, metrics, observe));
+        }
+        if self
+            .timer
+            .as_ref()
+            .is_some_and(|(armed, _)| *armed != deadline)
+        {
+            self.timer = None;
+        }
+        if self.timer.is_none() {
+            match timer.try_sleep_until(deadline) {
+                Ok(wait) => self.timer = Some((deadline, wait)),
+                Err(error) => return Poll::Ready(Err(error)),
+            }
+        }
+        if self.timer.as_mut().unwrap().1.as_mut().poll(cx).is_ready() {
+            self.timer = None;
+            // The clock, rather than timer readiness, decides the boundary.
+            // Register a replacement once; an early-ready adapter cannot spin.
+            let mut wait = match timer.try_sleep_until(deadline) {
+                Ok(wait) => wait,
+                Err(error) => return Poll::Ready(Err(error)),
+            };
+            if wait.as_mut().poll(cx).is_ready() {
+                return Poll::Ready(Err(ErrorCode::InvalidInput));
+            }
+            self.timer = Some((deadline, wait));
+        }
+        Poll::Pending
     }
 
     /// Every due attempt consumes its cadence, even if wall time or collection
@@ -109,6 +164,7 @@ impl RouterMetricSampler {
         if now < next {
             return Ok(None);
         }
+        self.timer = None;
         self.next = now.checked_add(self.interval);
         if self.next.is_none() {
             return Err(ErrorCode::Limit);
