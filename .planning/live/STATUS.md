@@ -39,6 +39,21 @@
 
 ### Autonomous continuation — 2026-10-21
 
+
+Latest implementation checkpoint `4054511` adds deadline-aware scheduled ingress
+reporting shutdown. Admission is fenced immediately; retry state and charged
+records survive expiry and escalation. Completion waits for preparing admissions
+and externally held records; cancellation wakes the shutdown coordinator.
+Verification exits 0: formatting, Live check, 135 library / 482 integration passes
+(2 opt-in ignored) / 1 doctest, plus Live+historical check. Receipts:
+`engine/target/live-verification/20261021T062755Z-2/`.
+WP-10 remains Partial and next executable: concrete reporting/recovery policy,
+complete runtime lifecycle and Control composition remain. Earlier WP-05/06/07/09
+gates persist; WP-11–29 pending. Further autonomous implementation can safely
+continue within those gates. No database/exchange access or Python/historical
+execution changes. Pre-existing untracked launcher preserved; no push or acceptance
+claim. See WP-10 evidence for initial failed test iterations and final verification.
+
 Latest implementation checkpoint `f607c06` adds bounded scheduled ingress reporting:
 one retained retry timer, finite handler attempts, explicit escalation after permanent
 failure/exhaustion/unwind, and charged ownership transfer. Timer admission faults

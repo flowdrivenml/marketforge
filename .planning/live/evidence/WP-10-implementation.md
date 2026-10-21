@@ -2946,3 +2946,59 @@ Changed: engine/src/live/routing/ingress_reporting.rs, engine/tests/live/router.
 STATUS.md and this ledger. No Python/historical execution, dependency/lockfile,
 ignored configuration or launcher modifications. No push. No package marked
 Accepted and no entire-project completion claim.
+
+
+## Continuation — scheduled ingress reporting shutdown (2026-10-21)
+
+Status: Partial. Next executable: WP-10. Initial HEAD `dc53f39`, branch
+`codex/wp06-completion`; preserved pre-existing untracked launcher
+`scripts/run-autonomous-codex.sh`. Read repository instructions, autonomous plan,
+decisions, status, roadmap WP-08–11 requirements, current ingress/reporting,
+delivery and shutdown consumers, and earlier foundational evidence. No completed
+work restarted. Implementation checkpoint: `4054511`.
+
+Acceptance ledger:
+- ScheduledIngressReporting::poll_shutdown closes reporting admission and
+  registers shutdown release notifications before processing outcomes. At most
+  one handler runs per turn; pending admission cancellation and externally held
+  record release cannot leave an idle shutdown coordinator unwoken.
+- Deadline expiry performs no reporting and retains retry timers, original
+  charged records and escalation state. Resume uses the same owner and a new
+  deadline. Retry policy remains active during shutdown.
+- Drained requires all journal reservations released, including preparing
+  admissions and transferred escalation records. This establishes reporting drain
+  only, not destination delivery, recovery completion, durability or daemon exit.
+- Two deterministic production-ingress witnesses cover immediate expiry,
+  admission closure, retry preservation, retry exhaustion, charged escalation
+  transfer, delayed drain, completed-drain precedence and cancellation wakeup.
+  A real destination queue remains populated after reporting drains, witnessing
+  the independent delivery responsibility.
+- Remaining: concrete runtime reporting/recovery handlers and policy, complete
+  runtime lifecycle and Control composition. Earlier WP-05/06/07/09 gates persist;
+  WP-11–29 pending. No package acceptance or project completion claim.
+
+Verification (engine/ unless root stated):
+- cargo fmt --manifest-path engine/Cargo.toml --all (root): exit 0.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite scheduled_ingress_shutdown: final exit 0, 2 passed / 482 filtered.
+- ./scripts/verify-live.sh full (root): final exit 0; commands: cargo fmt --all --
+  --check; cargo check --locked --offline --no-default-features --features live
+  --lib; cargo test with the same flags --lib (135 passed), --test live_suite
+  (482 passed, 2 opt-in ignored), --doc (1 passed). Final receipts:
+  engine/target/live-verification/20261021T062755Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings remain.
+- git diff --check (root): exit 0 before implementation checkpoint.
+- Initial focused execution exited 101: test reused a completed one-shot Ready
+  deadline. Corrected the new fixture to a repeat-ready poll_fn. An overly broad
+  replacement briefly affected older fixtures, producing an undeclared Poll
+  compile error (focused command exit 101; initial full verification exit 1,
+  receipts 20261021T062720Z-2). Restored all earlier fixtures unchanged. Final
+  focused and full suites pass; no assertions weakened or failures unresolved.
+- SQL/performance opt-in and historical-only suites not run; historical zero-stream
+  baseline not rechecked. No database/exchange access or durability claim.
+
+Changed: engine/src/live/routing/ingress_reporting.rs, engine/tests/live/router.rs,
+STATUS.md and this ledger. No Python/historical execution, dependency/lockfile,
+ignored configuration or launcher modifications. No push. Safe autonomous
+continuation remains possible; the complete campaign remains unfinished.
