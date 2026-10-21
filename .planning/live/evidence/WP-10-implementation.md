@@ -3528,3 +3528,59 @@ Changed: engine/src/live/routing/{destination,driver,router}.rs,
 engine/tests/live/router.rs, STATUS.md and this ledger. No Python/historical
 execution, dependency/lockfile, ignored configuration or launcher changes.
 No push. Further autonomous WP-10 implementation can safely continue.
+
+
+### 2026-10-21 — Continue ready terminal reporting after failure
+
+Status: Partial. Next executable: WP-10. Initial HEAD `15ce43a`, branch
+`codex/wp06-completion`; pre-existing untracked launcher preserved. Inspected
+AGENTS, autonomous plan, decisions, status, WP-10/11 roadmap and current delivery,
+shutdown, reporting, journal and tracking recovery production consumers.
+Implementation checkpoint: `3dbf060`.
+
+Acceptance ledger:
+- Registered terminal reporting now requests one follow-up bounded turn after
+  RetryScheduled or PermanentlyFailed as well as Reported. Deferral/escalation
+  advances eligibility; unrelated ready reports need not wait for a retry timer.
+- Idle retains its existing parking behavior. No immediate handler retry, new
+  owner, delivery guarantee or release of the failed record is introduced.
+- Production regression uses two actual finalized failed delivery obligations.
+  Eight scenarios cover temporary/permanent reporting failure, open/closed driver
+  and successful/rejected timer admission. The next ready record is acknowledged;
+  the failed obligation remains identified and charged, with correct escalation
+  count. A following Idle turn emits no wake. Existing journal-capacity release
+  notification on successful acknowledgement is checked separately in wake count.
+- Remaining: concrete outcome/recovery policy, runtime lifecycle and Control
+  composition. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. No acceptance,
+  daemon completion or crash durability claim.
+
+Verification (Cargo commands executed from engine/):
+- Initial focused regression: cargo test --locked --offline --no-default-features
+  --features live --test live_suite
+  failed_reporting_schedules_one_progress_turn_without_spinning: exit 101,
+  0 passed / 1 failed / 493 filtered, missing notification (0 vs 1).
+  Receipt /tmp/live-report-wake-before.log.
+- After fix, original single-record witness passed. Strengthened two-record witness
+  initially failed an expected wake count: successful acknowledgement also wakes
+  the pre-existing journal capacity waiter. Corrected expectation to include both
+  independent notifications. An intermediate full verification consequently failed
+  integration; no production assertion or delivery guarantee was weakened.
+- Final focused eight-scenario witness: same command, exit 0, 1 passed / 493
+  filtered. /tmp/live-report-wake-after.log. Final extra identity/journal assertions
+  verified by the full suite below.
+- cargo fmt --all: exit 0. Root ./scripts/verify-live.sh full: exit 0, all five
+  gates pass: cargo fmt --all -- --check; cargo check --locked --offline
+  --no-default-features --features live --lib; cargo test with the same flags
+  --lib (135 passed), --test live_suite (492 passed / 2 opt-in ignored), --doc
+  (1 passed). Final receipts:
+  engine/target/live-verification/20261021T070749Z-3/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0, existing warnings. /tmp/live-report-wake-combined.log.
+- git diff --check: exit 0 before implementation checkpoint.
+Historical-only baseline not rerun; prior 151/1 zero-stream finding remains.
+No SQL, exchange, performance or soak verification claimed.
+
+Changed: engine/src/live/routing/driver.rs, engine/tests/live/reporting.rs,
+STATUS.md and this evidence ledger. No Python/historical execution, dependencies,
+lockfile, ignored configuration or launcher edits. No push. Further autonomous
+WP-10 implementation can safely continue within recorded gates.

@@ -39,6 +39,23 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Checkpoint `3dbf060` prevents ready terminal reports from parking after an earlier
+report is deferred or escalated. Each non-idle reporting transition requests one
+bounded follow-up turn; Idle does not self-wake. Eight deterministic scenarios
+cover temporary/permanent failure, open/closed driver and available/rejected retry
+timer admission. Independent ready reports complete while the original failed
+record retains its identity and journal charge. Full Live verification exits 0:
+formatting, check, 135 library / 492 integration (2 opt-in ignored) / 1 doctest;
+Live+historical compilation exits 0. Final receipts:
+`engine/target/live-verification/20261021T070749Z-3/`.
+WP-10 remains Partial and next executable: concrete outcome/recovery policy,
+runtime lifecycle and Control composition remain. WP-05/06/07/09 gates persist;
+WP-11–29 pending. Further autonomous implementation can safely continue.
+No SQL/exchange access, Python/historical execution edits, dependency/lockfile or
+ignored configuration changes. Untracked launcher preserved; no push.
+See the WP-10 implementation evidence.
+
+
 
 Checkpoint `f962ba2` closes the registered delivery scheduling gap after an
 external recovery owner releases payload capacity. The existing capacity owner
