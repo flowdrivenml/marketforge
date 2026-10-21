@@ -1619,6 +1619,70 @@ fn router_observation_requires_closed_admission_and_has_no_runtime_effects() {
         assert!(ROUTER_METRICS.contains(&metric));
         assert_eq!(result, Ok(ObservationAdmission::Accepted));
     }
+    // Sampling cadence is monotonic and never builds snapshots while disabled
+    // or before its deadline. Delayed scheduling emits only one current sample.
+    use marketforge_engine::live::routing::metrics::RouterMetricSampler;
+    let start = marketforge_engine::live::foundation::MonotonicClock::now(clock.as_ref());
+    let interval = Duration::from_secs(2);
+    assert!(RouterMetricSampler::new(Duration::ZERO, Some(start)).is_err());
+    let mut sampler = RouterMetricSampler::new(interval, None).unwrap();
+    assert!(
+        sampler
+            .sample_due(start, clock.as_ref(), &handle, || panic!("disabled"))
+            .unwrap()
+            .is_none()
+    );
+    sampler.schedule(Some(start + interval));
+    assert!(
+        sampler
+            .sample_due(start, clock.as_ref(), &handle, || panic!("early"))
+            .unwrap()
+            .is_none()
+    );
+    clock.set_wall_ns(123);
+    let sampled = sampler
+        .sample_due(start + interval, clock.as_ref(), &handle, || before.clone())
+        .unwrap()
+        .unwrap();
+    assert!(
+        sampled
+            .iter()
+            .all(|(_, result)| *result == Ok(ObservationAdmission::Accepted))
+    );
+    let late = start + Duration::from_secs(100);
+    assert!(
+        sampler
+            .sample_due(late, clock.as_ref(), &handle, || before.clone())
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(sampler.next_deadline(), Some(late + interval));
+    assert!(
+        sampler
+            .sample_due(late, clock.as_ref(), &handle, || panic!("catch-up burst"))
+            .unwrap()
+            .is_none()
+    );
+    struct FailedWall;
+    impl marketforge_engine::live::foundation::clock::WallClock for FailedWall {
+        fn unix_time_ns(&self) -> Result<i64, ErrorCode> {
+            Err(ErrorCode::Unavailable)
+        }
+    }
+    sampler.schedule(Some(start));
+    assert_eq!(
+        sampler.sample_due(start, &FailedWall, &handle, || panic!("wall failure")),
+        Err(ErrorCode::Unavailable)
+    );
+    assert_eq!(sampler.next_deadline(), Some(start + interval));
+    let mut overflow = RouterMetricSampler::new(Duration::MAX, Some(start)).unwrap();
+    assert_eq!(
+        overflow.sample_due(start, clock.as_ref(), &handle, || panic!("overflow")),
+        Err(ErrorCode::Limit)
+    );
+    assert_eq!(overflow.next_deadline(), None);
+    sampler.schedule(None);
+    assert_eq!(sampler.next_deadline(), None);
     let samples = metrics.snapshot(Duration::from_secs(1));
     assert_eq!(samples.len(), 6);
     for (i, sample) in samples.iter().enumerate() {

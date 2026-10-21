@@ -59,3 +59,61 @@ impl RouterDrainSnapshot {
         })
     }
 }
+
+/// Cooperative sampling cadence. The runtime arms its timer at `next_deadline`;
+/// late turns produce one current sample, never a burst of historical samples.
+/// Disabled sampling does not read wall time or construct owner snapshots.
+pub struct RouterMetricSampler {
+    interval: std::time::Duration,
+    next: Option<std::time::Instant>,
+}
+
+pub type RouterMetricResults = [(MetricId, Result<ObservationAdmission, ErrorCode>); 6];
+
+impl RouterMetricSampler {
+    pub fn new(
+        interval: std::time::Duration,
+        first: Option<std::time::Instant>,
+    ) -> Result<Self, ErrorCode> {
+        if interval.is_zero() {
+            return Err(ErrorCode::InvalidInput);
+        }
+        Ok(Self {
+            interval,
+            next: first,
+        })
+    }
+
+    pub fn next_deadline(&self) -> Option<std::time::Instant> {
+        self.next
+    }
+
+    /// Runtime configuration supplies the next measurement boundary explicitly.
+    pub fn schedule(&mut self, first: Option<std::time::Instant>) {
+        self.next = first;
+    }
+
+    /// Every due attempt consumes its cadence, even if wall time or collection
+    /// fails. Observational failures must not create an immediate retry loop.
+    /// An unrepresentable next deadline disables sampling and returns Limit.
+    pub fn sample_due(
+        &mut self,
+        now: std::time::Instant,
+        wall: &dyn crate::live::foundation::clock::WallClock,
+        metrics: &dyn ScopedMetricsPort,
+        observe: impl FnOnce() -> RouterDrainSnapshot,
+    ) -> Result<Option<RouterMetricResults>, ErrorCode> {
+        let Some(next) = self.next else {
+            return Ok(None);
+        };
+        if now < next {
+            return Ok(None);
+        }
+        self.next = now.checked_add(self.interval);
+        if self.next.is_none() {
+            return Err(ErrorCode::Limit);
+        }
+        let timestamp = wall.unix_time_ns()?;
+        Ok(Some(observe().record_metrics(metrics, timestamp)))
+    }
+}
