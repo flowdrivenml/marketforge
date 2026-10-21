@@ -40,6 +40,23 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest continuation repairs shutdown drain wakeups for WP-10 global preparation
+charges and destination payload capacity. One bounded replacement-aware waiter
+per authoritative accounting owner is registered atomically with the drain check;
+final release wakes outside all accounting/registry locks. Registry and composed
+router shutdown use these production owners. Deterministic tests prove replacement,
+partial/final release, reentrant observations, close fencing and repeated drain.
+Full verification exits 0: formatting, Live check, 134 library / 439 integration
+(2 opt-in ignored) / 1 doctest; Live+historical compilation exits 0. Receipts:
+`engine/target/live-verification/20261021T050256Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort ordered
+composition, runtime retry scheduling and native metrics/control binding remain.
+Earlier WP-05/06/07/09 gates persist; WP-11–29 remain pending. Further autonomous
+implementation is safe. Checkpoint: local commit carrying this entry and the
+matching WP-10 ledger. Preserved untracked launcher. No push, SQL/exchange traffic,
+Python/historical execution, dependencies or ignored configuration changes.
+
+
 Latest continuation composes WP-10 cooperative router shutdown across the existing
 namespace registry, admission budget, destination registry and delivery driver.
 Registry shutdown now closes queue/capacity admission outside registry locks;

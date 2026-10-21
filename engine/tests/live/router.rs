@@ -422,3 +422,67 @@ fn router_shutdown_composes_preparation_queue_payload_and_delivery_responsibilit
     );
     assert!(owners.snapshot().is_drained());
 }
+
+#[test]
+fn registry_shutdown_wakes_latest_coordinator_after_final_payload_release() {
+    use marketforge_engine::live::routing::{
+        destination::DestinationCapacity, queue::DestinationQueue,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::task::{Context, Wake, Waker};
+    struct Observer {
+        registry: Arc<RouterRegistry>,
+        wakes: AtomicUsize,
+    }
+    impl Wake for Observer {
+        fn wake(self: Arc<Self>) {
+            // Reentrant observation proves wake runs outside registry/capacity locks.
+            assert!(self.registry.snapshot().shutting_down);
+            self.wakes.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let registry = Arc::new(RouterRegistry::new());
+    let adapter = destination(1, DestinationKind::Publication, DeliveryPolicy::Required);
+    let queue =
+        DestinationQueue::new(DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap());
+    registry.register_queue(adapter, queue.clone()).unwrap();
+    queue.try_enqueue(batch()).unwrap();
+    let payload = queue.try_dequeue().unwrap();
+    let make_observer = || {
+        Arc::new(Observer {
+            registry: registry.clone(),
+            wakes: AtomicUsize::new(0),
+        })
+    };
+    let old = make_observer();
+    let latest = make_observer();
+    let old_waker = Waker::from(old.clone());
+    let latest_waker = Waker::from(latest.clone());
+    assert!(
+        registry
+            .poll_shutdown(&mut Context::from_waker(&old_waker))
+            .is_pending()
+    );
+    assert!(
+        registry
+            .poll_shutdown(&mut Context::from_waker(&latest_waker))
+            .is_pending()
+    );
+    assert_eq!(queue.observe().capacity.occupied_events, 2);
+    assert_eq!(latest.wakes.load(Ordering::SeqCst), 0);
+    drop(payload);
+    assert_eq!(old.wakes.load(Ordering::SeqCst), 0);
+    assert_eq!(latest.wakes.load(Ordering::SeqCst), 1);
+    assert!(
+        registry
+            .poll_shutdown(&mut Context::from_waker(&latest_waker))
+            .is_ready()
+    );
+    assert!(
+        registry
+            .poll_shutdown(&mut Context::from_waker(&latest_waker))
+            .is_ready()
+    );
+    assert_eq!(latest.wakes.load(Ordering::SeqCst), 1);
+    assert!(queue.try_enqueue(batch()).is_err());
+}

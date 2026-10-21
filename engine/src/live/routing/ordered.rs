@@ -224,6 +224,12 @@ impl OrderedAdmissionBudget {
         self.budget.close();
     }
 
+    /// Wake the enclosing shutdown coordinator after the final preparation
+    /// releases its mandatory charge, including futures still awaiting capacity.
+    pub fn poll_shutdown(&self, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {
+        self.budget.poll_shutdown(cx)
+    }
+
     pub async fn prepare<'a>(
         &self,
         registry: &'a RouterRegistry,

@@ -82,9 +82,9 @@ impl RouterShutdownOwners<'_> {
         cx: &mut Context<'_>,
         deadline: &mut DeadlineFuture,
     ) -> RouterShutdownStep {
-        self.admission.close();
+        let _ = self.admission.poll_shutdown(cx);
         let _ = self.namespaces.poll_shutdown(cx);
-        self.destinations.shutdown();
+        let _ = self.destinations.poll_shutdown(cx);
         self.delivery.close();
         if self.snapshot().is_drained() {
             return RouterShutdownStep::Drained;

@@ -1,7 +1,10 @@
 //! Mandatory count/byte accounting, independent of optional measurements.
 //! A reservation retains capacity until ownership is dropped, including unwind.
 use crate::live::model::error::ErrorCode;
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    task::{Context, Poll, Waker},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ResourceUsage {
@@ -13,6 +16,7 @@ struct State {
     limit: ResourceUsage,
     used: ResourceUsage,
     closed: bool,
+    shutdown_waker: Option<Waker>,
 }
 #[derive(Debug, Clone)]
 pub struct ResourceBudget(Arc<Mutex<State>>);
@@ -25,6 +29,7 @@ impl ResourceBudget {
             limit,
             used: ResourceUsage::default(),
             closed: false,
+            shutdown_waker: None,
         }))))
     }
     /// Immediate, atomic admission in both dimensions. Owners may wait using
@@ -65,6 +70,25 @@ impl ResourceBudget {
     pub fn close(&self) {
         self.0.lock().unwrap_or_else(|e| e.into_inner()).closed = true;
     }
+    /// Fence admission and register one replaceable drain coordinator. This
+    /// does not revoke reservations or allocate a queue of shutdown waiters.
+    pub fn poll_shutdown(&self, cx: &mut Context<'_>) -> Poll<()> {
+        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        state.closed = true;
+        if state.used == ResourceUsage::default() {
+            state.shutdown_waker = None;
+            Poll::Ready(())
+        } else {
+            if state
+                .shutdown_waker
+                .as_ref()
+                .is_none_or(|w| !w.will_wake(cx.waker()))
+            {
+                state.shutdown_waker = Some(cx.waker().clone());
+            }
+            Poll::Pending
+        }
+    }
 }
 #[derive(Debug)]
 pub struct ResourceReservation {
@@ -78,14 +102,82 @@ impl ResourceReservation {
 }
 impl Drop for ResourceReservation {
     fn drop(&mut self) {
-        let mut state = self.budget.0.lock().unwrap_or_else(|e| e.into_inner());
-        state.used.items -= self.amount.items;
-        state.used.bytes -= self.amount.bytes;
+        let waker = {
+            let mut state = self.budget.0.lock().unwrap_or_else(|e| e.into_inner());
+            state.used.items -= self.amount.items;
+            state.used.bytes -= self.amount.bytes;
+            if state.used == ResourceUsage::default() {
+                state.shutdown_waker.take()
+            } else {
+                None
+            }
+        };
+        if let Some(waker) = waker {
+            waker.wake();
+        }
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shutdown_wakes_latest_coordinator_only_after_final_charge_outside_lock() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::task::Wake;
+        struct Observer {
+            budget: ResourceBudget,
+            wakes: AtomicUsize,
+        }
+        impl Wake for Observer {
+            fn wake(self: Arc<Self>) {
+                assert_eq!(self.budget.usage(), ResourceUsage::default());
+                self.wakes.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        let budget = ResourceBudget::new(ResourceUsage { items: 2, bytes: 2 }).unwrap();
+        let first = budget
+            .reserve(ResourceUsage { items: 1, bytes: 1 })
+            .unwrap();
+        let last = budget
+            .reserve(ResourceUsage { items: 1, bytes: 1 })
+            .unwrap();
+        let observer = || {
+            Arc::new(Observer {
+                budget: budget.clone(),
+                wakes: AtomicUsize::new(0),
+            })
+        };
+        let old = observer();
+        let latest = observer();
+        let old_waker = Waker::from(old.clone());
+        let latest_waker = Waker::from(latest.clone());
+        assert!(
+            budget
+                .poll_shutdown(&mut Context::from_waker(&old_waker))
+                .is_pending()
+        );
+        assert!(
+            budget
+                .poll_shutdown(&mut Context::from_waker(&latest_waker))
+                .is_pending()
+        );
+        assert!(matches!(
+            budget.reserve(ResourceUsage { items: 1, bytes: 0 }),
+            Err(ErrorCode::Unavailable)
+        ));
+        drop(first);
+        assert_eq!(latest.wakes.load(Ordering::SeqCst), 0);
+        drop(last);
+        assert_eq!(old.wakes.load(Ordering::SeqCst), 0);
+        assert_eq!(latest.wakes.load(Ordering::SeqCst), 1);
+        assert!(
+            budget
+                .poll_shutdown(&mut Context::from_waker(&latest_waker))
+                .is_ready()
+        );
+        assert_eq!(latest.wakes.load(Ordering::SeqCst), 1);
+    }
+
     #[test]
     fn admission_is_atomic_and_drop_releases() {
         let b = ResourceBudget::new(ResourceUsage { items: 2, bytes: 9 }).unwrap();

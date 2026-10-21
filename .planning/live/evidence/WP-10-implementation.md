@@ -1480,3 +1480,53 @@ runtime scheduling/retry integration, native metrics/control binding. Shutdown
 composition now exists but needs binding in that owner and ultimately WP-24.
 Earlier WP-05/06/07/09 gates persist. WP-11–29 remain pending; no package accepted
 or overall completion claimed. Further autonomous WP-10 work can safely continue.
+
+
+## Continuation — wake shutdown after final accounting release (2026-10-21)
+
+Status: Partial. Starting checkpoint `ab7dac5`, branch `codex/wp06-completion`.
+Read required campaign instructions, decisions/status and WP-10/11 roadmap;
+inspected current ordered admission, registry, delivery driver, shutdown and real
+consumer tests. Next executable remains WP-10. Preserved pre-existing untracked
+`scripts/run-autonomous-codex.sh`; no competing writer or completed-work restart.
+
+Implemented one bounded replacement-aware shutdown waiter on ResourceBudget and
+DestinationCapacity. Closure and drain registration are atomic with accounting;
+final release extracts the waiter and invokes it outside the lock. Partial release
+retains it. Existing reservations/payloads remain charged; no delivery or durability
+is inferred. OrderedAdmissionBudget and RouterRegistry expose poll_shutdown;
+RouterShutdownOwners registers the coordinator on both real owners. Registry
+releases its locks before capacity shutdown/wake callbacks. Foundation change is
+required by WP-10's existing global preparation accounting, with no financial or
+historical contract changes.
+
+Deterministic tests exercise real production reservations and registered queue
+payloads, final/partial release, latest-waker replacement, reentrant snapshots,
+closed admission and repeat drain. No arbitrary sleeps or external dependencies.
+
+Verification (actual commands/exit codes):
+- From engine/: `cargo test --locked --offline --no-default-features --features
+  live --test live_suite registry_shutdown`: exit 0, 2 passed (capacity change).
+- Root `./scripts/verify-live.sh full`: final exit 0. Executes `cargo fmt --all
+  -- --check`; `cargo check --locked --offline --no-default-features --features
+  live --lib`; same flags with `cargo test --lib` (134 passed), `--test live_suite`
+  (439 passed, 2 opt-in ignored), `--doc` (1 passed). Final receipts:
+  `engine/target/live-verification/20261021T050256Z-2/`.
+- From engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: final exit 0; existing dead-code warnings remain.
+- Root `git diff --check`: exit 0 before checkpoint. SQL/performance opt-ins and
+  historical-only execution not run; no claim on those gates or zero-stream baseline.
+
+Changed paths: `engine/src/live/foundation/resources.rs`,
+`engine/src/live/routing/{destination,ordered,router,shutdown}.rs`,
+`engine/tests/live/router.rs`, STATUS.md and this ledger.
+Checkpoint: local commit carrying this entry. No push, SQL/exchange traffic,
+Python/historical execution edits, dependency/lockfile or ignored-config changes.
+
+Remaining acceptance ledger: production EventRouterPort ordered composition,
+runtime retry scheduling and native metrics/control binding; shutdown primitives
+still need binding in that owner and WP-24. One shutdown coordinator per accounting
+owner is supported. Reporting/transferred recovery responsibility still needs runtime
+scheduling; these wakeups establish no external consumer processing or durability.
+WP-05/06/07/09 gates persist; WP-11–29 pending. Safe autonomous continuation remains
+possible; no package acceptance or whole-project completion claimed.

@@ -43,6 +43,7 @@ struct CapacityState {
     next_waiter_id: Option<u64>,
     waiters: HashMap<u64, Waker>,
     shutting_down: bool,
+    shutdown_waker: Option<Waker>,
 }
 
 impl Default for CapacityState {
@@ -53,6 +54,7 @@ impl Default for CapacityState {
             next_waiter_id: Some(1),
             waiters: HashMap::new(),
             shutting_down: false,
+            shutdown_waker: None,
         }
     }
 }
@@ -161,6 +163,26 @@ impl DestinationCapacity {
         wake_all(waiters);
     }
 
+    /// One replacement-aware shutdown coordinator; payload owners retain their
+    /// permits. Register atomically with the drain check to avoid lost wakeups.
+    pub fn poll_shutdown(&self, cx: &mut Context<'_>) -> Poll<()> {
+        self.shutdown();
+        let mut state = self.lock_state();
+        if state.occupied_events == 0 && state.occupied_bytes == 0 {
+            state.shutdown_waker = None;
+            Poll::Ready(())
+        } else {
+            if state
+                .shutdown_waker
+                .as_ref()
+                .is_none_or(|w| !w.will_wake(cx.waker()))
+            {
+                state.shutdown_waker = Some(cx.waker().clone());
+            }
+            Poll::Pending
+        }
+    }
+
     pub fn usage(&self) -> CapacityUsage {
         let state = self.lock_state();
 
@@ -229,7 +251,7 @@ impl CapacityReservation {
 
 impl Drop for CapacityReservation {
     fn drop(&mut self) {
-        let waiters = {
+        let (waiters, shutdown_waker) = {
             let mut state = self
                 .inner
                 .state
@@ -252,10 +274,18 @@ impl Drop for CapacityReservation {
             // request may not fit the newly available capacity.
             //
             // Waiters compete to reserve capacity when polled.
-            std::mem::take(&mut state.waiters)
+            let shutdown_waker = if state.occupied_events == 0 && state.occupied_bytes == 0 {
+                state.shutdown_waker.take()
+            } else {
+                None
+            };
+            (std::mem::take(&mut state.waiters), shutdown_waker)
         };
 
         wake_all(waiters);
+        if let Some(waker) = shutdown_waker {
+            waker.wake();
+        }
     }
 }
 

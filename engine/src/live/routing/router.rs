@@ -714,6 +714,31 @@ impl RouterRegistry {
         }
     }
 
+    /// Fence membership and register the coordinator on outstanding payload
+    /// capacity. Executor callbacks run after releasing registry locks.
+    pub fn poll_shutdown(&self, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {
+        self.shutdown();
+        let queues: Vec<_> = {
+            let state = self.state.read().unwrap_or_else(|e| e.into_inner());
+            state
+                .destinations
+                .values()
+                .filter_map(|entry| entry.queue.clone())
+                .collect()
+        };
+        let mut drained = true;
+        for queue in queues {
+            if queue.capacity().poll_shutdown(cx).is_pending() {
+                drained = false;
+            }
+        }
+        if drained {
+            std::task::Poll::Ready(())
+        } else {
+            std::task::Poll::Pending
+        }
+    }
+
     /// Owned observation from the authoritative registry. Membership and revision
     /// are consistent; individual queue samples are observational, not a global
     /// transaction across independent consumers. No adapter callbacks run here.
