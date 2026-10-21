@@ -293,8 +293,9 @@ impl DeliveryDriver {
     /// turn. Capacity/correlation/reporting failures and failed tracking retries
     /// never self-wake: the runtime must arrange reporting notifications
     /// and a bounded retry timer. Correlated completions wake the last drive waker.
-    /// External payload release also needs a runtime
-    /// notification or timer. Worker futures and idle queues register this waker.
+    /// Later release of an externally held payload charge still needs a runtime
+    /// notification or timer; recovery transfers schedule their own progress turn.
+    /// Worker futures and idle queues register this waker.
     /// This is a cooperative scheduling primitive, not a deadline shutdown path;
     /// close admission and synchronize all queues before closing the driver.
     pub fn drive_registered(
@@ -469,11 +470,21 @@ impl DeliveryDriver {
     }
 
     /// Recovery transfer preserves the original worker payload and its charge.
+    /// Successful transfer frees a supervision slot and wakes the coordinator,
+    /// including after closure. Empty lookups preserve its pending notification.
     pub fn take_blocked_for_recovery(&mut self) -> Option<(PendingDeliveryError, WorkerOutcome)> {
-        self.supervisor.take_blocked_for_recovery()
+        let outcome = self.supervisor.take_blocked_for_recovery();
+        if outcome.is_some() {
+            self.notify_progress();
+        }
+        outcome
     }
 
     pub fn take_for_recovery(&mut self, id: DeliveryObligationId) -> Option<RetainedDelivery> {
-        self.supervisor.take_for_recovery(id)
+        let retained = self.supervisor.take_for_recovery(id);
+        if retained.is_some() {
+            self.notify_progress();
+        }
+        retained
     }
 }
