@@ -1088,10 +1088,11 @@ impl AcknowledgementTracker {
             return Err(AcknowledgementError::CapacityExceeded);
         }
 
+        let mut seen = std::collections::HashSet::new();
         for obligation in &obligations {
             required_completion_stage(obligation.kind, obligation.policy)?;
 
-            if self.obligations.contains_key(&obligation.id) {
+            if self.obligations.contains_key(&obligation.id) || !seen.insert(obligation.id) {
                 return Err(AcknowledgementError::DuplicateObligation);
             }
         }
@@ -1100,23 +1101,21 @@ impl AcknowledgementTracker {
             self.next_id
                 .ok_or(AcknowledgementError::ObligationIdExhausted)?,
         );
+        // Preflight exhaustion before registering any obligation.
+        let next_id = transaction_id
+            .0
+            .checked_add(1)
+            .ok_or(AcknowledgementError::ObligationIdExhausted)?;
 
-        self.next_id = Some(
-            transaction_id
-                .0
-                .checked_add(1)
-                .ok_or(AcknowledgementError::ObligationIdExhausted)?,
-        );
-
+        let ids = obligations.iter().map(|obligation| obligation.id).collect();
         for obligation in &obligations {
             self.register(obligation.clone())
                 .expect("obligation passed validation");
-
-            self.transaction_state
-                .entry(transaction_id)
-                .or_insert_with(Vec::new)
-                .push(obligation.id);
         }
+        // Empty transactions also need an identity so they can be aborted or
+        // activated exactly once.
+        self.transaction_state.insert(transaction_id, ids);
+        self.next_id = Some(next_id);
 
         Ok(PreparedObligations {
             transaction_id,
@@ -1142,6 +1141,28 @@ impl AcknowledgementTracker {
         // Validate all specs before allocating any IDs.
         for spec in &specs {
             required_completion_stage(spec.kind, spec.policy)?;
+        }
+
+        // Reserve the complete ID range, including the transaction identity,
+        // before consuming IDs. A failed preparation must leave allocator state
+        // untouched, including at the u64 boundary.
+        let first = self
+            .next_id
+            .ok_or(AcknowledgementError::ObligationIdExhausted)?;
+        let count =
+            u64::try_from(specs.len()).map_err(|_| AcknowledgementError::ObligationIdExhausted)?;
+        first
+            .checked_add(count)
+            .and_then(|id| id.checked_add(1))
+            .ok_or(AcknowledgementError::ObligationIdExhausted)?;
+
+        for index in 0..count {
+            if self
+                .obligations
+                .contains_key(&DeliveryObligationId(first + index))
+            {
+                return Err(AcknowledgementError::DuplicateObligation);
+            }
         }
 
         // All specs validated — now allocate and build.
@@ -1509,6 +1530,67 @@ mod transaction_integrity_tests {
 
         // The tracker must not silently activate the transaction.
         assert_eq!(tracker.status(obligation.id), Some(DeliveryStatus::Pending));
+    }
+    #[test]
+    fn preparation_failure_is_atomic_for_duplicate_ids_and_exhaustion() {
+        let obligation = DeliveryObligation {
+            id: DeliveryObligationId(7),
+            destination: DestinationId(1),
+            range: DeliveryCursorRange::new(
+                StreamCursor::new(StreamId("atomic".into()), LogEpoch(1), 1),
+                StreamCursor::new(StreamId("atomic".into()), LogEpoch(1), 1),
+            )
+            .unwrap(),
+            kind: DestinationKind::Recording,
+            policy: DeliveryPolicy::Required,
+        };
+        let mut tracker = AcknowledgementTracker::new(10).unwrap();
+        assert_eq!(
+            tracker
+                .prepare_obligations(vec![obligation.clone(), obligation.clone()])
+                .unwrap_err(),
+            AcknowledgementError::DuplicateObligation
+        );
+        assert!(tracker.is_empty());
+        assert!(tracker.transaction_state.is_empty());
+        assert_eq!(tracker.next_id, Some(1));
+        let spec = DeliveryObligationSpec {
+            destination: obligation.destination,
+            range: obligation.range.clone(),
+            kind: obligation.kind,
+            policy: obligation.policy,
+        };
+        tracker.next_id = Some(u64::MAX - 1);
+        assert_eq!(
+            tracker
+                .prepare_obligation_specs(vec![spec.clone()])
+                .unwrap_err(),
+            AcknowledgementError::ObligationIdExhausted
+        );
+        assert_eq!(tracker.next_id, Some(u64::MAX - 1));
+        assert!(tracker.is_empty());
+        tracker.next_id = Some(7);
+        tracker.register(obligation).unwrap();
+        assert_eq!(
+            tracker.prepare_obligation_specs(vec![spec]).unwrap_err(),
+            AcknowledgementError::DuplicateObligation
+        );
+        assert_eq!(tracker.next_id, Some(7));
+        assert_eq!(tracker.len(), 1);
+        assert!(tracker.transaction_state.is_empty());
+    }
+
+    #[test]
+    fn empty_preparation_has_a_real_abortable_transaction() {
+        let mut tracker = AcknowledgementTracker::new(1).unwrap();
+        let prepared = tracker.prepare_obligations(vec![]).unwrap();
+        assert_eq!(tracker.transaction_state.len(), 1);
+        tracker.abort_prepared(prepared).unwrap();
+        assert!(tracker.transaction_state.is_empty());
+        let prepared = tracker.prepare_obligation_specs(vec![]).unwrap();
+        tracker.begin_commitment(prepared).unwrap();
+        assert!(tracker.transaction_state.is_empty());
+        assert!(tracker.is_empty());
     }
     // Transaction integrity tests go here.
 }
