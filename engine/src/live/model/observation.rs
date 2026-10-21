@@ -245,6 +245,12 @@ pub enum MetricId {
     RecoveryEscalations,
     FailedTasksTotal,
     RestartedTasksTotal,
+    RouterAdmissionEvents,
+    RouterAdmissionBytes,
+    RouterRetainedDeliveries,
+    RouterTrackedObligations,
+    RouterTerminalReports,
+    RouterEscalatedReports,
     ActiveConnections,
     ActiveSourceStreams,
     ActiveDerivedStreams,
@@ -438,7 +444,12 @@ impl MetricId {
             | Self::RecoveryEscalations
             | Self::FailedTasksTotal
             | Self::RestartedTasksTotal => (MetricKind::Counter, MetricUnit::Count),
-            Self::ActiveConnections
+            Self::RouterAdmissionEvents
+            | Self::RouterRetainedDeliveries
+            | Self::RouterTrackedObligations
+            | Self::RouterTerminalReports
+            | Self::RouterEscalatedReports
+            | Self::ActiveConnections
             | Self::ActiveSourceStreams
             | Self::ActiveDerivedStreams
             | Self::ActiveSubscribers
@@ -478,7 +489,8 @@ impl MetricId {
             | Self::ConfiguredWeightLimit
             | Self::ObservedWeightUsage
             | Self::EstimatedRemainingWeight => (MetricKind::UnsignedGauge, MetricUnit::Count),
-            Self::TotalResidentMemory
+            Self::RouterAdmissionBytes
+            | Self::TotalResidentMemory
             | Self::ComponentMemory
             | Self::RegisteredBufferMemory
             | Self::RetainedBytes

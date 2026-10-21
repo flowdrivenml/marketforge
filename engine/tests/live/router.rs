@@ -1558,6 +1558,134 @@ fn router_observation_requires_closed_admission_and_has_no_runtime_effects() {
         before,
         RouterDrainSnapshot::observe(&namespaces, &budget, &registry, &delivery)
     );
+    // The production projection uses the real prebound native collector. It
+    // cannot mutate any router owner, including while measurements are disabled.
+    use marketforge_engine::live::{
+        foundation::clock::ManualClock,
+        metrics::registry::NativeMetrics,
+        model::{
+            error::ErrorCode,
+            observation::{
+                Measurement, MetricBinding, MetricValue, MissingMeasurement, ResetBoundary,
+            },
+            operation::{ResourceId, ResourceVersion},
+        },
+        ports::observability::ObservationAdmission,
+        routing::metrics::ROUTER_METRICS,
+    };
+    use std::time::{Duration, Instant};
+    let clock = Arc::new(ManualClock::new(Instant::now(), 0));
+    let metrics = NativeMetrics::new(clock.clone(), 3, 18, true).unwrap();
+    let binding = |generation, catalog: Vec<_>| MetricBinding {
+        owner: ResourceVersion {
+            resource: ResourceId::Runtime,
+            generation,
+        },
+        reset_epoch: 0,
+        reset: ResetBoundary::OwnerGeneration,
+        metrics: catalog,
+    };
+    let handle = metrics
+        .register(binding(1, ROUTER_METRICS.to_vec()))
+        .unwrap();
+    for (metric, result) in before.record_metrics(&handle, 123) {
+        assert!(ROUTER_METRICS.contains(&metric));
+        assert_eq!(result, Ok(ObservationAdmission::Accepted));
+    }
+    let samples = metrics.snapshot(Duration::from_secs(1));
+    assert_eq!(samples.len(), 6);
+    for (i, sample) in samples.iter().enumerate() {
+        assert_eq!(sample.metric, ROUTER_METRICS[i]);
+        assert_eq!(
+            sample.measurement,
+            Measurement::Available {
+                value: if i == 1 {
+                    MetricValue::Bytes(0)
+                } else {
+                    MetricValue::UnsignedGauge(0)
+                },
+                observed_at_ns: 123,
+            }
+        );
+    }
+    // Distinct fixture values catch accidental field swaps and unit confusion.
+    let mut projection = before.clone();
+    projection.admission_usage = ResourceUsage {
+        items: 7,
+        bytes: 800,
+    };
+    projection.delivery.retained_deliveries = 3;
+    projection.delivery.tracked_obligations = 4;
+    projection.delivery.journal_records = 5;
+    projection.delivery.escalated_records = 2;
+    assert!(
+        projection
+            .record_metrics(&handle, 456)
+            .iter()
+            .all(|(_, r)| *r == Ok(ObservationAdmission::Accepted))
+    );
+    let samples = metrics.snapshot(Duration::from_secs(1));
+    for (sample, value) in samples.iter().zip([7, 800, 3, 4, 5, 2]) {
+        assert_eq!(
+            sample.measurement,
+            Measurement::Available {
+                value: if sample.metric == ROUTER_METRICS[1] {
+                    MetricValue::Bytes(value)
+                } else {
+                    MetricValue::UnsignedGauge(value)
+                },
+                observed_at_ns: 456,
+            }
+        );
+    }
+    clock.advance(Duration::from_secs(1)).unwrap();
+    assert!(
+        metrics
+            .snapshot(Duration::from_secs(1))
+            .iter()
+            .all(|s| matches!(
+                s.measurement,
+                Measurement::Stale {
+                    observed_at_ns: 456,
+                    ..
+                }
+            ))
+    );
+    metrics.set_enabled(false);
+    assert!(
+        before
+            .record_metrics(&handle, 789)
+            .iter()
+            .all(|(_, r)| *r == Ok(ObservationAdmission::Disabled))
+    );
+    assert!(
+        metrics
+            .snapshot(Duration::from_secs(1))
+            .iter()
+            .all(|s| s.measurement
+                == Measurement::Unavailable {
+                    reason: MissingMeasurement::Disabled
+                })
+    );
+    metrics.set_enabled(true);
+    // Replacement invalidates the old generation; missing series remain errors
+    // while the one registered gauge continues to be sampled independently.
+    let replacement = metrics
+        .register(binding(2, vec![ROUTER_METRICS[0]]))
+        .unwrap();
+    assert!(
+        before
+            .record_metrics(&handle, 0)
+            .iter()
+            .all(|(_, r)| *r == Err(ErrorCode::StaleGeneration))
+    );
+    let partial = before.record_metrics(&replacement, 0);
+    assert_eq!(partial[0].1, Ok(ObservationAdmission::Accepted));
+    assert!(partial[1..].iter().all(|(_, r)| r.is_err()));
+    assert_eq!(
+        before,
+        RouterDrainSnapshot::observe(&namespaces, &budget, &registry, &delivery)
+    );
     assert!(!delivery.is_closed());
     let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
     assert!(namespaces.poll_shutdown(&mut cx).is_ready());

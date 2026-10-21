@@ -19,3 +19,5 @@ pub mod supervisor;
 pub mod tracking_recovery;
 pub mod transaction;
 pub mod worker;
+
+pub mod metrics;
