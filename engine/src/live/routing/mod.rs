@@ -8,6 +8,7 @@ pub mod cursor;
 pub mod destination;
 pub mod driver;
 pub mod ingress;
+pub mod ingress_reporting;
 pub mod namespaces;
 pub mod ordered;
 pub mod queue;

@@ -2758,6 +2758,170 @@ mod ingress_witnesses {
     }
 
     #[test]
+    fn recorded_ingress_wakes_latest_reporter_and_drains_admission_reserved_before_close() {
+        use marketforge_engine::live::routing::ingress_reporting::{
+            IngressOutcomes, RecordedIngressError,
+        };
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::task::Wake;
+        #[derive(Default)]
+        struct Counter(AtomicUsize);
+        impl Wake for Counter {
+            fn wake(self: Arc<Self>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        let fixture = Fixture::new();
+        let queue = fixture.queue(1, DeliveryPolicy::Required);
+        queue.try_enqueue(batch()).unwrap();
+        let ingress = fixture.ingress();
+        let journal = IngressOutcomes::new(ResourceUsage {
+            items: 1,
+            bytes: 100_000,
+        })
+        .unwrap();
+        let first = Arc::new(Counter::default());
+        let latest = Arc::new(Counter::default());
+        let shutdown = Arc::new(Counter::default());
+        let first_waker = Waker::from(first.clone());
+        let latest_waker = Waker::from(latest.clone());
+        let shutdown_waker = Waker::from(shutdown.clone());
+        let mut first_cx = Context::from_waker(&first_waker);
+        let mut latest_cx = Context::from_waker(&latest_waker);
+        let mut shutdown_cx = Context::from_waker(&shutdown_waker);
+        assert!(journal.poll_next(&mut first_cx).is_pending());
+        assert!(journal.poll_next(&mut latest_cx).is_pending());
+        let mut pending = Box::pin(journal.admit(&ingress, batch(), context()));
+        assert!(pending.as_mut().poll(&mut first_cx).is_pending());
+        assert!(matches!(
+            ready(journal.admit(&ingress, batch(), context())),
+            Err(RecordedIngressError::Capacity { .. })
+        ));
+        assert!(journal.poll_shutdown(&mut shutdown_cx).is_pending());
+        drop(queue.try_dequeue().unwrap());
+        assert!(matches!(
+            pending.as_mut().poll(&mut first_cx),
+            Poll::Ready(Ok(()))
+        ));
+        assert_eq!(latest.0.load(Ordering::SeqCst), 1);
+        assert_eq!(shutdown.0.load(Ordering::SeqCst), 0);
+        let record = match journal.poll_next(&mut latest_cx) {
+            Poll::Ready(record) => record,
+            _ => panic!("reserved admission lost after closure"),
+        };
+        assert_eq!(fixture.next(), 3);
+        drop(record);
+        assert_eq!(shutdown.0.load(Ordering::SeqCst), 1);
+        assert!(journal.poll_shutdown(&mut shutdown_cx).is_ready());
+    }
+
+    #[test]
+    fn recorded_ingress_reserves_before_commit_and_charges_dequeued_records() {
+        use marketforge_engine::live::model::memory::RetainedSize;
+        use marketforge_engine::live::routing::ingress_reporting::{
+            IngressOutcomes, RecordedIngressError,
+        };
+        let fixture = Fixture::new();
+        let queue = fixture.queue(1, DeliveryPolicy::Required);
+        let ingress = fixture.ingress();
+        let bytes = usize::try_from(batch().retained_size_bytes().unwrap()).unwrap();
+        let journal = IngressOutcomes::new(ResourceUsage { items: 1, bytes }).unwrap();
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(journal.poll_next(&mut cx).is_pending());
+        ready(journal.admit(&ingress, batch(), context())).unwrap();
+        assert_eq!(fixture.next(), 3);
+        assert_eq!(journal.snapshot().usage, ResourceUsage { items: 1, bytes });
+        let record = match journal.poll_next(&mut cx) {
+            Poll::Ready(record) => record,
+            _ => panic!("committed outcome must be retained"),
+        };
+        assert!(Arc::ptr_eq(
+            &record.batch().events()[0],
+            &queue.try_dequeue().unwrap().batch().events()[0]
+        ));
+        assert!(matches!(
+            record.outcome(),
+            IngressOutcome::Required {
+                required: OrderedCommitOutcome::Tracked(TrackedFanoutResult::Complete { .. }),
+                ..
+            }
+        ));
+        // Dequeue cannot free capacity while the reporting consumer holds it.
+        assert!(matches!(
+            ready(journal.admit(&ingress, batch(), context())),
+            Err(RecordedIngressError::Capacity { .. })
+        ));
+        assert!(journal.poll_shutdown(&mut cx).is_pending());
+        drop(record);
+        assert!(journal.poll_shutdown(&mut cx).is_ready());
+        assert!(matches!(
+            ready(journal.admit(&ingress, batch(), context())),
+            Err(RecordedIngressError::Capacity { .. })
+        ));
+        assert_eq!(fixture.next(), 3);
+    }
+
+    #[test]
+    fn recorded_ingress_releases_cancelled_pending_and_rejected_reservations() {
+        use marketforge_engine::live::model::memory::RetainedSize;
+        use marketforge_engine::live::routing::ingress_reporting::{
+            IngressOutcomes, RecordedIngressError,
+        };
+        let fixture = Fixture::new();
+        let queue = fixture.queue(1, DeliveryPolicy::Required);
+        let ingress = fixture.ingress();
+        let bytes = usize::try_from(batch().retained_size_bytes().unwrap()).unwrap();
+        let too_small = IngressOutcomes::new(ResourceUsage {
+            items: 2,
+            bytes: bytes - 1,
+        })
+        .unwrap();
+        assert!(matches!(
+            ready(too_small.admit(&ingress, batch(), context())),
+            Err(RecordedIngressError::Capacity { .. })
+        ));
+        assert_eq!(fixture.next(), 1);
+        assert!(queue.try_dequeue().is_none());
+        let journal = IngressOutcomes::new(ResourceUsage {
+            items: 2,
+            bytes: bytes * 2,
+        })
+        .unwrap();
+        queue.try_enqueue(batch()).unwrap();
+        let mut pending = Box::pin(journal.admit(&ingress, batch(), context()));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(pending.as_mut().poll(&mut cx).is_pending());
+        assert_eq!(journal.snapshot().usage.items, 1);
+        drop(pending);
+        assert_eq!(journal.snapshot().usage, ResourceUsage::default());
+        assert_eq!(fixture.budget.usage(), ResourceUsage::default());
+        assert_eq!(fixture.next(), 1);
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+        assert!(matches!(
+            ready(journal.admit(
+                &ingress,
+                batch(),
+                AdmissionContext::without_deadline(cancellation)
+            )),
+            Err(RecordedIngressError::Admission(_))
+        ));
+        assert_eq!(journal.snapshot().usage, ResourceUsage::default());
+        assert!(journal.poll_next(&mut cx).is_pending());
+        drop(queue.try_dequeue().unwrap());
+        ready(journal.admit(&ingress, batch(), context())).unwrap();
+        // Closing does not discard a committed record.
+        journal.close();
+        let record = match journal.poll_next(&mut cx) {
+            Poll::Ready(record) => record,
+            _ => panic!("record lost on closure"),
+        };
+        assert_eq!(record.batch().last_cursor(), batch().last_cursor());
+        drop(record);
+        assert!(journal.poll_shutdown(&mut cx).is_ready());
+    }
+
+    #[test]
     fn ingress_composes_required_and_optional_without_claiming_completion() {
         let fixture = Fixture::new();
         let required = fixture.queue(1, DeliveryPolicy::Required);
