@@ -39,6 +39,25 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest implementation checkpoint `9293c85` adds bounded ownership of contextual
+ingress outcomes for runtime reporting. Reporting capacity is reserved before
+admission; drop/cancellation releases it before commitment, and completed outcomes
+are retained synchronously without an intervening await. Dequeued records retain
+their charge until released. Three deterministic production-path witnesses cover
+event-byte and record bounds, immutable sharing, rejection, cancellation, dropped
+waits, latest-reporter wakeup and reserved admission completing after closure.
+Final checks exit 0: formatting, Live check, 135 library / 470 integration passes
+(2 opt-in ignored) / 1 doctest, plus Live+historical check. Full receipts:
+`engine/target/live-verification/20261021T061040Z-2/`.
+WP-10 remains Partial and next executable: the simple EventRouterPort projection,
+concrete runtime/reporter and Control composition still remain. This journal is
+in-memory outcome ownership, not durable reporting or a running daemon. Earlier
+WP-05/06/07/09 gates remain; WP-11–29 remain pending. Further autonomous work can
+safely continue. No SQL/exchange traffic, dependency/lockfile, ignored configuration
+or Python/historical execution changes. Pre-existing untracked launcher preserved;
+no push or acceptance claim. See WP-10 evidence for exact commands and limits.
+
+
 Latest implementation checkpoint `2200236` adds contextual producer ingress over
 the existing registry, namespaces, budget and delivery driver. No driver lock is
 held across capacity waits; nonwaiting commitment contention returns the batch

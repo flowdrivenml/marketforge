@@ -2671,3 +2671,63 @@ Verification (engine/ unless root stated):
 
 Changed: engine/src/live/routing/{ingress,mod}.rs,
 engine/tests/live/router.rs, STATUS.md and this ledger.
+
+
+## Continuation — bounded producer outcome reporting (2026-10-21)
+
+Status: Partial. Next executable: WP-10. Initial HEAD b75bfac, branch
+codex/wp06-completion. Preserved pre-existing untracked
+scripts/run-autonomous-codex.sh. Inspected campaign instructions, plan,
+decisions, current status/evidence, WP-09–11 roadmap, domain delivery/order
+requirements and actual ingress/ordered/registry/driver/resource owners.
+Implementation checkpoint: `9293c85`; evidence checkpoint carries this entry.
+
+Acceptance ledger:
+- IngressOutcomes reserves mandatory record/event-byte resources before ingress
+  can commit. It retains the full IngressOutcome without awaiting after commitment.
+  No projection converts partial or recovery results into a success receipt.
+- Pending-future drop and ingress rejection release reporting resources. Journal
+  closure fences new reservations while previously reserved admissions may finish.
+  Results remain readable after closure. Dequeue transfers the resource charge
+  with the record, preventing a slow consumer from bypassing the bound.
+- One replaceable reporting waiter is woken outside the journal lock. Shutdown
+  uses existing ResourceBudget ownership and waits for consumer-held records.
+  No competing delivery tracker, executor, cursor or completion owner introduced.
+- Three deterministic actual-ingress witnesses exercise required queue commitment,
+  immutable Arc sharing, byte and record exhaustion before commitment, cancellation,
+  dropped pending futures, rejected admission, latest-reporter wakeup, closure while
+  waiting, retained committed results and shutdown with a consumer-held charge.
+- Remaining: EventRouterPort admission projection with retained outcome ownership,
+  actual reporting/recovery consumer and runtime/Control composition. The record
+  currently exposes borrowed inspection; consuming recovery integration remains.
+  No claim of complete WP-10 or a running daemon. Existing WP-05/06/07/09 gates
+  persist; WP-11–29 pending. Further autonomous work can safely continue.
+
+Resource/persistence limits: bytes account for retained events, not an exact heap
+allocator measurement. Per-destination metadata is separately bounded by finite
+registry membership and outstanding-record count. The journal is process-local;
+no restart durability is implied. Successful journal admission means an outcome
+was recorded, which may itself describe a rejected/partial routing attempt.
+
+Verification (engine/ unless root stated; final commands exit 0):
+- cargo fmt --manifest-path engine/Cargo.toml --all (root): exit 0.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite recorded_ingress: exit 0, 3 passed / 469 filtered out.
+- ./scripts/verify-live.sh full (root): exit 0. Exact gates: cargo fmt --all --
+  --check; cargo check --locked --offline --no-default-features --features live
+  --lib; cargo test with same feature flags --lib (135 passed), --test live_suite
+  (470 passed, 2 opt-in ignored), --doc (1 passed). Final receipts:
+  engine/target/live-verification/20261021T061040Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0. Existing dead-code warnings remain.
+- git diff --check (root): exit 0 before implementation checkpoint.
+- Earlier complete verification also passed at 060907Z-2 (135/469/1) and
+  060949Z-2 (135/470/1). One documentation-read command used an incorrect filename;
+  corrected using the existing docs/live/02* path. No failed build/test commands.
+- SQL/performance opt-in and historical-only tests not run; historical zero-stream
+  baseline not rechecked. No database/exchange access or production data changes.
+
+Changed: engine/src/live/routing/{ingress_reporting,mod}.rs,
+engine/tests/live/router.rs, STATUS.md and this evidence ledger.
+No Python/historical execution, dependency/lockfile, ignored configuration changes
+or push. No package marked Accepted and no project completion claim.
