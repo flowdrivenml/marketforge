@@ -83,3 +83,37 @@ Add package-specific checks and Live+TUI / historical-only / base-library checks
 At every package boundary, give a compact report: `status`, `implemented`, `verification`, `remaining blockers`, `changed files`, `evidence path`, and `next authorized package`. Stop for an unresolved decision with material consequences, unsafe/destructive access, exhausted permitted resources, or completion of the authorized sequence. Routine code decisions and compiler errors are not reasons to request user intervention.
 
 `AGENTS.md` defines durable repository behavior; `.planning/live/AUTONOMOUS_PLAN.md` (if present and explicitly authorized) defines the **current sequence, permitted operations, and stopping point**. Neither file grants permission to change accepted decisions, access production databases, or claim acceptance without evidence.
+
+
+## Live Exchange Configuration
+
+MarketForge Live uses exchange and normalization specifications under:
+
+    data/.config/live/
+
+The development environment contains:
+
+- 15 exchange connectivity profiles.
+- 15 trade normalization specifications.
+- 15 L2 normalization specifications.
+- Global Live configuration.
+- Runtime source and derived-stream configurations.
+
+These files are authoritative development inputs for the exchange
+configuration compiler, protocol adapters, and normalization pipeline.
+
+Inspect existing specifications before creating replacements.
+
+The specifications are drafts until their actual exchange behavior
+has been independently verified.
+
+Codex may inspect, validate, and correct these files as part of
+authorized work packages.
+
+Because these files are ignored by Git, their modifications are
+not protected by ordinary Git checkpoints.
+
+Before changing an ignored configuration file, create a durable,
+reproducible backup or a sanitized version-controlled reference.
+
+Never commit credentials, private endpoints, or sensitive data.
