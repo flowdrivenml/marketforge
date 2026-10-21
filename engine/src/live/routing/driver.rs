@@ -303,6 +303,40 @@ impl DeliveryDriver {
         (turn, Ok(()))
     }
 
+    /// Run one timed delivery turn and report at most one terminal record from
+    /// the same authoritative journal, including while admission is closed.
+    /// Temporary failures retain the record with its existing retry policy;
+    /// permanent failures remain escalated for explicit resolution. Only actual
+    /// reporting progress schedules another turn, so deferred retries never spin.
+    /// Reporters must be bounded, nonblocking and idempotent: this cooperative
+    /// owner cannot preempt a synchronous handler or establish its durability.
+    #[allow(clippy::too_many_arguments)]
+    pub fn drive_registered_reporting<R: super::reporting::FinalizationReporter>(
+        &mut self,
+        registry: &super::router::RouterRegistry,
+        cx: &mut Context<'_>,
+        clock: &dyn crate::live::foundation::clock::MonotonicClock,
+        timer: &dyn DeadlineTimer,
+        interval: std::time::Duration,
+        consumer: &super::reporting::FinalizationReportingConsumer<R>,
+    ) -> (
+        RegisteredDeliveryDrive,
+        Result<(), crate::live::model::error::ErrorCode>,
+        Result<super::reporting::ReportingStep, super::reporting::ReportingCoordinatorError>,
+    ) {
+        use super::reporting::ReportingStep;
+        let (turn, scheduling) =
+            self.drive_registered_with_retry(registry, cx, clock, timer, interval);
+        let reporting = consumer.process_one(&mut self.journal, clock);
+        if matches!(reporting, Ok(ReportingStep::Reported)) {
+            cx.waker().wake_by_ref();
+        }
+        if self.closed && self.snapshot().is_drained() {
+            self.retry_timer = None;
+        }
+        (turn, scheduling, reporting)
+    }
+
     /// A successfully correlated completion wakes the most recently polled
     /// coordinator once. Rejected completions neither consume nor wake it.
     /// This also applies while draining a closed driver; completion is progress,

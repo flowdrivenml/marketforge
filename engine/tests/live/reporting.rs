@@ -490,3 +490,153 @@ fn stale_resolution_token_cannot_commit() {
     // The journal should still have the record (not committed).
     assert_eq!(journal.len(), 1);
 }
+
+#[test]
+fn registered_reporting_retries_without_spin_and_drains_after_close() {
+    use marketforge_engine::live::{
+        foundation::{clock::ManualClock as RuntimeClock, deadline::ManualDeadlineTimer},
+        routing::{
+            driver::DeliveryDriver, router::RouterRegistry, supervisor::DeliverySupervisor,
+            tracking_recovery::TrackingRecovery, worker::DestinationWorkers,
+        },
+    };
+    use std::{
+        num::NonZeroUsize,
+        task::{Context, Wake, Waker},
+        time::Instant,
+    };
+    struct Counter(AtomicUsize);
+    impl Wake for Counter {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    struct RecoveringReporter(Arc<AtomicUsize>);
+    impl FinalizationReporter for RecoveringReporter {
+        fn report(&self, _: &FinalizationRecord) -> Result<(), ReportingError> {
+            if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(ReportingError::TemporarilyUnavailable)
+            } else {
+                Ok(())
+            }
+        }
+    }
+    let now = Instant::now();
+    let clock = RuntimeClock::new(now, 0);
+    let timer = ManualDeadlineTimer::new(now, 1).unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let consumer = FinalizationReportingConsumer::new(
+        RecoveringReporter(calls.clone()),
+        Duration::from_secs(10),
+        FinalizationRetryPolicy::new(Duration::from_secs(1), Duration::from_secs(10), 3).unwrap(),
+    )
+    .unwrap();
+    let limit = NonZeroUsize::new(1).unwrap();
+    let mut driver = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(1).unwrap(),
+        TrackingRecovery::new(1).unwrap(),
+        journal_with_failure(),
+    );
+    driver.close();
+    let registry = RouterRegistry::new();
+    let wakes = Arc::new(Counter(AtomicUsize::new(0)));
+    let waker = Waker::from(wakes.clone());
+    let mut cx = Context::from_waker(&waker);
+    let mut turn = |driver: &mut DeliveryDriver| {
+        let (_, schedule, report) = driver.drive_registered_reporting(
+            &registry,
+            &mut cx,
+            &clock,
+            &timer,
+            Duration::from_secs(1),
+            &consumer,
+        );
+        assert_eq!(schedule, Ok(()));
+        report.unwrap()
+    };
+    assert_eq!(turn(&mut driver), ReportingStep::RetryScheduled);
+    assert_eq!(driver.snapshot().journal_records, 1);
+    let before = wakes.0.load(Ordering::SeqCst);
+    assert_eq!(turn(&mut driver), ReportingStep::Idle);
+    assert_eq!(wakes.0.load(Ordering::SeqCst), before);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    clock.advance(Duration::from_secs(1)).unwrap();
+    timer.advance_to(now + Duration::from_secs(1)).unwrap();
+    assert_eq!(turn(&mut driver), ReportingStep::Reported);
+    assert!(driver.snapshot().is_drained());
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(turn(&mut driver), ReportingStep::Idle);
+}
+
+#[test]
+fn registered_reporting_preserves_escalation_when_retry_timer_is_unavailable() {
+    use marketforge_engine::live::{
+        foundation::{clock::ManualClock as RuntimeClock, deadline::ManualDeadlineTimer},
+        model::error::ErrorCode,
+        routing::{
+            admission::DeadlineTimer, driver::DeliveryDriver, router::RouterRegistry,
+            supervisor::DeliverySupervisor, tracking_recovery::TrackingRecovery,
+            worker::DestinationWorkers,
+        },
+    };
+    use std::{
+        num::NonZeroUsize,
+        task::{Context, Waker},
+        time::Instant,
+    };
+    struct Permanent(Arc<AtomicUsize>);
+    impl FinalizationReporter for Permanent {
+        fn report(&self, _: &FinalizationRecord) -> Result<(), ReportingError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Err(ReportingError::PermanentFailure)
+        }
+    }
+    let now = Instant::now();
+    let clock = RuntimeClock::new(now, 0);
+    let timer = ManualDeadlineTimer::new(now, 1).unwrap();
+    let _reserved = timer
+        .try_sleep_until(now + Duration::from_secs(60))
+        .unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let consumer = FinalizationReportingConsumer::new(
+        Permanent(calls.clone()),
+        Duration::from_secs(10),
+        FinalizationRetryPolicy::new(Duration::from_secs(1), Duration::from_secs(10), 3).unwrap(),
+    )
+    .unwrap();
+    let limit = NonZeroUsize::new(1).unwrap();
+    let mut driver = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(1).unwrap(),
+        TrackingRecovery::new(1).unwrap(),
+        journal_with_failure(),
+    );
+    let registry = RouterRegistry::new();
+    let mut cx = Context::from_waker(Waker::noop());
+    let (_, scheduling, reporting) = driver.drive_registered_reporting(
+        &registry,
+        &mut cx,
+        &clock,
+        &timer,
+        Duration::from_secs(1),
+        &consumer,
+    );
+    assert_eq!(scheduling, Err(ErrorCode::Capacity));
+    assert_eq!(reporting, Ok(ReportingStep::PermanentlyFailed));
+    driver.close();
+    clock.advance(Duration::from_secs(60)).unwrap();
+    let (_, scheduling, reporting) = driver.drive_registered_reporting(
+        &registry,
+        &mut cx,
+        &clock,
+        &timer,
+        Duration::from_secs(1),
+        &consumer,
+    );
+    assert_eq!(scheduling, Err(ErrorCode::Capacity));
+    assert_eq!(reporting, Ok(ReportingStep::Idle));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(driver.snapshot().escalated_records, 1);
+    assert!(!driver.snapshot().is_drained());
+}
