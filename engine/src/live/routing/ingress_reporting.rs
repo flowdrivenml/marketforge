@@ -265,7 +265,41 @@ pub enum ScheduledIngressStep {
     EscalationRequired,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IngressReportingShutdownStep {
+    Step(ScheduledIngressStep),
+    Drained,
+    DeadlineReached,
+}
+
 impl ScheduledIngressReporting {
+    /// Fence new admissions and perform at most one reporting turn. Registers
+    /// for release of reservations held by preparing admissions or escalated
+    /// records as well as new outcomes. One coordinator must own shutdown polling.
+    /// Expiry retains the pending record, retry timer and escalation state; resume
+    /// with this same owner and a new deadline. Drained concerns reporting only,
+    /// never destination completion, recovery completion or durability.
+    pub fn poll_shutdown(
+        &mut self,
+        journal: &IngressOutcomes,
+        reporter: &mut impl IngressReporter,
+        cx: &mut Context<'_>,
+        clock: &dyn crate::live::foundation::clock::MonotonicClock,
+        timer: &dyn super::admission::DeadlineTimer,
+        deadline: &mut super::admission::DeadlineFuture,
+    ) -> Result<Poll<IngressReportingShutdownStep>, ErrorCode> {
+        if journal.poll_shutdown(cx).is_ready() && self.pending().is_none() {
+            return Ok(Poll::Ready(IngressReportingShutdownStep::Drained));
+        }
+        if deadline.as_mut().poll(cx).is_ready() {
+            return Ok(Poll::Ready(IngressReportingShutdownStep::DeadlineReached));
+        }
+        match self.poll_step(journal, reporter, cx, clock, timer)? {
+            Poll::Ready(ScheduledIngressStep::Idle) => Ok(Poll::Pending),
+            step => Ok(step.map(IngressReportingShutdownStep::Step)),
+        }
+    }
+
     pub fn new(
         interval: std::time::Duration,
         max_attempts: std::num::NonZeroUsize,

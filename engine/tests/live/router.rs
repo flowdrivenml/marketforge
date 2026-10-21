@@ -3294,6 +3294,252 @@ mod ingress_witnesses {
     }
 
     #[test]
+    fn scheduled_ingress_shutdown_retains_deadline_retry_and_transferred_charges() {
+        use marketforge_engine::live::{
+            foundation::clock::ManualClock,
+            routing::{
+                admission::{DeadlineFuture, DeadlineTimer},
+                ingress_reporting::{
+                    IngressOutcomes, IngressReporter, IngressReportingShutdownStep as Shutdown,
+                    ScheduledIngressReporting, ScheduledIngressStep,
+                },
+                reporting::ReportingError,
+            },
+        };
+        use std::{
+            num::NonZeroUsize,
+            time::{Duration, Instant},
+        };
+        struct Timer;
+        impl DeadlineTimer for Timer {
+            fn sleep_until(&self, _: Instant) -> DeadlineFuture {
+                Box::pin(std::future::pending())
+            }
+        }
+        struct Reporter(usize);
+        impl IngressReporter for Reporter {
+            fn report(
+                &mut self,
+                _: &EventBatch,
+                _: &mut IngressOutcome,
+            ) -> Result<(), ReportingError> {
+                self.0 += 1;
+                Err(ReportingError::TemporarilyUnavailable)
+            }
+        }
+        let fixture = Fixture::new();
+        let queue = fixture.queue(1, DeliveryPolicy::Required);
+        let journal = IngressOutcomes::new(ResourceUsage {
+            items: 1,
+            bytes: 100_000,
+        })
+        .unwrap();
+        ready(journal.admit(&fixture.ingress(), batch(), context())).unwrap();
+        let clock = ManualClock::new(Instant::now(), 0);
+        let mut consumer =
+            ScheduledIngressReporting::new(Duration::from_secs(1), NonZeroUsize::new(2).unwrap())
+                .unwrap();
+        let mut reporter = Reporter(0);
+        let mut cx = Context::from_waker(Waker::noop());
+        let mut expired: DeadlineFuture = Box::pin(std::future::poll_fn(|_| Poll::Ready(())));
+        let mut pending: DeadlineFuture = Box::pin(std::future::pending());
+        assert_eq!(
+            consumer
+                .poll_shutdown(
+                    &journal,
+                    &mut reporter,
+                    &mut cx,
+                    &clock,
+                    &Timer,
+                    &mut expired
+                )
+                .unwrap(),
+            Poll::Ready(Shutdown::DeadlineReached)
+        );
+        assert!(journal.snapshot().closed);
+        assert_eq!(reporter.0, 0);
+        assert_eq!(journal.snapshot().usage.items, 1);
+        assert_eq!(
+            consumer
+                .poll_shutdown(
+                    &journal,
+                    &mut reporter,
+                    &mut cx,
+                    &clock,
+                    &Timer,
+                    &mut pending
+                )
+                .unwrap(),
+            Poll::Ready(Shutdown::Step(ScheduledIngressStep::RetryScheduled))
+        );
+        assert_eq!(reporter.0, 1);
+        assert_eq!(
+            consumer
+                .poll_shutdown(
+                    &journal,
+                    &mut reporter,
+                    &mut cx,
+                    &clock,
+                    &Timer,
+                    &mut expired
+                )
+                .unwrap(),
+            Poll::Ready(Shutdown::DeadlineReached)
+        );
+        assert!(consumer.pending().is_some());
+        assert!(
+            consumer
+                .poll_shutdown(
+                    &journal,
+                    &mut reporter,
+                    &mut cx,
+                    &clock,
+                    &Timer,
+                    &mut pending
+                )
+                .unwrap()
+                .is_pending()
+        );
+        assert_eq!(reporter.0, 1);
+        clock.advance(Duration::from_secs(1)).unwrap();
+        assert_eq!(
+            consumer
+                .poll_shutdown(
+                    &journal,
+                    &mut reporter,
+                    &mut cx,
+                    &clock,
+                    &Timer,
+                    &mut pending
+                )
+                .unwrap(),
+            Poll::Ready(Shutdown::Step(ScheduledIngressStep::EscalationRequired))
+        );
+        let transferred = consumer.take_pending().unwrap();
+        assert!(
+            consumer
+                .poll_shutdown(
+                    &journal,
+                    &mut reporter,
+                    &mut cx,
+                    &clock,
+                    &Timer,
+                    &mut pending
+                )
+                .unwrap()
+                .is_pending()
+        );
+        drop(transferred);
+        assert_eq!(
+            consumer
+                .poll_shutdown(
+                    &journal,
+                    &mut reporter,
+                    &mut cx,
+                    &clock,
+                    &Timer,
+                    &mut expired
+                )
+                .unwrap(),
+            Poll::Ready(Shutdown::Drained)
+        );
+        assert_eq!(reporter.0, 2);
+        assert_eq!(queue.snapshot().queued_batches, 1);
+    }
+
+    #[test]
+    fn scheduled_ingress_shutdown_wakes_after_preparing_admission_cancellation() {
+        use marketforge_engine::live::{
+            foundation::clock::ManualClock,
+            routing::{
+                admission::{DeadlineFuture, DeadlineTimer},
+                ingress_reporting::{
+                    IngressOutcomes, IngressReporter, IngressReportingShutdownStep as Shutdown,
+                    ScheduledIngressReporting,
+                },
+                reporting::ReportingError,
+            },
+        };
+        use std::{
+            num::NonZeroUsize,
+            sync::atomic::{AtomicUsize, Ordering},
+            task::Wake,
+            time::{Duration, Instant},
+        };
+        struct Timer;
+        impl DeadlineTimer for Timer {
+            fn sleep_until(&self, _: Instant) -> DeadlineFuture {
+                Box::pin(std::future::pending())
+            }
+        }
+        struct Reporter;
+        impl IngressReporter for Reporter {
+            fn report(
+                &mut self,
+                _: &EventBatch,
+                _: &mut IngressOutcome,
+            ) -> Result<(), ReportingError> {
+                panic!("no committed outcome")
+            }
+        }
+        #[derive(Default)]
+        struct Counter(AtomicUsize);
+        impl Wake for Counter {
+            fn wake(self: Arc<Self>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+        let fixture = Fixture::new();
+        let queue = fixture.queue(1, DeliveryPolicy::Required);
+        queue.try_enqueue(batch()).unwrap();
+        let journal = IngressOutcomes::new(ResourceUsage {
+            items: 1,
+            bytes: 100_000,
+        })
+        .unwrap();
+        let ingress = fixture.ingress();
+        let mut admission = Box::pin(journal.admit(&ingress, batch(), context()));
+        let mut admission_cx = Context::from_waker(Waker::noop());
+        assert!(admission.as_mut().poll(&mut admission_cx).is_pending());
+        let counter = Arc::new(Counter::default());
+        let waker = Waker::from(counter.clone());
+        let mut cx = Context::from_waker(&waker);
+        let clock = ManualClock::new(Instant::now(), 0);
+        let mut consumer =
+            ScheduledIngressReporting::new(Duration::from_secs(1), NonZeroUsize::new(2).unwrap())
+                .unwrap();
+        let mut deadline: DeadlineFuture = Box::pin(std::future::pending());
+        assert!(
+            consumer
+                .poll_shutdown(
+                    &journal,
+                    &mut Reporter,
+                    &mut cx,
+                    &clock,
+                    &Timer,
+                    &mut deadline
+                )
+                .unwrap()
+                .is_pending()
+        );
+        drop(admission);
+        assert_eq!(counter.0.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            consumer
+                .poll_shutdown(
+                    &journal,
+                    &mut Reporter,
+                    &mut cx,
+                    &clock,
+                    &Timer,
+                    &mut deadline
+                )
+                .unwrap(),
+            Poll::Ready(Shutdown::Drained)
+        );
+    }
+
+    #[test]
     fn ingress_reporting_consumer_retains_failed_records_and_resource_charges() {
         use marketforge_engine::live::routing::{
             ingress_reporting::{
