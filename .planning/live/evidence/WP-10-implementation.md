@@ -654,3 +654,50 @@ shutdown composition remain incomplete. These observations support that work;
 they do not constitute a shutdown implementation. Earlier WP-05/06/07/09 gates
 persist; WP-11–29 pending. No acceptance claimed. Further autonomous WP-10
 implementation can safely continue.
+
+
+## Continuation — exclusive destination admission worker (2026-10-21)
+
+Status: Partial. Baseline `d4099b4`, branch `codex/wp06-completion`; only
+pre-existing untracked `scripts/run-autonomous-codex.sh`, preserved. Inspected
+AGENTS, autonomous plan, decisions, status, roadmap WP-10/11, distribution ownership
+requirements and actual queue, router, tracker, reporting and destination ports.
+Next executable package remains WP-10.
+
+Implemented `DestinationWorker` over the real `EventDestinationPort`. One exclusive
+queue lease prevents competing workers/raw dequeues. At most one adapter call is
+polled; pending calls retain their exact future, immutable payload and count/byte
+charge when callers stop polling. Outcomes block further dequeue until explicitly
+transferred with the charged payload. Valid acceptance is only admission, including
+for Durable destinations. Wrong destination/through cursor is an explicit retained
+invalid response; rejected outcomes retain their original payload. Shutdown closes
+admission without destroying queued or in-flight work. Drain observations include
+transferred payload charges and reservations, not just queue depth. No background
+scheduler, automatic retry, delivery completion or crash durability is claimed.
+
+Four deterministic production-interface witnesses cover FIFO and shared Arc
+identity, adapter wakeups, repeated polling without resubmission, failed/invalid
+responses, constructor rejection, exclusive ownership/release, slow destination
+isolation, shutdown with unfinished work, and capacity retained through handoff.
+No sleeps or external services.
+
+Verification (all exit 0):
+- engine/: `cargo test --locked --offline --no-default-features --features live
+  --test live_suite destination_worker`: 4 passed, 406 filtered out.
+- Root `./scripts/verify-live.sh full`: `cargo fmt --all -- --check`;
+  `cargo check --locked --offline --no-default-features --features live --lib`;
+  `cargo test --locked --offline --no-default-features --features live --lib`
+  (132 passed); same test flags with `--test live_suite` (408 passed, 2 opt-in
+  ignored); with `--doc` (1 passed). Receipts:
+  `engine/target/live-verification/20261021T042138Z-2/`.
+- engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0, existing dead-code warnings remain.
+
+Changed: routing/{mod,queue,worker}.rs, tests/live/{mod,destination_worker}.rs,
+STATUS.md and this ledger. Checkpoint: local commit carrying this continuation.
+No SQL/exchange traffic, Python/historical execution, dependencies/lockfile,
+ignored configuration changes or push. Opt-in SQL/performance/historical baseline
+not rerun. Earlier foundational gates unchanged. Remaining: production router
+owner, registry-bound worker construction/scheduling, completion/recovery payload
+integration, metrics/control binding and deadline shutdown composition. WP-10 is
+not ReadyForReview or Accepted; WP-11–29 pending. Safe to continue autonomously.

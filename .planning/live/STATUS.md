@@ -40,6 +40,22 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest continuation implements the WP-10 exclusive destination admission worker.
+It retains pending adapter calls, payloads and capacity across polling pauses;
+validates destination/cursor correlation; and transfers outcomes with charged
+payload ownership. Four deterministic witnesses cover FIFO, slow/failed adapters,
+invalid responses, shutdown/drain observations and exclusive consumer fencing.
+Full Live verification exits 0: 132 library / 408 integration (2 opt-in ignored) /
+1 doctest, formatting and Live compilation. Live+historical check exits 0.
+Receipts: `engine/target/live-verification/20261021T042138Z-2/`.
+WP-10 remains Partial: production router owner, worker runtime scheduling,
+completion/recovery integration, metrics/control binding and deadline shutdown
+remain. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Further autonomous
+WP-10 implementation is safe. No SQL/exchange traffic or Python/historical,
+dependency/ignored-config changes. Pre-existing untracked launcher preserved.
+Checkpoint: local commit carrying this entry and matching WP-10 evidence.
+
+
 Latest continuation adds WP-10 owned recovery drain observations covering correlated
 updates, unresolved outcomes and in-flight reservations. Queue-specific len/is_empty
 semantics are preserved and documented; shutdown consumers can use the complete

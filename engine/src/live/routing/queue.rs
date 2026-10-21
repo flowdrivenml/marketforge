@@ -95,6 +95,7 @@ pub struct QueueObservation {
 struct QueueState {
     batches: VecDeque<QueuedBatch>,
     closed: bool,
+    worker_claimed: bool,
 }
 
 #[derive(Debug)]
@@ -144,7 +145,45 @@ pub struct DestinationQueue {
     inner: Arc<QueueInner>,
 }
 
+/// Exclusive dequeue authority held by one destination worker.
+pub(crate) struct QueueWorkerLease {
+    queue: DestinationQueue,
+}
+
+impl QueueWorkerLease {
+    pub(crate) fn dequeue(&self) -> Option<QueuedBatch> {
+        self.queue
+            .inner
+            .state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .batches
+            .pop_front()
+    }
+}
+
+impl Drop for QueueWorkerLease {
+    fn drop(&mut self) {
+        self.queue
+            .inner
+            .state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .worker_claimed = false;
+    }
+}
+
 impl DestinationQueue {
+    pub(crate) fn claim_worker(&self) -> Option<QueueWorkerLease> {
+        let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+        if state.worker_claimed {
+            return None;
+        }
+        state.worker_claimed = true;
+        Some(QueueWorkerLease {
+            queue: self.clone(),
+        })
+    }
     /// Queue ownership identity, independent of equal capacity settings.
     pub(crate) fn same_owner(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
@@ -342,6 +381,7 @@ impl DestinationQueue {
     }
 
     /// Remove the oldest queued batch.
+    /// Returns None while an exclusive destination worker owns dequeue authority.
     ///
     /// Ownership transfers to the consumer.
     ///
@@ -354,6 +394,9 @@ impl DestinationQueue {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
+        if state.worker_claimed {
+            return None;
+        }
         state.batches.pop_front()
     }
 
