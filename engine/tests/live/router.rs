@@ -3740,6 +3740,86 @@ mod ingress_witnesses {
     }
 
     #[test]
+    fn closed_driver_reconciles_transferred_ingress_tracking_against_known_obligation() {
+        use marketforge_engine::live::{
+            model::delivery::{DeliveryStage, DeliveryStatus},
+            routing::{
+                acknowledgement::{
+                    AcknowledgementError, DeliveryCursorRange, DeliveryObligation,
+                    DeliveryObligationId,
+                },
+                router::{RecoveryTrackingResult, UnresolvedTrackingUpdate},
+                tracking_recovery::TrackingRecoveryOutcome,
+            },
+        };
+        let fixture = Fixture::new();
+        let mut driver = fixture.driver.lock().unwrap();
+        let (tracker, recovery) = driver.admission_owners().unwrap();
+        let id = DeliveryObligationId(70);
+        let range = DeliveryCursorRange::new(
+            batch().first_cursor().clone(),
+            batch().last_cursor().clone(),
+        )
+        .unwrap();
+        tracker
+            .register(DeliveryObligation {
+                id,
+                destination: DestinationId(1),
+                range: range.clone(),
+                kind: DestinationKind::Publication,
+                policy: DeliveryPolicy::Required,
+            })
+            .unwrap();
+        let mut outcome = IngressOutcome::Required {
+            required: OrderedCommitOutcome::Tracked(TrackedFanoutResult::RecoveryPending {
+                batch: batch(),
+                committed: vec![],
+                failed: vec![],
+                tracking: Ok(RecoveryTrackingResult {
+                    errors: vec![],
+                    unresolved: vec![UnresolvedTrackingUpdate::MissingObligation {
+                        destination: DestinationId(1),
+                        status: DeliveryStatus::Progress(DeliveryStage::Queued),
+                        reservation: recovery.reserve().unwrap(),
+                    }],
+                }),
+            }),
+            optional: None,
+        };
+        driver.close();
+        assert_eq!(
+            driver.reconcile_ingress_tracking(&mut outcome).transferred,
+            1
+        );
+        drop(outcome);
+        let retained = driver.next_unresolved_tracking().unwrap();
+        assert_eq!(retained.destination(), DestinationId(1));
+        assert_eq!(retained.range(), &range);
+        let before = driver.snapshot();
+        assert_eq!(
+            driver.reconcile_unresolved_tracking(DeliveryObligationId(71)),
+            TrackingRecoveryOutcome::RetryRequired {
+                error: AcknowledgementError::UnknownObligation,
+                remaining: 1,
+            }
+        );
+        assert_eq!(driver.snapshot(), before);
+        assert_eq!(
+            driver.reconcile_unresolved_tracking(id),
+            TrackingRecoveryOutcome::Recovered { remaining: 0 }
+        );
+        assert!(driver.next_unresolved_tracking().is_none());
+        assert!(driver.snapshot().recovery.is_drained());
+        assert_eq!(
+            driver.reconcile_unresolved_tracking(id),
+            TrackingRecoveryOutcome::Empty
+        );
+        // Queued repair does not discharge the independent delivery obligation.
+        assert_eq!(driver.snapshot().tracked_obligations, 1);
+        assert!(!driver.snapshot().is_drained());
+    }
+
+    #[test]
     fn tracking_ingress_reporter_integrates_charged_consumer_and_driver() {
         use marketforge_engine::live::{
             model::delivery::DeliveryStatus,

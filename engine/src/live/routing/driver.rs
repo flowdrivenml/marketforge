@@ -146,6 +146,26 @@ impl DeliveryDriver {
         outcome.reconcile_tracking(&mut self.tracker, &mut self.recovery)
     }
 
+    /// Inspect the oldest uncorrelated result without transferring its charge.
+    /// The runtime must supply a known obligation rather than infer one from a
+    /// destination alone: independent cursor namespaces may share a destination.
+    pub fn next_unresolved_tracking(
+        &self,
+    ) -> Option<&super::tracking_recovery::UnresolvedRecoveryOutcome> {
+        self.recovery.next_unresolved()
+    }
+
+    /// Reconcile one retained result against the authoritative tracker, including
+    /// after admission closes. A wrong destination, range or progress leaves the
+    /// result intact. This never creates an obligation or fabricates progress.
+    pub fn reconcile_unresolved_tracking(
+        &mut self,
+        obligation: DeliveryObligationId,
+    ) -> super::tracking_recovery::TrackingRecoveryOutcome {
+        self.recovery
+            .reconcile_next_unresolved(&mut self.tracker, obligation)
+    }
+
     /// Attach a registry worker to the existing authoritative delivery owners.
     /// Shutdown fencing is enforced by the owned scheduler. Errors return the
     /// worker intact, including queue lease and any pending operation.
