@@ -59,6 +59,7 @@ impl RouterResources {
         let destinations = self.destinations.snapshot();
         let limit = self.delivery.snapshot().workers.limit;
         if destinations.destinations.len() + destinations.retired.len() > limit
+            || !self.delivery.registered_workers_in(&self.destinations)
             || destinations
                 .destinations
                 .iter()
@@ -216,6 +217,22 @@ impl<R: FinalizationReporter, I: IngressReporter> RouterRuntime<R, I> {
         self.shared.namespaces.register(first)
     }
 
+    /// The source/log lifecycle supplies this identity; retirement never guesses
+    /// a replacement epoch or reclaims a tombstone while stale work may exist.
+    pub fn retire_namespace(
+        &self,
+        stream: &crate::live::model::identity::StreamId,
+        epoch: crate::live::model::cursor::LogEpoch,
+    ) -> Result<(), NamespaceError> {
+        self.shared.namespaces.retire(stream, epoch)
+    }
+
+    /// The configuration/runtime owner invokes this after accepting its update.
+    /// Optional measurement changes never alter mandatory queue accounting.
+    pub fn schedule_metrics(&mut self, first: Option<std::time::Instant>) {
+        self.sampler.schedule(first);
+    }
+
     /// Activate a real adapter with bounded queue accounting. Destination IDs
     /// identify instances; removal retains old workers/charges until drained.
     pub fn register_destination(
@@ -320,6 +337,42 @@ impl<R: FinalizationReporter, I: IngressReporter> RouterRuntime<R, I> {
         Ok(())
     }
 
+    /// Operational acceptance is separate from the failed market-data outcome.
+    /// The caller enforces management authorization and supplies the real local
+    /// acceptance sink; the router never turns this action into successful repair.
+    pub fn prepare_terminal_resolution(
+        &mut self,
+        id: super::acknowledgement::DeliveryObligationId,
+        resolution: super::acknowledgement::EscalationResolution,
+    ) -> Result<
+        super::acknowledgement::PreparedEscalationResolution,
+        super::acknowledgement::FinalizationJournalError,
+    > {
+        self.shared
+            .delivery
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .journal_mut()
+            .prepare_resolution(id, resolution)
+    }
+
+    pub fn commit_terminal_resolution(
+        &mut self,
+        id: super::acknowledgement::DeliveryObligationId,
+        receipt: &super::resolution::ResolutionAcceptanceReceipt,
+        sink: &super::resolution::BoundedResolutionSink,
+    ) -> Result<
+        super::acknowledgement::EscalationResolutionRecord,
+        super::acknowledgement::FinalizationJournalError,
+    > {
+        self.shared
+            .delivery
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .journal_mut()
+            .commit_resolution(id, receipt, sink)
+    }
+
     /// Correlation failures retain their original payload until a recovery owner
     /// explicitly takes responsibility. No guessed obligation is constructed.
     pub fn take_blocked_for_recovery(
@@ -344,6 +397,26 @@ impl<R: FinalizationReporter, I: IngressReporter> RouterRuntime<R, I> {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take_for_recovery(id)
+    }
+
+    /// Restore pre-existing responsibility, including after shutdown expiry.
+    /// A foreign owner or full pending collection returns the charged delivery.
+    #[allow(clippy::result_large_err)]
+    pub fn restore_delivery_from_recovery(
+        &mut self,
+        delivery: super::completion::RetainedDelivery,
+    ) -> Result<
+        (),
+        (
+            super::completion::PendingDeliveryError,
+            super::completion::RetainedDelivery,
+        ),
+    > {
+        self.shared
+            .delivery
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .restore_from_recovery(delivery)
     }
 
     pub fn reconcile_unresolved_tracking(
@@ -511,6 +584,18 @@ impl<R: FinalizationReporter, I: IngressReporter> RouterRuntime<R, I> {
             return RouterStop::DeadlineReached;
         }
         RouterStop::Step(self.drive(cx))
+    }
+}
+
+impl<R, I> Drop for RouterRuntime<R, I> {
+    fn drop(&mut self) {
+        // Abandonment cannot be reported as successful drain, but surviving
+        // producer handles must not admit new work after their scheduler dies.
+        self.shared.admission.close();
+        self.shared.namespaces.shutdown();
+        self.shared.destinations.shutdown();
+        self.shared.outcomes.close();
+        self.shared.cancellation.cancel();
     }
 }
 

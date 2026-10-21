@@ -1,6 +1,5 @@
-//! Planned module: src/live/routing.
-
-// Document 17 scaffolding: declarations only; implementations are not complete.
+//! Canonical router: bounded ordered admission, delivery ownership and observations.
+//! Concrete storage, publication, recovery and executor adapters use their frozen ports.
 pub mod acknowledgement;
 pub mod admission;
 pub mod completion;

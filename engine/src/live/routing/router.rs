@@ -372,6 +372,26 @@ pub struct RouterRegistry {
 }
 
 impl RouterRegistry {
+    /// Validate transferred worker ownership against the exact live or retired
+    /// registration, not merely a reusable destination ID or equal descriptor.
+    pub(super) fn owns_queue(
+        &self,
+        descriptor: &DestinationDescriptor,
+        queue: &DestinationQueue,
+    ) -> bool {
+        let state = self.state.read().unwrap_or_else(|e| e.into_inner());
+        state
+            .destinations
+            .values()
+            .chain(state.retired.iter())
+            .any(|entry| {
+                &entry.descriptor == descriptor
+                    && entry
+                        .queue
+                        .as_ref()
+                        .is_some_and(|registered| registered.same_owner(queue))
+            })
+    }
     /// Try each optional queue once, without registering capacity waiters.
     /// The registry fence prevents removal/replacement during commitment.
     /// A full or closed subscriber cannot delay any other destination.

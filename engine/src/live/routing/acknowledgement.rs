@@ -880,6 +880,9 @@ pub enum AcknowledgementError {
 /// owns synchronization and resource accounting around it.
 #[derive(Debug)]
 pub struct AcknowledgementTracker {
+    // A moving tracker keeps its identity. Outstanding recovery owners retain
+    // this token, so a later tracker cannot alias it even with identical IDs.
+    identity: std::sync::Arc<()>,
     obligations: HashMap<DeliveryObligationId, TrackedObligation>,
     max_obligations: usize,
     next_id: Option<u64>,
@@ -900,11 +903,16 @@ impl AcknowledgementTracker {
         }
 
         Ok(Self {
+            identity: std::sync::Arc::new(()),
             obligations: HashMap::new(),
             max_obligations,
             next_id: Some(1),
             transaction_state: HashMap::new(),
         })
+    }
+
+    pub(super) fn identity(&self) -> &std::sync::Arc<()> {
+        &self.identity
     }
     /// Transfer a terminal obligation into the bounded journal.
     ///

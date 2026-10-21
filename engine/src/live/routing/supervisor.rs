@@ -78,6 +78,10 @@ pub struct DeliverySupervisor {
     blocked: Option<(PendingDeliveryError, WorkerOutcome)>,
 }
 impl DeliverySupervisor {
+    pub(super) fn registered_workers_in(&self, registry: &super::router::RouterRegistry) -> bool {
+        self.workers.registered_in(registry)
+    }
+
     pub fn new(workers: DestinationWorkers, limit: std::num::NonZeroUsize) -> Self {
         Self {
             workers,
@@ -178,6 +182,15 @@ impl DeliverySupervisor {
 
     pub fn take_for_recovery(&mut self, id: DeliveryObligationId) -> Option<RetainedDelivery> {
         self.pending.take_for_recovery(id)
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub fn restore_from_recovery(
+        &mut self,
+        delivery: RetainedDelivery,
+        tracker: &AcknowledgementTracker,
+    ) -> Result<(), (PendingDeliveryError, RetainedDelivery)> {
+        self.pending.restore(delivery, tracker)
     }
 
     pub fn pending_len(&self) -> usize {

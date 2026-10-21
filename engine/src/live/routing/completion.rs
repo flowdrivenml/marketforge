@@ -17,6 +17,7 @@ use crate::live::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompletionError {
+    ForeignTracker,
     Tracking(AcknowledgementError),
     DescriptorMismatch,
     InvalidAdmission,
@@ -32,6 +33,7 @@ pub enum CompletionError {
 pub struct RetainedDelivery {
     outcome: WorkerOutcome,
     obligation: DeliveryObligation,
+    tracker_identity: std::sync::Arc<()>,
 }
 
 /// Terminal reporting ownership is in the journal. Payload capacity remains
@@ -89,6 +91,7 @@ impl RetainedDelivery {
             Ok(obligation) => Ok(Self {
                 outcome,
                 obligation,
+                tracker_identity: tracker.identity().clone(),
             }),
             Err(error) => Err((error, outcome)),
         }
@@ -103,6 +106,9 @@ impl RetainedDelivery {
     }
 
     fn check_tracker(&self, tracker: &AcknowledgementTracker) -> Result<(), CompletionError> {
+        if !std::sync::Arc::ptr_eq(&self.tracker_identity, tracker.identity()) {
+            return Err(CompletionError::ForeignTracker);
+        }
         match tracker.obligation(self.obligation.id) {
             Some(obligation) if obligation == &self.obligation => Ok(()),
             Some(_) => Err(CompletionError::DescriptorMismatch),
@@ -176,7 +182,7 @@ impl RetainedDelivery {
         tracker: &mut AcknowledgementTracker,
         journal: &mut FinalizationJournal,
     ) -> Result<FinalizedDelivery, (FinalizationHandoffError, Self)> {
-        if tracker.obligation(self.obligation.id) != Some(&self.obligation) {
+        if self.check_tracker(tracker).is_err() {
             return Err((
                 FinalizationHandoffError::Acknowledgement(AcknowledgementError::UnknownObligation),
                 self,
@@ -234,6 +240,36 @@ impl PendingDeliveries {
         self.deliveries
             .iter()
             .find(|delivery| delivery.obligation.id == id)
+    }
+
+    /// Return an explicitly transferred payload to its original owner. Neither
+    /// progress nor admission is replayed; failures return the complete charge.
+    #[allow(clippy::result_large_err)]
+    pub fn restore(
+        &mut self,
+        delivery: RetainedDelivery,
+        tracker: &AcknowledgementTracker,
+    ) -> Result<(), (PendingDeliveryError, RetainedDelivery)> {
+        let validate = || {
+            delivery
+                .check_tracker(tracker)
+                .map_err(PendingDeliveryError::Completion)?;
+            if self.get(delivery.obligation.id).is_some() {
+                return Err(PendingDeliveryError::DuplicateObligation);
+            }
+            if self.len() == self.capacity() {
+                return Err(PendingDeliveryError::Full);
+            }
+            Ok(())
+        };
+        if let Err(error) = validate() {
+            return Err((error, delivery));
+        }
+        if self.deliveries.try_reserve(1).is_err() {
+            return Err((PendingDeliveryError::AllocationFailed, delivery));
+        }
+        self.deliveries.push(delivery);
+        Ok(())
     }
 
     /// Correlate against the real tracker. Ambiguity fails closed rather than

@@ -245,6 +245,12 @@ pub enum WorkerShutdownStep {
 }
 
 impl DestinationWorkers {
+    pub(super) fn registered_in(&self, registry: &super::router::RouterRegistry) -> bool {
+        self.workers
+            .iter()
+            .all(|worker| registry.owns_queue(&worker.descriptor, &worker.queue))
+    }
+
     pub fn new(limit: std::num::NonZeroUsize) -> Self {
         Self {
             workers: Vec::new(),

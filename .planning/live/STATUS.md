@@ -14,7 +14,7 @@
 | WP-07 | Freeze service ports, management and observation surfaces | Contract implementation review pending; C12 adapter decision OPEN | [Contract implementation and witnesses](evidence/wp07-contracts.md) |
 | WP-08 | Implement foundations and real native observability | ReadyForReview | [Implementation ledger](evidence/WP-08-implementation.md) |
 | WP-09 | Implement the Configuration System | Partial — candidates/DAG/journal verified; semantic compiler and service pending | [Implementation ledger](evidence/WP-09-implementation.md) |
-| WP-10 | Implement the canonical event router | Partial — owned router composed; configuration/concrete consumers pending | [Implementation ledger](evidence/WP-10-implementation.md) |
+| WP-10 | Implement the canonical event router | ReadyForReview — router contracts and composed ownership verified; external integration owners explicit | [Implementation ledger](evidence/WP-10-implementation.md) |
 | WP-11 | Implement source registry and dependency ownership | Pending | — |
 | WP-12 | Implement exchange-profile and format compilation | Pending | — |
 | WP-13 | Implement WebSocket Connection Manager | Pending | — |
@@ -36,6 +36,40 @@
 | WP-29 | Hardening, reproducibility and release | Pending | — |
 
 ## Current Development Position
+
+
+### WP-10 final contract audit — 2026-10-21
+
+**WP-10: ReadyForReview, not Accepted.** The authoritative
+[requirement-to-code-to-test matrix](evidence/WP-10-implementation.md) covers every
+WP-10 requirement and acceptance criterion. Ten added composed tests (18 total)
+verify recovery return after shutdown, full/foreign-owner rejection with charges
+preserved, exact transferred-worker queue ownership, concurrent producer ordering,
+dropped/cancelled waits, explicit durability, destination replacement/stale results,
+operational resolution receipts, namespace/measurement boundaries and owner loss.
+Recovery returns use the same tracker; no competing mutable owner was introduced.
+
+Full Live verification exits 0: 137 library / 510 integration passed
+(2 opt-in ignored) / 1 doctest. Receipts:
+`engine/target/live-verification/20261021T112625Z-2/`.
+Live+historical, Live+TUI and base compilation exit 0. Historical-only baseline
+rechecked: 151 passed / 1 failed, `rejects_empty_streams`, unchanged historical
+execution; receipts `engine/target/live-verification/20261021T112456Z-2/`.
+
+No mandatory router-owned blocker remains. Persisted configuration acceptance
+belongs to WP-09; recovery orchestration to WP-18; concrete retention/SQL/socket
+adapters to WP-20/21/22; daemon reconciliation and supervision to WP-24; Control
+transport/authorization to WP-25. Their actual integration remains unverified,
+with deterministic boundary witnesses documented; no end-to-end service claim.
+The earlier WP-05/06/07/09 statuses are unchanged. User retains acceptance.
+
+One coherent local audit checkpoint; no push, database/exchange access, Python or
+historical execution edits, dependencies/lockfile or ignored configuration changes.
+Pre-existing .gitignore changes and untracked artifacts are preserved/excluded.
+**Current task stops here. No next package is authorized by this audit request;
+WP-11 was not started.**
+
+## Previous campaign notes (historical; superseded by the final audit above)
 
 ### Autonomous continuation — 2026-10-21
 

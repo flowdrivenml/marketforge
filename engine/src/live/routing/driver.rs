@@ -74,6 +74,10 @@ pub struct DeliveryDriver {
 }
 
 impl DeliveryDriver {
+    pub(super) fn registered_workers_in(&self, registry: &super::router::RouterRegistry) -> bool {
+        self.supervisor.registered_workers_in(registry)
+    }
+
     /// Commit ordered admission against the same owners used by delivery turns.
     /// Shutdown rejects before obligations or queues change and returns all
     /// prepared responsibility intact. No mutable owner escapes this operation.
@@ -499,5 +503,18 @@ impl DeliveryDriver {
             self.notify_progress();
         }
         retained
+    }
+
+    /// Completion of pre-existing responsibility is allowed after closure.
+    /// Restoration never calls the adapter or invents delivery progress.
+    #[allow(clippy::result_large_err)]
+    pub fn restore_from_recovery(
+        &mut self,
+        delivery: RetainedDelivery,
+    ) -> Result<(), (PendingDeliveryError, RetainedDelivery)> {
+        self.supervisor
+            .restore_from_recovery(delivery, &self.tracker)?;
+        self.notify_progress();
+        Ok(())
     }
 }

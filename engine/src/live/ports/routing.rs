@@ -144,8 +144,14 @@ pub enum RoutingAdmissionFailure {
 /// This is deliberately distinct from destination completion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RoutingAdmission {
+    /// Complete admission under the configured policies, never proof of a
+    /// destination's delivery, persistence or crash-durability stage.
     Accepted { through: StreamCursor },
 
+    /// Complete admission could not be promised. Partial fan-out may already
+    /// have transferred responsibility; detailed outcomes remain router-owned
+    /// for reporting/recovery. This is not rollback and does not authorize
+    /// replacing the accepted event's identity or blindly replaying its batch.
     Rejected { reason: RoutingAdmissionFailure },
 }
 
