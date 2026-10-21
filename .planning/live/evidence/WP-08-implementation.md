@@ -1,63 +1,72 @@
-# WP-08 foundations and native observability
+# WP-08 — Foundations and native observability
 
-Status: Partial / InProgress. Date: 2026-10-21. Not Accepted.
+Status: ReadyForReview (not Accepted). Date: 2026-10-21.
+Initial primitive checkpoint: `18e5f0e`; completion checkpoint is the commit
+carrying this report. Upstream localized C01/C06/C12 gates remain visible.
 
-## Implemented and exercised
+## Requirement ledger
 
-- Separate SystemWallClock and SystemMonotonicClock; explicit ManualClock adapter
-  independently controls wall time and monotonic advancement. Signed wall values
-  and checked timestamp overflow are retained.
-- Mandatory atomic count/byte resource admission with move-owned RAII permits,
-  checked arithmetic, explicit capacity failure and close-without-revocation.
-  Concurrent reservations cannot exceed capacity.
-- Executor-independent BoundedTaskSpawner uses the frozen task interfaces.
-  Capacity survives dropped handles while futures run, and is released on
-  rejection. Counts include retained completed handles. This does not select or
-  implement the unresolved concrete executor.
-- NativeMetrics and ScopedMetricsPort implementation: finite prebound catalog,
-  scoped owner generation/reset identity, replacement fencing, retained obsolete
-  handle accounting, monotonic freshness, explicit missing/disabled/overflow,
-  lazy disabled path, nonblocking observation admission and dropped count.
-  Counter overflow is sticky until explicit reset; decreasing counters rejected.
-- Fixed 65-bucket histogram, checked count/sum, exact extrema and bounded bucket
-  upper quantile estimates. No unbounded sample reservoir.
-- Bounded counter aggregation rejects duplicate owner contributions, preserves
-  missing/stale semantics and reports arithmetic overflow.
-- Capability health evaluates only supplied authoritative observations, ignores
-  unrelated optional failures for the consumer total, marks expired success
-  Unknown and retains unresolved confirmed failures despite expiry.
-- Bounded redacted diagnostic history and local create-new JSONL writer with
-  restrictive file mode, byte cap, no overwrite, sync and uncertain-write fencing.
-  Typed persisted records omit free text/payload/endpoints and fingerprint IDs.
-  Blocking file writes are explicitly for an owned diagnostic worker only.
+| Requirement | Implementation / witness |
+|---|---|
+| Monotonic versus wall time | Production SystemMonotonicClock/SystemWallClock; explicit ManualClock; wall jumps cannot expire deadlines |
+| Bounded cancellation | Fallible pre-scheduling waiter reservation, configurable cap (4096 default), checked IDs, wake outside locks, drop unregister; router admission propagates capacity |
+| Deadline scheduling | One native deadline worker; bounded timer slots retained until future drop, monotonic expiry, explicit unfinished shutdown; deterministic adapter shares expiry core |
+| Task/deadline/resource bounds | BoundedTaskSpawner wraps frozen task ports; permits survive dropped running handles, failed spawn releases; atomic count/byte budget and close without revocation |
+| Scoped metrics | NativeMetrics implements ScopedMetricsPort and ObservationSinkPort; closed vocabulary covers all frozen owners; finite scopes/series including retained obsolete handles; explicit retire, generation/reset fencing |
+| Metric semantics | Checked monotonic counters, typed gauges, 65 fixed histogram buckets with exact extrema and bucket-upper quantile estimates, sticky overflow, reset-aware monotonic rate estimation |
+| Configuration / disabled timing | MetricsSettings controls enabled and detailed/sampled lazy measurement; disabled closures do not run; health and diagnostics remain active; explicit reset before measurement resumption |
+| Snapshot/aggregation | Monotonic receipt freshness, missing/disabled/stale/overflow values; duplicate owner aggregation rejected; RuntimeInstance counters survive owner-generation changes |
+| Health | Required capability policy, optional failure isolation, missing/stale success Unknown, confirmed failures retained; configured pressure hysteresis/stabilization cannot clear integrity without authoritative recovery |
+| Local diagnostics | Typed redacted records fingerprint IDs, omit free text/native payloads/endpoints; bounded local history; create-new byte-capped JSONL writer, restrictive file mode, sync and uncertain-write fencing |
+| Diagnostic lifecycle | Bounded nonblocking logging-worker queue; explicit queued versus written distinction; deadline shutdown/join report and rejected-record accounting |
+| Deterministic harness / composition | Real admission, clock, cancellation, accounting and native observations composed; actual InstrumentedOwner constructor; reusable bounded fault script and REST adapter use frozen ports; existing filesystem storage/replay fault witnesses preserved |
+| Test safety | Existing unsafe RawWaker ownership replaced with safe Arc<Wake>, preserving assertions |
 
 ## Verification
 
-`./scripts/verify-live.sh quick` passes at successive increments: 99, 100, 106,
-112 and 113 library tests; each successful invocation exits 0. One intermediate
-quick run failed compiling SHA-256 hex formatting; fixed for the current sha2
-API, then full verification passed. No dependency/lockfile changes.
+Latest foundation checkpoint full run: `./scripts/verify-live.sh full`, exit 0;
+123 library tests, 366 integration passed / 2 opt-in tests ignored, 1 doctest.
+All five gates pass. Receipts:
+`engine/target/live-verification/20261021T031217Z-2/`.
+Earlier full/quick runs are retained under the same raw-log parent. Intermediate
+SHA-256 formatting and exhaustive timer-error conversion compile failures were
+repaired and subsequently verified; no assertions were weakened.
 
-Latest `./scripts/verify-live.sh full`, exit 0, all five gates pass:
-113 library, 363 integration passed / 1 opt-in PostgreSQL test ignored by default,
-1 doctest. Raw logs: `engine/target/live-verification/20261021T025854Z-2/`.
-The isolated PostgreSQL test was executed separately and passed (WP-06 report).
+`./scripts/verify-live.sh tui`: exit 0, compile check (not behavioral tests).
+Receipt `20261021T030647Z-2/live-tui.log`.
+`cargo check --locked --offline --no-default-features --features live,historical`
+(engine/): exit 0.
+`./scripts/verify-live.sh historical`: exit 1; actual library result 151 passed /
+1 known unchanged failure `historical::merge::resources::tests::rejects_empty_streams`.
+Receipt `20261021T030818Z-2/historical-library.log`. Historical code unchanged.
 
-## Remaining requirements / truthful limits
+Release overhead command (engine/): `cargo test --locked --offline --release
+--no-default-features --features live --test live_suite
+native_measurement_overhead_baseline -- --ignored --nocapture`, exit 0, 1 passed.
+System monotonic clock, 100000 operations: counters 2555699 ns; detailed timing
+sampled 1/10 763300 ns; disabled 22031 ns. 1000 two-series snapshots: 68162 ns.
+These are reproducible primitive baselines on this machine, not service latency
+or production throughput certification. No timing threshold is used as a test.
 
-WP-08 is not complete: concrete bounded deadline scheduler and joined shutdown,
-reusable transport/storage fault harness and composition runner, native sink
-integration, rate/reset policy, diagnostic worker lifecycle, broader health
-policy/stabilization consumers, and reproducible overhead baseline remain.
-Cancellation implementation is preserved; its waiter bounds need reconciliation.
-Scaffold modules are not claimed implemented by adjacent working modules.
-C12 concrete runtime/TLS/SQL adapter choice remains an open prerequisite for
-real task/network/storage adapters, not permission to invent a replacement stack.
-WP-05 C01 metadata/identity integration and C06 signed timestamp mapping remain
-localized unresolved requirements. No downstream package is certified complete.
+## Limits and integration obligations
 
-Changed modules: foundation clock/resources/shutdown/diagnostics and exports;
-metrics registry/histogram/aggregation/health and exports. Existing routing,
-historical execution, Python, database schemas and ignored profiles unchanged.
-Checkpoint: commit carrying this report (see Git history). Next authorized work:
-continue WP-08 independently executable contracts, then WP-09 through WP-29.
+No concrete async network/SQL executor was selected; BoundedTaskSpawner is an
+admission wrapper over the frozen executor port. C12 remains open before real
+network/SQL adapters. Native timer and diagnostic workers are bounded owned
+foundation workers, not a second market-data runtime. Timed-out shutdown reports
+unfinished ownership; it does not claim an OS-blocked write was cancelled.
+
+Metrics replacements need transition headroom while old handles are retained;
+capacity failures are explicit. Histogram quantiles are approximations. Local
+logging is operational history, not a canonical durability journal. Health only
+consumes authoritative input; it cannot establish market-data validity. Each
+subsequent production owner must bind these handles through its constructor and
+provide its domain observations in its own package. No exporter/server/TUI owner
+is claimed implemented here. Existing WP-10 behavior is preserved except for
+fallible timer/cancellation admission integration.
+
+Changed: foundation clock/cancellation/deadline/resources/shutdown/diagnostics;
+metrics registry/histogram/aggregation/health; observation admission outcomes;
+router wait-capacity conversion; deterministic foundation/support tests.
+No Python, historical execution, dependency, lockfile, ignored profile, or
+production database changes. Next authorized package: WP-09.

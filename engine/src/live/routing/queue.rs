@@ -120,6 +120,9 @@ impl From<AdmissionWaitError> for AsyncQueueAdmissionError {
     fn from(value: AdmissionWaitError) -> Self {
         match value {
             AdmissionWaitError::MissingTimer => Self::MissingTimer,
+            AdmissionWaitError::TimerCapacity | AdmissionWaitError::CancellationCapacity => {
+                Self::Capacity(CapacityError::Full)
+            }
         }
     }
 }

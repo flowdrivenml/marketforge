@@ -1,6 +1,4 @@
-//! Planned module: src/live/foundation.
-
-// Document 17 scaffolding: declarations only; implementations are not complete.
+//! Shared Live clocks, cancellation, bounded scheduling, accounting and local diagnostics.
 pub mod cancellation;
 pub mod clock;
 pub mod diagnostics;
@@ -12,3 +10,5 @@ pub use cancellation::{CancellationToken, Cancelled};
 pub use clock::{MonotonicClock, SystemMonotonicClock};
 
 pub use filesystem::FileEpochStore;
+
+pub mod deadline;

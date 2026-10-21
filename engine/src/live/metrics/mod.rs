@@ -1,6 +1,4 @@
-//! Planned module: src/live/metrics.
-
-// Document 17 scaffolding: declarations only; implementations are not complete.
+//! Native scoped collection, bounded aggregation and observational health.
 pub mod aggregation;
 pub(crate) mod counter;
 pub(crate) mod diagnostic_history;

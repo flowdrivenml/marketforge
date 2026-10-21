@@ -190,3 +190,106 @@ mod tests {
         );
     }
 }
+
+/// Configured diagnostic hysteresis. Integrity failures are separately latched
+/// until explicit authoritative recovery; low metric values cannot clear them.
+#[derive(Debug, Clone, Copy)]
+pub struct PressurePolicy {
+    pub enter_degraded: u64,
+    pub leave_degraded: u64,
+    pub stabilize: Duration,
+}
+impl PressurePolicy {
+    pub fn validate(self) -> Result<Self, ErrorCode> {
+        if self.leave_degraded >= self.enter_degraded {
+            return Err(ErrorCode::InvalidInput);
+        }
+        Ok(self)
+    }
+}
+#[derive(Default)]
+pub struct PressureHealth {
+    degraded: bool,
+    clear_since: Option<Instant>,
+    unresolved_failure: bool,
+}
+impl PressureHealth {
+    pub fn observe(
+        &mut self,
+        policy: PressurePolicy,
+        value: Option<u64>,
+        now: Instant,
+        confirmed_failure: bool,
+        authoritative_recovery: bool,
+    ) -> Result<HealthStatus, ErrorCode> {
+        policy.validate()?;
+        if authoritative_recovery {
+            self.unresolved_failure = false;
+        }
+        if confirmed_failure {
+            self.unresolved_failure = true;
+        }
+        if self.unresolved_failure {
+            return Ok(HealthStatus::Unhealthy);
+        }
+        let Some(value) = value else {
+            self.clear_since = None;
+            return Ok(HealthStatus::Unknown);
+        };
+        if value >= policy.enter_degraded {
+            self.degraded = true;
+            self.clear_since = None;
+        } else if self.degraded && value <= policy.leave_degraded {
+            let since = self.clear_since.get_or_insert(now);
+            if now.saturating_duration_since(*since) >= policy.stabilize {
+                self.degraded = false;
+                self.clear_since = None;
+            }
+        } else {
+            self.clear_since = None;
+        }
+        Ok(if self.degraded {
+            HealthStatus::Degraded
+        } else {
+            HealthStatus::Healthy
+        })
+    }
+}
+#[cfg(test)]
+mod pressure_tests {
+    use super::*;
+    #[test]
+    fn configured_stabilization_never_delays_integrity_failure() {
+        let policy = PressurePolicy {
+            enter_degraded: 80,
+            leave_degraded: 60,
+            stabilize: Duration::from_secs(2),
+        };
+        let mut state = PressureHealth::default();
+        let now = Instant::now();
+        assert_eq!(
+            state.observe(policy, Some(80), now, false, false),
+            Ok(HealthStatus::Degraded)
+        );
+        assert_eq!(
+            state.observe(policy, Some(50), now, false, false),
+            Ok(HealthStatus::Degraded)
+        );
+        assert_eq!(
+            state.observe(policy, Some(50), now + Duration::from_secs(2), false, false),
+            Ok(HealthStatus::Healthy)
+        );
+        assert_eq!(
+            state.observe(policy, Some(0), now, true, false),
+            Ok(HealthStatus::Unhealthy)
+        );
+        assert_eq!(
+            state.observe(policy, None, now + Duration::from_secs(10), false, false),
+            Ok(HealthStatus::Unhealthy)
+        );
+        assert_eq!(
+            state.observe(policy, Some(0), now + Duration::from_secs(11), false, true),
+            Ok(HealthStatus::Healthy)
+        );
+    }
+}
