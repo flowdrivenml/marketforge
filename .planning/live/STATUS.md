@@ -39,6 +39,22 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest checkpoint `b18da9c` repairs atomic WP-10 obligation preparation:
+duplicate IDs reject before mutation rather than panicking, specification ID
+exhaustion/collision preserves the allocator, and empty preparations retain a
+real abortable/activatable transaction identity. Two new production-tracker unit
+witnesses pass. Full Live verification exits 0: 132 library / 400 integration
+(2 opt-in ignored) / 1 doctest, formatting and Live check. Combined
+Live+historical compilation exits 0. Receipts:
+`engine/target/live-verification/20261021T041259Z-2/`.
+WP-10 remains Partial and next executable: production port owner, bounded workers,
+completion/recovery payload lifetime, metrics/control projection and deadline
+shutdown remain. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending.
+Further autonomous implementation can safely continue. No SQL/exchange access,
+Python/historical/dependency/ignored-config changes or push. Pre-existing
+untracked launcher preserved. See WP-10 evidence for exact checks.
+
+
 Checkpoint `3155b01` closes a WP-10 commitment ownership gap: public plans can no
 longer omit/duplicate required destinations, substitute an unrelated queue, or
 forge the registered descriptor. Obligations also match the descriptor retained

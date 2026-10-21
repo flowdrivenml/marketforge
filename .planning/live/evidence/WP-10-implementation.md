@@ -477,3 +477,46 @@ and deadline shutdown composition remain incomplete. No package is marked
 Accepted or ReadyForReview by this continuation. Earlier WP-05/06/07/09 gates
 remain open; WP-11–29 remain pending. Next authorized executable package is
 WP-10 completion. Further autonomous implementation can safely continue.
+
+
+## Continuation — atomic obligation preparation (2026-10-21)
+
+Status: Partial. Implementation checkpoint `b18da9c`; baseline `7181bf3`,
+branch `codex/wp06-completion`. Initial inventory: only pre-existing untracked
+`scripts/run-autonomous-codex.sh`, preserved. Inspected instructions, plan,
+decisions, status, roadmap WP-10/11 and current router/tracker consumers.
+Next executable package remains WP-10; completed work was retained.
+
+Implemented in `engine/src/live/routing/acknowledgement.rs`:
+- Prevalidate duplicate IDs across an entire obligation preparation. Previously
+  duplicate IDs could panic after the first obligation was registered.
+- Preflight complete specification ID allocation, transaction identity and
+  collisions with existing obligations before consuming allocator state.
+- Register empty transaction membership explicitly, permitting abort/activation
+  rather than returning an unusable prepared handle.
+- Two deterministic tests exercise duplicate rejection without mutation,
+  exhaustion at u64 boundary, manually registered ID collision and empty
+  transaction abort/activation through production tracker operations.
+
+Verification from engine/ (all exit 0):
+- `cargo test --locked --offline --no-default-features --features live --lib
+  transaction_integrity_tests`: 5 passed, 127 filtered out.
+- Root `./scripts/verify-live.sh full`: five gates pass. Exact commands:
+  `cargo fmt --all -- --check`; `cargo check --locked --offline
+  --no-default-features --features live --lib`; `cargo test --locked --offline
+  --no-default-features --features live --lib` (132 passed); same test flags
+  with `--test live_suite` (400 passed, 2 opt-in ignored); with `--doc`
+  (1 passed). Receipts: `engine/target/live-verification/20261021T041259Z-2/`.
+- `cargo check --locked --offline --no-default-features --features live,historical`:
+  exit 0; existing dead-code warnings remain.
+- Root `git diff --check`: exit 0.
+
+Changed files: acknowledgement.rs, STATUS.md and this ledger. No SQL, exchange,
+Python/historical execution, dependency/lockfile, ignored configuration changes
+or push. Opt-in SQL/performance and historical baseline tests were not rerun.
+
+Remaining acceptance ledger unchanged: production EventRouterPort owner, bounded
+worker scheduling, completion/recovery payload lifetime, metrics/control binding
+and deadline shutdown composition remain incomplete. Earlier WP-05/06/07/09
+gates persist; WP-11–29 pending. No acceptance claimed. Further autonomous
+WP-10 implementation can safely continue.
