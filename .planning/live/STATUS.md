@@ -39,7 +39,7 @@
 
 ### Autonomous continuation — 2026-10-21
 
-Latest continuation adds bounded explicit cursor namespace ownership and
+Checkpoint `045d860` adds bounded explicit cursor namespace ownership and
 `OrderedFanout::prepare_registered`, preserving the existing real tracked
 fan-out. Retirement/shutdown fence cloned handles; bounded tombstones prevent
 same-namespace frontier resets. Three new deterministic witnesses pass, including

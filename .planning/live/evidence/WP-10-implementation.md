@@ -152,5 +152,4 @@ owner is still pending. Required worker/completion correlation, bounded global
 scheduling, owner-lifetime recovery/payload retention, best-effort/no-subscriber
 policies, native metrics/snapshots and deadline shutdown remain incomplete.
 Earlier WP-05/06/07/09 gates remain open. Further independent WP-10 work is safe;
-WP-11 prerequisites are not declared satisfied. Checkpoint: implementation commit
-carrying this section (identifier recorded in the subsequent status checkpoint).
+WP-11 prerequisites are not declared satisfied. Checkpoint: `045d860` (namespace ownership, witnesses and package evidence).
