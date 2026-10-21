@@ -2126,3 +2126,55 @@ Documentation checkpoint is the commit carrying this entry.
 Earlier WP-05/06/07/09 gates persist; WP-10 Partial; WP-11–29 pending.
 Next authorized executable package: WP-10 completion. Further autonomous
 implementation can safely continue. No acceptance or project completion claimed.
+
+## Continuation — native router metric binding (2026-10-21)
+
+Status: Partial. Starting HEAD `42bc459`, branch `codex/wp06-completion`.
+Preserved pre-existing untracked `scripts/run-autonomous-codex.sh`. Read campaign
+instructions, plan, decisions, status, WP-10/11 roadmap, latest evidence, actual
+router/admission/delivery/shutdown and native observation consumers. WP-10 remains
+the next executable package; no completed package restarted.
+
+Implementation checkpoint: `5775ada`.
+
+Acceptance ledger:
+- Implemented: six finite native gauge IDs with correct count/byte descriptors;
+  RouterDrainSnapshot::record_metrics uses the prebound ScopedMetricsPort and
+  returns each result independently in a fixed array without allocations/retries.
+- Admission occupancy, retained deliveries, tracked obligations, terminal reports
+  and escalated reports remain separate overlapping responsibilities. Samples do
+  not establish durability, distinct event totals or consumer processing.
+- Consumer witness: extended existing production-owner observation test uses the
+  actual NativeMetrics registry. Covers zero observations, distinct projection
+  fixture values (mapping only), correct units/timestamps, monotonic staleness,
+  disabled measurements, replacement generation fencing, missing bindings with
+  independent successful sampling, and unchanged authoritative router owners.
+- Missing: EventRouterPort production admission composition, concrete runtime and
+  reporter integration, scheduled sampling/full router instrumentation and Control
+  binding. This API does not autonomously schedule collection. No daemon claimed.
+- Existing earlier contract gates remain; no architecture decision was changed.
+
+Verification (engine/ unless marked root):
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite router_observation: exit 0, 1 passed, 457 filtered out.
+- Root ./scripts/verify-live.sh full: exit 0, all five gates passed. Commands:
+  cargo fmt --all -- --check; cargo check --locked --offline --no-default-features
+  --features live --lib; cargo test with the same flags --lib (135 passed),
+  --test live_suite (456 passed, 2 opt-in ignored), --doc (1 passed).
+  Receipts: engine/target/live-verification/20261021T053737Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0, existing dead-code warnings remain.
+- Root git diff --check: exit 0 before implementation checkpoint.
+- Two initial working-directory mistakes: creating the new module with a doubled
+  engine/ prefix failed without writing it; a root-level cargo fmt invocation
+  failed for missing Cargo.toml. Corrected paths and ran final gates above. No
+  compiler or behavioral test failures. SQL/performance opt-in tests and historical
+  zero-stream baseline not rechecked; no database or exchange traffic.
+
+Changed: engine/src/live/model/observation.rs, engine/src/live/routing/metrics.rs,
+engine/src/live/routing/mod.rs, engine/tests/live/router.rs, STATUS.md, this ledger.
+No Python/historical execution, dependency/lockfile, ignored configuration or
+system changes; no push. Documentation checkpoint is the commit carrying this
+entry. Remaining: WP-05/06/07/09 open gates, WP-10 Partial, WP-11–29 pending.
+Next authorized executable package: WP-10 completion. Further autonomous work can
+safely continue; no package acceptance or project completion claimed.

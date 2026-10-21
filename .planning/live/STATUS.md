@@ -39,6 +39,25 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest implementation checkpoint `5775ada` adds a finite native router metric
+catalog and binds the authoritative owned router observation to six independent
+gauges. Admission count/bytes, retained deliveries, tracked obligations, terminal
+reports and escalated reports retain distinct meanings. Each sample returns its
+own outcome; disabled/stale/unbound measurements cannot affect resource accounting
+or shutdown. The real NativeMetrics witness covers units, distinct projection
+values, wall timestamps, monotonic staleness, disabling, replacement and partial
+binding. Final verification exits 0: formatting, Live check, 135 library / 456
+integration (2 opt-in ignored) / 1 doctest, Live+historical check. Receipts:
+`engine/target/live-verification/20261021T053737Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort admission,
+concrete runtime/reporter integration and full metric/control wiring remain. This
+adds a usable binding, not a running coordinator or Control server. Earlier
+WP-05/06/07/09 gates persist; WP-11–29 pending. Further autonomous work is safe.
+No SQL/exchange access, push, Python/historical execution edits, dependencies or
+ignored configuration changes. Pre-existing untracked launcher preserved.
+See WP-10 evidence. No acceptance or project completion claimed.
+
+
 Latest implementation checkpoint `a2ccb14` exposes atomic admission budget
 limits/usage/closure and a shared-reference combined router observation. Drain
 requires the admission fence, preventing an empty open budget from being reported
