@@ -1795,6 +1795,51 @@ fn router_observation_requires_closed_admission_and_has_no_runtime_effects() {
         Poll::Ready(Ok(Some(_)))
     ));
     assert_eq!(timer.calls.load(Ordering::SeqCst), 1);
+    // A timer may become ready after the initial clock check, including
+    // while polling the single replacement for an earlier wake.
+    struct AdvancingTimer {
+        clock: Arc<marketforge_engine::live::foundation::clock::ManualClock>,
+        calls: AtomicUsize,
+        advance_on: usize,
+        interval: Duration,
+    }
+    impl DeadlineTimer for AdvancingTimer {
+        fn sleep_until(&self, _: Instant) -> DeadlineFuture {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
+            let clock = self.clock.clone();
+            let interval = self.interval;
+            let advance = call == self.advance_on;
+            Box::pin(async move {
+                if advance {
+                    clock.advance(interval).unwrap();
+                }
+            })
+        }
+    }
+    for advance_on in [1, 2] {
+        use marketforge_engine::live::foundation::clock::MonotonicClock;
+        let deadline = clock.now() + interval;
+        sampler.schedule(Some(deadline));
+        let advancing = AdvancingTimer {
+            clock: clock.clone(),
+            calls: AtomicUsize::new(0),
+            advance_on,
+            interval,
+        };
+        assert!(matches!(
+            sampler.poll_sample(
+                &mut cx,
+                clock.as_ref(),
+                &advancing,
+                clock.as_ref(),
+                &handle,
+                || before.clone()
+            ),
+            Poll::Ready(Ok(Some(_)))
+        ));
+        assert_eq!(advancing.calls.load(Ordering::SeqCst), advance_on);
+        assert_eq!(sampler.next_deadline(), Some(deadline + interval));
+    }
     let samples = metrics.snapshot(Duration::from_secs(1));
     assert_eq!(samples.len(), 6);
     for (i, sample) in samples.iter().enumerate() {
