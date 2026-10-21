@@ -3053,3 +3053,49 @@ Changed: engine/src/live/routing/shutdown.rs, engine/tests/live/router.rs,
 STATUS.md and this ledger. No Python/historical execution, dependency/lockfile,
 ignored configuration or launcher edits. No push. Next executable package remains
 WP-10; safe autonomous continuation remains possible within the recorded gates.
+
+
+### 2026-10-21 — Producer reporting and complete drain observations
+
+Status: Partial. Implementation checkpoint: `8bee678`. Initial HEAD `e83fcdc`,
+branch `codex/wp06-completion`; only pre-existing untracked
+`scripts/run-autonomous-codex.sh`, preserved. Read campaign instructions, current
+status and evidence, relevant roadmap entries and recorded identity/monitoring
+and open decisions. WP-10 remains the next executable package.
+
+Implemented:
+- IngressReportingSnapshot samples the authoritative scheduler and journal:
+  pending ownership, failed attempts/budget, retry interval/deadline, retained
+  timer, intervention requirement, resource usage/limit and closure.
+- CompleteRouterDrainSnapshot combines delivery and producer reporting without
+  polling work or closing admission. Externally transferred charged records
+  prevent reporting drain. Sampling is explicitly per-owner, not transactional;
+  these observations establish no durability or recovery completion.
+- Existing actual-ingress witnesses now verify initial queued state, timer
+  exhaustion and retry retention, timer installation, escalation, transfer/reset,
+  repeated pure observation, delayed complete drain and final release. Production
+  queue/delivery behavior and assertions remain intact.
+
+Verification (engine/ unless root stated):
+- cargo fmt --manifest-path engine/Cargo.toml --all (root): exit 0.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite scheduled_ingress_reporting: exit 0, 2 passed / 483 filtered.
+- ./scripts/verify-live.sh full (root): exit 0. Runs cargo fmt --all -- --check;
+  cargo check --locked --offline --no-default-features --features live --lib;
+  cargo test with those flags --lib (135 passed), --test live_suite (483 passed,
+  2 opt-in ignored), --doc (1 passed). Final receipts:
+  engine/target/live-verification/20261021T063459Z-7/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0 after final implementation; existing dead-code warnings persist.
+- git diff --check (root): exit 0. No failed compiler/test commands.
+- Earlier full verification of the reporting snapshot also passed (135/483/1),
+  receipts 20261021T063427Z-3. No SQL/performance/historical-only tests run;
+  historical zero-stream baseline not rechecked. No external requests.
+
+Changed: engine/src/live/routing/{ingress_reporting,shutdown}.rs,
+engine/tests/live/router.rs, STATUS.md and this ledger. No dependency/lockfile,
+Python/historical execution, ignored configuration or launcher modifications.
+Remaining: concrete reporting/recovery policy and handlers, full runtime lifecycle
+and Control wire composition; earlier WP-05/06/07/09 gates persist. WP-11–29
+pending. Safe autonomous continuation remains possible. No push, acceptance or
+project completion claim.

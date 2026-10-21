@@ -39,6 +39,21 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest implementation checkpoint `8bee678` adds read-only producer reporting
+snapshots and a combined router drain observation. Actual owner state exposes
+attempt budget, retry deadline/timer, escalation and charged journal resources.
+Transferred records prevent complete drain even after destination delivery drains.
+Deterministic existing production-path witnesses now assert those observations.
+Final full verification exits 0: formatting, Live check, 135 library / 483
+integration passes (2 opt-in ignored) / 1 doctest; Live+historical check exits 0.
+Receipts: `engine/target/live-verification/20261021T063459Z-7/`.
+WP-10 remains Partial and next executable: concrete reporting/recovery policy,
+full runtime lifecycle and Control wire composition remain. Earlier WP-05/06/07/09
+gates persist; WP-11–29 pending. Further autonomous implementation can safely
+continue. No SQL/exchange access, Python/historical execution changes, dependencies,
+ignored configuration or launcher edits. No push or acceptance claim.
+
+
 
 Latest implementation checkpoint `15b85ef` preserves and verifies the pre-existing
 uncommitted combined router shutdown coordinator. Delivery and producer reporting
