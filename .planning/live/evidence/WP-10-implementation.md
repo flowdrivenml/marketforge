@@ -3267,3 +3267,53 @@ engine/tests/live/router.rs, STATUS.md and this ledger. No SQL/exchange requests
 Python/historical execution, dependency/lockfile, ignored configuration or launcher
 edits. No push. Next authorized package remains WP-10 until its remaining scope
 and prerequisite gates permit progression.
+
+
+### 2026-10-21 — Tracking repair progress wakes the delivery coordinator
+
+Status: Partial. Next executable package: WP-10. Initial HEAD `d3429c3`,
+branch `codex/wp06-completion`; only pre-existing untracked path was
+`scripts/run-autonomous-codex.sh`, preserved. Inspected Git history, campaign
+policy, decisions, current status, WP-10/11 roadmap, distribution delivery-stage
+requirements and actual ingress/reporting/driver/shutdown consumers. No completed
+package restarted. Implementation checkpoint: `ebea89c`.
+
+Acceptance ledger:
+- Producer tracking handoff can create driver-owned recovery work after a
+  coordinator parks. A nonzero transfer now consumes/wakes the existing waiter.
+  Successful explicit unresolved reconciliation also notifies, so finalization
+  and shutdown need not wait for an unrelated queue notification or timer tick.
+- Both paths remain available after admission closure. Rejected, empty, foreign-
+  only and duplicate attempts preserve the waiter and do not self-schedule.
+  Multiple updates coalesce into one wake until the next drive re-arms it.
+- Two strengthened deterministic production-interface witnesses cover actual
+  driver reservations and tracker correlation, replacement of an older waker,
+  mixed valid/foreign handoff, duplicate handoff, re-arming, unknown obligation,
+  successful reconciliation and empty retry. Existing assertions still establish
+  retained payload/recovery ownership and independent destination obligations.
+  Controlled repair fixtures do not claim naturally reproduced tracking corruption.
+- No new queue, owner, financial semantics or delivery guarantee. Remaining:
+  complete concrete outcome/recovery policy, runtime supervision/lifecycle and
+  Control composition. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending.
+  This is neither a complete daemon nor crash-durable recovery. No acceptance claim.
+
+Verification (engine/ unless root stated), all exit 0:
+- cargo fmt --all.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite closed_driver_reconciles: 1 passed / 489 filtered.
+- Same command with ingress_tracking_handoff: 2 passed / 488 filtered.
+- ./scripts/verify-live.sh full (root): cargo fmt --all -- --check;
+  cargo check --locked --offline --no-default-features --features live --lib;
+  cargo test with those flags --lib (135 passed), --test live_suite
+  (488 passed, 2 opt-in ignored), --doc (1 passed). Final receipts:
+  engine/target/live-verification/20261021T065151Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0. Existing dead-code warnings remain.
+- git diff --check (root), before implementation checkpoint: exit 0.
+No SQL/performance opt-in or historical-only tests run; historical zero-stream
+baseline not rechecked. No compiler/test failures.
+
+Changed: engine/src/live/routing/driver.rs, engine/tests/live/router.rs,
+STATUS.md and this ledger. No database/exchange requests, Python/historical
+execution, dependency/lockfile, ignored configuration or launcher edits. No push.
+Further autonomous WP-10 implementation can safely continue within recorded gates.

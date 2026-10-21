@@ -39,6 +39,21 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Checkpoint `ebea89c` adds delivery-coordinator notifications for producer tracking
+handoff and successful explicit unresolved reconciliation, including after closure.
+Notifications coalesce through the existing single waiter; failed/unchanged attempts
+preserve it. Two strengthened production-interface witnesses cover latest-waker
+replacement, mixed foreign/valid repairs, duplicate attempts and rejected correlation.
+Full verification exits 0: formatting, Live check, 135 library / 488 integration
+passes (2 opt-in ignored) / 1 doctest, plus Live+historical compilation. Receipts:
+`engine/target/live-verification/20261021T065151Z-2/`.
+WP-10 remains Partial and next executable: complete outcome/recovery policy,
+runtime lifecycle and Control composition remain. Earlier WP-05/06/07/09 gates
+persist; WP-11–29 pending. Further autonomous implementation can safely continue.
+No SQL/exchange access, Python/historical execution, dependencies, ignored
+configuration or pre-existing launcher changes; no push. See WP-10 evidence.
+
+
 Latest implementation checkpoint `10ad5d0` closes a generic ingress-reporting
 acknowledgement gap: an unresolved reservation-count mapping now retains its
 charged record even when the returned reservation list is empty. Explicit handler
