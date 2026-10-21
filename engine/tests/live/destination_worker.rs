@@ -1469,3 +1469,208 @@ fn delivery_supervisor_snapshot_distinguishes_empty_transactions_and_recovery_re
     assert!(!preparing.is_drained());
     assert!(!reserved.is_drained());
 }
+
+#[test]
+fn delivery_driver_recovers_tracking_before_terminal_handoff_and_requires_reporting() {
+    use marketforge_engine::live::{
+        foundation::clock::ManualClock,
+        model::delivery::{DeliveryStage, DeliveryStatus},
+        routing::{
+            acknowledgement::{DeliveryAcknowledgement, DeliveryObligationId, FinalizationJournal},
+            admission::DeadlineFuture,
+            driver::{DeliveryDriver, DeliveryShutdown},
+            supervisor::{DeliverySupervisor, SupervisionStep},
+            tracking_recovery::TrackingRecovery,
+            worker::DestinationWorkers,
+        },
+    };
+    let (_, old_outcome, tracker) = retained_fixture(0);
+    drop(old_outcome);
+    let (queue, adapter, worker) = fixture(0);
+    queue.try_enqueue(batch(10)).unwrap();
+    adapter.release();
+    let mut workers = DestinationWorkers::new(std::num::NonZeroUsize::new(1).unwrap());
+    assert!(workers.insert(worker).is_ok());
+    let mut driver = DeliveryDriver::new(
+        DeliverySupervisor::new(workers, std::num::NonZeroUsize::new(1).unwrap()),
+        tracker,
+        TrackingRecovery::new(2).unwrap(),
+        FinalizationJournal::new(1).unwrap(),
+    );
+    let waker = Waker::from(Arc::new(WakeCount::default()));
+    let mut cx = Context::from_waker(&waker);
+    assert!(matches!(
+        driver.drive(&mut cx).delivery,
+        Poll::Ready(SupervisionStep::Retained(_))
+    ));
+    let (tracker, recovery) = driver.admission_owners();
+    let obligation = tracker.obligation(DeliveryObligationId(1)).unwrap().clone();
+    recovery
+        .retain(
+            DeliveryAcknowledgement {
+                obligation: obligation.id,
+                destination: obligation.destination,
+                range: obligation.range,
+                status: DeliveryStatus::Progress(DeliveryStage::Durable),
+            },
+            recovery.reserve().unwrap(),
+        )
+        .unwrap();
+    let before = driver.snapshot();
+    assert_eq!(before.recovery.pending_updates, 1);
+    let mut expired: DeadlineFuture = Box::pin(std::future::ready(()));
+    assert!(matches!(
+        driver.drive_shutdown(&mut cx, &mut expired),
+        DeliveryShutdown::DeadlineReached
+    ));
+    assert_eq!(driver.snapshot().recovery, before.recovery);
+    assert_eq!(driver.snapshot().retained_deliveries, 1);
+    let mut later: DeadlineFuture = Box::pin(std::future::pending());
+    let DeliveryShutdown::Step(step) = driver.drive_shutdown(&mut cx, &mut later) else {
+        panic!("resume");
+    };
+    assert_eq!(step.recovery.recovered, 1);
+    let Poll::Ready(SupervisionStep::Finalized(payload)) = step.delivery else {
+        panic!("recovered terminal payload");
+    };
+    assert_eq!(driver.snapshot().tracked_obligations, 0);
+    assert_eq!(driver.snapshot().journal_records, 1);
+    // Successful reporting alone cannot release the transferred payload charge.
+    let clock = ManualClock::new(std::time::Instant::now(), 0);
+    let claim = driver
+        .journal_mut()
+        .claim_next(&clock, std::time::Duration::from_secs(1))
+        .unwrap()
+        .unwrap();
+    driver
+        .journal_mut()
+        .acknowledge(claim.record.obligation.id, claim.token, &clock)
+        .unwrap();
+    assert!(!driver.snapshot().is_drained());
+    let mut expired: DeadlineFuture = Box::pin(std::future::ready(()));
+    assert!(matches!(
+        driver.drive_shutdown(&mut cx, &mut expired),
+        DeliveryShutdown::DeadlineReached
+    ));
+    drop(payload);
+    assert!(matches!(
+        driver.drive_shutdown(&mut cx, &mut expired),
+        DeliveryShutdown::Drained
+    ));
+    assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn delivery_driver_failed_recovery_does_not_block_independent_worker() {
+    use marketforge_engine::live::{
+        model::delivery::DeliveryStatus,
+        routing::{
+            acknowledgement::{
+                AcknowledgementError, DeliveryAcknowledgement, DeliveryObligationId,
+                FinalizationJournal,
+            },
+            driver::DeliveryDriver,
+            supervisor::{DeliverySupervisor, SupervisionStep},
+            tracking_recovery::TrackingRecovery,
+            worker::DestinationWorkers,
+        },
+    };
+    let (_, old_outcome, tracker) = retained_fixture(0);
+    drop(old_outcome);
+    let (queue, adapter, worker) = fixture(1);
+    queue.try_enqueue(batch(10)).unwrap();
+    adapter.release();
+    let mut recovery = TrackingRecovery::new(1).unwrap();
+    let obligation = tracker.obligation(DeliveryObligationId(1)).unwrap();
+    recovery
+        .retain(
+            DeliveryAcknowledgement {
+                obligation: DeliveryObligationId(999),
+                destination: obligation.destination,
+                range: obligation.range.clone(),
+                status: DeliveryStatus::Failed(DeliveryFailure::Unavailable),
+            },
+            recovery.reserve().unwrap(),
+        )
+        .unwrap();
+    let mut workers = DestinationWorkers::new(std::num::NonZeroUsize::new(1).unwrap());
+    assert!(workers.insert(worker).is_ok());
+    let mut driver = DeliveryDriver::new(
+        DeliverySupervisor::new(workers, std::num::NonZeroUsize::new(1).unwrap()),
+        tracker,
+        recovery,
+        FinalizationJournal::new(1).unwrap(),
+    );
+    let waker = Waker::from(Arc::new(WakeCount::default()));
+    let mut cx = Context::from_waker(&waker);
+    let step = driver.drive(&mut cx);
+    assert_eq!(step.recovery.attempted, 1);
+    assert_eq!(
+        step.recovery.first_error,
+        Some(AcknowledgementError::UnknownObligation)
+    );
+    assert!(matches!(
+        step.delivery,
+        Poll::Ready(SupervisionStep::Retained(_))
+    ));
+    let step = driver.drive(&mut cx);
+    assert_eq!(step.recovery.attempted, 1);
+    assert_eq!(step.recovery.remaining, 1);
+    let Poll::Ready(SupervisionStep::Finalized(payload)) = step.delivery else {
+        panic!("independent rejection");
+    };
+    drop(payload);
+    driver.close();
+    assert_eq!(driver.snapshot().recovery.pending_updates, 1);
+    assert_eq!(driver.snapshot().recovery.available_updates, 0);
+    assert!(!driver.snapshot().is_drained());
+    assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn delivery_driver_shutdown_retains_empty_preparation_and_in_flight_recovery_capacity() {
+    use marketforge_engine::live::routing::{
+        acknowledgement::{AcknowledgementTracker, FinalizationJournal},
+        admission::DeadlineFuture,
+        driver::{DeliveryDriver, DeliveryShutdown},
+        supervisor::DeliverySupervisor,
+        tracking_recovery::TrackingRecovery,
+        worker::DestinationWorkers,
+    };
+    let limit = std::num::NonZeroUsize::new(1).unwrap();
+    let mut driver = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(1).unwrap(),
+        TrackingRecovery::new(1).unwrap(),
+        FinalizationJournal::new(1).unwrap(),
+    );
+    let (tracker, recovery) = driver.admission_owners();
+    let prepared = tracker.prepare_obligations(vec![]).unwrap();
+    let reservation = recovery.reserve().unwrap();
+    let waker = Waker::from(Arc::new(WakeCount::default()));
+    let mut cx = Context::from_waker(&waker);
+    let mut later: DeadlineFuture = Box::pin(std::future::pending());
+    let DeliveryShutdown::Step(step) = driver.drive_shutdown(&mut cx, &mut later) else {
+        panic!("empty workers cannot hide preparation or recovery responsibility");
+    };
+    assert!(step.delivery.is_pending());
+    assert_eq!(step.recovery.attempted, 0);
+    assert_eq!(driver.snapshot().prepared_transactions, 1);
+    assert_eq!(driver.snapshot().recovery.reserved_updates, 1);
+    driver
+        .admission_owners()
+        .0
+        .abort_prepared(prepared)
+        .unwrap();
+    let mut expired: DeadlineFuture = Box::pin(std::future::ready(()));
+    assert!(matches!(
+        driver.drive_shutdown(&mut cx, &mut expired),
+        DeliveryShutdown::DeadlineReached
+    ));
+    assert_eq!(driver.snapshot().recovery.reserved_updates, 1);
+    drop(reservation);
+    assert!(matches!(
+        driver.drive_shutdown(&mut cx, &mut later),
+        DeliveryShutdown::Drained
+    ));
+}

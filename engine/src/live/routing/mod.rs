@@ -6,6 +6,7 @@ pub mod admission;
 pub mod completion;
 pub mod cursor;
 pub mod destination;
+pub mod driver;
 pub mod namespaces;
 pub mod ordered;
 pub mod queue;

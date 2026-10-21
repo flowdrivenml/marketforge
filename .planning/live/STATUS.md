@@ -40,6 +40,24 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest continuation composes WP-10 delivery responsibility under `DeliveryDriver`:
+one owned supervisor/tracker/recovery/journal, a bounded recovery pass followed by
+worker/finalization polling, correlated completions, explicit recovery transfers,
+and resumable deadline shutdown checking the full delivery drain predicate.
+Full verification exits 0: formatting, Live compilation, 133 library tests,
+434 integration tests (2 opt-in ignored), 1 doctest; Live+historical check exits 0.
+Receipts: `engine/target/live-verification/20261021T045121Z-3/`.
+WP-10 remains Partial: production EventRouterPort admission/ordered composition,
+runtime wakeup/retry scheduling, metrics/control binding and admission-namespace
+shutdown remain. DeliveryDriver is a production composition component, not a
+running router or daemon. Earlier WP-05/06/07/09 gates and WP-11–29 remain open.
+Next executable package: WP-10; safe autonomous continuation remains possible.
+Checkpoint: local commit carrying this entry and WP-10 evidence. Pre-existing
+untracked launcher preserved; no push, database/exchange traffic, historical or
+Python code changes, dependencies, or ignored configuration edits.
+
+
+
 Latest continuation adds a capacity-bounded WP-10 tracking recovery pass:
 independent obligations progress past a failed update, while successors of the
 same obligation remain fenced and failed updates retain order and charges.

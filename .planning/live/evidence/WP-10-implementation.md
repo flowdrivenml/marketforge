@@ -1255,3 +1255,68 @@ runtime or crash-durable recovery mechanism. Callers must schedule it without
 busy polling. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Next
 authorized executable package remains WP-10; safe autonomous work can continue.
 No package acceptance or overall completion claimed.
+
+
+## Continuation — owned delivery driver and complete delivery drain (2026-10-21)
+
+Status: Partial. Starting checkpoint `51f21c8`, branch `codex/wp06-completion`.
+Initial working tree contained only untracked `scripts/run-autonomous-codex.sh`,
+preserved. Read campaign policy, decisions, status, WP-10 roadmap requirements
+and current ordered admission, worker, supervisor, completion and recovery code.
+WP-10 remains next executable; completed work was preserved.
+
+Implemented `DeliveryDriver`, an exclusive mutable composition owner for the
+existing supervisor, acknowledgement tracker, tracking recovery and terminal
+journal. Admission borrows the same tracker/recovery pair; reporting borrows the
+same journal. Each drive turn performs one capacity-bounded recovery pass and at
+most one worker/finalization step. Failed recovery observations remain explicit
+while independent delivery work progresses. Correlated completion and charged
+recovery transfers use the existing supervisor. Shutdown fences worker queues,
+checks all delivery responsibilities, and observes deadline expiry before applying
+recovery or calling adapters. Deadline expiry retains the owner for resumption.
+Worker drain alone cannot hide preparation tokens, recovery reservations, retained
+or transferred payload charges, or unreported terminal outcomes.
+
+Three deterministic production witnesses cover recovery enabling terminal handoff
+in the same turn; deadline expiry preserving an otherwise recoverable update;
+reporting success while a transferred payload is still charged; later full drain;
+unknown-obligation recovery retaining its capacity without blocking an independent
+worker rejection; and empty prepared transactions plus external recovery
+reservations preventing false successful shutdown. Reporting uses ManualClock;
+no arbitrary sleeps or external services.
+
+Verification:
+- From engine/: `cargo test --locked --offline --no-default-features --features
+  live --test live_suite delivery_driver`: final exit 0, 2 passed before adding
+  the third witness. Initial run exited 101 (0 passed, 2 failed): test reused a
+  completed `std::future::Ready` deadline and confused in-flight reservation count
+  with charged pending-update count. Replaced deadline before repolling and asserted
+  pending count plus exhausted available capacity. Assertions retain the intended
+  ownership guarantees. Third witness included in the full suite below.
+- Root `./scripts/verify-live.sh full`: exit 0. Exact gates: `cargo fmt --all --
+  --check`; `cargo check --locked --offline --no-default-features --features live
+  --lib`; same feature flags with `cargo test --lib` (133 passed), `--test
+  live_suite` (434 passed, 2 opt-in ignored), `--doc` (1 passed). Full receipts:
+  `engine/target/live-verification/20261021T045121Z-3/`.
+- From engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; `engine/target/wp10-delivery-driver-combined.log`.
+- Root `git diff --check`: exit 0 before checkpoint. Existing dead-code warning
+  for the owned unresolved-recovery reservation remains. SQL/performance opt-in
+  tests and historical baseline test execution not rerun; no claim for those gates.
+
+Changed: `engine/src/live/routing/{driver,mod}.rs`,
+`engine/tests/live/destination_worker.rs`, STATUS.md and this package ledger.
+Checkpoint: local commit carrying this entry. No push or database/exchange traffic;
+no Python/historical execution, dependency/lockfile or ignored configuration edits.
+
+Remaining acceptance ledger: production EventRouterPort owner and ordered
+admission integration, automatic runtime scheduling/wakeup/retry policy, native
+metrics/control binding, and whole-router shutdown including admission namespaces.
+DeliveryDriver integrates delivery components but does not spawn an executor,
+certify durability, reconcile uncorrelated outcomes automatically, or establish
+namespace closure. The enclosing runtime must schedule bounded turns on wakeup,
+completion/reporting changes and retry deadlines; failed retries must not busy
+poll. Its mutable admission access is internal composition, not a public control
+API or an admission-closure fence. Earlier WP-05/06/07/09 gates persist; WP-11–29
+remain pending. Further autonomous WP-10 work can safely continue. No package
+acceptance or whole-project completion claimed.
