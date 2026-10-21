@@ -2073,3 +2073,56 @@ Remaining packages: WP-10 Partial; earlier WP-05/06/07/09 gates unchanged;
 WP-11–29 pending. Next authorized executable package: WP-10 completion.
 Further autonomous implementation can safely continue. The service and project
 are not complete.
+
+
+## Continuation — admission closure and read-only router observation (2026-10-21)
+
+Status: Partial. Starting HEAD `3b59ef9`, branch `codex/wp06-completion`.
+Pre-existing untracked `scripts/run-autonomous-codex.sh` preserved. Inspected
+instructions, campaign plan, decision register, status, roadmap WP-08–11, current
+router, ordered admission, shutdown, supervision and relevant consumer tests.
+WP-10 remains next executable; no completed functionality restarted.
+
+Implementation checkpoint: `a2ccb14`.
+
+Acceptance ledger:
+- Implemented: atomic mandatory budget observation of limits, usage and closure;
+  ordered-budget exposure; shared-reference `RouterDrainSnapshot::observe`;
+  shutdown delegates to that same observation; drain now requires admission
+  closure as well as zero usage and other owners' drain.
+- Regression: all other owners closed/empty while admission remains open does
+  not report complete drain. Closing admission then permits drain. Observation
+  does not close owners or poll adapters. Snapshots remain owned/stable.
+- Accounting witness: closing a charged budget preserves its charge and limit,
+  rejects further reservations and releases usage only on reservation drop.
+- Still missing: production EventRouterPort composition, concrete runtime and
+  reporter integration, native metric/control binding. This supplies observation
+  to future Control consumers; it does not implement the Control service.
+- Observation is consistent within each owner, not a cross-owner transaction.
+  No external durability or end-consumer processing claim follows from drain.
+
+Verification (from engine/ unless stated; final exits all 0):
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite router_observation: 1 passed, 457 filtered out.
+- Root ./scripts/verify-live.sh full: cargo fmt --all -- --check; cargo check
+  --locked --offline --no-default-features --features live --lib; cargo test
+  with the same flags --lib (135 passed), --test live_suite (456 passed,
+  2 opt-in ignored), --doc (1 passed). Receipts:
+  engine/target/live-verification/20261021T053402Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings only.
+- Root git diff --check: exit 0 before checkpoint.
+- Initial cargo fmt --all from repository root exited 1 (no Cargo.toml), then
+  corrected to engine/ and succeeded. No compiler or behavioral test failures.
+- SQL/performance opt-in tests and historical-only suite not run; historical
+  zero-stream baseline not rechecked. No database or exchange traffic.
+
+Changed: engine/src/live/foundation/resources.rs,
+engine/src/live/routing/ordered.rs, engine/src/live/routing/shutdown.rs,
+engine/tests/live/router.rs, STATUS.md and this ledger. No Python/historical
+execution, dependency/lockfile, ignored configuration or system changes. No push.
+Documentation checkpoint is the commit carrying this entry.
+
+Earlier WP-05/06/07/09 gates persist; WP-10 Partial; WP-11–29 pending.
+Next authorized executable package: WP-10 completion. Further autonomous
+implementation can safely continue. No acceptance or project completion claimed.

@@ -39,6 +39,24 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest implementation checkpoint `a2ccb14` exposes atomic admission budget
+limits/usage/closure and a shared-reference combined router observation. Drain
+requires the admission fence, preventing an empty open budget from being reported
+as closed/drained. Existing shutdown uses the same observation implementation.
+Two deterministic regression witnesses cover open/closed observation, retained
+charges after closure/release, owned snapshot stability and no sampling effects.
+Verification exits 0: formatting, Live check, 135 library / 456 integration
+(2 opt-in ignored) / 1 doctest, combined Live+historical check. Receipts:
+`engine/target/live-verification/20261021T053402Z-2/`.
+WP-10 remains Partial and next executable: EventRouterPort admission composition,
+concrete runtime/reporting and native metrics/control binding remain. The new
+observation is available to consumers; no Control server is claimed. Earlier
+WP-05/06/07/09 gates persist; WP-11–29 pending. Further autonomous work is safe.
+No SQL/exchange access, push, Python/historical execution edits, dependencies or
+ignored configuration changes. Pre-existing untracked launcher preserved.
+See WP-10 evidence. No package acceptance or project completion claimed.
+
+
 Latest implementation checkpoint `0b0de81` connects ordered commitment directly
 through `DeliveryDriver::commit_ordered`, using its authoritative tracker/recovery
 owners and returning required plus optional outcomes. Closed owners return the
