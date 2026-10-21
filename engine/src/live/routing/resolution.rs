@@ -156,15 +156,25 @@ pub struct BoundedResolutionSink {
 
 impl BoundedResolutionSink {
     pub fn new(capacity: usize) -> Result<Self, ResolutionAcceptanceError> {
+        Self::with_identity_allocator(capacity, &NEXT_SINK_ID)
+    }
+
+    fn with_identity_allocator(
+        capacity: usize,
+        identities: &AtomicU64,
+    ) -> Result<Self, ResolutionAcceptanceError> {
         if capacity == 0 {
             return Err(ResolutionAcceptanceError::CapacityExceeded);
         }
 
-        let id = NEXT_SINK_ID.fetch_add(1, Ordering::Relaxed);
-
-        if id == u64::MAX {
-            return Err(ResolutionAcceptanceError::IdentityExhausted);
-        }
+        // Exhaustion must remain sticky: wrapping would allow a later sink to
+        // reuse an earlier owner's receipt namespace. Relaxed ordering suffices
+        // because this atomic allocates identities, not published sink state.
+        let id = identities
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.checked_add(1)
+            })
+            .map_err(|_| ResolutionAcceptanceError::IdentityExhausted)?;
 
         Ok(Self {
             inner: Arc::new(SinkInner {
@@ -433,5 +443,59 @@ impl ResolutionAcceptanceSink for BoundedResolutionSink {
         });
 
         Ok(receipt)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sink_identity_exhaustion_is_permanent() {
+        let identities = AtomicU64::new(u64::MAX - 1);
+        // Invalid capacity must not consume the last available identity.
+        assert!(matches!(
+            BoundedResolutionSink::with_identity_allocator(0, &identities),
+            Err(ResolutionAcceptanceError::CapacityExceeded)
+        ));
+        let last = BoundedResolutionSink::with_identity_allocator(1, &identities).unwrap();
+        assert_eq!(last.inner.id, u64::MAX - 1);
+        for _ in 0..3 {
+            assert!(matches!(
+                BoundedResolutionSink::with_identity_allocator(1, &identities),
+                Err(ResolutionAcceptanceError::IdentityExhausted)
+            ));
+            assert_eq!(identities.load(Ordering::Relaxed), u64::MAX);
+        }
+        assert_eq!(last.len(), 0);
+    }
+
+    #[test]
+    fn concurrent_sink_construction_cannot_reuse_exhausted_identities() {
+        let identities = AtomicU64::new(u64::MAX - 4);
+        let results = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..12)
+                .map(|_| {
+                    scope.spawn(|| BoundedResolutionSink::with_identity_allocator(1, &identities))
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        let mut allocated = Vec::new();
+        let mut exhausted = 0;
+        for result in results {
+            match result {
+                Ok(sink) => allocated.push(sink.inner.id),
+                Err(ResolutionAcceptanceError::IdentityExhausted) => exhausted += 1,
+                Err(error) => panic!("unexpected construction failure: {error:?}"),
+            }
+        }
+        allocated.sort_unstable();
+        assert_eq!(allocated, (u64::MAX - 4..u64::MAX).collect::<Vec<_>>());
+        assert_eq!(exhausted, 8);
+        assert_eq!(identities.load(Ordering::Relaxed), u64::MAX);
     }
 }

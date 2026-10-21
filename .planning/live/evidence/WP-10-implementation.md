@@ -3634,3 +3634,22 @@ Changed: engine/src/live/routing/reporting.rs, engine/tests/live/reporting.rs,
 STATUS.md and this ledger. No Python/historical execution, dependency/lockfile,
 ignored configuration or launcher changes. No push. Further autonomous WP-10
 implementation can safely continue; no prerequisite bypass to WP-11 claimed.
+
+
+### Interrupted iteration recovery — 2026-10-21
+
+Preserved the pre-existing resolution.rs patch and untracked launcher on
+codex/wp06-completion (initial HEAD 30fa31a). The interrupted work prevents
+resolution sink identity allocation from wrapping and reusing receipt namespaces.
+Checked atomic allocation now fails permanently at exhaustion; invalid capacity
+does not consume identity. Two deterministic tests cover sequential exhaustion
+and twelve concurrent constructors competing for four remaining identities.
+
+Verification from engine/: cargo fmt --check: exit 0;
+cargo test --locked --offline --no-default-features --features live --lib
+live::routing::resolution::tests: exit 0, 2 passed;
+cargo test --locked --offline --no-default-features --features live --test
+live_suite resolution: exit 0, 52 passed. Existing retained-reservation warning.
+No database, exchange, dependency or historical execution changes.
+Recovery checkpoint contains this entry and the preserved implementation.
+WP-10 remains Partial; comprehensive composition assessment follows.
