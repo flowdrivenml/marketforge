@@ -2758,6 +2758,317 @@ mod ingress_witnesses {
     }
 
     #[test]
+    fn router_port_retains_required_receipt_and_fences_reporting_capacity() {
+        use marketforge_engine::live::{
+            ports::routing::{EventRouterPort, RoutingAdmission, RoutingAdmissionFailure},
+            routing::{ingress_reporting::IngressOutcomes, port::RouterPort},
+        };
+        let fixture = Fixture::new();
+        let queue = fixture.queue(1, DeliveryPolicy::Required);
+        let journal = IngressOutcomes::new(ResourceUsage {
+            items: 1,
+            bytes: 100_000,
+        })
+        .unwrap();
+        let port = RouterPort {
+            ingress: fixture.ingress(),
+            outcomes: &journal,
+            cancellation: CancellationToken::new(),
+            timeout: None,
+        };
+        let producer: &dyn EventRouterPort = &port;
+        assert_eq!(
+            ready(producer.admit(batch())),
+            RoutingAdmission::Accepted {
+                through: batch().last_cursor().clone()
+            }
+        );
+        assert_eq!(fixture.next(), 3);
+        assert_eq!(
+            ready(producer.admit(batch())),
+            RoutingAdmission::Rejected {
+                reason: RoutingAdmissionFailure::CapacityExceeded
+            }
+        );
+        let mut cx = Context::from_waker(Waker::noop());
+        let record = match journal.poll_next(&mut cx) {
+            Poll::Ready(record) => record,
+            _ => panic!("missing outcome"),
+        };
+        assert!(Arc::ptr_eq(
+            &record.batch().events()[0],
+            &queue.try_dequeue().unwrap().batch().events()[0]
+        ));
+        assert!(matches!(
+            record.outcome(),
+            IngressOutcome::Required {
+                required: OrderedCommitOutcome::Tracked(TrackedFanoutResult::Complete { .. }),
+                ..
+            }
+        ));
+        drop(record);
+        assert_eq!(
+            ready(producer.admit(batch())),
+            RoutingAdmission::Rejected {
+                reason: RoutingAdmissionFailure::InvalidCursor
+            }
+        );
+        assert_eq!(journal.snapshot().usage, ResourceUsage::default());
+        journal.close();
+        assert_eq!(
+            ready(producer.admit(batch())),
+            RoutingAdmission::Rejected {
+                reason: RoutingAdmissionFailure::ShuttingDown
+            }
+        );
+    }
+
+    #[test]
+    fn router_port_cancellation_deadline_and_empty_membership_do_not_commit() {
+        use marketforge_engine::live::{
+            ports::routing::{EventRouterPort, RoutingAdmission, RoutingAdmissionFailure},
+            routing::{ingress_reporting::IngressOutcomes, port::RouterPort},
+        };
+        let fixture = Fixture::new();
+        let journal = IngressOutcomes::new(ResourceUsage {
+            items: 2,
+            bytes: 100_000,
+        })
+        .unwrap();
+        let mut port = RouterPort {
+            ingress: fixture.ingress(),
+            outcomes: &journal,
+            cancellation: CancellationToken::new(),
+            timeout: None,
+        };
+        assert_eq!(
+            ready(port.admit(batch())),
+            RoutingAdmission::Rejected {
+                reason: RoutingAdmissionFailure::NoRequiredCapacity
+            }
+        );
+        let queue = fixture.queue(1, DeliveryPolicy::Required);
+        port.timeout = Some(std::time::Duration::ZERO);
+        assert_eq!(
+            ready(port.admit(batch())),
+            RoutingAdmission::Rejected {
+                reason: RoutingAdmissionFailure::DeadlineExceeded
+            }
+        );
+        port.timeout = None;
+        port.cancellation.cancel();
+        assert_eq!(
+            ready(port.admit(batch())),
+            RoutingAdmission::Rejected {
+                reason: RoutingAdmissionFailure::Cancelled
+            }
+        );
+        assert_eq!(fixture.next(), 1);
+        assert!(queue.try_dequeue().is_none());
+        assert_eq!(journal.snapshot().usage, ResourceUsage::default());
+    }
+
+    #[test]
+    fn router_port_retains_required_tracking_rejection_and_dropped_wait_rolls_back() {
+        use marketforge_engine::live::{
+            ports::routing::{EventRouterPort, RoutingAdmission, RoutingAdmissionFailure},
+            routing::{ingress_reporting::IngressOutcomes, port::RouterPort},
+        };
+        let mut fixture = Fixture::new();
+        let limit = NonZeroUsize::new(2).unwrap();
+        fixture.driver = Mutex::new(DeliveryDriver::new(
+            DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+            AcknowledgementTracker::new(1).unwrap(),
+            TrackingRecovery::new(4).unwrap(),
+            FinalizationJournal::new(4).unwrap(),
+        ));
+        let first = fixture.queue(1, DeliveryPolicy::Required);
+        let second = fixture.queue(2, DeliveryPolicy::Required);
+        let journal = IngressOutcomes::new(ResourceUsage {
+            items: 1,
+            bytes: 100_000,
+        })
+        .unwrap();
+        let port = RouterPort {
+            ingress: fixture.ingress(),
+            outcomes: &journal,
+            cancellation: CancellationToken::new(),
+            timeout: None,
+        };
+        first.try_enqueue(batch()).unwrap();
+        let mut waiting = port.admit(batch());
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(waiting.as_mut().poll(&mut cx).is_pending());
+        assert_eq!(journal.snapshot().usage.items, 1);
+        drop(waiting);
+        assert_eq!(journal.snapshot().usage, ResourceUsage::default());
+        assert_eq!(fixture.budget.usage(), ResourceUsage::default());
+        drop(first.try_dequeue().unwrap());
+        assert_eq!(
+            ready(port.admit(batch())),
+            RoutingAdmission::Rejected {
+                reason: RoutingAdmissionFailure::NoRequiredCapacity
+            }
+        );
+        let record = match journal.poll_next(&mut cx) {
+            Poll::Ready(record) => record,
+            _ => panic!("missing tracking rejection"),
+        };
+        assert!(matches!(
+            record.outcome(),
+            IngressOutcome::Required {
+                required: OrderedCommitOutcome::Rejected { .. },
+                ..
+            }
+        ));
+        assert!(first.try_dequeue().is_none());
+        assert!(second.try_dequeue().is_none());
+        assert_eq!(fixture.next(), 1);
+        assert_eq!(journal.snapshot().usage.items, 1);
+        drop(record);
+        assert_eq!(journal.snapshot().usage, ResourceUsage::default());
+    }
+
+    #[test]
+    fn router_port_partial_required_commit_never_returns_success_or_rewinds_identity() {
+        use marketforge_engine::live::{
+            foundation::MonotonicClock,
+            ports::routing::{EventRouterPort, RoutingAdmission, RoutingAdmissionFailure},
+            routing::{ingress_reporting::IngressOutcomes, port::RouterPort},
+        };
+        // Close one real queue only once both real reservations exist. This
+        // injects a commitment fault without sleeps or poll-count assumptions.
+        struct CloseReserved {
+            first: DestinationQueue,
+            second: DestinationQueue,
+            now: Instant,
+        }
+        impl MonotonicClock for CloseReserved {
+            fn now(&self) -> Instant {
+                if self.first.capacity().usage().occupied_events == 2
+                    && self.second.capacity().usage().occupied_events == 2
+                {
+                    self.second.close();
+                }
+                self.now
+            }
+        }
+        let fixture = Fixture::new();
+        let first = fixture.queue(1, DeliveryPolicy::Required);
+        let second = fixture.queue(2, DeliveryPolicy::Required);
+        let journal = IngressOutcomes::new(ResourceUsage {
+            items: 1,
+            bytes: 100_000,
+        })
+        .unwrap();
+        struct Timer;
+        impl marketforge_engine::live::routing::admission::DeadlineTimer for Timer {
+            fn sleep_until(
+                &self,
+                _: Instant,
+            ) -> marketforge_engine::live::routing::admission::DeadlineFuture {
+                Box::pin(std::future::pending())
+            }
+        }
+        let timer = Timer;
+        let mut ingress = fixture.ingress();
+        ingress.timer = Some(&timer);
+        ingress.clock = Arc::new(CloseReserved {
+            first: first.clone(),
+            second: second.clone(),
+            now: fixture.clock.now(),
+        });
+        let port = RouterPort {
+            ingress,
+            outcomes: &journal,
+            cancellation: CancellationToken::new(),
+            timeout: Some(std::time::Duration::from_secs(1)),
+        };
+        assert_eq!(
+            ready(port.admit(batch())),
+            RoutingAdmission::Rejected {
+                reason: RoutingAdmissionFailure::NoRequiredCapacity
+            }
+        );
+        assert_eq!(fixture.next(), 3);
+        let mut cx = Context::from_waker(Waker::noop());
+        let record = match journal.poll_next(&mut cx) {
+            Poll::Ready(record) => record,
+            _ => panic!("lost partial commitment"),
+        };
+        match record.outcome() {
+            IngressOutcome::Required {
+                required:
+                    OrderedCommitOutcome::Tracked(TrackedFanoutResult::RecoveryPending {
+                        committed,
+                        failed,
+                        ..
+                    }),
+                ..
+            }
+            | IngressOutcome::Required {
+                required:
+                    OrderedCommitOutcome::Tracked(TrackedFanoutResult::Partial {
+                        committed,
+                        failed,
+                        ..
+                    }),
+                ..
+            } => {
+                assert_eq!(committed.len(), 1);
+                assert_eq!(failed.len(), 1);
+            }
+            other => panic!("unexpected partial result: {other:?}"),
+        }
+        assert_eq!(record.batch(), &batch());
+        assert_eq!(first.try_dequeue().unwrap().batch(), &batch());
+        assert!(second.try_dequeue().is_none());
+        assert_eq!(journal.snapshot().usage.items, 1);
+    }
+
+    #[test]
+    fn router_port_optional_overload_is_retained_as_attempt_only() {
+        use marketforge_engine::live::{
+            ports::routing::{EventRouterPort, RoutingAdmission},
+            routing::{ingress_reporting::IngressOutcomes, port::RouterPort},
+        };
+        let fixture = Fixture::new();
+        let queue = fixture.queue(1, DeliveryPolicy::BestEffort);
+        queue.try_enqueue(batch()).unwrap();
+        let journal = IngressOutcomes::new(ResourceUsage {
+            items: 1,
+            bytes: 100_000,
+        })
+        .unwrap();
+        let port = RouterPort {
+            ingress: fixture.ingress(),
+            outcomes: &journal,
+            cancellation: CancellationToken::new(),
+            timeout: None,
+        };
+        assert_eq!(
+            ready(port.admit(batch())),
+            RoutingAdmission::Accepted {
+                through: batch().last_cursor().clone()
+            }
+        );
+        let mut cx = Context::from_waker(Waker::noop());
+        let record = match journal.poll_next(&mut cx) {
+            Poll::Ready(record) => record,
+            _ => panic!("missing attempt"),
+        };
+        match record.outcome() {
+            IngressOutcome::Optional(OptionalOrderedOutcome::Attempted(attempt)) => {
+                assert!(attempt.queued.is_empty());
+                assert_eq!(attempt.failed.len(), 1);
+            }
+            _ => panic!("lost overload"),
+        }
+        assert_eq!(fixture.next(), 3);
+        assert_eq!(journal.snapshot().usage.items, 1);
+    }
+
+    #[test]
     fn recorded_ingress_wakes_latest_reporter_and_drains_admission_reserved_before_close() {
         use marketforge_engine::live::routing::ingress_reporting::{
             IngressOutcomes, RecordedIngressError,

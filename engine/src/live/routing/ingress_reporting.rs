@@ -18,7 +18,7 @@ use crate::live::{
         ResourceBudget, ResourceBudgetSnapshot, ResourceReservation, ResourceUsage,
     },
     model::{error::ErrorCode, memory::RetainedSize},
-    ports::routing::EventBatch,
+    ports::routing::{EventBatch, RoutingAdmission},
 };
 
 #[derive(Debug)]
@@ -94,6 +94,19 @@ impl IngressOutcomes {
         batch: EventBatch,
         context: AdmissionContext,
     ) -> Result<(), RecordedIngressError> {
+        self.admit_receipt(ingress, batch, context)
+            .await
+            .map(|_| ())
+    }
+
+    /// Retain the complete outcome before returning its conservative producer
+    /// receipt. Partial or uncertain required delivery never yields Accepted.
+    pub async fn admit_receipt(
+        &self,
+        ingress: &RouterIngress<'_>,
+        batch: EventBatch,
+        context: AdmissionContext,
+    ) -> Result<RoutingAdmission, RecordedIngressError> {
         let amount = batch
             .retained_size_bytes()
             .ok()
@@ -109,6 +122,7 @@ impl IngressOutcomes {
             .admit(batch.clone(), context)
             .await
             .map_err(RecordedIngressError::Admission)?;
+        let receipt = super::port::receipt(&batch, &outcome);
         let waiter = {
             let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
             state.records.push_back(IngressRecord {
@@ -121,7 +135,7 @@ impl IngressOutcomes {
         if let Some(waiter) = waiter {
             waiter.wake();
         }
-        Ok(())
+        Ok(receipt)
     }
 
     /// One replaceable reporting coordinator; no hidden waiter queue.

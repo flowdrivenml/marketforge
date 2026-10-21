@@ -11,6 +11,7 @@ pub mod ingress;
 pub mod ingress_reporting;
 pub mod namespaces;
 pub mod ordered;
+pub mod port;
 pub mod queue;
 pub mod reporting;
 pub mod resolution;
