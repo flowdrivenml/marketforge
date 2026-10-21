@@ -50,10 +50,10 @@ pub struct FileRevisionJournal {
     path: PathBuf,
     _lock: Lock,
     state: Mutex<State>,
-    limits: JournalLimits,
-    clock: Arc<dyn MonotonicClock>,
+    pub(super) limits: JournalLimits,
+    pub(super) clock: Arc<dyn MonotonicClock>,
     wall: Arc<dyn WallClock>,
-    owner: ResourceVersion,
+    pub(super) owner: ResourceVersion,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WritePoint {
@@ -88,7 +88,7 @@ impl Write for LimitedBuffer {
         Ok(())
     }
 }
-fn encode<T: Serialize>(value: &T, limit: usize) -> Result<Vec<u8>, ErrorCode> {
+pub(super) fn encode<T: Serialize>(value: &T, limit: usize) -> Result<Vec<u8>, ErrorCode> {
     let mut writer = LimitedBuffer {
         bytes: vec![],
         limit,

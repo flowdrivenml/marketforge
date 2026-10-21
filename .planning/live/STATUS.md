@@ -13,7 +13,7 @@
 | WP-06 | Freeze and implement event/delivery/replay contracts | Partial — basic real C06 witness passes; signed timestamp and fault gates remain | [Independent contracts](evidence/wp06-independent-contracts.md), [Observed C06 mapping and blockers](evidence/wp06-c06-connected.md) |
 | WP-07 | Freeze service ports, management and observation surfaces | Contract implementation review pending; C12 adapter decision OPEN | [Contract implementation and witnesses](evidence/wp07-contracts.md) |
 | WP-08 | Implement foundations and real native observability | ReadyForReview | [Implementation ledger](evidence/WP-08-implementation.md) |
-| WP-09 | Implement the Configuration System | Partial — candidates/DAG/journal verified; semantic compiler and service pending | [Implementation ledger](evidence/WP-09-implementation.md) |
+| WP-09 | Implement the Configuration System | Partial — compiler/store/service composed; mandatory schema/economic/impact gaps remain | [Implementation ledger](evidence/WP-09-implementation.md) |
 | WP-10 | Implement the canonical event router | ReadyForReview — Not Accepted | [Implementation ledger](evidence/WP-10-implementation.md) |
 | WP-11 | Implement source registry and dependency ownership | Pending | — |
 | WP-12 | Implement exchange-profile and format compilation | Pending | — |
@@ -36,6 +36,39 @@
 | WP-29 | Hardening, reproducibility and release | Pending | — |
 
 ## Current Development Position
+
+### WP-09 configuration implementation — 2026-10-21
+
+**WP-09 remains Partial — Not Accepted.** The current authoritative
+[requirement/code/test matrix](evidence/WP-09-implementation.md) supersedes earlier
+candidate-only status. Implemented bounded canonical TOML/static loading,
+inheritance provenance, fail-closed catalog/protocol compiler, semantic diffs and
+supported source impacts, the frozen store adapter on a dedicated bounded worker,
+and a management service for durable acceptance/history/query/restore/status.
+The existing FileRevisionJournal remains the sole revision/persistence owner.
+Only successful durable CAS produces a hand-off; the service cannot mutate live
+owners and never claims runtime application/adoption. WP-24 executes plans.
+
+Mandatory gaps: authoritative draft-to-DTO mapping/defaults; C01/OPEN-001 metadata
+provisioning/classification; native/static and pure derived-economic compiler
+inputs; derived impact closure/resource feasibility; frozen diff expressiveness
+for global recovery/shutdown and profile removal. Exact requirements and owning
+dependencies are recorded in the matrix; these are not reassigned to make WP-09
+complete. Unsupported/unknown inputs fail explicitly. No real exchange or daemon
+integration is claimed. WP-10 remains ReadyForReview — Not Accepted.
+
+Full Live verification exits 0: 137 library / 523 integration passed (2 opt-in
+ignored) / 1 doctest; final receipts `engine/target/live-verification/20261021T121532Z-2/`.
+Live+historical, Live+TUI, base and historical-only library builds exit 0.
+Nineteen focused WP-09 tests pass. Exact commands are in the report. One coherent
+local implementation checkpoint includes this evidence; no push, DB access,
+Python/historical edits, accepted-decision or ignored-configuration changes.
+The pre-existing untracked autonomous-runner script is excluded.
+**Current scope/stopping point: WP-09 only. No next package is authorized.**
+
+The completed assignments below are historical context; their stopping/scope
+statements do not supersede the current WP-09 assignment.
+
 
 
 ### Cross-package responsibility reconciliation — 2026-10-21

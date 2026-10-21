@@ -48,3 +48,5 @@ pub(crate) mod wp09_configuration;
 pub(crate) mod destination_worker;
 
 pub(crate) mod router_runtime;
+
+pub(crate) mod wp09_service;
