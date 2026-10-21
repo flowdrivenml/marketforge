@@ -39,6 +39,23 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest implementation checkpoint `3e006a9` adds a cooperative bounded router metric
+sampling cadence. Disabled/early turns construct no snapshots; delayed turns emit
+one current sample without catch-up bursts. Wall/collector errors consume the
+cadence; deadline overflow disables sampling explicitly. The existing real native
+collector witness covers boundaries, failures, disabling and overflow.
+Verification exits 0: formatting, Live check, 135 library / 460 integration
+(2 opt-in ignored) / 1 doctest, Live+historical check. Receipts:
+`engine/target/live-verification/20261021T054918Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort composition,
+concrete runtime/reporter integration, runtime timer binding for the new cadence,
+and full Control integration. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending.
+Further autonomous implementation can safely continue. No SQL/exchange access,
+push, Python/historical execution, dependency or ignored configuration changes.
+Pre-existing untracked launcher preserved. See WP-10 evidence; no acceptance or
+project completion claimed.
+
+
 Latest implementation checkpoint `de3f4df` adds bounded registered router shutdown:
 admission/namespaces/registry close immediately; delivery remains attachable until
 unclaimed queues have reconciled. Capacity-limited schedulers drain/reap between

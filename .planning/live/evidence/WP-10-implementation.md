@@ -2348,3 +2348,50 @@ Changed: engine/src/live/routing/{router,shutdown}.rs,
 engine/tests/live/router.rs, STATUS.md and this ledger. Documentation checkpoint
 is the commit carrying this entry. Further autonomous implementation can safely
 continue with WP-10 composition; the approved v1 service is not complete.
+
+## Continuation — cooperative metric cadence (2026-10-21)
+
+Status: Partial. Initial HEAD `99c3854`, branch `codex/wp06-completion`;
+pre-existing untracked `scripts/run-autonomous-codex.sh` preserved. Reviewed
+campaign instructions, status, decisions, WP-10/11 roadmap, current routing
+owners and runtime output consumers. Next executable package remains WP-10.
+
+Implementation checkpoint: `3e006a9`.
+
+Acceptance ledger:
+- Added RouterMetricSampler over the existing authoritative RouterDrainSnapshot
+  projection and scoped native metric port. One monotonic deadline and interval
+  bound scheduling state; zero interval rejects. Runtime receives the next
+  deadline for its existing timer rather than creating a background task.
+- Disabled/early turns do not construct snapshots or read wall time. A delayed
+  turn records one current observation and schedules from now, preventing catch-up
+  bursts. Wall-time and collector failures consume the sampling cadence; deadline
+  overflow explicitly returns Limit and disables sampling. Individual metric
+  admissions remain observable, with no integrity/delivery effects.
+- Extended the real native-collector/router-owner witness with exact deadline,
+  late turn, no repeated same-turn sampling, disabling/rescheduling, wall failure,
+  zero interval and deadline overflow. Existing metric projection, stale binding,
+  generation and owner nonmutation assertions remain intact.
+- Remaining: production EventRouterPort facade preserving partial/recovery
+  responsibility, concrete runtime/reporter binding, runtime timer binding for
+  this cadence and full Control integration. This helper is not a daemon or
+  independently running sampler. Earlier WP-05/06/07/09 gates persist; WP-11–29
+  remain pending. No package acceptance claimed.
+
+Verification (engine/ unless root specified):
+- Root ./scripts/verify-live.sh full: exit 0, all five gates:
+  cargo fmt --all -- --check; cargo check --locked --offline --no-default-features
+  --features live --lib; cargo test with the same flags --lib (135 passed),
+  --test live_suite (460 passed, 2 opt-in ignored), --doc (1 passed).
+  Receipts: engine/target/live-verification/20261021T054918Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings remain.
+- Root git diff --check: exit 0 before implementation checkpoint.
+- No failing verification commands. SQL/performance opt-in and historical-only
+  suites not run; historical zero-stream baseline not rechecked. No SQL/exchange
+  traffic, dependency/lockfile or ignored configuration changes.
+
+Changed: engine/src/live/routing/metrics.rs, engine/tests/live/router.rs,
+STATUS.md and this ledger. Documentation checkpoint is the commit carrying this
+entry. No Python/historical execution changes or push. Further autonomous work
+can safely continue with WP-10 composition. The approved v1 service is incomplete.
