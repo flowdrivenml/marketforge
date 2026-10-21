@@ -39,6 +39,27 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest continuation checkpoint `cd7f74f` composes registry maintenance, delivery,
+and membership notification in `DeliveryDriver::drive_registered`. Each turn
+attaches at most one queue, runs one existing recovery/supervision turn, and arms
+membership observation against the revision captured before adapter polling.
+Progress schedules another turn; capacity/correlation/shutdown observations do
+not self-wake indefinitely. Three deterministic witnesses cover bounded attachment,
+capacity retry/retirement/shutdown, adapter-time membership mutation, retained
+uncorrelated payload ownership, and ordered tracked delivery through explicit
+completion and terminal payload release.
+Verification exits 0: formatting, Live check, 134 library / 450 integration
+(2 opt-in ignored) / 1 doctest, plus Live+historical compilation. Receipts:
+`engine/target/live-verification/20261021T052023Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort ordered
+composition, runtime completion/reporting/retry timer scheduling, native metrics
+and control binding. This coordinator primitive is not a running daemon.
+WP-05/06/07/09 open gates persist; WP-11–29 pending. Further autonomous WP-10
+implementation can safely continue. No push, SQL/exchange access, Python/historical
+execution edits, dependencies or ignored configuration changes. Pre-existing
+untracked `scripts/run-autonomous-codex.sh` preserved. See
+[WP-10 evidence](evidence/WP-10-implementation.md). No acceptance claimed.
+
 
 Latest continuation adds bounded registry-to-delivery worker reconciliation and
 wake-driven routing membership observation. One maintenance turn reaps drained

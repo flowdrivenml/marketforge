@@ -1747,3 +1747,66 @@ external payload release or completion; those owners retain their own wakeups.
 These are integrated production composition primitives, not a running daemon.
 Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Next authorized executable
 package: WP-10. Further autonomous implementation is safe. No acceptance claimed.
+
+## Continuation — bounded registered delivery turns (2026-10-21)
+
+Status: Partial. Implementation checkpoint: `cd7f74f`; starting checkpoint:
+`b9ebf5b`, branch `codex/wp06-completion`. Inspected campaign instructions, Git
+inventory/history, decisions, status, roadmap WP-08–11, distribution requirements,
+actual registry/ordered admission/driver/supervisor/worker owners and tests.
+WP-10 remains next executable. Preserved untracked user launcher.
+
+Implemented `DeliveryDriver::drive_registered` and its explicit result: one
+registry reconciliation (at most one fresh attachment), one existing bounded
+recovery/supervision pass, and membership observation against the revision captured
+before maintenance/adapter polling. Successful attachment/retention/finalization or
+an observed concurrent membership revision schedules one further cooperative
+turn. Capacity/correlation failures and shutdown do not self-wake repeatedly.
+No second tracker, task, executor, retry queue or delivery policy was introduced.
+
+Acceptance ledger and witnesses:
+- Bounded reconciliation and retirement: one attachment per turn, scheduler-full
+  rejection releases only the fresh lease, retired drain reaps one slot and
+  attaches its replacement, closed driver fences attachment.
+- Wake safety: actual membership mutation during adapter future polling is
+  observed; the next turn arms the current revision. Capacity/correlation/shutdown
+  observations do not create an immediate retry loop.
+- Fault ownership: deliberately untracked queued payload produces a retained
+  correlation failure, is not resubmitted, and transfers intact to recovery.
+- Real consumer path: existing OrderedFanout prepares/commits through the same
+  driver tracker/recovery, adapter admission retains the delivery, explicit
+  Delivered completion permits finalization, returned terminal record retains
+  capacity until dropped, and the independent journal record remains visible.
+
+Verification (actual final exits):
+- From engine/: `cargo test --locked --offline --no-default-features --features
+  live --test live_suite registered_driver`: exit 0, 3 passed.
+- Root `./scripts/verify-live.sh full`: exit 0; `cargo fmt --all -- --check`,
+  `cargo check --locked --offline --no-default-features --features live --lib`,
+  tests with the same locked/offline/feature flags and `--lib` (134 passed),
+  `--test live_suite` (450 passed, 2 ignored), `--doc` (1 passed).
+  Receipts: `engine/target/live-verification/20261021T052023Z-2/`.
+- From engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; existing dead-code warnings remain.
+- Root `git diff --check`: exit 0 before implementation checkpoint.
+- Initial test append used a root-relative path from engine/ and wrote no file;
+  corrected path. Initial success-witness compile exit 101 used the wrong
+  ManualClock import; corrected to foundation::clock. Its next run exit 101
+  exposed the expected retained-capacity backpressure (CapacityBlocked); corrected
+  fixture expectation to assert that explicit state and absence of a self-wake.
+  No production assertions or delivery guarantees weakened.
+
+Changed: `engine/src/live/routing/driver.rs`, `engine/tests/live/router.rs`,
+STATUS.md and this ledger. No SQL/exchange traffic, production data, dependencies,
+ignored configuration, Python or historical execution edits. SQL/performance
+opt-ins and historical-only tests not run; no claim on those gates or historical
+zero-stream baseline. No push. Documentation checkpoint is the commit carrying
+this entry.
+
+Remaining: production EventRouterPort ordered composition; runtime completion,
+reporting and bounded retry timer scheduling; native metrics/control binding.
+External payload release and completion/reporting still require runtime notification
+or a bounded retry timer; failed tracking passes must not be busy-polled. Synchronize
+all queues before closing the driver; this method is not deadline shutdown.
+Earlier WP-05/06/07/09 gates remain open and WP-11–29 remain pending. Further
+independent autonomous WP-10 work is safe. No package or project acceptance claimed.
