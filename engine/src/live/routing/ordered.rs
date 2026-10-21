@@ -129,9 +129,15 @@ impl<'a> OrderedFanout<'a> {
         let plan = registry
             .plan(&batch)
             .map_err(OrderedPreparationError::Registry)?;
-        let prepared = FanoutAdmissionCoordinator::prepare(&plan, &batch, context.clone(), timer)
-            .await
-            .map_err(OrderedPreparationError::Capacity)?;
+        let prepared = FanoutAdmissionCoordinator::prepare_with_clock(
+            &plan,
+            &batch,
+            context.clone(),
+            timer,
+            clock.as_ref(),
+        )
+        .await
+        .map_err(OrderedPreparationError::Capacity)?;
         check(&context, clock.as_ref()).map_err(OrderedPreparationError::Context)?;
         Ok(Self {
             registry,

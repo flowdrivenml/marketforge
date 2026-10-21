@@ -236,6 +236,24 @@ impl DestinationQueue {
         context: AdmissionContext,
         timer: Option<&dyn DeadlineTimer>,
     ) -> AsyncCapacityAdmission {
+        self.reserve_async_with_clock(
+            batch,
+            context,
+            timer,
+            &crate::live::foundation::clock::SystemMonotonicClock,
+        )
+        .await
+    }
+
+    /// Use the admission owner's clock for the final precommit deadline fence.
+    /// The supplied timer must use the same monotonic timeline.
+    pub async fn reserve_async_with_clock(
+        &self,
+        batch: &EventBatch,
+        context: AdmissionContext,
+        timer: Option<&dyn DeadlineTimer>,
+        clock: &dyn crate::live::foundation::MonotonicClock,
+    ) -> AsyncCapacityAdmission {
         let events = batch.len();
 
         let bytes = match batch.retained_size_bytes() {
@@ -275,7 +293,7 @@ impl DestinationQueue {
         }
 
         if let Some(deadline) = context.deadline {
-            if std::time::Instant::now() >= deadline {
+            if clock.now() >= deadline {
                 return AsyncCapacityAdmission::Rejected(
                     AsyncQueueAdmissionError::DeadlineExceeded,
                 );

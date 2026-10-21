@@ -2199,13 +2199,15 @@ fn ordered_fanout_rechecks_deadline_inside_commitment_fence() {
     struct FenceClock {
         start: std::time::Instant,
         calls: std::sync::atomic::AtomicUsize,
+        armed: std::sync::atomic::AtomicBool,
     }
     impl MonotonicClock for FenceClock {
         fn now(&self) -> std::time::Instant {
-            let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            // Preparation checks twice, commit checks once before acquiring the
-            // registry fence. Expiry is observed only at the final fence check.
-            if call < 3 {
+            // Arm after preparation, independently of reservation count.
+            // Expire on the second commitment clock observation.
+            if !self.armed.load(std::sync::atomic::Ordering::SeqCst)
+                || self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0
+            {
                 self.start
             } else {
                 self.start + std::time::Duration::from_secs(1)
@@ -2223,6 +2225,11 @@ fn ordered_fanout_rechecks_deadline_inside_commitment_fence() {
     tracker.abort_prepared(obligations).unwrap();
     let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
     let start = std::time::Instant::now();
+    let clock = Arc::new(FenceClock {
+        start,
+        calls: std::sync::atomic::AtomicUsize::new(0),
+        armed: std::sync::atomic::AtomicBool::new(false),
+    });
     let pending = ready(OrderedFanout::prepare(
         &registry,
         &order,
@@ -2231,13 +2238,11 @@ fn ordered_fanout_rechecks_deadline_inside_commitment_fence() {
             CancellationToken::new(),
             Some(start + std::time::Duration::from_secs(1)),
         ),
-        Arc::new(FenceClock {
-            start,
-            calls: std::sync::atomic::AtomicUsize::new(0),
-        }),
+        clock.clone(),
         Some(&PendingTimer),
     ))
     .unwrap();
+    clock.armed.store(true, std::sync::atomic::Ordering::SeqCst);
     let mut recovery = TrackingRecovery::new(10).unwrap();
     assert!(matches!(
         pending.commit(&mut tracker, &mut recovery),
@@ -3390,5 +3395,142 @@ fn namespace_shutdown_waits_for_commit_and_abort_and_replaces_waiter() {
         empty
             .poll_shutdown(&mut Context::from_waker(Waker::noop()))
             .is_ready()
+    );
+}
+
+#[test]
+fn ordered_fanout_reservations_use_the_owners_monotonic_timeline() {
+    use marketforge_engine::live::{
+        foundation::clock::ManualClock,
+        routing::{
+            admission::{DeadlineFuture, DeadlineTimer},
+            cursor::StreamAdmissionOrder,
+            ordered::OrderedFanout,
+        },
+    };
+    struct PendingTimer;
+    impl DeadlineTimer for PendingTimer {
+        fn sleep_until(&self, _: std::time::Instant) -> DeadlineFuture {
+            Box::pin(std::future::pending())
+        }
+    }
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+    // Expired on the system timeline, still ahead on the owner's timeline.
+    let start = std::time::Instant::now() - std::time::Duration::from_secs(3600);
+    let clock = Arc::new(ManualClock::new(start, 0));
+    let deadline = start + std::time::Duration::from_secs(1);
+    let preparation = ready(OrderedFanout::prepare(
+        &registry,
+        &order,
+        batch.clone(),
+        AdmissionContext::new(CancellationToken::new(), Some(deadline)),
+        clock.clone(),
+        Some(&PendingTimer),
+    ))
+    .expect("every destination uses the injected clock");
+    assert!(order.snapshot().pending_last.is_some());
+    assert!(tracker.is_empty());
+    drop(preparation);
+    assert!(order.snapshot().pending_last.is_none());
+    assert_eq!(order.next(), Some(batch.first_cursor().clone()));
+    // The deadline fence works even before the timer is polled ready.
+    clock.advance(std::time::Duration::from_secs(1)).unwrap();
+    let queue = registry.peek_queue(DestinationId(1)).unwrap();
+    assert!(matches!(
+        ready(queue.reserve_async_with_clock(
+            &batch,
+            AdmissionContext::new(CancellationToken::new(), Some(deadline)),
+            Some(&PendingTimer),
+            clock.as_ref(),
+        )),
+        marketforge_engine::live::routing::queue::AsyncCapacityAdmission::Rejected(
+            marketforge_engine::live::routing::queue::AsyncQueueAdmissionError::DeadlineExceeded
+        )
+    ));
+    // Rollback and rejection release capacity in both real destination queues.
+    drop(
+        ready(OrderedFanout::prepare(
+            &registry,
+            &order,
+            batch,
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            clock,
+            None,
+        ))
+        .unwrap(),
+    );
+}
+
+#[test]
+fn fanout_deadline_between_destinations_releases_prior_reservations() {
+    use marketforge_engine::live::{
+        foundation::MonotonicClock,
+        routing::{
+            admission::{DeadlineFuture, DeadlineTimer},
+            queue::AsyncQueueAdmissionError,
+            router::FanoutPreparationError,
+        },
+    };
+    struct PendingTimer;
+    impl DeadlineTimer for PendingTimer {
+        fn sleep_until(&self, _: std::time::Instant) -> DeadlineFuture {
+            Box::pin(std::future::pending())
+        }
+    }
+    struct CrossingClock {
+        start: std::time::Instant,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+    impl MonotonicClock for CrossingClock {
+        fn now(&self) -> std::time::Instant {
+            let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.start + std::time::Duration::from_secs(call as u64)
+        }
+    }
+    let (registry, batch, mut tracker, plan, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let start = std::time::Instant::now();
+    let clock = CrossingClock {
+        start,
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    };
+    assert!(matches!(
+        ready(FanoutAdmissionCoordinator::prepare_with_clock(
+            &plan,
+            &batch,
+            AdmissionContext::new(
+                CancellationToken::new(),
+                Some(start + std::time::Duration::from_secs(1))
+            ),
+            Some(&PendingTimer),
+            &clock,
+        )),
+        Err(FanoutPreparationError::Admission {
+            destination: DestinationId(2),
+            reason: AsyncQueueAdmissionError::DeadlineExceeded,
+        })
+    ));
+    assert_eq!(clock.calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert!(tracker.is_empty());
+    for id in [1, 2] {
+        let queue = registry.peek_queue(DestinationId(id)).unwrap();
+        let snapshot = queue.observe();
+        assert_eq!(snapshot.capacity.occupied_events, 0);
+        assert_eq!(snapshot.capacity.occupied_bytes, 0);
+        assert_eq!(snapshot.capacity.waiting_operations, 0);
+        assert!(queue.try_dequeue().is_none());
+    }
+    drop(
+        ready(FanoutAdmissionCoordinator::prepare(
+            &plan,
+            &batch,
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            None,
+        ))
+        .unwrap(),
     );
 }

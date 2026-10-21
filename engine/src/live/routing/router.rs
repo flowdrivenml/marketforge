@@ -969,6 +969,24 @@ impl FanoutAdmissionCoordinator {
         context: AdmissionContext,
         timer: Option<&dyn DeadlineTimer>,
     ) -> Result<PreparedFanout, FanoutPreparationError> {
+        Self::prepare_with_clock(
+            plan,
+            batch,
+            context,
+            timer,
+            &crate::live::foundation::clock::SystemMonotonicClock,
+        )
+        .await
+    }
+
+    /// Preserve one monotonic timeline across every destination reservation.
+    pub async fn prepare_with_clock(
+        plan: &RoutingPlan,
+        batch: &EventBatch,
+        context: AdmissionContext,
+        timer: Option<&dyn DeadlineTimer>,
+        clock: &dyn crate::live::foundation::MonotonicClock,
+    ) -> Result<PreparedFanout, FanoutPreparationError> {
         if plan.required.is_empty() {
             return Err(FanoutPreparationError::NoRequiredDestinations);
         }
@@ -985,7 +1003,10 @@ impl FanoutAdmissionCoordinator {
                 .as_ref()
                 .ok_or(FanoutPreparationError::MissingQueue(id))?;
 
-            match queue.reserve_async(batch, context.clone(), timer).await {
+            match queue
+                .reserve_async_with_clock(batch, context.clone(), timer, clock)
+                .await
+            {
                 AsyncCapacityAdmission::Reserved(reservation) => {
                     prepared.push(PreparedDestination {
                         id,
