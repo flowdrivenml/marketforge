@@ -40,6 +40,25 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest implementation checkpoints `d1dd223` and `535fb81` connect producer-owned
+tracking repairs to the authoritative delivery owners and expose explicit
+obligation-based reconciliation after admission closes. TrackingIngressReporter
+performs nonwaiting handoff before calling runtime reporting policy, without
+holding the driver lock. Foreign reservations and ambiguous count mappings stay
+charged for intervention; successful transfers remain independently owned by
+recovery. Four new deterministic witnesses cover ownership, retries, contention,
+closure, unknown obligations and independent outstanding delivery obligations.
+Final verification exits 0: formatting, Live check, 135 library / 488 integration
+passes (2 opt-in ignored) / 1 doctest, and Live+historical check. Receipts:
+`engine/target/live-verification/20261021T064550Z-2/`.
+WP-10 remains Partial and next executable: complete outcome/recovery policy,
+runtime lifecycle and Control composition remain. Earlier WP-05/06/07/09 gates
+persist; WP-11–29 remain pending. Further autonomous work can safely continue.
+No SQL/exchange access, dependency/lockfile, ignored configuration, Python or
+historical execution edits. Pre-existing untracked launcher preserved; no push.
+See [WP-10 evidence](evidence/WP-10-implementation.md) for commands and limitations.
+
+
 Latest implementation checkpoint `c4639c0` prevents ingress reporting success
 from releasing records that still own unresolved tracking-repair reservations.
 Both unresolved-update and reservation-count-mismatch outcomes remain charged

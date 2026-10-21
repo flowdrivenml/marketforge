@@ -3150,3 +3150,69 @@ engine/tests/live/router.rs, STATUS.md and this ledger. No Python/historical
 execution, dependency/lockfile, ignored configuration or launcher edits. No push.
 Safe autonomous implementation can continue; no package accepted or project
 completion claimed.
+
+
+### 2026-10-21 — Producer tracking handoff and shutdown reconciliation
+
+Status: Partial. Initial HEAD `7607fff`, branch `codex/wp06-completion`;
+pre-existing untracked `scripts/run-autonomous-codex.sh` preserved. Inspected
+campaign policy, current Git history/status, decisions, WP-10/11 roadmap,
+architecture distribution/failure-delivery requirements and actual ingress,
+reporting, tracking-recovery and delivery consumers. WP-10 remains the next
+executable package. Implementation checkpoints: `d1dd223`, `535fb81`.
+
+Acceptance ledger:
+- DeliveryDriver::reconcile_ingress_tracking attempts each attached update once
+  through the existing tracker/recovery owners. Valid reservations transfer to
+  correlated or uncorrelated recovery; foreign reservations remain attached in
+  original order. Count mismatches are untouched and explicitly blocked. The
+  original detailed outcomes/errors remain available to reporting policy.
+- TrackingIngressReporter integrates that handoff with the charged consumer.
+  Driver contention is temporary failure, poison is permanent failure, and
+  foreign/ambiguous ownership requires intervention. Driver lock releases before
+  delegated policy executes; reporting retries cannot duplicate transferred work.
+- Closure fences new admission while permitting repair handoff and explicit
+  obligation-based uncorrelated reconciliation. Read-only inspection preserves
+  ownership; invalid correlation retains the result and charge. The existing
+  tracker validates destination, complete cursor range and progress.
+- Four new production-interface witnesses exercise mixed foreign/valid repair
+  reservations, pending acknowledgement retention, repeated handoff, mismatched
+  mapping, actual charged consumer/driver contention, closure, reporting retry,
+  delegated lock reentry, unknown-obligation preservation and successful explicit
+  correlation. Reporting drain and repair drain leave destination obligations
+  independent. Controlled fault fixtures supply real reservations; they do not
+  claim to reproduce a naturally occurring reservation ownership corruption.
+- No allocation of a competing recovery owner or unbounded queue. Work is bounded
+  by the retained outcome's destination count; ordered Vec removal/insertion may
+  be quadratic in that configured count. No performance claim is made.
+- Remaining: full concrete policy for all producer/delivery failures, runtime
+  supervision/lifecycle and Control wire composition. Explicit reconciliation
+  requires a known obligation; it does not invent missing correlation. This is
+  not a running daemon, durable reporting or completed WP-18 recovery coordinator.
+  Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. No acceptance claim.
+
+Verification (engine/ unless root stated):
+- cargo fmt --manifest-path engine/Cargo.toml --all (root): exit 0.
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite ingress_tracking_handoff: exit 0, 2 passed / 486 filtered.
+- Same command with tracking_ingress_reporter: exit 0, 1 passed / 488 filtered.
+- Same command with closed_driver_reconciles: exit 0, 1 passed / 489 filtered.
+- ./scripts/verify-live.sh full (root): final exit 0. Exact commands: cargo fmt
+  --all -- --check; cargo check --locked --offline --no-default-features --features
+  live --lib; cargo test with those flags --lib (135 passed), --test live_suite
+  (488 passed, 2 opt-in ignored), --doc (1 passed). Final receipts:
+  engine/target/live-verification/20261021T064550Z-2/.
+- Earlier full run before shutdown reconciliation also exited 0 (135/487/1),
+  receipts engine/target/live-verification/20261021T064338Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0 after final changes; existing dead-code warnings persist.
+- git diff --check (root): exit 0 before checkpoints. No compiler/test failures.
+  Exploratory searches using incorrect architecture filenames returned missing-file
+  errors; located the actual names with rg --files and read relevant sections.
+- SQL/performance opt-in and historical-only suites not run; historical zero-stream
+  baseline not rechecked. No database or exchange requests.
+
+Changed: engine/src/live/routing/{driver,ingress,ingress_reporting}.rs,
+engine/tests/live/router.rs, STATUS.md and this ledger. No Python/historical
+execution, dependencies, lockfile, ignored configuration or launcher changes.
+No push. Further autonomous work can safely continue within recorded gates.
