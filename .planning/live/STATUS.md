@@ -39,6 +39,26 @@
 
 ### Autonomous continuation — 2026-10-21
 
+
+Latest continuation connects WP-10 destination worker outcomes to authoritative
+obligations with `RetainedDelivery`. Binding validates descriptor, exact cursor
+range and actual admission response. Correlated completions use existing tracker
+stage rules; admission acceptance invents no progress. Payloads retain their
+original queue charges through errors, insufficient durability, full journals and
+terminal journal handoff until explicitly released/transferred by the supervisor.
+Three new negative/fault witnesses and the extended real ordered fan-out witness
+pass. Full Live verification exits 0: formatting, Live check, 132 library / 421
+integration (2 opt-in ignored) / 1 doctest; Live+historical check exits 0. Receipts:
+`engine/target/live-verification/20261021T043439Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort owner,
+automatic bounded outcome/obligation lookup and completion ingestion, recovery
+scheduling, runtime supervision, native metrics/control binding and whole-router
+shutdown remain. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Further
+autonomous WP-10 work is safe. No database/exchange access, Python/historical
+execution, dependency or ignored-config changes; no push. Pre-existing untracked
+launcher preserved. Checkpoint: local commit carrying this entry and WP-10 ledger.
+
+
 Latest continuation adds WP-10 deadline-driven destination worker shutdown:
 admission is fenced, each poll transfers at most one charged outcome, expiry
 retains pending calls/queued payloads and later drain resumes without resubmission.

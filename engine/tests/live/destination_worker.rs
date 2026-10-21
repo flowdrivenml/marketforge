@@ -353,9 +353,53 @@ fn destination_worker_registered_ordered_fanout_preserves_obligation_stages() {
         tracker.status(DeliveryObligationId(1)),
         Some(DeliveryStatus::Progress(DeliveryStage::Queued))
     );
-    drop(outcome);
+    use marketforge_engine::live::{
+        ports::routing::DestinationCompletion,
+        routing::{acknowledgement::FinalizationJournal, completion::RetainedDelivery},
+    };
+    let delivery = RetainedDelivery::bind(outcome, DeliveryObligationId(1), &tracker).unwrap();
+    delivery.apply_admission(&mut tracker).unwrap();
+    assert_eq!(
+        tracker.status(DeliveryObligationId(1)),
+        Some(DeliveryStatus::Progress(DeliveryStage::Queued))
+    );
+    let mut journal = FinalizationJournal::new(1).unwrap();
+    let (_, delivery) = delivery
+        .finalize_into(&mut tracker, &mut journal)
+        .unwrap_err();
+    assert!(journal.is_empty());
+    assert!(!worker.snapshot().is_drained());
+    delivery
+        .apply_completion(
+            &mut tracker,
+            &DestinationCompletion {
+                destination: DestinationId(7),
+                through: original.last_cursor().clone(),
+                status: DeliveryStatus::Progress(DeliveryStage::Committed),
+            },
+        )
+        .unwrap();
+    let (_, delivery) = delivery
+        .finalize_into(&mut tracker, &mut journal)
+        .unwrap_err();
+    assert!(journal.is_empty());
+    assert!(!worker.snapshot().is_drained());
+    delivery
+        .apply_completion(
+            &mut tracker,
+            &DestinationCompletion {
+                destination: DestinationId(7),
+                through: original.last_cursor().clone(),
+                status: DeliveryStatus::Progress(DeliveryStage::Durable),
+            },
+        )
+        .unwrap();
+    let finalized = delivery.finalize_into(&mut tracker, &mut journal).unwrap();
+    assert_eq!(journal.len(), 1);
+    assert!(tracker.is_empty());
+    assert!(!worker.snapshot().is_drained());
+    drop(finalized);
     assert!(worker.snapshot().is_drained());
-    assert_eq!(tracker.len(), 1); // runtime must still own completion responsibility
     assert!(recovery.snapshot().is_drained());
 }
 
@@ -760,4 +804,214 @@ fn destination_worker_shutdown_expiry_fences_new_adapter_calls() {
         Poll::Ready(WorkerShutdownStep::Drained)
     ));
     assert!(empty.snapshot().is_drained());
+}
+
+fn retained_fixture(
+    mode: u8,
+) -> (
+    DestinationWorker,
+    marketforge_engine::live::routing::worker::WorkerOutcome,
+    marketforge_engine::live::routing::acknowledgement::AcknowledgementTracker,
+) {
+    use marketforge_engine::live::{
+        model::delivery::{DeliveryStage, DeliveryStatus},
+        routing::acknowledgement::{
+            AcknowledgementTracker, DeliveryAcknowledgement, DeliveryCursorRange,
+            DeliveryObligation, DeliveryObligationId,
+        },
+    };
+    let (queue, adapter, mut worker) = fixture(mode);
+    let batch = batch(10);
+    let obligation = DeliveryObligation {
+        id: DeliveryObligationId(1),
+        destination: DestinationId(7),
+        range: DeliveryCursorRange::new(batch.first_cursor().clone(), batch.last_cursor().clone())
+            .unwrap(),
+        kind: DestinationKind::Recording,
+        policy: DeliveryPolicy::Durable,
+    };
+    let mut tracker = AcknowledgementTracker::new(2).unwrap();
+    tracker.register(obligation.clone()).unwrap();
+    tracker
+        .acknowledge(DeliveryAcknowledgement {
+            obligation: obligation.id,
+            destination: obligation.destination,
+            range: obligation.range,
+            status: DeliveryStatus::Progress(DeliveryStage::Queued),
+        })
+        .unwrap();
+    queue.try_enqueue(batch).unwrap();
+    adapter.release();
+    let waker = Waker::from(Arc::new(WakeCount::default()));
+    assert_eq!(
+        worker.poll_next(&mut Context::from_waker(&waker)),
+        Poll::Ready(WorkerStep::OutcomeReady)
+    );
+    let outcome = worker.take_outcome().unwrap();
+    worker.close();
+    (worker, outcome, tracker)
+}
+
+#[test]
+fn retained_delivery_rejects_bad_correlation_and_preserves_capacity() {
+    use marketforge_engine::live::{
+        model::delivery::{DeliveryStage, DeliveryStatus},
+        ports::routing::DestinationCompletion,
+        routing::{
+            acknowledgement::{AcknowledgementError, DeliveryObligationId},
+            completion::{CompletionError, RetainedDelivery},
+        },
+    };
+    let (worker, outcome, mut tracker) = retained_fixture(0);
+    let (error, outcome) =
+        RetainedDelivery::bind(outcome, DeliveryObligationId(999), &tracker).unwrap_err();
+    assert_eq!(
+        error,
+        CompletionError::Tracking(AcknowledgementError::UnknownObligation)
+    );
+    assert!(!worker.snapshot().is_drained());
+    let mut wrong = outcome.descriptor;
+    wrong.policy = DeliveryPolicy::Required;
+    let mut outcome = outcome;
+    outcome.descriptor = wrong;
+    let (error, mut outcome) =
+        RetainedDelivery::bind(outcome, DeliveryObligationId(1), &tracker).unwrap_err();
+    assert_eq!(error, CompletionError::DescriptorMismatch);
+    outcome.descriptor.policy = DeliveryPolicy::Durable;
+    let delivery = RetainedDelivery::bind(outcome, DeliveryObligationId(1), &tracker).unwrap();
+    let mut completion = DestinationCompletion {
+        destination: DestinationId(999),
+        through: delivery.payload().batch().last_cursor().clone(),
+        status: DeliveryStatus::Progress(DeliveryStage::Durable),
+    };
+    assert_eq!(
+        delivery.apply_completion(&mut tracker, &completion),
+        Err(CompletionError::DestinationMismatch)
+    );
+    completion.destination = DestinationId(7);
+    completion.through.offset -= 1;
+    assert_eq!(
+        delivery.apply_completion(&mut tracker, &completion),
+        Err(CompletionError::CursorMismatch)
+    );
+    completion.through.offset += 1;
+    completion.status = DeliveryStatus::Pending;
+    assert!(
+        delivery
+            .apply_completion(&mut tracker, &completion)
+            .is_err()
+    );
+    assert_eq!(
+        tracker.status(DeliveryObligationId(1)),
+        Some(DeliveryStatus::Progress(DeliveryStage::Queued))
+    );
+    completion.status = DeliveryStatus::Progress(DeliveryStage::Committed);
+    delivery
+        .apply_completion(&mut tracker, &completion)
+        .unwrap();
+    completion.status = DeliveryStatus::Progress(DeliveryStage::Delivered);
+    assert!(
+        delivery
+            .apply_completion(&mut tracker, &completion)
+            .is_err()
+    );
+    assert!(!worker.snapshot().is_drained());
+    // Ownership can move to a supervisor without changing any tracker state.
+    let moved = delivery;
+    assert_eq!(moved.obligation().id, DeliveryObligationId(1));
+    assert_eq!(
+        tracker.status(DeliveryObligationId(1)),
+        Some(DeliveryStatus::Progress(DeliveryStage::Committed))
+    );
+}
+
+#[test]
+fn retained_delivery_rejection_and_full_journal_keep_recovery_payload() {
+    use marketforge_engine::live::{
+        model::delivery::DeliveryStatus,
+        ports::routing::DestinationCompletion,
+        routing::{
+            acknowledgement::{DeliveryObligationId, FinalizationJournal, ObligationFinalization},
+            completion::{CompletionError, RetainedDelivery},
+        },
+    };
+    let (worker, outcome, mut tracker) = retained_fixture(1);
+    let delivery = RetainedDelivery::bind(outcome, DeliveryObligationId(1), &tracker).unwrap();
+    delivery.apply_admission(&mut tracker).unwrap();
+    assert_eq!(
+        tracker.status(DeliveryObligationId(1)),
+        Some(DeliveryStatus::Failed(DeliveryFailure::Unavailable))
+    );
+    assert_eq!(
+        delivery.apply_completion(
+            &mut tracker,
+            &DestinationCompletion {
+                destination: DestinationId(7),
+                through: delivery.payload().batch().last_cursor().clone(),
+                status: DeliveryStatus::Failed(DeliveryFailure::Unavailable),
+            }
+        ),
+        Err(CompletionError::AdmissionRejected)
+    );
+    let mut journal = FinalizationJournal::new(1).unwrap();
+    // Fill the real journal using a different obligation, not a fake capacity flag.
+    let mut other = delivery.obligation().clone();
+    other.id = DeliveryObligationId(2);
+    tracker.register(other.clone()).unwrap();
+    tracker
+        .acknowledge(
+            marketforge_engine::live::routing::acknowledgement::DeliveryAcknowledgement {
+                obligation: other.id,
+                destination: other.destination,
+                range: other.range,
+                status: DeliveryStatus::Failed(DeliveryFailure::Rejected),
+            },
+        )
+        .unwrap();
+    tracker.finalize_into(other.id, &mut journal).unwrap();
+    let (_, delivery) = delivery
+        .finalize_into(&mut tracker, &mut journal)
+        .unwrap_err();
+    assert_eq!(tracker.len(), 1);
+    assert!(!worker.snapshot().is_drained());
+    // Supervisor can hand off to another bounded terminal journal without resubmission.
+    let mut available = FinalizationJournal::new(1).unwrap();
+    let finalized = delivery
+        .finalize_into(&mut tracker, &mut available)
+        .unwrap();
+    assert!(matches!(
+        finalized.outcome,
+        ObligationFinalization::Failed {
+            reason: DeliveryFailure::Unavailable,
+            ..
+        }
+    ));
+    assert!(tracker.is_empty());
+    assert!(!worker.snapshot().is_drained());
+    assert_eq!(finalized.payload.batch().first_cursor().offset, 10);
+    drop(finalized);
+    assert!(worker.snapshot().is_drained());
+}
+
+#[test]
+fn retained_delivery_does_not_trust_forged_valid_admission_label() {
+    use marketforge_engine::live::routing::{
+        acknowledgement::DeliveryObligationId,
+        completion::{CompletionError, RetainedDelivery},
+    };
+    for mode in [2, 3, 4] {
+        let (worker, mut outcome, tracker) = retained_fixture(mode);
+        let response = match outcome.admission {
+            WorkerAdmissionResult::InvalidResponse(response) => response,
+            _ => panic!("fixture must produce invalid correlation"),
+        };
+        outcome.admission = WorkerAdmissionResult::Valid(response);
+        let (error, outcome) =
+            RetainedDelivery::bind(outcome, DeliveryObligationId(1), &tracker).unwrap_err();
+        assert_eq!(error, CompletionError::InvalidAdmission);
+        assert!(!worker.snapshot().is_drained());
+        drop(outcome);
+        assert!(worker.snapshot().is_drained());
+        assert_eq!(tracker.len(), 1);
+    }
 }

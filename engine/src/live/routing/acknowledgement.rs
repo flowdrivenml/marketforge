@@ -1066,6 +1066,11 @@ impl AcknowledgementTracker {
             .get(&obligation)
             .map(|tracked| tracked.status)
     }
+
+    /// Immutable correlation metadata from the authoritative registration.
+    pub fn obligation(&self, id: DeliveryObligationId) -> Option<&DeliveryObligation> {
+        self.obligations.get(&id).map(|tracked| &tracked.obligation)
+    }
     pub fn len(&self) -> usize {
         self.obligations.len()
     }

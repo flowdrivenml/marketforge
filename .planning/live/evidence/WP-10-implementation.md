@@ -905,3 +905,64 @@ Remaining: production EventRouterPort owner, completion/recovery correlation and
 payload retention, runtime supervision, native metrics/control integration and
 whole-router deadline shutdown composition. Earlier WP-05/06/07/09 gates remain;
 WP-11–29 pending. No acceptance claimed. Safe autonomous work can continue on WP-10.
+
+
+## Continuation — charged payload completion and journal handoff (2026-10-21)
+
+Status: Partial. Baseline `7107948`, branch `codex/wp06-completion`; only initial
+untracked `scripts/run-autonomous-codex.sh` preserved. Inspected instructions,
+autonomous plan, decisions, current status/evidence, WP-10/11 roadmap and actual
+ordered/worker/tracker/journal consumers. Relevant Document 08 sections 2 and 17
+require independent completion semantics and distinct queue/delivery guarantees.
+Next executable package remains WP-10; completed components were retained.
+
+Implemented `routing::completion::RetainedDelivery`, owning the original charged
+worker payload and frozen obligation metadata. Binding checks the authoritative
+tracker registration's destination/kind/policy and exact batch cursor range, then
+revalidates the admission response even if a caller forges the public Valid label.
+Failure returns the entire WorkerOutcome. Immutable tracker metadata access avoids
+a second registration owner. Accepted admission invents no delivery stage; actual
+rejection can be applied as failure while retaining recovery payload. Separately
+observed completions must match destination and full through cursor and pass the
+existing authoritative progress rules. Every operation verifies the registration
+still matches. Terminal handoff uses the existing atomic tracker-to-journal path;
+incomplete guarantees/full journals return the entire owner. Successful handoff
+returns the charged payload for explicit release or recovery transfer. There is
+no hidden collection, retry, task, replacement cursor or changed durability policy.
+
+Consumer evidence: extended the real registered ordered fan-out/worker witness
+through queued admission, insufficient queued/committed durability, durable
+completion and journal transfer. Three new deterministic tests cover unknown and
+wrong-descriptor binding, wrong destination/partial cursor completion, progress
+regression, invalid admission responses relabeled Valid, rejection handling,
+completion refusal after rejection, full journal preservation and supervisor
+handoff without adapter resubmission. Worker drain stays false until the returned
+terminal payload is released, while tracker/journal reporting ownership remains
+separate. Actual queue, adapter, tracker and journal implementations are exercised.
+
+Verification (all final commands exit 0):
+- engine/: `cargo test --locked --offline --no-default-features --features live
+  --test live_suite retained_delivery`: 3 passed, 420 filtered out.
+- Root `./scripts/verify-live.sh full`: `cargo fmt --all -- --check`;
+  `cargo check --locked --offline --no-default-features --features live --lib`;
+  same flags with `cargo test ... --lib` (132 passed), `--test live_suite`
+  (421 passed, 2 opt-in ignored), `--doc` (1 passed). Final receipts:
+  `engine/target/live-verification/20261021T043439Z-2/`.
+- engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; log `engine/target/wp10-completion-combined.log`.
+- Root `git diff --check`: exit 0.
+Existing unused recovery-reservation warning retained. Opt-in SQL/performance and
+historical baseline execution not rerun; no new claims for those gates.
+
+Changed: `engine/src/live/routing/completion.rs`, `acknowledgement.rs`, `mod.rs`,
+`engine/tests/live/destination_worker.rs`, STATUS.md and this ledger. Checkpoint:
+local commit carrying this entry. No SQL/exchange traffic, Python/historical
+execution changes, dependencies/lockfile or ignored configuration changes; no push.
+
+Remaining acceptance ledger: production EventRouterPort owner, automatic bounded
+outcome/obligation lookup and completion ingestion, recovery scheduling, runtime
+supervision, native metrics/control integration and whole-router deadline shutdown.
+This explicit single-payload owner does not supply a runtime supervisor or complete
+WP-10 acceptance. The caller still supplies an existing obligation ID and authentic
+destination observations. Earlier WP-05/06/07/09 gates persist; WP-11–29 pending.
+Further autonomous WP-10 implementation can safely continue. No acceptance claimed.

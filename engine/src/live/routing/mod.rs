@@ -3,6 +3,7 @@
 // Document 17 scaffolding: declarations only; implementations are not complete.
 pub mod acknowledgement;
 pub mod admission;
+pub mod completion;
 pub mod cursor;
 pub mod destination;
 pub mod namespaces;
