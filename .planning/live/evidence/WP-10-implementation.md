@@ -2245,3 +2245,50 @@ or push. Documentation checkpoint is the commit carrying this entry.
 Remaining: earlier WP-05/06/07/09 gates, WP-10 Partial, WP-11–29 pending.
 Next authorized package: WP-10 completion. Further autonomous work can safely
 continue; the approved v1 implementation and release are not complete.
+
+
+## Continuation — commitment schedules delivery coordination (2026-10-21)
+
+Status: Partial. Next executable package remains WP-10. Initial branch
+`codex/wp06-completion`, HEAD `3934590`, only pre-existing untracked
+`scripts/run-autonomous-codex.sh` (preserved). Reviewed campaign instructions,
+current status/evidence, decisions, roadmap WP-10/11 and ordered admission,
+delivery driver, registry and consumer witnesses. Existing implementation retained.
+
+Implementation checkpoint: `baf09d3`.
+
+Acceptance ledger:
+- Implemented: DeliveryDriver::commit_ordered consumes and wakes the latest
+  drive waiter after non-rejected tracked commitment. This schedules newly owned
+  work even if tracking repair rather than an idle queue needs attention.
+- Rejections preserve the waiter and do not schedule speculative work. Closed
+  driver behavior and returned preparation ownership remain unchanged.
+- Extended real production-path witness parks the driver, prepares then cancels
+  an admission, verifies no wake/no obligations, then commits the original cursor
+  successfully and verifies exactly one coordinator notification. Existing
+  delivery/completion/payload-release assertions continue to pass.
+- Remaining: production EventRouterPort owner composition, runtime/reporter
+  integration, scheduled instrumentation and full Control binding. No daemon or
+  package acceptance is claimed. Earlier WP-05/06/07/09 gates remain.
+
+Verification (engine/ unless root specified):
+- cargo test --locked --offline --no-default-features --features live --test
+  live_suite registered_driver_advances_tracked_delivery_without_inventing_completion:
+  exit 0, 1 passed (initial successful-admission witness).
+- Root ./scripts/verify-live.sh full after adding rejection assertions: exit 0.
+  Commands: cargo fmt --all -- --check; cargo check --locked --offline
+  --no-default-features --features live --lib; cargo test with identical flags
+  --lib (135 passed), --test live_suite (458 passed, 2 opt-in ignored), --doc
+  (1 passed). Receipts: engine/target/live-verification/20261021T054320Z-2/.
+- cargo check --locked --offline --no-default-features --features live,historical:
+  exit 0; existing dead-code warnings remain.
+- Root git diff --check: exit 0 before implementation checkpoint.
+- No failing behavioral commands. SQL/performance opt-in and historical-only
+  suites not run; historical zero-stream baseline not rechecked. No SQL or
+  exchange traffic; no financial/wire/ownership contract changes.
+
+Changed: engine/src/live/routing/driver.rs, engine/tests/live/router.rs,
+STATUS.md and this evidence ledger. No Python/historical execution, dependency,
+lockfile, ignored configuration or system edits. No push. Documentation checkpoint
+is the commit carrying this entry. WP-10 remains Partial; WP-11–29 pending.
+Further autonomous implementation can safely continue with WP-10 composition.

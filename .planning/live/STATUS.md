@@ -39,6 +39,23 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest implementation checkpoint `baf09d3` connects ordered commitment to the
+parked delivery coordinator. Accepted responsibility wakes the latest drive
+waiter once, including tracking-recovery work that cannot rely on queue wakeups.
+Precommit rejection preserves the waiter, frontier and empty obligation set.
+The existing production-path integration witness now covers cancellation followed
+by successful commitment without rearming the coordinator.
+Verification exits 0: formatting, Live check, 135 library / 458 integration
+(2 opt-in ignored) / 1 doctest, Live+historical check. Receipts:
+`engine/target/live-verification/20261021T054320Z-2/`.
+WP-10 remains Partial and next executable: production EventRouterPort composition,
+concrete runtime/reporter integration and full instrumentation/Control binding.
+Earlier WP-05/06/07/09 gates persist; WP-11–29 pending. Further autonomous work is
+safe. No SQL/exchange access, push, Python/historical execution, dependency or
+ignored configuration edits. Pre-existing untracked launcher preserved.
+See WP-10 evidence; no acceptance or project completion claimed.
+
+
 Latest implementation checkpoint `8f348f4` fixes mixed monotonic timelines in
 ordered fan-out: the admission owner's clock now reaches each queue reservation's
 final deadline fence. Existing entry points retain system-clock behavior. Two
