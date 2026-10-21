@@ -1574,8 +1574,8 @@ corrected its match. No final failing verification. SQL/performance opt-ins and
 historical-only test execution not rerun; no new claim on those gates/baselines.
 
 Changed: `engine/src/live/routing/{router,shutdown,snapshot}.rs`,
-`engine/tests/live/router.rs`, STATUS.md and this ledger. Checkpoint: local commit
-carrying this continuation. No push, dependency/lockfile, ignored config,
+`engine/tests/live/router.rs`, STATUS.md and this ledger. Checkpoint: `b658d5e`
+(bounded retired-destination ownership and shutdown drain). No push, dependency/lockfile, ignored config,
 Python/historical execution changes or production data access.
 
 Remaining acceptance ledger: production EventRouterPort ordered composition,

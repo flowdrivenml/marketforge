@@ -50,7 +50,7 @@ Three new deterministic witnesses and the updated shutdown witness pass.
 Final full Live verification exits 0: 134 library / 442 integration (2 opt-in ignored)
 / 1 doctest; formatting, Live check and combined Live+historical check exit 0.
 Receipts: `engine/target/live-verification/20261021T050714Z-2/`.
-Checkpoint: local commit carrying this entry and the WP-10 ledger continuation.
+Checkpoint: `b658d5e` (bounded retired-destination ownership and shutdown drain).
 WP-10 remains Partial and next executable: production EventRouterPort composition,
 runtime scheduling/retry/retirement reaping and native metrics/control binding.
 WP-05/06/07/09 open gates persist; WP-11–29 pending. Further autonomous work is safe.
