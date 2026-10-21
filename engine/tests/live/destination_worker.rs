@@ -1503,7 +1503,7 @@ fn delivery_driver_recovers_tracking_before_terminal_handoff_and_requires_report
         driver.drive(&mut cx).delivery,
         Poll::Ready(SupervisionStep::Retained(_))
     ));
-    let (tracker, recovery) = driver.admission_owners();
+    let (tracker, recovery) = driver.admission_owners().unwrap();
     let obligation = tracker.obligation(DeliveryObligationId(1)).unwrap().clone();
     recovery
         .retain(
@@ -1523,6 +1523,8 @@ fn delivery_driver_recovers_tracking_before_terminal_handoff_and_requires_report
         driver.drive_shutdown(&mut cx, &mut expired),
         DeliveryShutdown::DeadlineReached
     ));
+    assert!(driver.is_closed());
+    assert!(driver.admission_owners().is_err());
     assert_eq!(driver.snapshot().recovery, before.recovery);
     assert_eq!(driver.snapshot().retained_deliveries, 1);
     let mut later: DeadlineFuture = Box::pin(std::future::pending());
@@ -1557,6 +1559,7 @@ fn delivery_driver_recovers_tracking_before_terminal_handoff_and_requires_report
         driver.drive_shutdown(&mut cx, &mut expired),
         DeliveryShutdown::Drained
     ));
+    assert!(driver.admission_owners().is_err());
     assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
 }
 
@@ -1644,7 +1647,7 @@ fn delivery_driver_shutdown_retains_empty_preparation_and_in_flight_recovery_cap
         TrackingRecovery::new(1).unwrap(),
         FinalizationJournal::new(1).unwrap(),
     );
-    let (tracker, recovery) = driver.admission_owners();
+    let (tracker, recovery) = driver.admission_owners().unwrap();
     let prepared = tracker.prepare_obligations(vec![]).unwrap();
     let reservation = recovery.reserve().unwrap();
     let waker = Waker::from(Arc::new(WakeCount::default()));
@@ -1657,11 +1660,13 @@ fn delivery_driver_shutdown_retains_empty_preparation_and_in_flight_recovery_cap
     assert_eq!(step.recovery.attempted, 0);
     assert_eq!(driver.snapshot().prepared_transactions, 1);
     assert_eq!(driver.snapshot().recovery.reserved_updates, 1);
-    driver
-        .admission_owners()
-        .0
-        .abort_prepared(prepared)
-        .unwrap();
+    assert!(driver.is_closed());
+    assert!(matches!(
+        driver.admission_owners(),
+        Err(marketforge_engine::live::routing::driver::DeliveryAdmissionError::Closed)
+    ));
+    driver.close(); // repeated closure cannot reopen admission
+    driver.abort_prepared(prepared).unwrap();
     let mut expired: DeadlineFuture = Box::pin(std::future::ready(()));
     assert!(matches!(
         driver.drive_shutdown(&mut cx, &mut expired),
@@ -1673,4 +1678,46 @@ fn delivery_driver_shutdown_retains_empty_preparation_and_in_flight_recovery_cap
         driver.drive_shutdown(&mut cx, &mut later),
         DeliveryShutdown::Drained
     ));
+}
+
+#[test]
+fn delivery_driver_explicit_close_fences_admission_even_when_already_drained() {
+    use marketforge_engine::live::routing::{
+        acknowledgement::{AcknowledgementTracker, FinalizationJournal},
+        admission::DeadlineFuture,
+        driver::{DeliveryAdmissionError, DeliveryDriver, DeliveryShutdown},
+        supervisor::DeliverySupervisor,
+        tracking_recovery::TrackingRecovery,
+        worker::DestinationWorkers,
+    };
+    let limit = std::num::NonZeroUsize::new(1).unwrap();
+    let mut driver = DeliveryDriver::new(
+        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+        AcknowledgementTracker::new(1).unwrap(),
+        TrackingRecovery::new(1).unwrap(),
+        FinalizationJournal::new(1).unwrap(),
+    );
+    assert!(!driver.is_closed());
+    assert!(driver.admission_owners().is_ok());
+    driver.close();
+    driver.close();
+    assert!(driver.snapshot().is_drained());
+    assert!(matches!(
+        driver.admission_owners(),
+        Err(DeliveryAdmissionError::Closed)
+    ));
+    let waker = Waker::from(Arc::new(WakeCount::default()));
+    let mut cx = Context::from_waker(&waker);
+    let mut expired: DeadlineFuture = Box::pin(std::future::ready(()));
+    assert!(matches!(
+        driver.drive_shutdown(&mut cx, &mut expired),
+        DeliveryShutdown::Drained
+    ));
+    assert!(driver.is_closed());
+    assert!(matches!(
+        driver.admission_owners(),
+        Err(DeliveryAdmissionError::Closed)
+    ));
+    assert_eq!(driver.snapshot().tracked_obligations, 0);
+    assert_eq!(driver.snapshot().prepared_transactions, 0);
 }

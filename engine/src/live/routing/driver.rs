@@ -2,7 +2,10 @@
 //! Admission and reporting borrow these same owners; this is not a second
 //! tracker, an executor, or a crash-durable recovery service.
 use super::{
-    acknowledgement::{AcknowledgementTracker, DeliveryObligationId, FinalizationJournal},
+    acknowledgement::{
+        AcknowledgementTracker, DeliveryObligationId, FinalizationJournal, PreparedObligations,
+        PreparedObligationsAbortError,
+    },
     admission::DeadlineFuture,
     completion::{PendingDeliveryError, RetainedDelivery},
     supervisor::{DeliverySupervisionSnapshot, DeliverySupervisor, SupervisionStep},
@@ -29,7 +32,13 @@ pub enum DeliveryShutdown {
     DeadlineReached,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeliveryAdmissionError {
+    Closed,
+}
+
 pub struct DeliveryDriver {
+    closed: bool,
     supervisor: DeliverySupervisor,
     tracker: AcknowledgementTracker,
     recovery: TrackingRecovery,
@@ -45,6 +54,7 @@ impl DeliveryDriver {
         journal: FinalizationJournal,
     ) -> Self {
         Self {
+            closed: false,
             supervisor,
             tracker,
             recovery,
@@ -54,8 +64,26 @@ impl DeliveryDriver {
 
     /// Exclusive admission access to the same tracker and recovery capacity
     /// consumed by worker supervision. Never hold this borrow across external IO.
-    pub fn admission_owners(&mut self) -> (&mut AcknowledgementTracker, &mut TrackingRecovery) {
-        (&mut self.tracker, &mut self.recovery)
+    pub fn admission_owners(
+        &mut self,
+    ) -> Result<(&mut AcknowledgementTracker, &mut TrackingRecovery), DeliveryAdmissionError> {
+        if self.closed {
+            return Err(DeliveryAdmissionError::Closed);
+        }
+        Ok((&mut self.tracker, &mut self.recovery))
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.closed
+    }
+
+    /// Roll back an existing preparation even after admission closes. This
+    /// deliberately grants no access for creating or committing new obligations.
+    pub fn abort_prepared(
+        &mut self,
+        prepared: PreparedObligations,
+    ) -> Result<(), PreparedObligationsAbortError> {
+        self.tracker.abort_prepared(prepared)
     }
 
     /// Reporting must explicitly acknowledge or escalate actual terminal records.
@@ -91,6 +119,7 @@ impl DeliveryDriver {
     }
 
     pub fn close(&mut self) {
+        self.closed = true;
         self.supervisor.close();
     }
 

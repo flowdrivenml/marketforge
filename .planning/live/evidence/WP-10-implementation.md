@@ -1320,3 +1320,55 @@ poll. Its mutable admission access is internal composition, not a public control
 API or an admission-closure fence. Earlier WP-05/06/07/09 gates persist; WP-11–29
 remain pending. Further autonomous WP-10 work can safely continue. No package
 acceptance or whole-project completion claimed.
+
+
+## Continuation — delivery admission shutdown fence (2026-10-21)
+
+Status: Partial. Starting checkpoint `fda3323`, branch `codex/wp06-completion`.
+Only pre-existing untracked `scripts/run-autonomous-codex.sh`; preserved. Read
+AGENTS.md, autonomous plan, decision register, status, WP-10/11 roadmap entries,
+Document 08 routing removal/shutdown boundaries and current delivery-driver,
+ordered admission, namespace, supervisor and consumer test code. WP-10 remains
+the next executable package; no completed implementation restarted.
+
+Implemented a monotonic driver admission fence. `close` and `drive_shutdown`
+reject subsequent admission-owner borrows with `DeliveryAdmissionError::Closed`.
+Mutable borrows prevent close racing an existing borrow. Explicit `abort_prepared`
+permits cleanup of already-owned preparations after closure without exposing the
+tracker for new admission. Recovery, completion, reporting and resumed draining
+continue through existing restricted operations. No external contract or financial
+semantics changed; the driver has no EventRouterPort implementation yet.
+
+Production witnesses cover open admission, repeated explicit close, already-empty
+drain, deadline expiry with retained work, refusal after eventual successful drain,
+and post-close abort allowing full drain while recovery reservations remain charged.
+One new deterministic test and strengthened existing tests use real owners and
+controlled futures, without sleeps or external services.
+
+Verification:
+- Root `./scripts/verify-live.sh full`: exit 0. Exact commands: `cargo fmt --all
+  -- --check`; `cargo check --locked --offline --no-default-features --features live
+  --lib`; same Cargo feature flags with `cargo test --lib` (133 passed), `--test
+  live_suite` (435 passed, 2 opt-in ignored), `--doc` (1 passed). Receipts:
+  `engine/target/live-verification/20261021T045336Z-3/`. Preliminary full run also
+  passed before final witness (434 integration), receipts
+  `engine/target/live-verification/20261021T045312Z-7/`.
+- From engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; `engine/target/wp10-admission-fence-combined.log`.
+- Root `git diff --check`: exit 0. Existing dead-code warnings remain.
+  Opt-in SQL/performance tests and historical test execution not rerun; no claim
+  for those gates. No database access was needed.
+
+Changed: `engine/src/live/routing/driver.rs`,
+`engine/tests/live/destination_worker.rs`, STATUS.md and this evidence ledger.
+Checkpoint: local commit carrying this entry. No push, SQL/exchange requests,
+Python/historical execution code, dependencies/lockfile or ignored config edits.
+
+Remaining acceptance ledger: production EventRouterPort owner and ordered
+admission integration, automatic runtime wakeup/retry scheduling, native
+metrics/control binding and whole-router admission namespace closure. This fence
+only covers the delivery driver's admission access; it does not close independently
+owned namespaces, budgets or registry. It does not certify a complete router or
+external durability. Earlier WP-05/06/07/09 gates remain; WP-11–29 pending. Safe
+independent autonomous WP-10 implementation can continue. No acceptance or overall
+completion claimed.
