@@ -14,7 +14,7 @@
 | WP-07 | Freeze service ports, management and observation surfaces | Contract implementation review pending; C12 adapter decision OPEN | [Contract implementation and witnesses](evidence/wp07-contracts.md) |
 | WP-08 | Implement foundations and real native observability | ReadyForReview | [Implementation ledger](evidence/WP-08-implementation.md) |
 | WP-09 | Implement the Configuration System | Partial — candidates/DAG/journal verified; semantic compiler and service pending | [Implementation ledger](evidence/WP-09-implementation.md) |
-| WP-10 | Implement the canonical event router | ReadyForReview — router contracts and composed ownership verified; external integration owners explicit | [Implementation ledger](evidence/WP-10-implementation.md) |
+| WP-10 | Implement the canonical event router | ReadyForReview — Not Accepted | [Implementation ledger](evidence/WP-10-implementation.md) |
 | WP-11 | Implement source registry and dependency ownership | Pending | — |
 | WP-12 | Implement exchange-profile and format compilation | Pending | — |
 | WP-13 | Implement WebSocket Connection Manager | Pending | — |
@@ -36,6 +36,44 @@
 | WP-29 | Hardening, reproducibility and release | Pending | — |
 
 ## Current Development Position
+
+
+### Cross-package responsibility reconciliation — 2026-10-21
+
+WP-10 has one current disposition: **ReadyForReview — Not Accepted**, supported
+by audit checkpoint `d631b4d` and
+[WP-10-implementation.md](evidence/WP-10-implementation.md). This documentation
+reconciliation neither reruns that audit nor changes its acceptance status.
+The [cross-package matrix](evidence/wp10-cross-package-reconciliation.md) traces
+all seven external boundaries to their existing Document 17 owners and exact
+interfaces. The action ledger, including required behavior, reuse, remaining work,
+acceptance tests, prerequisites and completion boundaries, is in
+[AUTONOMOUS_PLAN.md — WP-10 consumer integration obligations](AUTONOMOUS_PLAN.md#wp-10-consumer-integration-obligations).
+
+| Owning package | Outstanding consumer obligation (all unverified) | Completion evidence still required |
+|---|---|---|
+| WP-09 (Partial) | Complete semantic acceptance/persistence and impact plans; hand committed revisions to the apply port, never mutate the router from a candidate | Invalid/failed persistence has zero runtime effects, correct revision conflicts and affected boundaries; actual application belongs to WP-24 |
+| WP-18 (Pending) | Bind typed failures/charged ownership to incident and recovery policy; preserve original tracker on return | Real router-to-recovery transfer/retry/escalation and partial-coverage tests; actual backend repair verified when its owner exists |
+| WP-20 (Pending) | Implement retention destination, RAM/Parquet/protection/replay and separately evidenced completion stages | Router-to-real-retention persistence, file/manifest faults, protected replay/restart and deadline accounting |
+| WP-21 (Pending) | Implement recorder destination, real transactions, ambiguous outcomes, coverage and retention catch-up | Router-to-isolated-real-PostgreSQL tests; no Committed/Durable inflation; disabled recording creates no connection |
+| WP-22 (Pending) | Implement publisher/session queues, local socket transport and replay/book handoff behind the destination port | Router-to-real-local-socket slow/disconnected peer isolation, ordering, generation fencing, handoff and finite shutdown |
+| WP-24 (Pending) | Bind the existing router, actual adapters/report consumers/tasks, committed destination reconciliation and native observations | Headless composed service, stale-revision/owner failures, independent demand, disabled services and truthful unfinished-work shutdown reports |
+| WP-25 (Pending) | Bind approved authorized Control commands and fresh projections to actual owners; preserve native receipt/token semantics | Real server/client authorization, correlation/idempotency, stale/foreign receipt, snapshot freshness and slow-client isolation tests |
+
+These are pending integrations, not missing router-owned implementation and not
+new completed packages. The approved sequence is unchanged; early components use
+frozen port witnesses, real adjacent owners are composed as available, WP-24
+finishes daemon wiring and WP-25 adds its transport. No dependency on a final
+Control server is imposed on earlier owners. C01/C06/C12 and other recorded
+prerequisite gates are retained, not waived. The known WP-27 title inconsistency
+is recorded in the report with DEC-032 controlling; it is outside these seven
+boundaries and no exporter work is authorized here.
+
+Documentation-only validation: ownership/source/interface/test-symbol references,
+links, a scoped dependency-cycle check and diff/scope checks. No new Rust/SQL/
+exchange tests or implementation verification is claimed. Pre-existing .gitignore
+and untracked artifacts are preserved. One local planning checkpoint, no push.
+**Stop after this reconciliation. No implementation package is started.**
 
 
 ### WP-10 final contract audit — 2026-10-21
@@ -66,8 +104,8 @@ The earlier WP-05/06/07/09 statuses are unchanged. User retains acceptance.
 One coherent local audit checkpoint; no push, database/exchange access, Python or
 historical execution edits, dependencies/lockfile or ignored configuration changes.
 Pre-existing .gitignore changes and untracked artifacts are preserved/excluded.
-**Current task stops here. No next package is authorized by this audit request;
-WP-11 was not started.**
+That audit ended at checkpoint `d631b4d`; WP-11 was not started. The current
+reconciliation assignment and stopping point are stated above.
 
 ## Previous campaign notes (historical; superseded by the final audit above)
 
@@ -1429,9 +1467,9 @@ Evidence: [contract ledger, constructor table, tests and limitations](evidence/w
 [exact final commands/logs](evidence/wp06-c06-wp07-verification/results-final.json),
 [exact modified-file manifest](evidence/wp06-c06-wp07-verification/files.json).
 
-### WP-10 — Canonical Event Router
+### WP-10 — Canonical Event Router (superseded historical snapshot)
 
-Status: In Progress — Early Implementation
+Status at that checkpoint (superseded): In Progress — Early Implementation
 
 WP-10 implementation began ahead of the formal roadmap sequence.
 
@@ -1486,7 +1524,7 @@ Passing unit and integration tests demonstrates that tested components behave as
 
 It does not establish that the complete router is operational or production-ready.
 
-## Implementation Architecture
+## Implementation Architecture (historical; superseded where the WP-10 audit differs)
 
 ### Existing Routing Components
 
@@ -1551,7 +1589,7 @@ TrackingRecovery and FinalizationJournal currently provide in-process tracking a
 
 They must not be described as crash-durable without a verified persistence implementation.
 
-## Implementation Workflow
+## Implementation Workflow (historical; current policy is AUTONOMOUS_PLAN.md)
 
 ### Development Responsibilities
 

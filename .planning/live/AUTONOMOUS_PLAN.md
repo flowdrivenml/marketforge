@@ -1,10 +1,15 @@
 # MarketForge Live — Autonomous Implementation Plan
 
-**Status:** Active execution policy
+**Status:** Standing execution policy; current assignment is planning reconciliation only
 **Execution model:** One Codex agent, sequential work packages
 **Project:** MarketForge Live
 **Implementation language:** Rust
 **Target:** Complete the approved MarketForge Live v1 implementation
+
+**Current assignment (2026-10-21):** Reconcile WP-10 consumer responsibilities,
+update planning/status and the requested reconciliation report, create one local
+planning checkpoint, then stop. This assignment authorizes no implementation or
+next-package execution; it overrides automatic continuation for this task.
 
 ---
 
@@ -112,6 +117,18 @@ Use available permissions; do not bypass sandbox restrictions.
 
 The repository already contains substantial MarketForge Live work.
 
+### Current WP-10 disposition
+
+**ReadyForReview — Not Accepted**, implementation/audit checkpoint `d631b4d`.
+The authoritative component evidence is
+[evidence/WP-10-implementation.md](evidence/WP-10-implementation.md).
+Its external integrations remain unverified work of their original owning
+packages below. Do not reopen WP-10 merely because a concrete sink, daemon or
+Control server does not exist; reopen only for a demonstrated router-owned defect.
+Only the user/integration owner may mark Accepted.
+
+### Historical baseline (superseded by STATUS.md and current evidence)
+
 Previously implemented or partially implemented:
 
 - WP-00 through WP-04: foundational work.
@@ -205,6 +222,174 @@ Do not bypass unresolved foundational contracts.
 
 An already partially implemented package must be inspected and
 completed rather than replaced unnecessarily.
+
+---
+
+### WP-10 consumer integration obligations
+
+This is the action ledger for the seven external boundaries identified by the
+WP-10 audit. It supplements, and never replaces or weakens, each complete
+Document 17 package entry. Source/owner/interface/test traceability and existing
+witnesses are in
+[evidence/wp10-cross-package-reconciliation.md](evidence/wp10-cross-package-reconciliation.md).
+All integrations below remain outstanding; an available interface is not an
+implemented consumer. Working Rust code stays with its current owner/module.
+
+#### WP-09 — Configuration acceptance
+
+- **Behavior/reuse:** Complete validated, durably accepted desired revisions and
+  impact/boundary plans through `ConfigurationCompilerPort`,
+  `ConfigurationStorePort` and `ConfigurationApplyPort`. Reuse WP-10's registry
+  revision/instance fencing and measurement boundary as application targets
+  **through the WP-24 reconciler**, not direct pre-persistence router mutation.
+- **Remaining/prerequisites:** Finish the semantic compiler, static-spec loading,
+  revision service and bounded worker integration already missing in WP-09. Use
+  WP-05/06/07 contracts, verified metadata/capability inputs and WP-08 foundations;
+  keep unresolved C01/economic validation fail-closed. A candidate/local journal
+  alone is not a complete configuration service.
+- **Acceptance/boundary:** Test invalid proposals, failed/uncertain persistence,
+  conflicting revisions and restore-as-new-revision with zero premature router
+  effects; verify affected-resource plans and admission/measurement boundaries
+  through a deterministic apply-port consumer. WP-09 owns acceptance/plan output;
+  WP-24 owns actual destination execution and applied/adopted observations.
+
+#### WP-18 — Recovery coordination
+
+- **Behavior/reuse:** Consume typed delivery failures without reassigning cursors
+  or guessing ambiguous obligations. Reuse `IngressReporter`,
+  `FinalizationReporter`, charged `IngressRecord`/`RetainedDelivery`/
+  `FinalizedDelivery`/`WorkerOutcome` and `RouterRuntime` transfer, restore and
+  tracking-reconciliation methods. Keep `RecoveryPort` orchestration distinct
+  from ownership of those payloads. WP-24 binds/supervises report consumers;
+  WP-25 authorizes supported manual actions, not automatic integrity decisions.
+- **Remaining/prerequisites:** Implement incidents, bounded scheduling/retries,
+  generation/demand fences, restored-guarantee results and persistent-gap
+  coordination using WP-05/06/07/08/10 and the WP-11/14/16/17 execution ports.
+  WP-20/21 own their segment/transaction evidence; later bindings provide actual
+  storage recovery. Operational history remains local (DEC-031).
+- **Acceptance/boundary:** Exercise real router-to-recovery transfers, full and
+  foreign-owner rejection with charges intact, post-deadline restoration,
+  ambiguous outcomes, retry/escalation and partial/unrecoverable coverage.
+  Reuse the existing return/receipt witnesses. Component tests may use explicit
+  backend ports; actual storage repair requires later real-adapter evidence.
+  Failure acknowledgement/current readiness must never imply restored history.
+
+#### WP-20 — Live retention
+
+- **Behavior/reuse:** Bind a retention adapter behind `EventDestinationPort`
+  using the immutable `EventBatch`, `DestinationKind::Retention` and exact
+  `DestinationCompletion` cursor/stage correlation via
+  `RouterRuntime::apply_completion`. Keep RAM acceptance, segment commitment
+  and configured crash durability separate. Reuse router queues/permits rather
+  than introducing a competing router or cursor allocator.
+- **Remaining/prerequisites:** Complete RAM/spill/manifest/protection/replay,
+  restart and coverage behavior in Document 17 WP-20. Consume WP-05/06/07/08/10
+  contracts, shared Arrow/Parquet primitives and the approved epoch/checkpoint
+  contract; bind `SegmentStoragePort`/`RetentionReaderPort`/`RetentionControlPort`.
+- **Acceptance/boundary:** Feed the real router into the real retention owner;
+  verify grouped-event identity on Parquet/replay, full buffers/disk, faults at
+  file/manifest boundaries, protected readers, restart and replay-to-live handoff.
+  Withhold Committed/Durable on failed persistence and retain required ownership
+  through deadline shutdown. Retention owns storage evidence, WP-18 recovery
+  orchestration; neither database recording nor the final daemon is a prerequisite
+  for retention component verification.
+
+#### WP-21 — PostgreSQL recording
+
+- **Behavior/reuse:** Implement the recorder behind `EventDestinationPort` and
+  `RecordingBackendPort`; return separately correlated `DestinationCompletion`
+  through `RouterRuntime::apply_completion`. Reuse `EventBatch` and existing
+  explicit policy/stage validation. Register recording demand through WP-11;
+  WP-24 applies accepted enable/disable boundaries and registers the adapter.
+- **Remaining/prerequisites:** Complete real SQL mapping/transactions, batching,
+  ambiguous-commit reconciliation, contiguous coverage, protected reads/cleanup
+  and retention catch-up. Depend on WP-05/06/07/10, configuration policy,
+  WP-11 demand, WP-18 recovery and WP-20 retention interfaces. Resolve the C06
+  mapping/timestamp/fault and C12 adapter gates as applicable; any migration still
+  needs its specific authorization. Writable tests require verified isolated
+  database/role permissions that cannot mutate the real `marketforge` database.
+- **Acceptance/boundary:** Exercise the composed router/recorder against isolated
+  real PostgreSQL: exact values, grouped-depth atomicity, duplicate/out-of-order
+  batches, lost commit acknowledgement, restart/outage/catch-up and protected
+  cleanup. Committed alone cannot settle Durable; unknown commits stay unknown.
+  Test disabled recording creates no connection and leaves publication working.
+  Mock contracts cannot complete SQL correctness or coverage acceptance.
+
+#### WP-22 — Unix publication
+
+- **Behavior/reuse:** Bind the publisher behind `EventDestinationPort` with
+  Publication policy and correlated Delivered evidence; consume the existing
+  router optional-outcome/retirement/queue contracts. The publisher owns its
+  session/subscriber routing and bounded queues; that does not duplicate the
+  canonical router or create independent acquisition ownership.
+- **Remaining/prerequisites:** Complete binary framing, negotiation, local socket
+  lifecycle, session-generation fencing, source demand, slow-client policy,
+  replay/book handoff and finite publication shutdown. Use WP-05/06/07/10/11/17
+  and WP-20 replay/protection/book-cut interfaces; PostgreSQL is optional.
+- **Acceptance/boundary:** Drive the real router into local Unix sessions with
+  fragmented/invalid frames, slow/disconnected readers and healthy peer/storage
+  sinks; verify bounds, stale completions, grouped L2 identity, protected replay
+  and snapshot-to-live handoff. Report precise publication gaps and unfinished
+  shutdown obligations. Socket write/Delivered is not consumer processing.
+
+#### WP-24 — Runtime composition and reconciliation
+
+- **Behavior/reuse:** Construct one validated `RouterRuntime` using
+  `RouterResources::validate` and `RouterServices`; pass `producer()` as the
+  owned `EventRouterPort`, schedule bounded `drive` turns, route actual adapter
+  completions to `apply_completion`, and drive `shutdown` to an explicit result.
+  Reuse native `snapshot`, namespace registration/retirement, destination
+  register/unregister, metric scheduling and charged recovery/optional transfers.
+- **Remaining/prerequisites:** Bind real bounded clocks/timers/tasks, local
+  reporting/operational acceptance consumers, metrics and available sinks;
+  implement startup, signals and generation/revision-safe configuration execution
+  behind `ConfigurationApplyPort` and lifecycle ports. Consume WP-09 committed
+  plans plus the earlier owner contracts/implementations through WP-23; preserve
+  independent transient demands and report partial desired/applied/adopted state.
+- **Acceptance/boundary:** Exercise headless startup, restart reconstruction,
+  accepted-versus-applied revisions, replacement races, owner/report-consumer
+  failure, bounded retry scheduling and finite shutdown with real owners/sinks
+  where available. Disabled recording creates no DB connection; Control clients
+  need not be connected for local progress. A dropped/disabled diagnostic sample
+  is not accepted market-data recovery responsibility. Keep transferred charges
+  until accepted by their next owner; map DeadlineReached/unfinished work into
+  the service ShutdownReport rather than claiming complete merely on task join.
+  This package owns real daemon wiring, not storage transactions or a second router.
+
+#### WP-25 — Control server/client
+
+- **Behavior/reuse:** Dispatch approved `ManagementPort`/`ManagementClientPort`
+  commands to authoritative owners; project `RouterRuntime::snapshot`/native
+  metrics without exposing mutable locks. Supported retry/resolution operations
+  delegate to `retry_ingress`, `retry_terminal_report`,
+  `prepare_terminal_resolution` and `commit_terminal_resolution`, using original
+  journal/sink tokens. Native methods do not automatically become wire commands.
+- **Remaining/prerequisites:** Complete bounded JSON transport/correlation,
+  authorization, audit, operations/idempotency and fresh snapshots using WP-07
+  schemas and WP-24/09/18 authoritative owner services. No control handler owns
+  desired configuration, recovery policy, delivery tracking or task lifecycle.
+- **Acceptance/boundary:** Test read-only denial/no effects, stale revisions,
+  disconnect-after-acceptance retries, foreign/stale resolution receipts,
+  operation objectives, snapshot freshness and slow clients alongside ongoing
+  market delivery. Any unsupported external command returns an explicit error.
+  Accepted failure resolution preserves the original failure and never certifies
+  payload repair. Control readiness is a WP-25 gate, not a WP-10 prerequisite.
+
+### Sequence and completion boundary check
+
+Document 17 order is unchanged. WP-09 produces committed plans through the
+apply port; it need not import a concrete WP-10/WP-24 owner to validate them.
+WP-18 may test later storage backends through their existing ports before
+WP-20/21 implement them; it cannot certify real storage recovery from those tests.
+WP-20/21/22 test their actual adapters against the existing router without waiting
+for the final daemon. WP-24 binds the concrete owners, then WP-25 adds management
+transport. Composition witnesses grow incrementally under Document 17 §13.2;
+WP-19's collector destinations are intentional and do not replace WP-20/21/22.
+No backward requirement for the complete daemon/Control server is imposed on
+WP-10 or its earlier consumers. Existing foundational/capability gates remain;
+no package was reordered or declared accepted by this reconciliation.
+The pre-existing WP-27 exporter-title inconsistency is recorded in the report;
+DEC-032 governs and no external monitoring requirement is added here.
 
 ---
 
