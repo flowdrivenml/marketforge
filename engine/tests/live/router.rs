@@ -1221,106 +1221,128 @@ fn recovery_transfer_wakes_parked_delivery_without_releasing_payload_or_obligati
             self.0.fetch_add(1, Ordering::SeqCst);
         }
     }
-    let registry = RouterRegistry::new();
-    let adapter = destination(1, DestinationKind::Publication, DeliveryPolicy::Required);
-    let queue =
-        DestinationQueue::new(DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap());
-    registry.register_queue(adapter, queue).unwrap();
-    let limit = NonZeroUsize::new(1).unwrap();
-    let mut driver = DeliveryDriver::new(
-        DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
-        AcknowledgementTracker::new(2).unwrap(),
-        TrackingRecovery::new(2).unwrap(),
-        FinalizationJournal::new(2).unwrap(),
-    );
-    let wakes = Arc::new(Counter::default());
-    let waker = Waker::from(wakes.clone());
-    let mut cx = Context::from_waker(&waker);
-    // Park the coordinator before admission; commitment must schedule a turn
-    // even if subsequent work is tracking recovery rather than queue delivery.
-    let _ = driver.drive(&mut cx);
-    let admission_wakes = wakes.0.load(Ordering::SeqCst);
-    let order = StreamAdmissionOrder::new(batch().first_cursor().clone()).unwrap();
-    let cancelled = CancellationToken::new();
-    let mut rejected_preparation = Box::pin(OrderedFanout::prepare(
-        &registry,
-        &order,
-        batch(),
-        AdmissionContext::without_deadline(cancelled.clone()),
-        Arc::new(ManualClock::new(Instant::now(), 0)),
-        None,
-    ));
-    let Poll::Ready(Ok(rejected_prepared)) = rejected_preparation.as_mut().poll(&mut cx) else {
-        panic!("capacity available before cancellation")
-    };
-    drop(rejected_preparation);
-    cancelled.cancel();
-    let Ok((rejected, optional)) = driver.commit_ordered(rejected_prepared) else {
-        panic!("owner remains open")
-    };
-    assert!(matches!(rejected, OrderedCommitOutcome::Rejected { .. }));
-    assert!(optional.is_none());
-    assert_eq!(wakes.0.load(Ordering::SeqCst), admission_wakes);
-    assert_eq!(driver.snapshot().tracked_obligations, 0);
-    // A rejected commitment preserves both the frontier and coordinator waiter.
-    let mut preparation = Box::pin(OrderedFanout::prepare(
-        &registry,
-        &order,
-        batch(),
-        AdmissionContext::without_deadline(CancellationToken::new()),
-        Arc::new(ManualClock::new(Instant::now(), 0)),
-        None,
-    ));
-    let Poll::Ready(Ok(prepared)) = preparation.as_mut().poll(&mut cx) else {
-        panic!("capacity available")
-    };
-    drop(preparation);
-    let Ok((required, optional)) = driver.commit_ordered(prepared) else {
-        panic!("open delivery owner accepts ordered commitment")
-    };
-    assert_eq!(wakes.0.load(Ordering::SeqCst), admission_wakes + 1);
-    assert!(matches!(required, OrderedCommitOutcome::Tracked(_)));
-    assert!(optional.unwrap().unwrap().queued.is_empty());
-    let turn = driver.drive_registered(&registry, &mut cx);
-    assert!(matches!(
-        turn.delivery.delivery,
-        Poll::Ready(SupervisionStep::Retained(_))
-    ));
-    let id = match turn.delivery.delivery {
-        Poll::Ready(SupervisionStep::Retained(id)) => id,
-        _ => panic!("expected retained outcome"),
-    };
-    assert_eq!(driver.snapshot().retained_deliveries, 1);
-    let before = wakes.0.load(Ordering::SeqCst);
-    let turn = driver.drive_registered(&registry, &mut cx);
-    assert!(matches!(
-        turn.delivery.delivery,
-        Poll::Ready(SupervisionStep::CapacityBlocked)
-    ));
-    assert_eq!(wakes.0.load(Ordering::SeqCst), before);
-    assert_eq!(driver.snapshot().tracked_obligations, 1);
-    let unknown =
-        marketforge_engine::live::routing::acknowledgement::DeliveryObligationId(u64::MAX);
-    assert!(driver.take_for_recovery(unknown).is_none());
-    assert!(driver.take_blocked_for_recovery().is_none());
-    assert_eq!(wakes.0.load(Ordering::SeqCst), before);
-    driver.close();
-    let retained = driver
-        .take_for_recovery(id)
-        .expect("original retained payload");
-    assert_eq!(wakes.0.load(Ordering::SeqCst), before + 1);
-    assert!(driver.take_for_recovery(id).is_none());
-    assert_eq!(wakes.0.load(Ordering::SeqCst), before + 1);
-    assert_eq!(
-        retained.payload().batch().first_cursor(),
-        batch().first_cursor()
-    );
-    assert_eq!(driver.snapshot().retained_deliveries, 0);
-    assert_eq!(driver.snapshot().tracked_obligations, 1);
-    assert!(!driver.snapshot().workers.workers[0].1.is_drained());
-    drop(retained);
-    assert!(driver.snapshot().workers.workers[0].1.is_drained());
-    assert!(!driver.snapshot().is_drained());
+    for retire in [false, true] {
+        let registry = RouterRegistry::new();
+        let adapter = destination(1, DestinationKind::Publication, DeliveryPolicy::Required);
+        let queue = DestinationQueue::new(
+            DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap(),
+        );
+        registry.register_queue(adapter, queue).unwrap();
+        let limit = NonZeroUsize::new(1).unwrap();
+        let mut driver = DeliveryDriver::new(
+            DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
+            AcknowledgementTracker::new(2).unwrap(),
+            TrackingRecovery::new(2).unwrap(),
+            FinalizationJournal::new(2).unwrap(),
+        );
+        let wakes = Arc::new(Counter::default());
+        let waker = Waker::from(wakes.clone());
+        let mut cx = Context::from_waker(&waker);
+        // Park the coordinator before admission; commitment must schedule a turn
+        // even if subsequent work is tracking recovery rather than queue delivery.
+        let _ = driver.drive(&mut cx);
+        let admission_wakes = wakes.0.load(Ordering::SeqCst);
+        let order = StreamAdmissionOrder::new(batch().first_cursor().clone()).unwrap();
+        let cancelled = CancellationToken::new();
+        let mut rejected_preparation = Box::pin(OrderedFanout::prepare(
+            &registry,
+            &order,
+            batch(),
+            AdmissionContext::without_deadline(cancelled.clone()),
+            Arc::new(ManualClock::new(Instant::now(), 0)),
+            None,
+        ));
+        let Poll::Ready(Ok(rejected_prepared)) = rejected_preparation.as_mut().poll(&mut cx) else {
+            panic!("capacity available before cancellation")
+        };
+        drop(rejected_preparation);
+        cancelled.cancel();
+        let Ok((rejected, optional)) = driver.commit_ordered(rejected_prepared) else {
+            panic!("owner remains open")
+        };
+        assert!(matches!(rejected, OrderedCommitOutcome::Rejected { .. }));
+        assert!(optional.is_none());
+        assert_eq!(wakes.0.load(Ordering::SeqCst), admission_wakes);
+        assert_eq!(driver.snapshot().tracked_obligations, 0);
+        // A rejected commitment preserves both the frontier and coordinator waiter.
+        let mut preparation = Box::pin(OrderedFanout::prepare(
+            &registry,
+            &order,
+            batch(),
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            Arc::new(ManualClock::new(Instant::now(), 0)),
+            None,
+        ));
+        let Poll::Ready(Ok(prepared)) = preparation.as_mut().poll(&mut cx) else {
+            panic!("capacity available")
+        };
+        drop(preparation);
+        let Ok((required, optional)) = driver.commit_ordered(prepared) else {
+            panic!("open delivery owner accepts ordered commitment")
+        };
+        assert_eq!(wakes.0.load(Ordering::SeqCst), admission_wakes + 1);
+        assert!(matches!(required, OrderedCommitOutcome::Tracked(_)));
+        assert!(optional.unwrap().unwrap().queued.is_empty());
+        let turn = driver.drive_registered(&registry, &mut cx);
+        assert!(matches!(
+            turn.delivery.delivery,
+            Poll::Ready(SupervisionStep::Retained(_))
+        ));
+        let id = match turn.delivery.delivery {
+            Poll::Ready(SupervisionStep::Retained(id)) => id,
+            _ => panic!("expected retained outcome"),
+        };
+        assert_eq!(driver.snapshot().retained_deliveries, 1);
+        let before = wakes.0.load(Ordering::SeqCst);
+        let turn = driver.drive_registered(&registry, &mut cx);
+        assert!(matches!(
+            turn.delivery.delivery,
+            Poll::Ready(SupervisionStep::CapacityBlocked)
+        ));
+        assert_eq!(wakes.0.load(Ordering::SeqCst), before);
+        assert_eq!(driver.snapshot().tracked_obligations, 1);
+        let unknown =
+            marketforge_engine::live::routing::acknowledgement::DeliveryObligationId(u64::MAX);
+        assert!(driver.take_for_recovery(unknown).is_none());
+        assert!(driver.take_blocked_for_recovery().is_none());
+        assert_eq!(wakes.0.load(Ordering::SeqCst), before);
+        driver.close();
+        let retained = driver
+            .take_for_recovery(id)
+            .expect("original retained payload");
+        assert_eq!(wakes.0.load(Ordering::SeqCst), before + 1);
+        assert!(driver.take_for_recovery(id).is_none());
+        assert_eq!(wakes.0.load(Ordering::SeqCst), before + 1);
+        assert_eq!(
+            retained.payload().batch().first_cursor(),
+            batch().first_cursor()
+        );
+        assert_eq!(driver.snapshot().retained_deliveries, 0);
+        assert_eq!(driver.snapshot().tracked_obligations, 1);
+        assert!(!driver.snapshot().workers.workers[0].1.is_drained());
+        if retire {
+            registry.unregister(DestinationId(1)).unwrap();
+            assert_eq!(registry.reap_retired(), 0);
+        }
+        // Repark with a replacement coordinator after transfer. External release
+        // must schedule progress without a timer or another admission.
+        let latest = Arc::new(Counter::default());
+        let latest_waker = Waker::from(latest.clone());
+        let mut latest_cx = Context::from_waker(&latest_waker);
+        let _ = driver.drive_registered(&registry, &mut latest_cx);
+        let old_before_release = wakes.0.load(Ordering::SeqCst);
+        let latest_before_release = latest.0.load(Ordering::SeqCst);
+        drop(retained);
+        assert_eq!(latest.0.load(Ordering::SeqCst), latest_before_release + 1);
+        assert_eq!(wakes.0.load(Ordering::SeqCst), old_before_release);
+        assert!(driver.snapshot().workers.workers[0].1.is_drained());
+        assert!(!driver.snapshot().is_drained());
+        // A consumed observer coalesces releases until the next turn; polling an
+        // already drained worker must park without spinning.
+        let before_idle = latest.0.load(Ordering::SeqCst);
+        let _ = driver.drive_registered(&registry, &mut latest_cx);
+        assert_eq!(latest.0.load(Ordering::SeqCst), before_idle);
+    }
 }
 
 #[test]

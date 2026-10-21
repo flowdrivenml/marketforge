@@ -44,6 +44,7 @@ struct CapacityState {
     waiters: HashMap<u64, Waker>,
     shutting_down: bool,
     shutdown_waker: Option<Waker>,
+    release_waker: Option<Waker>,
 }
 
 impl Default for CapacityState {
@@ -55,6 +56,7 @@ impl Default for CapacityState {
             waiters: HashMap::new(),
             shutting_down: false,
             shutdown_waker: None,
+            release_waker: None,
         }
     }
 }
@@ -183,6 +185,19 @@ impl DestinationCapacity {
         }
     }
 
+    /// One replacement-aware coordinator, armed before inspecting owners.
+    /// Releases wake it even after closure without consuming admission waiters.
+    pub(crate) fn arm_release_notification(&self, waker: &Waker) {
+        let mut state = self.lock_state();
+        if state
+            .release_waker
+            .as_ref()
+            .is_none_or(|w| !w.will_wake(waker))
+        {
+            state.release_waker = Some(waker.clone());
+        }
+    }
+
     pub fn usage(&self) -> CapacityUsage {
         let state = self.lock_state();
 
@@ -251,7 +266,7 @@ impl CapacityReservation {
 
 impl Drop for CapacityReservation {
     fn drop(&mut self) {
-        let (waiters, shutdown_waker) = {
+        let (waiters, shutdown_waker, release_waker) = {
             let mut state = self
                 .inner
                 .state
@@ -279,10 +294,17 @@ impl Drop for CapacityReservation {
             } else {
                 None
             };
-            (std::mem::take(&mut state.waiters), shutdown_waker)
+            (
+                std::mem::take(&mut state.waiters),
+                shutdown_waker,
+                state.release_waker.take(),
+            )
         };
 
         wake_all(waiters);
+        if let Some(waker) = release_waker {
+            waker.wake();
+        }
         if let Some(waker) = shutdown_waker {
             waker.wake();
         }

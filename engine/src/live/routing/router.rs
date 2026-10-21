@@ -842,6 +842,18 @@ impl RouterRegistry {
         }
     }
 
+    /// Arm before inspecting workers and retired entries to prevent lost release
+    /// notifications. Membership notifications cover queues registered later.
+    /// Capacity registration invokes no executor callbacks under registry locks.
+    pub(crate) fn arm_release_notifications(&self, waker: &std::task::Waker) {
+        let state = self.state.read().unwrap_or_else(|e| e.into_inner());
+        for entry in state.destinations.values().chain(state.retired.iter()) {
+            if let Some(queue) = &entry.queue {
+                queue.capacity().arm_release_notification(waker);
+            }
+        }
+    }
+
     /// Wait for routing membership to differ from an observed revision. Checking
     /// and registration share the membership fence, so a concurrent mutation
     /// cannot be missed. One runtime coordinator is supported; polling with a

@@ -293,8 +293,8 @@ impl DeliveryDriver {
     /// turn. Capacity/correlation/reporting failures and failed tracking retries
     /// never self-wake: the runtime must arrange reporting notifications
     /// and a bounded retry timer. Correlated completions wake the last drive waker.
-    /// Later release of an externally held payload charge still needs a runtime
-    /// notification or timer; recovery transfers schedule their own progress turn.
+    /// Registered queue payload releases and recovery transfers schedule progress
+    /// turns, including releases by external recovery owners after closure.
     /// Worker futures and idle queues register this waker.
     /// This is a cooperative scheduling primitive, not a deadline shutdown path;
     /// close admission and synchronize all queues before closing the driver.
@@ -304,6 +304,7 @@ impl DeliveryDriver {
         cx: &mut Context<'_>,
     ) -> RegisteredDeliveryDrive {
         let revision = registry.revision();
+        registry.arm_release_notifications(cx.waker());
         let maintenance = self.sync_registry(registry);
         let delivery = self.drive(cx);
         let membership = registry.poll_membership_change(revision, cx);
