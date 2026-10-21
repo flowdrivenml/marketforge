@@ -355,6 +355,7 @@ pub enum RouterRegistryError {
 
 struct RouterRegistryState {
     destinations: HashMap<DestinationId, RegisteredDestination>,
+    retired: Vec<RegisteredDestination>,
     max_destinations: usize,
     revision: u64,
     shutting_down: bool,
@@ -454,6 +455,7 @@ impl RouterRegistry {
         Self {
             state: RwLock::new(RouterRegistryState {
                 destinations: HashMap::new(),
+                retired: Vec::new(),
                 max_destinations: 1024,
                 revision: 0,
                 shutting_down: false,
@@ -503,7 +505,7 @@ impl RouterRegistry {
         if state.destinations.contains_key(&descriptor.id) {
             return Err(RouterRegistryError::DuplicateDestination);
         }
-        if state.destinations.len() >= state.max_destinations {
+        if state.destinations.len() + state.retired.len() >= state.max_destinations {
             return Err(RouterRegistryError::DestinationCapacity);
         }
 
@@ -563,6 +565,35 @@ impl RouterRegistry {
         )
         .map_err(RegistryWorkerError::Worker)
     }
+    /// Claim the oldest unclaimed removed queue for this ID. Multiple retired
+    /// instances can coexist with a new active instance; they never share queues.
+    pub fn claim_retired_worker(
+        &self,
+        id: DestinationId,
+    ) -> Result<super::worker::DestinationWorker, RegistryWorkerError> {
+        let state = self.state.read().unwrap_or_else(|e| e.into_inner());
+        let mut error = RegistryWorkerError::UnknownDestination;
+        for entry in state
+            .retired
+            .iter()
+            .filter(|entry| entry.descriptor.id == id)
+        {
+            let Some(queue) = entry.queue.clone() else {
+                error = RegistryWorkerError::MissingQueue;
+                continue;
+            };
+            match super::worker::DestinationWorker::from_registered(
+                queue,
+                entry.destination.clone(),
+                entry.descriptor,
+            ) {
+                Ok(worker) => return Ok(worker),
+                Err(reason) => error = RegistryWorkerError::Worker(reason),
+            }
+        }
+        Err(error)
+    }
+
     /// Register one destination instance.
     ///
     /// Multiple instances of the same destination kind are allowed,
@@ -588,7 +619,7 @@ impl RouterRegistry {
         if state.destinations.contains_key(&descriptor.id) {
             return Err(RouterRegistryError::DuplicateDestination);
         }
-        if state.destinations.len() >= state.max_destinations {
+        if state.destinations.len() + state.retired.len() >= state.max_destinations {
             return Err(RouterRegistryError::DestinationCapacity);
         }
 
@@ -611,35 +642,67 @@ impl RouterRegistry {
         Ok(())
     }
 
-    /// Remove a destination from future routing plans.
-    ///
-    /// Existing plans retain their Arc-owned destination references.
-    ///
-    /// This does not cancel already accepted delivery obligations.
+    /// Remove a destination from future plans while retaining its queued and
+    /// consumer-held responsibility. Retired queues close without discarding
+    /// payloads and still support worker claims for draining. Retired instances
+    /// consume the same bounded registry slots until explicitly reaped.
     pub fn unregister(&self, id: DestinationId) -> Result<(), RouterRegistryError> {
-        let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
-        let mut state = self
-            .state
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-        if state.shutting_down {
-            return Err(RouterRegistryError::ShuttingDown);
+        let queue = {
+            let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
+            let mut state = self.state.write().unwrap_or_else(|e| e.into_inner());
+            if state.shutting_down {
+                return Err(RouterRegistryError::ShuttingDown);
+            }
+            if !state.destinations.contains_key(&id) {
+                return Err(RouterRegistryError::UnknownDestination);
+            }
+            let next_revision = state
+                .revision
+                .checked_add(1)
+                .ok_or(RouterRegistryError::RevisionExhausted)?;
+            let entry = state.destinations.remove(&id).expect("checked membership");
+            let queue = entry.queue.clone();
+            state.retired.push(entry);
+            state.revision = next_revision;
+            queue
+        };
+        // Arbitrary executor callbacks must run outside both registry locks.
+        if let Some(queue) = queue {
+            queue.shutdown();
         }
-
-        if !state.destinations.contains_key(&id) {
-            return Err(RouterRegistryError::UnknownDestination);
-        }
-
-        let next_revision = state
-            .revision
-            .checked_add(1)
-            .ok_or(RouterRegistryError::RevisionExhausted)?;
-
-        state.destinations.remove(&id);
-        state.revision = next_revision;
-
         Ok(())
+    }
+
+    /// Release closed, fully uncharged retired instances. This does not finalize
+    /// delivery obligations: their independent driver retains that responsibility.
+    /// Queues are closed before reaping so stale plan/queue clones cannot acquire
+    /// new capacity after the drain observation. No adapter is dropped under locks.
+    pub fn reap_retired(&self) -> usize {
+        let removed: Vec<_> = {
+            let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
+            let mut state = self.state.write().unwrap_or_else(|e| e.into_inner());
+            let mut retained = Vec::with_capacity(state.retired.len());
+            let mut removed = Vec::new();
+            for entry in state.retired.drain(..) {
+                let drained = entry.queue.as_ref().is_none_or(|queue| {
+                    let observation = queue.observe();
+                    observation.queue.closed
+                        && observation.queue.queued_batches == 0
+                        && observation.capacity.shutting_down
+                        && observation.capacity.occupied_events == 0
+                        && observation.capacity.occupied_bytes == 0
+                        && observation.capacity.waiting_operations == 0
+                });
+                if drained {
+                    removed.push(entry);
+                } else {
+                    retained.push(entry);
+                }
+            }
+            state.retired = retained;
+            removed
+        };
+        removed.len()
     }
 
     /// Create a deterministic snapshot of destinations for a batch.
@@ -704,6 +767,7 @@ impl RouterRegistry {
             state
                 .destinations
                 .values()
+                .chain(state.retired.iter())
                 .filter_map(|entry| entry.queue.clone())
                 .collect()
         };
@@ -723,6 +787,7 @@ impl RouterRegistry {
             state
                 .destinations
                 .values()
+                .chain(state.retired.iter())
                 .filter_map(|entry| entry.queue.clone())
                 .collect()
         };
@@ -752,12 +817,22 @@ impl RouterRegistry {
                 queue: entry.queue.as_ref().map(DestinationQueue::observe),
             })
             .collect();
+        let mut retired: Vec<_> = state
+            .retired
+            .iter()
+            .map(|entry| super::snapshot::DestinationSnapshot {
+                descriptor: entry.descriptor,
+                queue: entry.queue.as_ref().map(DestinationQueue::observe),
+            })
+            .collect();
+        retired.sort_by_key(|entry| entry.descriptor.id.0);
         destinations.sort_unstable_by_key(|entry| entry.descriptor.id.0);
         super::snapshot::RouterSnapshot {
             revision: state.revision,
             shutting_down: state.shutting_down,
             destination_limit: state.max_destinations,
             destinations,
+            retired,
         }
     }
 

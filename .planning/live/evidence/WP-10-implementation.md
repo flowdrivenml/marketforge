@@ -1530,3 +1530,55 @@ owner is supported. Reporting/transferred recovery responsibility still needs ru
 scheduling; these wakeups establish no external consumer processing or durability.
 WP-05/06/07/09 gates persist; WP-11–29 pending. Safe autonomous continuation remains
 possible; no package acceptance or whole-project completion claimed.
+
+
+## Continuation — retain removed destination drain ownership (2026-10-21)
+
+Status: Partial. Starting checkpoint `57171a8`, branch `codex/wp06-completion`.
+Inspected campaign instructions, decisions, current status/evidence, roadmap WP-10,
+registry, queue, worker, admission and shutdown consumers. Next executable: WP-10.
+The only initial untracked file was `scripts/run-autonomous-codex.sh`; preserved.
+
+Fixed a production gap: unregister previously erased occupied queues from registry
+and composed shutdown observations. Retired entries now retain original adapter
+and queue ownership, close outside both registry locks, and support exclusive
+oldest-unclaimed worker acquisition. Same-ID active replacements and multiple old
+instances keep independent queues. Active plus retired entries consume the same
+bounded destination slots. Explicit reaping requires closed queues, zero queue
+payloads, zero occupied count/bytes and zero capacity waiters; adapters drop after
+registry locks release. Reaping establishes no delivery completion or durability.
+Snapshots and both shutdown paths include retired queues. Runtime must schedule
+retired worker claims, reporting, recovery and explicit reaping.
+
+Tests exercise original Arc payload readback, worker exclusivity, queue closure,
+replacement independence, repeated same-ID retirement at the resource limit,
+partial/final charge release, held reservations, reentrant retirement wakeups,
+stale queue admission rejection and composed shutdown across retired ownership.
+No sleeps, SQL or exchange dependencies. Existing replacement assertions unchanged.
+
+Verification (actual exits):
+- From engine/: `cargo test --locked --offline --no-default-features --features
+  live --test live_suite registry_retirement`: exit 0, 3 passed.
+- Same command filtered by `router_shutdown`: exit 0, 2 passed; filtered by
+  `destination_worker_registration_replacement`: final exit 0, 1 passed.
+- Root `./scripts/verify-live.sh full`: final exit 0; formatting; Live library
+  check; 134 library / 442 integration (2 opt-in ignored) / 1 doctest passed.
+  Exact Cargo commands/logs: `engine/target/live-verification/20261021T050714Z-2/`.
+- From engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0, existing dead-code warnings only.
+- `git diff --check`: exit 0 before checkpoint.
+Initial replacement test failed because the first draft blocked same-ID reuse;
+corrected retirement storage to preserve established independent replacement
+behavior, without changing that test. One edit script failed before writing;
+corrected its match. No final failing verification. SQL/performance opt-ins and
+historical-only test execution not rerun; no new claim on those gates/baselines.
+
+Changed: `engine/src/live/routing/{router,shutdown,snapshot}.rs`,
+`engine/tests/live/router.rs`, STATUS.md and this ledger. Checkpoint: local commit
+carrying this continuation. No push, dependency/lockfile, ignored config,
+Python/historical execution changes or production data access.
+
+Remaining acceptance ledger: production EventRouterPort ordered composition,
+runtime retries/retired-drain/reaping integration, native metrics/control binding.
+WP-05/06/07/09 gates remain; WP-11–29 pending. No package accepted and no overall
+completion claim. Further autonomous WP-10 work can safely continue.

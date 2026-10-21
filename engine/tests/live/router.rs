@@ -358,6 +358,8 @@ fn router_shutdown_composes_preparation_queue_payload_and_delivery_responsibilit
         panic!("capacity available")
     };
     drop(prepare);
+    registry.unregister(DestinationId(1)).unwrap();
+    assert_eq!(registry.snapshot().retired.len(), 1);
     let limit = NonZeroUsize::new(1).unwrap();
     let mut delivery = DeliveryDriver::new(
         DeliverySupervisor::new(DestinationWorkers::new(limit), limit),
@@ -485,4 +487,185 @@ fn registry_shutdown_wakes_latest_coordinator_after_final_payload_release() {
     );
     assert_eq!(latest.wakes.load(Ordering::SeqCst), 1);
     assert!(queue.try_enqueue(batch()).is_err());
+}
+
+#[test]
+fn registry_retirement_preserves_payloads_bounds_and_replacement_independence() {
+    use marketforge_engine::live::routing::{
+        destination::DestinationCapacity, queue::DestinationQueue, worker::WorkerStep,
+    };
+    use std::task::{Context, Poll, Waker};
+    let registry = RouterRegistry::with_destination_limit(2).unwrap();
+    let adapter = destination(1, DestinationKind::Publication, DeliveryPolicy::Required);
+    let queue =
+        DestinationQueue::new(DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap());
+    registry
+        .register_queue(adapter.clone(), queue.clone())
+        .unwrap();
+    let original = batch();
+    queue.try_enqueue(original.clone()).unwrap();
+    registry.unregister(DestinationId(1)).unwrap();
+    assert_eq!(registry.destination_count(), 0);
+    assert!(registry.plan(&original).is_err());
+    assert!(queue.snapshot().closed);
+    assert_eq!(registry.reap_retired(), 0);
+    assert_eq!(
+        registry.snapshot().retired[0]
+            .queue
+            .unwrap()
+            .queue
+            .queued_events,
+        2
+    );
+
+    // An active replacement shares neither queue nor retirement responsibility.
+    let replacement =
+        DestinationQueue::new(DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap());
+    registry
+        .register_queue(adapter, replacement.clone())
+        .unwrap();
+    assert!(!replacement.snapshot().closed);
+    assert_eq!(
+        registry.register(destination(
+            2,
+            DestinationKind::Publication,
+            DeliveryPolicy::Required
+        )),
+        Err(RouterRegistryError::DestinationCapacity)
+    );
+    let mut worker = registry.claim_retired_worker(DestinationId(1)).unwrap();
+    assert!(registry.claim_retired_worker(DestinationId(1)).is_err());
+    let mut cx = Context::from_waker(Waker::noop());
+    assert_eq!(
+        worker.poll_admission(&mut cx),
+        Poll::Ready(WorkerStep::OutcomeReady)
+    );
+    let outcome = worker.take_outcome().unwrap();
+    assert_eq!(outcome.payload.batch(), &original);
+    assert!(Arc::ptr_eq(
+        &outcome.payload.batch().events()[0],
+        &original.events()[0]
+    ));
+    assert_eq!(registry.reap_retired(), 0); // transferred payload remains charged
+    assert!(registry.poll_shutdown(&mut cx).is_pending());
+    drop(outcome);
+    assert!(registry.poll_shutdown(&mut cx).is_ready());
+    assert_eq!(registry.reap_retired(), 1);
+    assert_eq!(registry.reap_retired(), 0);
+    assert!(registry.snapshot().retired.is_empty());
+    assert_eq!(registry.snapshot().destinations.len(), 1);
+}
+
+#[test]
+fn registry_retirement_wakes_waiters_outside_locks_and_retains_reservations() {
+    use marketforge_engine::live::routing::{
+        destination::{CapacityError, DestinationCapacity},
+        queue::DestinationQueue,
+    };
+    use std::{
+        future::Future,
+        sync::atomic::{AtomicUsize, Ordering},
+        task::{Context, Poll, Wake, Waker},
+    };
+    struct Observer {
+        registry: Arc<RouterRegistry>,
+        wakes: AtomicUsize,
+    }
+    impl Wake for Observer {
+        fn wake(self: Arc<Self>) {
+            assert_eq!(self.registry.destination_count(), 0);
+            assert_eq!(self.registry.snapshot().retired.len(), 1);
+            assert_eq!(self.registry.reap_retired(), 0);
+            self.wakes.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let registry = Arc::new(RouterRegistry::with_destination_limit(1).unwrap());
+    let adapter = destination(1, DestinationKind::Publication, DeliveryPolicy::Required);
+    let queue =
+        DestinationQueue::new(DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap());
+    registry
+        .register_queue(adapter.clone(), queue.clone())
+        .unwrap();
+    let reservation = queue.capacity().try_reserve(100, 100_000).unwrap();
+    let observer = Arc::new(Observer {
+        registry: registry.clone(),
+        wakes: AtomicUsize::new(0),
+    });
+    let waker = Waker::from(observer.clone());
+    let mut cx = Context::from_waker(&waker);
+    let mut waiting = Box::pin(queue.capacity().reserve(1, 1));
+    assert!(waiting.as_mut().poll(&mut cx).is_pending());
+    registry.unregister(DestinationId(1)).unwrap();
+    assert_eq!(observer.wakes.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        waiting.as_mut().poll(&mut cx),
+        Poll::Ready(Err(CapacityError::ShuttingDown))
+    ));
+    assert_eq!(registry.reap_retired(), 0);
+    assert_eq!(
+        registry.register(adapter.clone()),
+        Err(RouterRegistryError::DestinationCapacity)
+    );
+    assert!(matches!(
+        queue.capacity().try_reserve(1, 1),
+        Err(CapacityError::ShuttingDown)
+    ));
+    drop(reservation);
+    assert_eq!(registry.reap_retired(), 1);
+    registry.register(adapter).unwrap();
+    assert_eq!(registry.destination_count(), 1);
+}
+
+#[test]
+fn registry_retirement_bounds_repeated_same_id_instances_and_releases_each_charge() {
+    use marketforge_engine::live::routing::{
+        destination::DestinationCapacity, queue::DestinationQueue, worker::WorkerStep,
+    };
+    use std::task::{Context, Poll, Waker};
+    let registry = RouterRegistry::with_destination_limit(2).unwrap();
+    let adapter = destination(1, DestinationKind::Publication, DeliveryPolicy::Required);
+    let mut originals = Vec::new();
+    for offset in [10, 20] {
+        let queue = DestinationQueue::new(
+            DestinationCapacity::new(adapter.descriptor().capacity, 1).unwrap(),
+        );
+        registry
+            .register_queue(adapter.clone(), queue.clone())
+            .unwrap();
+        let original = EventBatch::new(vec![l2_event("router-source", 1, offset)]).unwrap();
+        queue.try_enqueue(original.clone()).unwrap();
+        registry.unregister(DestinationId(1)).unwrap();
+        originals.push(original);
+    }
+    assert_eq!(registry.snapshot().retired.len(), 2);
+    assert_eq!(
+        registry.register(adapter.clone()),
+        Err(RouterRegistryError::DestinationCapacity)
+    );
+    let mut first_worker = registry.claim_retired_worker(DestinationId(1)).unwrap();
+    let mut second_worker = registry.claim_retired_worker(DestinationId(1)).unwrap();
+    assert!(registry.claim_retired_worker(DestinationId(1)).is_err());
+    let mut cx = Context::from_waker(Waker::noop());
+    assert_eq!(
+        first_worker.poll_admission(&mut cx),
+        Poll::Ready(WorkerStep::OutcomeReady)
+    );
+    assert_eq!(
+        second_worker.poll_admission(&mut cx),
+        Poll::Ready(WorkerStep::OutcomeReady)
+    );
+    let first = first_worker.take_outcome().unwrap();
+    let second = second_worker.take_outcome().unwrap();
+    assert_eq!(first.payload.batch(), &originals[0]);
+    assert_eq!(second.payload.batch(), &originals[1]);
+    drop(first);
+    assert_eq!(registry.reap_retired(), 1);
+    assert_eq!(registry.snapshot().retired.len(), 1);
+    registry.register(adapter).unwrap(); // only the released slot may be reused
+    assert_eq!(registry.reap_retired(), 0);
+    registry.shutdown();
+    assert!(registry.poll_shutdown(&mut cx).is_pending());
+    drop(second);
+    assert!(registry.poll_shutdown(&mut cx).is_ready());
+    assert_eq!(registry.reap_retired(), 1);
 }

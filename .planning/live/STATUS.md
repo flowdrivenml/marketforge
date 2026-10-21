@@ -40,6 +40,24 @@
 ### Autonomous continuation — 2026-10-21
 
 
+Latest continuation retains unregistered WP-10 destinations in a bounded retired
+set. Removed queues close outside registry locks, remain observable and drainable
+through exclusive retired-worker claims, and keep queued/reserved/consumer-held
+charges visible to registry and composed shutdown. Active plus retired instances
+share the destination limit; explicit drain-checked reaping releases slots without
+finalizing independent delivery obligations. Same-ID replacements remain independent.
+Three new deterministic witnesses and the updated shutdown witness pass.
+Final full Live verification exits 0: 134 library / 442 integration (2 opt-in ignored)
+/ 1 doctest; formatting, Live check and combined Live+historical check exit 0.
+Receipts: `engine/target/live-verification/20261021T050714Z-2/`.
+Checkpoint: local commit carrying this entry and the WP-10 ledger continuation.
+WP-10 remains Partial and next executable: production EventRouterPort composition,
+runtime scheduling/retry/retirement reaping and native metrics/control binding.
+WP-05/06/07/09 open gates persist; WP-11–29 pending. Further autonomous work is safe.
+No push, SQL/exchange traffic, Python/historical execution edits, dependencies or
+ignored configuration changes. Pre-existing untracked launcher preserved.
+
+
 Latest continuation repairs shutdown drain wakeups for WP-10 global preparation
 charges and destination payload capacity. One bounded replacement-aware waiter
 per authoritative accounting owner is registered atomically with the drain check;

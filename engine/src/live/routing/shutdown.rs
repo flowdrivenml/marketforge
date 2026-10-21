@@ -32,16 +32,21 @@ impl RouterDrainSnapshot {
                 .all(|entry| entry.order.closed && entry.order.pending_last.is_none())
             && self.admission_usage == ResourceUsage::default()
             && self.destinations.shutting_down
-            && self.destinations.destinations.iter().all(|entry| {
-                entry.queue.as_ref().is_none_or(|queue| {
-                    queue.queue.closed
-                        && queue.queue.queued_batches == 0
-                        && queue.capacity.shutting_down
-                        && queue.capacity.occupied_events == 0
-                        && queue.capacity.occupied_bytes == 0
-                        && queue.capacity.waiting_operations == 0
+            && self
+                .destinations
+                .destinations
+                .iter()
+                .chain(self.destinations.retired.iter())
+                .all(|entry| {
+                    entry.queue.as_ref().is_none_or(|queue| {
+                        queue.queue.closed
+                            && queue.queue.queued_batches == 0
+                            && queue.capacity.shutting_down
+                            && queue.capacity.occupied_events == 0
+                            && queue.capacity.occupied_bytes == 0
+                            && queue.capacity.waiting_operations == 0
+                    })
                 })
-            })
             && self.delivery.is_drained()
     }
 }

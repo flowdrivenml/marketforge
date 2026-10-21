@@ -15,6 +15,9 @@ pub struct RouterSnapshot {
     pub revision: u64,
     pub shutting_down: bool,
     pub destination_limit: usize,
-    /// Sorted by destination ID; bounded by destination_limit.
+    /// Active and retired entries together are bounded by destination_limit.
+    /// Each list is sorted by destination ID.
     pub destinations: Vec<DestinationSnapshot>,
+    /// Removed from routing, still owned until queue/capacity drain and reaping.
+    pub retired: Vec<DestinationSnapshot>,
 }
