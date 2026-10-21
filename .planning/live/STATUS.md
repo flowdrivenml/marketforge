@@ -39,6 +39,21 @@
 
 ### Autonomous continuation — 2026-10-21
 
+Latest continuation adds `OrderedAdmissionBudget`: global event-count and retained-
+byte limits are acquired before destination waiting and held through prepared
+commitment/drop. Exhaustion explicitly rejects without a hidden waiter queue;
+cancellation/drop releases both global and destination reservations. Two new
+consumer witnesses pass. Full Live verification exits 0: 130 library, 388
+integration (2 opt-in ignored), 1 doctest, formatting and Live check. Combined
+Live+historical compilation also exits 0. Receipts:
+`engine/target/live-verification/20261021T035519Z-2/`.
+WP-10 remains Partial: the production owner must use this bounded entry point;
+worker/completion/recovery lifetime, policy composition and snapshots remain.
+WP-11–29 remain pending; earlier WP-05/06/07/09 open gates persist. Further
+independent autonomous WP-10 implementation is safe. Pre-existing untracked
+launcher remains untouched; no SQL, exchange, dependency or historical changes.
+
+
 Checkpoint `045d860` adds bounded explicit cursor namespace ownership and
 `OrderedFanout::prepare_registered`, preserving the existing real tracked
 fan-out. Retirement/shutdown fence cloned handles; bounded tombstones prevent

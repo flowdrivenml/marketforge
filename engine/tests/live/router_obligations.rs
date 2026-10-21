@@ -2421,3 +2421,178 @@ fn registered_namespace_concurrent_registration_has_one_owner() {
     );
     assert_eq!(namespaces.registered_count(), 1);
 }
+
+#[test]
+fn bounded_ordered_admission_retains_global_charge_and_releases_on_drop() {
+    use marketforge_engine::live::{
+        foundation::{SystemMonotonicClock, resources::ResourceUsage},
+        model::{error::ErrorCode, memory::RetainedSize},
+        routing::{
+            namespaces::AdmissionNamespaces,
+            ordered::{OrderedAdmissionBudget, OrderedCommitOutcome, OrderedPreparationError},
+        },
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    namespaces.register(batch.first_cursor().clone()).unwrap();
+    let charge = ResourceUsage {
+        items: batch.len(),
+        bytes: usize::try_from(batch.retained_size_bytes().unwrap()).unwrap(),
+    };
+    let budget = OrderedAdmissionBudget::new(charge).unwrap();
+    let context = || AdmissionContext::without_deadline(CancellationToken::new());
+    let admission = ready(budget.prepare(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        context(),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ))
+    .unwrap();
+    assert_eq!(budget.usage(), charge);
+    assert!(matches!(
+        ready(budget.prepare(
+            &registry,
+            &namespaces,
+            batch.clone(),
+            context(),
+            Arc::new(SystemMonotonicClock),
+            None
+        )),
+        Err(OrderedPreparationError::Budget(ErrorCode::Capacity))
+    ));
+    drop(admission);
+    assert_eq!(budget.usage(), ResourceUsage::default());
+    // Byte exhaustion is independent of the event count limit.
+    let small = OrderedAdmissionBudget::new(ResourceUsage {
+        items: charge.items + 1,
+        bytes: charge.bytes - 1,
+    })
+    .unwrap();
+    assert!(matches!(
+        ready(small.prepare(
+            &registry,
+            &namespaces,
+            batch.clone(),
+            context(),
+            Arc::new(SystemMonotonicClock),
+            None
+        )),
+        Err(OrderedPreparationError::Budget(ErrorCode::Capacity))
+    ));
+    assert_eq!(small.usage(), ResourceUsage::default());
+    let admission = ready(budget.prepare(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        context(),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ))
+    .unwrap();
+    let mut recovery = TrackingRecovery::new(10).unwrap();
+    assert!(matches!(
+        admission.commit(&mut tracker, &mut recovery),
+        OrderedCommitOutcome::Tracked(TrackedFanoutResult::Complete { .. })
+    ));
+    assert_eq!(budget.usage(), ResourceUsage::default());
+    for id in [1, 2] {
+        assert!(
+            registry
+                .peek_queue(DestinationId(id))
+                .unwrap()
+                .try_dequeue()
+                .is_some()
+        );
+    }
+    budget.close();
+    assert!(matches!(
+        ready(budget.prepare(
+            &registry,
+            &namespaces,
+            batch,
+            context(),
+            Arc::new(SystemMonotonicClock),
+            None
+        )),
+        Err(OrderedPreparationError::Budget(ErrorCode::Unavailable))
+    ));
+}
+
+#[test]
+fn bounded_ordered_admission_dropped_wait_releases_global_and_destination_capacity() {
+    use marketforge_engine::live::{
+        foundation::{SystemMonotonicClock, resources::ResourceUsage},
+        routing::{namespaces::AdmissionNamespaces, ordered::OrderedAdmissionBudget},
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let queue = registry.peek_queue(DestinationId(2)).unwrap();
+    for _ in 0..50 {
+        queue.try_enqueue(batch.clone()).unwrap();
+    }
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    namespaces.register(batch.first_cursor().clone()).unwrap();
+    let budget = OrderedAdmissionBudget::new(ResourceUsage {
+        items: 100,
+        bytes: 1_000_000,
+    })
+    .unwrap();
+    let cancel = CancellationToken::new();
+    let mut waiting = Box::pin(budget.prepare(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        AdmissionContext::without_deadline(cancel.clone()),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ));
+    let waker = Waker::from(Arc::new(NoopWake));
+    assert!(
+        waiting
+            .as_mut()
+            .poll(&mut Context::from_waker(&waker))
+            .is_pending()
+    );
+    assert_eq!(budget.usage().items, batch.len());
+    drop(waiting);
+    assert_eq!(budget.usage(), ResourceUsage::default());
+    assert_eq!(queue.capacity().usage().waiting_operations, 0);
+    assert_eq!(
+        registry
+            .peek_queue(DestinationId(1))
+            .unwrap()
+            .capacity()
+            .usage()
+            .occupied_events,
+        0
+    );
+    assert!(tracker.is_empty());
+    // Cancellation also releases the global charge when the future completes.
+    let mut waiting = Box::pin(budget.prepare(
+        &registry,
+        &namespaces,
+        batch,
+        AdmissionContext::without_deadline(cancel.clone()),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ));
+    assert!(
+        waiting
+            .as_mut()
+            .poll(&mut Context::from_waker(&waker))
+            .is_pending()
+    );
+    cancel.cancel();
+    assert!(
+        waiting
+            .as_mut()
+            .poll(&mut Context::from_waker(&waker))
+            .is_ready()
+    );
+    assert_eq!(budget.usage(), ResourceUsage::default());
+}

@@ -16,7 +16,11 @@ use super::{
     tracking_recovery::TrackingRecovery,
 };
 use crate::live::{
-    foundation::MonotonicClock,
+    foundation::{
+        MonotonicClock,
+        resources::{ResourceBudget, ResourceReservation, ResourceUsage},
+    },
+    model::{error::ErrorCode, memory::RetainedSize},
     ports::routing::{EventBatch, RoutingAdmissionFailure},
 };
 
@@ -27,6 +31,7 @@ pub enum OrderedPreparationError {
     Registry(RouterRegistryError),
     Capacity(FanoutPreparationError),
     Namespace(NamespaceError),
+    Budget(ErrorCode),
 }
 
 /// Owns capacity and the exclusive namespace permit; has no tracker side effects
@@ -40,6 +45,7 @@ pub struct OrderedFanout<'a> {
     order: CursorOrderPermit,
     context: AdmissionContext,
     clock: Arc<dyn MonotonicClock>,
+    _admission: Option<ResourceReservation>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,6 +126,7 @@ impl<'a> OrderedFanout<'a> {
             order,
             context,
             clock,
+            _admission: None,
         })
     }
 
@@ -159,5 +166,59 @@ impl<'a> OrderedFanout<'a> {
             self.order.commit();
         }
         OrderedCommitOutcome::Tracked(result)
+    }
+}
+
+/// Global count/byte bound for preparations, including futures waiting on slow
+/// destinations. Capacity exhaustion is explicit rejection; no waiter queue is
+/// allocated. A prepared operation retains its charge until commitment or drop.
+#[derive(Debug)]
+pub struct OrderedAdmissionBudget {
+    budget: ResourceBudget,
+}
+
+impl OrderedAdmissionBudget {
+    pub fn new(limit: ResourceUsage) -> Result<Self, ErrorCode> {
+        Ok(Self {
+            budget: ResourceBudget::new(limit)?,
+        })
+    }
+
+    pub fn usage(&self) -> ResourceUsage {
+        self.budget.usage()
+    }
+
+    /// Stop new preparations without revoking already acquired responsibility.
+    /// Runtime shutdown must also close namespaces and cancel waiting contexts.
+    pub fn close(&self) {
+        self.budget.close();
+    }
+
+    pub async fn prepare<'a>(
+        &self,
+        registry: &'a RouterRegistry,
+        namespaces: &AdmissionNamespaces,
+        batch: EventBatch,
+        context: AdmissionContext,
+        clock: Arc<dyn MonotonicClock>,
+        timer: Option<&dyn DeadlineTimer>,
+    ) -> Result<OrderedFanout<'a>, OrderedPreparationError> {
+        check(&context, clock.as_ref()).map_err(OrderedPreparationError::Context)?;
+        let bytes = batch
+            .retained_size_bytes()
+            .map_err(|_| OrderedPreparationError::Budget(ErrorCode::Capacity))?;
+        let reservation = self
+            .budget
+            .reserve(ResourceUsage {
+                items: batch.len(),
+                bytes: usize::try_from(bytes)
+                    .map_err(|_| OrderedPreparationError::Budget(ErrorCode::Capacity))?,
+            })
+            .map_err(OrderedPreparationError::Budget)?;
+        let mut prepared =
+            OrderedFanout::prepare_registered(registry, namespaces, batch, context, clock, timer)
+                .await?;
+        prepared._admission = Some(reservation);
+        Ok(prepared)
     }
 }

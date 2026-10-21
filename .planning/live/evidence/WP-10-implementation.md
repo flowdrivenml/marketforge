@@ -153,3 +153,56 @@ scheduling, owner-lifetime recovery/payload retention, best-effort/no-subscriber
 policies, native metrics/snapshots and deadline shutdown remain incomplete.
 Earlier WP-05/06/07/09 gates remain open. Further independent WP-10 work is safe;
 WP-11 prerequisites are not declared satisfied. Checkpoint: `045d860` (namespace ownership, witnesses and package evidence).
+
+
+## Continuation — bounded global preparation (2026-10-21)
+
+Status: Partial. Next authorized/executable package: WP-10 completion.
+Baseline HEAD `b9b3a94`, branch `codex/wp06-completion`; pre-existing untracked
+`scripts/run-autonomous-codex.sh` preserved. Current source, history, status,
+roadmap WP-10 and recorded decisions inspected; no completed work restarted.
+
+Implemented:
+- `OrderedAdmissionBudget` composes the existing WP-08 atomic resource budget
+  with registered ordered tracked fan-out. Event count and canonical retained
+  memory are charged before any destination capacity wait; no caller-supplied
+  byte estimate can undercount the batch. Checked conversion fails closed.
+- Global exhaustion rejects explicitly without allocating a waiter queue.
+  Charges survive preparation and release on dropped futures/preparations,
+  cancellation, errors and synchronous commitment. Queue/obligation capacity
+  remains owned by existing downstream mechanisms after responsibility transfer.
+- Closing the budget rejects new preparation without revoking in-flight work.
+  Owner shutdown must also close namespaces/cancel waits; close alone is not
+  advertised as a complete router shutdown.
+- Two deterministic real-consumer witnesses cover count and independent byte
+  exhaustion, exact usage, prepared drop, slow second destination, pending-future
+  drop, cancellation wakeup, closure, tracked commitment and queue readback.
+
+Verification (all exit 0):
+- engine/: `cargo test --locked --offline --no-default-features --features live
+  --test live_suite bounded_ordered_admission`: 2 passed, 388 filtered out.
+- root: `./scripts/verify-live.sh full`: five gates pass. Exact commands:
+  `cargo fmt --all -- --check`; `cargo check --locked --offline
+  --no-default-features --features live --lib`; `cargo test --locked --offline
+  --no-default-features --features live --lib` (130 passed); same test command
+  with `--test live_suite` (388 passed / 2 opt-in ignored); same with `--doc`
+  (1 passed). Commands execute in engine/. Receipts:
+  `engine/target/live-verification/20261021T035519Z-2/`.
+- engine/: `cargo check --locked --offline --no-default-features --features
+  live,historical`: exit 0; receipt
+  `engine/target/live-verification/admission-budget-combined-check.log`.
+- `git diff --check`: exit 0. Existing dead-code warning remains.
+
+Changed: `engine/src/live/routing/ordered.rs`,
+`engine/tests/live/router_obligations.rs`, STATUS.md and this ledger.
+No SQL or exchange requests; opt-in tests and historical baseline tests were
+not rerun. No Python, historical execution, dependencies, lockfile, ignored
+configuration or user launcher changes. No push.
+
+Limitations: bounded preparation is available through this coordinator; existing
+lower-level compatibility APIs are preserved. Production EventRouterPort owner
+integration is pending and must not bypass this bound. Production workers,
+completion/recovery ownership, best-effort/no-subscriber policies, native
+observations and deadline shutdown remain incomplete. No package acceptance
+asserted. Earlier foundational blockers remain unchanged. Checkpoint: commit
+carrying this report; further independent WP-10 work can safely continue.
