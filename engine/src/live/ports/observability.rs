@@ -9,7 +9,9 @@ use crate::live::model::{
 pub enum ObservationAdmission {
     Accepted,
     DroppedCapacity,
+    Rejected(ErrorCode),
     Disabled,
+    SampledOut,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiagnosticEvent {

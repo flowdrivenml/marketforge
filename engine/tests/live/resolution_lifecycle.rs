@@ -447,3 +447,57 @@ fn full_lifecycle_chain() {
 fn sink_with_capacity(capacity: usize) -> BoundedResolutionSink {
     BoundedResolutionSink::new(capacity).unwrap()
 }
+
+#[test]
+fn journal_capacity_notification_replaces_waiter_and_runs_after_sink_unlock() {
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        task::{Wake, Waker},
+    };
+    struct Observer {
+        sink: Arc<BoundedResolutionSink>,
+        calls: AtomicUsize,
+    }
+    impl Wake for Observer {
+        fn wake(self: Arc<Self>) {
+            // Reenter the sink: notification must not run under its commitment lock.
+            assert_eq!(self.sink.len(), 1);
+            self.calls.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let (mut journal, token, record, id) = prepare_resolution(make_obligation(1));
+    let sink = Arc::new(sink_with_capacity(1));
+    let old = Arc::new(Observer {
+        sink: sink.clone(),
+        calls: AtomicUsize::new(0),
+    });
+    let current = Arc::new(Observer {
+        sink: sink.clone(),
+        calls: AtomicUsize::new(0),
+    });
+    journal.arm_capacity_notification(&Waker::from(old.clone()));
+    journal.arm_capacity_notification(&Waker::from(current.clone()));
+    let receipt = sink.accept(token, &record).unwrap();
+    assert!(
+        journal
+            .commit_resolution(DeliveryObligationId(999), &receipt, &sink)
+            .is_err()
+    );
+    assert_eq!(current.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(journal.len(), 1);
+    journal.commit_resolution(id, &receipt, &sink).unwrap();
+    assert_eq!(current.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(old.calls.load(Ordering::SeqCst), 0);
+    assert!(journal.is_empty());
+    assert!(journal.commit_resolution(id, &receipt, &sink).is_err());
+    assert_eq!(current.calls.load(Ordering::SeqCst), 1);
+    let clock = ManualClock::new();
+    assert!(
+        sink.try_take(&clock, Duration::from_secs(1))
+            .unwrap()
+            .is_some()
+    );
+}

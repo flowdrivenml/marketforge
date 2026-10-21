@@ -8,8 +8,8 @@ use marketforge_engine::live::{
     },
     foundation::{CancellationToken, MonotonicClock},
     model::{
-        configuration::*, delivery::*, derived::*, error::*, identity::*, observation::*,
-        operation::*, protocol::*, snapshot::*,
+        configuration::*, derived::*, error::*, identity::*, observation::*, operation::*,
+        protocol::*, snapshot::*,
     },
     ports::{configuration::*, context::*, control::*, lifecycle::*, routing::RoutingFuture},
 };
@@ -561,46 +561,10 @@ fn cursor_positions_and_latency_boundaries_are_checked() {
     };
     assert_eq!(summary.validate(), Err(ErrorCode::InvalidInput));
 }
-fn config() -> DesiredConfiguration {
-    DesiredConfiguration {
-        schema_version: 1,
-        global: GlobalSettings {
-            logging: LogLevel::Info,
-            metrics: MetricsSettings {
-                enabled: true,
-                detailed_timing: false,
-                snapshot_interval_ns: 100,
-                timing_sample_one_in: 1,
-            },
-            recording: RecordingSettings {
-                enabled: false,
-                batch_events: 10,
-                flush_interval_ns: 100,
-                policy: DeliveryPolicy::BestEffort,
-            },
-            recovery: RecoveryPolicy {
-                enabled: true,
-                initial_backoff_ns: 10,
-                max_backoff_ns: 100,
-                max_attempts: 3,
-                jitter: true,
-            },
-            max_subscribers: 10,
-            shutdown_deadline_ns: 100,
-            budgets: ResourceBudgets {
-                retention_memory_bytes: 1024,
-                retention_disk_bytes: 1024,
-                publisher_queue_events: 10,
-                publisher_queue_bytes: 1024,
-                max_tasks: 10,
-                max_file_descriptors: 10,
-            },
-        },
-        sources: vec![],
-        derived: vec![],
-        profiles: vec![],
-    }
+pub(super) fn config() -> DesiredConfiguration {
+    serde_json::from_str(include_str!("fixtures/default-config.json")).unwrap()
 }
+
 struct Store {
     state: Mutex<ConfigurationRevision>,
     fail: bool,
@@ -1021,7 +985,7 @@ fn contrasting_depth_contracts_require_evidence_and_valid_strategy_inputs() {
     );
 }
 
-fn source_key() -> SourceStreamKey {
+pub(super) fn source_key() -> SourceStreamKey {
     SourceStreamKey {
         exchange: marketforge_engine::canonical::Exchange::Bybit,
         market: MarketKind::Spot,

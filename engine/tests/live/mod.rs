@@ -38,3 +38,18 @@ pub(crate) mod wp06_contracts;
 
 pub(crate) mod c06_recording;
 pub(crate) mod wp07_contracts;
+
+pub(crate) mod c06_postgres;
+
+pub(crate) mod wp08_foundations;
+
+pub(crate) mod wp09_configuration;
+
+pub(crate) mod destination_worker;
+
+pub(crate) mod router_runtime;
+
+pub(crate) mod wp09_service;
+
+pub(crate) mod wp05_identity;
+pub(crate) mod wp05_metadata;

@@ -7,7 +7,10 @@
 //!
 //! The journal remains the owner of each record until acknowledged.
 
-use std::time::Duration;
+use std::{
+    panic::{AssertUnwindSafe, catch_unwind},
+    time::Duration,
+};
 
 use crate::live::routing::acknowledgement::{FinalizationEscalation, FinalizationRetryPolicy};
 use crate::live::{
@@ -30,6 +33,8 @@ pub enum ReportingError {
 /// proof of external persistence or consumer acknowledgement.
 ///
 /// Handlers should be idempotent because claims may be retried.
+/// Unwinding handlers are treated as permanent failures: the journal retains
+/// the original outcome for explicit intervention. This cannot contain aborts.
 pub trait FinalizationReporter: Send + Sync {
     fn report(&self, record: &FinalizationRecord) -> Result<(), ReportingError>;
 }
@@ -109,7 +114,11 @@ impl<R: FinalizationReporter> FinalizationReportingConsumer<R> {
     ) -> Result<ReportingStep, ReportingCoordinatorError> {
         let id = claim.record.obligation.id;
 
-        match self.reporter.report(&claim.record) {
+        // Only the adapter invocation is contained. Journal validation errors still
+        // propagate, preserving its lease/token fences and original record.
+        let result = catch_unwind(AssertUnwindSafe(|| self.reporter.report(&claim.record)))
+            .unwrap_or(Err(ReportingError::PermanentFailure));
+        match result {
             Ok(()) => {
                 journal.acknowledge(id, claim.token, clock)?;
 

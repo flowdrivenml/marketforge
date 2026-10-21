@@ -41,7 +41,7 @@ fn stream() -> StreamRow {
         stream_kind: StreamKind::L2,
     }
 }
-fn row(offset: u64) -> StoredEvent {
+pub(super) fn row(offset: u64) -> StoredEvent {
     let mut fields = (*l2_event("s", 1, offset)).clone().into_fields();
     if let marketforge_engine::live::model::LivePayload::L2Group(g) = &mut fields.payload {
         for (side, price, quantity) in [(BookSide::Bid, 100, 2), (BookSide::Ask, 101, 0)] {

@@ -19,6 +19,7 @@ use crate::live::{
 use std::{
     collections::VecDeque,
     sync::{Arc, Mutex},
+    task::{Context, Poll, Waker},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,10 +83,21 @@ pub struct QueueSnapshot {
     pub closed: bool,
 }
 
+/// One queue observation taken with insertion/dequeue excluded. Capacity includes
+/// reservations and consumer-held batches, so it must not be called queue depth.
+/// Independent capacity releases may occur immediately after this observation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueueObservation {
+    pub queue: QueueSnapshot,
+    pub capacity: super::destination::CapacityUsage,
+}
+
 #[derive(Debug, Default)]
 struct QueueState {
     batches: VecDeque<QueuedBatch>,
     closed: bool,
+    worker_claimed: bool,
+    worker_waiter: Option<Waker>,
 }
 
 #[derive(Debug)]
@@ -120,6 +132,9 @@ impl From<AdmissionWaitError> for AsyncQueueAdmissionError {
     fn from(value: AdmissionWaitError) -> Self {
         match value {
             AdmissionWaitError::MissingTimer => Self::MissingTimer,
+            AdmissionWaitError::TimerCapacity | AdmissionWaitError::CancellationCapacity => {
+                Self::Capacity(CapacityError::Full)
+            }
         }
     }
 }
@@ -132,7 +147,75 @@ pub struct DestinationQueue {
     inner: Arc<QueueInner>,
 }
 
+/// Exclusive dequeue authority held by one destination worker.
+pub(crate) struct QueueWorkerLease {
+    queue: DestinationQueue,
+}
+
+impl QueueWorkerLease {
+    /// Register under the insertion lock to prevent lost wakeups.
+    pub(crate) fn poll_dequeue(&self, cx: &mut Context<'_>) -> Poll<Option<QueuedBatch>> {
+        let mut state = self
+            .queue
+            .inner
+            .state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if let Some(batch) = state.batches.pop_front() {
+            state.worker_waiter = None;
+            return Poll::Ready(Some(batch));
+        }
+        if state.closed {
+            state.worker_waiter = None;
+            return Poll::Ready(None);
+        }
+        state.worker_waiter = Some(cx.waker().clone());
+        Poll::Pending
+    }
+
+    pub(crate) fn dequeue(&self) -> Option<QueuedBatch> {
+        self.queue
+            .inner
+            .state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .batches
+            .pop_front()
+    }
+}
+
+impl Drop for QueueWorkerLease {
+    fn drop(&mut self) {
+        let waiter = {
+            let mut state = self
+                .queue
+                .inner
+                .state
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            state.worker_claimed = false;
+            state.worker_waiter.take()
+        };
+        drop(waiter);
+    }
+}
+
 impl DestinationQueue {
+    pub(crate) fn claim_worker(&self) -> Option<QueueWorkerLease> {
+        let mut state = self.inner.state.lock().unwrap_or_else(|p| p.into_inner());
+        if state.worker_claimed {
+            return None;
+        }
+        state.worker_claimed = true;
+        Some(QueueWorkerLease {
+            queue: self.clone(),
+        })
+    }
+    /// Queue ownership identity, independent of equal capacity settings.
+    pub(crate) fn same_owner(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+
     pub fn new(capacity: DestinationCapacity) -> Self {
         Self {
             inner: Arc::new(QueueInner {
@@ -152,6 +235,24 @@ impl DestinationQueue {
         batch: &EventBatch,
         context: AdmissionContext,
         timer: Option<&dyn DeadlineTimer>,
+    ) -> AsyncCapacityAdmission {
+        self.reserve_async_with_clock(
+            batch,
+            context,
+            timer,
+            &crate::live::foundation::clock::SystemMonotonicClock,
+        )
+        .await
+    }
+
+    /// Use the admission owner's clock for the final precommit deadline fence.
+    /// The supplied timer must use the same monotonic timeline.
+    pub async fn reserve_async_with_clock(
+        &self,
+        batch: &EventBatch,
+        context: AdmissionContext,
+        timer: Option<&dyn DeadlineTimer>,
+        clock: &dyn crate::live::foundation::MonotonicClock,
     ) -> AsyncCapacityAdmission {
         let events = batch.len();
 
@@ -192,7 +293,7 @@ impl DestinationQueue {
         }
 
         if let Some(deadline) = context.deadline {
-            if std::time::Instant::now() >= deadline {
+            if clock.now() >= deadline {
                 return AsyncCapacityAdmission::Rejected(
                     AsyncQueueAdmissionError::DeadlineExceeded,
                 );
@@ -263,6 +364,11 @@ impl DestinationQueue {
             permit: reservation.commit(),
         });
 
+        let waiter = state.worker_waiter.take();
+        drop(state);
+        if let Some(waiter) = waiter {
+            waiter.wake();
+        }
         Ok(())
     }
     /// Attempt immediate admission.
@@ -320,11 +426,17 @@ impl DestinationQueue {
 
         // Queue insertion is the admission commitment boundary.
         state.batches.push_back(QueuedBatch { batch, permit });
+        let waiter = state.worker_waiter.take();
+        drop(state);
+        if let Some(waiter) = waiter {
+            waiter.wake();
+        }
 
         Ok(())
     }
 
     /// Remove the oldest queued batch.
+    /// Returns None while an exclusive destination worker owns dequeue authority.
     ///
     /// Ownership transfers to the consumer.
     ///
@@ -337,6 +449,9 @@ impl DestinationQueue {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
+        if state.worker_claimed {
+            return None;
+        }
         state.batches.pop_front()
     }
 
@@ -351,6 +466,11 @@ impl DestinationQueue {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         state.closed = true;
+        let waiter = state.worker_waiter.take();
+        drop(state);
+        if let Some(waiter) = waiter {
+            waiter.wake();
+        }
     }
 
     /// Shut down the queue and its capacity manager.
@@ -389,6 +509,10 @@ impl DestinationQueue {
     }
 
     pub fn snapshot(&self) -> QueueSnapshot {
+        self.observe().queue
+    }
+
+    pub fn observe(&self) -> QueueObservation {
         let state = self
             .inner
             .state
@@ -403,11 +527,15 @@ impl DestinationQueue {
             queued_bytes += item.bytes();
         }
 
-        QueueSnapshot {
-            queued_batches: state.batches.len(),
-            queued_events,
-            queued_bytes,
-            closed: state.closed,
+        QueueObservation {
+            queue: QueueSnapshot {
+                queued_batches: state.batches.len(),
+                queued_events,
+                queued_bytes,
+                closed: state.closed,
+            },
+            // Preserve insertion's queue -> capacity lock order.
+            capacity: self.inner.capacity.usage(),
         }
     }
 

@@ -1,13 +1,14 @@
-//! Planned module: src/live/config.
+//! Cold-path configuration loading, planning and durable acceptance.
 
-// Document 17 scaffolding: declarations only; implementations are not complete.
-pub(crate) mod compiler;
-pub(crate) mod diff;
-pub(crate) mod effective;
+pub mod compiler;
+pub mod diff;
+pub mod effective;
 pub(crate) mod inheritance;
-pub(crate) mod loader;
-pub(crate) mod manager;
+pub mod loader;
+pub mod manager;
 pub(crate) mod revision;
 pub(crate) mod schema;
-pub(crate) mod store;
-pub(crate) mod validation;
+pub mod store;
+pub mod validation;
+
+pub mod worker;

@@ -943,7 +943,12 @@ record = false
 
 Each source definition references an exchange profile and channel capability.
 
-Instrument symbols must be resolved through the existing MarketForge instrument catalog.
+Instrument symbols must be resolved through the authoritative existing PostgreSQL
+catalog using `(exchange, symbol, instrument_type, market_category)`, not an
+exchange/symbol-only lookup. The approved five classification pairs, immutable
+metadata contract and conditional quantity economics are specified in Document 02
+§3.3 and DEC-036/037. No catalog schema change or Python-orchestration authority
+is implied. Missing/ambiguous/conflicting metadata must be explicit.
 
 ### 7.3 Source Identity Validation
 
@@ -960,6 +965,14 @@ The compiler must reject:
 Equivalent source specifications must resolve to the same canonical acquisition key.
 
 The registry must not establish duplicate exchange subscriptions merely because two configuration entries reference equivalent source streams.
+
+Option A stores persistent SourceDefinition/DerivedDefinition identities in
+committed ConfigurationRevision contents. WP-09 must reject duplicate canonical
+source registrations, duplicate/colliding IDs and semantic reassignment proved by
+current/retained authoritative state. Reuse WP-05's canonical key and candidate
+identity contracts; a candidate result neither reserves a revision nor changes a
+registry. Removal/reintroduction and missing historical bindings remain
+OPEN-006–009, not permission to rebind an ID. No separate identity journal is allowed.
 
 ### 7.4 Source-Level Recording
 
@@ -1416,6 +1429,12 @@ impl LiveConfigCompiler {
 
 The compiler must not establish network connections, create database transactions, or modify active runtime state.
 
+The conceptual InstrumentCatalog dependency above denotes immutable validated
+metadata inputs; it does not make the historical JSON catalog the production
+authority for Live economics. Read-only SQL hydration belongs to the eventual
+approved infrastructure boundary (owner OPEN-011), not the pure compiler or the
+per-event processing path. WP-07 port integration must preserve this boundary.
+
 It is a deterministic transformation from validated inputs to a resolved plan.
 
 ### 10.3 CompiledLivePlan
@@ -1499,6 +1518,15 @@ Runtime optimization priorities include:
 
 The compiler should optimize repeated per-event work rather than minimize one-time compilation cost.
 
+Consume typed read-only metadata and retain immutable validated economics and
+provenance in compilation inputs. The verified WP-05 resolver contract/in-memory
+fixtures are not a production catalog adapter or proof that the frozen compiler
+port already consumes them. WP-07 owns service-port adoption; WP-12 owns
+catalog/protocol and native-normalization integration; concrete PostgreSQL adapter
+ownership remains OPEN-011. Activation freshness/refresh policy remains OPEN-010;
+an available fetched-at timestamp or caller-supplied age check does not settle it.
+No profile or configuration default may invent missing family/economic fields.
+
 ---
 
 ## 11. Configuration Validation
@@ -1578,7 +1606,8 @@ Validation must evaluate the complete desired configuration rather than only ind
 Required checks include:
 
 - Duplicate stream identifiers.
-- Conflicting source definitions.
+- Conflicting source definitions and duplicate canonical acquisitions under different IDs.
+- Source/derived identity collisions and semantic reassignment demonstrated by authoritative committed state/history.
 - Missing derived dependencies.
 - Cyclic derived dependencies.
 - Incompatible derived input schemas.
@@ -1695,6 +1724,13 @@ Application outcome
 ```
 
 Configuration history is operational metadata and must remain separate from canonical market-data history.
+
+Committed declarations are also the persistent identity authority (Option A).
+Bounded history cannot prove bindings that predate its retained suffix. Report
+that limitation; pruning does not authorize identifier reuse or delete retained
+events, recorded rows, replay clients or independent runtime demand. No permanent
+tombstone/retention extension is approved here. OPEN-006–009 retain the lifecycle
+and historical-binding decisions, including same-ID/identical-definition restore.
 
 ### 12.5 Revision Persistence
 
@@ -2015,6 +2051,12 @@ Source recording enabled
 
 A new derived generation does not imply that underlying source streams must reconnect.
 
+A changed canonical SourceStreamKey must not be silently rebound to an existing
+StreamId when authoritative state/history demonstrates a different binding.
+Source acquisition identity replacement is distinct from an existing derived
+stream's explicit semantic generation transition. Neither operation settles
+removed-declaration reintroduction or permanent ID reuse (OPEN-006–009).
+
 ### 14.5 Deferred Runtime Changes
 
 Initially excluded from hot reconfiguration:
@@ -2182,6 +2224,12 @@ A single transactionally published configuration snapshot may replace separate d
 
 The essential requirement is that configuration contents and revision identity cannot become inconsistent after a crash.
 
+Under Option A, those committed contents also contain the authoritative assigned
+source/derived IDs and semantic declarations. The existing FileRevisionJournal is
+the durable configuration implementation; persistent identity reconstruction does
+not create a second journal/database. Epoch storage remains a separate existing
+cursor namespace responsibility, not the logical identity mapping authority.
+
 ### 16.2 Atomic Persistence
 
 Configuration persistence must provide:
@@ -2224,6 +2272,15 @@ Reconcile Desired Resources
 If the persisted desired configuration is invalid under the installed static specifications, startup must fail safely or enter an explicitly defined degraded management mode.
 
 It must not silently modify acquisition semantics to achieve startup.
+
+WP-11 reconstructs persistent registrations/requirements from validated committed
+declarations under WP-24 composition/reconciliation, retaining current IDs even
+for disabled declarations. This restores neither transient handles/demand nor
+old connections, readiness or generations. Use WP-05 mapping evidence without
+claiming permanent non-reuse when history has been pruned. Metadata is resolved
+outside processing; freshness and concrete read-only adapter ownership remain
+OPEN-010/011. Unknown historical identity bindings remain explicit for replay and
+restart rather than being filled from a different current acquisition.
 
 ### 16.4 Runtime Reconciliation Persistence
 

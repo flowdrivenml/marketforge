@@ -3,6 +3,7 @@ use crate::live::routing::acknowledgement::AcknowledgementError;
 use crate::live::routing::acknowledgement::AcknowledgementTracker;
 use crate::live::routing::acknowledgement::DeliveryAcknowledgement;
 use crate::live::routing::acknowledgement::DeliveryCursorRange;
+use crate::live::routing::acknowledgement::DeliveryObligationId;
 use crate::live::routing::destination::{CapacityError, CapacityReservation, DestinationCapacity};
 use crate::live::{model::delivery::DeliveryStatus, ports::routing::DestinationId};
 use std::collections::VecDeque;
@@ -30,6 +31,16 @@ pub enum TrackingRecoveryOutcome {
         error: AcknowledgementError,
         remaining: usize,
     },
+}
+
+/// Result of one capacity-bounded pass, without discarding failed updates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TrackingRecoveryPass {
+    pub attempted: usize,
+    pub recovered: usize,
+    pub blocked_by_predecessor: usize,
+    pub remaining: usize,
+    pub first_error: Option<AcknowledgementError>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrackingRecoveryValidationError {
@@ -140,6 +151,24 @@ impl PendingTrackingUpdate {
         self.reservation.reservation.events()
     }
 }
+/// Owned observation of recovery responsibilities, including reservations held
+/// by prepared fan-outs that have not yet produced an outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrackingRecoverySnapshot {
+    pub pending_updates: usize,
+    pub unresolved_outcomes: usize,
+    pub reserved_updates: usize,
+    pub available_updates: usize,
+}
+
+impl TrackingRecoverySnapshot {
+    /// Recovery is drained only when no retained or in-flight responsibility exists.
+    /// This says nothing about destination processing or obligation finalization.
+    pub fn is_drained(&self) -> bool {
+        self.pending_updates == 0 && self.unresolved_outcomes == 0 && self.reserved_updates == 0
+    }
+}
+
 /// Bounded in-process storage for failed tracking updates.
 ///
 /// Capacity is accounted for by the reservations owned
@@ -167,7 +196,16 @@ impl TrackingRecovery {
         &self,
         count: usize,
     ) -> Result<Vec<TrackingRecoveryReservation>, CapacityError> {
-        let mut reservations = Vec::with_capacity(count);
+        // Reject before allocating: public callers may supply arbitrary counts,
+        // including counts whose Vec layout would overflow. Availability is a
+        // preflight only; individual reservations still enforce shared capacity.
+        if count > self.available() {
+            return Err(CapacityError::Full);
+        }
+        let mut reservations = Vec::new();
+        reservations
+            .try_reserve_exact(count)
+            .map_err(|_| CapacityError::AccountingOverflow)?;
 
         for _ in 0..count {
             reservations.push(self.reserve()?);
@@ -214,6 +252,44 @@ impl TrackingRecovery {
         }
     }
 
+    /// Try each initially retained update at most once. A failed obligation does
+    /// not block independent obligations, but its later updates cannot overtake
+    /// it. Failed entries retain their original order and capacity reservations.
+    /// Work is bounded by configured recovery capacity (with a bounded prefix
+    /// scan per entry); no retry loop, allocation, IO or automatic wakeup occurs.
+    /// Uncorrelated outcomes still require explicit reconciliation.
+    pub fn retry_pass(&mut self, tracker: &mut AcknowledgementTracker) -> TrackingRecoveryPass {
+        let mut report = TrackingRecoveryPass::default();
+        let mut index = 0;
+        while index < self.pending.len() {
+            let update = &self.pending[index];
+            let id = update.acknowledgement.obligation;
+            if self
+                .pending
+                .iter()
+                .take(index)
+                .any(|earlier| earlier.acknowledgement.obligation == id)
+            {
+                report.blocked_by_predecessor += 1;
+                index += 1;
+                continue;
+            }
+            report.attempted += 1;
+            match tracker.acknowledge(update.acknowledgement.clone()) {
+                Ok(()) => {
+                    self.pending.remove(index);
+                    report.recovered += 1;
+                }
+                Err(error) => {
+                    report.first_error.get_or_insert(error);
+                    index += 1;
+                }
+            }
+        }
+        report.remaining = self.pending.len();
+        report
+    }
+
     pub fn retain_unresolved(
         &mut self,
         destination: DestinationId,
@@ -252,6 +328,45 @@ impl TrackingRecovery {
     }
     pub fn unresolved_len(&self) -> usize {
         self.unresolved.len()
+    }
+
+    /// Inspect the oldest uncorrelated outcome without transferring responsibility.
+    pub fn next_unresolved(&self) -> Option<&UnresolvedRecoveryOutcome> {
+        self.unresolved.front()
+    }
+
+    /// Reconcile the oldest uncorrelated outcome with a known obligation.
+    ///
+    /// The authoritative tracker checks destination, complete cursor range and
+    /// progress semantics before either owner releases responsibility. Rejection
+    /// leaves the outcome and its reservation intact. Success releases only the
+    /// recovery slot; terminal obligation finalization remains the tracker's job.
+    pub fn reconcile_next_unresolved(
+        &mut self,
+        tracker: &mut AcknowledgementTracker,
+        obligation: DeliveryObligationId,
+    ) -> TrackingRecoveryOutcome {
+        let Some(outcome) = self.unresolved.front() else {
+            return TrackingRecoveryOutcome::Empty;
+        };
+        let acknowledgement = DeliveryAcknowledgement {
+            obligation,
+            destination: outcome.destination,
+            range: outcome.range.clone(),
+            status: outcome.status,
+        };
+        match tracker.acknowledge(acknowledgement) {
+            Ok(()) => {
+                self.unresolved.pop_front();
+                TrackingRecoveryOutcome::Recovered {
+                    remaining: self.unresolved.len(),
+                }
+            }
+            Err(error) => TrackingRecoveryOutcome::RetryRequired {
+                error,
+                remaining: self.unresolved.len(),
+            },
+        }
     }
     /// Validate reservations intended for one tracked fan-out.
     ///
@@ -302,10 +417,24 @@ impl TrackingRecovery {
         Ok(())
     }
 
+    /// Observe all recovery ownership without releasing reservations.
+    pub fn snapshot(&self) -> TrackingRecoverySnapshot {
+        let occupied = self.occupied();
+        TrackingRecoverySnapshot {
+            pending_updates: self.pending.len(),
+            unresolved_outcomes: self.unresolved.len(),
+            reserved_updates: occupied - self.pending.len() - self.unresolved.len(),
+            available_updates: self.capacity.capacity.limits().max_pending_events - occupied,
+        }
+    }
+
+    /// Number of correlated pending updates; excludes unresolved outcomes.
     pub fn len(&self) -> usize {
         self.pending.len()
     }
 
+    /// Whether the correlated pending-update queue is empty. Use snapshot().is_drained()
+    /// when deciding whether all recovery responsibility has drained.
     pub fn is_empty(&self) -> bool {
         self.pending.is_empty()
     }

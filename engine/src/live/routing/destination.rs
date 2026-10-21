@@ -43,6 +43,8 @@ struct CapacityState {
     next_waiter_id: Option<u64>,
     waiters: HashMap<u64, Waker>,
     shutting_down: bool,
+    shutdown_waker: Option<Waker>,
+    release_waker: Option<Waker>,
 }
 
 impl Default for CapacityState {
@@ -53,6 +55,8 @@ impl Default for CapacityState {
             next_waiter_id: Some(1),
             waiters: HashMap::new(),
             shutting_down: false,
+            shutdown_waker: None,
+            release_waker: None,
         }
     }
 }
@@ -161,6 +165,39 @@ impl DestinationCapacity {
         wake_all(waiters);
     }
 
+    /// One replacement-aware shutdown coordinator; payload owners retain their
+    /// permits. Register atomically with the drain check to avoid lost wakeups.
+    pub fn poll_shutdown(&self, cx: &mut Context<'_>) -> Poll<()> {
+        self.shutdown();
+        let mut state = self.lock_state();
+        if state.occupied_events == 0 && state.occupied_bytes == 0 {
+            state.shutdown_waker = None;
+            Poll::Ready(())
+        } else {
+            if state
+                .shutdown_waker
+                .as_ref()
+                .is_none_or(|w| !w.will_wake(cx.waker()))
+            {
+                state.shutdown_waker = Some(cx.waker().clone());
+            }
+            Poll::Pending
+        }
+    }
+
+    /// One replacement-aware coordinator, armed before inspecting owners.
+    /// Releases wake it even after closure without consuming admission waiters.
+    pub(crate) fn arm_release_notification(&self, waker: &Waker) {
+        let mut state = self.lock_state();
+        if state
+            .release_waker
+            .as_ref()
+            .is_none_or(|w| !w.will_wake(waker))
+        {
+            state.release_waker = Some(waker.clone());
+        }
+    }
+
     pub fn usage(&self) -> CapacityUsage {
         let state = self.lock_state();
 
@@ -229,7 +266,7 @@ impl CapacityReservation {
 
 impl Drop for CapacityReservation {
     fn drop(&mut self) {
-        let waiters = {
+        let (waiters, shutdown_waker, release_waker) = {
             let mut state = self
                 .inner
                 .state
@@ -252,10 +289,25 @@ impl Drop for CapacityReservation {
             // request may not fit the newly available capacity.
             //
             // Waiters compete to reserve capacity when polled.
-            std::mem::take(&mut state.waiters)
+            let shutdown_waker = if state.occupied_events == 0 && state.occupied_bytes == 0 {
+                state.shutdown_waker.take()
+            } else {
+                None
+            };
+            (
+                std::mem::take(&mut state.waiters),
+                shutdown_waker,
+                state.release_waker.take(),
+            )
         };
 
         wake_all(waiters);
+        if let Some(waker) = release_waker {
+            waker.wake();
+        }
+        if let Some(waker) = shutdown_waker {
+            waker.wake();
+        }
     }
 }
 

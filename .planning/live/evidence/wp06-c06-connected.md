@@ -124,3 +124,41 @@ The full exact file manifest and source hashes are in
 
 No dependency, historical code/test, PostgreSQL DDL, credential, WP-10 code,
 commit or push was changed/performed. Final acceptance remains the user's decision.
+
+## Autonomous isolated PostgreSQL witness — 2026-10-21
+
+New authorization permits writes only in `marketforge_live_test` using its
+restricted matching role. Actual current_database/current_user/session_user
+were checked. All elevated role flags are false. A connection attempt with this
+role to `marketforge` is rejected by server pg_hba.conf for SSL and non-SSL,
+despite inherited SQL CONNECT privilege. No production credentials were used.
+
+`tests/live/c06_postgres.rs` is an opt-in psql fixture adapter, not a production
+SQL driver. Every session executes an identity/role guard before fixture SQL.
+The test creates a unique stream, uses production StoredEvent encoding, commits
+a parent with two ordered levels and coverage, reads from a new session,
+reconstructs StoredEvent and validates the canonical event. Full u64 offsets and
+order counts survive exact NUMERIC transport. A duplicate insert fails; a failing
+child constraint rolls back identity and parent together. Cleanup addresses only
+the uniquely created fixture. No DDL, schema-policy changes or real DB writes.
+
+Command (engine/): `cargo test --locked --offline --no-default-features --features
+live --test live_suite c06_postgres -- --ignored`, exit 0; 1 passed, 363 filtered.
+Initial compile errors and a fixture StreamIdentityMismatch were repaired without
+weakening production validation. Full Live check subsequently passed: 113 library,
+363 integration plus this one separately executed opt-in test, and 1 doctest.
+Receipt directory: `engine/target/live-verification/20261021T025854Z-2/`.
+
+This does NOT certify a production recorder, network-level lost-commit response,
+concurrent protected cleanup, or full idempotent retry/reconciliation SQL. Those
+gates remain open, as does the canonical signed timestamp/schema conflict. The
+previous read-only authorization blocker is superseded for the isolated DB.
+Checkpoint: commit carrying this addendum, see Git history.
+
+The isolated witness was strengthened with a 28-place fractional price and
+quantity, plus asserted fixture cleanup. Both exact decimals survive SQL NUMERIC
+readback and canonical reconstruction; the test exits 0 with 1 passed. Cleanup
+success is now asserted before test success rather than relying only on Drop.
+
+Final isolated SQL receipt: `engine/target/live-verification/campaign-final-1792553404735277127/results.json` (SQL command exit 0;
+1 passed, 377 filtered). The test guards identity/role on every libpq session.
