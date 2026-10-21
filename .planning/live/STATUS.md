@@ -13,7 +13,7 @@
 | WP-06 | Freeze and implement event/delivery/replay contracts | Independent contracts implemented; C06 real database gates BLOCKED | [Independent contracts](evidence/wp06-independent-contracts.md), [Observed C06 mapping and blockers](evidence/wp06-c06-connected.md) |
 | WP-07 | Freeze service ports, management and observation surfaces | Contract implementation review pending; C12 adapter decision OPEN | [Contract implementation and witnesses](evidence/wp07-contracts.md) |
 | WP-08 | Implement foundations and real native observability | ReadyForReview | [Implementation ledger](evidence/WP-08-implementation.md) |
-| WP-09 | Implement the Configuration System | Pending | — |
+| WP-09 | Implement the Configuration System | Partial — candidates/DAG/journal verified; semantic compiler and service pending | [Implementation ledger](evidence/WP-09-implementation.md) |
 | WP-10 | Implement the canonical event router | In Progress — Early Implementation | Routing, admission, acknowledgement, commitment, and recovery code; passing Live tests |
 | WP-11 | Implement source registry and dependency ownership | Pending | — |
 | WP-12 | Implement exchange-profile and format compilation | Pending | — |
@@ -38,6 +38,15 @@
 ## Current Development Position
 
 ### Autonomous continuation — 2026-10-21
+
+Checkpoint `50f1009` completes WP-08 primitives as ReadyForReview. WP-09 now has
+verified candidate changes, iterative bounded DAG validation and a real bounded
+checksummed local revision journal, including all nine persistence fault points.
+Full verification exits 0: 129 library / 371 integration / 1 doctest. WP-09 remains
+Partial; authoritative metadata/capability compilation, TOML projection, worker
+port and management integration are not certified. Independent WP-10 work may
+continue against its explicit WP-06/WP-08 prerequisites.
+
 
 WP-08 completion verification: full Live exits 0 (123 library, 366 integration,
 1 doctest; two opt-in tests run separately). TUI and combined Live+historical
