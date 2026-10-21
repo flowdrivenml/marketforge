@@ -128,6 +128,45 @@ Market category: Linear
 
 Instrument metadata must be resolved before stream activation and made available to the processing path without per-event database queries.
 
+The authoritative source is the existing PostgreSQL catalog, without schema
+changes: `catalog.exchanges`, `catalog.instruments`, `catalog.instrument_specs`
+and `catalog.instrument_api_raw`. `catalog.instrument_metrics` is not contract
+economics. Python catalog models/historical normalization are compatibility
+references; Python orchestration is not authoritative for Live architecture.
+The historical JSON/currency catalog alone does not establish complete economics.
+
+Resolve the full `(exchange, symbol, instrument_type, market_category)` tuple:
+
+| instrument_type | market_category | InstrumentKind | ContractKind |
+|---|---|---|---|
+| spot | spot | Spot | None |
+| perpetual | linear | Perpetual | Linear |
+| perpetual | inverse | Perpetual | Inverse |
+| future | linear | Future | Linear |
+| future | inverse | Future | Inverse |
+
+Missing, ambiguous, unknown/options or conflicting classifications must not be
+silently accepted. An absent derivative family stays unresolved; exchange names
+and symbol suffixes cannot supply it. Reuse `InstrumentIdentity`, `InstrumentKind`,
+`ContractKind`, `InstrumentSpec`, `QuantityEncoding` and `Decimal`.
+
+Metadata validity is distinct from normalization capability. Validate identity,
+classification, required fields, exact economic representations and required
+positive tick size. Preserve Base/Quote/Contracts encodings, contract value/asset,
+quantity step/available limits, base/quote/settlement assets and catalog provenance
+(including fetched-at and available versions). A multiplier is mandatory only
+when the selected normalization requires one. Never invent missing multipliers or
+settlement semantics, or certify native field units from economic validity alone.
+
+**Verified contract:** `model/metadata.rs` supplies typed read-only
+`MetadataResolver`, immutable `ValidatedInstrumentMetadata` and deterministic
+in-memory fixtures. This does not establish a production PostgreSQL adapter,
+frozen service-port adoption or real-exchange normalization capability. Resolution
+runs during compilation/controlled refresh. A caller-supplied age check is not an
+accepted activation freshness policy. See DEC-036/037 and OPEN-010/011 in the
+[decision register](../../.planning/live/decisions.md) for accepted authority,
+open freshness policy and open concrete-adapter ownership.
+
 ### 3.4 Channel Identity
 
 A channel identifies the semantic market-data feed.
@@ -165,7 +204,7 @@ A source stream represents one unique logical exchange acquisition.
 pub struct SourceStreamKey {
     pub exchange: ExchangeId,
     pub market: MarketKind,
-    pub instrument: InstrumentId,
+    pub instrument: crate::instrument::InstrumentIdentity,
     pub channel: ChannelSpec,
 }
 ```
@@ -183,6 +222,12 @@ Two equivalent keys must resolve to one logical source acquisition.
 
 Different acquisition semantics must produce different keys.
 
+At the compilation/registration boundary, the verified
+`SourceStreamKey::canonicalized` contract normalizes venue spelling using the
+existing Exchange enum, preserves native symbols, and rejects invalid/unresolved
+classification. It does not infer symbol aliases, channel defaults or economics.
+Operational settings never become acquisition-key fields.
+
 ### 3.6 StreamId
 
 `StreamId` is an opaque identifier assigned to a registered logical stream.
@@ -191,13 +236,15 @@ Different acquisition semantics must produce different keys.
 pub struct StreamId(pub String);
 ```
 
-The representation is provisional.
+The string representation does not settle allocation policy: UUIDs or another
+non-reusable mechanism remain OPEN-008. Persistent assigned IDs are declared in
+committed configuration (Option A), not independently persisted by the registry.
 
 `StreamId` must not be used as a substitute for `SourceStreamKey` when determining acquisition equivalence.
 
-A stream identifier may represent either a source stream or a derived stream.
-
-Internal APIs should distinguish these categories where required.
+The shared cursor's StreamId representation may identify source or derived
+output. Registry/configuration declarations use distinct StreamId/DerivedStreamId
+types and must reject colliding assigned values in shared logical identity use.
 
 ### 3.7 DerivedStreamId
 
@@ -212,6 +259,43 @@ Their identities must incorporate or reference a validated transformation specif
 Two semantically equivalent derived-stream requests may reuse an existing processor.
 
 A source stream and a derived stream must never accidentally share the same registry identity.
+
+`DerivedStreamId` identifies a logical derived stream; `DerivedGeneration`
+identifies an incarnation of its transformation semantics. A validated semantic
+change requires an explicit new-generation boundary, not silent reinterpretation
+of old output. Structural/dependency validation is not derived economic approval;
+WP-23 owns semantic compilation/execution and WP-09 consumes its validated results.
+
+### 3.8 Persistent Mapping Authority and Evidence
+
+**Accepted architecture (DEC-035/038):** committed configuration revisions and the
+existing configuration journal own persistent source/derived declarations. Do not
+introduce a separate persistent identity database/journal. WP-05 owns domain
+contracts; WP-09 validates and durably accepts declarations; WP-11 reconstructs
+operational registrations from validated committed configuration; WP-24 reconciles
+them. Transient allocation/demand ownership remains WP-11. Source/derived identity
+namespaces remain distinct and must not collide in shared logical identity use.
+Epoch allocation is independent of logical identity and lifecycle generations.
+
+Within authoritative state/history, one canonical source acquisition has one
+logical StreamId; conflicting registrations/reassignment must reject. Disabled
+declarations retain their IDs. Disabling/removing persistent intent does not
+release independently owned subscriber/recording/retention/derived demand.
+
+**Verified implementation:** `model/persistent_identity.rs` reconstructs immutable
+current mappings and bounded retained-history evidence, validates prospective
+candidates without accepting/reserving a revision, and reports checked derived
+semantic generation boundaries. `FromInitialRevision` and `RetainedSuffix`
+distinguish the evidence available; reintroduction/incomplete-proof reports are
+not reuse permissions. These contracts do not implement WP-09 enforcement or
+WP-11/WP-24 runtime reconstruction.
+
+**Unresolved policy (OPEN-006–009):** permanent non-reuse after history pruning,
+same-ID/identical-definition reintroduction, allocation mechanism, and historical
+bindings for retained events/replay/recorded rows. The user prefers non-reuse
+across different semantics, but no permanent mechanism/tombstone is accepted or
+implemented. Missing history must not silently authorize reuse. A fresh LogEpoch
+does not prove a historical StreamId-to-key binding. WP-05 remains Partial.
 
 ---
 

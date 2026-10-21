@@ -8,3 +8,5 @@ pub(crate) mod services;
 pub(crate) mod shutdown;
 pub(crate) mod startup;
 pub(crate) mod supervisor;
+
+pub mod dependencies;

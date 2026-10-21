@@ -90,6 +90,19 @@ impl RetainedSize for LiveEvent {
             total = add(total, string_bytes(&id.0)?)?;
         }
 
+        if let super::envelope::EventOrigin::Derived(origin) = &self.provenance.origin {
+            total = add(total, string_bytes(&origin.derived_stream.0)?)?;
+            total = add(total, string_bytes(&origin.source_cursor.stream_id.0)?)?;
+            total = add(
+                total,
+                allocation_bytes::<super::envelope::ConversionStep>(origin.conversion.capacity())?,
+            )?;
+            for step in &origin.conversion {
+                total = add(total, string_bytes(&step.from_currency)?)?;
+                total = add(total, string_bytes(&step.to_currency)?)?;
+                total = add(total, string_bytes(&step.reference.stream_id.0)?)?;
+            }
+        }
         match &self.payload {
             LivePayload::Trade(trade) => {
                 total = add(total, trade_heap_bytes(trade)?)?;

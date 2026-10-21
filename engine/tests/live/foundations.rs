@@ -2,7 +2,7 @@
 //!
 //! Tests use only std-library types:
 //! - std::sync::AtomicBool / Arc for shared state.
-//! - std::task::Poll, Wake, RawWaker / RawWakerVTable for polling.
+//! - std::task::Poll and safe Arc-backed Wake implementations for polling.
 //! - std::pin::Pin, Future for future polling.
 //!
 //! No Tokio, no external async runtime.
@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::Wake;
-use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 // ── Test Waker Infrastructure ─────────────────────────────────────────────
@@ -27,23 +27,14 @@ pub struct TestWakerData {
     done: Arc<AtomicBool>,
 }
 
-/// VTable for a TestWaker.
-///
-/// - `clone_field`: returns an identical RawWaker (the data pointer is shared —
-///   wakers in these tests are never actually cloned after construction).
-/// - `wake_field`: retrieves the Arc<AtomicBool> from the data, sets `done` to true.
-/// - `drop_field`: reconstitutes the Box to clean it up when the waker dies.
-const TA_VTABLE: RawWakerVTable = RawWakerVTable::new(
-    |ptr| RawWaker::new(ptr, &TA_VTABLE),
-    |ptr| unsafe {
-        let data = &*(ptr as *const TestWakerData);
-        data.done.store(true, Ordering::SeqCst);
-    },
-    |_| {},
-    |ptr| unsafe {
-        let _ = Box::from_raw(ptr as *mut TestWakerData);
-    },
-);
+impl Wake for TestWakerData {
+    fn wake(self: Arc<Self>) {
+        self.done.store(true, Ordering::SeqCst);
+    }
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.done.store(true, Ordering::SeqCst);
+    }
+}
 
 struct TestWaker {
     done: Arc<AtomicBool>,
@@ -52,10 +43,8 @@ struct TestWaker {
 impl TestWaker {
     fn new() -> (Self, Waker) {
         let done = Arc::new(AtomicBool::new(false));
-        let raw_ptr: *mut TestWakerData =
-            Box::into_raw(Box::new(TestWakerData { done: done.clone() }));
-        let raw = RawWaker::new(raw_ptr as *const (), &TA_VTABLE);
-        (Self { done }, unsafe { Waker::from_raw(raw) })
+        let waker = Waker::from(Arc::new(TestWakerData { done: done.clone() }));
+        (Self { done }, waker)
     }
 
     fn is_done(&self) -> bool {

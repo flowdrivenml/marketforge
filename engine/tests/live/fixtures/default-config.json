@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "global": {
+    "logging": "info",
+    "metrics": { "enabled": true, "detailed_timing": false, "snapshot_interval_ns": 100, "timing_sample_one_in": 1 },
+    "recording": { "enabled": false, "batch_events": 10, "flush_interval_ns": 100, "policy": "best_effort" },
+    "recovery": { "enabled": true, "initial_backoff_ns": 10, "max_backoff_ns": 100, "max_attempts": 3, "jitter": true },
+    "max_subscribers": 10,
+    "shutdown_deadline_ns": 100,
+    "budgets": {
+      "retention_memory_bytes": 1024, "retention_disk_bytes": 1024,
+      "publisher_queue_events": 10, "publisher_queue_bytes": 1024,
+      "max_tasks": 10, "max_file_descriptors": 10
+    }
+  },
+  "sources": [], "derived": [], "profiles": []
+}

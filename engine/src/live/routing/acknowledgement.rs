@@ -333,6 +333,7 @@ pub struct FinalizationJournal {
     capacity: usize,
     next_claim_token: Option<u64>,
     next_resolution_token: Option<u64>,
+    capacity_waiter: Option<std::task::Waker>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -372,8 +373,28 @@ impl FinalizationJournal {
             capacity,
             next_claim_token: Some(1),
             next_resolution_token: Some(1),
+            capacity_waiter: None,
             id: FinalizationJournalId(id),
         })
+    }
+
+    /// Arm one replaceable coordinator for the next successful record removal.
+    /// Failed acknowledgement/resolution preserves the notification. The caller
+    /// owns scheduling; this does not retry reporting or certify durability.
+    pub fn arm_capacity_notification(&mut self, waker: &std::task::Waker) {
+        if self
+            .capacity_waiter
+            .as_ref()
+            .is_none_or(|old| !old.will_wake(waker))
+        {
+            self.capacity_waiter = Some(waker.clone());
+        }
+    }
+
+    fn notify_capacity_release(&mut self) {
+        if let Some(waiter) = self.capacity_waiter.take() {
+            waiter.wake();
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -544,6 +565,8 @@ impl FinalizationJournal {
             .mark_journal_committed()
             .expect("validated sink commitment state");
 
+        drop(guard);
+        self.notify_capacity_release();
         debug_assert_eq!(removed.record, expected.record);
 
         Ok(expected)
@@ -740,6 +763,7 @@ impl FinalizationJournal {
             .remove(position)
             .expect("verified journal position");
 
+        self.notify_capacity_release();
         Ok(entry.record)
     }
 
@@ -856,6 +880,9 @@ pub enum AcknowledgementError {
 /// owns synchronization and resource accounting around it.
 #[derive(Debug)]
 pub struct AcknowledgementTracker {
+    // A moving tracker keeps its identity. Outstanding recovery owners retain
+    // this token, so a later tracker cannot alias it even with identical IDs.
+    identity: std::sync::Arc<()>,
     obligations: HashMap<DeliveryObligationId, TrackedObligation>,
     max_obligations: usize,
     next_id: Option<u64>,
@@ -876,11 +903,16 @@ impl AcknowledgementTracker {
         }
 
         Ok(Self {
+            identity: std::sync::Arc::new(()),
             obligations: HashMap::new(),
             max_obligations,
             next_id: Some(1),
             transaction_state: HashMap::new(),
         })
+    }
+
+    pub(super) fn identity(&self) -> &std::sync::Arc<()> {
+        &self.identity
     }
     /// Transfer a terminal obligation into the bounded journal.
     ///
@@ -1066,6 +1098,21 @@ impl AcknowledgementTracker {
             .get(&obligation)
             .map(|tracked| tracked.status)
     }
+
+    pub(crate) fn obligations(&self) -> impl Iterator<Item = &DeliveryObligation> {
+        self.obligations.values().map(|tracked| &tracked.obligation)
+    }
+
+    /// Immutable correlation metadata from the authoritative registration.
+    pub fn obligation(&self, id: DeliveryObligationId) -> Option<&DeliveryObligation> {
+        self.obligations.get(&id).map(|tracked| &tracked.obligation)
+    }
+
+    /// Includes empty prepared transactions, which still own a commitment token.
+    /// Bounded by the same configured limit as delivery obligations.
+    pub fn prepared_transactions(&self) -> usize {
+        self.transaction_state.len()
+    }
     pub fn len(&self) -> usize {
         self.obligations.len()
     }
@@ -1084,14 +1131,17 @@ impl AcknowledgementTracker {
         &mut self,
         obligations: Vec<DeliveryObligation>,
     ) -> Result<PreparedObligations, AcknowledgementError> {
-        if obligations.len() > self.remaining_capacity() {
+        if obligations.len() > self.remaining_capacity()
+            || self.transaction_state.len() >= self.max_obligations
+        {
             return Err(AcknowledgementError::CapacityExceeded);
         }
 
+        let mut seen = std::collections::HashSet::new();
         for obligation in &obligations {
             required_completion_stage(obligation.kind, obligation.policy)?;
 
-            if self.obligations.contains_key(&obligation.id) {
+            if self.obligations.contains_key(&obligation.id) || !seen.insert(obligation.id) {
                 return Err(AcknowledgementError::DuplicateObligation);
             }
         }
@@ -1100,23 +1150,21 @@ impl AcknowledgementTracker {
             self.next_id
                 .ok_or(AcknowledgementError::ObligationIdExhausted)?,
         );
+        // Preflight exhaustion before registering any obligation.
+        let next_id = transaction_id
+            .0
+            .checked_add(1)
+            .ok_or(AcknowledgementError::ObligationIdExhausted)?;
 
-        self.next_id = Some(
-            transaction_id
-                .0
-                .checked_add(1)
-                .ok_or(AcknowledgementError::ObligationIdExhausted)?,
-        );
-
+        let ids = obligations.iter().map(|obligation| obligation.id).collect();
         for obligation in &obligations {
             self.register(obligation.clone())
                 .expect("obligation passed validation");
-
-            self.transaction_state
-                .entry(transaction_id)
-                .or_insert_with(Vec::new)
-                .push(obligation.id);
         }
+        // Empty transactions also need an identity so they can be aborted or
+        // activated exactly once.
+        self.transaction_state.insert(transaction_id, ids);
+        self.next_id = Some(next_id);
 
         Ok(PreparedObligations {
             transaction_id,
@@ -1135,13 +1183,37 @@ impl AcknowledgementTracker {
         specs: Vec<DeliveryObligationSpec>,
     ) -> Result<PreparedObligations, AcknowledgementError> {
         // Capacity must be checked before any mutation.
-        if specs.len() > self.remaining_capacity() {
+        if specs.len() > self.remaining_capacity()
+            || self.transaction_state.len() >= self.max_obligations
+        {
             return Err(AcknowledgementError::CapacityExceeded);
         }
 
         // Validate all specs before allocating any IDs.
         for spec in &specs {
             required_completion_stage(spec.kind, spec.policy)?;
+        }
+
+        // Reserve the complete ID range, including the transaction identity,
+        // before consuming IDs. A failed preparation must leave allocator state
+        // untouched, including at the u64 boundary.
+        let first = self
+            .next_id
+            .ok_or(AcknowledgementError::ObligationIdExhausted)?;
+        let count =
+            u64::try_from(specs.len()).map_err(|_| AcknowledgementError::ObligationIdExhausted)?;
+        first
+            .checked_add(count)
+            .and_then(|id| id.checked_add(1))
+            .ok_or(AcknowledgementError::ObligationIdExhausted)?;
+
+        for index in 0..count {
+            if self
+                .obligations
+                .contains_key(&DeliveryObligationId(first + index))
+            {
+                return Err(AcknowledgementError::DuplicateObligation);
+            }
         }
 
         // All specs validated — now allocate and build.
@@ -1509,6 +1581,103 @@ mod transaction_integrity_tests {
 
         // The tracker must not silently activate the transaction.
         assert_eq!(tracker.status(obligation.id), Some(DeliveryStatus::Pending));
+    }
+    #[test]
+    fn preparation_failure_is_atomic_for_duplicate_ids_and_exhaustion() {
+        let obligation = DeliveryObligation {
+            id: DeliveryObligationId(7),
+            destination: DestinationId(1),
+            range: DeliveryCursorRange::new(
+                StreamCursor::new(StreamId("atomic".into()), LogEpoch(1), 1),
+                StreamCursor::new(StreamId("atomic".into()), LogEpoch(1), 1),
+            )
+            .unwrap(),
+            kind: DestinationKind::Recording,
+            policy: DeliveryPolicy::Required,
+        };
+        let mut tracker = AcknowledgementTracker::new(10).unwrap();
+        assert_eq!(
+            tracker
+                .prepare_obligations(vec![obligation.clone(), obligation.clone()])
+                .unwrap_err(),
+            AcknowledgementError::DuplicateObligation
+        );
+        assert!(tracker.is_empty());
+        assert!(tracker.transaction_state.is_empty());
+        assert_eq!(tracker.next_id, Some(1));
+        let spec = DeliveryObligationSpec {
+            destination: obligation.destination,
+            range: obligation.range.clone(),
+            kind: obligation.kind,
+            policy: obligation.policy,
+        };
+        tracker.next_id = Some(u64::MAX - 1);
+        assert_eq!(
+            tracker
+                .prepare_obligation_specs(vec![spec.clone()])
+                .unwrap_err(),
+            AcknowledgementError::ObligationIdExhausted
+        );
+        assert_eq!(tracker.next_id, Some(u64::MAX - 1));
+        assert!(tracker.is_empty());
+        tracker.next_id = Some(7);
+        tracker.register(obligation).unwrap();
+        assert_eq!(
+            tracker.prepare_obligation_specs(vec![spec]).unwrap_err(),
+            AcknowledgementError::DuplicateObligation
+        );
+        assert_eq!(tracker.next_id, Some(7));
+        assert_eq!(tracker.len(), 1);
+        assert!(tracker.transaction_state.is_empty());
+    }
+
+    #[test]
+    fn empty_preparation_has_a_real_abortable_transaction() {
+        let mut tracker = AcknowledgementTracker::new(1).unwrap();
+        let prepared = tracker.prepare_obligations(vec![]).unwrap();
+        assert_eq!(tracker.transaction_state.len(), 1);
+        tracker.abort_prepared(prepared).unwrap();
+        assert!(tracker.transaction_state.is_empty());
+        let prepared = tracker.prepare_obligation_specs(vec![]).unwrap();
+        tracker.begin_commitment(prepared).unwrap();
+        assert!(tracker.transaction_state.is_empty());
+        assert!(tracker.is_empty());
+    }
+
+    #[test]
+    fn empty_preparations_are_bounded_and_release_capacity_without_consuming_ids_on_failure() {
+        let mut tracker = AcknowledgementTracker::new(1).unwrap();
+        let first = tracker.prepare_obligations(vec![]).unwrap();
+        let next_id = tracker.next_id;
+        assert_eq!(tracker.prepared_transactions(), 1);
+        assert_eq!(
+            tracker.prepare_obligations(vec![]).unwrap_err(),
+            AcknowledgementError::CapacityExceeded
+        );
+        assert_eq!(
+            tracker.prepare_obligation_specs(vec![]).unwrap_err(),
+            AcknowledgementError::CapacityExceeded
+        );
+        let cursor = StreamCursor::new(StreamId("bounded".into()), LogEpoch(1), 0);
+        let spec = DeliveryObligationSpec {
+            destination: DestinationId(1),
+            range: DeliveryCursorRange::new(cursor.clone(), cursor).unwrap(),
+            kind: DestinationKind::Recording,
+            policy: DeliveryPolicy::Required,
+        };
+        assert_eq!(
+            tracker.prepare_obligation_specs(vec![spec]).unwrap_err(),
+            AcknowledgementError::CapacityExceeded
+        );
+        assert!(tracker.is_empty());
+        assert_eq!(tracker.next_id, next_id);
+        assert_eq!(tracker.prepared_transactions(), 1);
+        tracker.abort_prepared(first).unwrap();
+        let second = tracker.prepare_obligation_specs(vec![]).unwrap();
+        tracker.begin_commitment(second).unwrap();
+        assert_eq!(tracker.prepared_transactions(), 0);
+        let third = tracker.prepare_obligations(vec![]).unwrap();
+        tracker.abort_prepared(third).unwrap();
     }
     // Transaction integrity tests go here.
 }

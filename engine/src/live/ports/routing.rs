@@ -36,6 +36,9 @@ impl EventBatch {
             return Err(EventBatchError::Empty);
         }
 
+        for event in &events {
+            event.check().map_err(EventBatchError::InvalidEvent)?;
+        }
         for pair in events.windows(2) {
             let previous = &pair[0].cursor;
             let current = &pair[1].cursor;
@@ -77,6 +80,7 @@ pub enum EventBatchError {
     Empty,
     MixedNamespace,
     NonIncreasingCursor,
+    InvalidEvent(crate::live::model::envelope::LiveEventError),
 }
 
 /// Identity assigned to one registered destination instance.
@@ -140,8 +144,14 @@ pub enum RoutingAdmissionFailure {
 /// This is deliberately distinct from destination completion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RoutingAdmission {
+    /// Complete admission under the configured policies, never proof of a
+    /// destination's delivery, persistence or crash-durability stage.
     Accepted { through: StreamCursor },
 
+    /// Complete admission could not be promised. Partial fan-out may already
+    /// have transferred responsibility; detailed outcomes remain router-owned
+    /// for reporting/recovery. This is not rollback and does not authorize
+    /// replacing the accepted event's identity or blindly replaying its batch.
     Rejected { reason: RoutingAdmissionFailure },
 }
 

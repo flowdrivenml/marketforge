@@ -34,6 +34,13 @@ pub type DeadlineFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 /// satisfy the same interface.
 pub trait DeadlineTimer: Send + Sync {
     fn sleep_until(&self, deadline: Instant) -> DeadlineFuture;
+    /// Bounded implementations reject timer admission before waiting begins.
+    fn try_sleep_until(
+        &self,
+        deadline: Instant,
+    ) -> Result<DeadlineFuture, crate::live::model::error::ErrorCode> {
+        Ok(self.sleep_until(deadline))
+    }
 }
 
 /// Admission cancellation and deadline configuration.
@@ -96,12 +103,19 @@ impl<T> AdmissionWait<T> {
             Some(deadline) => {
                 let timer = timer.ok_or(AdmissionWaitError::MissingTimer)?;
 
-                Some(timer.sleep_until(deadline))
+                Some(
+                    timer
+                        .try_sleep_until(deadline)
+                        .map_err(|_| AdmissionWaitError::TimerCapacity)?,
+                )
             }
             None => None,
         };
 
-        let cancellation = context.cancellation.cancelled();
+        let cancellation = context
+            .cancellation
+            .try_cancelled()
+            .map_err(|_| AdmissionWaitError::CancellationCapacity)?;
 
         Ok(Self {
             operation: Box::pin(operation),
@@ -116,6 +130,8 @@ impl<T> AdmissionWait<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdmissionWaitError {
     MissingTimer,
+    TimerCapacity,
+    CancellationCapacity,
 }
 
 impl<T> Future for AdmissionWait<T> {

@@ -46,6 +46,13 @@ pub struct QueueDestination {
     pub descriptor: DestinationDescriptor,
     pub queue: DestinationQueue,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegistryWorkerError {
+    UnknownDestination,
+    MissingQueue,
+    Worker(super::worker::WorkerCreationError),
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FanoutPreparationError {
     NoRequiredDestinations,
@@ -69,6 +76,7 @@ pub enum TrackedFanoutError {
     RollbackFailed,
     Precommit(FanoutCommitmentError),
     RecoveryCapacityExhausted,
+    Context(crate::live::ports::routing::RoutingAdmissionFailure),
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoutingObligationValidationError {
@@ -94,6 +102,7 @@ pub enum FanoutCommitResult {
 }
 
 #[derive(Debug)]
+#[must_use = "delivery and recovery outcomes retain required ownership"]
 pub enum TrackedFanoutResult {
     Complete {
         through: StreamCursor,
@@ -110,6 +119,14 @@ pub enum TrackedFanoutResult {
         batch: EventBatch,
         reason: TrackedFanoutError,
     },
+    /// Irreversible destination results exist, while tracking responsibility is
+    /// retained by recovery or returned here with its original reservations.
+    RecoveryPending {
+        batch: EventBatch,
+        committed: Vec<CommittedDestination>,
+        failed: Vec<FailedDestinationCommitment>,
+        tracking: Result<RecoveryTrackingResult, RecoveryTrackingFailure>,
+    },
     AcknowledgementFailed {
         batch: EventBatch,
         committed: Vec<CommittedDestination>,
@@ -118,7 +135,7 @@ pub enum TrackedFanoutResult {
     },
 }
 #[derive(Debug)]
-enum RecoveryTrackingFailure {
+pub enum RecoveryTrackingFailure {
     ReservationCountMismatch {
         expected: usize,
         actual: usize,
@@ -126,9 +143,9 @@ enum RecoveryTrackingFailure {
     },
 }
 #[derive(Debug)]
-struct RecoveryTrackingResult {
-    errors: Vec<RecoveryTrackingError>,
-    unresolved: Vec<UnresolvedTrackingUpdate>,
+pub struct RecoveryTrackingResult {
+    pub errors: Vec<RecoveryTrackingError>,
+    pub unresolved: Vec<UnresolvedTrackingUpdate>,
 }
 /// Tracking update errors produced when acknowledgement correlation
 /// fails for one or more destinations.
@@ -152,7 +169,7 @@ pub enum TrackingUpdateError {
 ///
 /// Both variants retain their capacity reservations.
 #[derive(Debug)]
-enum UnresolvedTrackingUpdate {
+pub enum UnresolvedTrackingUpdate {
     ApplyFailure {
         destination: DestinationId,
         failure: TrackingApplyFailure,
@@ -166,7 +183,7 @@ enum UnresolvedTrackingUpdate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum RecoveryTrackingError {
+pub enum RecoveryTrackingError {
     MissingObligation {
         destination: DestinationId,
     },
@@ -198,6 +215,7 @@ pub struct FanoutCommitmentRejection {
 #[derive(Debug)]
 pub struct PreparedDestination {
     id: DestinationId,
+    descriptor: DestinationDescriptor,
     queue: DestinationQueue,
     reservation: CapacityReservation,
 }
@@ -307,10 +325,25 @@ impl RoutingPlan {
     }
 }
 
+/// Best-effort queue admission only; no delivery or durability receipt is implied.
+#[derive(Debug)]
+pub struct BestEffortFanout {
+    pub queued: Vec<CommittedDestination>,
+    pub failed: Vec<FailedDestinationCommitment>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BestEffortError {
+    Context(crate::live::ports::routing::RoutingAdmissionFailure),
+    InvalidPlan(FanoutCommitmentError),
+    MissingQueue(DestinationId),
+}
+
 /// Destination registration and planning errors.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RouterRegistryError {
     DuplicateDestination,
+    DestinationCapacity,
     UnknownDestination,
     InvalidDestinationPolicy,
     InvalidCapacity,
@@ -322,8 +355,11 @@ pub enum RouterRegistryError {
 
 struct RouterRegistryState {
     destinations: HashMap<DestinationId, RegisteredDestination>,
+    retired: Vec<RegisteredDestination>,
+    max_destinations: usize,
     revision: u64,
     shutting_down: bool,
+    membership_waiter: Option<std::task::Waker>,
 }
 
 /// Thread-safe destination registry.
@@ -336,15 +372,130 @@ pub struct RouterRegistry {
 }
 
 impl RouterRegistry {
+    /// Validate transferred worker ownership against the exact live or retired
+    /// registration, not merely a reusable destination ID or equal descriptor.
+    pub(super) fn owns_queue(
+        &self,
+        descriptor: &DestinationDescriptor,
+        queue: &DestinationQueue,
+    ) -> bool {
+        let state = self.state.read().unwrap_or_else(|e| e.into_inner());
+        state
+            .destinations
+            .values()
+            .chain(state.retired.iter())
+            .any(|entry| {
+                &entry.descriptor == descriptor
+                    && entry
+                        .queue
+                        .as_ref()
+                        .is_some_and(|registered| registered.same_owner(queue))
+            })
+    }
+    /// Try each optional queue once, without registering capacity waiters.
+    /// The registry fence prevents removal/replacement during commitment.
+    /// A full or closed subscriber cannot delay any other destination.
+    pub fn try_best_effort(
+        &self,
+        plan: &RoutingPlan,
+        batch: &EventBatch,
+    ) -> Result<BestEffortFanout, BestEffortError> {
+        self.try_best_effort_checked(plan, batch, || Ok(()))
+    }
+
+    pub(crate) fn try_best_effort_checked(
+        &self,
+        plan: &RoutingPlan,
+        batch: &EventBatch,
+        check: impl FnOnce() -> Result<(), crate::live::ports::routing::RoutingAdmissionFailure>,
+    ) -> Result<BestEffortFanout, BestEffortError> {
+        let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
+        let state = self.state.read().unwrap_or_else(|e| e.into_inner());
+        let invalid = |reason| BestEffortError::InvalidPlan(reason);
+        if state.shutting_down {
+            return Err(invalid(FanoutCommitmentError::ShuttingDown));
+        }
+        if state.revision != plan.registry_revision {
+            return Err(invalid(FanoutCommitmentError::RegistryChanged));
+        }
+        if batch.first_cursor() != &plan.first_cursor || batch.last_cursor() != &plan.last_cursor {
+            return Err(invalid(FanoutCommitmentError::CursorMismatch));
+        }
+        // Validate the entire public plan before the first irreversible write.
+        if plan.best_effort.len()
+            != state
+                .destinations
+                .values()
+                .filter(|entry| entry.descriptor.policy == DeliveryPolicy::BestEffort)
+                .count()
+        {
+            return Err(invalid(FanoutCommitmentError::DestinationMismatch));
+        }
+        let mut seen = std::collections::HashSet::new();
+        for entry in &plan.best_effort {
+            let Some(current) = state.destinations.get(&entry.descriptor.id) else {
+                return Err(invalid(FanoutCommitmentError::DestinationMismatch));
+            };
+            if !seen.insert(entry.descriptor.id)
+                || current.descriptor != entry.descriptor
+                || entry.descriptor.policy != DeliveryPolicy::BestEffort
+                || !Arc::ptr_eq(&current.destination, &entry.destination)
+            {
+                return Err(invalid(FanoutCommitmentError::DestinationMismatch));
+            }
+            if current.queue.is_none() {
+                return Err(BestEffortError::MissingQueue(entry.descriptor.id));
+            }
+        }
+        check().map_err(BestEffortError::Context)?;
+        let mut result = BestEffortFanout {
+            queued: Vec::with_capacity(plan.best_effort.len()),
+            failed: Vec::new(),
+        };
+        for entry in &plan.best_effort {
+            // Use the authoritative registered queue, never a caller's clone.
+            let queue = state.destinations[&entry.descriptor.id]
+                .queue
+                .as_ref()
+                .unwrap();
+            match queue.try_enqueue(batch.clone()) {
+                Ok(()) => result.queued.push(CommittedDestination {
+                    id: entry.descriptor.id,
+                    through: batch.last_cursor().clone(),
+                }),
+                Err(rejection) => result.failed.push(FailedDestinationCommitment {
+                    id: entry.descriptor.id,
+                    reason: rejection.reason,
+                }),
+            }
+        }
+        Ok(result)
+    }
+
     pub fn new() -> Self {
         Self {
             state: RwLock::new(RouterRegistryState {
                 destinations: HashMap::new(),
+                retired: Vec::new(),
+                max_destinations: 1024,
                 revision: 0,
                 shutting_down: false,
+                membership_waiter: None,
             }),
             commitment: Mutex::new(()),
         }
+    }
+    pub fn with_destination_limit(max_destinations: usize) -> Result<Self, RouterRegistryError> {
+        if max_destinations == 0 {
+            return Err(RouterRegistryError::InvalidCapacity);
+        }
+        let registry = Self::new();
+        registry
+            .state
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .max_destinations = max_destinations;
+        Ok(registry)
     }
     pub fn register_queue(
         &self,
@@ -376,6 +527,9 @@ impl RouterRegistry {
         if state.destinations.contains_key(&descriptor.id) {
             return Err(RouterRegistryError::DuplicateDestination);
         }
+        if state.destinations.len() + state.retired.len() >= state.max_destinations {
+            return Err(RouterRegistryError::DestinationCapacity);
+        }
 
         let next_revision = state
             .revision
@@ -392,6 +546,12 @@ impl RouterRegistry {
         );
 
         state.revision = next_revision;
+        let waiter = state.membership_waiter.take();
+        drop(state);
+        drop(_commitment);
+        if let Some(waiter) = waiter {
+            waiter.wake();
+        }
 
         Ok(())
     }
@@ -409,6 +569,101 @@ impl RouterRegistry {
             .get(&id)
             .and_then(|entry| entry.queue.clone())
     }
+
+    /// Claim the actual registered adapter/queue pair under its membership fence.
+    /// This also permits draining a closed registry. Replacements use independent
+    /// queues; an old worker retains only its original instance's responsibility.
+    pub fn claim_worker(
+        &self,
+        id: DestinationId,
+    ) -> Result<super::worker::DestinationWorker, RegistryWorkerError> {
+        let state = self.state.read().unwrap_or_else(|p| p.into_inner());
+        let entry = state
+            .destinations
+            .get(&id)
+            .ok_or(RegistryWorkerError::UnknownDestination)?;
+        let queue = entry
+            .queue
+            .clone()
+            .ok_or(RegistryWorkerError::MissingQueue)?;
+        super::worker::DestinationWorker::from_registered(
+            queue,
+            entry.destination.clone(),
+            entry.descriptor,
+        )
+        .map_err(RegistryWorkerError::Worker)
+    }
+    /// Claim the oldest unclaimed removed queue for this ID. Multiple retired
+    /// instances can coexist with a new active instance; they never share queues.
+    pub fn claim_retired_worker(
+        &self,
+        id: DestinationId,
+    ) -> Result<super::worker::DestinationWorker, RegistryWorkerError> {
+        let state = self.state.read().unwrap_or_else(|e| e.into_inner());
+        let mut error = RegistryWorkerError::UnknownDestination;
+        for entry in state
+            .retired
+            .iter()
+            .filter(|entry| entry.descriptor.id == id)
+        {
+            let Some(queue) = entry.queue.clone() else {
+                error = RegistryWorkerError::MissingQueue;
+                continue;
+            };
+            match super::worker::DestinationWorker::from_registered(
+                queue,
+                entry.destination.clone(),
+                entry.descriptor,
+            ) {
+                Ok(worker) => return Ok(worker),
+                Err(reason) => error = RegistryWorkerError::Worker(reason),
+            }
+        }
+        Err(error)
+    }
+
+    /// Claim one unowned queue, retired instances first, then active IDs in
+    /// deterministic order. The scan is bounded by the registry destination limit.
+    /// Direct adapters without queues are not worker candidates. No adapter code
+    /// is invoked under the membership fence. Existing worker leases are skipped.
+    /// During shutdown, fully drained queues are skipped: reaping their worker
+    /// must not immediately recreate it and prevent shutdown convergence.
+    pub fn claim_next_worker(
+        &self,
+    ) -> Result<Option<super::worker::DestinationWorker>, RegistryWorkerError> {
+        use super::worker::{DestinationWorker, WorkerCreationError};
+        let state = self.state.read().unwrap_or_else(|e| e.into_inner());
+        let mut active: Vec<_> = state.destinations.values().collect();
+        active.sort_by_key(|entry| entry.descriptor.id.0);
+        for entry in state.retired.iter().chain(active.into_iter()) {
+            let Some(queue) = entry.queue.clone() else {
+                continue;
+            };
+            if state.shutting_down {
+                let observation = queue.observe();
+                if observation.queue.closed
+                    && observation.queue.queued_batches == 0
+                    && observation.capacity.shutting_down
+                    && observation.capacity.occupied_events == 0
+                    && observation.capacity.occupied_bytes == 0
+                    && observation.capacity.waiting_operations == 0
+                {
+                    continue;
+                }
+            }
+            match DestinationWorker::from_registered(
+                queue,
+                entry.destination.clone(),
+                entry.descriptor,
+            ) {
+                Ok(worker) => return Ok(Some(worker)),
+                Err(WorkerCreationError::AlreadyClaimed) => continue,
+                Err(reason) => return Err(RegistryWorkerError::Worker(reason)),
+            }
+        }
+        Ok(None)
+    }
+
     /// Register one destination instance.
     ///
     /// Multiple instances of the same destination kind are allowed,
@@ -420,6 +675,7 @@ impl RouterRegistry {
         let descriptor = destination.descriptor();
 
         validate_descriptor(&descriptor)?;
+        let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
 
         let mut state = self
             .state
@@ -432,6 +688,9 @@ impl RouterRegistry {
 
         if state.destinations.contains_key(&descriptor.id) {
             return Err(RouterRegistryError::DuplicateDestination);
+        }
+        if state.destinations.len() + state.retired.len() >= state.max_destinations {
+            return Err(RouterRegistryError::DestinationCapacity);
         }
 
         let next_revision = state
@@ -449,38 +708,80 @@ impl RouterRegistry {
         );
 
         state.revision = next_revision;
+        let waiter = state.membership_waiter.take();
+        drop(state);
+        drop(_commitment);
+        if let Some(waiter) = waiter {
+            waiter.wake();
+        }
 
         Ok(())
     }
 
-    /// Remove a destination from future routing plans.
-    ///
-    /// Existing plans retain their Arc-owned destination references.
-    ///
-    /// This does not cancel already accepted delivery obligations.
+    /// Remove a destination from future plans while retaining its queued and
+    /// consumer-held responsibility. Retired queues close without discarding
+    /// payloads and still support worker claims for draining. Retired instances
+    /// consume the same bounded registry slots until explicitly reaped.
     pub fn unregister(&self, id: DestinationId) -> Result<(), RouterRegistryError> {
-        let mut state = self
-            .state
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-        if state.shutting_down {
-            return Err(RouterRegistryError::ShuttingDown);
+        let (queue, waiter) = {
+            let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
+            let mut state = self.state.write().unwrap_or_else(|e| e.into_inner());
+            if state.shutting_down {
+                return Err(RouterRegistryError::ShuttingDown);
+            }
+            if !state.destinations.contains_key(&id) {
+                return Err(RouterRegistryError::UnknownDestination);
+            }
+            let next_revision = state
+                .revision
+                .checked_add(1)
+                .ok_or(RouterRegistryError::RevisionExhausted)?;
+            let entry = state.destinations.remove(&id).expect("checked membership");
+            let queue = entry.queue.clone();
+            state.retired.push(entry);
+            state.revision = next_revision;
+            (queue, state.membership_waiter.take())
+        };
+        // Arbitrary executor callbacks must run outside both registry locks.
+        if let Some(queue) = queue {
+            queue.shutdown();
         }
-
-        if !state.destinations.contains_key(&id) {
-            return Err(RouterRegistryError::UnknownDestination);
+        if let Some(waiter) = waiter {
+            waiter.wake();
         }
-
-        let next_revision = state
-            .revision
-            .checked_add(1)
-            .ok_or(RouterRegistryError::RevisionExhausted)?;
-
-        state.destinations.remove(&id);
-        state.revision = next_revision;
-
         Ok(())
+    }
+
+    /// Release closed, fully uncharged retired instances. This does not finalize
+    /// delivery obligations: their independent driver retains that responsibility.
+    /// Queues are closed before reaping so stale plan/queue clones cannot acquire
+    /// new capacity after the drain observation. No adapter is dropped under locks.
+    pub fn reap_retired(&self) -> usize {
+        let removed: Vec<_> = {
+            let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
+            let mut state = self.state.write().unwrap_or_else(|e| e.into_inner());
+            let mut retained = Vec::with_capacity(state.retired.len());
+            let mut removed = Vec::new();
+            for entry in state.retired.drain(..) {
+                let drained = entry.queue.as_ref().is_none_or(|queue| {
+                    let observation = queue.observe();
+                    observation.queue.closed
+                        && observation.queue.queued_batches == 0
+                        && observation.capacity.shutting_down
+                        && observation.capacity.occupied_events == 0
+                        && observation.capacity.occupied_bytes == 0
+                        && observation.capacity.waiting_operations == 0
+                });
+                if drained {
+                    removed.push(entry);
+                } else {
+                    retained.push(entry);
+                }
+            }
+            state.retired = retained;
+            removed
+        };
+        removed.len()
     }
 
     /// Create a deterministic snapshot of destinations for a batch.
@@ -531,17 +832,134 @@ impl RouterRegistry {
         })
     }
 
-    /// Prevent future registrations, removals, and plans.
-    ///
-    /// Existing plans remain valid snapshots but are not
-    /// automatically authorized to commit after shutdown.
+    /// Fence membership/plans and close every registered queue and capacity
+    /// manager. Existing payloads and reservations retain their charges until
+    /// explicitly drained or released; closure proves no delivery guarantee.
     pub fn shutdown(&self) {
-        let mut state = self
-            .state
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (queues, waiter) = {
+            let _commitment = self.commitment.lock().unwrap_or_else(|e| e.into_inner());
+            let mut state = self
+                .state
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.shutting_down = true;
+            let waiter = state.membership_waiter.take();
+            let queues: Vec<_> = state
+                .destinations
+                .values()
+                .chain(state.retired.iter())
+                .filter_map(|entry| entry.queue.clone())
+                .collect();
+            (queues, waiter)
+        };
+        // Queue/capacity shutdown invokes arbitrary executor wakers. Membership
+        // is already fenced, so callbacks may safely inspect this registry.
+        for queue in queues {
+            queue.shutdown();
+        }
+        if let Some(waiter) = waiter {
+            waiter.wake();
+        }
+    }
 
-        state.shutting_down = true;
+    /// Arm before inspecting workers and retired entries to prevent lost release
+    /// notifications. Membership notifications cover queues registered later.
+    /// Capacity registration invokes no executor callbacks under registry locks.
+    pub(crate) fn arm_release_notifications(&self, waker: &std::task::Waker) {
+        let state = self.state.read().unwrap_or_else(|e| e.into_inner());
+        for entry in state.destinations.values().chain(state.retired.iter()) {
+            if let Some(queue) = &entry.queue {
+                queue.capacity().arm_release_notification(waker);
+            }
+        }
+    }
+
+    /// Wait for routing membership to differ from an observed revision. Checking
+    /// and registration share the membership fence, so a concurrent mutation
+    /// cannot be missed. One runtime coordinator is supported; polling with a
+    /// different waker replaces the previous waiter without growing resources.
+    /// Failed mutations and retired-slot reaping do not change routing revision.
+    /// Shutdown returns ShuttingDown, including when the revision is unchanged.
+    /// Notification proves membership change only, never delivery or durability.
+    pub fn poll_membership_change(
+        &self,
+        observed_revision: u64,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<u64, RouterRegistryError>> {
+        use std::task::Poll;
+        let mut state = self.state.write().unwrap_or_else(|e| e.into_inner());
+        if state.shutting_down {
+            return Poll::Ready(Err(RouterRegistryError::ShuttingDown));
+        }
+        if state.revision != observed_revision {
+            return Poll::Ready(Ok(state.revision));
+        }
+        if state
+            .membership_waiter
+            .as_ref()
+            .is_none_or(|w| !w.will_wake(cx.waker()))
+        {
+            state.membership_waiter = Some(cx.waker().clone());
+        }
+        Poll::Pending
+    }
+
+    /// Fence membership and register the coordinator on outstanding payload
+    /// capacity. Executor callbacks run after releasing registry locks.
+    pub fn poll_shutdown(&self, cx: &mut std::task::Context<'_>) -> std::task::Poll<()> {
+        self.shutdown();
+        let queues: Vec<_> = {
+            let state = self.state.read().unwrap_or_else(|e| e.into_inner());
+            state
+                .destinations
+                .values()
+                .chain(state.retired.iter())
+                .filter_map(|entry| entry.queue.clone())
+                .collect()
+        };
+        let mut drained = true;
+        for queue in queues {
+            if queue.capacity().poll_shutdown(cx).is_pending() {
+                drained = false;
+            }
+        }
+        if drained {
+            std::task::Poll::Ready(())
+        } else {
+            std::task::Poll::Pending
+        }
+    }
+
+    /// Owned observation from the authoritative registry. Membership and revision
+    /// are consistent; individual queue samples are observational, not a global
+    /// transaction across independent consumers. No adapter callbacks run here.
+    pub fn snapshot(&self) -> super::snapshot::RouterSnapshot {
+        let state = self.state.read().unwrap_or_else(|e| e.into_inner());
+        let mut destinations: Vec<_> = state
+            .destinations
+            .values()
+            .map(|entry| super::snapshot::DestinationSnapshot {
+                descriptor: entry.descriptor,
+                queue: entry.queue.as_ref().map(DestinationQueue::observe),
+            })
+            .collect();
+        let mut retired: Vec<_> = state
+            .retired
+            .iter()
+            .map(|entry| super::snapshot::DestinationSnapshot {
+                descriptor: entry.descriptor,
+                queue: entry.queue.as_ref().map(DestinationQueue::observe),
+            })
+            .collect();
+        retired.sort_by_key(|entry| entry.descriptor.id.0);
+        destinations.sort_unstable_by_key(|entry| entry.descriptor.id.0);
+        super::snapshot::RouterSnapshot {
+            revision: state.revision,
+            shutting_down: state.shutting_down,
+            destination_limit: state.max_destinations,
+            destinations,
+            retired,
+        }
     }
 
     pub fn revision(&self) -> u64 {
@@ -597,6 +1015,24 @@ impl FanoutAdmissionCoordinator {
         context: AdmissionContext,
         timer: Option<&dyn DeadlineTimer>,
     ) -> Result<PreparedFanout, FanoutPreparationError> {
+        Self::prepare_with_clock(
+            plan,
+            batch,
+            context,
+            timer,
+            &crate::live::foundation::clock::SystemMonotonicClock,
+        )
+        .await
+    }
+
+    /// Preserve one monotonic timeline across every destination reservation.
+    pub async fn prepare_with_clock(
+        plan: &RoutingPlan,
+        batch: &EventBatch,
+        context: AdmissionContext,
+        timer: Option<&dyn DeadlineTimer>,
+        clock: &dyn crate::live::foundation::MonotonicClock,
+    ) -> Result<PreparedFanout, FanoutPreparationError> {
         if plan.required.is_empty() {
             return Err(FanoutPreparationError::NoRequiredDestinations);
         }
@@ -613,10 +1049,14 @@ impl FanoutAdmissionCoordinator {
                 .as_ref()
                 .ok_or(FanoutPreparationError::MissingQueue(id))?;
 
-            match queue.reserve_async(batch, context.clone(), timer).await {
+            match queue
+                .reserve_async_with_clock(batch, context.clone(), timer, clock)
+                .await
+            {
                 AsyncCapacityAdmission::Reserved(reservation) => {
                     prepared.push(PreparedDestination {
                         id,
+                        descriptor: required.descriptor,
                         queue: queue.clone(),
                         reservation,
                     });
@@ -713,8 +1153,8 @@ impl FanoutCommitmentCoordinator {
     /// Recovery capacity is reserved before any irreversible
     /// queue commitment.
     ///
-    /// This entry point will become the authoritative production
-    /// commitment path once recovery ownership is integrated.
+    /// Activates obligations before queue writes and transfers every failed
+    /// tracking update into recovery or an explicitly owned return value.
     pub fn commit_tracked_with_recovery(
         registry: &RouterRegistry,
         tracker: &mut AcknowledgementTracker,
@@ -723,6 +1163,30 @@ impl FanoutCommitmentCoordinator {
         prepared: PreparedFanout,
         obligations: PreparedObligations,
         batch: EventBatch,
+    ) -> TrackedFanoutResult {
+        Self::commit_tracked_with_recovery_checked(
+            registry,
+            tracker,
+            recovery,
+            plan,
+            prepared,
+            obligations,
+            batch,
+            || Ok(()),
+        )
+    }
+
+    /// Checks the caller's cancellation/deadline fence under the registry
+    /// commitment lock, after all preparation and before obligation activation.
+    pub(crate) fn commit_tracked_with_recovery_checked(
+        registry: &RouterRegistry,
+        tracker: &mut AcknowledgementTracker,
+        recovery: &mut TrackingRecovery,
+        plan: &RoutingPlan,
+        prepared: PreparedFanout,
+        obligations: PreparedObligations,
+        batch: EventBatch,
+        check: impl FnOnce() -> Result<(), crate::live::ports::routing::RoutingAdmissionFailure>,
     ) -> TrackedFanoutResult {
         let _commitment = registry
             .commitment
@@ -798,26 +1262,124 @@ impl FanoutCommitmentCoordinator {
             };
         }
 
-        // All precommit checks passed.
-        //
-        // Do not activate obligations or enqueue events yet.
-        // The next stage will connect these operations while
-        // preserving recovery ownership.
-
-        drop(reservations);
-
-        match tracker.abort_prepared(obligations) {
-            Ok(()) => TrackedFanoutResult::Rejected {
+        // Build all correlation state before the first queue can accept work.
+        if let Err(error) = Self::validate_commitment_mapping(&prepared, obligations.obligations())
+        {
+            return match tracker.abort_prepared(obligations) {
+                Ok(()) => TrackedFanoutResult::Rejected {
+                    batch,
+                    reason: TrackedFanoutError::Validation(error),
+                },
+                Err(_) => TrackedFanoutResult::Rejected {
+                    batch,
+                    reason: TrackedFanoutError::RollbackFailed,
+                },
+            };
+        }
+        let templates =
+            match Self::prepare_acknowledgement_templates(&prepared, obligations.obligations()) {
+                Ok(templates) => templates,
+                Err(error) => {
+                    return match tracker.abort_prepared(obligations) {
+                        Ok(()) => TrackedFanoutResult::Rejected {
+                            batch,
+                            reason: TrackedFanoutError::Validation(error),
+                        },
+                        Err(_) => TrackedFanoutResult::Rejected {
+                            batch,
+                            reason: TrackedFanoutError::RollbackFailed,
+                        },
+                    };
+                }
+            };
+        let range = DeliveryCursorRange::new(plan.first_cursor.clone(), plan.last_cursor.clone())
+            .expect("validated routing range");
+        if let Err(reason) = check() {
+            return TrackedFanoutResult::Rejected {
                 batch,
-                reason: TrackedFanoutError::ObligationCommitment,
-            },
-
-            Err(_) => TrackedFanoutResult::Rejected {
+                reason: if tracker.abort_prepared(obligations).is_ok() {
+                    TrackedFanoutError::Context(reason)
+                } else {
+                    TrackedFanoutError::RollbackFailed
+                },
+            };
+        }
+        let handle = match Self::try_begin_tracked_commitment(tracker, plan, &prepared, obligations)
+        {
+            Ok(handle) => handle,
+            Err(failure) => {
+                if let Some(prepared) = failure.obligations {
+                    if tracker.abort_prepared(prepared).is_err() {
+                        return TrackedFanoutResult::Rejected {
+                            batch,
+                            reason: TrackedFanoutError::RollbackFailed,
+                        };
+                    }
+                }
+                return TrackedFanoutResult::Rejected {
+                    batch,
+                    reason: failure.reason,
+                };
+            }
+        };
+        let outcome = Self::commit_locked(registry, prepared, batch.clone());
+        let (committed, failed, rejection) = match outcome {
+            FanoutCommitResult::Complete { committed, .. } => (committed, Vec::new(), None),
+            FanoutCommitResult::Partial(partial) => (partial.committed, partial.failed, None),
+            FanoutCommitResult::Rejected(rejection) => {
+                // Defensive path: no queue accepted. Active obligations still
+                // receive terminal failures through the reserved recovery path.
+                let failed = handle
+                    .obligations()
+                    .iter()
+                    .map(|o| FailedDestinationCommitment {
+                        id: o.destination,
+                        reason: QueueError::Closed,
+                    })
+                    .collect();
+                (Vec::new(), failed, Some(rejection.reason))
+            }
+        };
+        let tracking = Self::apply_tracking_updates_with_recovery(
+            tracker,
+            recovery,
+            &templates,
+            &committed,
+            &failed,
+            reservations,
+            &range,
+        );
+        match tracking {
+            Ok(updates) if updates.errors.is_empty() && updates.unresolved.is_empty() => {}
+            tracking => {
+                return TrackedFanoutResult::RecoveryPending {
+                    batch,
+                    committed,
+                    failed,
+                    tracking,
+                };
+            }
+        }
+        if let Some(reason) = rejection {
+            return TrackedFanoutResult::Rejected {
                 batch,
-                reason: TrackedFanoutError::RollbackFailed,
-            },
+                reason: TrackedFanoutError::Precommit(reason),
+            };
+        }
+        if failed.is_empty() {
+            TrackedFanoutResult::Complete {
+                through: batch.last_cursor().clone(),
+                committed,
+            }
+        } else {
+            TrackedFanoutResult::Partial {
+                batch,
+                committed,
+                failed,
+            }
         }
     }
+
     /// Prepare recovery capacity for a tracked fan-out.
     ///
     /// Validates registry state and recovery capacity before
@@ -882,7 +1444,7 @@ impl FanoutCommitmentCoordinator {
     fn apply_tracking_updates_with_recovery(
         tracker: &mut AcknowledgementTracker,
         recovery: &mut TrackingRecovery,
-        obligation_map: &HashMap<DestinationId, DeliveryObligation>,
+        templates: &HashMap<DestinationId, DeliveryAcknowledgement>,
         committed: &[CommittedDestination],
         failed: &[FailedDestinationCommitment],
         reservations: Vec<TrackingRecoveryReservation>,
@@ -921,7 +1483,7 @@ impl FanoutCommitmentCoordinator {
             }));
 
         for ((destination_id, status), reservation) in outcomes.zip(reservations) {
-            let Some(obligation) = obligation_map.get(&destination_id) else {
+            let Some(template) = templates.get(&destination_id) else {
                 errors.push(RecoveryTrackingError::MissingObligation {
                     destination: destination_id,
                 });
@@ -943,12 +1505,8 @@ impl FanoutCommitmentCoordinator {
 
                 continue;
             };
-            let acknowledgement = DeliveryAcknowledgement {
-                obligation: obligation.id,
-                destination: obligation.destination,
-                range: obligation.range.clone(),
-                status,
-            };
+            let mut acknowledgement = template.clone();
+            acknowledgement.status = status;
 
             match recovery.apply_or_retain(tracker, acknowledgement, reservation) {
                 Ok(TrackingApplyOutcome::Applied) => {}
@@ -1101,12 +1659,39 @@ impl FanoutCommitmentCoordinator {
             return Err(FanoutCommitmentError::NoRequiredDestinations);
         }
 
+        Self::validate_prepared_owners(&state, prepared)
+    }
+
+    /// A public plan is untrusted input. Every required registered owner must
+    /// appear exactly once, with its actual descriptor and queue instance.
+    fn validate_prepared_owners(
+        state: &RouterRegistryState,
+        prepared: &PreparedFanout,
+    ) -> Result<(), FanoutCommitmentError> {
+        let expected = state
+            .destinations
+            .values()
+            .filter(|entry| entry.descriptor.policy != DeliveryPolicy::BestEffort)
+            .count();
+        if expected != prepared.destinations.len() {
+            return Err(FanoutCommitmentError::DestinationMismatch);
+        }
+        let mut seen = std::collections::HashSet::with_capacity(expected);
         for destination in &prepared.destinations {
-            if !state.destinations.contains_key(&destination.id) {
+            let Some(current) = state.destinations.get(&destination.id) else {
+                return Err(FanoutCommitmentError::DestinationMismatch);
+            };
+            if !seen.insert(destination.id)
+                || current.descriptor.policy == DeliveryPolicy::BestEffort
+                || current.descriptor != destination.descriptor
+                || !current
+                    .queue
+                    .as_ref()
+                    .is_some_and(|queue| queue.same_owner(&destination.queue))
+            {
                 return Err(FanoutCommitmentError::DestinationMismatch);
             }
         }
-
         Ok(())
     }
     fn commit_locked(
@@ -1152,13 +1737,8 @@ impl FanoutCommitmentCoordinator {
         // The registry state is retained under the read lock.
         // The commitment mutex prevents router-controlled changes.
 
-        for destination in &prepared.destinations {
-            if !state.destinations.contains_key(&destination.id) {
-                return FanoutCommitResult::Rejected(FanoutCommitmentRejection {
-                    batch,
-                    reason: FanoutCommitmentError::DestinationMismatch,
-                });
-            }
+        if let Err(reason) = Self::validate_prepared_owners(&state, &prepared) {
+            return FanoutCommitResult::Rejected(FanoutCommitmentRejection { batch, reason });
         }
 
         let through = batch.last_cursor().clone();
@@ -1486,6 +2066,18 @@ pub fn validate_routing_obligations(
         }
 
         if obligation.policy != planned.descriptor.policy {
+            return Err(RoutingObligationValidationError::DeliveryPolicyMismatch);
+        }
+
+        let owner = prepared
+            .destinations
+            .iter()
+            .find(|entry| entry.id == destination_id)
+            .ok_or(RoutingObligationValidationError::MissingObligation)?;
+        if obligation.kind != owner.descriptor.kind {
+            return Err(RoutingObligationValidationError::DestinationKindMismatch);
+        }
+        if obligation.policy != owner.descriptor.policy {
             return Err(RoutingObligationValidationError::DeliveryPolicyMismatch);
         }
 

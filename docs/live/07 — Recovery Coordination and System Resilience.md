@@ -1502,9 +1502,9 @@ A restarted process establishes new runtime generations.
 |---|---|
 | Exchange protocol configurations | Local TOML |
 | Trade and depth format configurations | Local TOML |
-| Desired stream declarations | Persistent configuration |
-| Instrument metadata | Python-managed PostgreSQL catalog |
-| Instrument metadata snapshot | Versioned local cache |
+| Desired stream declarations and assigned source/derived IDs | Committed configuration revisions; existing configuration journal (Option A) |
+| Instrument metadata | Existing authoritative PostgreSQL catalog; typed read-only resolution |
+| Instrument metadata snapshot | Local projection with explicit provenance/available versions; activation freshness policy OPEN-010 |
 | Physical WebSocket connections | Transient |
 | Native subscription assignments | Transient |
 | Processing tasks | Transient |
@@ -1568,7 +1568,17 @@ Loading previously accepted stream declarations does not restore
 the operational state of their former runtime instances.
 
 The daemon reconstructs registered source identities and persistent
-acquisition requirements from authoritative persisted configuration.
+acquisition requirements from validated committed configuration revisions
+(Option A). The existing configuration journal is the durable declaration
+authority; there is no additional persistent identity database/journal. WP-05
+supplies domain mapping evidence, WP-09 compilation/durable acceptance, WP-11
+operational registration/reconstruction, and WP-24 composition/reconciliation.
+Disabled declarations retain their logical IDs; their current independent demand
+is determined by its owning registrations, not by the enabled flag alone.
+
+Logical source/derived identity is independent of LogEpoch and lifecycle
+generations. Derived semantic changes require explicit generation boundaries;
+recovery does not silently assign different semantics to an existing ID.
 
 Transient subscriber demand must not be restored automatically.
 
@@ -1637,7 +1647,10 @@ Conceptually:
 
     RuntimeInstanceId
 
-This identity distinguishes events, operations, and cursors produced by different process incarnations.
+This identity distinguishes operational owners and event provenance across
+process incarnations. Canonical cursor identity remains `(StreamId, LogEpoch,
+offset)`; RuntimeInstanceId is not a replacement for durable epoch allocation or
+proof of a stable historical logical-ID binding.
 
 Example:
 
@@ -1657,7 +1670,11 @@ Persistent event provenance must not contain ambiguous generation identifiers.
 
 Logical StreamId values should remain stable across process restarts when the corresponding persistent stream declarations remain unchanged.
 
-The Stream Registry reconstructs these identities from validated persistent mappings.
+The Stream Registry reconstructs source/derived persistent identities from
+validated committed configuration revisions in the existing journal (Option A),
+using WP-05 mapping evidence. It does not maintain a competing durable identity
+mapping. Disabled declarations retain their assigned IDs. Missing earlier bindings
+and removed-ID reintroduction remain explicit under OPEN-006–009; see §12.4.
 
 It must not create new logical streams merely because the process restarted.
 
@@ -1823,13 +1840,32 @@ Repeating recovery must not create duplicate authoritative stream registrations 
 
 Where durable identity information is unavailable, the system must report the limitation rather than claim exactly-once recovery.
 
+Current/retained configuration history proves only the mappings it contains.
+Reject demonstrated reassignment/collisions; report known reintroduction and
+missing historical bindings. Permanent non-reuse after pruning, identical
+reintroduction, UUID/other allocation and retained-event/replay/recorded-row
+binding retention remain OPEN-006–009. No permanent tombstones or reuse permission
+are implied. A fresh LogEpoch cannot prove that an old logical identifier refers
+to the same canonical source; replay must not reinterpret old events using an
+unproved new binding.
+
+Metadata recovery consumes immutable validated full-tuple catalog metadata, not
+per-event database lookups or guessed economics. Python models/normalization may
+inform compatibility but do not own Live architecture. Timestamp/version
+availability is not an activation freshness policy (OPEN-010), and the concrete
+read-only PostgreSQL adapter package remains OPEN-011.
+
 ### 12.5 Storage Ownership
 
 Persistent recovery metadata remains local unless another subsystem explicitly owns durable storage.
 
 PostgreSQL must not become the default operational recovery database.
 
-It remains reserved for optional market-data recording and the existing Python-managed instrument catalog.
+It remains reserved for optional market-data recording and the existing
+authoritative instrument catalog (`catalog.exchanges`, `catalog.instruments`,
+`catalog.instrument_specs`, `catalog.instrument_api_raw`), without schema changes.
+`catalog.instrument_metrics` is not authoritative contract economics. This does
+not make recovery a new catalog persistence owner or grant database access.
 
 The Recovery Coordinator must not create an additional PostgreSQL dependency for its own lifecycle management.
 

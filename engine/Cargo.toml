@@ -23,7 +23,7 @@ historical = [
     "dep:num-integer",
 ]
 
-live = ["live-retention"]
+live = ["live-retention", "dep:toml_edit"]
 
 live-retention = [
     "dep:arrow-array",
@@ -37,6 +37,7 @@ arrow-select = ["dep:arrow-select"]
 
 
 [dependencies]
+toml_edit = { version = "=0.25.17", default-features = false, features = ["parse"], optional = true }
 clap = { version = "4.6.7", features = ["derive"] }
 rust_decimal = "1.43.0"
 serde = { version = "1.0.229", features = ["derive"] }

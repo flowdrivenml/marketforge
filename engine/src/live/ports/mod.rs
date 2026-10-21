@@ -1,6 +1,6 @@
-//! Planned module: src/live/ports.
+//! Narrow Live service boundaries shared by production and deterministic adapters.
 
-// Document 17 scaffolding: declarations only; implementations are not complete.
+// Ports carry contracts; their production owners are separate work packages.
 pub mod configuration;
 pub mod control;
 pub mod observability;
@@ -13,3 +13,6 @@ pub mod registry;
 pub mod retention;
 pub mod routing;
 pub mod transport;
+
+pub mod context;
+pub mod lifecycle;

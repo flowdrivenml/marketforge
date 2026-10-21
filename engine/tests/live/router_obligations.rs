@@ -1716,3 +1716,1821 @@ fn recovery_aware_commitment_rejects_insufficient_capacity() {
         assert_eq!(queue.snapshot().queued_batches, 0);
     }
 }
+
+#[test]
+fn recovery_aware_commitment_queues_and_tracks_every_destination() {
+    let (registry, batch, mut tracker, plan, prepared, obligations) = validation_fixture();
+    let original = batch.clone();
+    let ids: Vec<_> = obligations.obligations().iter().map(|o| o.id).collect();
+    let mut recovery = TrackingRecovery::new(2).unwrap();
+    let outcome = FanoutCommitmentCoordinator::commit_tracked_with_recovery(
+        &registry,
+        &mut tracker,
+        &mut recovery,
+        &plan,
+        prepared,
+        obligations,
+        batch,
+    );
+    assert!(
+        matches!(outcome,TrackedFanoutResult::Complete {ref through,ref committed} if through==original.last_cursor() && committed.len()==2)
+    );
+    assert_eq!(recovery.occupied(), 0);
+    for id in ids {
+        assert_eq!(
+            tracker.status(id),
+            Some(DeliveryStatus::Progress(DeliveryStage::Queued))
+        );
+    }
+    for destination in [DestinationId(1), DestinationId(2)] {
+        assert_eq!(
+            registry
+                .peek_queue(destination)
+                .unwrap()
+                .snapshot()
+                .queued_batches,
+            1
+        );
+    }
+}
+#[test]
+fn recovery_aware_partial_fanout_preserves_success_and_terminal_failure() {
+    let (registry, batch, mut tracker, plan, prepared, obligations) = validation_fixture();
+    let mapped: Vec<_> = obligations
+        .obligations()
+        .iter()
+        .map(|o| (o.destination, o.id))
+        .collect();
+    registry.peek_queue(DestinationId(2)).unwrap().close();
+    let mut recovery = TrackingRecovery::new(2).unwrap();
+    let outcome = FanoutCommitmentCoordinator::commit_tracked_with_recovery(
+        &registry,
+        &mut tracker,
+        &mut recovery,
+        &plan,
+        prepared,
+        obligations,
+        batch.clone(),
+    );
+    assert!(
+        matches!(outcome,TrackedFanoutResult::Partial {batch:ref returned,ref committed,ref failed} if returned==&batch && committed.len()==1 && failed.len()==1 && failed[0].id==DestinationId(2))
+    );
+    assert_eq!(recovery.occupied(), 0);
+    for (destination, id) in mapped {
+        assert_eq!(
+            tracker.status(id),
+            Some(if destination == DestinationId(1) {
+                DeliveryStatus::Progress(DeliveryStage::Queued)
+            } else {
+                DeliveryStatus::Failed(DeliveryFailure::Unavailable)
+            })
+        );
+    }
+}
+
+#[test]
+fn ordered_frontier_drop_gap_namespace_and_exhaustion() {
+    use marketforge_engine::live::routing::cursor::{CursorOrderError, StreamAdmissionOrder};
+    let batch =
+        EventBatch::new(vec![l2_event("ordered", 1, 10), l2_event("ordered", 1, 11)]).unwrap();
+    let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+    let permit = order.prepare(&batch).unwrap();
+    assert!(matches!(order.prepare(&batch), Err(CursorOrderError::Busy)));
+    drop(permit);
+    assert_eq!(order.next(), Some(batch.first_cursor().clone()));
+    order.prepare(&batch).unwrap().commit();
+    assert_eq!(order.next().unwrap().offset, 12);
+    assert!(matches!(order.prepare(&batch), Err(CursorOrderError::Gap)));
+    let wrong_epoch = EventBatch::new(vec![l2_event("ordered", 2, 12)]).unwrap();
+    assert!(matches!(
+        order.prepare(&wrong_epoch),
+        Err(CursorOrderError::Namespace)
+    ));
+    let gap =
+        EventBatch::new(vec![l2_event("ordered", 1, 12), l2_event("ordered", 1, 14)]).unwrap();
+    assert!(matches!(order.prepare(&gap), Err(CursorOrderError::Gap)));
+    let final_batch = EventBatch::new(vec![l2_event("last", 1, u64::MAX)]).unwrap();
+    let final_order = StreamAdmissionOrder::new(final_batch.first_cursor().clone()).unwrap();
+    final_order.prepare(&final_batch).unwrap().commit();
+    assert_eq!(final_order.next(), None);
+    assert!(matches!(
+        final_order.prepare(&final_batch),
+        Err(CursorOrderError::Exhausted)
+    ));
+}
+
+#[test]
+fn router_destination_registration_is_bounded_and_rejection_preserves_revision() {
+    use marketforge_engine::live::routing::router::RouterRegistryError;
+    let registry = RouterRegistry::with_destination_limit(1).unwrap();
+    registry
+        .register(obligation_test_destination(
+            1,
+            DestinationKind::Recording,
+            DeliveryPolicy::Required,
+        ))
+        .unwrap();
+    let revision = registry.revision();
+    assert_eq!(
+        registry.register(obligation_test_destination(
+            2,
+            DestinationKind::Recording,
+            DeliveryPolicy::Required
+        )),
+        Err(RouterRegistryError::DestinationCapacity)
+    );
+    assert_eq!(registry.revision(), revision);
+    assert_eq!(registry.destination_count(), 1);
+}
+
+#[test]
+fn ordered_fanout_context_rejection_releases_capacity_without_obligations() {
+    use marketforge_engine::live::{
+        foundation::clock::ManualClock,
+        ports::routing::RoutingAdmissionFailure,
+        routing::{
+            cursor::StreamAdmissionOrder,
+            ordered::{OrderedCommitOutcome, OrderedFanout},
+        },
+    };
+    for cancel in [true, false] {
+        let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+        drop(prepared);
+        tracker.abort_prepared(obligations).unwrap();
+        let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+        let start = std::time::Instant::now();
+        let clock = Arc::new(ManualClock::new(start, 0));
+        let token = CancellationToken::new();
+        // A clock-only deadline test needs a timer only during reservation;
+        // use cancellation here and independently cover deadline at entry below.
+        let pending = ready(OrderedFanout::prepare(
+            &registry,
+            &order,
+            batch.clone(),
+            AdmissionContext::without_deadline(token.clone()),
+            clock,
+            None,
+        ))
+        .unwrap();
+        if cancel {
+            token.cancel();
+        } else {
+            registry.shutdown();
+        }
+        let mut recovery = TrackingRecovery::new(10).unwrap();
+        let outcome = pending.commit(&mut tracker, &mut recovery);
+        if cancel {
+            assert!(matches!(
+                outcome,
+                OrderedCommitOutcome::Rejected {
+                    reason:
+                        marketforge_engine::live::routing::ordered::OrderedCommitFailure::Context(
+                            RoutingAdmissionFailure::Cancelled
+                        ),
+                    ..
+                }
+            ));
+        } else {
+            assert!(matches!(
+                outcome,
+                OrderedCommitOutcome::Tracked(TrackedFanoutResult::Rejected { .. })
+            ));
+        }
+        assert_eq!(order.next(), Some(batch.first_cursor().clone()));
+        assert!(tracker.is_empty());
+        assert_eq!(recovery.occupied(), 0);
+        assert!(
+            registry
+                .peek_queue(DestinationId(1))
+                .unwrap()
+                .try_dequeue()
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn ordered_fanout_commits_real_queues_and_advances_once() {
+    use marketforge_engine::live::{
+        foundation::clock::SystemMonotonicClock,
+        routing::{
+            cursor::{CursorOrderError, StreamAdmissionOrder},
+            ordered::{OrderedCommitOutcome, OrderedFanout, OrderedPreparationError},
+        },
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+    let prepare = || {
+        OrderedFanout::prepare(
+            &registry,
+            &order,
+            batch.clone(),
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            Arc::new(SystemMonotonicClock),
+            None,
+        )
+    };
+    let pending = ready(prepare()).unwrap();
+    assert!(matches!(
+        ready(prepare()),
+        Err(OrderedPreparationError::Order(CursorOrderError::Busy))
+    ));
+    let mut recovery = TrackingRecovery::new(10).unwrap();
+    assert!(matches!(
+        pending.commit(&mut tracker, &mut recovery),
+        OrderedCommitOutcome::Tracked(TrackedFanoutResult::Complete { .. })
+    ));
+    assert_eq!(order.next().unwrap().offset, 12);
+    for id in [1, 2] {
+        let queued = registry
+            .peek_queue(DestinationId(id))
+            .unwrap()
+            .try_dequeue()
+            .unwrap();
+        assert_eq!(queued.batch(), &batch);
+    }
+    assert!(matches!(
+        ready(prepare()),
+        Err(OrderedPreparationError::Order(CursorOrderError::Gap))
+    ));
+}
+
+#[test]
+fn ordered_fanout_drop_and_expired_entry_preserve_frontier() {
+    use marketforge_engine::live::{
+        foundation::clock::ManualClock,
+        ports::routing::RoutingAdmissionFailure,
+        routing::{
+            cursor::StreamAdmissionOrder,
+            ordered::{OrderedFanout, OrderedPreparationError},
+        },
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+    let start = std::time::Instant::now();
+    let clock = Arc::new(ManualClock::new(start, 0));
+    let pending = ready(OrderedFanout::prepare(
+        &registry,
+        &order,
+        batch.clone(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        clock.clone(),
+        None,
+    ))
+    .unwrap();
+    drop(pending);
+    assert!(order.prepare(&batch).is_ok());
+    let result = ready(OrderedFanout::prepare(
+        &registry,
+        &order,
+        batch.clone(),
+        AdmissionContext::new(CancellationToken::new(), Some(start)),
+        clock,
+        None,
+    ));
+    assert!(matches!(
+        result,
+        Err(OrderedPreparationError::Context(
+            RoutingAdmissionFailure::DeadlineExceeded
+        ))
+    ));
+    assert!(tracker.is_empty());
+    assert_eq!(order.next(), Some(batch.first_cursor().clone()));
+}
+
+#[test]
+fn ordered_fanout_deadline_and_tracker_pressure_do_not_transfer_responsibility() {
+    use marketforge_engine::live::{
+        foundation::clock::ManualClock,
+        ports::routing::RoutingAdmissionFailure,
+        routing::{
+            admission::{DeadlineFuture, DeadlineTimer},
+            cursor::StreamAdmissionOrder,
+            ordered::{OrderedCommitOutcome, OrderedFanout},
+        },
+    };
+    // Capacity is immediately available. This timer deliberately stays pending;
+    // the injected monotonic clock independently witnesses the final check.
+    struct PendingTimer;
+    impl DeadlineTimer for PendingTimer {
+        fn sleep_until(&self, _: std::time::Instant) -> DeadlineFuture {
+            Box::pin(std::future::pending())
+        }
+    }
+    for expire in [true, false] {
+        let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+        drop(prepared);
+        tracker.abort_prepared(obligations).unwrap();
+        if !expire {
+            tracker = AcknowledgementTracker::new(1).unwrap();
+        }
+        let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+        let start = std::time::Instant::now();
+        let clock = Arc::new(ManualClock::new(start, 0));
+        let duration = std::time::Duration::from_secs(1);
+        let pending = ready(OrderedFanout::prepare(
+            &registry,
+            &order,
+            batch.clone(),
+            AdmissionContext::new(CancellationToken::new(), Some(start + duration)),
+            clock.clone(),
+            Some(&PendingTimer),
+        ))
+        .unwrap();
+        if expire {
+            clock.advance(duration).unwrap();
+        }
+        let mut recovery = TrackingRecovery::new(10).unwrap();
+        let expected = if expire {
+            marketforge_engine::live::routing::ordered::OrderedCommitFailure::Context(
+                RoutingAdmissionFailure::DeadlineExceeded,
+            )
+        } else {
+            marketforge_engine::live::routing::ordered::OrderedCommitFailure::Obligations(
+                AcknowledgementError::CapacityExceeded,
+            )
+        };
+        assert!(matches!(pending.commit(&mut tracker, &mut recovery),
+            OrderedCommitOutcome::Rejected { reason, .. } if reason == expected));
+        assert!(tracker.is_empty());
+        assert_eq!(order.next(), Some(batch.first_cursor().clone()));
+        for id in [1, 2] {
+            assert!(
+                registry
+                    .peek_queue(DestinationId(id))
+                    .unwrap()
+                    .try_dequeue()
+                    .is_none()
+            );
+        }
+        // Reservations are released, so a fresh preparation succeeds.
+        assert!(
+            ready(OrderedFanout::prepare(
+                &registry,
+                &order,
+                batch,
+                AdmissionContext::without_deadline(CancellationToken::new()),
+                clock,
+                None
+            ))
+            .is_ok()
+        );
+    }
+}
+
+#[test]
+fn ordered_fanout_partial_failure_advances_frontier_and_retains_payload() {
+    use marketforge_engine::live::{
+        foundation::clock::SystemMonotonicClock,
+        routing::{
+            cursor::StreamAdmissionOrder,
+            ordered::{OrderedCommitOutcome, OrderedFanout},
+        },
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+    let pending = ready(OrderedFanout::prepare(
+        &registry,
+        &order,
+        batch.clone(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ))
+    .unwrap();
+    registry.peek_queue(DestinationId(2)).unwrap().close();
+    let mut recovery = TrackingRecovery::new(10).unwrap();
+    match pending.commit(&mut tracker, &mut recovery) {
+        OrderedCommitOutcome::Tracked(TrackedFanoutResult::Partial {
+            batch: retained,
+            committed,
+            failed,
+        }) => {
+            assert_eq!(retained, batch);
+            assert_eq!(committed.len(), 1);
+            assert_eq!(failed.len(), 1);
+        }
+        outcome => panic!("expected explicit partial outcome: {outcome:?}"),
+    }
+    assert_eq!(order.next().unwrap().offset, 12);
+    assert_eq!(
+        registry
+            .peek_queue(DestinationId(1))
+            .unwrap()
+            .try_dequeue()
+            .unwrap()
+            .batch(),
+        &batch
+    );
+}
+
+#[test]
+fn ordered_fanout_dropped_wait_releases_prior_reservations_and_exclusive_order() {
+    use marketforge_engine::live::{
+        foundation::clock::SystemMonotonicClock,
+        routing::{cursor::StreamAdmissionOrder, ordered::OrderedFanout},
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let queue = registry.peek_queue(DestinationId(2)).unwrap();
+    // Exhaust only the second destination; the first reservation must be
+    // released when the preparation future is dropped while waiting.
+    for _ in 0..50 {
+        queue.try_enqueue(batch.clone()).unwrap();
+    }
+    let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+    let mut pending = Box::pin(OrderedFanout::prepare(
+        &registry,
+        &order,
+        batch.clone(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ));
+    let waker = Waker::from(Arc::new(NoopWake));
+    assert!(
+        pending
+            .as_mut()
+            .poll(&mut Context::from_waker(&waker))
+            .is_pending()
+    );
+    assert_eq!(
+        registry
+            .peek_queue(DestinationId(1))
+            .unwrap()
+            .capacity()
+            .usage()
+            .occupied_events,
+        2
+    );
+    drop(pending);
+    assert_eq!(
+        registry
+            .peek_queue(DestinationId(1))
+            .unwrap()
+            .capacity()
+            .usage()
+            .occupied_events,
+        0
+    );
+    assert_eq!(queue.capacity().usage().waiting_operations, 0);
+    assert!(order.prepare(&batch).is_ok());
+    assert!(tracker.is_empty());
+}
+
+#[test]
+fn ordered_fanout_rechecks_deadline_inside_commitment_fence() {
+    use marketforge_engine::live::{
+        foundation::MonotonicClock,
+        ports::routing::RoutingAdmissionFailure,
+        routing::{
+            admission::{DeadlineFuture, DeadlineTimer},
+            cursor::StreamAdmissionOrder,
+            ordered::{OrderedCommitOutcome, OrderedFanout},
+        },
+    };
+    struct FenceClock {
+        start: std::time::Instant,
+        calls: std::sync::atomic::AtomicUsize,
+        armed: std::sync::atomic::AtomicBool,
+    }
+    impl MonotonicClock for FenceClock {
+        fn now(&self) -> std::time::Instant {
+            // Arm after preparation, independently of reservation count.
+            // Expire on the second commitment clock observation.
+            if !self.armed.load(std::sync::atomic::Ordering::SeqCst)
+                || self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0
+            {
+                self.start
+            } else {
+                self.start + std::time::Duration::from_secs(1)
+            }
+        }
+    }
+    struct PendingTimer;
+    impl DeadlineTimer for PendingTimer {
+        fn sleep_until(&self, _: std::time::Instant) -> DeadlineFuture {
+            Box::pin(std::future::pending())
+        }
+    }
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+    let start = std::time::Instant::now();
+    let clock = Arc::new(FenceClock {
+        start,
+        calls: std::sync::atomic::AtomicUsize::new(0),
+        armed: std::sync::atomic::AtomicBool::new(false),
+    });
+    let pending = ready(OrderedFanout::prepare(
+        &registry,
+        &order,
+        batch.clone(),
+        AdmissionContext::new(
+            CancellationToken::new(),
+            Some(start + std::time::Duration::from_secs(1)),
+        ),
+        clock.clone(),
+        Some(&PendingTimer),
+    ))
+    .unwrap();
+    clock.armed.store(true, std::sync::atomic::Ordering::SeqCst);
+    let mut recovery = TrackingRecovery::new(10).unwrap();
+    assert!(matches!(
+        pending.commit(&mut tracker, &mut recovery),
+        OrderedCommitOutcome::Tracked(TrackedFanoutResult::Rejected {
+            reason: TrackedFanoutError::Context(RoutingAdmissionFailure::DeadlineExceeded),
+            ..
+        })
+    ));
+    assert!(tracker.is_empty());
+    assert_eq!(recovery.occupied(), 0);
+    assert_eq!(order.next(), Some(batch.first_cursor().clone()));
+    for id in [1, 2] {
+        assert!(
+            registry
+                .peek_queue(DestinationId(id))
+                .unwrap()
+                .try_dequeue()
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn registered_namespace_routes_without_resetting_frontier() {
+    use marketforge_engine::live::{
+        foundation::SystemMonotonicClock,
+        routing::{
+            cursor::CursorOrderError,
+            namespaces::{AdmissionNamespaces, NamespaceError},
+            ordered::{OrderedCommitOutcome, OrderedFanout, OrderedPreparationError},
+        },
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let namespaces = AdmissionNamespaces::new(2).unwrap();
+    let context = || AdmissionContext::without_deadline(CancellationToken::new());
+    assert!(matches!(
+        ready(OrderedFanout::prepare_registered(
+            &registry,
+            &namespaces,
+            batch.clone(),
+            context(),
+            Arc::new(SystemMonotonicClock),
+            None
+        )),
+        Err(OrderedPreparationError::Namespace(NamespaceError::Unknown))
+    ));
+    let first = batch.first_cursor().clone();
+    namespaces.register(first.clone()).unwrap();
+    let order = namespaces.get(&first.stream_id, first.log_epoch).unwrap();
+    let admission = ready(OrderedFanout::prepare_registered(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        context(),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ))
+    .unwrap();
+    assert!(matches!(order.prepare(&batch), Err(CursorOrderError::Busy)));
+    let mut recovery = TrackingRecovery::new(10).unwrap();
+    assert!(matches!(
+        admission.commit(&mut tracker, &mut recovery),
+        OrderedCommitOutcome::Tracked(TrackedFanoutResult::Complete { .. })
+    ));
+    assert_eq!(order.next().unwrap().offset, batch.last_cursor().offset + 1);
+    assert_eq!(
+        namespaces.register(first.clone()),
+        Err(NamespaceError::AlreadyRegistered)
+    );
+    assert!(matches!(order.prepare(&batch), Err(CursorOrderError::Gap)));
+    for id in [1, 2] {
+        assert!(
+            registry
+                .peek_queue(DestinationId(id))
+                .unwrap()
+                .try_dequeue()
+                .is_some()
+        );
+    }
+    namespaces
+        .retire(&first.stream_id, first.log_epoch)
+        .unwrap();
+    assert!(matches!(
+        order.prepare(&batch),
+        Err(CursorOrderError::Closed)
+    ));
+    assert!(matches!(
+        namespaces.get(&first.stream_id, first.log_epoch),
+        Err(NamespaceError::Retired)
+    ));
+    assert_eq!(
+        namespaces.register(first),
+        Err(NamespaceError::AlreadyRegistered)
+    );
+}
+
+#[test]
+fn registered_namespace_budget_shutdown_and_inflight_retirement() {
+    use marketforge_engine::live::routing::{
+        cursor::CursorOrderError,
+        namespaces::{AdmissionNamespaces, NamespaceError},
+    };
+    assert!(matches!(
+        AdmissionNamespaces::new(0),
+        Err(NamespaceError::InvalidLimit)
+    ));
+    let (_, batch, _, _, _, _) = validation_fixture();
+    let first = batch.first_cursor().clone();
+    let namespaces = AdmissionNamespaces::new(2).unwrap();
+    let mut invalid = first.clone();
+    invalid.stream_id = StreamId(String::new());
+    assert_eq!(
+        namespaces.register(invalid),
+        Err(NamespaceError::InvalidCursor(
+            CursorOrderError::InvalidIdentity
+        ))
+    );
+    namespaces.register(first.clone()).unwrap();
+    let old = namespaces.get(&first.stream_id, first.log_epoch).unwrap();
+    let permit = old.prepare(&batch).unwrap();
+    namespaces
+        .retire(&first.stream_id, first.log_epoch)
+        .unwrap();
+    // Retirement cannot roll back an operation already holding its permit.
+    permit.commit();
+    assert_eq!(old.next().unwrap().offset, batch.last_cursor().offset + 1);
+    assert!(matches!(old.prepare(&batch), Err(CursorOrderError::Closed)));
+    let mut second = first.clone();
+    second.log_epoch = LogEpoch(first.log_epoch.0 + 1);
+    namespaces.register(second.clone()).unwrap();
+    let current = namespaces.get(&second.stream_id, second.log_epoch).unwrap();
+    let mut third = second.clone();
+    third.log_epoch = LogEpoch(second.log_epoch.0 + 1);
+    assert_eq!(
+        namespaces.register(third.clone()),
+        Err(NamespaceError::Capacity)
+    );
+    assert_eq!(namespaces.registered_count(), 2);
+    assert_eq!(current.next(), Some(second));
+    namespaces.shutdown();
+    namespaces.shutdown();
+    assert!(matches!(
+        current.prepare(&batch),
+        Err(CursorOrderError::Closed)
+    ));
+    assert!(matches!(
+        namespaces.get(&first.stream_id, first.log_epoch),
+        Err(NamespaceError::Shutdown)
+    ));
+    assert_eq!(namespaces.register(third), Err(NamespaceError::Shutdown));
+}
+
+#[test]
+fn registered_namespace_concurrent_registration_has_one_owner() {
+    use marketforge_engine::live::routing::namespaces::{AdmissionNamespaces, NamespaceError};
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    let barrier = std::sync::Barrier::new(2);
+    let results = std::thread::scope(|scope| {
+        let tasks: Vec<_> = (0..2)
+            .map(|_| {
+                scope.spawn(|| {
+                    barrier.wait();
+                    namespaces.register(cursor(10))
+                })
+            })
+            .collect();
+        tasks
+            .into_iter()
+            .map(|task| task.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|r| **r == Err(NamespaceError::AlreadyRegistered))
+            .count(),
+        1
+    );
+    assert_eq!(namespaces.registered_count(), 1);
+}
+
+#[test]
+fn bounded_ordered_admission_retains_global_charge_and_releases_on_drop() {
+    use marketforge_engine::live::{
+        foundation::{SystemMonotonicClock, resources::ResourceUsage},
+        model::{error::ErrorCode, memory::RetainedSize},
+        routing::{
+            namespaces::AdmissionNamespaces,
+            ordered::{OrderedAdmissionBudget, OrderedCommitOutcome, OrderedPreparationError},
+        },
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    namespaces.register(batch.first_cursor().clone()).unwrap();
+    let charge = ResourceUsage {
+        items: batch.len(),
+        bytes: usize::try_from(batch.retained_size_bytes().unwrap()).unwrap(),
+    };
+    let budget = OrderedAdmissionBudget::new(charge).unwrap();
+    let context = || AdmissionContext::without_deadline(CancellationToken::new());
+    let admission = ready(budget.prepare(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        context(),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ))
+    .unwrap();
+    assert_eq!(budget.usage(), charge);
+    assert!(matches!(
+        ready(budget.prepare(
+            &registry,
+            &namespaces,
+            batch.clone(),
+            context(),
+            Arc::new(SystemMonotonicClock),
+            None
+        )),
+        Err(OrderedPreparationError::Budget(ErrorCode::Capacity))
+    ));
+    drop(admission);
+    assert_eq!(budget.usage(), ResourceUsage::default());
+    // Byte exhaustion is independent of the event count limit.
+    let small = OrderedAdmissionBudget::new(ResourceUsage {
+        items: charge.items + 1,
+        bytes: charge.bytes - 1,
+    })
+    .unwrap();
+    assert!(matches!(
+        ready(small.prepare(
+            &registry,
+            &namespaces,
+            batch.clone(),
+            context(),
+            Arc::new(SystemMonotonicClock),
+            None
+        )),
+        Err(OrderedPreparationError::Budget(ErrorCode::Capacity))
+    ));
+    assert_eq!(small.usage(), ResourceUsage::default());
+    let admission = ready(budget.prepare(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        context(),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ))
+    .unwrap();
+    let mut recovery = TrackingRecovery::new(10).unwrap();
+    assert!(matches!(
+        admission.commit(&mut tracker, &mut recovery),
+        OrderedCommitOutcome::Tracked(TrackedFanoutResult::Complete { .. })
+    ));
+    assert_eq!(budget.usage(), ResourceUsage::default());
+    for id in [1, 2] {
+        assert!(
+            registry
+                .peek_queue(DestinationId(id))
+                .unwrap()
+                .try_dequeue()
+                .is_some()
+        );
+    }
+    budget.close();
+    assert!(matches!(
+        ready(budget.prepare(
+            &registry,
+            &namespaces,
+            batch,
+            context(),
+            Arc::new(SystemMonotonicClock),
+            None
+        )),
+        Err(OrderedPreparationError::Budget(ErrorCode::Unavailable))
+    ));
+}
+
+#[test]
+fn bounded_ordered_admission_dropped_wait_releases_global_and_destination_capacity() {
+    use marketforge_engine::live::{
+        foundation::{SystemMonotonicClock, resources::ResourceUsage},
+        routing::{namespaces::AdmissionNamespaces, ordered::OrderedAdmissionBudget},
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let queue = registry.peek_queue(DestinationId(2)).unwrap();
+    for _ in 0..50 {
+        queue.try_enqueue(batch.clone()).unwrap();
+    }
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    namespaces.register(batch.first_cursor().clone()).unwrap();
+    let budget = OrderedAdmissionBudget::new(ResourceUsage {
+        items: 100,
+        bytes: 1_000_000,
+    })
+    .unwrap();
+    let cancel = CancellationToken::new();
+    let mut waiting = Box::pin(budget.prepare(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        AdmissionContext::without_deadline(cancel.clone()),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ));
+    let waker = Waker::from(Arc::new(NoopWake));
+    assert!(
+        waiting
+            .as_mut()
+            .poll(&mut Context::from_waker(&waker))
+            .is_pending()
+    );
+    assert_eq!(budget.usage().items, batch.len());
+    drop(waiting);
+    assert_eq!(budget.usage(), ResourceUsage::default());
+    assert_eq!(queue.capacity().usage().waiting_operations, 0);
+    assert_eq!(
+        registry
+            .peek_queue(DestinationId(1))
+            .unwrap()
+            .capacity()
+            .usage()
+            .occupied_events,
+        0
+    );
+    assert!(tracker.is_empty());
+    // Cancellation also releases the global charge when the future completes.
+    let mut waiting = Box::pin(budget.prepare(
+        &registry,
+        &namespaces,
+        batch,
+        AdmissionContext::without_deadline(cancel.clone()),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ));
+    assert!(
+        waiting
+            .as_mut()
+            .poll(&mut Context::from_waker(&waker))
+            .is_pending()
+    );
+    cancel.cancel();
+    assert!(
+        waiting
+            .as_mut()
+            .poll(&mut Context::from_waker(&waker))
+            .is_ready()
+    );
+    assert_eq!(budget.usage(), ResourceUsage::default());
+}
+
+fn add_optional_queue(
+    registry: &RouterRegistry,
+    id: u64,
+) -> marketforge_engine::live::routing::queue::DestinationQueue {
+    use marketforge_engine::live::routing::{
+        destination::DestinationCapacity, queue::DestinationQueue,
+    };
+    let destination =
+        obligation_test_destination(id, DestinationKind::Publication, DeliveryPolicy::BestEffort);
+    let queue = DestinationQueue::new(
+        DestinationCapacity::new(destination.descriptor().capacity, 10).unwrap(),
+    );
+    registry.register_queue(destination, queue.clone()).unwrap();
+    queue
+}
+
+#[test]
+fn optional_fanout_isolates_full_and_closed_queues_and_preserves_identity() {
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let full = add_optional_queue(&registry, 3);
+    let closed = add_optional_queue(&registry, 4);
+    let healthy = add_optional_queue(&registry, 5);
+    while full.try_enqueue(batch.clone()).is_ok() {}
+    closed.close();
+    let namespaces =
+        marketforge_engine::live::routing::namespaces::AdmissionNamespaces::new(1).unwrap();
+    namespaces.register(batch.first_cursor().clone()).unwrap();
+    let admission = ready(
+        marketforge_engine::live::routing::ordered::OrderedFanout::prepare_registered(
+            &registry,
+            &namespaces,
+            batch.clone(),
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            Arc::new(marketforge_engine::live::foundation::SystemMonotonicClock),
+            None,
+        ),
+    )
+    .unwrap();
+    let (required, optional) =
+        admission.commit_with_best_effort(&mut tracker, &mut TrackingRecovery::new(10).unwrap());
+    assert!(matches!(
+        required,
+        marketforge_engine::live::routing::ordered::OrderedCommitOutcome::Tracked(
+            TrackedFanoutResult::Complete { .. }
+        )
+    ));
+    let optional = optional.unwrap().unwrap();
+    assert_eq!(
+        optional.queued.iter().map(|d| d.id).collect::<Vec<_>>(),
+        vec![DestinationId(5)]
+    );
+    assert_eq!(
+        optional.failed.iter().map(|d| d.id).collect::<Vec<_>>(),
+        vec![DestinationId(3), DestinationId(4)]
+    );
+    assert_eq!(full.capacity().usage().waiting_operations, 0);
+    assert_eq!(closed.capacity().usage().waiting_operations, 0);
+    for queue in [
+        healthy,
+        registry.peek_queue(DestinationId(1)).unwrap(),
+        registry.peek_queue(DestinationId(2)).unwrap(),
+    ] {
+        let queued = queue.try_dequeue().unwrap();
+        assert_eq!(queued.batch(), &batch);
+        assert!(Arc::ptr_eq(&queued.batch().events()[0], &batch.events()[0]));
+    }
+}
+
+#[test]
+fn optional_fanout_prevalidates_stale_duplicate_and_shutdown_plans() {
+    use marketforge_engine::live::routing::router::BestEffortError;
+    let registry = RouterRegistry::new();
+    let queue = add_optional_queue(&registry, 1);
+    let batch = obligation_test_batch();
+    let mut duplicate = registry.plan(&batch).unwrap();
+    duplicate.best_effort.push(duplicate.best_effort[0].clone());
+    assert_eq!(
+        registry.try_best_effort(&duplicate, &batch).unwrap_err(),
+        BestEffortError::InvalidPlan(FanoutCommitmentError::DestinationMismatch)
+    );
+    assert!(queue.try_dequeue().is_none());
+    let stale = registry.plan(&batch).unwrap();
+    let second = add_optional_queue(&registry, 2);
+    assert_eq!(
+        registry.try_best_effort(&stale, &batch).unwrap_err(),
+        BestEffortError::InvalidPlan(FanoutCommitmentError::RegistryChanged)
+    );
+    let plan = registry.plan(&batch).unwrap();
+    registry.shutdown();
+    assert_eq!(
+        registry.try_best_effort(&plan, &batch).unwrap_err(),
+        BestEffortError::InvalidPlan(FanoutCommitmentError::ShuttingDown)
+    );
+    assert!(queue.try_dequeue().is_none());
+    assert!(second.try_dequeue().is_none());
+}
+
+#[test]
+fn optional_fanout_does_not_run_after_cancelled_required_commitment() {
+    use marketforge_engine::live::{
+        foundation::SystemMonotonicClock,
+        routing::{
+            namespaces::AdmissionNamespaces,
+            ordered::{OrderedCommitOutcome, OrderedFanout},
+        },
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let queue = add_optional_queue(&registry, 3);
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    namespaces.register(batch.first_cursor().clone()).unwrap();
+    let cancellation = CancellationToken::new();
+    let admission = ready(OrderedFanout::prepare_registered(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        AdmissionContext::without_deadline(cancellation.clone()),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ))
+    .unwrap();
+    cancellation.cancel();
+    let (required, optional) =
+        admission.commit_with_best_effort(&mut tracker, &mut TrackingRecovery::new(10).unwrap());
+    assert!(matches!(required, OrderedCommitOutcome::Rejected { .. }));
+    assert!(optional.is_none());
+    assert!(queue.try_dequeue().is_none());
+    assert!(tracker.is_empty());
+    // Rejection releases the same frontier for a valid retry.
+    let retry = ready(OrderedFanout::prepare_registered(
+        &registry,
+        &namespaces,
+        batch,
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ))
+    .unwrap();
+    let (_, optional) =
+        retry.commit_with_best_effort(&mut tracker, &mut TrackingRecovery::new(10).unwrap());
+    assert_eq!(optional.unwrap().unwrap().queued.len(), 1);
+    assert!(queue.try_dequeue().is_some());
+}
+
+#[test]
+fn optional_only_ordered_attempt_and_rejections_preserve_ownership() {
+    use marketforge_engine::live::{
+        foundation::{SystemMonotonicClock, resources::ResourceUsage},
+        routing::{
+            namespaces::AdmissionNamespaces,
+            ordered::{OptionalOrderedError, OptionalOrderedOutcome, OrderedAdmissionBudget},
+        },
+    };
+    let registry = RouterRegistry::new();
+    let batch = obligation_test_batch();
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    namespaces.register(batch.first_cursor().clone()).unwrap();
+    let order = namespaces
+        .get(
+            &batch.first_cursor().stream_id,
+            batch.first_cursor().log_epoch,
+        )
+        .unwrap();
+    let budget = OrderedAdmissionBudget::new(ResourceUsage {
+        items: 100,
+        bytes: 1_000_000,
+    })
+    .unwrap();
+    assert!(matches!(
+        budget.try_optional_only(
+            &registry,
+            &namespaces,
+            batch.clone(),
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            &SystemMonotonicClock
+        ),
+        OptionalOrderedOutcome::Rejected { .. }
+    ));
+    let queue = add_optional_queue(&registry, 1);
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    let result = budget.try_optional_only(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        AdmissionContext::without_deadline(cancel),
+        &SystemMonotonicClock,
+    );
+    let OptionalOrderedOutcome::Rejected {
+        batch: returned, ..
+    } = result
+    else {
+        panic!("cancel ignored")
+    };
+    assert!(Arc::ptr_eq(&returned.events()[0], &batch.events()[0]));
+    assert_eq!(order.next().unwrap(), *batch.first_cursor());
+    assert!(queue.try_dequeue().is_none());
+    let (required, required_batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let required_namespaces = AdmissionNamespaces::new(1).unwrap();
+    required_namespaces
+        .register(required_batch.first_cursor().clone())
+        .unwrap();
+    assert!(matches!(
+        budget.try_optional_only(
+            &required,
+            &required_namespaces,
+            required_batch,
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            &SystemMonotonicClock
+        ),
+        OptionalOrderedOutcome::Rejected {
+            reason: OptionalOrderedError::RequiredDestinations,
+            ..
+        }
+    ));
+    assert!(
+        required
+            .peek_queue(DestinationId(1))
+            .unwrap()
+            .try_dequeue()
+            .is_none()
+    );
+    while queue.try_enqueue(batch.clone()).is_ok() {}
+    let result = budget.try_optional_only(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        &SystemMonotonicClock,
+    );
+    let OptionalOrderedOutcome::Attempted(result) = result else {
+        panic!("optional attempt rejected")
+    };
+    assert!(result.queued.is_empty());
+    assert_eq!(result.failed.len(), 1);
+    assert_eq!(queue.capacity().usage().waiting_operations, 0);
+    assert_eq!(order.next().unwrap().offset, batch.last_cursor().offset + 1);
+    assert_eq!(budget.usage(), ResourceUsage::default());
+    assert!(matches!(
+        budget.try_optional_only(
+            &registry,
+            &namespaces,
+            batch,
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            &SystemMonotonicClock
+        ),
+        OptionalOrderedOutcome::Rejected { .. }
+    ));
+}
+
+#[test]
+fn optional_only_ordered_success_budget_and_shutdown() {
+    use marketforge_engine::live::{
+        foundation::{SystemMonotonicClock, resources::ResourceUsage},
+        routing::{
+            namespaces::AdmissionNamespaces,
+            ordered::{OptionalOrderedOutcome, OrderedAdmissionBudget},
+        },
+    };
+    let registry = RouterRegistry::new();
+    let queue = add_optional_queue(&registry, 1);
+    let batch = obligation_test_batch();
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    namespaces.register(batch.first_cursor().clone()).unwrap();
+    let tiny = OrderedAdmissionBudget::new(ResourceUsage { items: 1, bytes: 1 }).unwrap();
+    assert!(matches!(
+        tiny.try_optional_only(
+            &registry,
+            &namespaces,
+            batch.clone(),
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            &SystemMonotonicClock
+        ),
+        OptionalOrderedOutcome::Rejected { .. }
+    ));
+    assert_eq!(tiny.usage(), ResourceUsage::default());
+    assert!(queue.try_dequeue().is_none());
+    let budget = OrderedAdmissionBudget::new(ResourceUsage {
+        items: 100,
+        bytes: 1_000_000,
+    })
+    .unwrap();
+    let OptionalOrderedOutcome::Attempted(result) = budget.try_optional_only(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        &SystemMonotonicClock,
+    ) else {
+        panic!("healthy queue rejected")
+    };
+    assert_eq!(result.queued.len(), 1);
+    assert!(result.failed.is_empty());
+    let queued = queue.try_dequeue().unwrap();
+    assert!(Arc::ptr_eq(&queued.batch().events()[0], &batch.events()[0]));
+    assert_eq!(budget.usage(), ResourceUsage::default());
+    budget.close();
+    assert!(matches!(
+        budget.try_optional_only(
+            &registry,
+            &namespaces,
+            batch,
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            &SystemMonotonicClock
+        ),
+        OptionalOrderedOutcome::Rejected { .. }
+    ));
+}
+
+#[test]
+fn router_snapshot_distinguishes_queue_depth_from_reserved_and_inflight_capacity() {
+    use marketforge_engine::live::{
+        model::memory::RetainedSize,
+        routing::{destination::DestinationCapacity, queue::DestinationQueue},
+    };
+    let registry = RouterRegistry::with_destination_limit(2).unwrap();
+    let destination =
+        obligation_test_destination(2, DestinationKind::Recording, DeliveryPolicy::Required);
+    let queue = DestinationQueue::new(
+        DestinationCapacity::new(destination.descriptor().capacity, 2).unwrap(),
+    );
+    registry.register_queue(destination, queue.clone()).unwrap();
+    let batch = obligation_test_batch();
+    let bytes = batch.retained_size_bytes().unwrap();
+    let reservation = queue.capacity().try_reserve(batch.len(), bytes).unwrap();
+    let sample = registry.snapshot().destinations[0].queue.unwrap();
+    assert_eq!(sample.queue.queued_events, 0);
+    assert_eq!(sample.capacity.occupied_events, batch.len());
+    drop(reservation);
+    queue.try_enqueue(batch.clone()).unwrap();
+    let queued = registry.snapshot();
+    let sample = queued.destinations[0].queue.unwrap();
+    assert_eq!(sample.queue.queued_events, batch.len());
+    assert_eq!(sample.queue.queued_bytes, bytes);
+    assert_eq!(sample.capacity.occupied_bytes, bytes);
+    let held = queue.try_dequeue().unwrap();
+    let sample = registry.snapshot().destinations[0].queue.unwrap();
+    assert_eq!(sample.queue.queued_batches, 0);
+    assert_eq!(sample.capacity.occupied_bytes, bytes);
+    queue.shutdown();
+    let closed = registry.snapshot().destinations[0].queue.unwrap();
+    assert!(closed.queue.closed);
+    assert!(closed.capacity.shutting_down);
+    assert_eq!(closed.capacity.occupied_bytes, bytes);
+    drop(held);
+    assert_eq!(
+        registry.snapshot().destinations[0]
+            .queue
+            .unwrap()
+            .capacity
+            .occupied_bytes,
+        0
+    );
+    assert_eq!(
+        queued.destinations[0].queue.unwrap().queue.queued_bytes,
+        bytes
+    );
+}
+
+#[test]
+fn router_snapshot_has_bounded_sorted_owned_membership() {
+    let registry = RouterRegistry::with_destination_limit(2).unwrap();
+    assert!(registry.snapshot().destinations.is_empty());
+    for id in [8, 3] {
+        registry
+            .register(obligation_test_destination(
+                id,
+                DestinationKind::Recording,
+                DeliveryPolicy::Required,
+            ))
+            .unwrap();
+    }
+    let before = registry.snapshot();
+    assert_eq!(before.destination_limit, 2);
+    assert_eq!(before.revision, 2);
+    assert_eq!(
+        before
+            .destinations
+            .iter()
+            .map(|entry| entry.descriptor.id.0)
+            .collect::<Vec<_>>(),
+        vec![3, 8]
+    );
+    assert!(
+        before
+            .destinations
+            .iter()
+            .all(|entry| entry.queue.is_none())
+    );
+    assert!(
+        registry
+            .register(obligation_test_destination(
+                9,
+                DestinationKind::Recording,
+                DeliveryPolicy::Required
+            ))
+            .is_err()
+    );
+    assert_eq!(registry.snapshot(), before);
+    registry.unregister(DestinationId(3)).unwrap();
+    let removed = registry.snapshot();
+    assert_eq!(removed.revision, 3);
+    assert_eq!(removed.destinations.len(), 1);
+    registry.shutdown();
+    let stopped = registry.snapshot();
+    assert!(stopped.shutting_down);
+    assert_eq!(stopped.destinations, removed.destinations);
+    assert!(!before.shutting_down);
+    assert_eq!(before.destinations.len(), 2);
+}
+
+#[test]
+fn namespace_snapshot_reports_inflight_shutdown_without_claiming_completion() {
+    use marketforge_engine::live::{
+        foundation::{SystemMonotonicClock, resources::ResourceUsage},
+        routing::{
+            namespaces::AdmissionNamespaces,
+            ordered::{OrderedAdmissionBudget, OrderedCommitOutcome},
+        },
+    };
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let namespaces = AdmissionNamespaces::new(1).unwrap();
+    namespaces.register(batch.first_cursor().clone()).unwrap();
+    let budget = OrderedAdmissionBudget::new(ResourceUsage {
+        items: 100,
+        bytes: 1_000_000,
+    })
+    .unwrap();
+    let admission = ready(budget.prepare(
+        &registry,
+        &namespaces,
+        batch.clone(),
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        Arc::new(SystemMonotonicClock),
+        None,
+    ))
+    .unwrap();
+    let pending = namespaces.snapshot();
+    assert_eq!(
+        pending.namespaces[0].order.next.as_ref(),
+        Some(batch.first_cursor())
+    );
+    assert_eq!(
+        pending.namespaces[0].order.pending_last.as_ref(),
+        Some(batch.last_cursor())
+    );
+    namespaces.shutdown();
+    let stopped = namespaces.snapshot();
+    assert!(stopped.shutting_down);
+    assert!(stopped.namespaces[0].order.closed);
+    assert!(stopped.namespaces[0].order.pending_last.is_some());
+    // Closing namespace admission preserves an already prepared responsibility.
+    let mut recovery = TrackingRecovery::new(10).unwrap();
+    assert!(matches!(
+        admission.commit(&mut tracker, &mut recovery),
+        OrderedCommitOutcome::Tracked(TrackedFanoutResult::Complete { .. })
+    ));
+    let finished = namespaces.snapshot();
+    assert!(finished.namespaces[0].order.pending_last.is_none());
+    assert_eq!(
+        finished.namespaces[0].order.next.as_ref().unwrap().offset,
+        batch.last_cursor().offset + 1
+    );
+    // Actual queue readback still has work; admission quiescence is not delivery.
+    assert!(
+        registry
+            .peek_queue(DestinationId(1))
+            .unwrap()
+            .try_dequeue()
+            .is_some()
+    );
+    assert!(!tracker.is_empty());
+    assert!(pending.namespaces[0].order.pending_last.is_some());
+    assert!(!pending.shutting_down);
+}
+
+#[test]
+fn namespace_snapshot_bounds_order_retirement_rollback_and_exhaustion() {
+    use marketforge_engine::live::routing::namespaces::{AdmissionNamespaces, NamespaceError};
+    let namespaces = AdmissionNamespaces::new(3).unwrap();
+    assert!(namespaces.snapshot().namespaces.is_empty());
+    for (name, epoch, offset) in [("z", 1, 0), ("a", 2, 0), ("a", 1, u64::MAX)] {
+        namespaces
+            .register(StreamCursor::new(
+                StreamId(name.into()),
+                LogEpoch(epoch),
+                offset,
+            ))
+            .unwrap();
+    }
+    assert_eq!(
+        namespaces.register(cursor(0)),
+        Err(NamespaceError::Capacity)
+    );
+    let sample = namespaces.snapshot();
+    assert_eq!(sample.limit, 3);
+    assert_eq!(
+        sample
+            .namespaces
+            .iter()
+            .map(|n| (n.order.stream_id.0.as_str(), n.order.log_epoch.0))
+            .collect::<Vec<_>>(),
+        vec![("a", 1), ("a", 2), ("z", 1)]
+    );
+    let order = namespaces.get(&StreamId("a".into()), LogEpoch(1)).unwrap();
+    let batch = EventBatch::new(vec![l2_event("a", 1, u64::MAX)]).unwrap();
+    let permit = order.prepare(&batch).unwrap();
+    assert_eq!(
+        order.snapshot().pending_last.as_ref(),
+        Some(batch.last_cursor())
+    );
+    drop(permit);
+    assert!(order.snapshot().pending_last.is_none());
+    assert_eq!(order.snapshot().next.as_ref(), Some(batch.first_cursor()));
+    order.prepare(&batch).unwrap().commit();
+    let exhausted = order.snapshot();
+    assert!(exhausted.next.is_none());
+    assert!(exhausted.pending_last.is_none());
+    assert!(!exhausted.closed);
+    namespaces
+        .retire(&StreamId("a".into()), LogEpoch(1))
+        .unwrap();
+    let retired = namespaces.snapshot();
+    assert!(retired.namespaces[0].retired);
+    assert!(retired.namespaces[0].order.closed);
+    assert!(retired.namespaces[0].order.next.is_none());
+    assert_eq!(
+        namespaces.register(batch.first_cursor().clone()),
+        Err(NamespaceError::AlreadyRegistered)
+    );
+    namespaces.shutdown();
+    namespaces.shutdown();
+    assert!(
+        namespaces
+            .snapshot()
+            .namespaces
+            .iter()
+            .all(|n| n.order.closed)
+    );
+    assert!(!sample.namespaces[0].retired);
+}
+
+#[test]
+fn commitment_owner_fence_rejects_omission_substitution_and_descriptor_forgery() {
+    use marketforge_engine::live::routing::{
+        destination::DestinationCapacity, queue::DestinationQueue,
+    };
+    for mutation in 0..5 {
+        let (registry, batch, mut tracker, mut plan, prepared, obligations) = validation_fixture();
+        drop(prepared);
+        tracker.abort_prepared(obligations).unwrap();
+        let foreign = DestinationQueue::new(
+            DestinationCapacity::new(plan.required[0].descriptor.capacity, 10).unwrap(),
+        );
+        match mutation {
+            0 => {
+                plan.required.pop();
+            }
+            1 => {
+                plan.required[0].queue = Some(foreign.clone());
+            }
+            2 => {
+                plan.required[0].descriptor.policy = DeliveryPolicy::Durable;
+            }
+            3 => {
+                plan.required[0].descriptor.kind = DestinationKind::Retention;
+            }
+            4 => {
+                plan.required[1] = plan.required[0].clone();
+            }
+            _ => unreachable!(),
+        }
+        let prepared = ready(FanoutAdmissionCoordinator::prepare(
+            &plan,
+            &batch,
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            None,
+        ))
+        .unwrap();
+        let obligations = prepare_routing_obligations(&mut tracker, &plan).unwrap();
+        let mut recovery = TrackingRecovery::new(10).unwrap();
+        let outcome = FanoutCommitmentCoordinator::commit_tracked_with_recovery(
+            &registry,
+            &mut tracker,
+            &mut recovery,
+            &plan,
+            prepared,
+            obligations,
+            batch.clone(),
+        );
+        assert!(
+            matches!(outcome, TrackedFanoutResult::Rejected {
+            batch: ref returned,
+            reason: TrackedFanoutError::Precommit(FanoutCommitmentError::DestinationMismatch),
+        } if returned == &batch),
+            "mutation {mutation}: {outcome:?}"
+        );
+        assert!(tracker.is_empty());
+        assert!(foreign.try_dequeue().is_none());
+        assert_eq!(foreign.capacity().usage().occupied_events, 0);
+        for id in [1, 2] {
+            let queue = registry.peek_queue(DestinationId(id)).unwrap();
+            assert!(queue.try_dequeue().is_none());
+            assert_eq!(queue.capacity().usage().occupied_events, 0);
+        }
+    }
+}
+
+#[test]
+fn commitment_owner_fence_applies_to_untracked_and_optional_entry_points() {
+    use marketforge_engine::live::routing::router::{BestEffortError, FanoutCommitResult};
+    let (registry, batch, mut tracker, mut plan, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    plan.required.pop();
+    let prepared = ready(FanoutAdmissionCoordinator::prepare(
+        &plan,
+        &batch,
+        AdmissionContext::without_deadline(CancellationToken::new()),
+        None,
+    ))
+    .unwrap();
+    assert!(
+        matches!(FanoutCommitmentCoordinator::commit(&registry, prepared, batch.clone()),
+        FanoutCommitResult::Rejected(rejection)
+        if rejection.reason == FanoutCommitmentError::DestinationMismatch && rejection.batch == batch)
+    );
+    for id in [1, 2] {
+        assert!(
+            registry
+                .peek_queue(DestinationId(id))
+                .unwrap()
+                .try_dequeue()
+                .is_none()
+        );
+    }
+    let optional = RouterRegistry::new();
+    let first = add_optional_queue(&optional, 1);
+    let second = add_optional_queue(&optional, 2);
+    let mut plan = optional.plan(&batch).unwrap();
+    plan.best_effort.pop();
+    assert_eq!(
+        optional.try_best_effort(&plan, &batch).unwrap_err(),
+        BestEffortError::InvalidPlan(FanoutCommitmentError::DestinationMismatch)
+    );
+    assert!(first.try_dequeue().is_none());
+    assert!(second.try_dequeue().is_none());
+    // An untouched authoritative plan still transfers the shared batch to both.
+    let plan = optional.plan(&batch).unwrap();
+    assert_eq!(
+        optional
+            .try_best_effort(&plan, &batch)
+            .unwrap()
+            .queued
+            .len(),
+        2
+    );
+    for queue in [first, second] {
+        let queued = queue.try_dequeue().unwrap();
+        assert!(Arc::ptr_eq(&queued.batch().events()[0], &batch.events()[0]));
+    }
+}
+
+#[test]
+fn commitment_owner_fence_rejects_obligation_policy_changed_after_preparation() {
+    for recovery_aware in [false, true] {
+        let (registry, batch, mut tracker, mut plan, prepared, obligations) = validation_fixture();
+        tracker.abort_prepared(obligations).unwrap();
+        // Both the public plan and obligations agree on the forged policy;
+        // only the prepared owner retains the actual registered descriptor.
+        plan.required[0].descriptor.policy = DeliveryPolicy::Durable;
+        let obligations = prepare_routing_obligations(&mut tracker, &plan).unwrap();
+        let result = if recovery_aware {
+            FanoutCommitmentCoordinator::commit_tracked_with_recovery(
+                &registry,
+                &mut tracker,
+                &mut TrackingRecovery::new(10).unwrap(),
+                &plan,
+                prepared,
+                obligations,
+                batch.clone(),
+            )
+        } else {
+            FanoutCommitmentCoordinator::commit_tracked(
+                &registry,
+                &mut tracker,
+                &plan,
+                prepared,
+                obligations,
+                batch.clone(),
+            )
+        };
+        assert!(matches!(result, TrackedFanoutResult::Rejected {
+            reason: TrackedFanoutError::Validation(RoutingObligationValidationError::DeliveryPolicyMismatch),
+            batch: ref returned,
+        } if returned == &batch));
+        assert!(tracker.is_empty());
+        for id in [1, 2] {
+            let queue = registry.peek_queue(DestinationId(id)).unwrap();
+            assert!(queue.try_dequeue().is_none());
+            assert_eq!(queue.capacity().usage().occupied_events, 0);
+        }
+    }
+}
+
+#[test]
+fn namespace_shutdown_waits_for_commit_and_abort_and_replaces_waiter() {
+    use marketforge_engine::live::routing::{
+        cursor::CursorOrderError,
+        namespaces::{AdmissionNamespaces, NamespaceError},
+    };
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use std::task::{Context, Wake, Waker};
+    struct Counter(AtomicUsize);
+    impl Wake for Counter {
+        fn wake(self: Arc<Self>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let (_, batch, _, _, _, _) = validation_fixture();
+    for commit in [false, true] {
+        let namespaces = AdmissionNamespaces::new(1).unwrap();
+        let first = batch.first_cursor().clone();
+        namespaces.register(first.clone()).unwrap();
+        let order = namespaces.get(&first.stream_id, first.log_epoch).unwrap();
+        let permit = order.prepare(&batch).unwrap();
+        namespaces
+            .retire(&first.stream_id, first.log_epoch)
+            .unwrap();
+        let old = Arc::new(Counter(AtomicUsize::new(0)));
+        let new = Arc::new(Counter(AtomicUsize::new(0)));
+        let old_waker = Waker::from(old.clone());
+        let new_waker = Waker::from(new.clone());
+        assert!(
+            namespaces
+                .poll_shutdown(&mut Context::from_waker(&old_waker))
+                .is_pending()
+        );
+        assert!(
+            namespaces
+                .poll_shutdown(&mut Context::from_waker(&new_waker))
+                .is_pending()
+        );
+        assert_eq!(
+            namespaces.register(first.clone()),
+            Err(NamespaceError::Shutdown)
+        );
+        assert!(matches!(
+            order.prepare(&batch),
+            Err(CursorOrderError::Closed)
+        ));
+        if commit {
+            permit.commit();
+        } else {
+            drop(permit);
+        }
+        assert_eq!(old.0.load(Ordering::SeqCst), 0);
+        assert_eq!(new.0.load(Ordering::SeqCst), 1);
+        assert!(
+            namespaces
+                .poll_shutdown(&mut Context::from_waker(&new_waker))
+                .is_ready()
+        );
+        assert!(
+            namespaces
+                .poll_shutdown(&mut Context::from_waker(&new_waker))
+                .is_ready()
+        );
+        assert_eq!(
+            order.next().unwrap().offset,
+            if commit {
+                batch.last_cursor().offset + 1
+            } else {
+                first.offset
+            }
+        );
+        assert_eq!(new.0.load(Ordering::SeqCst), 1);
+    }
+    let empty = AdmissionNamespaces::new(1).unwrap();
+    assert!(
+        empty
+            .poll_shutdown(&mut Context::from_waker(Waker::noop()))
+            .is_ready()
+    );
+}
+
+#[test]
+fn ordered_fanout_reservations_use_the_owners_monotonic_timeline() {
+    use marketforge_engine::live::{
+        foundation::clock::ManualClock,
+        routing::{
+            admission::{DeadlineFuture, DeadlineTimer},
+            cursor::StreamAdmissionOrder,
+            ordered::OrderedFanout,
+        },
+    };
+    struct PendingTimer;
+    impl DeadlineTimer for PendingTimer {
+        fn sleep_until(&self, _: std::time::Instant) -> DeadlineFuture {
+            Box::pin(std::future::pending())
+        }
+    }
+    let (registry, batch, mut tracker, _, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let order = StreamAdmissionOrder::new(batch.first_cursor().clone()).unwrap();
+    // Expired on the system timeline, still ahead on the owner's timeline.
+    let start = std::time::Instant::now() - std::time::Duration::from_secs(3600);
+    let clock = Arc::new(ManualClock::new(start, 0));
+    let deadline = start + std::time::Duration::from_secs(1);
+    let preparation = ready(OrderedFanout::prepare(
+        &registry,
+        &order,
+        batch.clone(),
+        AdmissionContext::new(CancellationToken::new(), Some(deadline)),
+        clock.clone(),
+        Some(&PendingTimer),
+    ))
+    .expect("every destination uses the injected clock");
+    assert!(order.snapshot().pending_last.is_some());
+    assert!(tracker.is_empty());
+    drop(preparation);
+    assert!(order.snapshot().pending_last.is_none());
+    assert_eq!(order.next(), Some(batch.first_cursor().clone()));
+    // The deadline fence works even before the timer is polled ready.
+    clock.advance(std::time::Duration::from_secs(1)).unwrap();
+    let queue = registry.peek_queue(DestinationId(1)).unwrap();
+    assert!(matches!(
+        ready(queue.reserve_async_with_clock(
+            &batch,
+            AdmissionContext::new(CancellationToken::new(), Some(deadline)),
+            Some(&PendingTimer),
+            clock.as_ref(),
+        )),
+        marketforge_engine::live::routing::queue::AsyncCapacityAdmission::Rejected(
+            marketforge_engine::live::routing::queue::AsyncQueueAdmissionError::DeadlineExceeded
+        )
+    ));
+    // Rollback and rejection release capacity in both real destination queues.
+    drop(
+        ready(OrderedFanout::prepare(
+            &registry,
+            &order,
+            batch,
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            clock,
+            None,
+        ))
+        .unwrap(),
+    );
+}
+
+#[test]
+fn fanout_deadline_between_destinations_releases_prior_reservations() {
+    use marketforge_engine::live::{
+        foundation::MonotonicClock,
+        routing::{
+            admission::{DeadlineFuture, DeadlineTimer},
+            queue::AsyncQueueAdmissionError,
+            router::FanoutPreparationError,
+        },
+    };
+    struct PendingTimer;
+    impl DeadlineTimer for PendingTimer {
+        fn sleep_until(&self, _: std::time::Instant) -> DeadlineFuture {
+            Box::pin(std::future::pending())
+        }
+    }
+    struct CrossingClock {
+        start: std::time::Instant,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+    impl MonotonicClock for CrossingClock {
+        fn now(&self) -> std::time::Instant {
+            let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.start + std::time::Duration::from_secs(call as u64)
+        }
+    }
+    let (registry, batch, mut tracker, plan, prepared, obligations) = validation_fixture();
+    drop(prepared);
+    tracker.abort_prepared(obligations).unwrap();
+    let start = std::time::Instant::now();
+    let clock = CrossingClock {
+        start,
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    };
+    assert!(matches!(
+        ready(FanoutAdmissionCoordinator::prepare_with_clock(
+            &plan,
+            &batch,
+            AdmissionContext::new(
+                CancellationToken::new(),
+                Some(start + std::time::Duration::from_secs(1))
+            ),
+            Some(&PendingTimer),
+            &clock,
+        )),
+        Err(FanoutPreparationError::Admission {
+            destination: DestinationId(2),
+            reason: AsyncQueueAdmissionError::DeadlineExceeded,
+        })
+    ));
+    assert_eq!(clock.calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert!(tracker.is_empty());
+    for id in [1, 2] {
+        let queue = registry.peek_queue(DestinationId(id)).unwrap();
+        let snapshot = queue.observe();
+        assert_eq!(snapshot.capacity.occupied_events, 0);
+        assert_eq!(snapshot.capacity.occupied_bytes, 0);
+        assert_eq!(snapshot.capacity.waiting_operations, 0);
+        assert!(queue.try_dequeue().is_none());
+    }
+    drop(
+        ready(FanoutAdmissionCoordinator::prepare(
+            &plan,
+            &batch,
+            AdmissionContext::without_deadline(CancellationToken::new()),
+            None,
+        ))
+        .unwrap(),
+    );
+}

@@ -198,11 +198,11 @@ The Control Server must not execute expensive operations while holding global co
 | Control Server | Client sessions, request framing, dispatch |
 | Configuration Manager | Desired-state revisions and validation |
 | Configuration Compiler | Effective configuration compilation |
-| Runtime Reconciler | Applying validated changes |
-| Stream Registry | Source-stream lifecycle and demand |
+| Runtime Reconciler | Applying durably accepted validated changes through runtime owners |
+| Stream Registry | Operational source identity, lifecycle/demand and reconstruction from committed declarations |
 | Subscription Manager | Exchange-native subscription operations |
 | Connection Manager | Physical transport lifecycle |
-| Derived Stream Registry | Merge and conversion definitions |
+| Derived Stream Registry | Operational derived registrations/generations using committed definitions |
 | Recording Manager | PostgreSQL recording |
 | Retention Manager | Replay and retention operations |
 | Recovery Coordinator | Recovery orchestration |
@@ -495,7 +495,10 @@ Desired state describes the configuration that MarketForge Live
 has accepted and committed as its persistent operating intent.
 
 The Configuration Manager is authoritative for persisted
-desired configuration and its revisions.
+desired configuration and its revisions. Under Option A, committed source/derived
+declarations and assigned IDs in the existing configuration journal are the
+persistent identity authority. There is no separate persistent identity database
+or journal; the operational registries reconstruct validated committed intent.
 
 Desired state is distinct from effective acquisition demand,
 actual runtime state, and health.
@@ -578,6 +581,16 @@ have already reached their required operational state.
 The Control API must distinguish accepted desired
 configuration from applied configuration and
 actual runtime observations.
+
+WP-05 supplies identity/mapping and typed read-only metadata contracts; WP-07
+integrates approved service ports. WP-09 must enforce identity requirements and
+metadata validation against authoritative inputs before durable acceptance.
+WP-11 owns operational/transient registration and independent demand, WP-12
+catalog/protocol and native-normalization integration, WP-23 derived semantic
+compilation/execution, and WP-24 runtime composition/reconciliation. A prospective
+identity result or metadata fixture is neither a committed revision nor runtime
+application. Concrete PostgreSQL metadata adapter ownership is OPEN-011; metadata
+activation freshness policy is OPEN-010, not decided by Control/UI defaults.
 
 
 ### 4.2 Actual State
@@ -880,7 +893,11 @@ must remain explicitly unavailable.
 For a source stream, `source_stream_key` identifies
 its canonical acquisition semantics.
 
-The Stream Registry owns logical source identity.
+The Stream Registry owns operational logical source registration. Persistent
+identity bindings come from validated committed configuration (DEC-035), rather
+than an independently persisted registry mapping. Source/derived namespaces are
+distinct and cannot collide in shared logical identity use; semantic generations
+and LogEpoch are independent of logical identity.
 
 Physical connection replacement, native subscription
 restoration, and L2 resynchronization must not
@@ -1333,6 +1350,13 @@ configuration mutation has been durably accepted.
 
 The registry must fence obsolete asynchronous operations before
 final removal.
+
+Removal does not authorize assigning the old ID to different semantics or erase
+retained-event/replay/recorded-row bindings. Permanent non-reuse after bounded
+history pruning and same-ID/identical-definition reintroduction are unresolved
+(OPEN-006/007/009); UUID/other allocation is OPEN-008. Do not infer permission from
+missing history, add permanent tombstones, or report an unimplemented non-reuse
+guarantee. A restore is a new validated revision and must respect these limits.
 
 #### Session-Scoped Operations
 
@@ -3168,9 +3192,13 @@ The Control API must not invent a second source-identity model.
 
 Source activation requires validated instrument metadata.
 
-The existing Python-managed instrument catalog remains authoritative.
+The existing PostgreSQL catalog is authoritative under DEC-036/037, using the
+complete `(exchange, symbol, instrument_type, market_category)` lookup identity.
+Python models/workflows are compatibility references, not Live architectural
+authority or a required activation dependency. Metadata validity and selected
+normalization capability remain separate (Document 02 §3.3).
 
-The Control API may receive instrument metadata through:
+Conceptually, the Control API may receive instrument metadata through:
 
     Instrument Context Registration
 
@@ -3178,7 +3206,13 @@ or:
 
     Source Registration With Instrument Context
 
-Both approaches must resolve to the shared immutable Rust InstrumentContext.
+Both conceptual approaches must resolve to shared immutable validated Rust
+metadata. WP-05 currently provides `ValidatedInstrumentMetadata`/`MetadataResolver`;
+the InstrumentContext/provisioning examples here do not establish an implemented
+registry or frozen WP-07 Control command. WP-07 owns approved service-port
+integration, and client-supplied context cannot override catalog authority.
+Activation freshness policy and concrete read-only SQL adapter package ownership
+remain OPEN-010/011; available provenance/version information must be preserved.
 
 The Control API must not query Python or PostgreSQL for every incoming market-data event.
 
@@ -5652,9 +5686,15 @@ The shutdown deadline must be finite.
 
 ## 27. Python Orchestration Integration
 
-Python orchestration communicates with MarketForge Live through the versioned Runtime Control API.
+Python orchestration may communicate with MarketForge Live as an independent
+client of the versioned Runtime Control API. This section describes compatible
+client integration, not a requirement that Python own or run the Live daemon.
 
-Python remains responsible for the authoritative instrument catalog and its associated metadata-management workflows.
+The existing PostgreSQL catalog is the metadata authority. Existing Python
+catalog models/metadata-management workflows may inform compatibility, but Python
+orchestration may be outdated and does not define the new Live architecture.
+Typed read-only catalog resolution does not require a Python process in the
+market-data processing path.
 
 Rust Live remains responsible for runtime acquisition, normalization, integrity validation, publication, retention, recording, and recovery.
 
@@ -5768,13 +5808,16 @@ The client must not assume that a connected control socket means exchange acquis
 
 ### 27.6 Instrument Metadata Provisioning
 
-The Python-managed instrument catalog remains authoritative.
-
-Python may deliver validated metadata to Rust through the established instrument-context provisioning contract.
+The existing PostgreSQL catalog remains authoritative without schema changes
+(DEC-036/037). A compatible Python client may deliver catalog-backed context
+through approved provisioning ports; this is a conceptual flow, not evidence that
+a metadata Control command/adapter is already frozen or implemented. It does not
+make Python-supplied economics an alternative authority. Concrete adapter package
+ownership remains OPEN-011 and activation freshness remains OPEN-010.
 
 Conceptually:
 
-    Python Instrument Catalog
+    Existing PostgreSQL Catalog
               |
               v
     Resolve Instrument Revision
@@ -5791,15 +5834,19 @@ Conceptually:
               v
     Validate And Publish Context
 
-The Rust Instrument Registry stores immutable, revisioned runtime contexts.
+In this conceptual flow, the Rust Instrument Registry holds immutable validated
+runtime contexts with catalog provenance/versions where actually available. No
+catalog-wide revision number or new persistence schema may be fabricated. The
+verified WP-05 model contract is not a production implementation of this registry.
 
 The Control API must not create a competing instrument metadata schema.
 
 ### 27.7 Metadata Revision Updates
 
-When Python detects an instrument metadata change:
+When a compatible Python client or controlled metadata refresh observes a
+catalog change, the conceptual update workflow is:
 
-1. Create or identify the authoritative metadata revision.
+1. Capture authoritative catalog provenance and versions where available; do not invent a revision.
 2. Determine the affected instruments.
 3. Submit the updated metadata to Rust.
 4. Validate the replacement context.

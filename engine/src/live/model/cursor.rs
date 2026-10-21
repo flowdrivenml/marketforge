@@ -39,6 +39,12 @@ pub struct StreamCursor {
 }
 
 impl StreamCursor {
+    /// Compare positions only within the same retained log namespace.
+    pub fn compare_position(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        (self.stream_id == other.stream_id && self.log_epoch == other.log_epoch)
+            .then(|| self.offset.cmp(&other.offset))
+    }
+
     pub fn new(stream_id: StreamId, log_epoch: LogEpoch, offset: u64) -> Self {
         Self {
             stream_id,

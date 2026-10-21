@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::canonical::{L2LevelUpdate, Trade};
 use crate::formats::depth::{DepthEventBoundary, DepthSourceEventMetadata, DepthSourceOperation};
+use crate::validate::{validate_l2_level_update, validate_trade};
 
 use super::cursor::*;
 use super::identity::StreamId;
@@ -62,12 +63,12 @@ use super::identity::StreamId;
 /// # Downstream immutability contract
 ///
 /// **Downstream consumers must not modify the fields of an accepted
-/// `LiveEvent`.** Although fields are `pub` (allowing inspection), the
-/// accepted event must be treated as immutable. Mutation should be done
+/// `LiveEvent`.** Fields are accessible through shared dereferencing only.
+/// The accepted event is immutable. Mutation must be done
 /// via construction of a new `LiveEvent` rather than in-place field
 /// assignment. Cursor ordering, provenance consistency, and event
 /// identity all depend on the envelope remaining unmodified after
-/// `LiveEvent::new`.
+/// `LiveEvent::try_new`.
 ///
 /// # Downstream consumption
 ///
@@ -99,10 +100,39 @@ use super::identity::StreamId;
 pub enum LiveEventError {
     StreamIdentityMismatch,
     MissingBookGeneration,
+    UnexpectedBookGeneration,
+    EmptyIdentity,
+    InvalidPayload,
+    TimestampMismatch,
+    InvalidSequenceRange,
+    InvalidInitialization,
+    InvalidOrigin,
+    NativeIdentityMismatch,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+impl std::fmt::Display for LiveEventError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+impl std::error::Error for LiveEventError {}
+
+/// Accepted fields are exposed by shared Deref only; no mutable dereference is
+/// implemented. To change values, explicitly consume a copy into construction
+/// fields, then validate a newly constructed event.
+///
+/// ```compile_fail
+/// use marketforge_engine::live::model::LiveEvent;
+/// fn mutate_accepted(event: &mut LiveEvent) { event.cursor.offset = 42; }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
 pub struct LiveEvent {
+    fields: LiveEventFields,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LiveEventFields {
     /// The MarketForge cursor assigned at acceptance time.
     ///
     /// The authoritative stream identity is `cursor.stream_id`.
@@ -132,20 +162,23 @@ impl LiveEvent {
         provenance: EventProvenance,
         timing: EventTiming,
     ) -> Result<Self, LiveEventError> {
-        if cursor.stream_id != provenance.source_stream {
-            return Err(LiveEventError::StreamIdentityMismatch);
-        }
+        let event = Self {
+            fields: LiveEventFields {
+                cursor,
+                payload,
+                provenance,
+                timing,
+            },
+        };
+        event.check()?;
+        Ok(event)
+    }
 
-        if matches!(&payload, LivePayload::L2Group(_)) && provenance.book_generation.is_none() {
-            return Err(LiveEventError::MissingBookGeneration);
-        }
-
-        Ok(Self {
-            cursor,
-            payload,
-            provenance,
-            timing,
-        })
+    pub fn into_fields(self) -> LiveEventFields {
+        self.fields
+    }
+    pub fn check(&self) -> Result<(), LiveEventError> {
+        self.fields.check()
     }
 
     /// The exchange-reported event timestamp, if available.
@@ -170,19 +203,7 @@ impl LiveEvent {
     /// - The cursor's `stream_id` matches the provenance's `source_stream`.
     /// - For L2 events, the provenance contains a valid `book_generation`.
     pub fn validate(&self) -> bool {
-        // Cursor stream identity must match provenance source.
-        if self.cursor.stream_id != self.provenance.source_stream {
-            return false;
-        }
-
-        // L2 events require a book generation.
-        if matches!(&self.payload, LivePayload::L2Group(_)) {
-            if self.provenance.book_generation.is_none() {
-                return false;
-            }
-        }
-
-        true
+        self.check().is_ok()
     }
 
     /// Assert that the event envelope's invariants hold.
@@ -356,14 +377,12 @@ pub struct NativeTradeId(pub String);
 /// - Missing native identifiers remain explicitly absent (`None`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EventProvenance {
-    /// The source stream identity for this event.
+    /// Original source identity. For source events this matches the cursor's
+    /// stream; derived output retains the source cursor and has its own stream.
     pub source_stream: StreamId,
 
-    /// Physical connection attempt that delivered this event.
-    pub connection_generation: ConnectionGeneration,
-
-    /// Subscription activation lifecycle that admitted this event.
-    pub subscription_generation: SubscriptionGeneration,
+    /// Actual acquisition or transformation origin. Replay preserves this value.
+    pub origin: EventOrigin,
 
     /// Native exchange sequence identifier, if provided by the source.
     pub native_sequence: Option<NativeSequence>,
@@ -410,5 +429,244 @@ impl EventTiming {
     /// Retrieve the local receipt timestamp as i64.
     pub fn received_timestamp_ns(&self) -> i64 {
         self.received_timestamp_ns
+    }
+}
+
+/// Origins never invent a WebSocket connection for REST or derived output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum EventOrigin {
+    WebSocket {
+        connection_generation: ConnectionGeneration,
+        subscription_generation: SubscriptionGeneration,
+    },
+    Rest,
+    Derived(DerivedProvenance),
+}
+
+pub const MAX_CONVERSION_STEPS: usize = 32;
+
+/// References preserve source identity without mutating or copying source values.
+/// Immutable definitions identified by revisions describe nested transformations.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DerivedProvenance {
+    pub derived_stream: super::identity::DerivedStreamId,
+    pub generation: DerivedGeneration,
+    pub source_cursor: StreamCursor,
+    pub transformation_revision: u64,
+    pub ordering_policy_revision: Option<u64>,
+    pub conversion: Vec<ConversionStep>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConversionStep {
+    pub from_currency: String,
+    pub to_currency: String,
+    pub reference: StreamCursor,
+    #[serde(with = "super::codec::decimal_text")]
+    pub rate: rust_decimal::Decimal,
+    pub inverted: bool,
+}
+
+impl<'de> Deserialize<'de> for LiveEvent {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Fields {
+            cursor: StreamCursor,
+            payload: LivePayload,
+            provenance: EventProvenance,
+            timing: EventTiming,
+        }
+        let fields = Fields::deserialize(deserializer)?;
+        Self::try_new(
+            fields.cursor,
+            fields.payload,
+            fields.provenance,
+            fields.timing,
+        )
+        .map_err(|e| serde::de::Error::custom(format!("invalid Live event: {e:?}")))
+    }
+}
+
+impl LiveL2Group {
+    /// Emit the entire current authoritative book, never BookStore's snapshot diff.
+    /// The owner supplies a consistent frozen view and its source metadata.
+    pub fn from_book(
+        book: &crate::book::BookStore,
+        envelope: crate::canonical::EventEnvelope,
+        source: DepthSourceEventMetadata,
+        operation: DepthSourceOperation,
+    ) -> Result<Self, LiveEventError> {
+        if !book.is_initialized() {
+            return Err(LiveEventError::InvalidInitialization);
+        }
+        let mut levels = Vec::new();
+        for (side, entries) in [
+            (crate::canonical::BookSide::Bid, book.bids()),
+            (crate::canonical::BookSide::Ask, book.asks()),
+        ] {
+            for (price, level) in entries {
+                levels.push(L2LevelUpdate {
+                    envelope: envelope.clone(),
+                    side,
+                    price: *price,
+                    quantity_base: level.quantity_base,
+                    quantity_quote: level.quantity_quote,
+                    quantity_contracts: level.quantity_contracts,
+                    order_count: level.order_count,
+                });
+            }
+        }
+        let group = Self::new(
+            DepthEventBoundary::Initialization,
+            operation,
+            levels,
+            source,
+        );
+        group.check()?;
+        Ok(group)
+    }
+}
+
+impl LiveL2Group {
+    pub fn check(&self) -> Result<(), LiveEventError> {
+        use LiveEventError::*;
+        if matches!((self.source.sequence_start, self.source.sequence_end), (Some(a), Some(b)) if a > b)
+        {
+            return Err(InvalidSequenceRange);
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for level in &self.grouped_levels {
+            validate_l2_level_update(level).map_err(|_| InvalidPayload)?;
+            if level.envelope.event_timestamp_ns != self.source.event_timestamp_ns
+                || level.envelope.system_timestamp_ns != self.source.system_timestamp_ns
+            {
+                return Err(TimestampMismatch);
+            }
+            if let Some(first) = self.grouped_levels.first() {
+                if level.envelope.exchange != first.envelope.exchange
+                    || level.envelope.instrument_id != first.envelope.instrument_id
+                    || level.envelope.symbol != first.envelope.symbol
+                    || level.envelope.stream_id != first.envelope.stream_id
+                {
+                    return Err(InvalidPayload);
+                }
+            }
+            if self.grouped_boundary == DepthEventBoundary::Initialization {
+                if level
+                    .quantity_base
+                    .into_iter()
+                    .chain(level.quantity_quote)
+                    .chain(level.quantity_contracts)
+                    .any(|q| q.is_zero())
+                    || !seen.insert((level.side, level.price))
+                {
+                    return Err(InvalidInitialization);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl std::ops::Deref for LiveEvent {
+    type Target = LiveEventFields;
+    fn deref(&self) -> &Self::Target {
+        &self.fields
+    }
+}
+impl TryFrom<LiveEventFields> for LiveEvent {
+    type Error = LiveEventError;
+    fn try_from(fields: LiveEventFields) -> Result<Self, Self::Error> {
+        fields.check()?;
+        Ok(Self { fields })
+    }
+}
+impl LiveEventFields {
+    /// Validate all envelope and canonical payload invariants before admission.
+    /// Native sequence continuity and exchange deduplication remain processor-owned.
+    pub fn check(&self) -> Result<(), LiveEventError> {
+        use LiveEventError::*;
+        if self.cursor.stream_id.0.trim().is_empty()
+            || self.provenance.source_stream.0.trim().is_empty()
+        {
+            return Err(EmptyIdentity);
+        }
+        match &self.provenance.origin {
+            EventOrigin::WebSocket { .. } | EventOrigin::Rest => {
+                if self.cursor.stream_id != self.provenance.source_stream {
+                    return Err(StreamIdentityMismatch);
+                }
+            }
+            EventOrigin::Derived(origin) => {
+                if origin.source_cursor.stream_id != self.provenance.source_stream
+                    || origin.source_cursor.stream_id == self.cursor.stream_id
+                    || origin.derived_stream.0.trim().is_empty()
+                    || origin.conversion.len() > MAX_CONVERSION_STEPS
+                {
+                    return Err(InvalidOrigin);
+                }
+                for step in &origin.conversion {
+                    if step.reference.stream_id.0.trim().is_empty()
+                        || step.from_currency.trim().is_empty()
+                        || step.to_currency.trim().is_empty()
+                        || step.rate <= rust_decimal::Decimal::ZERO
+                    {
+                        return Err(InvalidOrigin);
+                    }
+                }
+                if origin
+                    .conversion
+                    .windows(2)
+                    .any(|p| p[0].to_currency != p[1].from_currency)
+                {
+                    return Err(InvalidOrigin);
+                }
+            }
+        }
+        if self.timing.exchange_timestamp_ns.is_some()
+            && self.timing.exchange_timestamp_ns != self.event_timestamp_ns()
+        {
+            return Err(TimestampMismatch);
+        }
+        match &self.payload {
+            LivePayload::Trade(trade) => {
+                if self.provenance.book_generation.is_some() {
+                    return Err(UnexpectedBookGeneration);
+                }
+                validate_trade(trade).map_err(|_| InvalidPayload)?;
+                if matches!((&self.provenance.native_sequence, trade.sequence), (Some(a), Some(b)) if a.0 != b)
+                    || matches!((&self.provenance.native_trade_id, &trade.trade_id), (Some(a), Some(b)) if &a.0 != b)
+                {
+                    return Err(NativeIdentityMismatch);
+                }
+            }
+            LivePayload::L2Group(group) => {
+                if self.provenance.book_generation.is_none() {
+                    return Err(MissingBookGeneration);
+                }
+                group.check()?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The exchange-reported event timestamp, if available.
+    ///
+    /// For trades, delegates to the canonical `Trade`'s envelope
+    /// `event_timestamp_ns` (always present in the canonical model).
+    /// For L2 events, uses `group.source.event_timestamp_ns`.
+    pub fn event_timestamp_ns(&self) -> Option<i64> {
+        match &self.payload {
+            LivePayload::Trade(trade) => {
+                // Trade envelope always provides event_timestamp_ns
+                // (non-nullable in the canonical model).
+                Some(trade.envelope.event_timestamp_ns)
+            }
+            LivePayload::L2Group(group) => Some(group.timestamp_ns()),
+        }
     }
 }
