@@ -23,15 +23,11 @@ historical = [
     "dep:num-integer",
 ]
 
-live = ["live-retention", "dep:toml_edit"]
-
-live-retention = [
-    "dep:arrow-array",
-    "dep:arrow-schema",
-    "dep:arrow-buffer",
-    "dep:arrow-select",
-    "dep:parquet",
+live = [
+    "dep:toml",
 ]
+
+
 monitor-tui = ["dep:ratatui", "dep:crossterm"]
 arrow-select = ["dep:arrow-select"]
 
@@ -60,6 +56,7 @@ rustix = { version = "1", features = ["fs"], optional = true }
 num-integer = { version = "0.1", optional = true }
 ratatui = { version = "0.30", optional = true }
 crossterm = { version = "0.29", optional = true }
+toml = { version = "1.1.8", optional = true }
 
 [dev-dependencies]
 tempfile = "3.27.0"
@@ -939,14 +936,161 @@ name = "convert_combined_publication"
 path = "tests/convert/combined/combined_publication.rs"
 required-features = ["historical"]
 
-# Document 17: Live targets (no dependency changes).
-
-[[bin]]
-name = "marketforge-live-tui"
-path = "src/bin/marketforge-live-tui.rs"
-required-features = ["live", "monitor-tui"]
+# ============================================================
+# LIVE — EXCHANGE CONFIGURATION TESTS
+# ============================================================
 
 [[test]]
-name = "live_suite"
-path = "tests/live_suite.rs"
+name = "live_config_exchange"
+path = "tests/live/config/exchange.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_exchange_identity"
+path = "tests/live/config/exchange/identity.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_exchange_websocket"
+path = "tests/live/config/exchange/websocket.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_exchange_channel"
+path = "tests/live/config/exchange/channel.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_exchange_rest"
+path = "tests/live/config/exchange/rest.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_exchange_market"
+path = "tests/live/config/exchange/market.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_exchange_validation"
+path = "tests/live/config/exchange/validation.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_exchange_store"
+path = "tests/live/config/exchange/store.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_format"
+path = "tests/live/config/format.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_format_identity"
+path = "tests/live/config/format/identity.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_format_common"
+path = "tests/live/config/format/common.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_format_trade"
+path = "tests/live/config/format/trade.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_format_depth"
+path = "tests/live/config/format/depth.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_format_validation"
+path = "tests/live/config/format/validation.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_format_store"
+path = "tests/live/config/format/store.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_general"
+path = "tests/live/config/general.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_general_model"
+path = "tests/live/config/general/model.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_config_general_validation"
+path = "tests/live/config/general/validation.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_stream_request"
+path = "tests/live/stream/request.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_stream_derived_request"
+path = "tests/live/stream/derived_request.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integrity"
+path = "tests/live/integrity.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integrity_tracker"
+path = "tests/live/integrity/tracker.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integrity_validation"
+path = "tests/live/integrity/validation.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_metrics"
+path = "tests/live/metrics.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_metrics_latency"
+path = "tests/live/metrics/latency.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_metrics_source"
+path = "tests/live/metrics/source.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_metrics_derived"
+path = "tests/live/metrics/derived.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_metrics_publication"
+path = "tests/live/metrics/publication.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_metrics_recording"
+path = "tests/live/metrics/recording.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_metrics_runtime"
+path = "tests/live/metrics/runtime.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_metrics_snapshot"
+path = "tests/live/metrics/snapshot.rs"
 required-features = ["live"]

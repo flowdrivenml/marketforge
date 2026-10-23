@@ -1,4 +1,4 @@
-#[cfg(any(feature = "live-retention", feature = "historical"))]
+#[cfg(feature = "historical")]
 pub mod parquet;
 
 #[cfg(feature = "historical")]

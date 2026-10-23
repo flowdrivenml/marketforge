@@ -1,3 +1,3 @@
 fn main() {
-    marketforge_engine::live::run();
+    println!("Hello, world!");
 }

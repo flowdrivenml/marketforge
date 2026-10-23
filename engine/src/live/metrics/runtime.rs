@@ -1,0 +1,386 @@
+use std::{
+    sync::atomic::{AtomicU64, Ordering},
+    time::Instant,
+};
+
+use serde::{Deserialize, Serialize};
+
+// ============================================================
+// RUNTIME METRICS SNAPSHOT
+// ============================================================
+
+/// Read-only operational measurements for MarketForge Live.
+///
+/// Counters are cumulative within this RuntimeMetrics instance.
+///
+/// Gauges represent the most recently reported authoritative
+/// values and are not guaranteed to describe the exact same
+/// instant under concurrent updates.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeMetricsSnapshot {
+    // --------------------------------------------------------
+    // Process uptime
+    // --------------------------------------------------------
+    pub uptime_seconds: u64,
+
+    // --------------------------------------------------------
+    // Stream counts
+    // --------------------------------------------------------
+    pub source_streams_running: u64,
+
+    pub derived_streams_running: u64,
+
+    pub streams_degraded: u64,
+
+    pub streams_failed: u64,
+
+    // --------------------------------------------------------
+    // Resource utilization
+    // --------------------------------------------------------
+    pub memory_rss_bytes: Option<u64>,
+
+    /// Process CPU utilization expressed as a percentage.
+    ///
+    /// 100.0 represents one fully utilized logical CPU.
+    ///
+    /// A multithreaded process can exceed 100.0.
+    pub cpu_usage_percent: Option<f64>,
+
+    // --------------------------------------------------------
+    // Event counters
+    // --------------------------------------------------------
+    pub source_events_total: u64,
+
+    pub derived_events_total: u64,
+
+    // --------------------------------------------------------
+    // Internal processing overload
+    // --------------------------------------------------------
+    pub internal_queue_overflows_total: u64,
+}
+
+// ============================================================
+// RUNTIME METRICS
+// ============================================================
+
+/// Global operational measurements for MarketForge Live.
+///
+/// This structure does not own:
+/// - Runtime lifecycle state.
+/// - Source or derived-stream registries.
+/// - Actual stream-processing queues.
+/// - Process resource-monitoring implementations.
+/// - Publication queue state.
+/// - Integrity gap history.
+///
+/// Authoritative components report their state through
+/// the methods provided here.
+///
+/// This structure can be shared across runtime components.
+#[derive(Debug)]
+pub struct RuntimeMetrics {
+    // --------------------------------------------------------
+    // Uptime
+    // --------------------------------------------------------
+    started_at: Instant,
+
+    // --------------------------------------------------------
+    // Stream counts
+    // --------------------------------------------------------
+    source_streams_running: AtomicU64,
+
+    derived_streams_running: AtomicU64,
+
+    streams_degraded: AtomicU64,
+
+    streams_failed: AtomicU64,
+
+    // --------------------------------------------------------
+    // Process resource utilization
+    // --------------------------------------------------------
+    memory_rss_bytes: AtomicU64,
+
+    has_memory_rss: std::sync::atomic::AtomicBool,
+
+    /// CPU utilization stored as raw f64 bits.
+    cpu_usage_bits: AtomicU64,
+
+    has_cpu_usage: std::sync::atomic::AtomicBool,
+
+    // --------------------------------------------------------
+    // Cumulative canonical event counts
+    // --------------------------------------------------------
+    source_events_total: AtomicU64,
+
+    derived_events_total: AtomicU64,
+
+    // --------------------------------------------------------
+    // Processing overload
+    // --------------------------------------------------------
+    internal_queue_overflows_total: AtomicU64,
+}
+
+// ============================================================
+// CONSTRUCTION
+// ============================================================
+
+impl Default for RuntimeMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RuntimeMetrics {
+    /// Create empty global runtime metrics.
+    ///
+    /// Uptime begins when this instance is created.
+    ///
+    /// All counters and stream-count gauges begin at zero.
+    ///
+    /// Memory and CPU utilization remain unavailable until
+    /// an external resource collector reports measurements.
+    pub fn new() -> Self {
+        Self {
+            started_at: Instant::now(),
+
+            source_streams_running: AtomicU64::new(0),
+            derived_streams_running: AtomicU64::new(0),
+
+            streams_degraded: AtomicU64::new(0),
+            streams_failed: AtomicU64::new(0),
+
+            memory_rss_bytes: AtomicU64::new(0),
+            has_memory_rss: std::sync::atomic::AtomicBool::new(false),
+
+            cpu_usage_bits: AtomicU64::new(0),
+            has_cpu_usage: std::sync::atomic::AtomicBool::new(false),
+
+            source_events_total: AtomicU64::new(0),
+            derived_events_total: AtomicU64::new(0),
+
+            internal_queue_overflows_total: AtomicU64::new(0),
+        }
+    }
+
+    // ========================================================
+    // STREAM COUNTS
+    // ========================================================
+
+    /// Report authoritative running-stream counts.
+    ///
+    /// The stream registry/runtime remains responsible for
+    /// determining actual lifecycle states.
+    pub fn set_running_stream_counts(&self, source: u64, derived: u64) {
+        self.source_streams_running.store(source, Ordering::Relaxed);
+
+        self.derived_streams_running
+            .store(derived, Ordering::Relaxed);
+    }
+
+    /// Report authoritative degraded and failed stream counts.
+    ///
+    /// A degraded stream may remain running.
+    ///
+    /// These measurements describe different dimensions:
+    /// running is lifecycle state, while degraded is health.
+    pub fn set_unhealthy_stream_counts(&self, degraded: u64, failed: u64) {
+        self.streams_degraded.store(degraded, Ordering::Relaxed);
+
+        self.streams_failed.store(failed, Ordering::Relaxed);
+    }
+
+    // ========================================================
+    // PROCESS MEMORY
+    // ========================================================
+
+    /// Publish the most recently measured process resident
+    /// memory usage, expressed in bytes.
+    ///
+    /// The caller is responsible for retrieving the actual
+    /// operating-system measurement.
+    ///
+    /// This function does not query /proc or other OS APIs.
+    pub fn set_memory_rss_bytes(&self, bytes: u64) {
+        self.memory_rss_bytes.store(bytes, Ordering::Relaxed);
+
+        self.has_memory_rss.store(true, Ordering::Relaxed);
+    }
+
+    // ========================================================
+    // PROCESS CPU
+    // ========================================================
+
+    /// Publish the most recently measured process CPU usage.
+    ///
+    /// The value is expressed as a percentage where:
+    ///
+    /// 100.0 = one fully utilized logical CPU.
+    /// 200.0 = two fully utilized logical CPUs.
+    ///
+    /// This is process utilization, not necessarily the
+    /// percentage of total machine capacity.
+    ///
+    /// Rejects negative, NaN, and infinite values.
+    pub fn set_cpu_usage_percent(&self, percent: f64) -> Result<(), String> {
+        if !percent.is_finite() {
+            return Err("cpu_usage_percent must be finite".into());
+        }
+
+        if percent < 0.0 {
+            return Err("cpu_usage_percent must not be negative".into());
+        }
+
+        self.cpu_usage_bits
+            .store(percent.to_bits(), Ordering::Relaxed);
+
+        self.has_cpu_usage.store(true, Ordering::Relaxed);
+
+        Ok(())
+    }
+
+    // ========================================================
+    // SOURCE EVENTS
+    // ========================================================
+
+    /// Record canonical events produced by source streams.
+    ///
+    /// Events must be counted once at their source output.
+    ///
+    /// Forwarding the same event to subscribers or derived
+    /// processors must not increment this counter again.
+    pub fn record_source_events(&self, count: u64) {
+        if count == 0 {
+            return;
+        }
+
+        self.source_events_total.fetch_add(count, Ordering::Relaxed);
+    }
+
+    // ========================================================
+    // DERIVED EVENTS
+    // ========================================================
+
+    /// Record canonical events produced by derived streams.
+    ///
+    /// These are counted separately from source events to
+    /// avoid confusing transformations with new exchange
+    /// acquisition.
+    pub fn record_derived_events(&self, count: u64) {
+        if count == 0 {
+            return;
+        }
+
+        self.derived_events_total
+            .fetch_add(count, Ordering::Relaxed);
+    }
+
+    // ========================================================
+    // INTERNAL QUEUE OVERFLOW
+    // ========================================================
+
+    /// Record one internal processing queue-overflow incident.
+    ///
+    /// This excludes external publication subscriber queues,
+    /// which have their own overflow counters.
+    ///
+    /// The responsible runtime component must independently
+    /// handle the associated processing and integrity outcome.
+    pub fn record_internal_queue_overflow(&self) {
+        self.internal_queue_overflows_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    // ========================================================
+    // UPTIME
+    // ========================================================
+
+    /// Return elapsed process-monitoring uptime in seconds.
+    ///
+    /// This uses a monotonic clock, so wall-clock adjustments
+    /// do not affect the measurement.
+    pub fn uptime_seconds(&self) -> u64 {
+        self.started_at.elapsed().as_secs()
+    }
+
+    // ========================================================
+    // SNAPSHOT
+    // ========================================================
+
+    /// Collect current global runtime metrics.
+    ///
+    /// This method is read-only and does not reset counters.
+    ///
+    /// Individual atomic measurements are not transactionally
+    /// synchronized with each other.
+    pub fn snapshot(&self) -> RuntimeMetricsSnapshot {
+        RuntimeMetricsSnapshot {
+            uptime_seconds: self.uptime_seconds(),
+
+            source_streams_running: self.source_streams_running.load(Ordering::Relaxed),
+
+            derived_streams_running: self.derived_streams_running.load(Ordering::Relaxed),
+
+            streams_degraded: self.streams_degraded.load(Ordering::Relaxed),
+
+            streams_failed: self.streams_failed.load(Ordering::Relaxed),
+
+            memory_rss_bytes: self.memory_rss_bytes(),
+
+            cpu_usage_percent: self.cpu_usage_percent(),
+
+            source_events_total: self.source_events_total(),
+
+            derived_events_total: self.derived_events_total(),
+
+            internal_queue_overflows_total: self.internal_queue_overflows_total(),
+        }
+    }
+
+    // ========================================================
+    // INSPECTION
+    // ========================================================
+
+    pub fn memory_rss_bytes(&self) -> Option<u64> {
+        if !self.has_memory_rss.load(Ordering::Relaxed) {
+            return None;
+        }
+
+        Some(self.memory_rss_bytes.load(Ordering::Relaxed))
+    }
+
+    pub fn cpu_usage_percent(&self) -> Option<f64> {
+        if !self.has_cpu_usage.load(Ordering::Relaxed) {
+            return None;
+        }
+
+        Some(f64::from_bits(self.cpu_usage_bits.load(Ordering::Relaxed)))
+    }
+
+    pub fn source_events_total(&self) -> u64 {
+        self.source_events_total.load(Ordering::Relaxed)
+    }
+
+    pub fn derived_events_total(&self) -> u64 {
+        self.derived_events_total.load(Ordering::Relaxed)
+    }
+
+    pub fn internal_queue_overflows_total(&self) -> u64 {
+        self.internal_queue_overflows_total.load(Ordering::Relaxed)
+    }
+
+    pub fn source_streams_running(&self) -> u64 {
+        self.source_streams_running.load(Ordering::Relaxed)
+    }
+
+    pub fn derived_streams_running(&self) -> u64 {
+        self.derived_streams_running.load(Ordering::Relaxed)
+    }
+
+    pub fn streams_degraded(&self) -> u64 {
+        self.streams_degraded.load(Ordering::Relaxed)
+    }
+
+    pub fn streams_failed(&self) -> u64 {
+        self.streams_failed.load(Ordering::Relaxed)
+    }
+}
