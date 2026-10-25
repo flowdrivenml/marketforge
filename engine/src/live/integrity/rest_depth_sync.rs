@@ -3,7 +3,7 @@ use crate::live::infrastructure::normalization::{
 };
 
 use super::{
-    CompiledDepthContinuityPlan, DepthBufferLimits, DepthControllerIgnoreReason,
+    CompiledDepthContinuityPlan, DepthBookLimits, DepthBufferLimits, DepthControllerIgnoreReason,
     DepthControllerOutcome, DepthControllerRecoveryReason, DepthResourceAccounting,
     DepthResourceLimits, DepthSnapshotSource, DepthSyncToken, LiveDepthController,
     PreSnapshotDepthBuffer,
@@ -96,7 +96,15 @@ impl RestDepthSyncCoordinator {
             resources: DepthResourceLimits::default(),
         })
     }
-
+    /// Configure retained order-book limits.
+    ///
+    /// The authoritative controller validates both the limits
+    /// and whether its synchronization state permits a change.
+    ///
+    /// This does not expose mutable controller access.
+    pub(super) fn set_book_limits(&mut self, limits: DepthBookLimits) -> Result<(), String> {
+        self.controller.set_book_limits(limits)
+    }
     // ========================================================
     // READ-ONLY INSPECTION
     // ========================================================

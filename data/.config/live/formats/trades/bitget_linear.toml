@@ -85,16 +85,16 @@ preserve_array_order = true
 # ============================================================
 
 [fields]
-trade_id = "execId"
+trade_id = "i"
 
-execution_link_id = "execLinkId"
+execution_link_id = "L"
 
-price = "price"
-quantity_base = "size"
+price = "p"
+quantity_base = "v"
 
-taker_side = "side"
+taker_side = "S"
 
-trade_timestamp = "ts"
+trade_timestamp = "T"
 
 is_rpi = "isRPI"
 

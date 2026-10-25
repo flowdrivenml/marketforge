@@ -203,6 +203,7 @@ impl TradeIdentityTracker {
     }
 
     /// Convenience operation for one trade identity.
+    #[cfg(test)]
     pub(super) fn observe(
         &mut self,
         id: &str,

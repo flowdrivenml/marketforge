@@ -82,14 +82,14 @@ preserve_array_order = true
 # must not be assumed without verification.
 
 [fields]
-trade_id = "execId"
-execution_link_id = "execLinkId"
+trade_id = "i"
+execution_link_id = "L"
 
-price = "price"
-quantity_quote = "size"
+price = "p"
+quantity_quote = "v"
 
-taker_side = "side"
-trade_timestamp = "ts"
+taker_side = "S"
+trade_timestamp = "T"
 
 is_rpi = "isRPI"
 
@@ -349,7 +349,7 @@ gap_action = "report_unverified_coverage"
 # GET /api/v3/market/fills
 # category = COIN-FUTURES
 #
-# Maximum 100 recent executions.
+# Maximum 100 recent executions. 
 # No arbitrary historical trade-ID pagination.
 #
 # REST/WS native identity compatibility must be

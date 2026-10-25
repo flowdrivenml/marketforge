@@ -234,6 +234,9 @@ request_timeout_seconds = 10
 # ------------------------------------------------------------
 
 [rest.endpoints.depth_snapshot]
+
+required_parameters = ["category", "symbol"]
+limit_parameter = "limit"
 method = "GET"
 
 path = "/v5/market/orderbook"
@@ -251,17 +254,29 @@ maximum_limit = 1000
 
 response_root = "result"
 
+response_record_container = "object"
 response_symbol_field = "s"
 response_update_id_field = "u"
 response_cross_sequence_field = "seq"
 
 weight_policy = "public_market_data"
 
+[rest.endpoints.depth_snapshot.application_response]
+strategy = "envelope"
+code_field = "retCode"
+success_codes = ["0"]
+message_field = "retMsg"
+data_field = "result"
+
+
 # ------------------------------------------------------------
 # RECENT PUBLIC TRADES
 # ------------------------------------------------------------
 
 [rest.endpoints.recent_trades]
+
+required_parameters = ["category", "symbol"]
+limit_parameter = "limit"
 method = "GET"
 
 path = "/v5/market/recent-trade"
@@ -284,6 +299,14 @@ response_root = "result.list"
 pagination_strategy = "none"
 
 weight_policy = "public_market_data"
+
+[rest.endpoints.recent_trades.application_response]
+strategy = "envelope"
+code_field = "retCode"
+success_codes = ["0"]
+message_field = "retMsg"
+data_field = "result"
+
 
 # ============================================================
 # RATE LIMITING
@@ -326,3 +349,19 @@ reset_timestamp = "X-Bapi-Limit-Reset-Timestamp"
 
 type = "request_count"
 cost = 1
+
+[rest.endpoints.recent_trades.trade_normalization]
+request_symbol_parameter = "symbol"
+trade_id = "execId"
+price = "price"
+quantity = "size"
+timestamp = "time"
+timestamp_unit = "milliseconds"
+side = "side"
+symbol = "symbol"
+side_strategy = "mapped"
+sequence = "seq"
+
+[rest.endpoints.recent_trades.trade_normalization.side_mappings]
+"Buy" = "buy"
+"Sell" = "sell"

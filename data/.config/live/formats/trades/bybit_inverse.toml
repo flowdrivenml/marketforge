@@ -173,7 +173,7 @@ source = "quantity"
 # This example is illustrative. The actual multiplier
 # and denomination must come from the instrument catalog.
 
-raw_unit = "contracts"
+raw_unit = "quote_asset"
 
 quantity_semantics = "instrument_metadata"
 

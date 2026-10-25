@@ -26,7 +26,8 @@ pub use identity::{ExchangeId, ExchangeIdentity, MarketType};
 pub use market::{MarketMapping, NativeMarketType};
 
 pub use rest::{
-    RateLimitErrorCode, RateLimitPolicy, RestConfig, RestEndpoint, RestRateLimiting, WeightPolicy,
+    RateLimitErrorCode, RateLimitPolicy, RestApplicationResponseConfig,
+    RestApplicationResponseStrategy, RestConfig, RestEndpoint, RestRateLimiting, WeightPolicy,
     WeightTier,
 };
 

@@ -1,6 +1,6 @@
 use super::CompiledRestDepthEndpoint;
 use super::{
-    CompiledDepthContinuityPlan, DepthBufferLimits, DepthControllerIgnoreReason,
+    CompiledDepthContinuityPlan, DepthBookLimits, DepthBufferLimits, DepthControllerIgnoreReason,
     DepthControllerOutcome, DepthControllerRecoveryReason, DepthResourceLimits,
     DepthSnapshotSource, DepthSourceBinding, DepthSourceBindingError, DepthSourceEpoch,
     DepthSyncToken, LiveDepthController, RestDepthRequestContext, RestDepthSyncCoordinator,
@@ -41,6 +41,9 @@ pub struct BoundDepthIngress {
     mode: BoundDepthMode,
     active_rest_request: Option<RestDepthRequestContext>,
     rest_endpoint_policy: Option<CompiledRestDepthEndpoint>,
+    /// Requested depth of the REST snapshot that established
+    /// the current synchronized book.
+    accepted_rest_requested_limit: Option<u64>,
 }
 
 impl BoundDepthIngress {
@@ -93,6 +96,7 @@ impl BoundDepthIngress {
             mode,
             active_rest_request: None,
             rest_endpoint_policy: None,
+            accepted_rest_requested_limit: None,
         })
     }
     /// Bind the configured REST snapshot endpoint.
@@ -148,7 +152,44 @@ impl BoundDepthIngress {
             BoundDepthMode::Rest(coordinator) => coordinator.is_synchronized(),
         }
     }
+    /// REST request limit associated with the current synchronized book.
+    ///
+    /// This is trusted request metadata, not a guarantee that
+    /// the exchange returned this many levels.
+    pub fn accepted_rest_requested_limit(&self) -> Option<u64> {
+        if self.is_synchronized() {
+            self.accepted_rest_requested_limit
+        } else {
+            None
+        }
+    }
+    // ========================================================
+    // RETAINED BOOK CONFIGURATION
+    // ========================================================
 
+    /// Configure the authoritative order book's retained-state
+    /// budget.
+    ///
+    /// The limits apply to both bid and ask levels combined.
+    ///
+    /// Configuration is rejected while the underlying controller
+    /// is synchronized, holds a staged snapshot, or has an active
+    /// REST synchronization attempt.
+    ///
+    /// After explicit invalidation, the policy may be changed
+    /// before synchronization restarts.
+    pub fn set_book_limits(&mut self, limits: DepthBookLimits) -> Result<(), String> {
+        match &mut self.mode {
+            BoundDepthMode::WebSocket(controller) => controller.set_book_limits(limits),
+
+            BoundDepthMode::Rest(coordinator) => coordinator.set_book_limits(limits),
+        }
+    }
+
+    /// Inspect the effective retained-book limits.
+    pub fn book_limits(&self) -> DepthBookLimits {
+        self.controller().book_limits()
+    }
     // ========================================================
     // WEBSOCKET MESSAGE ADMISSION
     // ========================================================
@@ -222,6 +263,10 @@ impl BoundDepthIngress {
                 // If it fails, retain the previous request
                 // context unchanged.
                 coordinator.begin_attempt(token)?;
+
+                // A new synchronization attempt supersedes previous
+                // REST coverage metadata.
+                self.accepted_rest_requested_limit = None;
 
                 self.active_rest_request = Some(request);
 
@@ -335,7 +380,16 @@ impl BoundDepthIngress {
 
             BoundDepthMode::WebSocket(_) => unreachable!(),
         };
-
+        // Preserve the requested depth only when this REST
+        // attempt successfully establishes an authoritative book.
+        if matches!(
+            outcome,
+            DepthControllerOutcome::Accepted { snapshot: true, .. }
+        ) {
+            self.accepted_rest_requested_limit = Some(request.requested_limit);
+        } else if matches!(outcome, DepthControllerOutcome::RecoveryRequired { .. }) {
+            self.accepted_rest_requested_limit = None;
+        }
         // The REST snapshot callback has completed.
         //
         // Both successful and failed attempts retire their
@@ -396,6 +450,7 @@ impl BoundDepthIngress {
         }
         self.active_rest_request = None;
         self.binding = next;
+        self.accepted_rest_requested_limit = None;
 
         Ok(())
     }
@@ -415,6 +470,7 @@ impl BoundDepthIngress {
             }
         }
         self.active_rest_request = None;
+        self.accepted_rest_requested_limit = None;
     }
 
     pub fn expire_pending_snapshot(&mut self) -> Option<DepthControllerOutcome> {

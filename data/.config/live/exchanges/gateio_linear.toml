@@ -336,6 +336,9 @@ request_timeout_seconds = 10
 
 [rest.endpoints.depth_snapshot]
 
+required_parameters = ["contract"]
+limit_parameter = "limit"
+
 method = "GET"
 
 path = "/futures/{settlement}/order_book"
@@ -353,7 +356,7 @@ settlement = "{native_settlement}"
 interval = "0"
 
 default_limit = 100
-
+maximum_limit = 100
 # Required for matching WebSocket U/u.
 with_id = true
 
@@ -374,11 +377,18 @@ authentication = "none"
 
 rate_limit_policy = "futures_public"
 
+[rest.endpoints.depth_snapshot.application_response]
+strategy = "raw"
+
+
 # ============================================================
 # HISTORICAL MARKET TRADES
 # ============================================================
 
 [rest.endpoints.historical_trades]
+
+required_parameters = ["contract"]
+limit_parameter = "limit"
 
 method = "GET"
 
@@ -411,6 +421,10 @@ response_root = "$"
 
 rate_limit_policy = "futures_public"
 
+[rest.endpoints.historical_trades.application_response]
+strategy = "raw"
+
+
 # ============================================================
 # RATE LIMITING
 # ============================================================
@@ -427,12 +441,9 @@ rule = "ip"
 # Do not assume Spot limits apply to Futures.
 
 [rest.rate_limit_policies.futures_public]
-
-# Unresolved intentionally.
-# Supply verified quota configuration before enabling
-# automatic high-volume REST recovery.
-
-status = "requires_verification"
+status = "verified"
+max_requests = 200
+window_seconds = 10
 
 
 # ============================================================
@@ -445,3 +456,14 @@ status = "requires_verification"
 # Without this header, Gate may truncate decimal sizes.
 
 X-Gate-Size-Decimal = "1"
+
+[rest.endpoints.historical_trades.trade_normalization]
+request_symbol_parameter = "symbol"
+trade_id = "id"
+price = "price"
+quantity = "size"
+timestamp = "create_time_ms"
+timestamp_unit = "seconds_decimal"
+symbol = "contract"
+side_strategy = "signed_quantity"
+positive_quantity_side = "buy"

@@ -301,6 +301,9 @@ request_timeout_seconds = 10
 # ============================================================
 
 [rest.endpoints.depth_snapshot]
+
+required_parameters = ["category", "symbol"]
+limit_parameter = "limit"
 method = "GET"
 
 path = "/api/v3/market/orderbook"
@@ -318,13 +321,23 @@ maximum_limit = 1000
 
 response_root = "data"
 
+response_record_container = "object"
 response_bids_field = "b"
 response_asks_field = "a"
 response_timestamp_field = "ts"
+response_timestamp_unit = "milliseconds"
 
 authentication = "none"
 
 rate_limit_policy = "depth_snapshot"
+
+[rest.endpoints.depth_snapshot.application_response]
+strategy = "envelope"
+code_field = "code"
+success_codes = ["00000"]
+message_field = "msg"
+data_field = "data"
+
 
 # IMPORTANT:
 #
@@ -340,6 +353,9 @@ rate_limit_policy = "depth_snapshot"
 # ============================================================
 
 [rest.endpoints.recent_trades]
+
+required_parameters = ["category", "symbol"]
+limit_parameter = "limit"
 method = "GET"
 
 path = "/api/v3/market/fills"
@@ -373,6 +389,14 @@ pagination_strategy = "none"
 
 rate_limit_policy = "recent_trades"
 
+[rest.endpoints.recent_trades.application_response]
+strategy = "envelope"
+code_field = "code"
+success_codes = ["00000"]
+message_field = "msg"
+data_field = "data"
+
+
 # ============================================================
 # RATE LIMITING
 # ============================================================
@@ -405,3 +429,17 @@ window_seconds = 1
 [rest.rate_limit_policies.recent_trades]
 max_requests = 20
 window_seconds = 1
+
+[rest.endpoints.recent_trades.trade_normalization]
+request_symbol_parameter = "symbol"
+trade_id = "execId"
+price = "price"
+quantity = "size"
+timestamp = "ts"
+timestamp_unit = "milliseconds"
+side = "side"
+side_strategy = "mapped"
+
+[rest.endpoints.recent_trades.trade_normalization.side_mappings]
+"buy" = "buy"
+"sell" = "sell"

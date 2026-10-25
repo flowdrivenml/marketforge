@@ -275,4 +275,3 @@ fn validate_conversion_request(request: &CreateDerivedStreamRequest) -> Result<(
 
     Ok(())
 }
-

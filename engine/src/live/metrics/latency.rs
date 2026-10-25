@@ -193,4 +193,3 @@ impl LatencyTracker {
         accumulator.last_ns
     }
 }
-

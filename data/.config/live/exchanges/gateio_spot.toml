@@ -317,6 +317,9 @@ request_timeout_seconds = 10
 
 [rest.endpoints.depth_snapshot]
 
+required_parameters = ["currency_pair"]
+limit_parameter = "limit"
+
 method = "GET"
 
 path = "/spot/order_book"
@@ -337,7 +340,7 @@ interval = "0"
 with_id = true
 
 default_limit = 100
-
+maximum_limit = 100
 # Do not assign an unverified maximum here.
 
 response_sequence_field = "id"
@@ -349,11 +352,18 @@ authentication = "none"
 
 rate_limit_policy = "spot_public"
 
+[rest.endpoints.depth_snapshot.application_response]
+strategy = "raw"
+
+
 # ============================================================
 # HISTORICAL MARKET TRADES
 # ============================================================
 
 [rest.endpoints.historical_trades]
+
+required_parameters = ["currency_pair"]
+limit_parameter = "limit"
 
 method = "GET"
 
@@ -392,6 +402,10 @@ legacy_id_pagination = true
 
 rate_limit_policy = "spot_public"
 
+[rest.endpoints.historical_trades.application_response]
+strategy = "raw"
+
+
 # ============================================================
 # RATE LIMITING
 # ============================================================
@@ -420,3 +434,19 @@ window_seconds = 1
 # processes sharing the same public IP.
 #
 # Reconcile actual throttling behavior during testing.
+
+[rest.endpoints.historical_trades.trade_normalization]
+request_symbol_parameter = "symbol"
+trade_id = "id"
+price = "price"
+quantity = "amount"
+timestamp = "create_time_ms"
+timestamp_unit = "milliseconds_decimal"
+side = "side"
+symbol = "currency_pair"
+side_strategy = "mapped"
+sequence = "sequence_id"
+
+[rest.endpoints.historical_trades.trade_normalization.side_mappings]
+"buy" = "buy"
+"sell" = "sell"

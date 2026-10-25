@@ -1,9 +1,19 @@
 use crate::book::BookChange;
 
+use super::DepthAcceptedTimestamp;
 use super::{
     AcceptedDepthOutput, DepthControllerOutcome, DepthSequenceBaseline, LiveDepthController,
 };
+use std::sync::atomic::{AtomicU64, Ordering};
+static NEXT_PUBLICATION_FENCE_ID: AtomicU64 = AtomicU64::new(1);
 
+fn next_publication_fence_id() -> Result<u64, String> {
+    NEXT_PUBLICATION_FENCE_ID
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+            current.checked_add(1)
+        })
+        .map_err(|_| "publication fence instance ID space exhausted".to_string())
+}
 // ============================================================
 // CONSUMER-FACING EVENTS
 // ============================================================
@@ -20,6 +30,7 @@ pub enum DepthPublicationEvent<'a> {
         book_generation: u64,
         baseline: DepthSequenceBaseline,
         levels: &'a [BookChange],
+        timestamp: DepthAcceptedTimestamp,
     },
 
     Delta {
@@ -27,6 +38,7 @@ pub enum DepthPublicationEvent<'a> {
         book_generation: u64,
         baseline: DepthSequenceBaseline,
         changes: &'a [BookChange],
+        timestamp: DepthAcceptedTimestamp,
     },
 }
 
@@ -92,6 +104,7 @@ pub enum DepthPublicationError {
 
     PreparationIdExhausted,
     PublicationRevisionExhausted,
+    ForeignPreparation,
 }
 
 // ============================================================
@@ -156,6 +169,7 @@ pub struct PreparedDepthPublication<'a> {
     next: DepthPublicationState,
 
     events: Vec<DepthPublicationEvent<'a>>,
+    fence_id: u64,
 }
 
 impl<'a> PreparedDepthPublication<'a> {
@@ -207,6 +221,7 @@ pub struct DepthPublicationFence {
     ///
     /// This is distinct from the last acknowledged book.
     uncertain_book: Option<BookIdentity>,
+    fence_id: u64,
 }
 
 impl DepthPublicationFence {
@@ -220,7 +235,7 @@ impl DepthPublicationFence {
         if stream_id.trim().is_empty() {
             return Err("depth publication fence requires a stream ID".into());
         }
-
+        let fence_id = next_publication_fence_id()?;
         Ok(Self {
             stream_id,
 
@@ -236,6 +251,7 @@ impl DepthPublicationFence {
 
             outstanding: None,
             uncertain_book: None,
+            fence_id,
         })
     }
 
@@ -333,6 +349,7 @@ impl DepthPublicationFence {
                         book_generation,
                         baseline,
                         levels,
+                        timestamp,
                     } => {
                         if controller.book_generation() != book_generation
                             || controller.baseline() != Some(baseline)
@@ -356,6 +373,7 @@ impl DepthPublicationFence {
                             book_generation,
                             baseline,
                             levels,
+                            timestamp,
                         });
 
                         next.published_book_generation = Some(book_generation);
@@ -365,6 +383,7 @@ impl DepthPublicationFence {
                         book_generation,
                         baseline,
                         changes,
+                        timestamp,
                     } => {
                         if controller.book_generation() != book_generation
                             || controller.baseline() != Some(baseline)
@@ -385,6 +404,7 @@ impl DepthPublicationFence {
                             book_generation,
                             baseline,
                             changes,
+                            timestamp,
                         });
                     }
                 }
@@ -408,7 +428,16 @@ impl DepthPublicationFence {
 
         self.reserve(next, events, PreparationKind::Normal)
     }
+    fn validate_preparation_owner(
+        &self,
+        prepared: &PreparedDepthPublication<'_>,
+    ) -> Result<(), DepthPublicationError> {
+        if prepared.fence_id != self.fence_id {
+            return Err(DepthPublicationError::ForeignPreparation);
+        }
 
+        Ok(())
+    }
     // ========================================================
     // RESET AFTER UNCERTAIN DELIVERY
     // ========================================================
@@ -508,6 +537,7 @@ impl DepthPublicationFence {
             book_generation,
             baseline,
             levels,
+            timestamp,
         }) = outcome.accepted_output()
         else {
             return Err(DepthPublicationError::DeltaWithoutSnapshot);
@@ -534,6 +564,7 @@ impl DepthPublicationFence {
                 book_generation,
                 baseline,
                 levels,
+                timestamp,
             }],
             PreparationKind::ResetSnapshot,
         )
@@ -547,6 +578,7 @@ impl DepthPublicationFence {
         &mut self,
         prepared: PreparedDepthPublication<'_>,
     ) -> Result<(), DepthPublicationError> {
+        self.validate_preparation_owner(&prepared)?;
         let pending = self.verify_prepared(&prepared)?;
 
         let next_revision = self
@@ -591,6 +623,7 @@ impl DepthPublicationFence {
         &mut self,
         prepared: PreparedDepthPublication<'_>,
     ) -> Result<(), DepthPublicationError> {
+        self.validate_preparation_owner(&prepared)?;
         self.verify_prepared(&prepared)?;
 
         self.mark_outstanding_handoff_uncertain()
@@ -701,6 +734,7 @@ impl DepthPublicationFence {
             previous,
             next,
             events,
+            fence_id: self.fence_id,
         })
     }
 

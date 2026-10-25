@@ -1,7 +1,6 @@
-use std::collections::BTreeSet;
-
 use super::{ChannelConfig, ExchangeConfig, MarketMapping, RestConfig, WebSocketConfig};
 
+use std::collections::BTreeSet;
 impl ExchangeConfig {
     /// Validate the complete exchange configuration.
     ///
@@ -115,6 +114,57 @@ fn validate_rest(config: &RestConfig) -> Result<(), String> {
     }
 
     for (name, endpoint) in &config.endpoints {
+        // ========================================================
+        // APPLICATION RESPONSE CONFIGURATION
+        // ========================================================
+
+        if let Some(application) = &endpoint.application_response {
+            application.validate().map_err(|reason| {
+                format!("rest.endpoints.{name}.application_response: {reason}")
+            })?;
+        }
+        let mut required = std::collections::HashSet::new();
+
+        for parameter in &endpoint.required_parameters {
+            if parameter.trim().is_empty() {
+                return Err(format!(
+                    "rest.endpoints.{name}: required parameter is empty"
+                ));
+            }
+
+            if !required.insert(parameter) {
+                return Err(format!(
+                    "rest.endpoints.{name}: duplicate required parameter '{parameter}'"
+                ));
+            }
+
+            if !endpoint.parameters.contains(parameter) {
+                return Err(format!(
+                    "rest.endpoints.{name}: required parameter '{parameter}' \
+             is not declared in parameters"
+                ));
+            }
+        }
+
+        // ========================================================
+        // NATIVE LIMIT PARAMETER
+        // ========================================================
+
+        if let Some(parameter) = &endpoint.limit_parameter {
+            if parameter.trim().is_empty() {
+                return Err(format!(
+                    "rest.endpoints.{name}: limit_parameter cannot be empty"
+                ));
+            }
+
+            if !endpoint.parameters.contains(parameter) {
+                return Err(format!(
+                    "rest.endpoints.{name}: limit_parameter '{parameter}' \
+             is not declared in parameters"
+                ));
+            }
+        }
+
         if name.trim().is_empty() {
             return Err("REST endpoint name cannot be empty".into());
         }
@@ -353,4 +403,123 @@ fn validate_market_routes(
     }
 
     Ok(())
+}
+
+// ============================================================
+// SEMANTIC VALIDATION TESTS
+// ============================================================
+#[cfg(test)]
+mod tests {
+    use crate::live::config::exchange::RestApplicationResponseConfig;
+    #[test]
+    fn validates_raw_response() {
+        let config: RestApplicationResponseConfig = toml::from_str(
+            r#"
+strategy = "raw"
+"#,
+        )
+        .unwrap();
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn rejects_envelope_without_code_field() {
+        let config: RestApplicationResponseConfig = toml::from_str(
+            r#"
+strategy = "envelope"
+success_codes = ["0"]
+"#,
+        )
+        .unwrap();
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_envelope_without_success_codes() {
+        let config: RestApplicationResponseConfig = toml::from_str(
+            r#"
+strategy = "envelope"
+code_field = "code"
+"#,
+        )
+        .unwrap();
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_success_codes() {
+        let config: RestApplicationResponseConfig = toml::from_str(
+            r#"
+strategy = "envelope"
+code_field = "code"
+success_codes = ["0", "0"]
+"#,
+        )
+        .unwrap();
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_envelope_fields_for_raw_response() {
+        let config: RestApplicationResponseConfig = toml::from_str(
+            r#"
+strategy = "raw"
+code_field = "code"
+success_codes = ["0"]
+"#,
+        )
+        .unwrap();
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_empty_optional_field_names() {
+        let config: RestApplicationResponseConfig = toml::from_str(
+            r#"
+strategy = "envelope"
+code_field = "code"
+success_codes = ["0"]
+message_field = ""
+"#,
+        )
+        .unwrap();
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_envelope_field_names() {
+        let config: RestApplicationResponseConfig = toml::from_str(
+            r#"
+strategy = "envelope"
+code_field = "code"
+success_codes = ["0"]
+message_field = "code"
+"#,
+        )
+        .unwrap();
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validates_complete_envelope() {
+        let config: RestApplicationResponseConfig = toml::from_str(
+            r#"
+strategy = "envelope"
+code_field = "retCode"
+success_codes = ["0"]
+message_field = "retMsg"
+data_field = "result"
+"#,
+        )
+        .unwrap();
+
+        assert!(config.validate().is_ok());
+    }
 }

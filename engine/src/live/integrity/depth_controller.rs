@@ -3,6 +3,7 @@ use super::{
     DepthContinuityValidator, DepthIgnoreReason, DepthSequenceBaseline, DepthViolationReason,
     to_book_changes,
 };
+use super::{DepthAcceptedTimestamp, DepthSourceTimestamp};
 use super::{DepthBookBudget, DepthBookLimits};
 use super::{DepthBridgeRule, DepthSnapshotSource, DepthSyncToken, PreSnapshotDepthBuffer};
 use super::{DepthResourceAccounting, DepthResourceLimits};
@@ -31,6 +32,11 @@ pub enum DepthControllerOutcome {
         snapshot: bool,
         book_generation: u64,
         baseline: DepthSequenceBaseline,
+        /// Timestamp metadata produced by Integrity.
+        ///
+        /// Describes the accepted source operation, not
+        /// the age of every retained price level.
+        timestamp: DepthAcceptedTimestamp,
     },
 
     Ignored {
@@ -85,6 +91,23 @@ struct PendingBitgetSnapshot {
     staged_at: Instant,
 }
 
+/// Current retained L2 coverage.
+///
+/// Level counts describe what MarketForge currently retains.
+/// They do not guarantee complete exchange-wide coverage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DepthCoverage {
+    pub subscribed_depth: Option<u64>,
+    pub retained_bid_levels: usize,
+    pub retained_ask_levels: usize,
+    pub synchronized: bool,
+    /// Source that initialized the currently synchronized book.
+    ///
+    /// None means there is no authoritative book.
+    pub snapshot_source: Option<NormalizationSource>,
+    pub snapshot_declared_depth: Option<u64>,
+}
+
 // ============================================================
 // LIVE DEPTH CONTROLLER
 // ============================================================
@@ -135,6 +158,8 @@ pub struct LiveDepthController {
     last_rest_attempt: Option<DepthSyncToken>,
     resources: DepthResourceLimits,
     book_limits: DepthBookLimits,
+    snapshot_source: Option<NormalizationSource>,
+    snapshot_declared_depth: Option<u64>,
 }
 
 // ============================================================
@@ -170,6 +195,8 @@ impl LiveDepthController {
             subscribed_depth: None,
             resources: DepthResourceLimits::default(),
             book_limits: DepthBookLimits::default(),
+            snapshot_source: None,
+            snapshot_declared_depth: None,
         })
     }
     /// Expire a staged Bitget snapshot if its bridging
@@ -353,6 +380,20 @@ impl LiveDepthController {
     pub fn subscribed_depth(&self) -> Option<u64> {
         self.subscribed_depth
     }
+    /// Return the current authoritative retained-book coverage.
+    ///
+    /// This is an observational snapshot, not an independent
+    /// synchronization state or a completeness guarantee.
+    pub fn coverage(&self) -> DepthCoverage {
+        DepthCoverage {
+            subscribed_depth: self.subscribed_depth,
+            retained_bid_levels: self.book.bids().len(),
+            retained_ask_levels: self.book.asks().len(),
+            synchronized: self.is_synchronized(),
+            snapshot_source: self.snapshot_source,
+            snapshot_declared_depth: self.snapshot_declared_depth,
+        }
+    }
     // ========================================================
     // INSPECTION
     // ========================================================
@@ -423,6 +464,8 @@ impl LiveDepthController {
         self.active_rest_attempt = None;
 
         self.book.clear();
+        self.snapshot_source = None;
+        self.snapshot_declared_depth = None;
     }
 
     // ========================================================
@@ -692,12 +735,15 @@ impl LiveDepthController {
         self.book_generation = next_generation;
 
         self.baseline = Some(baseline);
+        self.snapshot_source = Some(NormalizationSource::WebSocket);
+        self.snapshot_declared_depth = message.declared_depth();
 
         DepthControllerOutcome::Accepted {
             changes,
             snapshot: true,
             book_generation: self.book_generation,
             baseline,
+            timestamp: DepthAcceptedTimestamp::single_message(message),
         }
     }
     // ========================================================
@@ -962,6 +1008,7 @@ impl LiveDepthController {
             snapshot: false,
             book_generation: self.book_generation,
             baseline: next_baseline,
+            timestamp: DepthAcceptedTimestamp::single_message(message),
         }
     }
     // ========================================================
@@ -1130,6 +1177,8 @@ impl LiveDepthController {
 
         self.baseline = Some(baseline);
         self.book_generation = next_generation;
+        self.snapshot_source = Some(NormalizationSource::WebSocket);
+        self.snapshot_declared_depth = None;
 
         // Initial synchronization must deliver the complete book,
         // not merely the bridging delta.
@@ -1140,6 +1189,7 @@ impl LiveDepthController {
             snapshot: true,
             book_generation: self.book_generation,
             baseline,
+            timestamp: DepthAcceptedTimestamp::staged_snapshot_bridge(message),
         }
     }
     // ============================================================
@@ -1304,7 +1354,12 @@ impl LiveDepthController {
         };
 
         let mut bridged = false;
-
+        // Initially, only the REST snapshot contributes
+        // to the candidate book.
+        //
+        // A successfully applied buffered delta replaces
+        // this as the latest contributing source message.
+        let mut latest_applied_timestamp = DepthSourceTimestamp::from_normalized(snapshot);
         for message in updates {
             if message.stream_id() != self.stream_id
                 || message.source() != NormalizationSource::WebSocket
@@ -1340,6 +1395,7 @@ impl LiveDepthController {
                                 DepthControllerRecoveryReason::InvalidBook(error.to_string()),
                             );
                         }
+                        latest_applied_timestamp = DepthSourceTimestamp::from_normalized(&message);
 
                         baseline.last_sequence = next_sequence;
                         bridged = true;
@@ -1387,6 +1443,13 @@ impl LiveDepthController {
                             DepthControllerRecoveryReason::InvalidBook(error.to_string()),
                         );
                     }
+
+                    // The update has passed continuity validation
+                    // and was successfully applied to the candidate book.
+                    //
+                    // Advance provenance by application order,
+                    // not by comparing exchange timestamps.
+                    latest_applied_timestamp = DepthSourceTimestamp::from_normalized(&message);
 
                     baseline.last_sequence = next_sequence;
                 }
@@ -1438,6 +1501,8 @@ impl LiveDepthController {
         self.book = candidate;
         self.baseline = Some(baseline);
         self.book_generation = next_book_generation;
+        self.snapshot_declared_depth = snapshot.declared_depth();
+        self.snapshot_source = Some(NormalizationSource::Rest);
         // The synchronization attempt has completed.
         //
         // A delayed duplicate response carrying the same token
@@ -1448,6 +1513,7 @@ impl LiveDepthController {
             snapshot: true,
             book_generation: self.book_generation,
             baseline,
+            timestamp: DepthAcceptedTimestamp::rest_reconciliation(latest_applied_timestamp),
         }
     }
 
@@ -1658,18 +1724,21 @@ fn full_book_changes(book: &BookStore) -> Vec<BookChange> {
 ///
 /// Neither form represents durable persistence or
 /// successful downstream delivery.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AcceptedDepthOutput<'a> {
     Snapshot {
         book_generation: u64,
         baseline: DepthSequenceBaseline,
         levels: &'a [BookChange],
+
+        timestamp: DepthAcceptedTimestamp,
     },
 
     Delta {
         book_generation: u64,
         baseline: DepthSequenceBaseline,
         changes: &'a [BookChange],
+
+        timestamp: DepthAcceptedTimestamp,
     },
 }
 
@@ -1688,10 +1757,12 @@ impl DepthControllerOutcome {
                 snapshot: true,
                 book_generation,
                 baseline,
+                timestamp,
             } => Some(AcceptedDepthOutput::Snapshot {
                 book_generation: *book_generation,
                 baseline: *baseline,
                 levels: changes,
+                timestamp: *timestamp,
             }),
 
             Self::Accepted {
@@ -1699,10 +1770,12 @@ impl DepthControllerOutcome {
                 snapshot: false,
                 book_generation,
                 baseline,
+                timestamp,
             } => Some(AcceptedDepthOutput::Delta {
                 book_generation: *book_generation,
                 baseline: *baseline,
                 changes,
+                timestamp: *timestamp,
             }),
 
             Self::Ignored { .. } | Self::RecoveryRequired { .. } | Self::SnapshotStaged { .. } => {
@@ -3082,6 +3155,7 @@ mod tests {
             levels,
             book_generation,
             baseline,
+            ..
         }) = outcome.accepted_output()
         else {
             panic!("expected full synchronized snapshot");
@@ -3121,6 +3195,7 @@ mod tests {
             levels,
             book_generation,
             baseline,
+            ..
         }) = outcome.accepted_output()
         else {
             panic!("Bitget bridge must emit synchronized snapshot");
@@ -3158,6 +3233,7 @@ mod tests {
             changes,
             book_generation,
             baseline,
+            ..
         }) = outcome.accepted_output()
         else {
             panic!("expected incremental depth output");
@@ -3252,6 +3328,7 @@ mod tests {
             levels,
             book_generation,
             baseline,
+            ..
         }) = outcome.accepted_output()
         else {
             panic!("REST bridge must produce full book snapshot");
@@ -3717,5 +3794,398 @@ mod tests {
         );
 
         assert!(controller.pending_bitget_snapshot.is_some());
+    }
+    #[test]
+    fn depth_coverage_reports_initial_empty_book() {
+        let controller = controller("binance_spot");
+
+        let coverage = controller.coverage();
+
+        assert_eq!(coverage.subscribed_depth, None);
+        assert_eq!(coverage.retained_bid_levels, 0);
+        assert_eq!(coverage.retained_ask_levels, 0);
+        assert!(!coverage.synchronized);
+    }
+    #[test]
+    fn depth_coverage_tracks_snapshot_and_delta() {
+        let mut controller = controller("bybit_spot");
+
+        // Initialize with one bid and one ask.
+        let outcome = controller.process(10, &bybit_snapshot(100, 200, 3));
+
+        assert!(matches!(
+            outcome,
+            DepthControllerOutcome::Accepted { snapshot: true, .. }
+        ));
+
+        let coverage = controller.coverage();
+
+        assert!(coverage.synchronized);
+        assert_eq!(coverage.retained_bid_levels, 1);
+        assert_eq!(coverage.retained_ask_levels, 1);
+
+        // Update the existing bid.
+        let outcome = controller.process(10, &bybit_delta(101, 201, 5));
+
+        assert!(matches!(
+            outcome,
+            DepthControllerOutcome::Accepted {
+                snapshot: false,
+                ..
+            }
+        ));
+
+        let coverage = controller.coverage();
+
+        assert!(coverage.synchronized);
+
+        // Updating an existing level must not increase coverage.
+        assert_eq!(coverage.retained_bid_levels, 1);
+        assert_eq!(coverage.retained_ask_levels, 1);
+
+        // Delete the bid with zero quantity.
+        let outcome = controller.process(10, &bybit_delta(102, 202, 0));
+
+        assert!(matches!(
+            outcome,
+            DepthControllerOutcome::Accepted {
+                snapshot: false,
+                ..
+            }
+        ));
+
+        let coverage = controller.coverage();
+
+        assert!(coverage.synchronized);
+        assert_eq!(coverage.retained_bid_levels, 0);
+        assert_eq!(coverage.retained_ask_levels, 1);
+    }
+    #[test]
+    fn depth_coverage_invalidates_after_sequence_failure() {
+        let mut controller = controller("bybit_spot");
+
+        controller.process(10, &bybit_snapshot(100, 200, 3));
+
+        assert!(controller.coverage().synchronized);
+
+        // Cross-sequence regression invalidates the book.
+        let outcome = controller.process(10, &bybit_delta(101, 199, 5));
+
+        assert!(matches!(
+            outcome,
+            DepthControllerOutcome::RecoveryRequired { .. }
+        ));
+
+        let coverage = controller.coverage();
+
+        assert!(!coverage.synchronized);
+        assert_eq!(coverage.retained_bid_levels, 0);
+        assert_eq!(coverage.retained_ask_levels, 0);
+    }
+    #[test]
+    fn depth_coverage_distinguishes_subscription_from_retained_levels() {
+        let mut controller = LiveDepthController::new_with_subscription_depth(
+            "stream-42",
+            plan("bybit_spot"),
+            10,
+            200,
+        )
+        .unwrap();
+
+        // Subscription depth exists before synchronization.
+        let coverage = controller.coverage();
+
+        assert_eq!(coverage.subscribed_depth, Some(200));
+        assert_eq!(coverage.retained_bid_levels, 0);
+        assert_eq!(coverage.retained_ask_levels, 0);
+        assert!(!coverage.synchronized);
+
+        // The snapshot supplies only one level per side.
+        let outcome = controller.process(10, &bybit_snapshot(100, 200, 3));
+
+        assert!(matches!(
+            outcome,
+            DepthControllerOutcome::Accepted { snapshot: true, .. }
+        ));
+
+        let coverage = controller.coverage();
+
+        assert_eq!(coverage.subscribed_depth, Some(200));
+        assert_eq!(coverage.retained_bid_levels, 1);
+        assert_eq!(coverage.retained_ask_levels, 1);
+        assert!(coverage.synchronized);
+
+        // A delta does not change the subscription depth.
+        let outcome = controller.process(10, &bybit_delta(101, 201, 5));
+
+        assert!(matches!(
+            outcome,
+            DepthControllerOutcome::Accepted {
+                snapshot: false,
+                ..
+            }
+        ));
+
+        let coverage = controller.coverage();
+
+        assert_eq!(coverage.subscribed_depth, Some(200));
+        assert_eq!(coverage.retained_bid_levels, 1);
+        assert_eq!(coverage.retained_ask_levels, 1);
+        assert!(coverage.synchronized);
+    }
+    #[test]
+    fn depth_coverage_resets_on_new_stream_generation() {
+        let mut controller = LiveDepthController::new_with_subscription_depth(
+            "stream-42",
+            plan("bybit_spot"),
+            10,
+            200,
+        )
+        .unwrap();
+
+        controller.process(10, &bybit_snapshot(100, 200, 3));
+
+        assert!(controller.coverage().synchronized);
+
+        // Begin a new runtime generation.
+        controller.begin_generation(11).unwrap();
+
+        let coverage = controller.coverage();
+
+        // Subscription configuration remains unchanged.
+        assert_eq!(coverage.subscribed_depth, Some(200));
+
+        // Previous book contents are no longer authoritative.
+        assert_eq!(coverage.retained_bid_levels, 0);
+        assert_eq!(coverage.retained_ask_levels, 0);
+
+        assert!(!coverage.synchronized);
+        assert_eq!(controller.stream_generation(), 11);
+    }
+    #[test]
+    fn depth_coverage_rejects_mismatched_snapshot_depth() {
+        let mut controller = LiveDepthController::new_with_subscription_depth(
+            "stream-42",
+            plan("bybit_spot"),
+            10,
+            200,
+        )
+        .unwrap();
+
+        // Construct a valid snapshot declaring depth 50,
+        // while the subscription requires depth 200.
+        let snapshot = NormalizedDepth::new(
+            "stream-42",
+            NormalizationSource::WebSocket,
+            DepthMessageKind::Snapshot,
+            sequence(None, Some(100), None, Some(200)),
+            vec![
+                level(BookSide::Bid, 80_000, 3),
+                level(BookSide::Ask, 80_010, 2),
+            ],
+            Some(1_000_000_000),
+            Some(50),
+        )
+        .unwrap();
+
+        let outcome = controller.process(10, &snapshot);
+
+        assert!(matches!(
+            outcome,
+            DepthControllerOutcome::RecoveryRequired {
+                reason: DepthControllerRecoveryReason::InvalidSnapshot(_),
+            }
+        ));
+
+        let coverage = controller.coverage();
+
+        // Subscription configuration remains authoritative.
+        assert_eq!(coverage.subscribed_depth, Some(200));
+
+        // Rejected snapshots cannot establish book coverage.
+        assert!(!coverage.synchronized);
+        assert_eq!(coverage.retained_bid_levels, 0);
+        assert_eq!(coverage.retained_ask_levels, 0);
+    }
+    #[test]
+    fn depth_coverage_tracks_rest_snapshot_reconciliation() {
+        let mut controller = controller("binance_spot");
+
+        let mut buffer = rest_buffer();
+
+        begin_rest(&mut controller);
+
+        // REST snapshot declares depth 200.
+        // The actual snapshot contains only one level per side.
+        let snapshot = rest_snapshot(100);
+
+        assert_eq!(snapshot.source(), NormalizationSource::Rest);
+        assert_eq!(snapshot.declared_depth(), Some(200));
+
+        // Before synchronization, no authoritative book exists.
+        let coverage = controller.coverage();
+
+        assert!(!coverage.synchronized);
+        assert_eq!(coverage.retained_bid_levels, 0);
+        assert_eq!(coverage.retained_ask_levels, 0);
+
+        // Establish the required REST/WebSocket sequence bridge.
+        push_buffered(&mut buffer, range_delta(101, 101));
+
+        let outcome = controller.complete_rest_snapshot(rest_token(), &mut buffer, &snapshot);
+
+        assert!(matches!(
+            outcome,
+            DepthControllerOutcome::Accepted { snapshot: true, .. }
+        ));
+
+        // Coverage describes the reconstructed authoritative book,
+        // not the nominal REST snapshot depth.
+        let coverage = controller.coverage();
+
+        assert!(coverage.synchronized);
+
+        assert_eq!(coverage.subscribed_depth, None);
+
+        assert_eq!(coverage.retained_bid_levels, 1);
+        assert_eq!(coverage.retained_ask_levels, 1);
+
+        // Both sides contain actual retained levels.
+        assert_eq!(controller.book().bids().len(), 1);
+        assert_eq!(controller.book().asks().len(), 1);
+    }
+    #[test]
+    fn depth_coverage_tracks_websocket_snapshot_source() {
+        let mut controller = controller("bybit_spot");
+
+        assert_eq!(controller.coverage().snapshot_source, None);
+
+        let outcome = controller.process(10, &bybit_snapshot(100, 200, 3));
+
+        assert!(matches!(
+            outcome,
+            DepthControllerOutcome::Accepted { snapshot: true, .. }
+        ));
+
+        assert_eq!(
+            controller.coverage().snapshot_source,
+            Some(NormalizationSource::WebSocket),
+        );
+
+        // An ordinary delta must not change snapshot provenance.
+        controller.process(10, &bybit_delta(101, 201, 5));
+
+        assert_eq!(
+            controller.coverage().snapshot_source,
+            Some(NormalizationSource::WebSocket),
+        );
+
+        controller.invalidate();
+
+        assert_eq!(controller.coverage().snapshot_source, None);
+    }
+    #[test]
+    fn depth_coverage_tracks_rest_snapshot_source() {
+        let mut controller = controller("binance_spot");
+        let mut buffer = rest_buffer();
+
+        begin_rest(&mut controller);
+
+        assert_eq!(controller.coverage().snapshot_source, None);
+
+        push_buffered(&mut buffer, range_delta(101, 101));
+
+        let outcome =
+            controller.complete_rest_snapshot(rest_token(), &mut buffer, &rest_snapshot(100));
+
+        assert!(matches!(
+            outcome,
+            DepthControllerOutcome::Accepted { snapshot: true, .. }
+        ));
+
+        assert_eq!(
+            controller.coverage().snapshot_source,
+            Some(NormalizationSource::Rest),
+        );
+
+        assert!(controller.coverage().synchronized);
+
+        controller.begin_generation(11).unwrap();
+
+        assert_eq!(controller.coverage().snapshot_source, None);
+    }
+    #[test]
+    fn depth_coverage_preserves_snapshot_declared_depth() {
+        let mut controller = LiveDepthController::new_with_subscription_depth(
+            "stream-42",
+            plan("bybit_spot"),
+            10,
+            200,
+        )
+        .unwrap();
+
+        let snapshot = bybit_snapshot(100, 200, 3);
+
+        assert_eq!(snapshot.declared_depth(), Some(200));
+
+        let outcome = controller.process(10, &snapshot);
+
+        assert!(matches!(
+            outcome,
+            DepthControllerOutcome::Accepted { snapshot: true, .. }
+        ));
+
+        let coverage = controller.coverage();
+
+        assert!(coverage.synchronized);
+        assert_eq!(coverage.subscribed_depth, Some(200));
+        assert_eq!(coverage.snapshot_declared_depth, Some(200));
+        assert_eq!(coverage.retained_bid_levels, 1);
+        assert_eq!(coverage.retained_ask_levels, 1);
+
+        // Subsequent deltas must not replace snapshot metadata.
+        controller.process(10, &bybit_delta(101, 201, 5));
+
+        assert_eq!(controller.coverage().snapshot_declared_depth, Some(200),);
+
+        controller.invalidate();
+
+        assert_eq!(controller.coverage().snapshot_declared_depth, None,);
+    }
+    #[test]
+    fn depth_coverage_preserves_rest_declared_depth() {
+        let mut controller = controller("binance_spot");
+        let mut buffer = rest_buffer();
+
+        begin_rest(&mut controller);
+
+        let snapshot = rest_snapshot(100);
+
+        assert_eq!(snapshot.declared_depth(), Some(200));
+
+        push_buffered(&mut buffer, range_delta(101, 101));
+
+        let outcome = controller.complete_rest_snapshot(rest_token(), &mut buffer, &snapshot);
+
+        assert!(matches!(
+            outcome,
+            DepthControllerOutcome::Accepted { snapshot: true, .. }
+        ));
+
+        let coverage = controller.coverage();
+
+        assert!(coverage.synchronized);
+
+        assert_eq!(coverage.snapshot_source, Some(NormalizationSource::Rest),);
+
+        assert_eq!(coverage.snapshot_declared_depth, Some(200));
+
+        // Snapshot depth is not the same as retained levels.
+        assert_eq!(coverage.retained_bid_levels, 1);
+        assert_eq!(coverage.retained_ask_levels, 1);
+
+        controller.begin_generation(11).unwrap();
+
+        assert_eq!(controller.coverage().snapshot_declared_depth, None,);
     }
 }

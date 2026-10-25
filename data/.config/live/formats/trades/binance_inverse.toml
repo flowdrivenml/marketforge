@@ -1,14 +1,8 @@
-# MarketForge Live — Binance COIN-M Aggregated Trades
-#
-# Proposed MarketForge Live format schema v1.
-#
-# References:
-# https://developers.binance.com/en/docs/products/derivatives-trading-coin-futures/websocket-market-streams/Connect
-# https://developers.binance.com/docs/derivatives/coin-margined-futures/market-data/rest-api/Compressed-Aggregate-Trades-List
+# MarketForge Live — Binance COIN-M Individual Trades
 #
 # Exchange: Binance
 # Market: Inverse (COIN-M)
-# Channel: <symbol>@aggTrade
+# Channel: <symbol>@trade
 #
 # Connection and recovery configuration:
 # exchanges/binance_inverse.toml
@@ -16,8 +10,11 @@
 # Instrument specifications are supplied by the existing
 # Python-managed MarketForge instrument catalog.
 #
-# This feed contains aggregated market executions.
-# Individual executions must not be fabricated.
+# Each message represents an individual market execution.
+#
+# IMPORTANT:
+# COIN-M trade quantities are denominated in contracts.
+# Contract conversion uses authoritative instrument metadata.
 
 schema_version = 1
 
@@ -25,7 +22,7 @@ schema_version = 1
 id = "binance_inverse"
 exchange = "binance"
 market = "inverse"
-channel = "aggregate_trades"
+channel = "trades"
 
 encoding = "json"
 target_schema = "canonical_trade"
@@ -38,7 +35,7 @@ target_schema = "canonical_trade"
 root = "$"
 
 event_type_field = "e"
-event_type_value = "aggTrade"
+event_type_value = "trade"
 
 symbol_field = "s"
 records = "single"
@@ -48,10 +45,7 @@ records = "single"
 # ============================================================
 
 [fields]
-aggregate_trade_id = "a"
-
-first_trade_id = "f"
-last_trade_id = "l"
+trade_id = "t"
 
 price = "p"
 quantity = "q"
@@ -61,15 +55,17 @@ exchange_event_timestamp = "E"
 
 buyer_is_maker = "m"
 
+# Additional native execution metadata observed in the
+# live COIN-M individual trade stream.
+trade_type = "X"
+symbol_type = "st"
+
 # ============================================================
 # FIELD TYPES
 # ============================================================
 
 [types]
-aggregate_trade_id = "u64"
-
-first_trade_id = "u64"
-last_trade_id = "u64"
+trade_id = "u64"
 
 price = "decimal_string"
 quantity = "decimal_string"
@@ -78,6 +74,9 @@ trade_timestamp = "i64"
 exchange_event_timestamp = "i64"
 
 buyer_is_maker = "boolean"
+
+trade_type = "optional_string"
+symbol_type = "optional_u8"
 
 # ============================================================
 # TIMESTAMP NORMALIZATION
@@ -90,21 +89,6 @@ source_unit = "milliseconds"
 canonical_unit = "nanoseconds"
 
 preserve_exchange_event_timestamp = true
-
-# ============================================================
-# AGGREGATION SEMANTICS
-# ============================================================
-
-[aggregation]
-type = "exchange_aggregated"
-
-# Describes exchange behavior, not MarketForge aggregation.
-aggregation_window_ms = 100
-
-preserve_aggregate_id = true
-preserve_trade_id_range = true
-
-expand_to_individual_trades = false
 
 # ============================================================
 # PRICE NORMALIZATION
@@ -125,7 +109,7 @@ allow_negative = false
 [normalization.quantity]
 source = "quantity"
 
-# COIN-M aggregated trade quantity is denominated
+# COIN-M individual trade quantity is denominated
 # in contracts, not directly in base-asset units.
 raw_unit = "contracts"
 
@@ -139,9 +123,22 @@ allow_negative = false
 #
 # Required normalization metadata:
 #
-# quantity_type
+# quantity_type = contracts
 # contract_value
 # contract_value_asset
+#
+# Example BTCUSD_PERP:
+#
+# contract_value = 100
+# contract_value_asset = USD
+#
+# Native quantity:
+#   q = 4 contracts
+#
+# Canonical quantities:
+#   quantity_contracts = 4
+#   quantity_quote = 400 USD
+#   quantity_base = 400 / execution_price BTC
 #
 # No contract-specific constants are stored here.
 
@@ -187,9 +184,9 @@ require_known_instrument = true
 # ============================================================
 
 [identity]
-strategy = "aggregate_trade_id"
+strategy = "native_trade_id"
 
-source = "aggregate_trade_id"
+source = "trade_id"
 
 preserve_native_id = true
 
@@ -197,7 +194,7 @@ deduplication_key = [
     "exchange",
     "market",
     "instrument",
-    "aggregate_trade_id",
+    "trade_id",
 ]
 
 # ============================================================
@@ -212,26 +209,20 @@ reject_invalid_numeric_values = true
 reject_nonpositive_price = true
 reject_nonpositive_quantity = true
 
-detect_duplicate_aggregate_ids = true
-detect_aggregate_id_regression = true
-detect_aggregate_id_gaps = true
+detect_duplicate_trade_ids = true
+detect_trade_id_regression = true
+detect_trade_id_gaps = true
 
-validate_trade_id_range = true
-
-# Validate:
-# first_trade_id <= last_trade_id
-
-# Aggregate ID gaps require coverage evaluation.
-# Missing aggregate IDs are not equivalent to missing
-# individual executions or WebSocket messages.
+# Trade-ID gaps trigger a coverage/recovery check.
+#
+# Do not assume that a numerical gap always proves
+# that executions are missing without considering
+# the exchange's documented ID semantics.
+#
+# Recovery must reconcile by native trade identity.
+# Reconnecting must not silently reset gap detection.
 
 gap_action = "request_recovery"
-
-# Recovery must use aggregate-trade-compatible history.
-# The exchange profile selects GET /dapi/v1/aggTrades.
-#
-# REST responses must be reconciled by aggregate identity.
-# Their availability does not prove arbitrary gap recovery.
 
 # ============================================================
 # CANONICAL OUTPUT
@@ -239,10 +230,9 @@ gap_action = "request_recovery"
 
 [output]
 event_type = "trade"
-trade_semantics = "aggregated"
+trade_semantics = "individual"
 
-preserve_native_aggregate_id = true
-preserve_native_trade_id_range = true
+preserve_native_trade_id = true
 
 preserve_event_timestamp = true
 preserve_exchange_event_timestamp = true

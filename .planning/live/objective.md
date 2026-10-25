@@ -753,3 +753,13 @@ are outside the scope of v1.
 The TUI may be implemented after the runtime infrastructure,
 provided its required REST queries and management operations
 are supported by the corresponding authoritative components.
+
+
+8. **Rate Limits**
+   - Display all REST and WebSocket rate-limit budgets.
+   - Show exchange, service, quota scope, capacity, and time window.
+   - Display current usage, available capacity, and utilization.
+   - Show pending requests and active exchange-imposed cooldowns.
+   - Display exchange-reported usage separately from local accounting.
+   - Support filtering by exchange, market/API service, and budget.
+   - Rate-limit monitoring is read-only; exchange quotas cannot be modified through the TUI.

@@ -25,6 +25,12 @@ historical = [
 
 live = [
     "dep:toml",
+    "dep:tokio",
+    "dep:rand",
+    "dep:url",
+    "dep:reqwest",
+    "dep:tokio-tungstenite",
+    "dep:futures-util",
 ]
 
 
@@ -57,6 +63,12 @@ num-integer = { version = "0.1", optional = true }
 ratatui = { version = "0.30", optional = true }
 crossterm = { version = "0.29", optional = true }
 toml = { version = "1.1.8", optional = true }
+tokio = { version = "1.54.1", features = ["full"], optional = true }
+rand = { version = "0.10.3", optional = true }
+url = { version = "2.5.8", optional = true }
+reqwest = { version = "0.12.28", features = ["json", "rustls-tls"], default-features = false, optional = true }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"], optional = true }
+futures-util = { version = "0.3.34", optional = true }
 
 [dev-dependencies]
 tempfile = "3.27.0"
@@ -1093,4 +1105,313 @@ required-features = ["live"]
 [[test]]
 name = "live_metrics_snapshot"
 path = "tests/live/metrics/snapshot.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_rate_limit_profiles"
+path = "tests/live/infrastructure/live_rate_limit_profiles.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_rest_integration"
+path = "tests/live/infrastructure/rest_integration.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_rest_resolver_bulk"
+path = "tests/live/infrastructure/rest_resolver_bulk.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_rest_smoke"
+path = "tests/live/infrastructure/rest_live_smoke.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_rest_bulk"
+path = "tests/live/infrastructure/rest_live_bulk.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_normalization_trade_fixtures"
+path = "tests/live/infrastructure/normalization_trade_fixtures.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_normalization_trade_compiler"
+path = "tests/live/infrastructure/normalization_trade_compiler.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_normalization_binance_decoder"
+path = "tests/live/infrastructure/normalization_binance_decoder.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_normalization_websocket_fixtures"
+path = "tests/live/infrastructure/normalization_websocket_fixtures.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_normalization_canonical_fixtures"
+path = "tests/live/infrastructure/normalization_canonical_fixtures.rs"
+required-features = ["live"]
+
+# ============================================================
+# LIVE — CROSS-COMPONENT INTEGRATION TESTS
+# ============================================================
+
+[[test]]
+name = "live_integration_depth_publication"
+path = "tests/live/integration/depth_publication.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_depth_recovery"
+path = "tests/live/integration/depth_recovery.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_trade_lifecycle"
+path = "tests/live/integration/trade_lifecycle.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_incident_lifecycle"
+path = "tests/live/integration/incident_lifecycle.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_failure_injection"
+path = "tests/live/integration/failure_injection.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_all_exchange_profiles"
+path = "tests/live/integration/all_exchange_profiles.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_depth_normalization"
+path = "tests/live/integration/depth_normalization.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_rest_depth_normalization"
+path = "tests/live/integration/rest_depth_normalization.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_depth_normalization_integrity"
+path = "tests/live/integration/depth_normalization_integrity.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_depth_okx_reference_book"
+path = "tests/live/integration/depth_okx_reference_book.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_depth_bitget_reference_book"
+path = "tests/live/integration/depth_bitget_reference_book.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_depth_bybit_derivatives_reference_book"
+path = "tests/live/integration/depth_bybit_derivatives_reference_book.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_depth_rest_sync_binance"
+path = "tests/live/integration/depth_rest_sync_binance.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_depth_rest_sync_binance_futures"
+path = "tests/live/integration/depth_rest_sync_binance_futures.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_depth_rest_sync_gateio"
+path = "tests/live/integration/depth_rest_sync_gateio.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_connection"
+path = "tests/live/integration/websocket_connection.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_heartbeat"
+path = "tests/live/integration/websocket_heartbeat.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_heartbeat_protocol"
+path = "tests/live/integration/websocket_heartbeat_protocol.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_application_heartbeat"
+path = "tests/live/integration/websocket_application_heartbeat.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_heartbeat_coverage"
+path = "tests/live/integration/websocket_heartbeat_coverage.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_heartbeat_plan"
+path = "tests/live/integration/websocket_heartbeat_plan.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_heartbeat_execution"
+path = "tests/live/integration/websocket_heartbeat_execution.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_supervisor_stress"
+path = "tests/live/integration/websocket_supervisor_stress.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_lifecycle"
+path = "tests/live/integration/websocket_lifecycle.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_reconnect"
+path = "tests/live/integration/websocket_reconnect.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_connection_fence"
+path = "tests/live/integration/websocket_connection_fence.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_reconnect_fence"
+path = "tests/live/integration/websocket_reconnect_fence.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_fenced_ingress"
+path = "tests/live/integration/websocket_fenced_ingress.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_stream_recovery"
+path = "tests/live/integration/websocket_stream_recovery.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_protocol"
+path = "tests/live/integration/websocket_subscription_protocol.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_ack"
+path = "tests/live/integration/websocket_subscription_ack.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_pending"
+path = "tests/live/integration/websocket_subscription_pending.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_send_receipt"
+path = "tests/live/integration/websocket_subscription_send_receipt.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_wire_receipt"
+path = "tests/live/integration/websocket_subscription_wire_receipt.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_session"
+path = "tests/live/integration/websocket_subscription_session.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_execution"
+path = "tests/live/integration/websocket_subscription_execution.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_driver"
+path = "tests/live/integration/websocket_subscription_driver.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_resolver"
+path = "tests/live/integration/websocket_subscription_resolver.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_real_profiles"
+path = "tests/live/integration/websocket_subscription_real_profiles.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_identity"
+path = "tests/live/integration/websocket_subscription_identity.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_ack_identity"
+path = "tests/live/integration/websocket_subscription_ack_identity.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_ack_binding"
+path = "tests/live/integration/websocket_subscription_ack_binding.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_retirement"
+path = "tests/live/integration/websocket_subscription_retirement.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_restoration"
+path = "tests/live/integration/websocket_subscription_restoration.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_restoration_session"
+path = "tests/live/integration/websocket_restoration_session.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_command_factory"
+path = "tests/live/integration/websocket_subscription_command_factory.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_restoration_dispatch"
+path = "tests/live/integration/websocket_restoration_dispatch.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_connection_session"
+path = "tests/live/integration/websocket_connection_session.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_shared_recovery"
+path = "tests/live/integration/websocket_shared_recovery.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_subscription_event_monitor"
+path = "tests/live/integration/websocket_subscription_event_monitor.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_connection_generation_bootstrap"
+path = "tests/live/integration/websocket_connection_generation_bootstrap.rs"
 required-features = ["live"]

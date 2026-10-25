@@ -21,7 +21,7 @@ schema_version = 1
 [exchange]
 id = "binance"
 market = "inverse"
-profile = "binance_inverse"
+profile = "binance_inverse" 
 
 # ============================================================
 # WEBSOCKET
@@ -99,22 +99,30 @@ event_type_field = "e"
 symbol_field = "s"
 
 # ============================================================
-# AGGREGATED TRADES
+# TRADES
 # ============================================================
 
-[channels.aggregate_trades]
+[channels.trades]
 enabled = true
 
-stream_template = "{symbol_lower}@aggTrade"
+# Binance individual trade WebSocket stream.
+stream_template = "{symbol_lower}@trade"
 
-event_type = "aggTrade"
+# Internal MarketForge event classification.
+event_type = "trades"
+
 format = "trades/binance_inverse"
 
-trade_semantics = "aggregated"
+# Each event represents an individual execution.
+trade_semantics = "individual"
 
-# Use aggregate-trade-compatible REST recovery.
-recovery_strategy = "aggregate_trade_id"
-recovery_endpoint = "aggregate_trades"
+# REST-based trade recovery.
+recovery_strategy = "trades"
+recovery_endpoint = "recent_trades"
+
+# ============================================================
+# L2 DIFFERENTIAL DEPTH
+# ============================================================
 
 # ============================================================
 # L2 DIFFERENTIAL DEPTH
@@ -159,6 +167,9 @@ request_timeout_seconds = 10
 # ------------------------------------------------------------
 
 [rest.endpoints.depth_snapshot]
+
+required_parameters = ["symbol"]
+limit_parameter = "limit"
 method = "GET"
 path = "/dapi/v1/depth"
 
@@ -172,11 +183,18 @@ response_sequence_field = "lastUpdateId"
 authentication = "none"
 weight_policy = "depth_snapshot"
 
+[rest.endpoints.depth_snapshot.application_response]
+strategy = "raw"
+
+
 # ------------------------------------------------------------
 # RECENT INDIVIDUAL TRADES
 # ------------------------------------------------------------
 
 [rest.endpoints.recent_trades]
+
+required_parameters = ["symbol"]
+limit_parameter = "limit"
 method = "GET"
 path = "/dapi/v1/trades"
 
@@ -188,11 +206,18 @@ maximum_limit = 1000
 authentication = "none"
 weight_policy = "recent_trades"
 
+[rest.endpoints.recent_trades.application_response]
+strategy = "raw"
+
+
 # ------------------------------------------------------------
 # HISTORICAL INDIVIDUAL TRADES
 # ------------------------------------------------------------
 
 [rest.endpoints.historical_trades]
+
+required_parameters = ["symbol"]
+limit_parameter = "limit"
 method = "GET"
 path = "/dapi/v1/historicalTrades"
 
@@ -209,11 +234,18 @@ authentication_header = "X-MBX-APIKEY"
 
 weight_policy = "historical_trades"
 
+[rest.endpoints.historical_trades.application_response]
+strategy = "raw"
+
+
 # ------------------------------------------------------------
 # AGGREGATED TRADES
 # ------------------------------------------------------------
 
 [rest.endpoints.aggregate_trades]
+
+required_parameters = ["symbol"]
+limit_parameter = "limit"
 method = "GET"
 path = "/dapi/v1/aggTrades"
 
@@ -241,6 +273,10 @@ max_history_hours = 48
 max_time_window_ms = 3600000
 
 weight_policy = "aggregate_trades"
+
+[rest.endpoints.aggregate_trades.application_response]
+strategy = "raw"
+
 
 # ============================================================
 # REST RATE LIMITING
@@ -294,3 +330,17 @@ weight = 200
 [rest.weight_policies.aggregate_trades]
 type = "fixed"
 weight = 20
+
+[rest.endpoints.recent_trades.trade_normalization]
+request_symbol_parameter = "symbol"
+trade_id = "id"
+price = "price"
+quantity = "qty"
+timestamp = "time"
+timestamp_unit = "milliseconds"
+side = "isBuyerMaker"
+side_strategy = "mapped"
+
+[rest.endpoints.recent_trades.trade_normalization.side_mappings]
+"true" = "sell"
+"false" = "buy"

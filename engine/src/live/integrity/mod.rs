@@ -9,6 +9,7 @@ mod depth_controller;
 mod depth_publication;
 mod depth_resources;
 mod depth_source_binding;
+mod depth_timestamp;
 mod incident;
 mod incident_lifecycle;
 mod model;
@@ -42,7 +43,7 @@ pub use depth_continuity_compiler::{
 };
 pub use depth_controller::{
     AcceptedDepthOutput, DepthControllerIgnoreReason, DepthControllerOutcome,
-    DepthControllerRecoveryReason, LiveDepthController,
+    DepthControllerRecoveryReason, DepthCoverage, LiveDepthController,
 };
 pub use depth_publication::{
     DepthPublicationError, DepthPublicationEvent, DepthPublicationFence, DepthPublicationPhase,
@@ -50,6 +51,9 @@ pub use depth_publication::{
 };
 pub use depth_resources::{DepthResourceAccounting, DepthResourceError, DepthResourceLimits};
 pub use depth_source_binding::{DepthSourceBinding, DepthSourceBindingError, DepthSourceEpoch};
+pub use depth_timestamp::{
+    DepthAcceptedTimestamp, DepthSourceTimestamp, DepthTimestampComposition,
+};
 pub use incident::{
     ConfirmedIntegrityIncident, IncidentOrigin, IncidentReportingError, IntegrityIncidentReporter,
 };

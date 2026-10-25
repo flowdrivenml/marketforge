@@ -101,20 +101,20 @@ event_type_field = "e"
 symbol_field = "s"
 
 # ============================================================
-# AGGREGATED TRADES
+# INDIVIDUAL TRADES
 # ============================================================
 
-[channels.aggregate_trades]
+[channels.trades]
 enabled = true
 
 route = "market"
-stream_template = "{symbol_lower}@aggTrade"
+stream_template = "{symbol_lower}@trade"
 
-event_type = "aggTrade"
+event_type = "trade"
 format = "trades/binance_linear"
 
-# Aggregated executions are NOT individual trade records.
-trade_semantics = "aggregated"
+# Each event represents an individual execution.
+trade_semantics = "individual"
 
 # ============================================================
 # L2 DIFFERENTIAL DEPTH
@@ -159,6 +159,9 @@ request_timeout_seconds = 10
 # ------------------------------------------------------------
 
 [rest.endpoints.depth_snapshot]
+
+required_parameters = ["symbol"]
+limit_parameter = "limit"
 method = "GET"
 path = "/fapi/v1/depth"
 
@@ -172,11 +175,18 @@ response_sequence_field = "lastUpdateId"
 authentication = "none"
 weight_policy = "depth_snapshot"
 
+[rest.endpoints.depth_snapshot.application_response]
+strategy = "raw"
+
+
 # ------------------------------------------------------------
 # RECENT TRADES
 # ------------------------------------------------------------
 
 [rest.endpoints.recent_trades]
+
+required_parameters = ["symbol"]
+limit_parameter = "limit"
 method = "GET"
 path = "/fapi/v1/trades"
 
@@ -188,11 +198,18 @@ maximum_limit = 1000
 authentication = "none"
 weight_policy = "recent_trades"
 
+[rest.endpoints.recent_trades.application_response]
+strategy = "raw"
+
+
 # ------------------------------------------------------------
 # HISTORICAL TRADES
 # ------------------------------------------------------------
 
 [rest.endpoints.historical_trades]
+
+required_parameters = ["symbol"]
+limit_parameter = "limit"
 method = "GET"
 path = "/fapi/v1/historicalTrades"
 
@@ -211,6 +228,10 @@ authentication_header = "X-MBX-APIKEY"
 max_history_days = 30
 
 weight_policy = "historical_trades"
+
+[rest.endpoints.historical_trades.application_response]
+strategy = "raw"
+
 
 # ============================================================
 # RATE LIMITING
@@ -255,3 +276,17 @@ weight = 5
 [rest.weight_policies.historical_trades]
 type = "fixed"
 weight = 200
+
+[rest.endpoints.recent_trades.trade_normalization]
+request_symbol_parameter = "symbol"
+trade_id = "id"
+price = "price"
+quantity = "qty"
+timestamp = "time"
+timestamp_unit = "milliseconds"
+side = "isBuyerMaker"
+side_strategy = "mapped"
+
+[rest.endpoints.recent_trades.trade_normalization.side_mappings]
+"true" = "sell"
+"false" = "buy"

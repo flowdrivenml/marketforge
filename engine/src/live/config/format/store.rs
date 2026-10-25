@@ -10,11 +10,7 @@ use crate::live::config::{
     exchange::{ExchangeId, MarketType},
 };
 
-use super::{
-    depth::DepthFormatConfig,
-    identity::FormatKind,
-    trade::TradeFormatConfig,
-};
+use super::{depth::DepthFormatConfig, identity::FormatKind, trade::TradeFormatConfig};
 
 // ============================================================
 // FORMAT CONFIGURATION STORE
@@ -87,9 +83,7 @@ impl FormatConfigStore {
             if configs.contains_key(&id) {
                 return Err(ConfigError::Validation {
                     path,
-                    reason: format!(
-                        "duplicate trade format identity '{id}'"
-                    ),
+                    reason: format!("duplicate trade format identity '{id}'"),
                 });
             }
 
@@ -118,9 +112,7 @@ impl FormatConfigStore {
             if configs.contains_key(&id) {
                 return Err(ConfigError::Validation {
                     path,
-                    reason: format!(
-                        "duplicate depth format identity '{id}'"
-                    ),
+                    reason: format!("duplicate depth format identity '{id}'"),
                 });
             }
 
@@ -139,11 +131,9 @@ impl FormatConfigStore {
     /// Files are sorted to guarantee deterministic loading
     /// and error reporting.
     fn toml_files(directory: &Path) -> Result<Vec<PathBuf>, ConfigError> {
-        let entries = fs::read_dir(directory).map_err(|source| {
-            ConfigError::Read {
-                path: directory.to_path_buf(),
-                source,
-            }
+        let entries = fs::read_dir(directory).map_err(|source| ConfigError::Read {
+            path: directory.to_path_buf(),
+            source,
         })?;
 
         let mut paths = Vec::new();
@@ -156,18 +146,19 @@ impl FormatConfigStore {
 
             let path = entry.path();
 
-            let file_type = entry.file_type().map_err(|source| {
-                ConfigError::Read {
-                    path: path.clone(),
-                    source,
-                }
+            let file_type = entry.file_type().map_err(|source| ConfigError::Read {
+                path: path.clone(),
+                source,
             })?;
 
             if !file_type.is_file() {
                 continue;
             }
 
-            if path.extension().is_some_and(|extension| extension == "toml") {
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "toml")
+            {
                 paths.push(path);
             }
         }
@@ -198,9 +189,7 @@ impl FormatConfigStore {
         if filename != id {
             return Err(ConfigError::Validation {
                 path: path.to_path_buf(),
-                reason: format!(
-                    "format filename '{filename}' does not match declared ID '{id}'"
-                ),
+                reason: format!("format filename '{filename}' does not match declared ID '{id}'"),
             });
         }
 

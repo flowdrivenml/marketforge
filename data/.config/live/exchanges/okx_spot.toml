@@ -270,6 +270,9 @@ request_timeout_seconds = 10
 # ------------------------------------------------------------
 
 [rest.endpoints.depth_snapshot]
+
+required_parameters = ["instId"]
+limit_parameter = "sz"
 method = "GET"
 
 path = "/api/v5/market/books"
@@ -284,17 +287,29 @@ maximum_limit = 400
 
 response_root = "data"
 
+response_record_container = "single_object_array"
 response_sequence_field = "seqId"
 
 authentication = "none"
 
 rate_limit_policy = "depth_snapshot"
 
+[rest.endpoints.depth_snapshot.application_response]
+strategy = "envelope"
+code_field = "code"
+success_codes = ["0"]
+message_field = "msg"
+data_field = "data"
+
+
 # ------------------------------------------------------------
 # RECENT TRADES
 # ------------------------------------------------------------
 
 [rest.endpoints.recent_trades]
+
+required_parameters = ["instId"]
+limit_parameter = "limit"
 method = "GET"
 
 path = "/api/v5/market/trades"
@@ -313,11 +328,22 @@ authentication = "none"
 
 rate_limit_policy = "recent_trades"
 
+[rest.endpoints.recent_trades.application_response]
+strategy = "envelope"
+code_field = "code"
+success_codes = ["0"]
+message_field = "msg"
+data_field = "data"
+
+
 # ------------------------------------------------------------
 # HISTORICAL TRADES
 # ------------------------------------------------------------
 
 [rest.endpoints.historical_trades]
+
+required_parameters = ["instId"]
+limit_parameter = "limit"
 method = "GET"
 
 path = "/api/v5/market/history-trades"
@@ -354,6 +380,14 @@ default_pagination_type = 1
 
 rate_limit_policy = "historical_trades"
 
+[rest.endpoints.historical_trades.application_response]
+strategy = "envelope"
+code_field = "code"
+success_codes = ["0"]
+message_field = "msg"
+data_field = "data"
+
+
 # ============================================================
 # RATE LIMITING
 # ============================================================
@@ -382,3 +416,18 @@ window_seconds = 2
 [rest.rate_limit_policies.historical_trades]
 max_requests = 20
 window_seconds = 2
+
+[rest.endpoints.recent_trades.trade_normalization]
+request_symbol_parameter = "instId"
+trade_id = "tradeId"
+price = "px"
+quantity = "sz"
+timestamp = "ts"
+timestamp_unit = "milliseconds"
+side = "side"
+symbol = "instId"
+side_strategy = "mapped"
+
+[rest.endpoints.recent_trades.trade_normalization.side_mappings]
+"buy" = "buy"
+"sell" = "sell"

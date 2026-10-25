@@ -185,30 +185,46 @@ impl CompiledRestDepthEndpoint {
 // ============================================================
 
 fn validate_endpoint(endpoint: &RestEndpoint) -> Result<u64, RestDepthEndpointError> {
+    // --------------------------------------------------------
+    // HTTP METHOD
+    // --------------------------------------------------------
+
     if !endpoint.method.eq_ignore_ascii_case("GET") {
         return Err(RestDepthEndpointError::UnsupportedHttpMethod);
     }
 
-    let has_response_mappings = endpoint
-        .response_bids_field
+    // --------------------------------------------------------
+    // AUTHORITATIVE SNAPSHOT SEQUENCE
+    // --------------------------------------------------------
+
+    // The REST endpoint configuration identifies the native
+    // sequence field.
+    //
+    // Bid/ask extraction belongs to the depth normalization
+    // configuration, not the transport endpoint contract.
+    let has_sequence_mapping = endpoint
+        .response_sequence_field
         .as_deref()
         .is_some_and(|value| !value.trim().is_empty())
-        && endpoint
-            .response_asks_field
+        || endpoint
+            .response_update_id_field
             .as_deref()
-            .is_some_and(|value| !value.trim().is_empty())
-        && (endpoint.response_sequence_field.is_some()
-            || endpoint.response_update_id_field.is_some());
+            .is_some_and(|value| !value.trim().is_empty());
 
-    if !has_response_mappings {
+    if !has_sequence_mapping {
         return Err(RestDepthEndpointError::MissingResponseMapping);
     }
+
+    // --------------------------------------------------------
+    // REQUEST LIMIT PARAMETER
+    // --------------------------------------------------------
 
     let has_limit_parameter = match endpoint.limit_parameter.as_deref() {
         Some(name) => endpoint
             .parameters
             .iter()
             .any(|parameter| parameter == name),
+
         None => endpoint
             .parameters
             .iter()
@@ -218,6 +234,10 @@ fn validate_endpoint(endpoint: &RestEndpoint) -> Result<u64, RestDepthEndpointEr
     if !has_limit_parameter {
         return Err(RestDepthEndpointError::MissingLimitParameter);
     }
+
+    // --------------------------------------------------------
+    // MAXIMUM REQUEST LIMIT
+    // --------------------------------------------------------
 
     let maximum = endpoint
         .maximum_limit
@@ -229,7 +249,6 @@ fn validate_endpoint(endpoint: &RestEndpoint) -> Result<u64, RestDepthEndpointEr
 
     Ok(maximum)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,17 +317,6 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_book_response_mapping() {
-        let mut endpoint = endpoint();
-        endpoint.response_bids_field = None;
-
-        assert_eq!(
-            validate_endpoint(&endpoint),
-            Err(RestDepthEndpointError::MissingResponseMapping),
-        );
-    }
-
-    #[test]
     fn rejects_missing_sequence_mapping() {
         let mut endpoint = endpoint();
         endpoint.response_update_id_field = None;
@@ -364,5 +372,25 @@ mod tests {
             policy().validate_request(&request(0)),
             Err(RestDepthEndpointError::InvalidRequestedLimit),
         );
+    }
+    #[test]
+    fn real_binance_spot_endpoint_has_valid_snapshot_contract() {
+        use std::path::PathBuf;
+
+        use crate::live::config::exchange::ExchangeConfig;
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../data/.config/live/exchanges/binance_spot.toml");
+
+        let config = ExchangeConfig::load(path).unwrap();
+
+        let endpoint = config
+            .endpoint("depth_snapshot")
+            .expect("Binance Spot depth snapshot endpoint exists");
+
+        let maximum =
+            validate_endpoint(endpoint).expect("Binance Spot REST snapshot endpoint must validate");
+
+        assert_eq!(maximum, 5000);
     }
 }

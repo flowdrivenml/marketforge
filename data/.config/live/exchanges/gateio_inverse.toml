@@ -382,6 +382,9 @@ request_timeout_seconds = 10
 
 [rest.endpoints.depth_snapshot]
 
+required_parameters = ["contract"]
+limit_parameter = "limit"
+
 method = "GET"
 
 path = "/futures/{settlement}/order_book"
@@ -402,6 +405,7 @@ contract = "{symbol}"
 interval = "0"
 
 default_limit = 100
+maximum_limit = 100
 
 # Required for WebSocket U/u bridging.
 
@@ -428,11 +432,18 @@ authentication = "none"
 
 rate_limit_policy = "futures_public"
 
+[rest.endpoints.depth_snapshot.application_response]
+strategy = "raw"
+
+
 # ============================================================
 # REST PUBLIC TRADE HISTORY
 # ============================================================
 
 [rest.endpoints.historical_trades]
+
+required_parameters = ["contract"]
+limit_parameter = "limit"
 
 method = "GET"
 
@@ -468,6 +479,10 @@ legacy_id_pagination = true
 
 rate_limit_policy = "futures_public"
 
+[rest.endpoints.historical_trades.application_response]
+strategy = "raw"
+
+
 # ============================================================
 # RATE LIMITING
 # ============================================================
@@ -484,9 +499,21 @@ rule = "ip"
 # Do not reuse a Spot quota without verification.
 
 [rest.rate_limit_policies.futures_public]
-
-status = "requires_verification"
+status = "verified"
+max_requests = 200
+window_seconds = 10
 
 # The configuration compiler should reject automatic
 # high-volume REST recovery until a verified quota
 # and operational safety margin are provided.
+
+[rest.endpoints.historical_trades.trade_normalization]
+request_symbol_parameter = "symbol"
+trade_id = "id"
+price = "price"
+quantity = "size"
+timestamp = "create_time_ms"
+timestamp_unit = "seconds_decimal"
+symbol = "contract"
+side_strategy = "signed_quantity"
+positive_quantity_side = "buy"
