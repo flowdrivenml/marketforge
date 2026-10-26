@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::live::stream::request::QuantityType;
 
-use super::NormalizationContext;
+use crate::live::infrastructure::normalization::context::NormalizationContext;
 
 // ============================================================
 // QUANTITY NORMALIZATION ERRORS

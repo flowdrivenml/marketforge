@@ -1,11 +1,17 @@
-use super::NativeSideValue;
-use super::{
-    AggressorSideNormalizer, CompiledTradeNormalizationPlan, NativeTradeFieldLayout,
-    PositiveQuantitySide, TimestampUnit, TradeFieldPlan,
-};
-use super::{TradeExtractionPlan, TradeRecordRepresentation};
 use crate::canonical::TradeSide;
 use crate::live::config::exchange::RestEndpoint;
+use crate::live::infrastructure::normalization::numeric::TimestampUnit;
+use crate::live::infrastructure::normalization::side::NativeSideValue;
+use crate::live::infrastructure::normalization::side::{
+    AggressorSideNormalizer, PositiveQuantitySide,
+};
+use crate::live::infrastructure::normalization::trades::compiler::CompiledTradeNormalizationPlan;
+use crate::live::infrastructure::normalization::trades::fields::{
+    NativeTradeFieldLayout, TradeFieldPlan,
+};
+use crate::live::infrastructure::normalization::trades::plan::{
+    TradeExtractionPlan, TradeRecordRepresentation,
+};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -49,7 +55,7 @@ impl RestTradeNormalizationCompiler {
     ) -> Result<CompiledTradeNormalizationPlan, RestTradeCompileError> {
         if !matches!(
             websocket_plan.semantics,
-            super::TradeRecordSemantics::Individual
+            crate::live::infrastructure::normalization::message::TradeRecordSemantics::Individual
         ) {
             return Err(RestTradeCompileError::InvalidConfiguration(
                 "REST individual-trade plan requires individual semantics".into(),
@@ -280,9 +286,9 @@ mod tests {
 
         use crate::live::config::format::FormatConfigStore;
 
-        use crate::live::infrastructure::normalization::{
-            NativeSideValue, QuantityPrecisionPolicy, TradeNormalizationCompiler,
-        };
+        use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
+        use crate::live::infrastructure::normalization::side::NativeSideValue;
+        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
 
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/live/formats");
 
@@ -366,7 +372,8 @@ mod tests {
 
         use crate::live::config::exchange::{ExchangeId, MarketType};
 
-        use crate::live::infrastructure::normalization::{NormalizationContext, TradeDecoder};
+        use crate::live::infrastructure::normalization::context::NormalizationContext;
+        use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
@@ -424,7 +431,8 @@ mod tests {
         // FULL REST RESPONSE DECODING
         // ========================================================
 
-        use crate::live::infrastructure::normalization::{NormalizationSource, RestTradeDecoder};
+        use crate::live::infrastructure::normalization::message::NormalizationSource;
+        use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
 
         let response = json!([
             {
@@ -546,11 +554,17 @@ mod tests {
             format::FormatConfigStore,
         };
 
-        use crate::live::infrastructure::normalization::{
-            AggressorSideNormalizer, NativeSideValue, NativeTradeFieldLayout, NormalizationContext,
-            NormalizationSource, QuantityPrecisionPolicy, RestTradeDecoder, TimestampUnit,
-            TradeDecoder, TradeNormalizationCompiler,
+        use crate::live::infrastructure::normalization::context::NormalizationContext;
+        use crate::live::infrastructure::normalization::message::NormalizationSource;
+        use crate::live::infrastructure::normalization::numeric::TimestampUnit;
+        use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
+        use crate::live::infrastructure::normalization::side::{
+            AggressorSideNormalizer, NativeSideValue,
         };
+        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
+        use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
+        use crate::live::infrastructure::normalization::trades::fields::NativeTradeFieldLayout;
+        use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
@@ -730,11 +744,17 @@ mod tests {
             exchange::{ExchangeId, MarketType},
             format::FormatConfigStore,
         };
-        use crate::live::infrastructure::normalization::{
-            AggressorSideNormalizer, NativeSideValue, NativeTradeFieldLayout, NormalizationContext,
-            NormalizationSource, QuantityPrecisionPolicy, RestTradeDecoder, TimestampUnit,
-            TradeDecoder, TradeNormalizationCompiler,
+        use crate::live::infrastructure::normalization::context::NormalizationContext;
+        use crate::live::infrastructure::normalization::message::NormalizationSource;
+        use crate::live::infrastructure::normalization::numeric::TimestampUnit;
+        use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
+        use crate::live::infrastructure::normalization::side::{
+            AggressorSideNormalizer, NativeSideValue,
         };
+        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
+        use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
+        use crate::live::infrastructure::normalization::trades::fields::NativeTradeFieldLayout;
+        use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
         };
@@ -976,11 +996,17 @@ mod tests {
             format::FormatConfigStore,
         };
 
-        use crate::live::infrastructure::normalization::{
-            AggressorSideNormalizer, NativeSideValue, NativeTradeFieldLayout, NormalizationContext,
-            NormalizationSource, QuantityPrecisionPolicy, RestTradeDecoder, TimestampUnit,
-            TradeDecoder, TradeNormalizationCompiler,
+        use crate::live::infrastructure::normalization::context::NormalizationContext;
+        use crate::live::infrastructure::normalization::message::NormalizationSource;
+        use crate::live::infrastructure::normalization::numeric::TimestampUnit;
+        use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
+        use crate::live::infrastructure::normalization::side::{
+            AggressorSideNormalizer, NativeSideValue,
         };
+        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
+        use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
+        use crate::live::infrastructure::normalization::trades::fields::NativeTradeFieldLayout;
+        use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
@@ -1237,11 +1263,17 @@ mod tests {
             format::FormatConfigStore,
         };
 
-        use crate::live::infrastructure::normalization::{
-            AggressorSideNormalizer, NativeSideValue, NativeTradeFieldLayout, NormalizationContext,
-            NormalizationSource, QuantityPrecisionPolicy, RestTradeDecoder, TimestampUnit,
-            TradeDecoder, TradeNormalizationCompiler,
+        use crate::live::infrastructure::normalization::context::NormalizationContext;
+        use crate::live::infrastructure::normalization::message::NormalizationSource;
+        use crate::live::infrastructure::normalization::numeric::TimestampUnit;
+        use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
+        use crate::live::infrastructure::normalization::side::{
+            AggressorSideNormalizer, NativeSideValue,
         };
+        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
+        use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
+        use crate::live::infrastructure::normalization::trades::fields::NativeTradeFieldLayout;
+        use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
@@ -1536,11 +1568,17 @@ mod tests {
             format::FormatConfigStore,
         };
 
-        use crate::live::infrastructure::normalization::{
-            AggressorSideNormalizer, NativeSideValue, NativeTradeFieldLayout, NormalizationContext,
-            NormalizationSource, QuantityPrecisionPolicy, RestTradeDecoder, TimestampUnit,
-            TradeDecoder, TradeNormalizationCompiler,
+        use crate::live::infrastructure::normalization::context::NormalizationContext;
+        use crate::live::infrastructure::normalization::message::NormalizationSource;
+        use crate::live::infrastructure::normalization::numeric::TimestampUnit;
+        use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
+        use crate::live::infrastructure::normalization::side::{
+            AggressorSideNormalizer, NativeSideValue,
         };
+        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
+        use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
+        use crate::live::infrastructure::normalization::trades::fields::NativeTradeFieldLayout;
+        use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
@@ -1713,11 +1751,17 @@ mod tests {
             format::FormatConfigStore,
         };
 
-        use crate::live::infrastructure::normalization::{
-            AggressorSideNormalizer, NativeTradeFieldLayout, NormalizationContext,
-            NormalizationSource, PositiveQuantitySide, QuantityPrecisionPolicy, RestTradeDecoder,
-            TimestampUnit, TradeDecoder, TradeNormalizationCompiler,
+        use crate::live::infrastructure::normalization::context::NormalizationContext;
+        use crate::live::infrastructure::normalization::message::NormalizationSource;
+        use crate::live::infrastructure::normalization::numeric::TimestampUnit;
+        use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
+        use crate::live::infrastructure::normalization::side::{
+            AggressorSideNormalizer, PositiveQuantitySide,
         };
+        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
+        use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
+        use crate::live::infrastructure::normalization::trades::fields::NativeTradeFieldLayout;
+        use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
@@ -1974,11 +2018,17 @@ mod tests {
             format::FormatConfigStore,
         };
 
-        use crate::live::infrastructure::normalization::{
-            AggressorSideNormalizer, NativeSideValue, NativeTradeFieldLayout, NormalizationContext,
-            NormalizationSource, QuantityPrecisionPolicy, RestTradeDecoder, TimestampUnit,
-            TradeDecoder, TradeNormalizationCompiler,
+        use crate::live::infrastructure::normalization::context::NormalizationContext;
+        use crate::live::infrastructure::normalization::message::NormalizationSource;
+        use crate::live::infrastructure::normalization::numeric::TimestampUnit;
+        use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
+        use crate::live::infrastructure::normalization::side::{
+            AggressorSideNormalizer, NativeSideValue,
         };
+        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
+        use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
+        use crate::live::infrastructure::normalization::trades::fields::NativeTradeFieldLayout;
+        use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
@@ -2209,9 +2259,8 @@ mod tests {
     fn compiles_binance_spot_rest_trade_from_config() {
         use crate::live::config::format::FormatConfigStore;
 
-        use crate::live::infrastructure::normalization::{
-            QuantityPrecisionPolicy, TradeNormalizationCompiler,
-        };
+        use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
+        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
 
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/live/formats");
 
@@ -2271,9 +2320,8 @@ mod tests {
     fn rejects_rest_trade_endpoint_without_mapping() {
         use crate::live::config::format::FormatConfigStore;
 
-        use crate::live::infrastructure::normalization::{
-            QuantityPrecisionPolicy, TradeNormalizationCompiler,
-        };
+        use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
+        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
 
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/live/formats");
 
@@ -2307,10 +2355,12 @@ mod tests {
             format::FormatConfigStore,
         };
 
-        use crate::live::infrastructure::normalization::{
-            NormalizationContext, NormalizationSource, QuantityPrecisionPolicy, RestTradeDecoder,
-            TradeDecoder, TradeNormalizationCompiler,
-        };
+        use crate::live::infrastructure::normalization::context::NormalizationContext;
+        use crate::live::infrastructure::normalization::message::NormalizationSource;
+        use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
+        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
+        use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
+        use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
@@ -2480,9 +2530,9 @@ mod tests {
     fn compiles_all_15_rest_trade_profiles_from_config() {
         use crate::live::config::format::FormatConfigStore;
 
-        use crate::live::infrastructure::normalization::{
-            QuantityPrecisionPolicy, TradeDecoder, TradeNormalizationCompiler,
-        };
+        use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
+        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
+        use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
 
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/live/formats");
 
@@ -2595,10 +2645,12 @@ mod tests {
         use crate::live::infrastructure::rest::RestRequest;
         use crate::live::infrastructure::rest::{ExchangeRestResponse, RestResponseHeaders};
 
-        use crate::live::infrastructure::normalization::{
-            NormalizationContext, NormalizationSource, QuantityPrecisionPolicy, RestTradeDecoder,
-            TradeDecoder, TradeNormalizationCompiler,
-        };
+        use crate::live::infrastructure::normalization::context::NormalizationContext;
+        use crate::live::infrastructure::normalization::message::NormalizationSource;
+        use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
+        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
+        use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
+        use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,

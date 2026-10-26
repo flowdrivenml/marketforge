@@ -1,6 +1,6 @@
-use super::DepthTimestampProvenance;
-use super::RestDepthNormalizationCompiler;
 use crate::live::config::format::DepthFormatConfig;
+use crate::live::infrastructure::normalization::depth::rest::compiler::RestDepthNormalizationCompiler;
+use crate::live::infrastructure::normalization::message::DepthTimestampProvenance;
 use crate::{
     canonical::{BookSide, EventEnvelope, Exchange, L2LevelUpdate},
     live::{config::exchange::ExchangeId, stream::request::SourceChannel},
@@ -9,10 +9,16 @@ use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
 
-use super::{
-    DepthMessageKind, JsonExtractor, NativeDepthLevel, NormalizationContext, NormalizationSource,
-    NormalizedDepth, QuantityNormalizer, QuantityPrecisionPolicy, RestDepthNormalizationPlan,
-    RestDepthSnapshotReader,
+use crate::live::infrastructure::normalization::context::NormalizationContext;
+use crate::live::infrastructure::normalization::depth::plan::NativeDepthLevel;
+use crate::live::infrastructure::normalization::depth::rest::compiler::RestDepthNormalizationPlan;
+use crate::live::infrastructure::normalization::depth::rest::fields::RestDepthSnapshotReader;
+use crate::live::infrastructure::normalization::extraction::JsonExtractor;
+use crate::live::infrastructure::normalization::message::{
+    DepthMessageKind, NormalizationSource, NormalizedDepth,
+};
+use crate::live::infrastructure::normalization::quantity::{
+    QuantityNormalizer, QuantityPrecisionPolicy,
 };
 
 // ============================================================

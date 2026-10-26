@@ -4,9 +4,11 @@ use thiserror::Error;
 
 use crate::canonical::SequenceMetadata;
 
-use super::{
-    JsonExtractor, NumericConverter, RestDepthNormalizationPlan, RestDepthRecordContainer,
+use crate::live::infrastructure::normalization::depth::rest::compiler::{
+    RestDepthNormalizationPlan, RestDepthRecordContainer,
 };
+use crate::live::infrastructure::normalization::extraction::JsonExtractor;
+use crate::live::infrastructure::normalization::numeric::NumericConverter;
 
 // ============================================================
 // ERRORS
@@ -366,7 +368,7 @@ mod tests {
 
     use crate::live::config::format::DepthFormatConfig;
 
-    use super::super::RestDepthNormalizationCompiler;
+    use crate::live::infrastructure::normalization::depth::rest::compiler::RestDepthNormalizationCompiler;
 
     fn root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data")

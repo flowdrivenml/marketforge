@@ -1,4 +1,6 @@
-use super::{DepthLevelError, DepthLevelPlan, DepthSidePlan};
+use crate::live::infrastructure::normalization::depth::plan::{
+    DepthLevelError, DepthLevelPlan, DepthSidePlan,
+};
 
 /// Source-specific paths for one REST depth snapshot.
 ///
@@ -38,7 +40,7 @@ pub fn compile_rest_depth_levels(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::live::infrastructure::normalization::NativeDepthLevelLayout;
+    use crate::live::infrastructure::normalization::depth::plan::NativeDepthLevelLayout;
     use serde_json::json;
 
     #[test]

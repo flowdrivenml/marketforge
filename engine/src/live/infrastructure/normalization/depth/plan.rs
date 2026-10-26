@@ -2,7 +2,8 @@ use rust_decimal::Decimal;
 use serde_json::Value;
 use thiserror::Error;
 
-use super::{JsonExtractor, NumericConverter};
+use crate::live::infrastructure::normalization::extraction::JsonExtractor;
+use crate::live::infrastructure::normalization::numeric::NumericConverter;
 
 // ============================================================
 // ERRORS

@@ -1,8 +1,9 @@
-use super::{
-    NormalizationContext, NormalizationSource, NormalizedTrades, TradeDecodeError, TradeDecoder,
-    TradeRecordSemantics,
-};
 use crate::live::config::exchange::{RestApplicationResponseStrategy, RestEndpoint};
+use crate::live::infrastructure::normalization::context::NormalizationContext;
+use crate::live::infrastructure::normalization::message::{
+    NormalizationSource, NormalizedTrades, TradeRecordSemantics,
+};
+use crate::live::infrastructure::normalization::trades::decoder::{TradeDecodeError, TradeDecoder};
 use crate::live::infrastructure::rest::RestRequest;
 use crate::live::infrastructure::rest::{
     ExchangeRestResponse, RestApplicationOutcome, RestApplicationRule, RestApplicationValidator,

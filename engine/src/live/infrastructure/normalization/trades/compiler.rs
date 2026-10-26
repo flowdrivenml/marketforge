@@ -1,12 +1,22 @@
-use super::{
-    AggressorSideNormalizer, NativeSideValue, NativeTradeFieldLayout, PositiveQuantitySide,
-    QuantityPrecisionPolicy, SymbolTypeMissingPolicy, SymbolTypeValidator, TimestampUnit,
-    TradeExtractionPlan, TradeFieldPlan, TradeRecordRepresentation, TradeRecordSemantics,
-};
-use super::{EnvelopeRule, EnvelopeValidator};
 use crate::live::config::{
     exchange::{ExchangeId, MarketType},
     format::MessageConfig,
+};
+use crate::live::infrastructure::normalization::envelope::{EnvelopeRule, EnvelopeValidator};
+use crate::live::infrastructure::normalization::message::TradeRecordSemantics;
+use crate::live::infrastructure::normalization::numeric::TimestampUnit;
+use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
+use crate::live::infrastructure::normalization::side::{
+    AggressorSideNormalizer, NativeSideValue, PositiveQuantitySide,
+};
+use crate::live::infrastructure::normalization::symbol_type::{
+    SymbolTypeMissingPolicy, SymbolTypeValidator,
+};
+use crate::live::infrastructure::normalization::trades::fields::{
+    NativeTradeFieldLayout, TradeFieldPlan,
+};
+use crate::live::infrastructure::normalization::trades::plan::{
+    TradeExtractionPlan, TradeRecordRepresentation,
 };
 use crate::live::stream::request::QuantityType;
 use crate::{canonical::TradeSide, live::config::format::TradeFormatConfig};

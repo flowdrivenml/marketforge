@@ -3,7 +3,9 @@ use thiserror::Error;
 
 use crate::{canonical::SequenceMetadata, live::config::format::DepthFormatConfig};
 
-use super::{DepthMessageKind, JsonExtractor, NumericConverter, TimestampUnit};
+use crate::live::infrastructure::normalization::extraction::JsonExtractor;
+use crate::live::infrastructure::normalization::message::DepthMessageKind;
+use crate::live::infrastructure::normalization::numeric::{NumericConverter, TimestampUnit};
 
 // ============================================================
 // ERRORS

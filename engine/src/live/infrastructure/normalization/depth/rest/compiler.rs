@@ -1,9 +1,11 @@
-use super::TimestampUnit;
-use super::{
-    DepthLevelPlan, DepthNormalizationCompiler, RestDepthLevelMapping, compile_rest_depth_levels,
-};
 use crate::live::config::exchange::{ExchangeId, MarketType};
 use crate::live::config::format::DepthFormatConfig;
+use crate::live::infrastructure::normalization::depth::compiler::DepthNormalizationCompiler;
+use crate::live::infrastructure::normalization::depth::plan::DepthLevelPlan;
+use crate::live::infrastructure::normalization::depth::rest::plan::{
+    RestDepthLevelMapping, compile_rest_depth_levels,
+};
+use crate::live::infrastructure::normalization::numeric::TimestampUnit;
 use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
@@ -201,13 +203,13 @@ impl RestDepthNormalizationCompiler {
 
             let compatible = match level_type {
                 "array" => {
-                    matches!(bids_layout, super::NativeDepthLevelLayout::Array { .. })
-                        && matches!(asks_layout, super::NativeDepthLevelLayout::Array { .. })
+                    matches!(bids_layout, crate::live::infrastructure::normalization::depth::plan::NativeDepthLevelLayout::Array { .. })
+                        && matches!(asks_layout, crate::live::infrastructure::normalization::depth::plan::NativeDepthLevelLayout::Array { .. })
                 }
 
                 "object" => {
-                    matches!(bids_layout, super::NativeDepthLevelLayout::Object { .. })
-                        && matches!(asks_layout, super::NativeDepthLevelLayout::Object { .. })
+                    matches!(bids_layout, crate::live::infrastructure::normalization::depth::plan::NativeDepthLevelLayout::Object { .. })
+                        && matches!(asks_layout, crate::live::infrastructure::normalization::depth::plan::NativeDepthLevelLayout::Object { .. })
                 }
 
                 _ => false,
@@ -224,7 +226,7 @@ impl RestDepthNormalizationCompiler {
             // declared for REST, require exact agreement.
             if level_type == "object" {
                 for layout in [bids_layout, asks_layout] {
-                    if let super::NativeDepthLevelLayout::Object {
+                    if let crate::live::infrastructure::normalization::depth::plan::NativeDepthLevelLayout::Object {
                         price_field,
                         quantity_field,
                         ..

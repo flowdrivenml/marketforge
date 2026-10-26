@@ -1,7 +1,7 @@
 use serde_json::Value;
 use thiserror::Error;
 
-use super::{ExtractionError, JsonExtractor};
+use crate::live::infrastructure::normalization::extraction::{ExtractionError, JsonExtractor};
 
 // ============================================================
 // RECORD REPRESENTATION
@@ -249,7 +249,9 @@ impl TradeExtractionPlan {
                 if !record.is_object() {
                     return Err(TradeExtractionError::InvalidRecord {
                         index: 0,
-                        actual: super::json_type(record),
+                        actual: crate::live::infrastructure::normalization::extraction::json_type(
+                            record,
+                        ),
                     });
                 }
 

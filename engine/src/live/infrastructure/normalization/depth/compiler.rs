@@ -2,7 +2,9 @@ use thiserror::Error;
 
 use crate::live::config::format::{DepthFormatConfig, DepthLevelSideConfig};
 
-use super::{DepthLevelPlan, DepthSidePlan, NativeDepthLevelLayout};
+use crate::live::infrastructure::normalization::depth::plan::{
+    DepthLevelPlan, DepthSidePlan, NativeDepthLevelLayout,
+};
 
 // ============================================================
 // ERRORS
@@ -292,7 +294,7 @@ mod tests {
 
     use super::*;
 
-    use crate::live::infrastructure::normalization::JsonExtractor;
+    use crate::live::infrastructure::normalization::extraction::JsonExtractor;
 
     // ========================================================
     // CONFIGURATION FACTORY

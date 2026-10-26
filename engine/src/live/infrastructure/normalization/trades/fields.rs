@@ -2,7 +2,10 @@ use rust_decimal::Decimal;
 use serde_json::Value;
 use thiserror::Error;
 
-use super::{ExtractionError, JsonExtractor, NumericConverter, NumericError, TimestampUnit};
+use crate::live::infrastructure::normalization::extraction::{ExtractionError, JsonExtractor};
+use crate::live::infrastructure::normalization::numeric::{
+    NumericConverter, NumericError, TimestampUnit,
+};
 
 // ============================================================
 // NATIVE TRADE FIELD CONFIGURATION
@@ -566,7 +569,7 @@ mod tests {
     #[test]
     fn binance_rest_trade_fields_are_extracted_correctly() {
         use super::*;
-        use crate::live::infrastructure::normalization::{
+        use crate::live::infrastructure::normalization::trades::plan::{
             TradeExtractionPlan, TradeRecordRepresentation,
         };
         use serde_json::json;

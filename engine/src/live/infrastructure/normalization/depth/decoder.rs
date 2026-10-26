@@ -1,8 +1,13 @@
-use super::DepthTimestampProvenance;
-use super::{
-    DepthMessageKind, DepthMetadataPlan, DepthNormalizationCompiler, JsonExtractor,
-    NormalizationContext, NormalizationSource, NormalizedDepth, QuantityNormalizer,
-    QuantityPrecisionPolicy,
+use crate::live::infrastructure::normalization::context::NormalizationContext;
+use crate::live::infrastructure::normalization::depth::compiler::DepthNormalizationCompiler;
+use crate::live::infrastructure::normalization::depth::fields::DepthMetadataPlan;
+use crate::live::infrastructure::normalization::extraction::JsonExtractor;
+use crate::live::infrastructure::normalization::message::DepthTimestampProvenance;
+use crate::live::infrastructure::normalization::message::{
+    DepthMessageKind, NormalizationSource, NormalizedDepth,
+};
+use crate::live::infrastructure::normalization::quantity::{
+    QuantityNormalizer, QuantityPrecisionPolicy,
 };
 use crate::live::stream::request::SourceChannel;
 use crate::{
@@ -76,7 +81,7 @@ pub enum DepthDecodeError {
 pub struct DepthDecoder {
     config: DepthFormatConfig,
 
-    levels: super::CompiledDepthLevelPlan,
+    levels: crate::live::infrastructure::normalization::depth::compiler::CompiledDepthLevelPlan,
 
     metadata: DepthMetadataPlan,
 
@@ -649,7 +654,7 @@ impl DepthDecoder {
 
     fn canonical_level(
         &self,
-        level: super::NativeDepthLevel,
+        level: crate::live::infrastructure::normalization::depth::plan::NativeDepthLevel,
         side: BookSide,
         context: &NormalizationContext,
         exchange: Exchange,

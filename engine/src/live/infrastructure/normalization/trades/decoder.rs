@@ -6,10 +6,13 @@ use crate::{
     live::{config::exchange::ExchangeId, stream::request::SourceChannel},
 };
 
-use super::{
-    CompiledTradeNormalizationPlan, JsonExtractor, NormalizationContext, NormalizationSource,
-    NormalizedTrades, QuantityNormalizer, TradeRecordSemantics,
+use crate::live::infrastructure::normalization::context::NormalizationContext;
+use crate::live::infrastructure::normalization::extraction::JsonExtractor;
+use crate::live::infrastructure::normalization::message::{
+    NormalizationSource, NormalizedTrades, TradeRecordSemantics,
 };
+use crate::live::infrastructure::normalization::quantity::QuantityNormalizer;
+use crate::live::infrastructure::normalization::trades::compiler::CompiledTradeNormalizationPlan;
 
 // ============================================================
 // ERRORS
@@ -91,7 +94,7 @@ impl TradeDecoder {
     /// Both REST and WebSocket use this canonical conversion path.
     fn decode_records(
         &self,
-        records: super::TradeRecordView<'_>,
+        records: crate::live::infrastructure::normalization::trades::plan::TradeRecordView<'_>,
         context: &NormalizationContext,
         source: NormalizationSource,
     ) -> Result<NormalizedTrades, TradeDecodeError> {

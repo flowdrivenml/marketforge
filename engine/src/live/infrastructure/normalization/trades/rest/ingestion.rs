@@ -4,8 +4,11 @@ use crate::live::config::exchange::RestEndpoint;
 use crate::live::infrastructure::rest::{ExchangeRestService, RestError, RestRequest};
 use crate::live::stream::request::SourceChannel;
 
-use super::{
-    NormalizationContext, NormalizedTrades, RestTradeDecoder, RestTradeResponseError, TradeDecoder,
+use crate::live::infrastructure::normalization::context::NormalizationContext;
+use crate::live::infrastructure::normalization::message::NormalizedTrades;
+use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
+use crate::live::infrastructure::normalization::trades::rest::decoder::{
+    RestTradeDecoder, RestTradeResponseError,
 };
 
 #[derive(Debug, Error)]

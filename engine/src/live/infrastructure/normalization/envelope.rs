@@ -1,7 +1,7 @@
 use serde_json::Value;
 use thiserror::Error;
 
-use super::JsonExtractor;
+use crate::live::infrastructure::normalization::extraction::JsonExtractor;
 
 // ============================================================
 // ERRORS
