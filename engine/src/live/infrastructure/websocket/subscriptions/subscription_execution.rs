@@ -203,6 +203,8 @@ impl SubscriptionExecutor {
 
         let receipt = loop {
             tokio::select! {
+                biased;
+
                 result = &mut receipt_future => {
                     break result?;
                 }

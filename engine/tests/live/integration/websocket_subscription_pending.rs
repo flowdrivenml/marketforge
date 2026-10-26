@@ -264,7 +264,7 @@ fn w43_duplicate_request_id_is_rejected() {
             "ETHUSDT:trades",
             ExpectedSubscriptionAck::subscribe(Some(json!(7))),
         ),
-        Err(SubscriptionPendingError::DuplicateRequestId)
+        Err(SubscriptionPendingError::RetiredRequestId)
     ));
 }
 

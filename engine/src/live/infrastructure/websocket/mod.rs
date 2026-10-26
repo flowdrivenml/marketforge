@@ -1,51 +1,100 @@
+#[path = "transport/connection.rs"]
 mod connection;
+#[path = "lifecycle/connection_fence.rs"]
 mod connection_fence;
+#[path = "transport/connection_generation_bootstrap.rs"]
 mod connection_generation_bootstrap;
+#[path = "transport/connection_session.rs"]
 mod connection_session;
+#[path = "slots/connection_slot_runner.rs"]
 mod connection_slot_runner;
+#[path = "slots/connection_slot_task.rs"]
 mod connection_slot_task;
+#[path = "slots/connection_slots.rs"]
 mod connection_slots;
+#[path = "transport/connector.rs"]
 mod connector;
+#[path = "transport/error.rs"]
 mod error;
+#[path = "lifecycle/fenced_ingress.rs"]
 mod fenced_ingress;
+#[path = "lifecycle/generation_frame_relay.rs"]
 mod generation_frame_relay;
+#[path = "heartbeat/heartbeat.rs"]
 mod heartbeat;
+#[path = "heartbeat/heartbeat_coverage.rs"]
 mod heartbeat_coverage;
+#[path = "heartbeat/heartbeat_plan.rs"]
 mod heartbeat_plan;
+#[path = "heartbeat/heartbeat_protocol.rs"]
 mod heartbeat_protocol;
+#[path = "lifecycle/lifecycle.rs"]
 mod lifecycle;
+#[path = "slots/managed_connection_slot.rs"]
 mod managed_connection_slot;
+#[path = "routing/native_frame_dispatcher.rs"]
 mod native_frame_dispatcher;
+#[path = "routing/native_message_router.rs"]
 mod native_message_router;
+#[path = "transport/reconnect.rs"]
 mod reconnect;
+#[path = "streams/shared_recovery.rs"]
 mod shared_recovery;
+#[path = "slots/slot_event_coordinator.rs"]
 mod slot_event_coordinator;
+#[path = "slots/slot_event_loop.rs"]
 mod slot_event_loop;
+#[path = "routing/stream_availability.rs"]
 mod stream_availability;
+#[path = "routing/stream_dispatch.rs"]
 mod stream_dispatch;
+#[path = "streams/stream_recovery.rs"]
 mod stream_recovery;
+#[path = "streams/stream_request.rs"]
 mod stream_request;
+#[path = "streams/stream_source.rs"]
 mod stream_source;
+#[path = "streams/stream_source_resolver.rs"]
 mod stream_source_resolver;
+#[path = "subscriptions/subscription_ack.rs"]
 mod subscription_ack;
+#[path = "subscriptions/subscription_ack_binding.rs"]
 mod subscription_ack_binding;
+#[path = "subscriptions/subscription_command_factory.rs"]
 mod subscription_command_factory;
+#[path = "subscriptions/subscription_driver.rs"]
 mod subscription_driver;
+#[path = "subscriptions/subscription_event_monitor.rs"]
 mod subscription_event_monitor;
+#[path = "subscriptions/subscription_execution.rs"]
 mod subscription_execution;
+#[path = "subscriptions/subscription_identity.rs"]
 mod subscription_identity;
+#[path = "subscriptions/subscription_pending.rs"]
 mod subscription_pending;
+#[path = "subscriptions/subscription_protocol.rs"]
 mod subscription_protocol;
+#[path = "subscriptions/subscription_resolver.rs"]
 mod subscription_resolver;
+#[path = "subscriptions/subscription_restoration.rs"]
 mod subscription_restoration;
+#[path = "subscriptions/subscription_restoration_dispatch.rs"]
 mod subscription_restoration_dispatch;
+#[path = "subscriptions/subscription_restoration_session.rs"]
 mod subscription_restoration_session;
+#[path = "subscriptions/subscription_send_receipt.rs"]
 mod subscription_send_receipt;
+#[path = "subscriptions/subscription_session.rs"]
 mod subscription_session;
+#[path = "transport/supervisor.rs"]
 mod supervisor;
+#[path = "transport/supervisor_plan.rs"]
 mod supervisor_plan;
+#[path = "manager/websocket_manager.rs"]
 mod websocket_manager;
+#[path = "manager/websocket_manager_bootstrap.rs"]
 mod websocket_manager_bootstrap;
+#[path = "manager/websocket_manager_state.rs"]
 mod websocket_manager_state;
 
 pub use connection::WebSocketConnection;
