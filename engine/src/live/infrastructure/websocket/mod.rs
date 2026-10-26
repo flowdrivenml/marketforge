@@ -188,3 +188,5 @@ pub use subscription_session::{
 pub use supervisor::{OutboundMessage, SupervisorExit, WebSocketSupervisor};
 pub use websocket_manager::{WebSocketManager, WebSocketManagerError};
 pub use websocket_manager_bootstrap::{WebSocketManagerRuntime, WebSocketProfileRuntime};
+
+pub use native_message_router::NativeMessageRouterError;

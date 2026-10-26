@@ -149,14 +149,6 @@ impl NativeFrameDispatcher {
             Ok(NativeFrameDispatchOutcome::StreamUnavailable)
         }
     }
-
-    // ========================================================
-    // ACCESSORS
-    // ========================================================
-
-    pub fn stream_count(&self) -> usize {
-        self.router.stream_count()
-    }
 }
 
 // ============================================================

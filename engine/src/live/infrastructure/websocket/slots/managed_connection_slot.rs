@@ -295,38 +295,6 @@ impl ManagedConnectionSlot {
 
         Ok(())
     }
-    // ========================================================
-    // UPDATE DESIRED SUBSCRIPTIONS
-    // ========================================================
-
-    /// Update the complete desired subscription projection
-    /// for this logical connection slot.
-    ///
-    /// ConnectionSlotRunner will detect the changed revision
-    /// and perform its existing reconnect-and-restore logic.
-    ///
-    /// The caller must serialize demand mutations.
-    pub fn update_demand(
-        &mut self,
-        desired: DesiredSubscriptionSnapshot,
-    ) -> Result<(), ManagedConnectionSlotError> {
-        if self
-            .event_loop
-            .as_ref()
-            .is_some_and(JoinHandle::is_finished)
-        {
-            return Err(ManagedConnectionSlotError::EventLoopTerminated);
-        }
-
-        let task = self
-            .task
-            .as_mut()
-            .ok_or(ManagedConnectionSlotError::EventLoopTerminated)?;
-
-        task.update_demand(desired)?;
-
-        Ok(())
-    }
 
     // ========================================================
     // SHUTDOWN

@@ -13,9 +13,9 @@ use tokio_tungstenite::tungstenite::Message;
 
 use super::{
     CompiledHeartbeatPlan, CompiledSubscriptionAckBinding, ConnectionBootstrapLimits,
-    ConnectionFence, ConnectionFenceError, ConnectionSessionLimits, ConnectionSessionOutputs,
-    ConnectionSlotRunner, DesiredSubscriptionSnapshot, FencedMessage, ReconnectError,
-    ReconnectEvent, ReconnectPolicy, SharedStreamRecovery, SubscriptionDriverEvent,
+    ConnectionFence, ConnectionFenceError, ConnectionSessionLimits, ConnectionSlotRunner,
+    DesiredSubscriptionSnapshot, FencedMessage, ReconnectError, ReconnectEvent, ReconnectPolicy,
+    SharedStreamRecovery, SubscriptionDriverEvent,
 };
 
 // ============================================================
@@ -152,61 +152,6 @@ impl ConnectionSlotTask {
     // START
     // ========================================================
 
-    pub fn start(
-        config: ConnectionSlotTaskConfig,
-        outputs: ConnectionSessionOutputs,
-        reconnect_events: mpsc::Sender<ReconnectEvent>,
-    ) -> Result<Self, ConnectionSlotTaskError> {
-        // Persistent logical-slot authority.
-        //
-        // These objects must survive physical reconnects.
-        let fence = ConnectionFence::new(config.runtime_id, config.slot_id)?;
-        let runner_fence = fence.clone();
-        let recovery = SharedStreamRecovery::new();
-
-        let demand = SlotDemand::new(config.initial_demand);
-
-        let demand_reader = demand.reader();
-
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
-
-        // Move the complete slot resources into one
-        // supervised Tokio task.
-        let join = tokio::spawn(async move {
-            let heartbeat = config.heartbeat_plan;
-
-            ConnectionSlotRunner::run(
-                &config.url,
-                config.exchange,
-                &config.compiled_limiters,
-                &config.shared_limiter,
-                config.reconnect_policy,
-                shutdown_rx,
-                reconnect_events,
-                runner_fence,
-                recovery,
-                config.connection_route,
-                // The existing runner requests complete
-                // snapshots and checks their revisions.
-                move || demand_reader.borrow().clone(),
-                // The heartbeat plan is compiled once.
-                // Each connection generation receives a clone.
-                move || heartbeat.clone(),
-                config.ack_bindings,
-                outputs,
-                config.bootstrap_limits,
-                config.session_limits,
-            )
-            .await
-        });
-
-        Ok(Self {
-            demand,
-            fence,
-            shutdown: Some(shutdown_tx),
-            join: Some(join),
-        })
-    }
     pub fn demand_revision(&self) -> u64 {
         self.demand.snapshot().revision()
     }

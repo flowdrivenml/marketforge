@@ -166,18 +166,6 @@ impl StreamAvailability {
 
         Ok(affected_count)
     }
-    // ========================================================
-    // DETACHMENT
-    // ========================================================
-
-    /// Forget a transport binding after the authoritative
-    /// runtime has detached the corresponding source stream.
-    ///
-    /// This method does not modify StreamDispatcher's
-    /// attachment registry; the owner performs that operation.
-    pub fn forget(&mut self, stream_id: &str) {
-        self.active.remove(stream_id);
-    }
 
     // ========================================================
     // OBSERVABILITY
@@ -187,6 +175,7 @@ impl StreamAvailability {
         self.active.contains_key(stream_id)
     }
 
+    #[cfg(test)]
     pub fn connected_count(&self) -> usize {
         self.active.len()
     }

@@ -70,6 +70,7 @@ pub(crate) struct ManagerAttachment {
 /// `desired == None` means the connection slot became empty
 /// and must be shut down.
 pub(crate) struct ManagerDetachment {
+    #[cfg(test)]
     pub slot_id: SlotId,
 
     pub desired: Option<DesiredSubscriptionSnapshot>,
@@ -140,6 +141,7 @@ impl WebSocketManagerState {
     }
 
     /// Number of subscribed streams assigned to one slot.
+    #[cfg(test)]
     pub fn slot_stream_count(&self, slot_id: SlotId) -> Result<usize, WebSocketManagerStateError> {
         let snapshot = self
             .slots
@@ -361,7 +363,11 @@ impl WebSocketManagerState {
 
         let desired = self.slots.snapshot(slot_id)?;
 
-        Ok(ManagerDetachment { slot_id, desired })
+        Ok(ManagerDetachment {
+            #[cfg(test)]
+            slot_id,
+            desired,
+        })
     }
 
     // ========================================================
@@ -392,6 +398,7 @@ impl WebSocketManagerState {
         self.slots.key(slot_id)
     }
 
+    #[cfg(test)]
     pub fn slot_count(&self) -> usize {
         self.slots.slot_count()
     }

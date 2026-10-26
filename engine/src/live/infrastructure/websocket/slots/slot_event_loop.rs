@@ -30,9 +30,6 @@ pub(crate) enum SlotEventLoopError {
     #[error("conflicting physical connection identity")]
     ConflictingConnectionIdentity,
 
-    #[error("connection event generation is inconsistent")]
-    GenerationMismatch,
-
     #[error(transparent)]
     Coordinator(#[from] SlotEventCoordinatorError),
     #[error("slot control channel closed")]

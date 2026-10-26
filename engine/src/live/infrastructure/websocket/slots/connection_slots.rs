@@ -285,6 +285,7 @@ impl ConnectionSlots {
         self.slots.get(&slot_id).map(|slot| &slot.key)
     }
 
+    #[cfg(test)]
     pub fn slot_count(&self) -> usize {
         self.slots.len()
     }

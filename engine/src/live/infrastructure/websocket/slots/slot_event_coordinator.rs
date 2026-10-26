@@ -248,12 +248,9 @@ impl SlotEventCoordinator {
     // OBSERVABILITY
     // ========================================================
 
+    #[cfg(test)]
     pub fn early_frame_count(&self) -> usize {
         self.early_count
-    }
-
-    pub fn connected_stream_count(&self) -> usize {
-        self.availability.connected_count()
     }
 }
 

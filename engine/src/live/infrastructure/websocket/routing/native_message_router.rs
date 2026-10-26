@@ -9,7 +9,7 @@ use tokio_tungstenite::tungstenite::Message;
 // ============================================================
 
 #[derive(Debug, Error, PartialEq, Eq)]
-pub(crate) enum NativeMessageRouterError {
+pub enum NativeMessageRouterError {
     #[error("invalid stream identifier")]
     InvalidStreamId,
 
@@ -236,6 +236,7 @@ impl NativeMessageRouter {
     /// not merely the newly attached streams.
     ///
     /// This method performs no network I/O.
+    #[cfg(test)]
     pub fn replace_all(
         &mut self,
         entries: impl IntoIterator<Item = (String, NativeMessageSelector)>,
@@ -254,6 +255,7 @@ impl NativeMessageRouter {
     // UNREGISTER
     // ========================================================
 
+    #[cfg(test)]
     pub fn unregister(&mut self, stream_id: &str) -> Result<(), NativeMessageRouterError> {
         self.selectors
             .remove(stream_id)
@@ -315,6 +317,7 @@ impl NativeMessageRouter {
         Ok(NativeMessageDestination { stream_id })
     }
 
+    #[cfg(test)]
     pub fn stream_count(&self) -> usize {
         self.selectors.len()
     }
