@@ -1,9 +1,15 @@
-use super::{ConnectionFence, ConnectionFenceError, ConnectionStamp, ConnectionState};
-use super::{
-    ConnectionGeneration, ConnectionLifecycleError, SupervisorExit, WebSocketConnection,
-    WebSocketConnector, WebSocketTransportError,
-};
+use super::connection::WebSocketConnection;
+use super::connector::WebSocketConnector;
+use super::error::WebSocketTransportError;
+use super::supervisor::SupervisorExit;
 use crate::live::infrastructure::limiter::{RateLimitManager, factory::CompiledWebSocketLimiters};
+use crate::live::infrastructure::websocket::lifecycle::fence::{
+    ConnectionFence, ConnectionFenceError, ConnectionStamp,
+};
+use crate::live::infrastructure::websocket::lifecycle::state::ConnectionState;
+use crate::live::infrastructure::websocket::lifecycle::state::{
+    ConnectionGeneration, ConnectionLifecycleError,
+};
 use std::{
     future::Future,
     sync::atomic::{AtomicU64, Ordering},

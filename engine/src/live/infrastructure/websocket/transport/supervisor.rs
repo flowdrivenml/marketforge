@@ -13,9 +13,10 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::live::infrastructure::limiter::{ConnectionRateLimiter, RequestPriority};
 
-use super::{
-    ApplicationHeartbeatPolicy, HeartbeatPolicy, WebSocketConnection, WebSocketTransportError,
-};
+use super::connection::WebSocketConnection;
+use super::error::WebSocketTransportError;
+use crate::live::infrastructure::websocket::heartbeat::policy::HeartbeatPolicy;
+use crate::live::infrastructure::websocket::heartbeat::protocol::ApplicationHeartbeatPolicy;
 
 // ============================================================
 // SUPERVISOR EXIT
@@ -44,7 +45,7 @@ pub enum OutboundMessage {
     /// send operation succeeds.
     SubscriptionTracked {
         text: String,
-        receipt: super::SubscriptionSendReceiptSender,
+        receipt: crate::live::infrastructure::websocket::subscriptions::send_receipt::SubscriptionSendReceiptSender,
     },
 } // ============================================================
 // SUPERVISOR

@@ -18,9 +18,11 @@ use crate::live::infrastructure::limiter::{
     ConnectionLimiterError, ConnectionRateLimiter, RequestPriority,
 };
 
-use super::{
-    ApplicationHeartbeatSchedule, CompiledHeartbeatPlan, OutboundMessage, SupervisorExit,
-    WebSocketConnection, WebSocketSupervisor, WebSocketTransportError,
+use super::connection::WebSocketConnection;
+use super::error::WebSocketTransportError;
+use super::supervisor::{OutboundMessage, SupervisorExit, WebSocketSupervisor};
+use crate::live::infrastructure::websocket::heartbeat::plan::{
+    ApplicationHeartbeatSchedule, CompiledHeartbeatPlan,
 };
 
 // ============================================================
@@ -44,7 +46,7 @@ enum SendJob {
     Subscription(String),
     SubscriptionTracked {
         text: String,
-        receipt: super::SubscriptionSendReceiptSender,
+        receipt: crate::live::infrastructure::websocket::subscriptions::send_receipt::SubscriptionSendReceiptSender,
     },
 }
 

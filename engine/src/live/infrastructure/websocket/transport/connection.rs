@@ -6,7 +6,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::Message};
 
 use crate::live::infrastructure::limiter::{ConnectionRateLimiter, RequestPriority};
 
-use super::WebSocketTransportError;
+use super::error::WebSocketTransportError;
 
 /// One physical WebSocket connection.
 ///
@@ -16,12 +16,13 @@ use super::WebSocketTransportError;
 /// Heartbeat supervision and reconnection are separate layers.
 pub struct WebSocketConnection {
     connection_id: u64,
-    pub(super) socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
-    pub(super) limiter: ConnectionRateLimiter,
+    pub(in crate::live::infrastructure::websocket) socket:
+        WebSocketStream<MaybeTlsStream<TcpStream>>,
+    pub(in crate::live::infrastructure::websocket) limiter: ConnectionRateLimiter,
 }
 
 impl WebSocketConnection {
-    pub(super) fn new(
+    pub(in crate::live::infrastructure::websocket) fn new(
         connection_id: u64,
         socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
         limiter: ConnectionRateLimiter,

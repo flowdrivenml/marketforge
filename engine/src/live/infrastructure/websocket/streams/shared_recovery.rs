@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use thiserror::Error;
 
-use super::StreamRecoveryCoordinator;
+use super::recovery::StreamRecoveryCoordinator;
 
 #[derive(Debug, Error)]
 pub enum SharedRecoveryError {

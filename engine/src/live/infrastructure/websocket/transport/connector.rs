@@ -7,7 +7,8 @@ use crate::live::infrastructure::limiter::{
     ConnectionRateLimiter, RateLimitManager, factory::CompiledWebSocketLimiters,
 };
 
-use super::{WebSocketConnection, WebSocketTransportError};
+use super::connection::WebSocketConnection;
+use super::error::WebSocketTransportError;
 
 /// Establishes physical WebSocket connections.
 ///
