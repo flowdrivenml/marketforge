@@ -15,6 +15,7 @@ pub use heartbeat::plan::{
 pub use heartbeat::policy::HeartbeatPolicy;
 pub use heartbeat::protocol::{ApplicationHeartbeatPolicy, HeartbeatProtocol};
 pub use lifecycle::fence::{ConnectionFence, ConnectionFenceError, ConnectionStamp, FencedMessage};
+pub(crate) use lifecycle::frame_relay::GenerationFrameRelay;
 pub use lifecycle::ingress::{FencedIngress, FencedIngressError};
 pub use lifecycle::state::{
     ConnectionGeneration, ConnectionLifecycle, ConnectionLifecycleError, ConnectionState,

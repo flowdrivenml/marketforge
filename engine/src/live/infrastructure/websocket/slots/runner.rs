@@ -17,9 +17,9 @@ use crate::live::{
     infrastructure::limiter::{RateLimitManager, factory::CompiledWebSocketLimiters},
 };
 
+use crate::live::infrastructure::websocket::GenerationFrameRelay;
 use crate::live::infrastructure::websocket::heartbeat::plan::CompiledHeartbeatPlan;
 use crate::live::infrastructure::websocket::lifecycle::fence::{ConnectionFence, FencedMessage};
-use crate::live::infrastructure::websocket::lifecycle::frame_relay::GenerationFrameRelay;
 use crate::live::infrastructure::websocket::streams::shared_recovery::SharedStreamRecovery;
 use crate::live::infrastructure::websocket::subscriptions::ack_binding::CompiledSubscriptionAckBinding;
 use crate::live::infrastructure::websocket::subscriptions::driver::SubscriptionDriverEvent;
