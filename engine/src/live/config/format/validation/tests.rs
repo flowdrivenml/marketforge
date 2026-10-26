@@ -167,18 +167,19 @@ fn reject_empty_trade_side_mappings() {
 // ============================================================
 // TRADE AGGREGATION
 // ============================================================
-
 #[test]
 fn reject_expanding_aggregated_trades() {
+    use crate::live::config::format::trade::TradeAggregationConfig;
+
     let mut config = load_trade("binance_linear");
 
-    let aggregation = config
-        .aggregation
-        .as_mut()
-        .expect("Missing aggregation configuration");
-
-    aggregation.kind = "exchange_aggregated".into();
-    aggregation.expand_to_individual_trades = Some(true);
+    config.aggregation = Some(TradeAggregationConfig {
+        kind: "exchange_aggregated".into(),
+        aggregation_window_ms: None,
+        preserve_aggregate_id: None,
+        preserve_trade_id_range: None,
+        expand_to_individual_trades: Some(true),
+    });
 
     assert_trade_error(&config, "cannot be expanded");
 }
