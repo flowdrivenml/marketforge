@@ -1,10 +1,16 @@
 use std::{
     collections::BTreeMap,
+    future,
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use tokio::sync::{mpsc, oneshot};
+use tokio::{
+    sync::{mpsc, oneshot},
+    time,
+};
+
+use tokio_tungstenite::tungstenite::Message;
 
 use crate::live::{
     config::exchange::ExchangeConfig,
@@ -14,33 +20,77 @@ use crate::live::{
 use super::{
     CompiledHeartbeatPlan, CompiledSubscriptionAckBinding, ConnectionBootstrapLimits,
     ConnectionFence, ConnectionGenerationBootstrap, ConnectionSession, ConnectionSessionLimits,
-    ConnectionSessionOutputs, DesiredSubscriptionSnapshot, ReconnectError, ReconnectEvent,
-    ReconnectPolicy, ReconnectRunner, SharedStreamRecovery, WebSocketTransportError,
+    ConnectionSessionOutputs, DesiredSubscriptionSnapshot, FencedMessage, GenerationFrameRelay,
+    ReconnectError, ReconnectEvent, ReconnectPolicy, ReconnectRunner, SharedStreamRecovery,
+    SubscriptionDriverEvent, WebSocketTransportError,
 };
+
+// ============================================================
+// DEMAND RECONCILIATION
+// ============================================================
+
+/// Maximum delay between periodic demand-revision checks
+/// while a physical WebSocket connection is running.
+///
+/// This is a MarketForge operational setting, not an
+/// exchange protocol requirement.
+///
+/// A production runtime may eventually replace polling
+/// with revision-change notifications.
+const DEMAND_RECONCILE_INTERVAL: Duration = Duration::from_millis(100);
+
+// ============================================================
+// MARKET-DATA OUTPUT MODE
+// ============================================================
+
+/// Internal market-data delivery strategy.
+///
+/// Raw mode preserves compatibility with existing callers.
+///
+/// Fenced mode delivers frames carrying the exact physical
+/// connection-generation identity that received them.
+///
+/// This type is intentionally private.
+enum MarketDataOutput {
+    Raw(mpsc::Sender<Message>),
+
+    Fenced(mpsc::Sender<FencedMessage<Message>>),
+}
 
 // ============================================================
 // LOGICAL CONNECTION-SLOT RUNTIME
 // ============================================================
 
+/// Supervises one logical WebSocket connection slot.
+///
+/// One slot may contain multiple source subscriptions.
+///
+/// The logical slot survives physical reconnections.
+///
+/// ConnectionSlotRunner does not:
+/// - Own authoritative consumer demand.
+/// - Normalize market data.
+/// - Validate trade/depth sequences.
+/// - Publish canonical events.
+///
+/// ReconnectRunner remains the physical lifecycle authority.
 pub struct ConnectionSlotRunner;
 
 impl ConnectionSlotRunner {
-    /// Run one logical WebSocket connection slot across
-    /// multiple physical connection generations.
+    // ========================================================
+    // LEGACY RAW OUTPUT
+    // ========================================================
+
+    /// Run one logical WebSocket connection slot using
+    /// the existing raw market-data output contract.
     ///
-    /// ReconnectRunner remains the physical lifecycle owner.
+    /// This entry point is retained for compatibility with
+    /// existing MarketForge callers and regression tests.
     ///
-    /// SharedStreamRecovery must be the persistent recovery
-    /// authority for this logical slot.
+    /// New manager integration should use run_fenced().
     ///
-    /// demand_snapshot must return a complete, internally
-    /// consistent snapshot assigned to this connection route.
-    ///
-    /// The authoritative demand owner must maintain
-    /// monotonically increasing revisions.
-    ///
-    /// Subscription events and market data must be consumed
-    /// continuously by downstream owners.
+    /// The caller remains responsible for continuously
+    /// consuming both output channels.
     #[allow(clippy::too_many_arguments)]
     pub async fn run<D, H>(
         url: &str,
@@ -64,21 +114,152 @@ impl ConnectionSlotRunner {
         D: Fn() -> DesiredSubscriptionSnapshot + Send + Sync + 'static,
         H: Fn() -> CompiledHeartbeatPlan + Send + Sync + 'static,
     {
-        // ----------------------------------------------------
-        // PERSISTENT SLOT RESOURCES
-        // ----------------------------------------------------
+        let ConnectionSessionOutputs {
+            market_data,
+            subscription_events,
+        } = outputs;
 
+        Self::run_internal(
+            url,
+            exchange,
+            compiled_limiters,
+            shared_limiter,
+            reconnect_policy,
+            shutdown,
+            reconnect_events,
+            fence,
+            recovery,
+            connection_route,
+            demand_snapshot,
+            heartbeat_plan,
+            ack_bindings,
+            MarketDataOutput::Raw(market_data),
+            subscription_events,
+            bootstrap_limits,
+            session_limits,
+        )
+        .await
+    }
+
+    // ========================================================
+    // FENCED OUTPUT
+    // ========================================================
+
+    /// Run one logical WebSocket connection slot with
+    /// generation-aware native market-data output.
+    ///
+    /// Each physical connection generation receives its own
+    /// bounded relay.
+    ///
+    /// Frames are stamped with their originating generation,
+    /// never with whichever generation happens to be current
+    /// when downstream processing occurs.
+    ///
+    /// Relay failures terminate the physical session and
+    /// return control to ReconnectRunner.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn run_fenced<D, H>(
+        url: &str,
+        exchange: Arc<ExchangeConfig>,
+        compiled_limiters: &CompiledWebSocketLimiters,
+        shared_limiter: &RateLimitManager,
+        reconnect_policy: ReconnectPolicy,
+        shutdown: oneshot::Receiver<()>,
+        reconnect_events: mpsc::Sender<ReconnectEvent>,
+        fence: ConnectionFence,
+        recovery: SharedStreamRecovery,
+        connection_route: Option<String>,
+        demand_snapshot: D,
+        heartbeat_plan: H,
+        ack_bindings: BTreeMap<String, CompiledSubscriptionAckBinding>,
+        market_data: mpsc::Sender<FencedMessage<Message>>,
+        subscription_events: mpsc::Sender<SubscriptionDriverEvent>,
+        bootstrap_limits: ConnectionBootstrapLimits,
+        session_limits: ConnectionSessionLimits,
+    ) -> Result<(), ReconnectError>
+    where
+        D: Fn() -> DesiredSubscriptionSnapshot + Send + Sync + 'static,
+        H: Fn() -> CompiledHeartbeatPlan + Send + Sync + 'static,
+    {
+        Self::run_internal(
+            url,
+            exchange,
+            compiled_limiters,
+            shared_limiter,
+            reconnect_policy,
+            shutdown,
+            reconnect_events,
+            fence,
+            recovery,
+            connection_route,
+            demand_snapshot,
+            heartbeat_plan,
+            ack_bindings,
+            MarketDataOutput::Fenced(market_data),
+            subscription_events,
+            bootstrap_limits,
+            session_limits,
+        )
+        .await
+    }
+
+    // ========================================================
+    // SHARED IMPLEMENTATION
+    // ========================================================
+
+    /// Shared implementation for raw and fenced output.
+    ///
+    /// This method owns the internal orchestration contract.
+    ///
+    /// The future WebSocketManager will hide this complexity
+    /// behind its attach/detach interface.
+    #[allow(clippy::too_many_arguments)]
+    async fn run_internal<D, H>(
+        url: &str,
+        exchange: Arc<ExchangeConfig>,
+        compiled_limiters: &CompiledWebSocketLimiters,
+        shared_limiter: &RateLimitManager,
+        reconnect_policy: ReconnectPolicy,
+        shutdown: oneshot::Receiver<()>,
+        reconnect_events: mpsc::Sender<ReconnectEvent>,
+        fence: ConnectionFence,
+        recovery: SharedStreamRecovery,
+        connection_route: Option<String>,
+        demand_snapshot: D,
+        heartbeat_plan: H,
+        ack_bindings: BTreeMap<String, CompiledSubscriptionAckBinding>,
+        market_data_output: MarketDataOutput,
+        subscription_events: mpsc::Sender<SubscriptionDriverEvent>,
+        bootstrap_limits: ConnectionBootstrapLimits,
+        session_limits: ConnectionSessionLimits,
+    ) -> Result<(), ReconnectError>
+    where
+        D: Fn() -> DesiredSubscriptionSnapshot + Send + Sync + 'static,
+        H: Fn() -> CompiledHeartbeatPlan + Send + Sync + 'static,
+    {
+        // ====================================================
+        // PERSISTENT LOGICAL-SLOT RESOURCES
+        // ====================================================
+
+        // These closures survive physical reconnects.
         let demand_snapshot = Arc::new(demand_snapshot);
         let heartbeat_plan = Arc::new(heartbeat_plan);
 
-        let market_data = outputs.market_data;
-        let subscription_events = outputs.subscription_events;
+        // The output destination also survives reconnects.
+        //
+        // Each physical generation creates its own local
+        // raw-frame relay when fenced delivery is enabled.
+        let market_data_output = Arc::new(market_data_output);
 
+        // ReconnectRunner owns the authoritative fence.
+        //
+        // Session callbacks use clones of the same
+        // underlying lifecycle authority.
         let session_fence = fence.clone();
 
-        // ----------------------------------------------------
-        // EXISTING RECONNECT AUTHORITY
-        // ----------------------------------------------------
+        // ====================================================
+        // PHYSICAL CONNECTION LIFECYCLE
+        // ====================================================
 
         ReconnectRunner::run_with_fence(
             url,
@@ -89,39 +270,46 @@ impl ConnectionSlotRunner {
             reconnect_events,
             fence,
             move |stamp, connection| {
-                // These clones retain handles to persistent
-                // logical-slot resources.
-                //
-                // They do not create new recovery authorities.
+                // ============================================
+                // CLONE PERSISTENT SLOT RESOURCES
+                // ============================================
 
                 let exchange = exchange.clone();
+
                 let recovery = recovery.clone();
+
                 let fence = session_fence.clone();
 
                 let demand_snapshot = demand_snapshot.clone();
+
                 let heartbeat_plan = heartbeat_plan.clone();
 
                 let ack_bindings = ack_bindings.clone();
 
                 let connection_route = connection_route.clone();
 
-                let market_data = market_data.clone();
+                let market_data_output = market_data_output.clone();
+
                 let subscription_events = subscription_events.clone();
+
+                // ============================================
+                // EXECUTE ONE PHYSICAL GENERATION
+                // ============================================
 
                 async move {
                     // ----------------------------------------
                     // READ CURRENT AUTHORITATIVE DEMAND
                     // ----------------------------------------
 
-                    // This happens AFTER the physical
-                    // connection handshake.
+                    // Read demand after the physical handshake.
                     //
                     // Never restore subscriptions from a
                     // previous generation's command queue.
-
                     let desired = demand_snapshot();
 
                     let revision = desired.revision();
+
+                    let current_revision_at_bootstrap = demand_snapshot().revision();
 
                     // ----------------------------------------
                     // GENERATE NATIVE TIMESTAMP
@@ -135,7 +323,7 @@ impl ConnectionSlotRunner {
                         .as_secs();
 
                     // ----------------------------------------
-                    // BOOTSTRAP THIS GENERATION
+                    // PREPARE THIS PHYSICAL GENERATION
                     // ----------------------------------------
 
                     let bootstrap = ConnectionGenerationBootstrap::prepare(
@@ -144,7 +332,7 @@ impl ConnectionSlotRunner {
                         &stamp,
                         connection_route.as_deref(),
                         &desired,
-                        revision,
+                        current_revision_at_bootstrap,
                         &recovery,
                         ack_bindings,
                         unix_seconds,
@@ -155,7 +343,7 @@ impl ConnectionSlotRunner {
                     })?;
 
                     // ----------------------------------------
-                    // CREATE PHYSICAL SESSION INPUTS
+                    // COMPILE SUBSCRIPTION ACK PROTOCOL
                     // ----------------------------------------
 
                     let acknowledgements = super::SubscriptionAckCompiler::compile(&exchange)
@@ -163,11 +351,45 @@ impl ConnectionSlotRunner {
                             session_error(format!("ACK compilation failed: {error}"))
                         })?;
 
+                    // ----------------------------------------
+                    // CONSTRUCT PHYSICAL SESSION INPUTS
+                    // ----------------------------------------
+
                     let inputs = bootstrap.into_session_inputs(
                         connection,
                         heartbeat_plan(),
                         acknowledgements,
                     );
+
+                    // ========================================
+                    // OUTPUT CONFIGURATION
+                    // ========================================
+
+                    // Raw mode:
+                    //
+                    //   ConnectionSession
+                    //       -> original mpsc::Sender<Message>
+                    //
+                    // Fenced mode:
+                    //
+                    //   ConnectionSession
+                    //       -> generation-local raw channel
+                    //       -> GenerationFrameRelay
+                    //       -> FencedMessage<Message>
+                    //
+                    // The relay is created for this physical
+                    // generation only.
+
+                    let (market_data, relay_input) = match market_data_output.as_ref() {
+                        MarketDataOutput::Raw(sender) => (sender.clone(), None),
+
+                        MarketDataOutput::Fenced(_) => {
+                            let (sender, receiver) =
+                                mpsc::channel::<Message>(session_limits.inbound_capacity);
+
+                            (sender, Some(receiver))
+                        }
+                    };
 
                     let outputs = ConnectionSessionOutputs {
                         market_data,
@@ -175,50 +397,196 @@ impl ConnectionSlotRunner {
                     };
 
                     // ----------------------------------------
-                    // DEMAND REVISION PROVIDER
+                    // CURRENT DEMAND REVISION PROVIDER
                     // ----------------------------------------
 
                     let current_revision = || demand_snapshot().revision();
 
-                    // ----------------------------------------
-                    // PHYSICAL SESSION LIFETIME
-                    // ----------------------------------------
-
-                    // The outer ReconnectRunner owns terminal
-                    // shutdown.
-                    //
-                    // Keep the sender alive while this
-                    // physical session runs.
-                    //
-                    // Dropping the sender prematurely would
-                    // close the receiver and trigger immediate
-                    // ConnectionSession shutdown.
+                    // ========================================
+                    // PHYSICAL SESSION SHUTDOWN
+                    // ========================================
 
                     let (session_shutdown_sender, session_shutdown_receiver) = oneshot::channel();
 
-                    let outcome = ConnectionSession::run(
+                    // ========================================
+                    // PHYSICAL SESSION
+                    // ========================================
+
+                    let session = ConnectionSession::run(
                         inputs,
                         outputs,
                         &fence,
                         current_revision,
                         session_shutdown_receiver,
                         session_limits,
-                    )
-                    .await;
+                    );
+
+                    tokio::pin!(session);
+
+                    // ========================================
+                    // GENERATION-LOCAL FRAME RELAY
+                    // ========================================
+
+                    // No relay is required for legacy raw
+                    // output mode.
+                    //
+                    // Fenced mode creates one relay using
+                    // this exact session stamp.
+                    //
+                    // Never replace this stamp with
+                    // fence.current_stamp() while draining.
+
+                    let relay = match (relay_input, market_data_output.as_ref()) {
+                        (Some(receiver), MarketDataOutput::Fenced(sender)) => {
+                            Some(GenerationFrameRelay::run(
+                                receiver,
+                                sender.clone(),
+                                &fence,
+                                stamp.clone(),
+                            ))
+                        }
+
+                        (None, MarketDataOutput::Raw(_)) => None,
+
+                        _ => {
+                            return Err(session_error(
+                                "inconsistent market-data output configuration".into(),
+                            ));
+                        }
+                    };
+
+                    // Pin the optional relay future so it
+                    // can be polled repeatedly by select!.
+                    tokio::pin!(relay);
+
+                    // ========================================
+                    // DEMAND REVISION WATCH
+                    // ========================================
+
+                    let mut demand_checks = time::interval(DEMAND_RECONCILE_INTERVAL);
+
+                    demand_checks.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+
+                    // ========================================
+                    // RUN UNTIL TERMINATION
+                    // ========================================
+
+                    let outcome = loop {
+                        tokio::select! {
+                            // --------------------------------
+                            // PHYSICAL SESSION COMPLETED
+                            // --------------------------------
+
+                            result = &mut session => {
+                                break result.map_err(
+                                    ConnectionSession::into_transport_error,
+                                );
+                            }
+
+                            // --------------------------------
+                            // FRAME RELAY TERMINATED
+                            // --------------------------------
+
+                            result = async {
+                                match relay.as_mut().as_pin_mut() {
+                                    Some(relay_future) => {
+                                        relay_future.await
+                                    }
+
+                                    None => {
+                                        future::pending().await
+                                    }
+                                }
+                            } => {
+                                // The relay must not exit while
+                                // the physical session is active.
+                                //
+                                // This includes:
+                                // - Input channel closure.
+                                // - Output backpressure.
+                                // - Output receiver closure.
+                                // - Stale generation.
+                                //
+                                // Returning a session error
+                                // causes ReconnectRunner to
+                                // revoke this generation.
+
+                                break Err(session_error(format!(
+                                    "generation frame relay terminated: {result:?}"
+                                )));
+                            }
+
+                            // --------------------------------
+                            // DESIRED SUBSCRIPTIONS CHANGED
+                            // --------------------------------
+
+                            _ = demand_checks.tick() => {
+                                let latest_revision =
+                                    demand_snapshot().revision();
+
+                                if latest_revision != revision {
+                                    // The current physical
+                                    // subscription set is no
+                                    // longer authoritative.
+                                    //
+                                    // ConnectionSlotRunner
+                                    // currently reconciles
+                                    // demand changes by
+                                    // recycling the session.
+                                    //
+                                    // ReconnectRunner will
+                                    // revoke this generation
+                                    // before reconnecting.
+
+                                    break Err(session_error(
+                                        format!(
+                                            "subscription demand changed \
+                                             from revision {} to {}; \
+                                             connection restoration required",
+                                            revision,
+                                            latest_revision,
+                                        ),
+                                    ));
+                                }
+                            }
+                        }
+                    };
+
+                    // ========================================
+                    // TERMINATE GENERATION-LOCAL RESOURCES
+                    // ========================================
+
+                    // Keep the shutdown sender alive until
+                    // the session has finished or been
+                    // cancelled.
+                    //
+                    // Dropping the session future cancels
+                    // its supervisor and subscription driver.
+                    //
+                    // Dropping the relay future ensures no
+                    // old-generation relay continues running.
+
+                    drop(session);
+
+                    drop(relay);
 
                     drop(session_shutdown_sender);
 
                     // ----------------------------------------
-                    // RETURN CONTROL TO RECONNECT RUNNER
+                    // RETURN TO RECONNECT AUTHORITY
                     // ----------------------------------------
 
-                    outcome.map_err(|error| ConnectionSession::into_transport_error(error))
+                    outcome
                 }
             },
         )
         .await
     }
 }
+
+// ============================================================
+// ERROR CONVERSION
+// ============================================================
 
 fn session_error(message: String) -> WebSocketTransportError {
     WebSocketTransportError::Session(message)

@@ -141,7 +141,11 @@ supports_unsubscribe = true
 # ============================================================
 # MESSAGE ROUTING
 # ============================================================
-
+request_id_field = "id"
+request_id_type = "unsigned_integer"
+request_id_optional = true
+success_field = "result.status"
+success_value = "success"
 [websocket.routing]
 
 mode = "channel"

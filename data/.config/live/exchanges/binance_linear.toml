@@ -35,11 +35,11 @@ timestamp_unit = "milliseconds"
 # ------------------------------------------------------------
 
 [websocket.routes.public]
-base_url = "wss://fstream.binance.com/public"
+base_url = "wss://fstream.binance.com/stream"
 access_mode = "stream"
 
 [websocket.routes.market]
-base_url = "wss://fstream.binance.com/market"
+base_url = "wss://fstream.binance.com/stream"
 access_mode = "stream"
 
 # Private user-data streams are outside MarketForge Live scope.

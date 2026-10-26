@@ -1415,3 +1415,28 @@ required-features = ["live"]
 name = "live_integration_websocket_connection_generation_bootstrap"
 path = "tests/live/integration/websocket_connection_generation_bootstrap.rs"
 required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_reconnect_server"
+path = "tests/live/integration/websocket_reconnect_server.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_connection_slot_e2e"
+path = "tests/live/integration/websocket_connection_slot_e2e.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_bulk_live"
+path = "tests/live/integration/websocket_bulk_live.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_manager"
+path = "tests/live/integration/websocket_manager.rs"
+required-features = ["live"]
+
+[[test]]
+name = "live_integration_websocket_manager_api"
+path = "tests/live/integration/websocket_manager_api.rs"
+required-features = ["live"]

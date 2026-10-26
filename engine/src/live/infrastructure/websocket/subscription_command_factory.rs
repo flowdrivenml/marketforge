@@ -3,13 +3,12 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::live::config::exchange::{ExchangeConfig, SubscriptionConfig};
-
 use super::{
     CompiledSubscriptionAckBinding, ConnectionFence, ConnectionStamp, ExpectedSubscriptionAck,
     PreparedRestoration, SubscriptionAckBindingError, SubscriptionCommand,
     SubscriptionProtocolError, SubscriptionStrategy,
 };
+use crate::live::config::exchange::{ExchangeConfig, ExchangeId, SubscriptionConfig};
 
 // ============================================================
 // ERRORS
@@ -175,7 +174,12 @@ impl SubscriptionCommandFactory {
             // GENERATE REQUEST ID
             // -----------------------------------------------
 
-            let request_id = Self::allocate_native_id(subscription, &self.stamp, &mut next_id)?;
+            let request_id = Self::allocate_native_id(
+                subscription,
+                &self.stamp,
+                &mut next_id,
+                exchange.exchange.id == ExchangeId::Okx,
+            )?;
 
             resolved.request.request_id = request_id.clone();
 
@@ -246,6 +250,7 @@ impl SubscriptionCommandFactory {
         config: &SubscriptionConfig,
         stamp: &ConnectionStamp,
         next_id: &mut u64,
+        okx_id_rules: bool,
     ) -> Result<Option<Value>, SubscriptionCommandFactoryError> {
         if config.request_id_field.is_none() {
             return Ok(None);
@@ -256,7 +261,20 @@ impl SubscriptionCommandFactory {
             .ok_or(SubscriptionCommandFactoryError::RequestIdExhausted)?;
 
         let native = match config.request_id_type.as_deref() {
-            Some("string") => Value::String(format!("mf-{}-{}", stamp.generation().get(), next,)),
+            Some("string") => {
+                let id = if okx_id_rules {
+                    // OKX: alphanumeric only, maximum 32 characters.
+                    format!("mf{}r{}", stamp.generation().get(), next)
+                } else {
+                    format!("mf-{}-{}", stamp.generation().get(), next)
+                };
+
+                if okx_id_rules && id.len() > 32 {
+                    return Err(SubscriptionCommandFactoryError::RequestIdExhausted);
+                }
+
+                Value::String(id)
+            }
 
             Some("unsigned_integer") => Value::from(next),
 

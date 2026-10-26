@@ -4,15 +4,10 @@ use tokio_tungstenite::connect_async;
 use url::Url;
 
 use crate::live::infrastructure::limiter::{
-    ConnectionRateLimiter,
-    RateLimitManager,
-    factory::CompiledWebSocketLimiters,
+    ConnectionRateLimiter, RateLimitManager, factory::CompiledWebSocketLimiters,
 };
 
-use super::{
-    WebSocketConnection,
-    WebSocketTransportError,
-};
+use super::{WebSocketConnection, WebSocketTransportError};
 
 /// Establishes physical WebSocket connections.
 ///
@@ -41,19 +36,13 @@ impl WebSocketConnector {
             ));
         }
 
-        let parsed = Url::parse(url).map_err(|error| {
-            WebSocketTransportError::Configuration(
-                error.to_string(),
-            )
-        })?;
+        let parsed = Url::parse(url)
+            .map_err(|error| WebSocketTransportError::Configuration(error.to_string()))?;
 
         let secure = parsed.scheme() == "wss";
 
         let local_test = parsed.scheme() == "ws"
-            && matches!(
-                parsed.host_str(),
-                Some("localhost" | "127.0.0.1" | "::1")
-            );
+            && matches!(parsed.host_str(), Some("localhost" | "127.0.0.1" | "::1"));
 
         if !secure && !local_test {
             return Err(WebSocketTransportError::Configuration(
@@ -73,18 +62,12 @@ impl WebSocketConnector {
 
         // Construct the connection-specific limiter before
         // attempting network access.
-        let local_limiter = ConnectionRateLimiter::new(
-            &compiled.connection,
-            connection_id,
-        )?;
+        let local_limiter = ConnectionRateLimiter::new(&compiled.connection, connection_id)?;
 
         // One deadline covers shared limiter admission
         // and the complete WebSocket handshake.
         let socket = tokio::time::timeout(timeout, async {
-            if let Some(operation) = compiled
-                .shared
-                .connection_attempt_operation()?
-            {
+            if let Some(operation) = compiled.shared.connection_attempt_operation()? {
                 shared_limiter.acquire(&operation).await?;
             }
 

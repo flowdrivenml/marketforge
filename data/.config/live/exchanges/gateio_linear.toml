@@ -201,7 +201,7 @@ update_event = "update"
 [channels.trades]
 
 enabled = true
-
+route = "usdt"
 channel = "futures.trades"
 
 subscription_payload = [
@@ -236,7 +236,7 @@ recovery_endpoint = "historical_trades"
 [channels.depth]
 
 enabled = true
-
+route = "usdt"
 channel = "futures.order_book_update"
 
 format = "depth/gateio_linear"

@@ -124,9 +124,8 @@ action_field = "action"
 # ============================================================
 
 [channels.trades]
-enabled = true
-
 route = "business"
+enabled = true
 
 channel = "trades-all"
 
@@ -150,7 +149,7 @@ recovery_endpoint = "historical_trades"
 [channels.aggregate_trades]
 enabled = false
 
-route = "public"
+route = "business"
 
 channel = "trades"
 

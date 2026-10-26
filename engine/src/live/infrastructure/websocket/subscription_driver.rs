@@ -467,7 +467,14 @@ impl SubscriptionDriver {
                 return Ok(());
             }
         };
-
+        // W4.7 temporary native protocol diagnostics.
+        // Remove after live compatibility validation.
+        if std::env::var_os("MF_DEBUG_WS_ACK").is_some() {
+            eprintln!(
+                "[MF WS NATIVE INBOUND] {}",
+                serde_json::to_string_pretty(&native).unwrap_or_else(|_| native.to_string())
+            );
+        }
         let result = session.on_message(recovery, protocol, &native, Instant::now())?;
 
         match result {

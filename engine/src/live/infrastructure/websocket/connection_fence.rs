@@ -224,7 +224,47 @@ impl ConnectionFence {
     pub fn accepts(&self, stamp: &ConnectionStamp) -> bool {
         self.same_identity(stamp) && self.read().accepts_data(stamp.generation)
     }
+    /// Execute a synchronous transport-delivery operation
+    /// while the specified physical connection is current
+    /// and its WebSocket handshake has completed.
+    ///
+    /// Unlike with_ready(), this does not require stream
+    /// recovery or canonical publication readiness.
+    ///
+    /// This permits native market data to reach the
+    /// normalization and integrity pipeline.
+    ///
+    /// The lifecycle read lock is held throughout the closure,
+    /// preventing generation revocation from completing while
+    /// the operation executes.
+    ///
+    /// Do not perform asynchronous operations inside the closure.
+    /// Do not treat admission to a downstream queue as canonical
+    /// publication authorization.
+    pub fn with_connected<R>(
+        &self,
+        stamp: &ConnectionStamp,
+        operation: impl FnOnce() -> R,
+    ) -> Option<R> {
+        if !self.same_identity(stamp) {
+            return None;
+        }
 
+        let lifecycle = self.read();
+
+        if lifecycle.current_generation() != Some(stamp.generation()) {
+            return None;
+        }
+
+        if !matches!(
+            lifecycle.state(),
+            ConnectionState::Connected | ConnectionState::Ready
+        ) {
+            return None;
+        }
+
+        Some(operation())
+    }
     /// Atomically validate generation readiness and
     /// execute a synchronous processing operation.
     ///
