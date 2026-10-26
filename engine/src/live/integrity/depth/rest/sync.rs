@@ -2,12 +2,18 @@ use crate::live::infrastructure::normalization::{
     DepthMessageKind, NormalizationSource, NormalizedDepth,
 };
 
-use super::{
-    CompiledDepthContinuityPlan, DepthBookLimits, DepthBufferLimits, DepthControllerIgnoreReason,
-    DepthControllerOutcome, DepthControllerRecoveryReason, DepthResourceAccounting,
-    DepthResourceLimits, DepthSnapshotSource, DepthSyncToken, LiveDepthController,
-    PreSnapshotDepthBuffer,
+use crate::live::integrity::depth::book_budget::DepthBookLimits;
+use crate::live::integrity::depth::buffer::{
+    DepthBufferLimits, DepthSyncToken, PreSnapshotDepthBuffer,
 };
+use crate::live::integrity::depth::continuity_compiler::{
+    CompiledDepthContinuityPlan, DepthSnapshotSource,
+};
+use crate::live::integrity::depth::controller::{
+    DepthControllerIgnoreReason, DepthControllerOutcome, DepthControllerRecoveryReason,
+    LiveDepthController,
+};
+use crate::live::integrity::depth::resources::{DepthResourceAccounting, DepthResourceLimits};
 
 // ============================================================
 // SYNCHRONIZATION PHASE
@@ -70,7 +76,7 @@ impl RestDepthSyncCoordinator {
     // CONSTRUCTION
     // ========================================================
 
-    pub(super) fn new(
+    pub(in crate::live::integrity) fn new(
         stream_id: impl Into<String>,
         plan: CompiledDepthContinuityPlan,
         stream_generation: u64,
@@ -102,7 +108,10 @@ impl RestDepthSyncCoordinator {
     /// and whether its synchronization state permits a change.
     ///
     /// This does not expose mutable controller access.
-    pub(super) fn set_book_limits(&mut self, limits: DepthBookLimits) -> Result<(), String> {
+    pub(in crate::live::integrity) fn set_book_limits(
+        &mut self,
+        limits: DepthBookLimits,
+    ) -> Result<(), String> {
         self.controller.set_book_limits(limits)
     }
     // ========================================================
@@ -146,7 +155,10 @@ impl RestDepthSyncCoordinator {
     ///
     /// The surrounding runtime must ensure generation
     /// changes correspond to authoritative lifecycle events.
-    pub(super) fn begin_generation(&mut self, generation: u64) -> Result<(), String> {
+    pub(in crate::live::integrity) fn begin_generation(
+        &mut self,
+        generation: u64,
+    ) -> Result<(), String> {
         self.controller.begin_generation(generation)?;
 
         self.buffer = None;
@@ -170,7 +182,10 @@ impl RestDepthSyncCoordinator {
     ///
     /// The token must be unique and monotonically increasing
     /// within the current stream generation.
-    pub(super) fn begin_attempt(&mut self, token: DepthSyncToken) -> Result<(), String> {
+    pub(in crate::live::integrity) fn begin_attempt(
+        &mut self,
+        token: DepthSyncToken,
+    ) -> Result<(), String> {
         // Allocate before mutating authoritative state.
         //
         // If buffer construction fails, an existing valid
@@ -208,7 +223,7 @@ impl RestDepthSyncCoordinator {
     /// the retained message's memory footprint.
     ///
     /// Returns an explicit outcome for every message.
-    pub(super) fn on_websocket(
+    pub(in crate::live::integrity) fn on_websocket(
         &mut self,
         generation: u64,
         message: NormalizedDepth,
@@ -389,7 +404,7 @@ impl RestDepthSyncCoordinator {
     ///
     /// The caller must still guarantee that messages
     /// are submitted in source-receipt order.
-    pub(super) fn on_rest_snapshot(
+    pub(in crate::live::integrity) fn on_rest_snapshot(
         &mut self,
         token: DepthSyncToken,
         snapshot: &NormalizedDepth,
@@ -435,7 +450,7 @@ impl RestDepthSyncCoordinator {
 
         outcome
     }
-    pub(super) fn new_with_resources(
+    pub(in crate::live::integrity) fn new_with_resources(
         stream_id: impl Into<String>,
         plan: CompiledDepthContinuityPlan,
         stream_generation: u64,
@@ -466,7 +481,7 @@ impl RestDepthSyncCoordinator {
     ///
     /// The Recovery Coordinator may subsequently request
     /// a newer REST synchronization attempt.
-    pub(super) fn invalidate(&mut self) {
+    pub(in crate::live::integrity) fn invalidate(&mut self) {
         self.cancel_current_attempt();
     }
 

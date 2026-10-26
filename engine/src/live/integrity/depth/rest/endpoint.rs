@@ -6,7 +6,9 @@ use crate::live::{
     infrastructure::normalization::{DepthMessageKind, NormalizationSource, NormalizedDepth},
 };
 
-use super::{DepthSourceBinding, RestDepthRequestContext, SourcePlanCompatibility};
+use crate::live::integrity::depth::binding::DepthSourceBinding;
+use crate::live::integrity::depth::rest::request::RestDepthRequestContext;
+use crate::live::integrity::source_plan_compatibility::SourcePlanCompatibility;
 
 // ============================================================
 // ERRORS
@@ -284,13 +286,13 @@ mod tests {
 
     fn request(limit: u64) -> RestDepthRequestContext {
         RestDepthRequestContext {
-            source_epoch: super::super::DepthSourceEpoch {
+            source_epoch: crate::live::integrity::depth::binding::DepthSourceEpoch {
                 stream_generation: 10,
                 connection_generation: 20,
                 subscription_generation: 30,
             },
 
-            sync_token: super::super::DepthSyncToken {
+            sync_token: crate::live::integrity::depth::buffer::DepthSyncToken {
                 stream_generation: 10,
                 attempt: 1,
             },

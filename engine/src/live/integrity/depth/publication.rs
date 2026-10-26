@@ -1,9 +1,10 @@
 use crate::book::BookChange;
 
-use super::DepthAcceptedTimestamp;
-use super::{
-    AcceptedDepthOutput, DepthControllerOutcome, DepthSequenceBaseline, LiveDepthController,
+use crate::live::integrity::depth::continuity::DepthSequenceBaseline;
+use crate::live::integrity::depth::controller::{
+    AcceptedDepthOutput, DepthControllerOutcome, LiveDepthController,
 };
+use crate::live::integrity::depth::timestamps::DepthAcceptedTimestamp;
 use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT_PUBLICATION_FENCE_ID: AtomicU64 = AtomicU64::new(1);
 

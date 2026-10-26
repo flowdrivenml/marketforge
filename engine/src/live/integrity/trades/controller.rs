@@ -7,10 +7,13 @@ use crate::{
     },
 };
 
-use super::{
-    CompiledTradeIntegrityPlan, TradeCoverageAction, TradeIdentityDecision, TradeIdentityError,
-    TradeIdentityLimits, TradeIdentityTracker, TradeIntegrityBaseline,
-    TradeIntegrityEvaluationError, TradeIntegrityEvaluator, TradeIntegrityObservation,
+use crate::live::integrity::trades::compiler::{CompiledTradeIntegrityPlan, TradeCoverageAction};
+use crate::live::integrity::trades::evaluator::{
+    TradeIntegrityBaseline, TradeIntegrityEvaluationError, TradeIntegrityEvaluator,
+    TradeIntegrityObservation,
+};
+use crate::live::integrity::trades::identity::{
+    TradeIdentityDecision, TradeIdentityError, TradeIdentityLimits, TradeIdentityTracker,
 };
 
 // ============================================================
@@ -163,7 +166,7 @@ impl LiveTradeController {
     ///
     /// This API requires the caller to supply the compiled
     /// trade-integrity configuration for the source stream.
-    pub(super) fn new(
+    pub(in crate::live::integrity) fn new(
         stream_id: impl Into<String>,
         generation: u64,
         limits: TradeIdentityLimits,
@@ -254,7 +257,10 @@ impl LiveTradeController {
     ///
     /// Cross-generation reconciliation remains the
     /// responsibility of the surrounding recovery workflow.
-    pub(super) fn begin_generation(&mut self, generation: u64) -> Result<(), String> {
+    pub(in crate::live::integrity) fn begin_generation(
+        &mut self,
+        generation: u64,
+    ) -> Result<(), String> {
         if generation <= self.generation {
             return Err("trade generation must increase monotonically".into());
         }
@@ -310,7 +316,7 @@ impl LiveTradeController {
     ///
     /// The controller does not claim that the resulting
     /// output has been durably persisted or published.
-    pub(super) fn process(
+    pub(in crate::live::integrity) fn process(
         &mut self,
         generation: u64,
         message: &NormalizedTrades,
@@ -581,7 +587,9 @@ mod tests {
     use rust_decimal::Decimal;
 
     use crate::canonical::{EventEnvelope, Exchange, TradeSide};
-    use crate::live::integrity::{TradeCoverageAction, TradeIdentityKind, TradeSequenceKind};
+    use crate::live::integrity::trades::compiler::{
+        TradeCoverageAction, TradeIdentityKind, TradeSequenceKind,
+    };
     const STREAM_ID: &str = "bybit:spot:BTCUSDT:trades";
 
     fn limits() -> TradeIdentityLimits {

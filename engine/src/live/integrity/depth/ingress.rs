@@ -1,13 +1,22 @@
-use super::CompiledRestDepthEndpoint;
-use super::{
-    CompiledDepthContinuityPlan, DepthBookLimits, DepthBufferLimits, DepthControllerIgnoreReason,
-    DepthControllerOutcome, DepthControllerRecoveryReason, DepthResourceLimits,
-    DepthSnapshotSource, DepthSourceBinding, DepthSourceBindingError, DepthSourceEpoch,
-    DepthSyncToken, LiveDepthController, RestDepthRequestContext, RestDepthSyncCoordinator,
-    SourcePlanCompatibility,
-};
 use crate::live::config::{exchange::ExchangeConfig, format::DepthFormatConfig};
 use crate::live::infrastructure::normalization::{NormalizationSource, NormalizedDepth};
+use crate::live::integrity::depth::binding::{
+    DepthSourceBinding, DepthSourceBindingError, DepthSourceEpoch,
+};
+use crate::live::integrity::depth::book_budget::DepthBookLimits;
+use crate::live::integrity::depth::buffer::{DepthBufferLimits, DepthSyncToken};
+use crate::live::integrity::depth::continuity_compiler::{
+    CompiledDepthContinuityPlan, DepthSnapshotSource,
+};
+use crate::live::integrity::depth::controller::{
+    DepthControllerIgnoreReason, DepthControllerOutcome, DepthControllerRecoveryReason,
+    LiveDepthController,
+};
+use crate::live::integrity::depth::resources::DepthResourceLimits;
+use crate::live::integrity::depth::rest::endpoint::CompiledRestDepthEndpoint;
+use crate::live::integrity::depth::rest::request::RestDepthRequestContext;
+use crate::live::integrity::depth::rest::sync::RestDepthSyncCoordinator;
+use crate::live::integrity::source_plan_compatibility::SourcePlanCompatibility;
 
 // ============================================================
 // INTERNAL DEPTH MODE

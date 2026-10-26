@@ -1,10 +1,12 @@
 use crate::live::infrastructure::normalization::{NormalizationSource, NormalizedTrades};
 
-use super::{
-    CompiledTradeIntegrityPlan, LiveTradeController, SourcePlanCompatibility,
-    TradeControllerOutcome, TradeIdentityLimits, TradeSourceBinding, TradeSourceBindingError,
-    TradeSourceEpoch,
+use crate::live::integrity::source_plan_compatibility::SourcePlanCompatibility;
+use crate::live::integrity::trades::binding::{
+    TradeSourceBinding, TradeSourceBindingError, TradeSourceEpoch,
 };
+use crate::live::integrity::trades::compiler::CompiledTradeIntegrityPlan;
+use crate::live::integrity::trades::controller::{LiveTradeController, TradeControllerOutcome};
+use crate::live::integrity::trades::identity::TradeIdentityLimits;
 
 // ============================================================
 // INGRESS OUTCOMES

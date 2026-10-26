@@ -1,4 +1,4 @@
-use super::model::{GapReason, GapRecord};
+use crate::live::integrity::model::{GapReason, GapRecord};
 
 // ============================================================
 // TRACKER INITIALIZATION

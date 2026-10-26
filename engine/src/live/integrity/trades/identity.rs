@@ -129,7 +129,7 @@ impl TradeIdentityTracker {
     ///
     /// The caller must provide IDs belonging to this
     /// tracker's authoritative stream and generation.
-    pub(super) fn observe_batch(
+    pub(in crate::live::integrity) fn observe_batch(
         &mut self,
         ids: &[&str],
     ) -> Result<Vec<TradeIdentityDecision>, TradeIdentityError> {
@@ -204,7 +204,7 @@ impl TradeIdentityTracker {
 
     /// Convenience operation for one trade identity.
     #[cfg(test)]
-    pub(super) fn observe(
+    pub(in crate::live::integrity) fn observe(
         &mut self,
         id: &str,
     ) -> Result<TradeIdentityDecision, TradeIdentityError> {

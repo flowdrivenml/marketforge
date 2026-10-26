@@ -1,4 +1,5 @@
-use super::{GapReason, GapTracker};
+use crate::live::integrity::model::GapReason;
+use crate::live::integrity::tracker::GapTracker;
 
 // ============================================================
 // INCIDENT IDENTITY
@@ -88,7 +89,7 @@ pub enum IncidentReportingError {
 pub struct IntegrityIncidentReporter;
 
 impl IntegrityIncidentReporter {
-    pub(super) fn record(
+    pub(in crate::live::integrity) fn record(
         tracker: &mut GapTracker,
         origin: IncidentOrigin<'_>,
         detected_at_ns: i64,
@@ -172,7 +173,7 @@ impl IntegrityIncidentReporter {
 mod tests {
     use super::*;
 
-    use crate::live::integrity::IntegrityWindow;
+    use crate::live::integrity::model::IntegrityWindow;
 
     const STREAM: &str = "binance:spot:BTCUSDT:depth";
     const START: i64 = 1_000_000_000;

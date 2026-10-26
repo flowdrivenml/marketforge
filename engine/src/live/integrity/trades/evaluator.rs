@@ -1,6 +1,8 @@
 use crate::canonical::Trade;
 
-use super::{CompiledTradeIntegrityPlan, TradeIdentityKind, TradeSequenceKind};
+use crate::live::integrity::trades::compiler::{
+    CompiledTradeIntegrityPlan, TradeIdentityKind, TradeSequenceKind,
+};
 
 // ============================================================
 // ACCEPTED BASELINE
@@ -251,7 +253,7 @@ mod tests {
 
     use crate::canonical::{EventEnvelope, Exchange, TradeSide};
 
-    use crate::live::integrity::TradeCoverageAction;
+    use crate::live::integrity::trades::compiler::TradeCoverageAction;
 
     fn numeric_plan() -> CompiledTradeIntegrityPlan {
         CompiledTradeIntegrityPlan {

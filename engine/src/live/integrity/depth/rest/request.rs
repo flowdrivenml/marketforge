@@ -1,4 +1,5 @@
-use super::{DepthSourceEpoch, DepthSyncToken};
+use crate::live::integrity::depth::binding::DepthSourceEpoch;
+use crate::live::integrity::depth::buffer::DepthSyncToken;
 
 /// Trusted metadata attached to one REST snapshot request.
 ///

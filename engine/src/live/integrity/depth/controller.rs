@@ -1,12 +1,16 @@
-use super::{
-    CompiledDepthContinuityPlan, DepthContinuityDecision, DepthContinuityFamily,
-    DepthContinuityValidator, DepthIgnoreReason, DepthSequenceBaseline, DepthViolationReason,
-    to_book_changes,
+use crate::live::integrity::book_adapter::to_book_changes;
+use crate::live::integrity::depth::book_budget::{DepthBookBudget, DepthBookLimits};
+use crate::live::integrity::depth::buffer::{DepthSyncToken, PreSnapshotDepthBuffer};
+use crate::live::integrity::depth::continuity::{
+    DepthContinuityDecision, DepthContinuityValidator, DepthIgnoreReason, DepthSequenceBaseline,
+    DepthViolationReason,
 };
-use super::{DepthAcceptedTimestamp, DepthSourceTimestamp};
-use super::{DepthBookBudget, DepthBookLimits};
-use super::{DepthBridgeRule, DepthSnapshotSource, DepthSyncToken, PreSnapshotDepthBuffer};
-use super::{DepthResourceAccounting, DepthResourceLimits};
+use crate::live::integrity::depth::continuity_compiler::{
+    CompiledDepthContinuityPlan, DepthContinuityFamily,
+};
+use crate::live::integrity::depth::continuity_compiler::{DepthBridgeRule, DepthSnapshotSource};
+use crate::live::integrity::depth::resources::{DepthResourceAccounting, DepthResourceLimits};
+use crate::live::integrity::depth::timestamps::{DepthAcceptedTimestamp, DepthSourceTimestamp};
 use crate::{
     book::{BookChange, BookStore},
     canonical::BookSide,
@@ -167,7 +171,7 @@ pub struct LiveDepthController {
 // ============================================================
 
 impl LiveDepthController {
-    pub(super) fn new(
+    pub(in crate::live::integrity) fn new(
         stream_id: impl Into<String>,
         plan: CompiledDepthContinuityPlan,
         stream_generation: u64,
@@ -240,7 +244,10 @@ impl LiveDepthController {
     ///
     /// A new budget may be installed after synchronization
     /// has been explicitly invalidated.
-    pub(super) fn set_book_limits(&mut self, limits: DepthBookLimits) -> Result<(), String> {
+    pub(in crate::live::integrity) fn set_book_limits(
+        &mut self,
+        limits: DepthBookLimits,
+    ) -> Result<(), String> {
         let limits = limits
             .validate()
             .map_err(|error| format!("invalid retained book limits: {error:?}"))?;
@@ -268,7 +275,7 @@ impl LiveDepthController {
     /// Resource policy cannot be changed while synchronized,
     /// while holding a Bitget snapshot, or while a REST
     /// synchronization attempt is active.
-    pub(super) fn set_resource_limits(
+    pub(in crate::live::integrity) fn set_resource_limits(
         &mut self,
         limits: DepthResourceLimits,
     ) -> Result<(), String> {
@@ -308,7 +315,10 @@ impl LiveDepthController {
     /// or schedule recovery.
     ///
     ///
-    pub(super) fn begin_rest_attempt(&mut self, token: DepthSyncToken) -> Result<(), String> {
+    pub(in crate::live::integrity) fn begin_rest_attempt(
+        &mut self,
+        token: DepthSyncToken,
+    ) -> Result<(), String> {
         if self.plan.snapshot_source != DepthSnapshotSource::Rest
             || !self.plan.requires_update_buffer
         {
@@ -360,7 +370,7 @@ impl LiveDepthController {
     ///
     /// A value of 1 represents the best bid/ask level,
     /// not unrestricted book coverage.
-    pub(super) fn new_with_subscription_depth(
+    pub(in crate::live::integrity) fn new_with_subscription_depth(
         stream_id: impl Into<String>,
         plan: CompiledDepthContinuityPlan,
         stream_generation: u64,
@@ -434,7 +444,10 @@ impl LiveDepthController {
     /// The caller is responsible for assigning authoritative,
     /// monotonically increasing generation identifiers.
     /// Any previously synchronized book becomes invalid.
-    pub(super) fn begin_generation(&mut self, generation: u64) -> Result<(), String> {
+    pub(in crate::live::integrity) fn begin_generation(
+        &mut self,
+        generation: u64,
+    ) -> Result<(), String> {
         if generation <= self.stream_generation {
             return Err("new stream generation must be greater \
                  than the current generation"
@@ -456,7 +469,7 @@ impl LiveDepthController {
     ///
     /// This clears the book rather than leaving a stale
     /// book accessible as if it were authoritative.
-    pub(super) fn invalidate(&mut self) {
+    pub(in crate::live::integrity) fn invalidate(&mut self) {
         self.baseline = None;
         self.pending_bitget_snapshot = None;
 
@@ -483,7 +496,7 @@ impl LiveDepthController {
     /// REST snapshots require a separately verified
     /// snapshot-bridge procedure and are intentionally
     /// rejected here.
-    pub(super) fn process(
+    pub(in crate::live::integrity) fn process(
         &mut self,
         generation: u64,
         message: &NormalizedDepth,
@@ -1210,7 +1223,7 @@ impl LiveDepthController {
     /// This operation does not perform HTTP requests or publish
     /// market data.
 
-    pub(super) fn complete_rest_snapshot(
+    pub(in crate::live::integrity) fn complete_rest_snapshot(
         &mut self,
         token: DepthSyncToken,
         buffer: &mut PreSnapshotDepthBuffer<NormalizedDepth>,
@@ -2459,7 +2472,9 @@ mod tests {
 
         assert_eq!(controller.baseline().unwrap().last_sequence, 205);
     }
-    use crate::live::integrity::{DepthBufferLimits, DepthSyncToken, PreSnapshotDepthBuffer};
+    use crate::live::integrity::depth::buffer::{
+        DepthBufferLimits, DepthSyncToken, PreSnapshotDepthBuffer,
+    };
 
     fn rest_token() -> DepthSyncToken {
         DepthSyncToken {

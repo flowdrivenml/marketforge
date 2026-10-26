@@ -1,7 +1,7 @@
-use super::{
-    ConfirmedIntegrityIncident, GapTracker, IncidentOrigin, IncidentReportingError,
-    IntegrityIncidentReporter,
+use crate::live::integrity::incidents::reporting::{
+    ConfirmedIntegrityIncident, IncidentOrigin, IncidentReportingError, IntegrityIncidentReporter,
 };
+use crate::live::integrity::tracker::GapTracker;
 
 // ============================================================
 // EPISODE IDENTITY
@@ -678,7 +678,7 @@ fn incident_matches_failure(
 mod tests {
     use super::*;
 
-    use crate::live::integrity::GapReason;
+    use crate::live::integrity::model::GapReason;
 
     const STREAM: &str = "binance:spot:BTCUSDT:depth";
     const START: i64 = 1_000_000_000;

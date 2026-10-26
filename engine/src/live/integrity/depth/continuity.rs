@@ -1,6 +1,8 @@
 use crate::canonical::SequenceMetadata;
 
-use super::depth_continuity_compiler::{CompiledDepthContinuityPlan, DepthContinuityFamily};
+use crate::live::integrity::depth::continuity_compiler::{
+    CompiledDepthContinuityPlan, DepthContinuityFamily,
+};
 
 // ============================================================
 // DECISIONS
@@ -387,7 +389,9 @@ fn reject(reason: DepthViolationReason) -> DepthContinuityDecision {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::live::integrity::{DepthBridgeRule, DepthSnapshotSource};
+    use crate::live::integrity::depth::continuity_compiler::{
+        DepthBridgeRule, DepthSnapshotSource,
+    };
 
     fn plan(family: DepthContinuityFamily) -> CompiledDepthContinuityPlan {
         CompiledDepthContinuityPlan {

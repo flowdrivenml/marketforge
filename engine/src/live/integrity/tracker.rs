@@ -1,8 +1,8 @@
-use super::model::{
+use crate::live::integrity::model::{
     GapHistoryCoverage, GapHistorySnapshot, GapReason, GapRecord, GapWindowStats, GapWindows,
     IntegrityWindow, StreamIntegritySnapshot,
 };
-use super::validation;
+use crate::live::integrity::validation;
 use std::collections::VecDeque;
 
 // ============================================================
