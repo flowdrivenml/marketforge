@@ -129,12 +129,24 @@ verify_live_unit() {
 }
 
 verify_live_integration() {
+  local target
+  for target in \
+    live_websocket live_rest live_normalization live_integrity \
+    live_config live_metrics live_exchange_contracts; do
+    run_gate \
+      "$target" \
+      cargo test \
+      "${CARGO_FLAGS[@]}" \
+      "${LIVE_FLAGS[@]}" \
+      --test "$target"
+  done
+
   run_gate \
-    live-integration \
+    live-network-compile \
     cargo test \
     "${CARGO_FLAGS[@]}" \
     "${LIVE_FLAGS[@]}" \
-    --test live_suite
+    --test live_network --no-run
 }
 
 verify_live_docs() {
