@@ -546,3 +546,6 @@ fn value_text(value: &Value) -> String {
 fn invalid(reason: impl Into<String>) -> SubscriptionAckError {
     SubscriptionAckError::Configuration(reason.into())
 }
+
+#[cfg(test)]
+mod tests;

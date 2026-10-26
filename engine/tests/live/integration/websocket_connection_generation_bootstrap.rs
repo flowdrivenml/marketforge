@@ -97,7 +97,7 @@ fn desired(revision: u64, include_eth: bool) -> DesiredSubscriptionSnapshot {
 // ============================================================
 
 #[test]
-fn w46_bootstraps_current_demand() {
+fn bootstraps_current_demand() {
     let (fence, stamp) = connected();
 
     let recovery = SharedStreamRecovery::new();
@@ -142,7 +142,7 @@ fn w46_bootstraps_current_demand() {
 // ============================================================
 
 #[test]
-fn w46_reconnect_bootstrap_preserves_recovery_authority() {
+fn reconnect_bootstrap_preserves_recovery_authority() {
     let (fence, first_stamp) = connected();
 
     let recovery = SharedStreamRecovery::new();
@@ -212,7 +212,7 @@ fn w46_reconnect_bootstrap_preserves_recovery_authority() {
 // ============================================================
 
 #[test]
-fn w46_bootstrap_rejects_stale_revision() {
+fn bootstrap_rejects_stale_revision() {
     let (fence, stamp) = connected();
 
     let recovery = SharedStreamRecovery::new();
@@ -240,7 +240,7 @@ fn w46_bootstrap_rejects_stale_revision() {
 // ============================================================
 
 #[test]
-fn w46_bootstrap_rejects_wrong_route() {
+fn bootstrap_rejects_wrong_route() {
     let (fence, stamp) = connected();
 
     let recovery = SharedStreamRecovery::new();
@@ -271,7 +271,7 @@ fn w46_bootstrap_rejects_wrong_route() {
 // ============================================================
 
 #[test]
-fn w46_bootstrap_rejects_revoked_connection() {
+fn bootstrap_rejects_revoked_connection() {
     let (fence, stamp) = connected();
 
     fence.failed(&stamp).unwrap();
@@ -302,7 +302,7 @@ fn w46_bootstrap_rejects_revoked_connection() {
 // ============================================================
 
 #[test]
-fn w46_bootstrap_rejects_invalid_limits() {
+fn bootstrap_rejects_invalid_limits() {
     let mut limits = limits();
 
     limits.maximum_pending = 0;

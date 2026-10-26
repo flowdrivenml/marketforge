@@ -88,7 +88,7 @@ fn limits() -> SubscriptionDriverLimits {
 }
 
 #[tokio::test]
-async fn w43_driver_correlates_two_outstanding_subscriptions() {
+async fn driver_correlates_two_outstanding_subscriptions() {
     let (session, recovery, tokens) = setup();
 
     let (command_tx, command_rx) = mpsc::channel(8);
@@ -249,7 +249,7 @@ async fn w43_driver_correlates_two_outstanding_subscriptions() {
 }
 
 #[tokio::test]
-async fn w43_driver_preserves_ack_before_send_receipt() {
+async fn driver_preserves_ack_before_send_receipt() {
     let (session, recovery, tokens) = setup();
 
     let (command_tx, command_rx) = mpsc::channel(8);

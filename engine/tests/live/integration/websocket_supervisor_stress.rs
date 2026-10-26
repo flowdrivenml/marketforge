@@ -60,7 +60,7 @@ fn infrastructure(config: &ExchangeConfig) -> (CompiledWebSocketLimiters, RateLi
 // ============================================================
 
 #[tokio::test]
-async fn w26_inbound_processing_continues_while_limiter_waits() {
+async fn inbound_processing_continues_while_limiter_waits() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();

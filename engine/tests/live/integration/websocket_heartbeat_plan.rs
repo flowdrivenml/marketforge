@@ -23,7 +23,7 @@ fn load(profile: &str) -> ExchangeConfig {
 }
 
 #[test]
-fn w25_compiles_all_fifteen_real_heartbeat_profiles() {
+fn compiles_all_fifteen_real_heartbeat_profiles() {
     let mut counts = [0_usize; 4];
 
     for exchange in EXCHANGES {
@@ -73,7 +73,7 @@ fn w25_compiles_all_fifteen_real_heartbeat_profiles() {
 }
 
 #[test]
-fn w25_server_control_does_not_invent_client_ping() {
+fn server_control_does_not_invent_client_ping() {
     for profile in [
         "binance_spot",
         "binance_linear",
@@ -96,7 +96,7 @@ fn w25_server_control_does_not_invent_client_ping() {
 }
 
 #[test]
-fn w25_inactivity_heartbeat_uses_incoming_traffic() {
+fn inactivity_heartbeat_uses_incoming_traffic() {
     for profile in ["okx_spot", "okx_linear", "okx_inverse"] {
         let config = load(profile);
 
@@ -125,7 +125,7 @@ fn w25_inactivity_heartbeat_uses_incoming_traffic() {
 }
 
 #[test]
-fn w25_periodic_heartbeats_preserve_native_messages() {
+fn periodic_heartbeats_preserve_native_messages() {
     for profile in [
         "bybit_spot",
         "bybit_linear",
@@ -152,28 +152,4 @@ fn w25_periodic_heartbeats_preserve_native_messages() {
 
         assert!(!application.protocol.request_text().is_empty());
     }
-}
-
-#[test]
-fn w25_rejects_ambiguous_heartbeat_configuration() {
-    let mut config = load("okx_spot");
-
-    let heartbeat = config.websocket.heartbeat.as_mut().unwrap();
-
-    // Inactivity-based scheduling must not silently
-    // become periodic scheduling.
-    heartbeat.interval_seconds = Some(20);
-
-    assert!(HeartbeatPlanCompiler::compile(&config).is_err());
-}
-
-#[test]
-fn w25_rejects_invalid_server_control_payload_policy() {
-    let mut config = load("binance_spot");
-
-    let heartbeat = config.websocket.heartbeat.as_mut().unwrap();
-
-    heartbeat.echo_ping_payload = Some(false);
-
-    assert!(HeartbeatPlanCompiler::compile(&config).is_err());
 }

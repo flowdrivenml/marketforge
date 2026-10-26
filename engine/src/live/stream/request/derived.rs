@@ -90,3 +90,6 @@ impl CreateDerivedStreamRequest {
         validation::validate_derived(self)
     }
 }
+
+#[cfg(test)]
+mod tests;

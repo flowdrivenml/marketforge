@@ -496,7 +496,7 @@ async fn check(case: ProfileCase, channel: &'static str) -> Result<String, Strin
 
 #[tokio::test]
 #[ignore = "connects to public exchange WebSockets"]
-async fn w47_all_exchange_profiles_live() {
+async fn all_exchange_profiles_live() {
     let mut passed = 0_usize;
     let mut failed = Vec::new();
 

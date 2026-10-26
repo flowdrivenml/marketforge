@@ -351,3 +351,6 @@ impl GapTracker {
         self.records.iter()
     }
 }
+
+#[cfg(test)]
+mod tests;

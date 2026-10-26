@@ -898,3 +898,6 @@ impl DepthFormatConfig {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

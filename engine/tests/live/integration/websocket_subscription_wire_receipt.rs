@@ -94,7 +94,7 @@ base_url = "https://example.invalid"
 // ============================================================
 
 #[tokio::test]
-async fn w43_tracked_subscription_receipt_follows_real_send() {
+async fn tracked_subscription_receipt_follows_real_send() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();

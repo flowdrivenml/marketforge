@@ -243,3 +243,6 @@ pub fn validate_depth(config: &DepthFormatConfig) -> Result<(), String> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

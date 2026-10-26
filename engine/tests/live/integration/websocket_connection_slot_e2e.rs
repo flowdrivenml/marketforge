@@ -260,7 +260,7 @@ async fn confirmations(
 // ============================================================
 
 #[tokio::test]
-async fn w46_connection_slot_reconnects_and_restores_current_demand() {
+async fn connection_slot_reconnects_and_restores_current_demand() {
     // --------------------------------------------------------
     // START LOOPBACK SERVER
     // --------------------------------------------------------
@@ -529,7 +529,7 @@ async fn w46_connection_slot_reconnects_and_restores_current_demand() {
 }
 
 #[tokio::test]
-async fn w46_demand_change_reconnects_healthy_connection() {
+async fn demand_change_reconnects_healthy_connection() {
     // --------------------------------------------------------
     // LOOPBACK SERVER
     // --------------------------------------------------------
@@ -816,7 +816,7 @@ async fn w46_demand_change_reconnects_healthy_connection() {
 
 #[tokio::test]
 #[ignore = "requires internet access to Binance Spot"]
-async fn w47_binance_spot_live_trades() {
+async fn binance_spot_live_trades() {
     const LIVE_URL: &str = "wss://stream.binance.com:443/ws";
 
     const LIVE_TIMEOUT: Duration = Duration::from_secs(30);

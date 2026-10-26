@@ -254,3 +254,6 @@ pub struct QuantityConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zero_quantity_action: Option<String>,
 }
+
+#[cfg(test)]
+mod tests;

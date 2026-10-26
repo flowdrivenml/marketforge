@@ -138,3 +138,6 @@ impl FormatIdentity {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

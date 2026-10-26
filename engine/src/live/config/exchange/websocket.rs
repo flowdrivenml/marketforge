@@ -429,3 +429,6 @@ pub struct ConnectionConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reconnect_strategy: Option<String>,
 }
+
+#[cfg(test)]
+mod tests;

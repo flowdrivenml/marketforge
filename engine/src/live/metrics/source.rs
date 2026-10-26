@@ -397,3 +397,6 @@ impl SourceMetrics {
         self.processing_latency.last()
     }
 }
+
+#[cfg(test)]
+mod tests;

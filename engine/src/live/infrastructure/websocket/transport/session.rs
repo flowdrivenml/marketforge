@@ -451,3 +451,6 @@ impl ConnectionSession {
         WebSocketTransportError::Session(error.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests;

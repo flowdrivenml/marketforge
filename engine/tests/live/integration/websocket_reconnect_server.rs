@@ -168,7 +168,7 @@ async fn test_client_generation(url: &str, streams: &[&str], request_id_base: u6
 // ============================================================
 
 #[tokio::test]
-async fn w46_scripted_server_supports_two_generations() {
+async fn scripted_server_supports_two_generations() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();

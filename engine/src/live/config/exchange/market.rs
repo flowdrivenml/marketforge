@@ -215,3 +215,6 @@ impl MarketMapping {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

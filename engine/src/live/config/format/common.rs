@@ -368,3 +368,6 @@ pub struct ContractNormalization {
 
     pub derive_quote_quantity: bool,
 }
+
+#[cfg(test)]
+mod tests;

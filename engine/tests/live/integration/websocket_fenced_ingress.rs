@@ -130,7 +130,7 @@ fn message(id: &str) -> NormalizedTrades {
 // ============================================================
 
 #[test]
-fn w33_fenced_trade_ingress_accepts_ready_generation() {
+fn fenced_trade_ingress_accepts_ready_generation() {
     let fence = ConnectionFence::new("runtime-1", "slot-1").unwrap();
 
     let stamp = fence.begin_connect().unwrap();
@@ -162,7 +162,7 @@ fn w33_fenced_trade_ingress_accepts_ready_generation() {
 // ============================================================
 
 #[test]
-fn w33_fenced_trade_ingress_rejects_generation_mismatch() {
+fn fenced_trade_ingress_rejects_generation_mismatch() {
     let fence = ConnectionFence::new("runtime-1", "slot-1").unwrap();
 
     let stamp = fence.begin_connect().unwrap();
@@ -197,7 +197,7 @@ fn w33_fenced_trade_ingress_rejects_generation_mismatch() {
 // ============================================================
 
 #[test]
-fn w33_fenced_trade_ingress_rejects_revoked_connection() {
+fn fenced_trade_ingress_rejects_revoked_connection() {
     let fence = ConnectionFence::new("runtime-1", "slot-1").unwrap();
 
     let stamp = fence.begin_connect().unwrap();
@@ -235,7 +235,7 @@ fn w33_fenced_trade_ingress_rejects_revoked_connection() {
 // ============================================================
 
 #[test]
-fn w33_fenced_trade_ingress_rejects_connected_but_unready() {
+fn fenced_trade_ingress_rejects_connected_but_unready() {
     let fence = ConnectionFence::new("runtime-1", "slot-1").unwrap();
 
     let stamp = fence.begin_connect().unwrap();
@@ -263,7 +263,7 @@ fn w33_fenced_trade_ingress_rejects_connected_but_unready() {
 // ============================================================
 
 #[test]
-fn w33_fenced_trade_ingress_rejects_old_epoch_after_reconnect() {
+fn fenced_trade_ingress_rejects_old_epoch_after_reconnect() {
     let fence = ConnectionFence::new("runtime-1", "slot-1").unwrap();
 
     let first = fence.begin_connect().unwrap();
@@ -382,7 +382,7 @@ fn depth_message() -> NormalizedDepth {
 }
 
 #[test]
-fn w33_fenced_depth_ingress_rejects_stale_generation() {
+fn fenced_depth_ingress_rejects_stale_generation() {
     let fence = ConnectionFence::new("runtime-1", "depth-slot").unwrap();
 
     let first = fence.begin_connect().unwrap();

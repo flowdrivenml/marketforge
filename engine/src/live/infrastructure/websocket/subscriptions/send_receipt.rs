@@ -116,3 +116,6 @@ pub fn subscription_send_receipt(
         SubscriptionSendReceiptReceiver { receiver },
     )
 }
+
+#[cfg(test)]
+mod tests;

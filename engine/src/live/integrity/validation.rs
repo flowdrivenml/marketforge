@@ -163,3 +163,6 @@ fn validate_sequence_evidence(record: &GapRecord) -> Result<(), String> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

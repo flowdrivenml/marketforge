@@ -106,3 +106,6 @@ impl CreateSourceStreamRequest {
         super::validation::validate(self)
     }
 }
+
+#[cfg(test)]
+mod tests;

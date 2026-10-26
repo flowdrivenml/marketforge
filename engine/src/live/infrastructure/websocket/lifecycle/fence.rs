@@ -340,3 +340,6 @@ impl ConnectionFence {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
+
+#[cfg(test)]
+mod tests;

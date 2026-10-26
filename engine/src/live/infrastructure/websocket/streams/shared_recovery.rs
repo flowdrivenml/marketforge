@@ -49,3 +49,6 @@ impl SharedStreamRecovery {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 }
+
+#[cfg(test)]
+mod tests;

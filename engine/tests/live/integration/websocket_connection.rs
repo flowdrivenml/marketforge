@@ -69,7 +69,7 @@ base_url = "https://example.invalid"
 // ============================================================
 
 #[tokio::test]
-async fn w1_connect_send_receive_close() {
+async fn connect_send_receive_close() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();
@@ -138,7 +138,7 @@ async fn w1_connect_send_receive_close() {
 // ============================================================
 
 #[tokio::test]
-async fn w1_rejects_insecure_external_url() {
+async fn rejects_insecure_external_url() {
     let (compiled, shared) = compiled_limits();
 
     let result = WebSocketConnector::connect(
@@ -163,7 +163,7 @@ async fn w1_rejects_insecure_external_url() {
 // ============================================================
 
 #[tokio::test]
-async fn w1_outbound_limiter_rejects_third_message() {
+async fn outbound_limiter_rejects_third_message() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();

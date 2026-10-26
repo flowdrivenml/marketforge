@@ -550,3 +550,6 @@ impl PublicationConnectionMetrics {
         self.publication_latency.last()
     }
 }
+
+#[cfg(test)]
+mod tests;

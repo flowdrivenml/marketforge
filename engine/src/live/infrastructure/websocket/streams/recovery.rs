@@ -486,3 +486,6 @@ impl StreamRecoveryCoordinator {
         Ok(entry)
     }
 }
+
+#[cfg(test)]
+mod tests;

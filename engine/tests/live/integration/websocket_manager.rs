@@ -252,13 +252,6 @@ fn trade_source(symbol: &str) -> StreamSource {
 // EVENT HELPERS
 // ============================================================
 
-async fn next_input(rx: &mut mpsc::Receiver<StreamInput>, label: &str) -> StreamInput {
-    time::timeout(EVENT_TIMEOUT, rx.recv())
-        .await
-        .unwrap_or_else(|_| panic!("timed out waiting for {label}"))
-        .unwrap_or_else(|| panic!("{label} channel closed unexpectedly"))
-}
-
 async fn wait_connected(rx: &mut mpsc::Receiver<StreamInput>, label: &str) {
     let deadline = Instant::now() + EVENT_TIMEOUT;
 

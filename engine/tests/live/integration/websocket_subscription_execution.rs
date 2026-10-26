@@ -75,7 +75,7 @@ fn setup() -> (
 }
 
 #[tokio::test]
-async fn w43_ack_before_receipt_is_preserved() {
+async fn preserves_ack_received_before_send_receipt() {
     let (_fence, mut recovery, mut session, token) = setup();
 
     let (outbound_tx, mut outbound_rx) = mpsc::channel(8);
@@ -164,7 +164,7 @@ async fn w43_ack_before_receipt_is_preserved() {
 }
 
 #[tokio::test]
-async fn w43_subscription_timeout_does_not_grant_recovery() {
+async fn subscription_timeout_does_not_grant_recovery() {
     let (_fence, mut recovery, mut session, token) = setup();
 
     let (outbound_tx, mut outbound_rx) = mpsc::channel(8);

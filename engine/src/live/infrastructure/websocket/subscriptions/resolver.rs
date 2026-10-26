@@ -285,3 +285,6 @@ impl SubscriptionResolver {
 fn missing(channel_name: &str) -> SubscriptionResolutionError {
     SubscriptionResolutionError::MissingTemplate(channel_name.to_owned())
 }
+
+#[cfg(test)]
+mod tests;

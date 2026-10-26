@@ -71,7 +71,7 @@ fn setup() -> (
 }
 
 #[tokio::test]
-async fn w43_ack_advances_subscription_but_not_recovery() {
+async fn ack_advances_subscription_but_not_recovery() {
     let (fence, stamp, mut recovery, mut session) = setup();
 
     let token = recovery
@@ -123,7 +123,7 @@ async fn w43_ack_advances_subscription_but_not_recovery() {
 }
 
 #[tokio::test]
-async fn w43_rejected_ack_never_advances_recovery() {
+async fn rejected_ack_never_advances_recovery() {
     let (fence, stamp, mut recovery, mut session) = setup();
 
     let token = recovery
@@ -169,7 +169,7 @@ async fn w43_rejected_ack_never_advances_recovery() {
 }
 
 #[test]
-fn w43_rebinding_invalidates_old_ack_authority() {
+fn rebinding_invalidates_old_ack_authority() {
     let (fence, stamp, mut recovery, mut session) = setup();
 
     let old = recovery
@@ -222,7 +222,7 @@ fn w43_rebinding_invalidates_old_ack_authority() {
 }
 
 #[test]
-fn w43_disconnect_revokes_pending_subscription() {
+fn disconnect_revokes_pending_subscription() {
     let (fence, stamp, mut recovery, mut session) = setup();
 
     let token = recovery
@@ -255,7 +255,7 @@ fn w43_disconnect_revokes_pending_subscription() {
 }
 
 #[test]
-fn w43_subscription_timeout_preserves_recovery_state() {
+fn subscription_timeout_preserves_recovery_state() {
     let (fence, stamp, mut recovery, mut session) = setup();
 
     let token = recovery

@@ -263,3 +263,6 @@ fn read_object_path<'a>(argument: &'a Value, path: &str) -> Option<&'a Value> {
 
     Some(current)
 }
+
+#[cfg(test)]
+mod tests;

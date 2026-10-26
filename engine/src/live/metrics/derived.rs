@@ -437,3 +437,6 @@ impl DerivedMetrics {
         self.buffer_wait_latency.is_some()
     }
 }
+
+#[cfg(test)]
+mod tests;

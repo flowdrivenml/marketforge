@@ -326,3 +326,6 @@ fn optional_seconds(
 fn invalid(reason: impl Into<String>) -> WebSocketTransportError {
     WebSocketTransportError::Configuration(reason.into())
 }
+
+#[cfg(test)]
+mod tests;

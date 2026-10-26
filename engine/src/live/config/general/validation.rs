@@ -288,3 +288,6 @@ fn validate_unix_socket_path(value: &str, field: &str) -> Result<(), String> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

@@ -274,3 +274,6 @@ fn validate_matcher_fields(config: &HeartbeatConfig) -> Result<(), WebSocketTran
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

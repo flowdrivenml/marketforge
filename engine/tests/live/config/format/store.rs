@@ -85,16 +85,6 @@ impl TestDirectory {
         )
         .unwrap();
     }
-
-    fn copy_depth(&self, profile: &str) {
-        let filename = format!("{profile}.toml");
-
-        fs::copy(
-            format_directory().join("depth").join(&filename),
-            self.path.join("depth").join(&filename),
-        )
-        .unwrap();
-    }
 }
 
 impl Drop for TestDirectory {
@@ -106,24 +96,6 @@ impl Drop for TestDirectory {
 // ============================================================
 // CONSTRUCTION
 // ============================================================
-
-#[test]
-fn new_store_is_empty() {
-    let store = FormatConfigStore::new();
-
-    assert!(store.is_empty());
-    assert_eq!(store.len(), 0);
-    assert_eq!(store.trade_count(), 0);
-    assert_eq!(store.depth_count(), 0);
-}
-
-#[test]
-fn default_store_is_empty() {
-    let store = FormatConfigStore::default();
-
-    assert!(store.is_empty());
-    assert_eq!(store.len(), 0);
-}
 
 // ============================================================
 // COMPLETE STORE LOADING
@@ -335,158 +307,6 @@ fn iteration_is_deterministic() {
 // ERROR HANDLING
 // ============================================================
 
-#[test]
-fn reject_missing_root_directory() {
-    let directory = TestDirectory::new();
-    let missing = directory.path().join("nonexistent");
-
-    assert!(FormatConfigStore::load_dir(&missing).is_err());
-}
-
-#[test]
-fn reject_missing_trade_directory() {
-    let directory = TestDirectory::new();
-
-    fs::create_dir_all(directory.path().join("depth")).unwrap();
-
-    assert!(FormatConfigStore::load_dir(directory.path()).is_err());
-}
-
-#[test]
-fn reject_missing_depth_directory() {
-    let directory = TestDirectory::new();
-
-    fs::create_dir_all(directory.path().join("trades")).unwrap();
-
-    assert!(FormatConfigStore::load_dir(directory.path()).is_err());
-}
-
-#[test]
-fn reject_invalid_trade_toml() {
-    let directory = TestDirectory::new();
-    directory.create_format_dirs();
-
-    fs::write(
-        directory.path().join("trades").join("invalid.toml"),
-        "[format\ninvalid",
-    )
-    .unwrap();
-
-    assert!(FormatConfigStore::load_dir(directory.path()).is_err());
-}
-
-#[test]
-fn reject_invalid_depth_toml() {
-    let directory = TestDirectory::new();
-    directory.create_format_dirs();
-
-    fs::write(
-        directory.path().join("depth").join("invalid.toml"),
-        "[format\ninvalid",
-    )
-    .unwrap();
-
-    assert!(FormatConfigStore::load_dir(directory.path()).is_err());
-}
-
-#[test]
-fn reject_trade_filename_identity_mismatch() {
-    let directory = TestDirectory::new();
-    directory.create_format_dirs();
-
-    fs::copy(
-        format_directory().join("trades/binance_spot.toml"),
-        directory.path().join("trades/wrong_name.toml"),
-    )
-    .unwrap();
-
-    assert!(FormatConfigStore::load_dir(directory.path()).is_err());
-}
-
-#[test]
-fn reject_depth_filename_identity_mismatch() {
-    let directory = TestDirectory::new();
-    directory.create_format_dirs();
-
-    fs::copy(
-        format_directory().join("depth/binance_spot.toml"),
-        directory.path().join("depth/wrong_name.toml"),
-    )
-    .unwrap();
-
-    assert!(FormatConfigStore::load_dir(directory.path()).is_err());
-}
-
-#[test]
-fn reject_duplicate_trade_identity() {
-    let directory = TestDirectory::new();
-    directory.create_format_dirs();
-
-    directory.copy_trade("binance_spot");
-
-    // Same declared format identity, different filename.
-    fs::copy(
-        format_directory().join("trades/binance_spot.toml"),
-        directory.path().join("trades/duplicate.toml"),
-    )
-    .unwrap();
-
-    assert!(FormatConfigStore::load_dir(directory.path()).is_err());
-}
-
-#[test]
-fn reject_duplicate_depth_identity() {
-    let directory = TestDirectory::new();
-    directory.create_format_dirs();
-
-    directory.copy_depth("binance_spot");
-
-    fs::copy(
-        format_directory().join("depth/binance_spot.toml"),
-        directory.path().join("depth/duplicate.toml"),
-    )
-    .unwrap();
-
-    assert!(FormatConfigStore::load_dir(directory.path()).is_err());
-}
-
 // ============================================================
 // PARTIAL STORES
 // ============================================================
-
-#[test]
-fn load_trade_only_store() {
-    let directory = TestDirectory::new();
-    directory.create_format_dirs();
-    directory.copy_trade("binance_spot");
-
-    let store = FormatConfigStore::load_dir(directory.path()).unwrap();
-
-    assert_eq!(store.trade_count(), 1);
-    assert_eq!(store.depth_count(), 0);
-    assert_eq!(store.len(), 1);
-}
-
-#[test]
-fn load_depth_only_store() {
-    let directory = TestDirectory::new();
-    directory.create_format_dirs();
-    directory.copy_depth("binance_spot");
-
-    let store = FormatConfigStore::load_dir(directory.path()).unwrap();
-
-    assert_eq!(store.trade_count(), 0);
-    assert_eq!(store.depth_count(), 1);
-    assert_eq!(store.len(), 1);
-}
-
-#[test]
-fn load_empty_format_directories() {
-    let directory = TestDirectory::new();
-    directory.create_format_dirs();
-
-    let store = FormatConfigStore::load_dir(directory.path()).unwrap();
-
-    assert!(store.is_empty());
-    assert_eq!(store.len(), 0);
-}

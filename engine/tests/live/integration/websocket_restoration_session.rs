@@ -74,7 +74,7 @@ fn desired() -> DesiredSubscriptionSnapshot {
 }
 
 #[test]
-fn w46_prepares_fresh_stream_epochs() {
+fn prepares_fresh_stream_epochs() {
     let (fence, stamp) = connected();
 
     let plan = SubscriptionRestorationPlanner::plan(&config(), &fence, &stamp, &desired()).unwrap();
@@ -113,7 +113,7 @@ fn w46_prepares_fresh_stream_epochs() {
 }
 
 #[test]
-fn w46_rejects_wrong_physical_route() {
+fn rejects_wrong_physical_route() {
     let (fence, stamp) = connected();
 
     let plan = SubscriptionRestorationPlanner::plan(&config(), &fence, &stamp, &desired()).unwrap();
@@ -133,7 +133,7 @@ fn w46_rejects_wrong_physical_route() {
 }
 
 #[test]
-fn w46_rejects_stale_demand_revision() {
+fn rejects_stale_demand_revision() {
     let (fence, stamp) = connected();
 
     let plan = SubscriptionRestorationPlanner::plan(&config(), &fence, &stamp, &desired()).unwrap();
@@ -152,7 +152,7 @@ fn w46_rejects_stale_demand_revision() {
 }
 
 #[test]
-fn w46_rejects_revoked_connection_generation() {
+fn rejects_revoked_connection_generation() {
     let (fence, stamp) = connected();
 
     let plan = SubscriptionRestorationPlanner::plan(&config(), &fence, &stamp, &desired()).unwrap();
@@ -168,7 +168,7 @@ fn w46_rejects_revoked_connection_generation() {
 }
 
 #[test]
-fn w46_rebinds_existing_streams_after_reconnect() {
+fn rebinds_existing_streams_after_reconnect() {
     let (fence, first_stamp) = connected();
 
     let mut recovery = StreamRecoveryCoordinator::new();
@@ -232,7 +232,7 @@ fn w46_rebinds_existing_streams_after_reconnect() {
 }
 
 #[test]
-fn w46_reconnection_retires_removed_demand() {
+fn reconnection_retires_removed_demand() {
     let (fence, first_stamp) = connected();
 
     let mut recovery = StreamRecoveryCoordinator::new();
@@ -275,7 +275,7 @@ fn w46_reconnection_retires_removed_demand() {
 }
 
 #[test]
-fn w46_conflicting_stream_kind_does_not_modify_authority() {
+fn conflicting_stream_kind_does_not_modify_authority() {
     let (fence, stamp) = connected();
 
     let mut recovery = StreamRecoveryCoordinator::new();

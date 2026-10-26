@@ -149,3 +149,6 @@ impl ExchangeConfigStore {
         self.profiles.contains_key(profile)
     }
 }
+
+#[cfg(test)]
+mod tests;

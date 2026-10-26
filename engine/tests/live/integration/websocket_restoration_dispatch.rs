@@ -89,7 +89,7 @@ fn commands() -> (
 }
 
 #[tokio::test]
-async fn w46_dispatches_all_commands_to_driver_channel() {
+async fn dispatches_all_commands_to_driver_channel() {
     let (fence, stamp, commands) = commands();
 
     let (sender, mut receiver) = mpsc::channel(4);
@@ -115,7 +115,7 @@ async fn w46_dispatches_all_commands_to_driver_channel() {
 }
 
 #[tokio::test]
-async fn w46_rejects_stale_demand_before_admission() {
+async fn rejects_stale_demand_before_admission() {
     let (fence, stamp, commands) = commands();
 
     let (sender, mut receiver) = mpsc::channel(4);
@@ -132,7 +132,7 @@ async fn w46_rejects_stale_demand_before_admission() {
 }
 
 #[tokio::test]
-async fn w46_rejects_revoked_generation() {
+async fn rejects_revoked_generation() {
     let (fence, stamp, commands) = commands();
 
     let (sender, mut receiver) = mpsc::channel(4);
@@ -154,7 +154,7 @@ async fn w46_rejects_revoked_generation() {
 }
 
 #[tokio::test]
-async fn w46_partial_admission_is_reported_explicitly() {
+async fn partial_admission_is_reported_explicitly() {
     let (fence, stamp, commands) = commands();
 
     // One available slot, but two restoration commands.
@@ -185,7 +185,7 @@ async fn w46_partial_admission_is_reported_explicitly() {
 }
 
 #[tokio::test]
-async fn w46_detects_demand_change_while_waiting_for_capacity() {
+async fn detects_demand_change_while_waiting_for_capacity() {
     let (fence, stamp, commands) = commands();
 
     let (sender, mut receiver) = mpsc::channel(1);

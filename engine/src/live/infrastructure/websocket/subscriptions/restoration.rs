@@ -340,3 +340,6 @@ fn valid_identifier(value: &str) -> bool {
             .chars()
             .any(|character| character.is_whitespace() || character.is_control())
 }
+
+#[cfg(test)]
+mod tests;

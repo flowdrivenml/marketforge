@@ -464,3 +464,6 @@ fn validate_nonempty(value: &str, name: &str) -> Result<(), SubscriptionProtocol
 fn invalid(reason: impl Into<String>) -> SubscriptionProtocolError {
     SubscriptionProtocolError::Configuration(reason.into())
 }
+
+#[cfg(test)]
+mod tests;

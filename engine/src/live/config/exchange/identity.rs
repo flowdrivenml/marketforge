@@ -69,3 +69,6 @@ impl ExchangeIdentity {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

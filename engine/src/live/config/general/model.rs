@@ -160,3 +160,6 @@ pub struct RecoveryDefaultsConfig {
 
     pub jitter: bool,
 }
+
+#[cfg(test)]
+mod tests;

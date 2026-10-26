@@ -308,3 +308,6 @@ impl ConnectionLifecycle {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -105,7 +105,7 @@ fn application_policy(configuration: &str) -> ApplicationHeartbeatPolicy {
 // ============================================================
 
 #[tokio::test]
-async fn w23_text_heartbeat_keeps_connection_alive() {
+async fn text_heartbeat_keeps_connection_alive() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();
@@ -193,7 +193,7 @@ response = "pong"
 // ============================================================
 
 #[tokio::test]
-async fn w23_json_heartbeat_preserves_market_data() {
+async fn json_heartbeat_preserves_market_data() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();
@@ -300,7 +300,7 @@ response_success_value = true
 // ============================================================
 
 #[tokio::test]
-async fn w23_missing_application_pong_fails_connection() {
+async fn missing_application_pong_fails_connection() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();

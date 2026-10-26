@@ -492,3 +492,6 @@ fn validate_stream_inputs(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

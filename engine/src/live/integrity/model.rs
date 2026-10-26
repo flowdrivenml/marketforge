@@ -193,3 +193,6 @@ pub struct GapHistorySnapshot {
     /// History availability and truncation information.
     pub coverage: GapHistoryCoverage,
 }
+
+#[cfg(test)]
+mod tests;

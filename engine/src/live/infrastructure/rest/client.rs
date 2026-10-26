@@ -1368,7 +1368,7 @@ path = "/trades"
         )
     }
     #[tokio::test]
-    async fn r2_real_http_200_success() {
+    async fn real_http_200_success() {
         let (client, manager, _) = deadline_test_client();
 
         let (url, server) = start_test_http_server(
@@ -1398,7 +1398,7 @@ path = "/trades"
     }
 
     #[tokio::test]
-    async fn r2_real_http_500_server_error() {
+    async fn real_http_500_server_error() {
         let (client, manager, _) = deadline_test_client();
 
         let (url, server) = start_test_http_server(
@@ -1421,7 +1421,7 @@ path = "/trades"
     }
 
     #[tokio::test]
-    async fn r2_real_http_429_applies_cooldown() {
+    async fn real_http_429_applies_cooldown() {
         let (client, manager, _) = deadline_test_client();
 
         let (url, server) = start_test_http_server(
@@ -1450,7 +1450,7 @@ path = "/trades"
     }
 
     #[tokio::test]
-    async fn r2_real_http_rejects_malformed_json() {
+    async fn real_http_rejects_malformed_json() {
         let (client, manager, _) = deadline_test_client();
 
         let (url, server) = start_test_http_server("200 OK", r#"{"broken":"#, &[], false);
@@ -1467,7 +1467,7 @@ path = "/trades"
     }
 
     #[tokio::test]
-    async fn r2_real_http_rejects_oversized_body() {
+    async fn real_http_rejects_oversized_body() {
         // deadline_test_client() configures max_response_bytes=1024.
         let (client, manager, _) = deadline_test_client();
 
@@ -1487,7 +1487,7 @@ path = "/trades"
     }
 
     #[tokio::test]
-    async fn r2_real_http_timeout_during_response() {
+    async fn real_http_timeout_during_response() {
         let (client, manager, _) = deadline_test_client();
 
         let (url, server) = start_test_http_server("200 OK", "{}", &[], true);
@@ -1512,7 +1512,7 @@ path = "/trades"
     // ============================================================
 
     #[tokio::test]
-    async fn r22_real_http_service_normalizes_binance_trades() {
+    async fn real_http_service_normalizes_binance_trades() {
         use std::fs;
         use std::path::PathBuf;
         use std::time::{SystemTime, UNIX_EPOCH};

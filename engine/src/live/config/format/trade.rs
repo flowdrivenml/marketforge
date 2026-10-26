@@ -480,3 +480,6 @@ impl TradeFormatConfig {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

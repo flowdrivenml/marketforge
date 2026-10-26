@@ -558,3 +558,6 @@ impl RestApplicationResponseConfig {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

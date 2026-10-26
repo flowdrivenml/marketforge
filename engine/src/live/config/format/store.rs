@@ -318,3 +318,6 @@ impl FormatConfigStore {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

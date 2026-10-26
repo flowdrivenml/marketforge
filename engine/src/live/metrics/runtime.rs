@@ -384,3 +384,6 @@ impl RuntimeMetrics {
         self.streams_failed.load(Ordering::Relaxed)
     }
 }
+
+#[cfg(test)]
+mod tests;

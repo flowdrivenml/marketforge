@@ -193,3 +193,6 @@ impl LatencyTracker {
         accumulator.last_ns
     }
 }
+
+#[cfg(test)]
+mod tests;

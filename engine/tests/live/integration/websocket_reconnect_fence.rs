@@ -80,7 +80,7 @@ fn retry_policy() -> ReconnectPolicy {
 }
 
 #[tokio::test]
-async fn w33_reconnect_runner_revokes_previous_generation() {
+async fn reconnect_runner_revokes_previous_generation() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();
@@ -221,7 +221,7 @@ async fn w33_reconnect_runner_revokes_previous_generation() {
 }
 
 #[tokio::test]
-async fn w33_aborting_runner_revokes_shared_authority() {
+async fn aborting_runner_revokes_shared_authority() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();

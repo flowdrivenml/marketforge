@@ -22,7 +22,7 @@ fn connected() -> (
 }
 
 #[tokio::test]
-async fn w43_successful_send_receipt_starts_ack_deadline() {
+async fn successful_send_receipt_starts_ack_deadline() {
     let (fence, stamp) = connected();
 
     let mut pending = SubscriptionPendingManager::new(8, Duration::from_secs(2)).unwrap();
@@ -72,50 +72,7 @@ async fn w43_successful_send_receipt_starts_ack_deadline() {
 }
 
 #[tokio::test]
-async fn w43_unsent_job_drop_fails_receipt() {
-    let (_fence, stamp) = connected();
-
-    let mut pending = SubscriptionPendingManager::new(8, Duration::from_secs(2)).unwrap();
-
-    let (fence, _) = connected();
-
-    // Use the original fence identity for reservation.
-    let current = fence.current_stamp().unwrap();
-
-    let id = pending
-        .reserve(
-            &fence,
-            &current,
-            "BTCUSDT:trades",
-            ExpectedSubscriptionAck::subscribe(Some(json!(1))),
-        )
-        .unwrap();
-
-    let (sender, receiver) = subscription_send_receipt(id, stamp);
-
-    drop(sender);
-
-    assert!(matches!(
-        receiver.wait(Duration::from_secs(1)).await,
-        Err(SubscriptionReceiptError::Send(
-            SubscriptionSendError::Cancelled
-        )),
-    ));
-
-    assert_eq!(pending.next_deadline(), None);
-    assert_eq!(
-        pending.phase(id),
-        Some(SubscriptionTransactionPhase::Reserved),
-    );
-
-    // The transaction owner must release the reservation.
-    pending.cancel(id).unwrap();
-
-    assert_eq!(pending.pending_count(), 0);
-}
-
-#[tokio::test]
-async fn w43_explicit_send_failure_does_not_start_ack_timer() {
+async fn explicit_send_failure_does_not_start_ack_timer() {
     let (fence, stamp) = connected();
 
     let mut pending = SubscriptionPendingManager::new(8, Duration::from_secs(2)).unwrap();
@@ -146,34 +103,4 @@ async fn w43_explicit_send_failure_does_not_start_ack_timer() {
 
     pending.cancel(id).unwrap();
     assert_eq!(pending.pending_count(), 0);
-}
-
-#[tokio::test]
-async fn w43_receipt_timeout_is_not_ack_timeout() {
-    let (fence, stamp) = connected();
-
-    let mut pending = SubscriptionPendingManager::new(8, Duration::from_secs(2)).unwrap();
-
-    let id = pending
-        .reserve(
-            &fence,
-            &stamp,
-            "BTCUSDT:trades",
-            ExpectedSubscriptionAck::subscribe(Some(json!(1))),
-        )
-        .unwrap();
-
-    let (sender, receiver) = subscription_send_receipt(id, stamp);
-
-    // The receipt exists, but transmission is unresolved.
-    let result = receiver.wait(Duration::from_millis(1)).await;
-
-    assert!(matches!(result, Err(SubscriptionReceiptError::TimedOut),));
-
-    // Reserved subscription must not acquire an ACK
-    // deadline simply because a receipt wait expired.
-    assert_eq!(pending.next_deadline(), None);
-
-    drop(sender);
-    pending.cancel(id).unwrap();
 }

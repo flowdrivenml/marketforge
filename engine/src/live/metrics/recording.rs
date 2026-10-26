@@ -239,3 +239,6 @@ impl RecordingMetrics {
         Some(self.last_successful_write_at_ns.load(Ordering::Relaxed))
     }
 }
+
+#[cfg(test)]
+mod tests;

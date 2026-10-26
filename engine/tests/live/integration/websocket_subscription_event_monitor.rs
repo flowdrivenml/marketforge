@@ -39,7 +39,7 @@ fn registered_token(
 // ============================================================
 
 #[tokio::test]
-async fn w46_forwards_valid_confirmed_event() {
+async fn forwards_valid_confirmed_event() {
     let (fence, stamp) = connected();
 
     let recovery = SharedStreamRecovery::new();
@@ -96,7 +96,7 @@ async fn w46_forwards_valid_confirmed_event() {
 }
 
 #[tokio::test]
-async fn w46_rejects_stale_demand_confirmation() {
+async fn rejects_stale_demand_confirmation() {
     let (fence, stamp) = connected();
     let recovery = SharedStreamRecovery::new();
 
@@ -142,7 +142,7 @@ async fn w46_rejects_stale_demand_confirmation() {
 }
 
 #[tokio::test]
-async fn w46_rejects_confirmation_from_revoked_generation() {
+async fn rejects_confirmation_from_revoked_generation() {
     let (fence, stamp) = connected();
 
     let recovery = SharedStreamRecovery::new();
@@ -193,7 +193,7 @@ async fn w46_rejects_confirmation_from_revoked_generation() {
 }
 
 #[tokio::test]
-async fn w46_rejects_confirmation_before_subscription_ack() {
+async fn rejects_confirmation_before_subscription_ack() {
     let (fence, stamp) = connected();
 
     let recovery = SharedStreamRecovery::new();

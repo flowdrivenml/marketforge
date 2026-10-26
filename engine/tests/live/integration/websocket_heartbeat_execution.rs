@@ -86,7 +86,7 @@ fn plan(config: &ExchangeConfig) -> CompiledHeartbeatPlan {
 // ============================================================
 
 #[tokio::test]
-async fn w25_server_ping_receives_echoed_pong() {
+async fn server_ping_receives_echoed_pong() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();
@@ -155,7 +155,7 @@ async fn w25_server_ping_receives_echoed_pong() {
 // ============================================================
 
 #[tokio::test]
-async fn w25_periodic_json_heartbeat_executes() {
+async fn periodic_json_heartbeat_executes() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();
@@ -234,7 +234,7 @@ async fn w25_periodic_json_heartbeat_executes() {
 // ============================================================
 
 #[tokio::test]
-async fn w25_inactivity_timer_resets_on_market_data() {
+async fn inactivity_timer_resets_on_market_data() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();

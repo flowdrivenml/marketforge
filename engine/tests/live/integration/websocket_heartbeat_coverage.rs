@@ -22,7 +22,7 @@ fn exchange_config(profile: &str) -> ExchangeConfig {
 }
 
 #[test]
-fn w24_audit_all_fifteen_heartbeat_profiles() {
+fn audit_all_fifteen_heartbeat_profiles() {
     let mut passed = 0_usize;
     let mut blocked = Vec::new();
 

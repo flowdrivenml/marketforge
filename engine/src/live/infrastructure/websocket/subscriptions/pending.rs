@@ -651,3 +651,6 @@ impl SubscriptionPendingManager {
             )
     }
 }
+
+#[cfg(test)]
+mod tests;

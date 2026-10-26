@@ -89,7 +89,7 @@ fn desired(revision: u64) -> DesiredSubscriptionSnapshot {
 // ============================================================
 
 #[test]
-fn w46_generates_native_commands_for_prepared_streams() {
+fn generates_native_commands_for_prepared_streams() {
     let (fence, stamp) = connected();
 
     let config = config();
@@ -158,7 +158,7 @@ fn w46_generates_native_commands_for_prepared_streams() {
 // ============================================================
 
 #[test]
-fn w46_rejects_stale_demand_before_command_generation() {
+fn rejects_stale_demand_before_command_generation() {
     let (fence, stamp) = connected();
     let config = config();
 
@@ -186,7 +186,7 @@ fn w46_rejects_stale_demand_before_command_generation() {
 // ============================================================
 
 #[test]
-fn w46_rejects_revoked_generation_before_compilation() {
+fn rejects_revoked_generation_before_compilation() {
     let (fence, stamp) = connected();
     let config = config();
 
@@ -214,7 +214,7 @@ fn w46_rejects_revoked_generation_before_compilation() {
 // ============================================================
 
 #[test]
-fn w46_rejects_wrong_route_before_command_generation() {
+fn rejects_wrong_route_before_command_generation() {
     let (fence, stamp) = connected();
     let config = config();
 
@@ -242,7 +242,7 @@ fn w46_rejects_wrong_route_before_command_generation() {
 // ============================================================
 
 #[test]
-fn w46_idless_subscription_requires_native_ack_binding() {
+fn idless_subscription_requires_native_ack_binding() {
     let config: ExchangeConfig = toml::from_str(
         r#"
 schema_version = 1

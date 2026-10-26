@@ -172,7 +172,7 @@ fn expected_arguments(profile: &str, channel: &str) -> Vec<Value> {
 // ============================================================
 
 #[test]
-fn w44_resolves_all_15_real_trade_and_depth_profiles() {
+fn resolves_all_15_real_trade_and_depth_profiles() {
     let mut verified = 0;
 
     for exchange in EXCHANGES {

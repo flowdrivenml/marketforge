@@ -127,7 +127,7 @@ async fn run_session(
 // ============================================================
 
 #[tokio::test]
-async fn w32_reconnects_with_new_generation_and_connection_id() {
+async fn reconnects_with_new_generation_and_connection_id() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();
@@ -239,7 +239,7 @@ async fn w32_reconnects_with_new_generation_and_connection_id() {
 // ============================================================
 
 #[tokio::test]
-async fn w32_failed_connections_respect_retry_limit() {
+async fn failed_connections_respect_retry_limit() {
     // Reserve an ephemeral port, then release it.
     // Connecting to it should fail.
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -306,7 +306,7 @@ async fn w32_failed_connections_respect_retry_limit() {
 // ============================================================
 
 #[test]
-fn w32_backoff_is_bounded_and_monotonic() {
+fn backoff_is_bounded_and_monotonic() {
     let policy = retry_policy(None);
 
     assert_eq!(policy.delay_for_failure(1), Duration::from_millis(30),);
@@ -321,7 +321,7 @@ fn w32_backoff_is_bounded_and_monotonic() {
 }
 
 #[test]
-fn w32_rejects_invalid_retry_configuration() {
+fn rejects_invalid_retry_configuration() {
     assert!(
         ReconnectPolicy::new(
             Duration::ZERO,

@@ -77,7 +77,7 @@ fn heartbeat() -> HeartbeatPolicy {
 }
 
 #[tokio::test]
-async fn w2_ping_pong_keeps_connection_alive() {
+async fn ping_pong_keeps_connection_alive() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();
@@ -157,7 +157,7 @@ async fn w2_ping_pong_keeps_connection_alive() {
 }
 
 #[tokio::test]
-async fn w2_missing_pong_closes_connection() {
+async fn missing_pong_closes_connection() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();
@@ -213,7 +213,7 @@ async fn w2_missing_pong_closes_connection() {
 }
 
 #[tokio::test]
-async fn w2_inbound_queue_overflow_fails_closed() {
+async fn inbound_queue_overflow_fails_closed() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();
@@ -268,7 +268,7 @@ async fn w2_inbound_queue_overflow_fails_closed() {
 }
 
 #[tokio::test]
-async fn w2_outbound_queue_uses_connection_limiter() {
+async fn outbound_queue_uses_connection_limiter() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 
     let address = listener.local_addr().unwrap();
