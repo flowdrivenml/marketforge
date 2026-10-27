@@ -1,6 +1,7 @@
 mod application;
 mod bootstrap;
 mod client;
+mod facade;
 mod factory;
 mod feedback;
 mod request;
@@ -15,6 +16,11 @@ pub use application::{
 };
 pub use bootstrap::ExchangeRestBootstrap;
 pub use client::{ExchangeRestClient, RestClientConfig, RestClientFeedbackConfig};
+pub use facade::{
+    HistoricalPagination, HistoricalTradeCursor, HistoricalTradePage, HistoricalTradesCapability,
+    RestEndpointCapability, RestFacadeError, RestFacadeFactory, RestOperationError,
+    StreamRestCapabilities, StreamRestHandle,
+};
 pub use factory::{
     CompiledRestApplicationRules, ExchangeRestClientFactory, RestApplicationRuleCompiler,
     RestFactoryFeedbackPolicy,

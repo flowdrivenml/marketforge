@@ -5,10 +5,10 @@ use crate::live::infrastructure::normalization::side::NativeSideValue;
 use crate::live::infrastructure::normalization::side::{
     AggressorSideNormalizer, PositiveQuantitySide,
 };
-use crate::live::infrastructure::normalization::trades::compiler::CompiledTradeNormalizationPlan;
 use crate::live::infrastructure::normalization::trades::fields::{
     NativeTradeFieldLayout, TradeFieldPlan,
 };
+use crate::live::infrastructure::normalization::trades::plan::CompiledTradeNormalizationPlan;
 use crate::live::infrastructure::normalization::trades::plan::{
     TradeExtractionPlan, TradeRecordRepresentation,
 };
@@ -288,7 +288,7 @@ mod tests {
 
         use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
         use crate::live::infrastructure::normalization::side::NativeSideValue;
-        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
+        use crate::live::infrastructure::normalization::trades::websocket::compiler::TradeNormalizationCompiler;
 
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/live/formats");
 
@@ -561,10 +561,10 @@ mod tests {
         use crate::live::infrastructure::normalization::side::{
             AggressorSideNormalizer, NativeSideValue,
         };
-        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
         use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
         use crate::live::infrastructure::normalization::trades::fields::NativeTradeFieldLayout;
         use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
+        use crate::live::infrastructure::normalization::trades::websocket::compiler::TradeNormalizationCompiler;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
@@ -751,10 +751,10 @@ mod tests {
         use crate::live::infrastructure::normalization::side::{
             AggressorSideNormalizer, NativeSideValue,
         };
-        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
         use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
         use crate::live::infrastructure::normalization::trades::fields::NativeTradeFieldLayout;
         use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
+        use crate::live::infrastructure::normalization::trades::websocket::compiler::TradeNormalizationCompiler;
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
         };
@@ -1003,10 +1003,10 @@ mod tests {
         use crate::live::infrastructure::normalization::side::{
             AggressorSideNormalizer, NativeSideValue,
         };
-        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
         use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
         use crate::live::infrastructure::normalization::trades::fields::NativeTradeFieldLayout;
         use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
+        use crate::live::infrastructure::normalization::trades::websocket::compiler::TradeNormalizationCompiler;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
@@ -1270,10 +1270,10 @@ mod tests {
         use crate::live::infrastructure::normalization::side::{
             AggressorSideNormalizer, NativeSideValue,
         };
-        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
         use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
         use crate::live::infrastructure::normalization::trades::fields::NativeTradeFieldLayout;
         use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
+        use crate::live::infrastructure::normalization::trades::websocket::compiler::TradeNormalizationCompiler;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
@@ -1575,10 +1575,10 @@ mod tests {
         use crate::live::infrastructure::normalization::side::{
             AggressorSideNormalizer, NativeSideValue,
         };
-        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
         use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
         use crate::live::infrastructure::normalization::trades::fields::NativeTradeFieldLayout;
         use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
+        use crate::live::infrastructure::normalization::trades::websocket::compiler::TradeNormalizationCompiler;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
@@ -1758,10 +1758,10 @@ mod tests {
         use crate::live::infrastructure::normalization::side::{
             AggressorSideNormalizer, PositiveQuantitySide,
         };
-        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
         use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
         use crate::live::infrastructure::normalization::trades::fields::NativeTradeFieldLayout;
         use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
+        use crate::live::infrastructure::normalization::trades::websocket::compiler::TradeNormalizationCompiler;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
@@ -2025,10 +2025,10 @@ mod tests {
         use crate::live::infrastructure::normalization::side::{
             AggressorSideNormalizer, NativeSideValue,
         };
-        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
         use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
         use crate::live::infrastructure::normalization::trades::fields::NativeTradeFieldLayout;
         use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
+        use crate::live::infrastructure::normalization::trades::websocket::compiler::TradeNormalizationCompiler;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
@@ -2260,7 +2260,7 @@ mod tests {
         use crate::live::config::format::FormatConfigStore;
 
         use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
-        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
+        use crate::live::infrastructure::normalization::trades::websocket::compiler::TradeNormalizationCompiler;
 
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/live/formats");
 
@@ -2321,7 +2321,7 @@ mod tests {
         use crate::live::config::format::FormatConfigStore;
 
         use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
-        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
+        use crate::live::infrastructure::normalization::trades::websocket::compiler::TradeNormalizationCompiler;
 
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/live/formats");
 
@@ -2358,9 +2358,9 @@ mod tests {
         use crate::live::infrastructure::normalization::context::NormalizationContext;
         use crate::live::infrastructure::normalization::message::NormalizationSource;
         use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
-        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
         use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
         use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
+        use crate::live::infrastructure::normalization::trades::websocket::compiler::TradeNormalizationCompiler;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
@@ -2531,8 +2531,8 @@ mod tests {
         use crate::live::config::format::FormatConfigStore;
 
         use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
-        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
         use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
+        use crate::live::infrastructure::normalization::trades::websocket::compiler::TradeNormalizationCompiler;
 
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/live/formats");
 
@@ -2648,9 +2648,9 @@ mod tests {
         use crate::live::infrastructure::normalization::context::NormalizationContext;
         use crate::live::infrastructure::normalization::message::NormalizationSource;
         use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
-        use crate::live::infrastructure::normalization::trades::compiler::TradeNormalizationCompiler;
         use crate::live::infrastructure::normalization::trades::decoder::TradeDecoder;
         use crate::live::infrastructure::normalization::trades::rest::decoder::RestTradeDecoder;
+        use crate::live::infrastructure::normalization::trades::websocket::compiler::TradeNormalizationCompiler;
 
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,

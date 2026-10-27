@@ -992,3 +992,10 @@ required-features = ["live"]
 name = "live_network"
 path = "tests/live/network/main.rs"
 required-features = ["live"]
+
+[[test]]
+name = "live_recovery"
+path = "tests/live/integration/recovery/main.rs"
+required-features = ["live"]
+
+

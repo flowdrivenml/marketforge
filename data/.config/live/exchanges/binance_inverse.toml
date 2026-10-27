@@ -214,34 +214,6 @@ strategy = "raw"
 # HISTORICAL INDIVIDUAL TRADES
 # ------------------------------------------------------------
 
-[rest.endpoints.historical_trades]
-
-required_parameters = ["symbol"]
-limit_parameter = "limit"
-method = "GET"
-path = "/dapi/v1/historicalTrades"
-
-parameters = ["symbol", "limit", "fromId"]
-
-default_limit = 100
-maximum_limit = 500
-
-pagination_strategy = "trade_id"
-pagination_parameter = "fromId"
-
-authentication = "api_key_header"
-authentication_header = "X-MBX-APIKEY"
-
-weight_policy = "historical_trades"
-
-[rest.endpoints.historical_trades.application_response]
-strategy = "raw"
-
-
-# ------------------------------------------------------------
-# AGGREGATED TRADES
-# ------------------------------------------------------------
-
 [rest.endpoints.aggregate_trades]
 
 required_parameters = ["symbol"]

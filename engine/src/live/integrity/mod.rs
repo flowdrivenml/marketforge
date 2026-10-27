@@ -1,5 +1,6 @@
 mod book_adapter;
 mod depth;
+mod facade;
 mod incidents;
 mod model;
 mod sequence_adapter;
@@ -37,6 +38,14 @@ pub use depth::rest::request::{RestDepthRequestContext, RestDepthRequestError};
 pub use depth::rest::sync::{RestDepthSyncCoordinator, RestDepthSyncPhase};
 pub use depth::timestamps::{
     DepthAcceptedTimestamp, DepthSourceTimestamp, DepthTimestampComposition,
+};
+pub use facade::{
+    CreateDepthIntegrity, CreateTradeIntegrity, IntegrityAdmissionError, IntegrityAdmissionState,
+    IntegrityBatchResult, IntegrityChannel, IntegrityDecision, IntegrityEffect,
+    IntegrityFacadeFactory, IntegrityFactoryError, IntegrityInput, IntegrityLifecycleError,
+    IntegrityLifecycleEvent, IntegrityLifecycleOutcome, IntegrityOutcome,
+    IntegrityPublicationAdapter, IntegrityPublicationError, IntegrityRecoveryError,
+    IntegrityRecoveryResult, RestDepthEndpointConfig, StreamIntegrityHandle, StreamIntegrityStatus,
 };
 pub use incidents::lifecycle::{
     ClassifiedEpisodeOutcome, ClosedIntegrityEpisode, EpisodeReportOutcome, IntegrityEpisodeError,

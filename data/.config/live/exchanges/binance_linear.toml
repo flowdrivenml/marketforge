@@ -206,37 +206,6 @@ strategy = "raw"
 # HISTORICAL TRADES
 # ------------------------------------------------------------
 
-[rest.endpoints.historical_trades]
-
-required_parameters = ["symbol"]
-limit_parameter = "limit"
-method = "GET"
-path = "/fapi/v1/historicalTrades"
-
-parameters = ["symbol", "limit", "fromId"]
-
-default_limit = 100
-maximum_limit = 500
-
-pagination_strategy = "trade_id"
-pagination_parameter = "fromId"
-
-authentication = "api_key_header"
-authentication_header = "X-MBX-APIKEY"
-
-# Binance documents a one-month availability window.
-max_history_days = 30
-
-weight_policy = "historical_trades"
-
-[rest.endpoints.historical_trades.application_response]
-strategy = "raw"
-
-
-# ============================================================
-# RATE LIMITING
-# ============================================================
-
 [rest.rate_limiting]
 strategy = "weighted_shared_pool"
 

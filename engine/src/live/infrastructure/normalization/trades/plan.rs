@@ -1,7 +1,78 @@
+use super::fields::TradeFieldPlan;
+use crate::live::config::exchange::{ExchangeId, MarketType};
+use crate::live::infrastructure::normalization::envelope::EnvelopeValidator;
+use crate::live::infrastructure::normalization::message::TradeRecordSemantics;
+use crate::live::infrastructure::normalization::quantity::QuantityPrecisionPolicy;
+use crate::live::infrastructure::normalization::side::AggressorSideNormalizer;
+use crate::live::infrastructure::normalization::symbol_type::SymbolTypeValidator;
+use crate::live::stream::request::QuantityType;
+
 use serde_json::Value;
 use thiserror::Error;
 
 use crate::live::infrastructure::normalization::extraction::{ExtractionError, JsonExtractor};
+
+// ============================================================
+// AGGREGATE TRADE METADATA
+// ============================================================
+
+/// Native aggregate identifiers that must survive decoding.
+///
+/// These are field paths, not extracted values.
+///
+/// The eventual decoder must preserve all configured
+/// identifiers rather than fabricate individual trades.
+#[derive(Debug, Clone)]
+pub struct AggregateTradeFieldPlan {
+    pub aggregate_id: String,
+    pub first_trade_id: String,
+    pub last_trade_id: String,
+}
+
+// ============================================================
+// COMPILED TRADE NORMALIZATION PLAN
+// ============================================================
+
+/// Immutable normalization instructions compiled from one
+/// exchange-native trade format.
+///
+/// This structure contains no exchange-specific branching.
+///
+/// It is intentionally independent of instrument identity.
+/// Economic quantity conversion uses NormalizationContext
+/// at decoding time.
+#[derive(Debug, Clone)]
+pub struct CompiledTradeNormalizationPlan {
+    pub format_id: String,
+
+    pub extraction: TradeExtractionPlan,
+
+    pub fields: TradeFieldPlan,
+
+    pub side: AggressorSideNormalizer,
+
+    pub semantics: TradeRecordSemantics,
+
+    pub precision: QuantityPrecisionPolicy,
+
+    pub aggregate_fields: Option<AggregateTradeFieldPlan>,
+
+    pub declared_quantity_type: Option<QuantityType>,
+
+    /// Native symbol path inside an individual trade record.
+    ///
+    /// When configured, the decoder must verify that this
+    /// symbol matches the authoritative stream context.
+    pub record_symbol_field: Option<String>,
+    /// Exchange and market expected by this native format.
+    pub expected_exchange: ExchangeId,
+    pub expected_market: MarketType,
+
+    /// Compiled native WebSocket message identity rules.
+    pub envelope: EnvelopeValidator,
+    /// Optional compiled native instrument discriminator.
+    pub symbol_type: Option<SymbolTypeValidator>,
+}
 
 // ============================================================
 // RECORD REPRESENTATION

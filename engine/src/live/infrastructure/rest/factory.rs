@@ -766,7 +766,7 @@ success_codes = ["0"]
         );
 
         // Based on the current 15-profile configuration set.
-        assert_eq!(total_endpoints, 37, "unexpected REST endpoint count",);
+        assert_eq!(total_endpoints, 35, "unexpected REST endpoint count");
 
         assert_eq!(
             total_raw + total_envelope,

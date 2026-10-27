@@ -12,7 +12,7 @@ use crate::live::infrastructure::normalization::message::{
     NormalizationSource, NormalizedTrades, TradeRecordSemantics,
 };
 use crate::live::infrastructure::normalization::quantity::QuantityNormalizer;
-use crate::live::infrastructure::normalization::trades::compiler::CompiledTradeNormalizationPlan;
+use crate::live::infrastructure::normalization::trades::plan::CompiledTradeNormalizationPlan;
 
 // ============================================================
 // ERRORS
@@ -63,7 +63,7 @@ pub enum TradeDecodeError {
 /// sequence continuity, deduplication, or recovery state.
 #[derive(Debug, Clone)]
 pub struct TradeDecoder {
-    plan: CompiledTradeNormalizationPlan,
+    pub(super) plan: CompiledTradeNormalizationPlan,
 }
 
 impl TradeDecoder {
@@ -92,7 +92,7 @@ impl TradeDecoder {
     /// validation and record extraction have succeeded.
     ///
     /// Both REST and WebSocket use this canonical conversion path.
-    fn decode_records(
+    pub(super) fn decode_records(
         &self,
         records: crate::live::infrastructure::normalization::trades::plan::TradeRecordView<'_>,
         context: &NormalizationContext,
@@ -123,7 +123,10 @@ impl TradeDecoder {
     // CONTEXT VALIDATION
     // ========================================================
 
-    fn validate_context(&self, context: &NormalizationContext) -> Result<(), TradeDecodeError> {
+    pub(super) fn validate_context(
+        &self,
+        context: &NormalizationContext,
+    ) -> Result<(), TradeDecodeError> {
         if !matches!(context.channel(), SourceChannel::Trades) {
             return Err(TradeDecodeError::InvalidContext(
                 "trade decoder requires a trades source stream".into(),
@@ -334,44 +337,6 @@ impl TradeDecoder {
             index_price: None,
             mark_price: None,
         })
-    }
-
-    // ========================================================
-    // DECODE ONE NATIVE MESSAGE
-    // ========================================================
-
-    /// Decode a complete native JSON trade message.
-    ///
-    /// Record extraction preserves the source order.
-    ///
-    /// The message is constructed only after every
-    /// individual trade has been decoded successfully.
-    ///
-    /// A malformed record therefore rejects the entire
-    /// message rather than publishing a partial batch.
-    pub fn decode_message(
-        &self,
-        message: &Value,
-        context: &NormalizationContext,
-        source: NormalizationSource,
-    ) -> Result<NormalizedTrades, TradeDecodeError> {
-        self.validate_context(context)?;
-
-        // Preserve WebSocket message validation.
-        self.plan
-            .envelope
-            .validate(message, context.symbol())
-            .map_err(|error| {
-                TradeDecodeError::InvalidContext(format!("native message envelope: {error}"))
-            })?;
-
-        let records = self
-            .plan
-            .extraction
-            .extract(message)
-            .map_err(|error| TradeDecodeError::Fields(error.to_string()))?;
-
-        self.decode_records(records, context, source)
     }
 }
 
