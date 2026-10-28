@@ -2,7 +2,7 @@ use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::canonical::SequenceMetadata;
+use crate::shared::domain::canonical::SequenceMetadata;
 
 use crate::live::infrastructure::normalization::depth::rest::compiler::{
     RestDepthNormalizationPlan, RestDepthRecordContainer,

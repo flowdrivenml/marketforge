@@ -1,3 +1,4 @@
+use crate::shared::terminal::palette::{BG, BLUE, CYAN, FG, GREEN, MUTED, YELLOW};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     io,
@@ -27,14 +28,6 @@ use crate::historical::convert::progress::{
 // -----------------------------------------------------------------------------
 // Tokyo Night palette
 // -----------------------------------------------------------------------------
-
-const BG: Color = Color::Rgb(26, 27, 38);
-const FG: Color = Color::Rgb(192, 202, 245);
-const BLUE: Color = Color::Rgb(122, 162, 247);
-const CYAN: Color = Color::Rgb(125, 207, 255);
-const GREEN: Color = Color::Rgb(158, 206, 106);
-const YELLOW: Color = Color::Rgb(224, 175, 104);
-const MUTED: Color = Color::Rgb(86, 95, 137);
 
 // -----------------------------------------------------------------------------
 // Terminal guard

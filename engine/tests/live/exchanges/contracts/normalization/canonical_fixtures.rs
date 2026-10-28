@@ -117,7 +117,7 @@ fn contract_value(request: &CreateSourceStreamRequest) -> Decimal {
 fn validate_quantities(
     profile: &str,
     request: &CreateSourceStreamRequest,
-    trade: &marketforge_engine::canonical::Trade,
+    trade: &marketforge_engine::shared::domain::canonical::Trade,
 ) {
     let base = trade
         .quantity_base

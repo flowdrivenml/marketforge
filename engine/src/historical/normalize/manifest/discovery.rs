@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
 use super::{
     inspection::inspect_parquet_file,

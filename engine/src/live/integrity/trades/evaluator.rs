@@ -1,4 +1,4 @@
-use crate::canonical::Trade;
+use crate::shared::domain::canonical::Trade;
 
 use crate::live::integrity::trades::compiler::{
     CompiledTradeIntegrityPlan, TradeIdentityKind, TradeSequenceKind,
@@ -251,7 +251,7 @@ mod tests {
 
     use rust_decimal::Decimal;
 
-    use crate::canonical::{EventEnvelope, Exchange, TradeSide};
+    use crate::shared::domain::canonical::{EventEnvelope, Exchange, TradeSide};
 
     use crate::live::integrity::trades::compiler::TradeCoverageAction;
 

@@ -25,4 +25,3 @@ pub use publication::{IntegrityPublicationAdapter, IntegrityPublicationError};
 pub use recovery::{IntegrityRecoveryError, IntegrityRecoveryResult};
 
 pub use admission::{IntegrityAdmissionError, IntegrityAdmissionState};
-

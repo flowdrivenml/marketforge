@@ -1,8 +1,11 @@
 use std::collections::BTreeMap;
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
-use super::{inventory::DepthTaskInventory, partition::MergePartition};
+use {
+    crate::historical::merge::depth::inventory::DepthTaskInventory,
+    crate::historical::merge::partition::MergePartition,
+};
 
 // -----------------------------------------------------------------------------
 // Partition input

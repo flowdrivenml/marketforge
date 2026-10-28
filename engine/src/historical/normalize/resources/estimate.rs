@@ -1,8 +1,10 @@
 use std::fs;
 
 use crate::{
-    error::{MarketForgeError, Result},
-    job::{ParquetResourceConfig, TargetSchema, WorkTask},
+    historical::job::WorkTask,
+    shared::error::{MarketForgeError, Result},
+    shared::normalization::TargetSchema,
+    shared::persistence::config::ParquetResourceConfig,
 };
 
 use super::budget::ResourceRequirements;

@@ -245,13 +245,13 @@ mod tests {
     use rust_decimal::Decimal;
 
     use crate::{
-        canonical::{EventEnvelope, Exchange, Trade, TradeSide},
         live::{
             infrastructure::normalization::TradeRecordSemantics,
             integrity::{
                 TradeControllerOutcome, TradeCoverageAction, TradeIdentityKind, TradeSequenceKind,
             },
         },
+        shared::domain::canonical::{EventEnvelope, Exchange, Trade, TradeSide},
     };
 
     const STREAM: &str = "bybit:spot:BTCUSDT:trades";

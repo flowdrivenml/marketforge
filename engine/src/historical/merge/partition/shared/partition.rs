@@ -1,6 +1,6 @@
 use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeJob,
+    historical::job::MergeJob,
+    shared::error::{MarketForgeError, Result},
 };
 
 // -----------------------------------------------------------------------------
@@ -172,7 +172,7 @@ fn invalid<T>(message: impl Into<String>) -> Result<T> {
 mod tests {
     use super::*;
 
-    use crate::job::MergeJob;
+    use crate::historical::job::MergeJob;
 
     fn test_job() -> MergeJob {
         serde_json::from_value(serde_json::json!({

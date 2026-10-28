@@ -4,11 +4,15 @@ use arrow_array::{ArrayRef, Int64Array, RecordBatch, UInt8Array, UInt32Array, UI
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 
 use crate::{
-    error::{MarketForgeError, Result},
-    formats::depth::{DepthEventBoundary, DepthSourceOperation},
+    shared::error::{MarketForgeError, Result},
+    shared::formats::depth::{DepthEventBoundary, DepthSourceOperation},
 };
 
-use super::event::{MergeEventKind, MergeEventRef, MergedEvent};
+use {
+    crate::historical::merge::core::event::MergeEventKind,
+    crate::historical::merge::core::event::MergeEventRef,
+    crate::historical::merge::core::event::MergedEvent,
+};
 
 // -----------------------------------------------------------------------------
 // Unified timeline schema

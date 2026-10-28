@@ -1,7 +1,9 @@
 use std::mem::size_of;
 use std::time::Duration;
 
-use crate::{canonical::L2LevelUpdate, live::infrastructure::normalization::NormalizedDepth};
+use crate::{
+    live::infrastructure::normalization::NormalizedDepth, shared::domain::canonical::L2LevelUpdate,
+};
 
 // ============================================================
 // RESOURCE LIMITS
@@ -166,8 +168,10 @@ mod tests {
     use rust_decimal::Decimal;
 
     use crate::{
-        canonical::{BookSide, EventEnvelope, Exchange, L2LevelUpdate, SequenceMetadata},
         live::infrastructure::normalization::{DepthMessageKind, NormalizationSource},
+        shared::domain::canonical::{
+            BookSide, EventEnvelope, Exchange, L2LevelUpdate, SequenceMetadata,
+        },
     };
 
     fn message(count: usize) -> NormalizedDepth {

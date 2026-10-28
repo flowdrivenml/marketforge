@@ -1,4 +1,3 @@
-use crate::canonical::TradeSide;
 use crate::live::config::exchange::RestEndpoint;
 use crate::live::infrastructure::normalization::numeric::TimestampUnit;
 use crate::live::infrastructure::normalization::side::NativeSideValue;
@@ -12,6 +11,7 @@ use crate::live::infrastructure::normalization::trades::plan::CompiledTradeNorma
 use crate::live::infrastructure::normalization::trades::plan::{
     TradeExtractionPlan, TradeRecordRepresentation,
 };
+use crate::shared::domain::canonical::TradeSide;
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -282,7 +282,7 @@ mod tests {
     fn compiles_binance_spot_rest_trade_plan() {
         use std::collections::BTreeMap;
 
-        use crate::canonical::TradeSide;
+        use crate::shared::domain::canonical::TradeSide;
 
         use crate::live::config::format::FormatConfigStore;
 
@@ -547,7 +547,7 @@ mod tests {
     fn normalizes_bybit_spot_rest_trades() {
         use std::collections::BTreeMap;
 
-        use crate::canonical::TradeSide;
+        use crate::shared::domain::canonical::TradeSide;
 
         use crate::live::config::{
             exchange::{ExchangeId, MarketType},
@@ -739,7 +739,6 @@ mod tests {
     fn normalizes_bybit_derivatives_rest_trades() {
         use std::collections::BTreeMap;
 
-        use crate::canonical::TradeSide;
         use crate::live::config::{
             exchange::{ExchangeId, MarketType},
             format::FormatConfigStore,
@@ -758,6 +757,7 @@ mod tests {
         use crate::live::stream::request::{
             CreateSourceStreamRequest, QuantityType, SourceChannel,
         };
+        use crate::shared::domain::canonical::TradeSide;
 
         use rust_decimal::Decimal;
         use serde_json::json;
@@ -989,7 +989,7 @@ mod tests {
     fn normalizes_bitget_all_markets_rest_trades() {
         use std::collections::BTreeMap;
 
-        use crate::canonical::TradeSide;
+        use crate::shared::domain::canonical::TradeSide;
 
         use crate::live::config::{
             exchange::{ExchangeId, MarketType},
@@ -1256,7 +1256,7 @@ mod tests {
     fn normalizes_okx_all_markets_rest_trades() {
         use std::collections::BTreeMap;
 
-        use crate::canonical::TradeSide;
+        use crate::shared::domain::canonical::TradeSide;
 
         use crate::live::config::{
             exchange::{ExchangeId, MarketType},
@@ -1561,7 +1561,7 @@ mod tests {
     fn normalizes_gateio_spot_rest_trades() {
         use std::collections::BTreeMap;
 
-        use crate::canonical::TradeSide;
+        use crate::shared::domain::canonical::TradeSide;
 
         use crate::live::config::{
             exchange::{ExchangeId, MarketType},
@@ -1744,7 +1744,7 @@ mod tests {
     }
     #[test]
     fn normalizes_gateio_futures_rest_trades() {
-        use crate::canonical::TradeSide;
+        use crate::shared::domain::canonical::TradeSide;
 
         use crate::live::config::{
             exchange::{ExchangeId, MarketType},
@@ -2011,7 +2011,7 @@ mod tests {
     fn normalizes_binance_derivatives_rest_trades() {
         use std::collections::BTreeMap;
 
-        use crate::canonical::TradeSide;
+        use crate::shared::domain::canonical::TradeSide;
 
         use crate::live::config::{
             exchange::{ExchangeId, MarketType},
@@ -2348,7 +2348,7 @@ mod tests {
     }
     #[test]
     fn normalizes_binance_spot_rest_from_config_end_to_end() {
-        use crate::canonical::TradeSide;
+        use crate::shared::domain::canonical::TradeSide;
 
         use crate::live::config::{
             exchange::{ExchangeId, MarketType},

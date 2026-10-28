@@ -4,8 +4,8 @@ use std::mem::size_of;
 use rust_decimal::Decimal;
 
 use crate::{
-    book::{BookChange, BookLevel, BookStore},
-    canonical::{BookSide, L2LevelUpdate},
+    shared::domain::book::{BookChange, BookLevel, BookStore},
+    shared::domain::canonical::{BookSide, L2LevelUpdate},
 };
 
 // ============================================================
@@ -226,7 +226,7 @@ impl DepthBookBudget {
 mod tests {
     use super::*;
 
-    use crate::canonical::{EventEnvelope, Exchange};
+    use crate::shared::domain::canonical::{EventEnvelope, Exchange};
 
     fn limits(max_levels: usize) -> DepthBookLimits {
         DepthBookLimits {

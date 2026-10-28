@@ -1,8 +1,9 @@
 use std::collections::HashSet;
 
-use crate::{
-    error::{MarketForgeError, Result},
-    process::convert::reference::{ReferenceObservation, ReferenceState},
+use {
+    crate::historical::convert::reference::ReferenceObservation,
+    crate::historical::convert::reference::ReferenceState, crate::shared::error::MarketForgeError,
+    crate::shared::error::Result,
 };
 
 #[derive(Debug, Clone)]

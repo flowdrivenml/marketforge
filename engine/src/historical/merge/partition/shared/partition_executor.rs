@@ -1,20 +1,21 @@
 use std::{collections::HashSet, fs, path::Path};
 
 use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeParquetConfig,
+    historical::job::MergeParquetConfig,
+    shared::error::{MarketForgeError, Result},
 };
 
-use super::{
-    boundary::DepthBoundaryLink,
-    inventory::DepthTaskInventory,
-    kway::KWayDepthMerger,
-    manifest::{MergeSkippedInitialization, MergeTimelineFile},
-    partition_input::PartitionInputPlan,
-    partition_stream::PartitionDepthStream,
-    source::DepthEventSource,
-    timeline::TimelineRecord,
-    writer::TimelineWriter,
+use {
+    crate::historical::merge::core::kway::KWayDepthMerger,
+    crate::historical::merge::core::source::DepthEventSource,
+    crate::historical::merge::depth::boundary::DepthBoundaryLink,
+    crate::historical::merge::depth::inventory::DepthTaskInventory,
+    crate::historical::merge::depth::partition_stream::PartitionDepthStream,
+    crate::historical::merge::output::manifests::manifest::MergeSkippedInitialization,
+    crate::historical::merge::output::manifests::manifest::MergeTimelineFile,
+    crate::historical::merge::output::writers::timeline::TimelineRecord,
+    crate::historical::merge::output::writers::writer::TimelineWriter,
+    crate::historical::merge::partition::shared::partition_input::PartitionInputPlan,
 };
 
 // -----------------------------------------------------------------------------

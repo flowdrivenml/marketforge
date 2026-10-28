@@ -4,7 +4,6 @@ use rust_decimal::Decimal;
 use serde_json::json;
 
 use marketforge_engine::{
-    canonical::TradeSide,
     live::{
         config::{
             exchange::{ExchangeId, MarketType},
@@ -16,6 +15,7 @@ use marketforge_engine::{
         },
         stream::request::{CreateSourceStreamRequest, QuantityType, SourceChannel},
     },
+    shared::domain::canonical::TradeSide,
 };
 
 // ============================================================

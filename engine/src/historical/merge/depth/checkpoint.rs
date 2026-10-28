@@ -2,9 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
-use super::inventory::DepthTaskInventory;
+use crate::historical::merge::depth::inventory::DepthTaskInventory;
 
 // -----------------------------------------------------------------------------
 // Reconstruction checkpoint

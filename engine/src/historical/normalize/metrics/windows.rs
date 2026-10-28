@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
-use crate::job::IntegrityCategory;
+use crate::shared::validation::IntegrityCategory;
 
 // -----------------------------------------------------------------------------
 // UTC window constants

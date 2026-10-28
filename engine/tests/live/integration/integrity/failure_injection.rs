@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use marketforge_engine::{
-    canonical::{BookSide, EventEnvelope, Exchange, L2LevelUpdate, SequenceMetadata},
     live::{
         config::{exchange::ExchangeConfig, format::DepthFormatConfig},
         infrastructure::normalization::{DepthMessageKind, NormalizationSource, NormalizedDepth},
@@ -11,6 +10,9 @@ use marketforge_engine::{
             DepthResourceLimits, DepthSourceBinding, DepthSourceEpoch, DepthSyncToken,
             RestDepthRequestContext,
         },
+    },
+    shared::domain::canonical::{
+        BookSide, EventEnvelope, Exchange, L2LevelUpdate, SequenceMetadata,
     },
 };
 

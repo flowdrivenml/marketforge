@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
 pub fn discover_conversion_files(directory: &Path) -> Result<Vec<PathBuf>> {
     if !directory.is_dir() {

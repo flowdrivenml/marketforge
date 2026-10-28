@@ -3,22 +3,14 @@ use crate::historical::normalize::progress::ProgressTaskId;
 use crate::historical::normalize::session::{
     ProcessingSessionResult, execute_processing_session_with_progress,
 };
-use crate::{
-    job::ProcessingJob,
-    process::{
-        ProcessingConfig, ProcessingResult, execute_processing_job_with_progress,
-        progress::{ProcessingProgress, ProgressEvent, ProgressReporter, ProgressState},
-    },
-};
-use crossterm::{
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-};
+use crate::shared::terminal::format::{compact, format_duration, format_speed};
+use crate::shared::terminal::guard::TerminalGuard;
+use crate::shared::terminal::palette::{BG, BLUE, CYAN, FG, GREEN, MUTED, RED, YELLOW};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     widgets::{Block, Borders, Gauge, Paragraph, Row, Sparkline, Table},
 };
 use std::io::Write;
@@ -32,47 +24,25 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+use {
+    crate::historical::job::ProcessingJob, crate::historical::normalize::ProcessingConfig,
+    crate::historical::normalize::ProcessingResult,
+    crate::historical::normalize::execute_processing_job_with_progress,
+    crate::historical::normalize::progress::ProcessingProgress,
+    crate::historical::normalize::progress::ProgressEvent,
+    crate::historical::normalize::progress::ProgressReporter,
+    crate::historical::normalize::progress::ProgressState,
+};
 
 // -----------------------------------------------------------------------------
 // Tokyo Night theme
 // -----------------------------------------------------------------------------
-
-const BG: Color = Color::Rgb(26, 27, 38);
-const FG: Color = Color::Rgb(192, 202, 245);
-const BLUE: Color = Color::Rgb(122, 162, 247);
-const CYAN: Color = Color::Rgb(125, 207, 255);
-const GREEN: Color = Color::Rgb(158, 206, 106);
-const YELLOW: Color = Color::Rgb(224, 175, 104);
-const RED: Color = Color::Rgb(247, 118, 142);
-const MUTED: Color = Color::Rgb(86, 95, 137);
 
 const REFRESH_INTERVAL: Duration = Duration::from_millis(250);
 
 // -----------------------------------------------------------------------------
 // Terminal guard
 // -----------------------------------------------------------------------------
-
-struct TerminalGuard;
-
-impl TerminalGuard {
-    fn enter() -> io::Result<Self> {
-        enable_raw_mode()?;
-
-        if let Err(error) = execute!(io::stdout(), EnterAlternateScreen) {
-            let _ = disable_raw_mode();
-            return Err(error);
-        }
-
-        Ok(Self)
-    }
-}
-
-impl Drop for TerminalGuard {
-    fn drop(&mut self) {
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
-        let _ = disable_raw_mode();
-    }
-}
 
 // -----------------------------------------------------------------------------
 // Task state
@@ -408,33 +378,6 @@ impl ProcessingDashboard {
 // -----------------------------------------------------------------------------
 // Formatting
 // -----------------------------------------------------------------------------
-
-fn compact(value: u64) -> String {
-    if value >= 1_000_000_000 {
-        format!("{:.2}B", value as f64 / 1_000_000_000.0)
-    } else if value >= 1_000_000 {
-        format!("{:.2}M", value as f64 / 1_000_000.0)
-    } else if value >= 1_000 {
-        format!("{:.1}K", value as f64 / 1_000.0)
-    } else {
-        value.to_string()
-    }
-}
-
-fn format_speed(value: f64) -> String {
-    format!("{}/s", compact(value.max(0.0) as u64))
-}
-
-fn format_duration(duration: Duration) -> String {
-    let seconds = duration.as_secs();
-
-    format!(
-        "{:02}:{:02}:{:02}",
-        seconds / 3600,
-        (seconds / 60) % 60,
-        seconds % 60
-    )
-}
 
 // -----------------------------------------------------------------------------
 // Header

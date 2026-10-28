@@ -1,4 +1,4 @@
-use crate::canonical::TimestampNs;
+use crate::shared::domain::canonical::TimestampNs;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde_json::Value;
 use thiserror::Error;

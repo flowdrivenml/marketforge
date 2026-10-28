@@ -1,9 +1,12 @@
 use crate::{
-    error::{MarketForgeError, Result},
-    formats::depth::DepthEventBoundary,
+    shared::error::{MarketForgeError, Result},
+    shared::formats::depth::DepthEventBoundary,
 };
 
-use super::{depth_cursor::DepthEventCursor, inventory::DepthTaskInventory};
+use {
+    crate::historical::merge::depth::cursor::DepthEventCursor,
+    crate::historical::merge::depth::inventory::DepthTaskInventory,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct DepthEventValidation {

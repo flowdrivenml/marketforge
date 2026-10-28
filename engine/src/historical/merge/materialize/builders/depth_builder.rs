@@ -8,14 +8,16 @@ use arrow_buffer::OffsetBuffer;
 use arrow_schema::DataType;
 use arrow_select::concat::concat;
 
-use crate::{
-    error::{MarketForgeError, Result},
-    process::parquet::depth_schema,
+use {
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
+    crate::shared::persistence::parquet::depth_schema,
 };
 
-use super::{
-    materialize_depth_metadata::ResolvedDepthMetadata, materialize_resolver::ResolvedMarketEvent,
-    materialize_schema::physical_depth_schema, unified_manifest::UnifiedMergeStream,
+use {
+    crate::historical::merge::materialize::builders::depth_metadata::ResolvedDepthMetadata,
+    crate::historical::merge::materialize::builders::schema::physical_depth_schema,
+    crate::historical::merge::materialize::shared::resolver::ResolvedMarketEvent,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeStream,
 };
 
 // -----------------------------------------------------------------------------

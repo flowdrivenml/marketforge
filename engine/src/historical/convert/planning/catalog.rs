@@ -4,11 +4,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{
-    error::{MarketForgeError, Result},
-    instrument::{Currency, InstrumentCatalog, InstrumentIdentity},
-    job::{ConvertJob, load_processing_job},
-    process::merge::{PhysicalMergeManifest, UnifiedMergeMode, UnifiedMergeStreamKind},
+use {
+    crate::historical::job::ConvertJob, crate::historical::job::load_processing_job,
+    crate::historical::merge::PhysicalMergeManifest, crate::historical::merge::UnifiedMergeMode,
+    crate::historical::merge::UnifiedMergeStreamKind, crate::shared::domain::instrument::Currency,
+    crate::shared::domain::instrument::InstrumentCatalog,
+    crate::shared::domain::instrument::InstrumentIdentity, crate::shared::error::MarketForgeError,
+    crate::shared::error::Result,
 };
 
 // -----------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-use crate::canonical::{L2LevelUpdate, SequenceMetadata, Trade};
+use crate::shared::domain::canonical::{L2LevelUpdate, SequenceMetadata, Trade};
 
 // ============================================================
 // NORMALIZATION SOURCE
@@ -438,7 +438,7 @@ fn validate_stream_id(stream_id: &str) -> Result<(), String> {
 mod tests {
     use rust_decimal::Decimal;
 
-    use crate::canonical::{BookSide, EventEnvelope, Exchange, TradeSide};
+    use crate::shared::domain::canonical::{BookSide, EventEnvelope, Exchange, TradeSide};
 
     use super::*;
 

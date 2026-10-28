@@ -1,9 +1,13 @@
 use std::{cmp::Reverse, collections::BinaryHeap};
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
-use super::manifest::MergeSkippedInitialization;
-use super::{depth_stream::DepthEventRef, ordering::MergeKey, source::DepthEventSource};
+use crate::historical::merge::output::manifests::manifest::MergeSkippedInitialization;
+use {
+    crate::historical::merge::core::ordering::MergeKey,
+    crate::historical::merge::core::source::DepthEventSource,
+    crate::historical::merge::depth::stream::DepthEventRef,
+};
 // -----------------------------------------------------------------------------
 // Merged event
 // -----------------------------------------------------------------------------

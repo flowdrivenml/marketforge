@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
 #[cfg(target_os = "linux")]
 pub fn atomic_publish_directory(staging: &Path, final_path: &Path) -> Result<()> {

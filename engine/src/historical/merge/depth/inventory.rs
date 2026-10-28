@@ -3,11 +3,12 @@ use std::{
     path::PathBuf,
 };
 
-use super::depth_boundary_summary::MergeBoundarySummary;
-use super::resolver::ResolvedMergeInput;
-use crate::{
-    error::{MarketForgeError, Result},
-    process::parquet::{DepthSegmentManifest, read_depth_segments},
+use crate::historical::merge::depth::boundary_summary::MergeBoundarySummary;
+use crate::historical::merge::execution::shared::resolver::ResolvedMergeInput;
+use {
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
+    crate::shared::persistence::parquet::DepthSegmentManifest,
+    crate::shared::persistence::parquet::read_depth_segments,
 };
 
 // -----------------------------------------------------------------------------

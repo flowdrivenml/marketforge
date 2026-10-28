@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeTimeRange,
+    historical::job::MergeTimeRange,
+    shared::error::{MarketForgeError, Result},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -11,14 +11,17 @@ use std::{
     path::Path,
 };
 
-use super::materialize_reconstruction::PhysicalInitialReconstruction;
-use super::{
-    manifest::{
-        MergeBoundaryRecord, MergeInputDataset, MergeSkippedInitialization, MergeTimelineFile,
-    },
-    materialize_checkpoints::PhysicalMergeCheckpoint,
-    materialize_global_validate::ValidatedPhysicalDataset,
-    unified_manifest::{UnifiedMergeMode, UnifiedMergeStream, UnifiedMergeStreamKind},
+use crate::historical::merge::materialize::validation::reconstruction::PhysicalInitialReconstruction;
+use {
+    crate::historical::merge::materialize::validation::checkpoints::PhysicalMergeCheckpoint,
+    crate::historical::merge::materialize::validation::global_validate::ValidatedPhysicalDataset,
+    crate::historical::merge::output::manifests::manifest::MergeBoundaryRecord,
+    crate::historical::merge::output::manifests::manifest::MergeInputDataset,
+    crate::historical::merge::output::manifests::manifest::MergeSkippedInitialization,
+    crate::historical::merge::output::manifests::manifest::MergeTimelineFile,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeMode,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeStream,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeStreamKind,
 };
 
 pub const PHYSICAL_MERGE_MANIFEST_VERSION: u32 = 1;

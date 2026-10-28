@@ -4,8 +4,8 @@ use super::{
     counters::ProcessingCounters, integrity::IntegrityMetrics, windows::ScopedIntegrityMetrics,
 };
 use crate::{
-    error::{MarketForgeError, Result},
-    job::WorkTask,
+    historical::job::WorkTask,
+    shared::error::{MarketForgeError, Result},
 };
 // -----------------------------------------------------------------------------
 // Live task metrics

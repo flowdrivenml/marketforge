@@ -8,29 +8,32 @@ use marketforge_engine::historical::convert::output::{
 use marketforge_engine::historical::convert::progress::{
     ConversionPhase, ConversionProgressReporter,
 };
-use marketforge_engine::{
-    instrument::InstrumentCatalog,
-    job::{ConvertJob, MergeParquetConfig, load_convert_job},
-    process::{
-        convert::{
-            execution::{
-                CombinedReferenceSelection, PhysicalConversionMetrics,
-                build_combined_reference_checkpoints_with_progress, build_conversion_checkpoints,
-                build_conversion_partition_plan, build_conversion_partition_plan_with_count,
-                build_depth_reference_checkpoints, materialize_depth_conversion,
-                materialize_trade_conversion,
-            },
-            output::{ConversionExecutionReceipt, ConversionPublication},
-            plan_conversion, resolve_conversion_catalog,
-        },
-        merge::{PhysicalMergeManifest, UnifiedMergeMode},
-    },
-};
 use std::cell::Cell;
 use std::{
     env, fs,
     path::{Path, PathBuf},
     time::Instant,
+};
+use {
+    marketforge_engine::historical::convert::execution::CombinedReferenceSelection,
+    marketforge_engine::historical::convert::execution::PhysicalConversionMetrics,
+    marketforge_engine::historical::convert::execution::build_combined_reference_checkpoints_with_progress,
+    marketforge_engine::historical::convert::execution::build_conversion_checkpoints,
+    marketforge_engine::historical::convert::execution::build_conversion_partition_plan,
+    marketforge_engine::historical::convert::execution::build_conversion_partition_plan_with_count,
+    marketforge_engine::historical::convert::execution::build_depth_reference_checkpoints,
+    marketforge_engine::historical::convert::execution::materialize_depth_conversion,
+    marketforge_engine::historical::convert::execution::materialize_trade_conversion,
+    marketforge_engine::historical::convert::output::ConversionExecutionReceipt,
+    marketforge_engine::historical::convert::output::ConversionPublication,
+    marketforge_engine::historical::convert::plan_conversion,
+    marketforge_engine::historical::convert::resolve_conversion_catalog,
+    marketforge_engine::historical::job::ConvertJob,
+    marketforge_engine::historical::job::MergeParquetConfig,
+    marketforge_engine::historical::job::load_convert_job,
+    marketforge_engine::historical::merge::PhysicalMergeManifest,
+    marketforge_engine::historical::merge::UnifiedMergeMode,
+    marketforge_engine::shared::domain::instrument::InstrumentCatalog,
 };
 
 thread_local! {

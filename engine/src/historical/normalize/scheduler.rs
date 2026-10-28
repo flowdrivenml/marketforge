@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, sync::Mutex, thread};
 
 use super::resources::{ResourceBudget, ResourceRequirements};
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 /// Executes independent tasks using a bounded number of threads.
 ///
 /// Results are returned in the same order as the input tasks,

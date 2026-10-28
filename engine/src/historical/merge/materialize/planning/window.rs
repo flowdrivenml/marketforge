@@ -1,6 +1,6 @@
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
-use super::unified_timeline::UnifiedTimelineRecord;
+use crate::historical::merge::output::writers::unified_timeline::UnifiedTimelineRecord;
 
 // -----------------------------------------------------------------------------
 // Window limits

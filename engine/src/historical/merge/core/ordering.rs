@@ -1,4 +1,4 @@
-use super::depth_stream::DepthEventRef;
+use crate::historical::merge::depth::stream::DepthEventRef;
 
 // -----------------------------------------------------------------------------
 // Deterministic chronological ordering

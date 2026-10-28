@@ -1,6 +1,6 @@
 use crate::{
-    book::{BookChange, BookLevel},
-    canonical::L2LevelUpdate,
+    shared::domain::book::{BookChange, BookLevel},
+    shared::domain::canonical::L2LevelUpdate,
 };
 
 /// Convert one canonical L2 level into the representation
@@ -36,7 +36,7 @@ pub fn to_book_changes(levels: &[L2LevelUpdate]) -> Vec<BookChange> {
 mod tests {
     use rust_decimal::Decimal;
 
-    use crate::canonical::{BookSide, EventEnvelope, Exchange, L2LevelUpdate};
+    use crate::shared::domain::canonical::{BookSide, EventEnvelope, Exchange, L2LevelUpdate};
 
     use super::*;
 

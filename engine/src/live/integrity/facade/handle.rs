@@ -1,4 +1,4 @@
-use crate::book::BookStore;
+use crate::shared::domain::book::BookStore;
 
 use super::admission::IntegrityAdmissionState;
 use crate::live::integrity::{

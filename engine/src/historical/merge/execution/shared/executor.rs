@@ -3,8 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::source::DepthEventSource;
-use super::{
+use crate::historical::merge::core::source::DepthEventSource;
+use crate::historical::merge::{
     DepthStream, KWayDepthMerger, MergeCommitPaths, MergeInputDataset, MergeManifest,
     MergeSkippedInitialization, MergeTimelineFile, TimelineRecord, TimelineWriter,
     build_depth_inventory, build_merge_checkpoints, build_merge_streams,
@@ -12,8 +12,8 @@ use super::{
     write_merge_manifest,
 };
 use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeJob,
+    historical::job::MergeJob,
+    shared::error::{MarketForgeError, Result},
 };
 
 // -----------------------------------------------------------------------------
@@ -168,12 +168,12 @@ fn execute_merge_into_staging(
     merger: &mut KWayDepthMerger,
 
     input_datasets: Vec<MergeInputDataset>,
-    streams_metadata: Vec<super::MergeStream>,
+    streams_metadata: Vec<crate::historical::merge::MergeStream>,
 
-    boundaries: &[super::DepthBoundaryLink],
+    boundaries: &[crate::historical::merge::DepthBoundaryLink],
 
-    checkpoints: Vec<super::MergeCheckpoint>,
-    initial_checkpoints: Vec<super::InitialMergeCheckpoint>,
+    checkpoints: Vec<crate::historical::merge::MergeCheckpoint>,
+    initial_checkpoints: Vec<crate::historical::merge::InitialMergeCheckpoint>,
 ) -> Result<MergeManifest> {
     let timeline_directory = staging.join("timeline");
 

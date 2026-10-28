@@ -1,15 +1,17 @@
-use crate::job::MergeTimeRange;
+use crate::historical::job::MergeTimeRange;
 use arrow_array::{Array, Int64Array, UInt8Array, UInt64Array};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs::File, path::Path};
 
-use super::{
-    checkpoint::MergeCheckpoint, manifest::MergeSkippedInitialization,
-    materialize_global_validate::ValidatedPhysicalDataset, unified_manifest::UnifiedMergeMode,
-};
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 use std::collections::HashSet;
+use {
+    crate::historical::merge::depth::checkpoint::MergeCheckpoint,
+    crate::historical::merge::materialize::validation::global_validate::ValidatedPhysicalDataset,
+    crate::historical::merge::output::manifests::manifest::MergeSkippedInitialization,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeMode,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

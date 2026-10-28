@@ -8,12 +8,15 @@ use arrow_schema::SchemaRef;
 
 use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
 
-use crate::{
-    error::{MarketForgeError, Result},
-    process::merge::PhysicalMergeManifest,
+use {
+    crate::historical::merge::PhysicalMergeManifest, crate::shared::error::MarketForgeError,
+    crate::shared::error::Result,
 };
 
-use super::partition::{ConversionPartition, ConversionPartitionPlan};
+use {
+    crate::historical::convert::execution::shared::partition::ConversionPartition,
+    crate::historical::convert::execution::shared::partition::ConversionPartitionPlan,
+};
 
 // -----------------------------------------------------------------------------
 // Partition-specific Parquet reader

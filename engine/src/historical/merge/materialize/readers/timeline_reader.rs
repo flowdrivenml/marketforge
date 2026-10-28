@@ -6,9 +6,12 @@ use std::{
 use arrow_array::{Array, Int64Array, RecordBatch, UInt8Array, UInt32Array, UInt64Array};
 use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
-use super::unified_timeline::{UnifiedTimelineRecord, unified_timeline_schema};
+use {
+    crate::historical::merge::output::writers::unified_timeline::UnifiedTimelineRecord,
+    crate::historical::merge::output::writers::unified_timeline::unified_timeline_schema,
+};
 
 // -----------------------------------------------------------------------------
 // Ordering key

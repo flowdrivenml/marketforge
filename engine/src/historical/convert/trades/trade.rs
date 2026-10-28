@@ -1,6 +1,6 @@
-use crate::{
-    error::Result,
-    process::convert::{ConversionDecimal, reference::EvaluatedConversion},
+use {
+    crate::historical::convert::ConversionDecimal,
+    crate::historical::convert::reference::EvaluatedConversion, crate::shared::error::Result,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,4 +1,4 @@
-use crate::canonical::SequenceMetadata;
+use crate::shared::domain::canonical::SequenceMetadata;
 
 use crate::live::integrity::depth::continuity_compiler::{
     CompiledDepthContinuityPlan, DepthContinuityFamily,

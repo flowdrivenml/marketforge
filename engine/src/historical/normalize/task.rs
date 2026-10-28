@@ -5,14 +5,14 @@ use super::{
     parquet::{ParquetDepthWriter, ParquetTradeWriter},
     progress::{ProgressReporter, WorkerProgress},
     sequence_policy::resolve_sequence_policy,
-    worker::{
-        DepthSink, TradeSink, process_depth_task_with_metrics, process_trade_task_with_metrics,
-    },
+    worker::{process_depth_task_with_metrics, process_trade_task_with_metrics},
 };
 use crate::{
-    book::SequencePolicy,
-    error::{MarketForgeError, Result},
-    job::{IntegrityPolicy, ParquetResourceConfig, TargetSchema, WorkTask},
+    historical::job::{IntegrityPolicy, WorkTask},
+    shared::domain::book::SequencePolicy,
+    shared::error::{MarketForgeError, Result},
+    shared::normalization::TargetSchema,
+    shared::persistence::config::ParquetResourceConfig,
 };
 use std::path::{Path, PathBuf};
 // -----------------------------------------------------------------------------

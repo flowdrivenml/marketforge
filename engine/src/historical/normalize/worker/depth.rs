@@ -2,23 +2,25 @@ use super::{
     integrity::{enforce_integrity, record_integrity_error},
     sink::DepthSink,
 };
-use crate::formats::depth::DepthEventBoundary;
 use crate::historical::normalize::boundary::{BoundaryBookState, DepthBoundaryTracker};
 use crate::historical::normalize::progress::WorkerProgress;
+use crate::shared::formats::depth::DepthEventBoundary;
 use crate::{
-    book::SequencePolicy,
-    error::{MarketForgeError, Result},
-    formats::depth::{DepthContext, DepthProcessor},
-    job::{IntegrityPolicy, TargetSchema, WorkTask},
-    process::metrics::{IntegrityCategory, IntegrityScope, ScopedIntegrityMetrics, TaskMetrics},
-    source::JsonlDecoder,
-    source::with_source_reader,
-};
-use crate::{
-    decode::{CsvDecoder, XlsxDepthDecoder},
-    formats::depth::{DepthCsvAdapter, DepthSnapshotAssembler},
+    shared::formats::depth::{DepthCsvAdapter, DepthSnapshotAssembler},
+    shared::io::decode::{CsvDecoder, XlsxDepthDecoder},
 };
 use std::io::Read;
+use {
+    crate::historical::job::IntegrityPolicy, crate::historical::job::WorkTask,
+    crate::historical::normalize::metrics::IntegrityCategory,
+    crate::historical::normalize::metrics::IntegrityScope,
+    crate::historical::normalize::metrics::ScopedIntegrityMetrics,
+    crate::historical::normalize::metrics::TaskMetrics,
+    crate::shared::domain::book::SequencePolicy, crate::shared::error::MarketForgeError,
+    crate::shared::error::Result, crate::shared::formats::depth::DepthContext,
+    crate::shared::formats::depth::DepthProcessor, crate::shared::io::source::JsonlDecoder,
+    crate::shared::io::source::with_source_reader, crate::shared::normalization::TargetSchema,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DepthSourceFormat {
@@ -626,7 +628,7 @@ fn process_csv_depth<R: Read, S: DepthSink>(
 }
 
 fn accept_outcome<S: DepthSink>(
-    mut outcome: crate::formats::depth::DepthProcessingOutcome,
+    mut outcome: crate::shared::formats::depth::DepthProcessingOutcome,
     source_ordinal: u64,
     source_rows: u64,
     processor: &DepthProcessor,

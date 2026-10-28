@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
 use crate::{
-    error::{MarketForgeError, Result},
-    instrument::Currency,
-    job::ConvertJob,
+    historical::job::ConvertJob,
+    shared::domain::instrument::Currency,
+    shared::error::{MarketForgeError, Result},
 };
 
-use super::{
+use crate::historical::convert::{
     catalog::{ResolvedConversionCatalog, ResolvedConversionInstrument},
     graph::{ConversionGraph, ConversionPath},
 };

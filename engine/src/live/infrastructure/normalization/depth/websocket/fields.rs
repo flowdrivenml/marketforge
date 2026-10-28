@@ -1,7 +1,7 @@
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::{canonical::SequenceMetadata, live::config::format::DepthFormatConfig};
+use crate::{live::config::format::DepthFormatConfig, shared::domain::canonical::SequenceMetadata};
 
 use crate::live::infrastructure::normalization::extraction::JsonExtractor;
 use crate::live::infrastructure::normalization::message::DepthMessageKind;

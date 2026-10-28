@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
-use crate::error::{MarketForgeError, Result};
 use crate::historical::normalize::boundary::BoundaryContinuity;
+use crate::shared::error::{MarketForgeError, Result};
 
-use super::depth_boundary_summary::MergeBoundarySnapshot;
-use super::inventory::DepthTaskInventory;
+use crate::historical::merge::depth::boundary_summary::MergeBoundarySnapshot;
+use crate::historical::merge::depth::inventory::DepthTaskInventory;
 
 // -----------------------------------------------------------------------------
 // Boundary relationship

@@ -6,8 +6,8 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    error::{MarketForgeError, Result},
-    job::ProcessingJob,
+    historical::job::ProcessingJob,
+    shared::error::{MarketForgeError, Result},
 };
 
 use super::{

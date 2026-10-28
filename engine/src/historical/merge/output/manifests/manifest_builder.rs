@@ -1,17 +1,20 @@
 use std::collections::HashSet;
 
 use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeJob,
+    historical::job::MergeJob,
+    shared::error::{MarketForgeError, Result},
 };
 
-use super::{
-    boundary::DepthBoundaryLink,
-    checkpoint::{InitialMergeCheckpoint, MergeCheckpoint},
-    manifest::{MergeInputDataset, MergeManifest, MergeStream},
-    output_validation::ValidatedMergeOutput,
-    partition_executor::MergePartitionResult,
-    writer::TimelineWriterMetrics,
+use {
+    crate::historical::merge::depth::boundary::DepthBoundaryLink,
+    crate::historical::merge::depth::checkpoint::InitialMergeCheckpoint,
+    crate::historical::merge::depth::checkpoint::MergeCheckpoint,
+    crate::historical::merge::output::manifests::manifest::MergeInputDataset,
+    crate::historical::merge::output::manifests::manifest::MergeManifest,
+    crate::historical::merge::output::manifests::manifest::MergeStream,
+    crate::historical::merge::output::validation::output_validation::ValidatedMergeOutput,
+    crate::historical::merge::output::writers::writer::TimelineWriterMetrics,
+    crate::historical::merge::partition::shared::partition_executor::MergePartitionResult,
 };
 
 // -----------------------------------------------------------------------------

@@ -5,13 +5,13 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeJob,
-    process::manifest::{
-        AuxiliaryFile, DATASET_MANIFEST_FILENAME, DATASET_MANIFEST_VERSION, DatasetFile,
-        DatasetManifest,
-    },
+use {
+    crate::historical::job::MergeJob, crate::historical::normalize::manifest::AuxiliaryFile,
+    crate::historical::normalize::manifest::DATASET_MANIFEST_FILENAME,
+    crate::historical::normalize::manifest::DATASET_MANIFEST_VERSION,
+    crate::historical::normalize::manifest::DatasetFile,
+    crate::historical::normalize::manifest::DatasetManifest,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
 };
 
 // -----------------------------------------------------------------------------

@@ -1,12 +1,16 @@
 use std::{collections::HashMap, path::Path};
 
-use crate::{
-    error::{MarketForgeError, Result},
-    formats::depth::{DepthEventBoundary, DepthSourceOperation},
-    process::parquet::IndexedDepthEvent,
+use {
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
+    crate::shared::formats::depth::DepthEventBoundary,
+    crate::shared::formats::depth::DepthSourceOperation,
+    crate::shared::persistence::parquet::IndexedDepthEvent,
 };
 
-use super::{depth_cursor::DepthEventCursor, unified_timeline::UnifiedTimelineRecord};
+use {
+    crate::historical::merge::depth::cursor::DepthEventCursor,
+    crate::historical::merge::output::writers::unified_timeline::UnifiedTimelineRecord,
+};
 
 // -----------------------------------------------------------------------------
 // Resolved depth metadata

@@ -10,11 +10,15 @@ use parquet::{
 };
 
 use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeParquetConfig,
+    historical::job::MergeParquetConfig,
+    shared::error::{MarketForgeError, Result},
 };
 
-use super::timeline::{TimelineBatchBuilder, TimelineRecord, timeline_schema};
+use {
+    crate::historical::merge::output::writers::timeline::TimelineBatchBuilder,
+    crate::historical::merge::output::writers::timeline::TimelineRecord,
+    crate::historical::merge::output::writers::timeline::timeline_schema,
+};
 
 // -----------------------------------------------------------------------------
 // Writer metrics

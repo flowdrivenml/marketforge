@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct ProcessingCounters {

@@ -1,6 +1,6 @@
 use crate::{
-    canonical::Exchange,
     live::infrastructure::normalization::{NormalizationSource, NormalizedTrades},
+    shared::domain::canonical::Exchange,
 };
 
 // ============================================================
@@ -243,8 +243,8 @@ mod tests {
     use rust_decimal::Decimal;
 
     use crate::{
-        canonical::{EventEnvelope, Trade, TradeSide},
         live::infrastructure::normalization::TradeRecordSemantics,
+        shared::domain::canonical::{EventEnvelope, Trade, TradeSide},
     };
 
     const STREAM: &str = "bybit:spot:BTCUSDT:trades";

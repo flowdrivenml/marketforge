@@ -5,7 +5,7 @@ use std::{
 
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
 // -----------------------------------------------------------------------------
 // Row-group metadata

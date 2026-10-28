@@ -6,15 +6,16 @@ use arrow_array::{
 use arrow_schema::{DataType, Fields};
 use arrow_select::{concat::concat, take::take};
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
-use super::{
-    materialize_depth_builder::{PhysicalDepthBatchBuilder, PhysicalDepthEvent},
-    materialize_depth_metadata::ResolvedDepthMetadata,
-    materialize_resolver::ResolvedMarketEvent,
-    materialize_schema::physical_combined_schema,
-    materialize_trade_builder::PhysicalTradeBatchBuilder,
-    unified_manifest::UnifiedMergeStream,
+use {
+    crate::historical::merge::materialize::builders::depth_builder::PhysicalDepthBatchBuilder,
+    crate::historical::merge::materialize::builders::depth_builder::PhysicalDepthEvent,
+    crate::historical::merge::materialize::builders::depth_metadata::ResolvedDepthMetadata,
+    crate::historical::merge::materialize::builders::schema::physical_combined_schema,
+    crate::historical::merge::materialize::builders::trade_builder::PhysicalTradeBatchBuilder,
+    crate::historical::merge::materialize::shared::resolver::ResolvedMarketEvent,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeStream,
 };
 
 // -----------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 use std::sync::{Condvar, Mutex};
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
 // -----------------------------------------------------------------------------
 // Resource requirements

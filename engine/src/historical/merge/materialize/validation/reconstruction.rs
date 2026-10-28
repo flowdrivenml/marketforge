@@ -2,11 +2,12 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
-use super::{
-    checkpoint::{CheckpointAvailability, InitialMergeCheckpoint},
-    materialize_checkpoints::PhysicalMergeCheckpoint,
+use {
+    crate::historical::merge::depth::checkpoint::CheckpointAvailability,
+    crate::historical::merge::depth::checkpoint::InitialMergeCheckpoint,
+    crate::historical::merge::materialize::validation::checkpoints::PhysicalMergeCheckpoint,
 };
 
 // -----------------------------------------------------------------------------

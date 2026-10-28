@@ -4,22 +4,24 @@ use std::{
     path::{Component, Path},
 };
 
-use super::unified_timeline::UnifiedTimelineRecord;
-use super::{
-    inventory::DepthTaskInventory, trade_inventory::TradeTaskInventory,
-    unified_reference_validation::UnifiedReferenceValidator,
-};
-use super::{
-    manifest::MergeTimelineFile,
-    ordering::MergeKey,
-    output_validation::ValidatedMergeOutput,
-    unified_manifest::{UnifiedMergeStream, UnifiedMergeStreamKind},
-    unified_partition_executor::UnifiedPartitionResult,
-    unified_timeline::unified_timeline_schema,
-};
-use crate::error::{MarketForgeError, Result};
+use crate::historical::merge::output::writers::unified_timeline::UnifiedTimelineRecord;
+use crate::shared::error::{MarketForgeError, Result};
 use arrow_array::{Array, Int64Array, UInt8Array, UInt32Array, UInt64Array};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use {
+    crate::historical::merge::core::ordering::MergeKey,
+    crate::historical::merge::output::manifests::manifest::MergeTimelineFile,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeStream,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeStreamKind,
+    crate::historical::merge::output::validation::output_validation::ValidatedMergeOutput,
+    crate::historical::merge::output::writers::unified_timeline::unified_timeline_schema,
+    crate::historical::merge::partition::unified::partition_executor::UnifiedPartitionResult,
+};
+use {
+    crate::historical::merge::depth::inventory::DepthTaskInventory,
+    crate::historical::merge::output::validation::unified_reference_validation::UnifiedReferenceValidator,
+    crate::historical::merge::trades::inventory::TradeTaskInventory,
+};
 
 // -----------------------------------------------------------------------------
 // Validated unified output

@@ -6,12 +6,16 @@ use std::{
     time::Instant,
 };
 
-use marketforge_engine::{
-    job::{ContentType, ProcessingJob, ProcessingOperation, load_processing_job},
-    process::{
-        ProcessingStatus, execute_processing_job, load_processing_config,
-        manifest::DatasetManifest, session::execute_processing_session,
-    },
+use {
+    marketforge_engine::historical::job::ContentType,
+    marketforge_engine::historical::job::ProcessingJob,
+    marketforge_engine::historical::job::ProcessingOperation,
+    marketforge_engine::historical::job::load_processing_job,
+    marketforge_engine::historical::normalize::ProcessingStatus,
+    marketforge_engine::historical::normalize::execute_processing_job,
+    marketforge_engine::historical::normalize::load_processing_config,
+    marketforge_engine::historical::normalize::manifest::DatasetManifest,
+    marketforge_engine::historical::normalize::session::execute_processing_session,
 };
 
 use serde::Serialize;

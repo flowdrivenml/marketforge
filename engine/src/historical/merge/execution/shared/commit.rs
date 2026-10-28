@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use crate::{
-    error::{MarketForgeError, Result},
-    process::executor::{commit_dataset, prepare_staging_path},
+use {
+    crate::historical::normalize::executor::commit_dataset,
+    crate::historical::normalize::executor::prepare_staging_path,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
 };
 
 // -----------------------------------------------------------------------------

@@ -1,7 +1,3 @@
-use crate::{
-    error::{MarketForgeError, Result},
-    process::merge::PhysicalMergeManifest,
-};
 use arrow_array::{Array, Int64Array, RecordBatch, UInt32Array, UInt64Array};
 use arrow_schema::SchemaRef;
 use parquet::arrow::{
@@ -12,8 +8,12 @@ use std::{
     fs::File,
     path::{Path, PathBuf},
 };
+use {
+    crate::historical::merge::PhysicalMergeManifest, crate::shared::error::MarketForgeError,
+    crate::shared::error::Result,
+};
 
-use super::super::reference::ReferenceKey;
+use crate::historical::convert::reference::ReferenceKey;
 
 pub const CONVERSION_READ_BATCH_SIZE: usize = 65_536;
 

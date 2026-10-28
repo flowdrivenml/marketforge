@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arrow_schema::{DataType, Field, Fields, Schema, SchemaRef};
 
-use crate::historical::normalize::parquet::{depth_schema, trade_schema};
+use crate::shared::persistence::parquet::{depth_schema, trade_schema};
 
 fn provenance_fields() -> Vec<Field> {
     vec![

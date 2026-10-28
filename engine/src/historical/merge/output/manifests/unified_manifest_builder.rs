@@ -1,21 +1,24 @@
 use std::collections::HashSet;
 
 use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeJob,
+    historical::job::MergeJob,
+    shared::error::{MarketForgeError, Result},
 };
 
-use super::{
-    boundary::DepthBoundaryLink,
-    checkpoint::{InitialMergeCheckpoint, MergeCheckpoint},
-    manifest::{MergeBoundaryRecord, MergeInputDataset},
-    output_validation::ValidatedMergeOutput,
-    unified_manifest::{
-        UNIFIED_MERGE_MANIFEST_VERSION, UnifiedMergeManifest, UnifiedMergeMode, UnifiedMergeStream,
-        UnifiedMergeStreamKind,
-    },
-    unified_partition_executor::UnifiedPartitionResult,
-    unified_timeline::UNIFIED_TIMELINE_VERSION,
+use {
+    crate::historical::merge::depth::boundary::DepthBoundaryLink,
+    crate::historical::merge::depth::checkpoint::InitialMergeCheckpoint,
+    crate::historical::merge::depth::checkpoint::MergeCheckpoint,
+    crate::historical::merge::output::manifests::manifest::MergeBoundaryRecord,
+    crate::historical::merge::output::manifests::manifest::MergeInputDataset,
+    crate::historical::merge::output::manifests::unified_manifest::UNIFIED_MERGE_MANIFEST_VERSION,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeManifest,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeMode,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeStream,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeStreamKind,
+    crate::historical::merge::output::validation::output_validation::ValidatedMergeOutput,
+    crate::historical::merge::output::writers::unified_timeline::UNIFIED_TIMELINE_VERSION,
+    crate::historical::merge::partition::unified::partition_executor::UnifiedPartitionResult,
 };
 
 // -----------------------------------------------------------------------------

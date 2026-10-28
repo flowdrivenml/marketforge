@@ -3,8 +3,10 @@ use std::{fs, path::Path};
 use serde::Deserialize;
 
 use crate::{
-    error::{MarketForgeError, Result},
-    job::{IntegrityAction, IntegrityPolicy, IntegrityRule, IntegrityWindowRule, ResourceConfig},
+    historical::job::{
+        IntegrityAction, IntegrityPolicy, IntegrityRule, IntegrityWindowRule, ResourceConfig,
+    },
+    shared::error::{MarketForgeError, Result},
 };
 
 #[derive(Debug, Clone, Deserialize)]

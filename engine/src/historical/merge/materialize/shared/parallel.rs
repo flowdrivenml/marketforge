@@ -1,24 +1,23 @@
-use super::progress::MergeWorkerProgress;
-use super::progress::{MergePhase, MergeProgressReporter, PartitionKey};
-use super::{
-    materialize_partition::{
-        MaterializationPartitionInput, MaterializationPartitionResult,
-        MaterializationPartitionWorker,
-    },
-    materialize_resources::estimate_materialization_resources,
-    trade_inventory::TradeTaskInventory,
-    unified_manifest::UnifiedMergeMode,
-    unified_manifest::UnifiedMergeStream,
-};
 use crate::historical::merge::DepthTaskInventory;
-use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeJob,
-    process::{resources::ResourceBudget, scheduler::execute_parallel_budgeted},
-};
+use crate::historical::merge::progress::MergeWorkerProgress;
+use crate::historical::merge::progress::{MergePhase, MergeProgressReporter, PartitionKey};
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
+};
+use {
+    crate::historical::job::MergeJob, crate::historical::normalize::resources::ResourceBudget,
+    crate::historical::normalize::scheduler::execute_parallel_budgeted,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
+};
+use {
+    crate::historical::merge::materialize::planning::partition::MaterializationPartitionInput,
+    crate::historical::merge::materialize::planning::partition::MaterializationPartitionResult,
+    crate::historical::merge::materialize::planning::partition::MaterializationPartitionWorker,
+    crate::historical::merge::materialize::planning::resources::estimate_materialization_resources,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeMode,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeStream,
+    crate::historical::merge::trades::inventory::TradeTaskInventory,
 };
 // -----------------------------------------------------------------------------
 // Partition plan

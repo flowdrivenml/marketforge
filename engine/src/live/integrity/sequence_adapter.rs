@@ -1,8 +1,8 @@
 use thiserror::Error;
 
 use crate::{
-    book::{SequencePolicy, SequenceTracker},
-    canonical::SequenceMetadata,
+    shared::domain::book::{SequencePolicy, SequenceTracker},
+    shared::domain::canonical::SequenceMetadata,
 };
 
 // ============================================================

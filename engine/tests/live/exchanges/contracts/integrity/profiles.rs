@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use marketforge_engine::{
-    canonical::Exchange,
     live::{
         config::format::{DepthFormatConfig, TradeFormatConfig},
         integrity::{
@@ -10,6 +9,7 @@ use marketforge_engine::{
             TradeIntegrityCompiler, TradeSourceBinding, TradeSourceEpoch,
         },
     },
+    shared::domain::canonical::Exchange,
 };
 
 const MARKETS: [&str; 3] = ["spot", "linear", "inverse"];
@@ -69,7 +69,6 @@ fn trade_limits() -> TradeIdentityLimits {
 // ============================================================
 
 use marketforge_engine::{
-    canonical::{BookSide, EventEnvelope, L2LevelUpdate, SequenceMetadata},
     live::{
         config::exchange::ExchangeConfig,
         infrastructure::normalization::{DepthMessageKind, NormalizationSource, NormalizedDepth},
@@ -78,6 +77,7 @@ use marketforge_engine::{
             DepthPublicationFence, DepthSnapshotSource, DepthSyncToken, RestDepthRequestContext,
         },
     },
+    shared::domain::canonical::{BookSide, EventEnvelope, L2LevelUpdate, SequenceMetadata},
 };
 
 use rust_decimal::Decimal;
@@ -459,13 +459,13 @@ fn every_trade_profile_constructs_a_source_bound_ingress() {
 #[test]
 fn every_trade_profile_accepts_and_deduplicates_executions() {
     use marketforge_engine::{
-        canonical::{EventEnvelope, Trade, TradeSide},
         live::{
             infrastructure::normalization::{
                 NormalizationSource, NormalizedTrades, TradeRecordSemantics,
             },
             integrity::{BoundTradeIngressOutcome, TradeControllerOutcome, TradeSequenceKind},
         },
+        shared::domain::canonical::{EventEnvelope, Trade, TradeSide},
     };
 
     use rust_decimal::Decimal;
@@ -602,13 +602,13 @@ fn every_trade_profile_accepts_and_deduplicates_executions() {
 #[test]
 fn every_websocket_depth_profile_synchronizes() {
     use marketforge_engine::{
-        canonical::{BookSide, EventEnvelope, L2LevelUpdate, SequenceMetadata},
         live::{
             infrastructure::normalization::{
                 DepthMessageKind, NormalizationSource, NormalizedDepth,
             },
             integrity::{DepthContinuityFamily, DepthControllerOutcome},
         },
+        shared::domain::canonical::{BookSide, EventEnvelope, L2LevelUpdate, SequenceMetadata},
     };
 
     use rust_decimal::Decimal;

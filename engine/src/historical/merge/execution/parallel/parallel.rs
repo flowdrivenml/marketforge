@@ -1,17 +1,18 @@
 use std::{collections::HashSet, path::Path};
 
-use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeJob,
-    process::{resources::ResourceBudget, scheduler::execute_parallel_budgeted},
+use {
+    crate::historical::job::MergeJob, crate::historical::normalize::resources::ResourceBudget,
+    crate::historical::normalize::scheduler::execute_parallel_budgeted,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
 };
 
-use super::{
-    boundary::DepthBoundaryLink,
-    inventory::DepthTaskInventory,
-    partition_executor::{MergePartitionResult, execute_merge_partition},
-    partition_input::PartitionInputPlan,
-    resources::estimate_merge_partition_resources,
+use {
+    crate::historical::merge::depth::boundary::DepthBoundaryLink,
+    crate::historical::merge::depth::inventory::DepthTaskInventory,
+    crate::historical::merge::execution::shared::resources::estimate_merge_partition_resources,
+    crate::historical::merge::partition::shared::partition_executor::MergePartitionResult,
+    crate::historical::merge::partition::shared::partition_executor::execute_merge_partition,
+    crate::historical::merge::partition::shared::partition_input::PartitionInputPlan,
 };
 
 // -----------------------------------------------------------------------------

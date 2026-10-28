@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::canonical::TradeSide;
+use crate::shared::domain::canonical::TradeSide;
 
 // ============================================================
 // SIDE NORMALIZATION ERRORS

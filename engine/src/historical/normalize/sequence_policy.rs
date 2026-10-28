@@ -1,7 +1,8 @@
 use crate::{
-    book::SequencePolicy,
-    error::{MarketForgeError, Result},
-    job::{TargetSchema, WorkTask},
+    historical::job::WorkTask,
+    shared::domain::book::SequencePolicy,
+    shared::error::{MarketForgeError, Result},
+    shared::normalization::TargetSchema,
 };
 
 /// Resolve depth sequence validation from normalization metadata.

@@ -14,13 +14,15 @@ use parquet::{
 };
 
 use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeParquetConfig,
+    historical::job::MergeParquetConfig,
+    shared::error::{MarketForgeError, Result},
 };
 
-use super::{
-    materialize_schema::{physical_combined_schema, physical_depth_schema, physical_trade_schema},
-    unified_manifest::UnifiedMergeMode,
+use {
+    crate::historical::merge::materialize::builders::schema::physical_combined_schema,
+    crate::historical::merge::materialize::builders::schema::physical_depth_schema,
+    crate::historical::merge::materialize::builders::schema::physical_trade_schema,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeMode,
 };
 
 // -----------------------------------------------------------------------------

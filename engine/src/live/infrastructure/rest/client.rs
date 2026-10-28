@@ -1517,7 +1517,7 @@ path = "/trades"
         use std::path::PathBuf;
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        use crate::canonical::TradeSide;
+        use crate::shared::domain::canonical::TradeSide;
 
         use crate::live::config::{
             ExchangeConfigStore,

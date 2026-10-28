@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::historical::convert::ConversionDecimal;
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReferenceKey {

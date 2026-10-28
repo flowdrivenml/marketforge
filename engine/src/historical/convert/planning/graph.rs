@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    error::{MarketForgeError, Result},
-    instrument::Currency,
+    shared::domain::instrument::Currency,
+    shared::error::{MarketForgeError, Result},
 };
 
-use super::catalog::ResolvedConversionInstrument;
+use crate::historical::convert::catalog::ResolvedConversionInstrument;
 
 // -----------------------------------------------------------------------------
 // Graph types
