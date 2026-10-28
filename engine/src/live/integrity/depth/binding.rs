@@ -1,6 +1,6 @@
 use crate::{
-    canonical::Exchange,
     live::infrastructure::normalization::{NormalizationSource, NormalizedDepth},
+    shared::domain::canonical::Exchange,
 };
 
 // ============================================================
@@ -247,8 +247,8 @@ mod tests {
     use rust_decimal::Decimal;
 
     use crate::{
-        canonical::{BookSide, EventEnvelope, L2LevelUpdate, SequenceMetadata},
         live::infrastructure::normalization::DepthMessageKind,
+        shared::domain::canonical::{BookSide, EventEnvelope, L2LevelUpdate, SequenceMetadata},
     };
 
     const STREAM: &str = "bybit:spot:BTCUSDT:depth";

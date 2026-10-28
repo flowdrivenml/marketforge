@@ -2,8 +2,8 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::{
-    canonical::{EventEnvelope, Exchange, Trade},
     live::{config::exchange::ExchangeId, stream::request::SourceChannel},
+    shared::domain::canonical::{EventEnvelope, Exchange, Trade},
 };
 
 use crate::live::infrastructure::normalization::context::NormalizationContext;

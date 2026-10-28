@@ -4,7 +4,6 @@ use rust_decimal::Decimal;
 use serde_json::Value;
 
 use marketforge_engine::{
-    canonical::Exchange,
     live::{
         config::{
             exchange::{ExchangeId, MarketType},
@@ -19,6 +18,7 @@ use marketforge_engine::{
         },
         stream::request::{CreateSourceStreamRequest, QuantityType, SourceChannel},
     },
+    shared::domain::canonical::Exchange,
 };
 
 const STREAM_ID: &str = "integration:bitget:depth";
@@ -226,7 +226,7 @@ impl ReferenceBook {
 
 fn compare_side(
     expected: &BTreeMap<Decimal, Decimal>,
-    actual: &BTreeMap<Decimal, marketforge_engine::book::BookLevel>,
+    actual: &BTreeMap<Decimal, marketforge_engine::shared::domain::book::BookLevel>,
     contracts: bool,
     label: &str,
 ) {

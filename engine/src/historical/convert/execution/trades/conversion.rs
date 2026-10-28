@@ -2,25 +2,29 @@ use std::collections::{HashMap, HashSet};
 
 use arrow_array::{Array, Decimal256Array, Int64Array, RecordBatch, UInt32Array, UInt64Array};
 
-use crate::{
-    error::{MarketForgeError, Result},
-    job::ConvertJob,
-    process::convert::{
-        ConversionDecimal, ConversionPlan, convert_trade_values,
-        output::{
-            CONVERSION_FAILURE_ARITHMETIC, CONVERSION_FAILURE_FUTURE,
-            CONVERSION_FAILURE_IDENTITY_MISMATCH, CONVERSION_FAILURE_MISSING,
-            CONVERSION_FAILURE_NO_PATH, CONVERSION_FAILURE_STALE, CONVERSION_STATUS_CONVERTED,
-            CONVERSION_STATUS_IDENTITY, CONVERSION_STATUS_UNAVAILABLE, TradeConversionRow,
-        },
-        reference::{
-            ConversionUnavailable, ReferenceKey, ReferenceObservation, ReferenceState,
-            evaluate_conversion_path,
-        },
-    },
+use {
+    crate::historical::convert::ConversionDecimal, crate::historical::convert::ConversionPlan,
+    crate::historical::convert::convert_trade_values,
+    crate::historical::convert::output::CONVERSION_FAILURE_ARITHMETIC,
+    crate::historical::convert::output::CONVERSION_FAILURE_FUTURE,
+    crate::historical::convert::output::CONVERSION_FAILURE_IDENTITY_MISMATCH,
+    crate::historical::convert::output::CONVERSION_FAILURE_MISSING,
+    crate::historical::convert::output::CONVERSION_FAILURE_NO_PATH,
+    crate::historical::convert::output::CONVERSION_FAILURE_STALE,
+    crate::historical::convert::output::CONVERSION_STATUS_CONVERTED,
+    crate::historical::convert::output::CONVERSION_STATUS_IDENTITY,
+    crate::historical::convert::output::CONVERSION_STATUS_UNAVAILABLE,
+    crate::historical::convert::output::TradeConversionRow,
+    crate::historical::convert::reference::ConversionUnavailable,
+    crate::historical::convert::reference::ReferenceKey,
+    crate::historical::convert::reference::ReferenceObservation,
+    crate::historical::convert::reference::ReferenceState,
+    crate::historical::convert::reference::evaluate_conversion_path,
+    crate::historical::job::ConvertJob, crate::shared::error::MarketForgeError,
+    crate::shared::error::Result,
 };
 
-use super::materialize::PhysicalConversionMetrics;
+use crate::historical::convert::execution::trades::materialize::PhysicalConversionMetrics;
 
 // -----------------------------------------------------------------------------
 // Shared conversion kernel

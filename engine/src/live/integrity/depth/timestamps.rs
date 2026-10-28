@@ -100,8 +100,8 @@ mod tests {
     use super::*;
 
     use crate::{
-        canonical::SequenceMetadata,
         live::infrastructure::normalization::{DepthMessageKind, NormalizationSource},
+        shared::domain::canonical::SequenceMetadata,
     };
 
     fn message(source: NormalizationSource, timestamp_ns: Option<i64>) -> NormalizedDepth {

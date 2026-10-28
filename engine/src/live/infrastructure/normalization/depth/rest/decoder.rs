@@ -2,8 +2,8 @@ use crate::live::config::format::DepthFormatConfig;
 use crate::live::infrastructure::normalization::depth::rest::compiler::RestDepthNormalizationCompiler;
 use crate::live::infrastructure::normalization::message::DepthTimestampProvenance;
 use crate::{
-    canonical::{BookSide, EventEnvelope, Exchange, L2LevelUpdate},
     live::{config::exchange::ExchangeId, stream::request::SourceChannel},
+    shared::domain::canonical::{BookSide, EventEnvelope, Exchange, L2LevelUpdate},
 };
 use serde::Serialize;
 use serde_json::Value;

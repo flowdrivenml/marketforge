@@ -1,21 +1,18 @@
-#[path = "planning/catalog.rs"]
-mod catalog;
-#[path = "shared/decimal.rs"]
-mod decimal;
-#[path = "depth/depth.rs"]
 mod depth;
+mod planning;
+mod shared;
+mod trades;
+use execution::executor;
+use planning::catalog;
+use planning::graph;
+use planning::planner;
+use shared::decimal;
+use trades::trade;
+
 pub mod execution;
-#[path = "execution/executor.rs"]
-mod executor;
-#[path = "planning/graph.rs"]
-mod graph;
 pub mod output;
-#[path = "planning/planner.rs"]
-mod planner;
 pub mod progress;
 pub mod reference;
-#[path = "trades/trade.rs"]
-mod trade;
 
 pub use catalog::{
     ResolvedConversionCatalog, ResolvedConversionInstrument, resolve_conversion_catalog,

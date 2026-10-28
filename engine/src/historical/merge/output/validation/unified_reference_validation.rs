@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
-use super::{
-    inventory::DepthTaskInventory, trade_inventory::TradeTaskInventory,
-    unified_timeline::UnifiedTimelineRecord,
+use {
+    crate::historical::merge::depth::inventory::DepthTaskInventory,
+    crate::historical::merge::output::writers::unified_timeline::UnifiedTimelineRecord,
+    crate::historical::merge::trades::inventory::TradeTaskInventory,
 };
 
 // -----------------------------------------------------------------------------

@@ -17,7 +17,7 @@ use crate::live::infrastructure::normalization::trades::plan::{
     TradeRecordRepresentation,
 };
 use crate::live::stream::request::QuantityType;
-use crate::{canonical::TradeSide, live::config::format::TradeFormatConfig};
+use crate::{live::config::format::TradeFormatConfig, shared::domain::canonical::TradeSide};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use thiserror::Error;

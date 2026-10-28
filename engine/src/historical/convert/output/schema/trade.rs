@@ -4,17 +4,20 @@ use arrow_array::{ArrayRef, Decimal256Array, RecordBatch, StringArray, UInt8Arra
 use arrow_buffer::i256;
 use arrow_schema::SchemaRef;
 
-use crate::{
-    error::{MarketForgeError, Result},
-    process::convert::{ConversionDecimal, reference::EvaluatedReference},
+use {
+    crate::historical::convert::ConversionDecimal,
+    crate::historical::convert::reference::EvaluatedReference,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
 };
 
-use super::{
-    provenance::{build_conversion_paths, build_conversion_references},
-    schema::{
-        CONVERSION_STATUS_CONVERTED, CONVERSION_STATUS_IDENTITY, CONVERSION_STATUS_SKIPPED,
-        CONVERSION_STATUS_UNAVAILABLE, converted_trade_schema,
-    },
+use {
+    crate::historical::convert::output::publication::provenance::build_conversion_paths,
+    crate::historical::convert::output::publication::provenance::build_conversion_references,
+    crate::historical::convert::output::schema::CONVERSION_STATUS_CONVERTED,
+    crate::historical::convert::output::schema::CONVERSION_STATUS_IDENTITY,
+    crate::historical::convert::output::schema::CONVERSION_STATUS_SKIPPED,
+    crate::historical::convert::output::schema::CONVERSION_STATUS_UNAVAILABLE,
+    crate::historical::convert::output::schema::converted_trade_schema,
 };
 
 // -----------------------------------------------------------------------------
@@ -41,7 +44,7 @@ impl TradeConversionRow {
         Self {
             target_quote: target_quote.to_owned(),
 
-            status: super::schema::CONVERSION_STATUS_SKIPPED,
+            status: crate::historical::convert::output::schema::CONVERSION_STATUS_SKIPPED,
             failure: None,
 
             rate: None,

@@ -1,10 +1,6 @@
-mod fingerprint;
-mod manifest;
-mod state;
 mod tracker;
-
-pub use fingerprint::fingerprint_book;
+pub use crate::shared::domain::book::boundary::{
+    BoundaryBookLevel, BoundaryBookState, BoundaryContinuity, BoundarySnapshot,
+    DepthBoundaryManifest, SnapshotCoverage, fingerprint_book,
+};
 pub use tracker::DepthBoundaryTracker;
-
-pub use manifest::{BoundaryContinuity, BoundarySnapshot, DepthBoundaryManifest, SnapshotCoverage};
-pub use state::{BoundaryBookLevel, BoundaryBookState};

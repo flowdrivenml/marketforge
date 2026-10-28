@@ -1,10 +1,10 @@
-use crate::{
-    error::{MarketForgeError, Result},
-    job::{MergeParquetConfig, MergeResources},
-    process::resources::ResourceRequirements,
+use {
+    crate::historical::job::MergeParquetConfig, crate::historical::job::MergeResources,
+    crate::historical::normalize::resources::ResourceRequirements,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
 };
 
-use super::materialize_window::MaterializationBatchLimits;
+use crate::historical::merge::materialize::planning::window::MaterializationBatchLimits;
 
 const MIB: u64 = 1024 * 1024;
 

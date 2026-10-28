@@ -3,10 +3,10 @@ use std::path::Path;
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 
-use crate::{
-    error::Result,
-    job::MergeParquetConfig,
-    process::merge::{PhysicalParquetWriter, PhysicalWriterMetrics, UnifiedMergeMode},
+use {
+    crate::historical::job::MergeParquetConfig, crate::historical::merge::PhysicalParquetWriter,
+    crate::historical::merge::PhysicalWriterMetrics, crate::historical::merge::UnifiedMergeMode,
+    crate::shared::error::Result,
 };
 
 pub struct ConvertedParquetWriter {

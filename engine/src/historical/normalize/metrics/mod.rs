@@ -4,7 +4,7 @@ mod policy;
 mod report;
 mod windows;
 
-pub use crate::job::IntegrityCategory;
+pub use crate::shared::validation::IntegrityCategory;
 pub use counters::ProcessingCounters;
 pub use integrity::{
     DEFAULT_MAX_DIAGNOSTICS, IntegrityCounters, IntegrityDiagnostic, IntegrityMetrics,

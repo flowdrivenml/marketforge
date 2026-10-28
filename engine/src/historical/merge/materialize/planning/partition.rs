@@ -1,32 +1,37 @@
-use super::DepthTaskInventory;
-use super::progress::MergeWorkerProgress;
-use super::{
-    materialize_combined_builder::{PhysicalCombinedBatchBuilder, PhysicalCombinedEvent},
-    materialize_decoder::GroupedCanonicalDecoder,
-    materialize_depth_builder::{PhysicalDepthBatchBuilder, PhysicalDepthEvent},
-    materialize_depth_metadata::DepthMetadataResolver,
-    materialize_inventory::CanonicalRowIndex,
-    materialize_planner::CanonicalReadPlanner,
-    materialize_reader::CanonicalParquetReader,
-    materialize_resolver::CanonicalTaskKey,
-    materialize_resources::MaterializationWorkerLimits,
-    materialize_row_groups::CanonicalRowGroupIndex,
-    materialize_timeline_reader::MaterializationTimelineReader,
-    materialize_trade_builder::PhysicalTradeBatchBuilder,
-    materialize_window::{MaterializationWindow, MaterializationWindowBuilder},
-    materialize_writer::{PhysicalParquetWriter, PhysicalWriterMetrics},
-    trade_inventory::TradeTaskInventory,
-    unified_manifest::UnifiedMergeStreamKind,
-    unified_manifest::{UnifiedMergeMode, UnifiedMergeStream},
-};
+use crate::historical::merge::DepthTaskInventory;
+use crate::historical::merge::progress::MergeWorkerProgress;
 use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeParquetConfig,
+    historical::job::MergeParquetConfig,
+    shared::error::{MarketForgeError, Result},
 };
 use std::time::{Duration, Instant};
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
+};
+use {
+    crate::historical::merge::materialize::builders::combined_builder::PhysicalCombinedBatchBuilder,
+    crate::historical::merge::materialize::builders::combined_builder::PhysicalCombinedEvent,
+    crate::historical::merge::materialize::builders::depth_builder::PhysicalDepthBatchBuilder,
+    crate::historical::merge::materialize::builders::depth_builder::PhysicalDepthEvent,
+    crate::historical::merge::materialize::builders::depth_metadata::DepthMetadataResolver,
+    crate::historical::merge::materialize::builders::trade_builder::PhysicalTradeBatchBuilder,
+    crate::historical::merge::materialize::builders::writer::PhysicalParquetWriter,
+    crate::historical::merge::materialize::builders::writer::PhysicalWriterMetrics,
+    crate::historical::merge::materialize::planning::planner::CanonicalReadPlanner,
+    crate::historical::merge::materialize::planning::resources::MaterializationWorkerLimits,
+    crate::historical::merge::materialize::planning::row_groups::CanonicalRowGroupIndex,
+    crate::historical::merge::materialize::planning::window::MaterializationWindow,
+    crate::historical::merge::materialize::planning::window::MaterializationWindowBuilder,
+    crate::historical::merge::materialize::readers::decoder::GroupedCanonicalDecoder,
+    crate::historical::merge::materialize::readers::inventory::CanonicalRowIndex,
+    crate::historical::merge::materialize::readers::reader::CanonicalParquetReader,
+    crate::historical::merge::materialize::readers::timeline_reader::MaterializationTimelineReader,
+    crate::historical::merge::materialize::shared::resolver::CanonicalTaskKey,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeMode,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeStream,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeStreamKind,
+    crate::historical::merge::trades::inventory::TradeTaskInventory,
 };
 
 // -----------------------------------------------------------------------------

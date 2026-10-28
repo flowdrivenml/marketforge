@@ -1,18 +1,20 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeTimeRange,
+    historical::job::MergeTimeRange,
+    shared::error::{MarketForgeError, Result},
 };
 
-use super::{
-    checkpoint::{InitialMergeCheckpoint, MergeCheckpoint},
-    manifest::{
-        MergeBoundaryRecord, MergeInputDataset, MergeSkippedInitialization, MergeTimelineFile,
-    },
-    unified_timeline::UNIFIED_TIMELINE_VERSION,
-};
 use std::collections::HashSet;
+use {
+    crate::historical::merge::depth::checkpoint::InitialMergeCheckpoint,
+    crate::historical::merge::depth::checkpoint::MergeCheckpoint,
+    crate::historical::merge::output::manifests::manifest::MergeBoundaryRecord,
+    crate::historical::merge::output::manifests::manifest::MergeInputDataset,
+    crate::historical::merge::output::manifests::manifest::MergeSkippedInitialization,
+    crate::historical::merge::output::manifests::manifest::MergeTimelineFile,
+    crate::historical::merge::output::writers::unified_timeline::UNIFIED_TIMELINE_VERSION,
+};
 // -----------------------------------------------------------------------------
 // Protocol
 // -----------------------------------------------------------------------------

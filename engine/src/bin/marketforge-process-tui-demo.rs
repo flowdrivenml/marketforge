@@ -1,27 +1,20 @@
+use marketforge_engine::shared::terminal::{
+    guard::TerminalGuard,
+    palette::{BG, BLUE, CYAN, FG, GREEN},
+};
 use std::{
     io::{self, stdout},
     thread,
     time::{Duration, Instant},
 };
 
-use crossterm::{
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-};
-
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     widgets::{Block, Borders, Gauge, Paragraph, Row, Table},
 };
-
-const BG: Color = Color::Rgb(26, 27, 38);
-const FG: Color = Color::Rgb(192, 202, 245);
-const BLUE: Color = Color::Rgb(122, 162, 247);
-const CYAN: Color = Color::Rgb(125, 207, 255);
-const GREEN: Color = Color::Rgb(158, 206, 106);
 
 struct Task {
     exchange: &'static str,
@@ -30,26 +23,6 @@ struct Task {
     records: u64,
     written: u64,
     speed: u64,
-}
-
-struct TerminalGuard;
-
-impl TerminalGuard {
-    fn enter() -> io::Result<Self> {
-        enable_raw_mode()?;
-        if let Err(error) = execute!(stdout(), EnterAlternateScreen) {
-            let _ = disable_raw_mode();
-            return Err(error);
-        }
-        Ok(Self)
-    }
-}
-
-impl Drop for TerminalGuard {
-    fn drop(&mut self) {
-        let _ = execute!(stdout(), LeaveAlternateScreen);
-        let _ = disable_raw_mode();
-    }
 }
 
 fn compact(value: u64) -> String {

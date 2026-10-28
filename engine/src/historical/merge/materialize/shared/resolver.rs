@@ -3,14 +3,17 @@ use std::{collections::HashMap, fs::File, path::PathBuf};
 use arrow_array::{Array, Int64Array, RecordBatch};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
-use crate::{
-    error::{MarketForgeError, Result},
-    process::parquet::{depth_schema, trade_schema},
+use {
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
+    crate::shared::persistence::parquet::depth_schema,
+    crate::shared::persistence::parquet::trade_schema,
 };
 
-use super::{
-    materialize_cache::CanonicalRowGroupCache, materialize_inventory::CanonicalRowIndex,
-    materialize_reader::CanonicalParquetReader, unified_timeline::UnifiedTimelineRecord,
+use {
+    crate::historical::merge::materialize::readers::cache::CanonicalRowGroupCache,
+    crate::historical::merge::materialize::readers::inventory::CanonicalRowIndex,
+    crate::historical::merge::materialize::readers::reader::CanonicalParquetReader,
+    crate::historical::merge::output::writers::unified_timeline::UnifiedTimelineRecord,
 };
 
 // -----------------------------------------------------------------------------
@@ -246,7 +249,9 @@ impl CanonicalReferenceResolver {
         Ok(output)
     }
 
-    pub fn cache_metrics(&self) -> &super::materialize_cache::CanonicalCacheMetrics {
+    pub fn cache_metrics(
+        &self,
+    ) -> &crate::historical::merge::materialize::readers::cache::CanonicalCacheMetrics {
         self.cache.metrics()
     }
 }

@@ -1,11 +1,11 @@
 use marketforge_engine::{
-    canonical::Exchange,
     live::integrity::{
         CompiledDepthContinuityPlan, CreateDepthIntegrity, DepthBridgeRule, DepthBufferLimits,
         DepthContinuityFamily, DepthResourceLimits, DepthSnapshotSource, DepthSourceBinding,
         DepthSourceEpoch, IntegrityAdmissionState, IntegrityFacadeFactory, IntegrityLifecycleEvent,
         IntegrityLifecycleOutcome, StreamIntegrityHandle,
     },
+    shared::domain::canonical::Exchange,
 };
 
 // ============================================================

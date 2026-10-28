@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use marketforge_engine::{
-    canonical::Exchange,
     live::{
         config::{
             exchange::{ExchangeId, MarketType},
@@ -16,6 +15,7 @@ use marketforge_engine::{
         },
         stream::request::{CreateSourceStreamRequest, QuantityType, SourceChannel},
     },
+    shared::domain::canonical::Exchange,
 };
 
 use serde_json::Value;

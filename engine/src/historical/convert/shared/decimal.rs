@@ -1,4 +1,4 @@
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 use arrow_buffer::i256;
 use num_bigint::{BigInt, Sign};
 use num_traits::{One, Signed, Zero};

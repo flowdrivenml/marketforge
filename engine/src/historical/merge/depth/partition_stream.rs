@@ -1,16 +1,20 @@
 use std::collections::{HashMap, HashSet};
 
-use super::{
-    boundary::{DepthBoundaryLink, MergeBoundaryRelation},
-    depth_cursor::DepthEventCursor,
-    depth_stream::DepthEventRef,
-    inventory::DepthTaskInventory,
-    partition::MergePartition,
-};
-use super::{manifest::MergeSkippedInitialization, source::DepthEventSource};
 use crate::{
-    error::{MarketForgeError, Result},
-    formats::depth::DepthEventBoundary,
+    shared::error::{MarketForgeError, Result},
+    shared::formats::depth::DepthEventBoundary,
+};
+use {
+    crate::historical::merge::core::source::DepthEventSource,
+    crate::historical::merge::output::manifests::manifest::MergeSkippedInitialization,
+};
+use {
+    crate::historical::merge::depth::boundary::DepthBoundaryLink,
+    crate::historical::merge::depth::boundary::MergeBoundaryRelation,
+    crate::historical::merge::depth::cursor::DepthEventCursor,
+    crate::historical::merge::depth::inventory::DepthTaskInventory,
+    crate::historical::merge::depth::stream::DepthEventRef,
+    crate::historical::merge::partition::MergePartition,
 };
 
 // -----------------------------------------------------------------------------

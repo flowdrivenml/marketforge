@@ -1,4 +1,8 @@
-use super::{depth_stream::DepthEventRef, ordering::MergeKey, trade_stream::TradeEventRef};
+use {
+    crate::historical::merge::core::ordering::MergeKey,
+    crate::historical::merge::depth::stream::DepthEventRef,
+    crate::historical::merge::trades::stream::TradeEventRef,
+};
 
 // -----------------------------------------------------------------------------
 // Event kind

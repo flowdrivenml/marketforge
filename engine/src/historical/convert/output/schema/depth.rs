@@ -1,15 +1,3 @@
-use super::{
-    provenance::{build_conversion_paths, build_conversion_references},
-    schema::{
-        CONVERSION_STATUS_CONVERTED, CONVERSION_STATUS_IDENTITY, CONVERSION_STATUS_UNAVAILABLE,
-        converted_depth_schema,
-    },
-    trade::TradeConversionRow,
-};
-use crate::{
-    error::{MarketForgeError, Result},
-    process::convert::{ConversionDecimal, ConvertedDepthLevel},
-};
 use arrow_array::{
     Array, ArrayRef, Decimal256Array, ListArray, RecordBatch, StringArray, StructArray, UInt8Array,
 };
@@ -18,6 +6,19 @@ use arrow_buffer::i256;
 use arrow_buffer::{NullBuffer, OffsetBuffer, ScalarBuffer};
 use arrow_schema::{DataType, SchemaRef};
 use std::sync::Arc;
+use {
+    crate::historical::convert::ConversionDecimal, crate::historical::convert::ConvertedDepthLevel,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
+};
+use {
+    crate::historical::convert::output::publication::provenance::build_conversion_paths,
+    crate::historical::convert::output::publication::provenance::build_conversion_references,
+    crate::historical::convert::output::schema::CONVERSION_STATUS_CONVERTED,
+    crate::historical::convert::output::schema::CONVERSION_STATUS_IDENTITY,
+    crate::historical::convert::output::schema::CONVERSION_STATUS_UNAVAILABLE,
+    crate::historical::convert::output::schema::converted_depth_schema,
+    crate::historical::convert::output::schema::trade::TradeConversionRow,
+};
 // -----------------------------------------------------------------------------
 // Depth conversion result
 // -----------------------------------------------------------------------------

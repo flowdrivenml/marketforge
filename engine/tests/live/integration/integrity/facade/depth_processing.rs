@@ -2,7 +2,6 @@ use marketforge_engine::live::integrity::{
     DepthPublicationEvent, DepthPublicationPhase, IntegrityPublicationAdapter,
 };
 use marketforge_engine::{
-    canonical::{BookSide, EventEnvelope, Exchange, L2LevelUpdate, SequenceMetadata},
     live::{
         config::format::DepthFormatConfig,
         infrastructure::normalization::{DepthMessageKind, NormalizationSource, NormalizedDepth},
@@ -12,6 +11,9 @@ use marketforge_engine::{
             IntegrityAdmissionError, IntegrityDecision, IntegrityFacadeFactory, IntegrityInput,
             IntegrityLifecycleEvent, IntegrityOutcome, StreamIntegrityHandle,
         },
+    },
+    shared::domain::canonical::{
+        BookSide, EventEnvelope, Exchange, L2LevelUpdate, SequenceMetadata,
     },
 };
 use std::path::PathBuf;

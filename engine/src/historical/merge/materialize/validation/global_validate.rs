@@ -1,13 +1,14 @@
-use super::materialize_validate::validate_physical_partition_with_progress;
-use super::progress::MergeProgressReporter;
-use super::{
-    manifest::MergeTimelineFile, materialize_partition::MaterializationPartitionResult,
-    unified_manifest::UnifiedMergeMode,
-};
-use crate::error::{MarketForgeError, Result};
+use crate::historical::merge::materialize::validation::validate::validate_physical_partition_with_progress;
+use crate::historical::merge::progress::MergeProgressReporter;
+use crate::shared::error::{MarketForgeError, Result};
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
+};
+use {
+    crate::historical::merge::materialize::planning::partition::MaterializationPartitionResult,
+    crate::historical::merge::output::manifests::manifest::MergeTimelineFile,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeMode,
 };
 // -----------------------------------------------------------------------------
 // Global validation result

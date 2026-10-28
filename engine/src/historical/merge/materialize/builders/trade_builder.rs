@@ -3,12 +3,15 @@ use std::sync::Arc;
 use arrow_array::{Array, ArrayRef, RecordBatch, UInt32Array, UInt64Array};
 use arrow_select::concat::concat;
 
-use crate::{
-    error::{MarketForgeError, Result},
-    process::parquet::trade_schema,
+use {
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
+    crate::shared::persistence::parquet::trade_schema,
 };
 
-use super::{materialize_resolver::ResolvedMarketEvent, materialize_schema::physical_trade_schema};
+use {
+    crate::historical::merge::materialize::builders::schema::physical_trade_schema,
+    crate::historical::merge::materialize::shared::resolver::ResolvedMarketEvent,
+};
 
 // -----------------------------------------------------------------------------
 // Physical trade batch builder

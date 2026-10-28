@@ -1,10 +1,5 @@
-use super::progress::MergeProgressReporter;
-use super::{
-    materialize_partition::MaterializationPartitionResult,
-    materialize_schema::{physical_combined_schema, physical_depth_schema, physical_trade_schema},
-    unified_manifest::UnifiedMergeMode,
-};
-use crate::error::{MarketForgeError, Result};
+use crate::historical::merge::progress::MergeProgressReporter;
+use crate::shared::error::{MarketForgeError, Result};
 use arrow_array::{
     Array, Int64Array, ListArray, RecordBatch, StructArray, UInt8Array, UInt32Array, UInt64Array,
 };
@@ -13,6 +8,13 @@ use std::time::{Duration, Instant};
 use std::{
     fs::File,
     path::{Path, PathBuf},
+};
+use {
+    crate::historical::merge::materialize::builders::schema::physical_combined_schema,
+    crate::historical::merge::materialize::builders::schema::physical_depth_schema,
+    crate::historical::merge::materialize::builders::schema::physical_trade_schema,
+    crate::historical::merge::materialize::planning::partition::MaterializationPartitionResult,
+    crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeMode,
 };
 
 type OrderingKey = (i64, u32, u64, u64);

@@ -1,8 +1,8 @@
-use super::partition_input::PartitionInputPlan;
-use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeParquetConfig,
-    process::resources::ResourceRequirements,
+use crate::historical::merge::partition::shared::partition_input::PartitionInputPlan;
+use {
+    crate::historical::job::MergeParquetConfig,
+    crate::historical::normalize::resources::ResourceRequirements,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
 };
 // -----------------------------------------------------------------------------
 // Constants

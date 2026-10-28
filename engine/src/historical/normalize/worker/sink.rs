@@ -1,6 +1,7 @@
-use crate::{
-    canonical::Trade, error::Result, formats::depth::DepthProcessingOutcome,
-    process::boundary::DepthBoundaryManifest,
+use {
+    crate::historical::normalize::boundary::DepthBoundaryManifest,
+    crate::shared::domain::canonical::Trade, crate::shared::error::Result,
+    crate::shared::formats::depth::DepthProcessingOutcome,
 };
 
 pub trait TradeSink {

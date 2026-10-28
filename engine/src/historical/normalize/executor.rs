@@ -14,11 +14,11 @@ use super::{
     task::{TaskExecution, execute_task_with_progress},
 };
 use crate::{
-    error::{MarketForgeError, Result},
-    job::{
-        ContentType, ProcessingJob, ProcessingOperation, TargetSchema,
-        validate_processing_job_structure,
+    historical::job::{
+        ContentType, ProcessingJob, ProcessingOperation, validate_processing_job_structure,
     },
+    shared::error::{MarketForgeError, Result},
+    shared::normalization::TargetSchema,
 };
 use std::{fs, path::Path};
 

@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use marketforge_engine::live::infrastructure::normalization::DepthTimestampProvenance;
 use marketforge_engine::{
-    canonical::Exchange,
     live::{
         config::{
             exchange::{ExchangeConfig, ExchangeId, MarketType},
@@ -19,6 +18,7 @@ use marketforge_engine::{
         },
         stream::request::{CreateSourceStreamRequest, QuantityType, SourceChannel},
     },
+    shared::domain::canonical::Exchange,
 };
 use rust_decimal::Decimal;
 use serde_json::{Value, json};

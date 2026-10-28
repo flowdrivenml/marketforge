@@ -12,9 +12,9 @@ use crate::live::integrity::depth::continuity_compiler::{DepthBridgeRule, DepthS
 use crate::live::integrity::depth::resources::{DepthResourceAccounting, DepthResourceLimits};
 use crate::live::integrity::depth::timestamps::{DepthAcceptedTimestamp, DepthSourceTimestamp};
 use crate::{
-    book::{BookChange, BookStore},
-    canonical::BookSide,
     live::infrastructure::normalization::{DepthMessageKind, NormalizationSource, NormalizedDepth},
+    shared::domain::book::{BookChange, BookStore},
+    shared::domain::canonical::BookSide,
 };
 use std::time::Instant;
 
@@ -1542,7 +1542,7 @@ impl LiveDepthController {
     fn evaluate_rest_bridge(
         &self,
         snapshot_sequence: u64,
-        sequence: &crate::canonical::SequenceMetadata,
+        sequence: &crate::shared::domain::canonical::SequenceMetadata,
     ) -> RestBridgeDecision {
         match self.plan.initial_bridge {
             DepthBridgeRule::BinanceSpotRangeContainsSnapshot => {
@@ -1816,8 +1816,10 @@ mod tests {
     use rust_decimal::Decimal;
 
     use crate::{
-        canonical::{BookSide, EventEnvelope, Exchange, L2LevelUpdate, SequenceMetadata},
         live::{config::format::DepthFormatConfig, integrity::DepthContinuityCompiler},
+        shared::domain::canonical::{
+            BookSide, EventEnvelope, Exchange, L2LevelUpdate, SequenceMetadata,
+        },
     };
 
     fn begin_rest(controller: &mut LiveDepthController) {

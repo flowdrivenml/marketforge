@@ -375,4 +375,3 @@ fn factory_construction_does_not_consume_rate_limit_budget() {
         );
     }
 }
-

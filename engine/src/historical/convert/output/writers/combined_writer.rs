@@ -1,21 +1,23 @@
-use super::{
-    provenance::{build_conversion_paths, build_conversion_references},
-    schema::{
-        CONVERSION_STATUS_CONVERTED, CONVERSION_STATUS_IDENTITY, CONVERSION_STATUS_SKIPPED,
-        CONVERSION_STATUS_UNAVAILABLE, converted_combined_schema,
-    },
-    trade::TradeConversionRow,
-};
-use crate::{
-    error::{MarketForgeError, Result},
-    process::convert::execution::CombinedConversionRow,
-};
 use arrow_array::{
     Array, ArrayRef, Decimal256Array, ListArray, RecordBatch, StringArray, StructArray, UInt8Array,
 };
 use arrow_buffer::{OffsetBuffer, i256};
 use arrow_schema::{DataType, SchemaRef};
 use std::sync::Arc;
+use {
+    crate::historical::convert::execution::CombinedConversionRow,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
+};
+use {
+    crate::historical::convert::output::publication::provenance::build_conversion_paths,
+    crate::historical::convert::output::publication::provenance::build_conversion_references,
+    crate::historical::convert::output::schema::CONVERSION_STATUS_CONVERTED,
+    crate::historical::convert::output::schema::CONVERSION_STATUS_IDENTITY,
+    crate::historical::convert::output::schema::CONVERSION_STATUS_SKIPPED,
+    crate::historical::convert::output::schema::CONVERSION_STATUS_UNAVAILABLE,
+    crate::historical::convert::output::schema::converted_combined_schema,
+    crate::historical::convert::output::schema::trade::TradeConversionRow,
+};
 
 // -----------------------------------------------------------------------------
 // Combined Arrow batch builder

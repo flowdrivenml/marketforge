@@ -2,9 +2,9 @@ use std::{fs::File, path::Path};
 
 use parquet::file::reader::{FileReader, SerializedFileReader};
 
-use crate::{
-    error::{MarketForgeError, Result},
-    process::merge::PhysicalMergeManifest,
+use {
+    crate::historical::merge::PhysicalMergeManifest, crate::shared::error::MarketForgeError,
+    crate::shared::error::Result,
 };
 
 // -----------------------------------------------------------------------------

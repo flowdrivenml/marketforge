@@ -1,6 +1,5 @@
 use marketforge_engine::live::integrity::{IntegrityAdmissionError, IntegrityAdmissionState};
 use marketforge_engine::{
-    canonical::{EventEnvelope, Exchange, Trade, TradeSide},
     live::{
         infrastructure::normalization::{
             NormalizationSource, NormalizedTrades, TradeRecordSemantics,
@@ -13,6 +12,7 @@ use marketforge_engine::{
             TradeIdentityLimits, TradeSequenceKind, TradeSourceBinding, TradeSourceEpoch,
         },
     },
+    shared::domain::canonical::{EventEnvelope, Exchange, Trade, TradeSide},
 };
 
 use rust_decimal::Decimal;

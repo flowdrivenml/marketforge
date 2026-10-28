@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::job::{DatasetId, JobId, PROCESSING_PROTOCOL_VERSION};
+use crate::historical::job::{DatasetId, JobId, PROCESSING_PROTOCOL_VERSION};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

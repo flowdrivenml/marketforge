@@ -5,7 +5,7 @@ use std::{
 
 use arrow_array::RecordBatch;
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
 // -----------------------------------------------------------------------------
 // Cache identity

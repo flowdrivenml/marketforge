@@ -3,12 +3,12 @@ use std::{
     path::{Component, Path},
 };
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
-use super::{
-    materialize_parallel::MaterializationPartitionPlan,
-    unified_partition_executor::UnifiedPartitionResult,
-    unified_partition_input::UnifiedPartitionInputPlan,
+use {
+    crate::historical::merge::materialize::shared::parallel::MaterializationPartitionPlan,
+    crate::historical::merge::partition::unified::partition_executor::UnifiedPartitionResult,
+    crate::historical::merge::partition::unified::partition_input::UnifiedPartitionInputPlan,
 };
 
 pub fn build_materialization_plans(

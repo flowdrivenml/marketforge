@@ -7,12 +7,12 @@ use arrow_array::{
 use arrow_buffer::{NullBuffer, OffsetBuffer};
 use arrow_schema::{DataType, Field, Fields};
 
-use crate::{
-    error::{MarketForgeError, Result},
-    process::convert::ConversionDirection,
+use {
+    crate::historical::convert::ConversionDirection, crate::shared::error::MarketForgeError,
+    crate::shared::error::Result,
 };
 
-use super::trade::TradeConversionRow;
+use crate::historical::convert::output::schema::trade::TradeConversionRow;
 
 // -----------------------------------------------------------------------------
 // Conversion paths

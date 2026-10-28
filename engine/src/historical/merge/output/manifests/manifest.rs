@@ -2,16 +2,17 @@ use std::{fs::File, io::BufWriter, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-use super::checkpoint::InitialMergeCheckpoint;
-use super::checkpoint::MergeCheckpoint;
-use super::{
-    boundary::{DepthBoundaryLink, MergeBoundaryRelation},
-    inventory::DepthTaskInventory,
-    writer::TimelineWriterMetrics,
-};
+use crate::historical::merge::depth::checkpoint::InitialMergeCheckpoint;
+use crate::historical::merge::depth::checkpoint::MergeCheckpoint;
 use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeTimeRange,
+    historical::job::MergeTimeRange,
+    shared::error::{MarketForgeError, Result},
+};
+use {
+    crate::historical::merge::depth::boundary::DepthBoundaryLink,
+    crate::historical::merge::depth::boundary::MergeBoundaryRelation,
+    crate::historical::merge::depth::inventory::DepthTaskInventory,
+    crate::historical::merge::output::writers::writer::TimelineWriterMetrics,
 };
 
 pub const MERGE_MANIFEST_VERSION: u32 = 1;

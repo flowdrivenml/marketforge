@@ -1,14 +1,16 @@
 #[cfg(feature = "monitor-tui")]
 use marketforge_engine::tui::merging::execute_merge_with_tui;
-use marketforge_engine::{
-    job::{ContentType, load_merge_job},
-    process::merge::{execute_unified_merge_job, resolve_merge_inputs},
-};
 use std::{
     env, fs,
     path::{Path, PathBuf},
     process::ExitCode,
     time::Instant,
+};
+use {
+    marketforge_engine::historical::job::ContentType,
+    marketforge_engine::historical::job::load_merge_job,
+    marketforge_engine::historical::merge::execute_unified_merge_job,
+    marketforge_engine::historical::merge::resolve_merge_inputs,
 };
 
 // -----------------------------------------------------------------------------

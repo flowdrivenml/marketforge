@@ -1,8 +1,11 @@
-use crate::error::Result;
+use crate::shared::error::Result;
 
-use super::{
-    depth_stream::DepthStream, event::MergeEventRef, manifest::MergeSkippedInitialization,
-    partition_stream::PartitionDepthStream, trade_stream::TradeStream,
+use {
+    crate::historical::merge::core::event::MergeEventRef,
+    crate::historical::merge::depth::partition_stream::PartitionDepthStream,
+    crate::historical::merge::depth::stream::DepthStream,
+    crate::historical::merge::output::manifests::manifest::MergeSkippedInitialization,
+    crate::historical::merge::trades::stream::TradeStream,
 };
 
 // -----------------------------------------------------------------------------
@@ -51,6 +54,6 @@ impl MergeEventSource for PartitionDepthStream {
     }
 
     fn skipped_initializations(&self) -> &[MergeSkippedInitialization] {
-        <PartitionDepthStream as super::source::DepthEventSource>::skipped_initializations(self)
+        <PartitionDepthStream as crate::historical::merge::core::source::DepthEventSource>::skipped_initializations(self)
     }
 }

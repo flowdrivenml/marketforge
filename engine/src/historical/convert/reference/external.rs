@@ -2,11 +2,11 @@ use super::{
     PhysicalReferenceReader, REFERENCE_READ_BATCH_SIZE, ReferenceObservation, ReferenceState,
 };
 use crate::historical::merge::{UnifiedMergeMode, UnifiedMergeStreamKind};
-use crate::{
-    error::{MarketForgeError, Result},
-    process::merge::PhysicalMergeManifest,
-};
 use std::{collections::HashSet, path::Path};
+use {
+    crate::historical::merge::PhysicalMergeManifest, crate::shared::error::MarketForgeError,
+    crate::shared::error::Result,
+};
 
 // -----------------------------------------------------------------------------
 // External reference cursor

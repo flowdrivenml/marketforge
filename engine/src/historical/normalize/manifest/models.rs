@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    job::ContentType,
-    process::metrics::{IntegrityEvaluation, IntegrityStatus, ProcessingMetricsReport},
+use {
+    crate::historical::job::ContentType,
+    crate::historical::normalize::metrics::IntegrityEvaluation,
+    crate::historical::normalize::metrics::IntegrityStatus,
+    crate::historical::normalize::metrics::ProcessingMetricsReport,
 };
 
 pub const DATASET_MANIFEST_VERSION: u32 = 2;

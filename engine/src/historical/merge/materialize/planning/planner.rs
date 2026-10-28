@@ -3,11 +3,13 @@ use std::{
     path::PathBuf,
 };
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
-use super::{
-    materialize_inventory::CanonicalRowIndex, materialize_resolver::CanonicalTaskKey,
-    materialize_row_groups::CanonicalRowGroupIndex, unified_timeline::UnifiedTimelineRecord,
+use {
+    crate::historical::merge::materialize::planning::row_groups::CanonicalRowGroupIndex,
+    crate::historical::merge::materialize::readers::inventory::CanonicalRowIndex,
+    crate::historical::merge::materialize::shared::resolver::CanonicalTaskKey,
+    crate::historical::merge::output::writers::unified_timeline::UnifiedTimelineRecord,
 };
 
 // -----------------------------------------------------------------------------

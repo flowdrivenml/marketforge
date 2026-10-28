@@ -1,10 +1,12 @@
-use crate::{
-    error::{MarketForgeError, Result},
-    job::IntegrityPolicy,
-    process::metrics::{
-        IntegrityCategory, IntegrityDiagnostic, IntegrityScope, ScopedIntegrityMetrics,
-        TaskMetrics, enforce_immediate_integrity,
-    },
+use {
+    crate::historical::job::IntegrityPolicy,
+    crate::historical::normalize::metrics::IntegrityCategory,
+    crate::historical::normalize::metrics::IntegrityDiagnostic,
+    crate::historical::normalize::metrics::IntegrityScope,
+    crate::historical::normalize::metrics::ScopedIntegrityMetrics,
+    crate::historical::normalize::metrics::TaskMetrics,
+    crate::historical::normalize::metrics::enforce_immediate_integrity,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
 };
 
 pub fn record_integrity_error(

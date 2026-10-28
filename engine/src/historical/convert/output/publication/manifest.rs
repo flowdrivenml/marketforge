@@ -1,21 +1,28 @@
-use super::combined_validation::{CombinedValidationMetrics, validate_combined_file};
-use super::depth_validation::{DepthConversionValidationMetrics, validate_depth_file};
-use super::receipt::ConversionDepthStatistics;
-use super::{
-    source_validation::SourcePreservationMetrics, validation::ConversionValidationMetrics,
-};
+use crate::historical::convert::output::publication::receipt::ConversionDepthStatistics;
 use crate::historical::merge::UnifiedMergeMode;
-use crate::{
-    error::{MarketForgeError, Result},
-    job::{ConversionConfig, ConvertJob},
-    process::merge::PhysicalMergeManifest,
-};
 use serde::{Deserialize, Serialize};
 use std::path::Component;
 use std::{
     fs::File,
     io::BufWriter,
     path::{Path, PathBuf},
+};
+use {
+    crate::historical::convert::output::validation::combined::CombinedValidationMetrics,
+    crate::historical::convert::output::validation::combined::validate_combined_file,
+};
+use {
+    crate::historical::convert::output::validation::depth::DepthConversionValidationMetrics,
+    crate::historical::convert::output::validation::depth::validate_depth_file,
+};
+use {
+    crate::historical::convert::output::validation::source::SourcePreservationMetrics,
+    crate::historical::convert::output::validation::trades::ConversionValidationMetrics,
+};
+use {
+    crate::historical::job::ConversionConfig, crate::historical::job::ConvertJob,
+    crate::historical::merge::PhysicalMergeManifest, crate::shared::error::MarketForgeError,
+    crate::shared::error::Result,
 };
 
 pub const CONVERSION_MANIFEST_VERSION: u32 = 1;
@@ -140,7 +147,8 @@ impl ConversionManifest {
 
         let manifest = Self {
             protocol_version: CONVERSION_MANIFEST_VERSION,
-            conversion_schema_version: super::schema::CONVERSION_SCHEMA_VERSION,
+            conversion_schema_version:
+                crate::historical::convert::output::schema::CONVERSION_SCHEMA_VERSION,
 
             job_id: job.job_id,
 
@@ -195,7 +203,9 @@ impl ConversionManifest {
             return invalid("unsupported conversion manifest version");
         }
 
-        if self.conversion_schema_version != super::schema::CONVERSION_SCHEMA_VERSION {
+        if self.conversion_schema_version
+            != crate::historical::convert::output::schema::CONVERSION_SCHEMA_VERSION
+        {
             return invalid("unsupported conversion schema version");
         }
 
@@ -360,7 +370,8 @@ impl ConversionManifest {
 
         let manifest = Self {
             protocol_version: CONVERSION_MANIFEST_VERSION,
-            conversion_schema_version: super::schema::CONVERSION_SCHEMA_VERSION,
+            conversion_schema_version:
+                crate::historical::convert::output::schema::CONVERSION_SCHEMA_VERSION,
 
             job_id: job.job_id,
 
@@ -464,7 +475,8 @@ impl ConversionManifest {
 
         let manifest = Self {
             protocol_version: CONVERSION_MANIFEST_VERSION,
-            conversion_schema_version: super::schema::CONVERSION_SCHEMA_VERSION,
+            conversion_schema_version:
+                crate::historical::convert::output::schema::CONVERSION_SCHEMA_VERSION,
 
             job_id: job.job_id,
 
@@ -525,7 +537,8 @@ impl ConversionManifest {
 fn discover_output_files(directory: &Path) -> Result<Vec<ConversionManifestFile>> {
     use parquet::file::reader::{FileReader, SerializedFileReader};
 
-    let paths = super::files::discover_conversion_files(directory)?;
+    let paths =
+        crate::historical::convert::output::shared::files::discover_conversion_files(directory)?;
 
     let mut files = Vec::with_capacity(paths.len());
 

@@ -11,8 +11,8 @@ use crate::live::infrastructure::normalization::quantity::{
 };
 use crate::live::stream::request::SourceChannel;
 use crate::{
-    canonical::{BookSide, EventEnvelope, Exchange, L2LevelUpdate},
     live::config::{exchange::ExchangeId, format::DepthFormatConfig},
+    shared::domain::canonical::{BookSide, EventEnvelope, Exchange, L2LevelUpdate},
 };
 use serde_json::Value;
 use thiserror::Error;

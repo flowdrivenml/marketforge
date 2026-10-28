@@ -13,10 +13,10 @@ use super::{
     scheduler::execute_parallel_budgeted,
     task::{TaskExecution, execute_task, execute_task_with_progress},
 };
-use crate::job::{ContentType, TargetSchema};
+use crate::{historical::job::ContentType, shared::normalization::TargetSchema};
 use crate::{
-    error::{MarketForgeError, Result},
-    job::{ProcessingJob, WorkTask, validate_processing_job_structure},
+    historical::job::{ProcessingJob, WorkTask, validate_processing_job_structure},
+    shared::error::{MarketForgeError, Result},
 };
 use std::collections::HashMap;
 

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    error::{MarketForgeError, Result},
-    job::IntegrityCategory,
+    shared::error::{MarketForgeError, Result},
+    shared::validation::IntegrityCategory,
 };
 
 pub const DEFAULT_MAX_DIAGNOSTICS: usize = 20;

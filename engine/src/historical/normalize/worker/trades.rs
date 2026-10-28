@@ -1,19 +1,22 @@
 use super::sink::TradeSink;
 use crate::historical::normalize::progress::WorkerProgress;
 use crate::{
-    decode::CsvDecoder,
-    error::{MarketForgeError, Result},
-    formats::trades::{
+    shared::error::{MarketForgeError, Result},
+    shared::formats::trades::{
         IdentityDecision, InstrumentMatcher, TradeContext, TradeProcessor, resolve_trade_headers,
     },
-    source::with_source_reader,
+    shared::io::decode::CsvDecoder,
+    shared::io::source::with_source_reader,
 };
-use crate::{
-    job::{IntegrityPolicy, TargetSchema, WorkTask},
-    process::metrics::{
-        IntegrityCategory, IntegrityDiagnostic, IntegrityScope, ScopedIntegrityMetrics,
-        TaskMetrics, enforce_immediate_integrity,
-    },
+use {
+    crate::historical::job::IntegrityPolicy, crate::historical::job::WorkTask,
+    crate::historical::normalize::metrics::IntegrityCategory,
+    crate::historical::normalize::metrics::IntegrityDiagnostic,
+    crate::historical::normalize::metrics::IntegrityScope,
+    crate::historical::normalize::metrics::ScopedIntegrityMetrics,
+    crate::historical::normalize::metrics::TaskMetrics,
+    crate::historical::normalize::metrics::enforce_immediate_integrity,
+    crate::shared::normalization::TargetSchema,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

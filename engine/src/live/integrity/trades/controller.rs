@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
 use crate::{
-    canonical::Trade,
     live::infrastructure::normalization::{
         NormalizationSource, NormalizedTrades, TradeRecordSemantics,
     },
+    shared::domain::canonical::Trade,
 };
 
 use crate::live::integrity::trades::compiler::{CompiledTradeIntegrityPlan, TradeCoverageAction};
@@ -586,10 +586,10 @@ mod tests {
 
     use rust_decimal::Decimal;
 
-    use crate::canonical::{EventEnvelope, Exchange, TradeSide};
     use crate::live::integrity::trades::compiler::{
         TradeCoverageAction, TradeIdentityKind, TradeSequenceKind,
     };
+    use crate::shared::domain::canonical::{EventEnvelope, Exchange, TradeSide};
     const STREAM_ID: &str = "bybit:spot:BTCUSDT:trades";
 
     fn limits() -> TradeIdentityLimits {

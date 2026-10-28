@@ -1,15 +1,17 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use super::materialize_reader::CanonicalForwardCursor;
-use super::{
-    materialize_planner::GroupedReadPlan, materialize_reader::CanonicalParquetReader,
-    materialize_resolver::ResolvedMarketEvent, materialize_row_groups::CanonicalRowGroupIndex,
-};
-use crate::error::{MarketForgeError, Result};
+use crate::historical::merge::materialize::readers::reader::CanonicalForwardCursor;
+use crate::shared::error::{MarketForgeError, Result};
 use arrow_array::RecordBatch;
 use arrow_array::{Array, Int64Array};
 use std::collections::HashSet;
 use std::collections::VecDeque;
+use {
+    crate::historical::merge::materialize::planning::planner::GroupedReadPlan,
+    crate::historical::merge::materialize::planning::row_groups::CanonicalRowGroupIndex,
+    crate::historical::merge::materialize::readers::reader::CanonicalParquetReader,
+    crate::historical::merge::materialize::shared::resolver::ResolvedMarketEvent,
+};
 
 pub struct GroupedCanonicalDecoder {
     reader: CanonicalParquetReader,

@@ -1,9 +1,11 @@
 use std::path::Path;
 
-use crate::{
-    error::{MarketForgeError, Result},
-    job::ProcessingJob,
-    process::metrics::{IntegrityEvaluation, IntegrityStatus, ProcessingMetricsReport},
+use {
+    crate::historical::job::ProcessingJob,
+    crate::historical::normalize::metrics::IntegrityEvaluation,
+    crate::historical::normalize::metrics::IntegrityStatus,
+    crate::historical::normalize::metrics::ProcessingMetricsReport,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
 };
 
 use super::{

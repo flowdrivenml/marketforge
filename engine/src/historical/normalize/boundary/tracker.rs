@@ -1,7 +1,7 @@
 use crate::{
-    book::SequencePolicy,
-    canonical::Exchange,
-    formats::depth::{DepthEventBoundary, DepthSourceEventMetadata},
+    shared::domain::book::SequencePolicy,
+    shared::domain::canonical::Exchange,
+    shared::formats::depth::{DepthEventBoundary, DepthSourceEventMetadata},
 };
 
 use super::{BoundaryBookState, BoundaryContinuity, BoundarySnapshot, DepthBoundaryManifest};

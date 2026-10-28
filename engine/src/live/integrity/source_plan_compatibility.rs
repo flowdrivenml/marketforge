@@ -1,6 +1,6 @@
 use crate::{
-    canonical::Exchange,
     live::config::exchange::{ExchangeId, MarketType},
+    shared::domain::canonical::Exchange,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

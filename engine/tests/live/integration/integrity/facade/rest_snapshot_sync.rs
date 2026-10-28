@@ -2,7 +2,6 @@ use marketforge_engine::live::integrity::{
     IntegrityAdmissionError, IntegrityAdmissionState, IntegrityRecoveryError,
 };
 use marketforge_engine::{
-    canonical::{BookSide, EventEnvelope, Exchange, L2LevelUpdate, SequenceMetadata},
     live::{
         config::{exchange::ExchangeConfig, format::DepthFormatConfig},
         infrastructure::normalization::{DepthMessageKind, NormalizationSource, NormalizedDepth},
@@ -13,6 +12,9 @@ use marketforge_engine::{
             IntegrityLifecycleEvent, IntegrityOutcome, IntegrityRecoveryResult,
             RestDepthEndpointConfig, RestDepthRequestContext, StreamIntegrityHandle,
         },
+    },
+    shared::domain::canonical::{
+        BookSide, EventEnvelope, Exchange, L2LevelUpdate, SequenceMetadata,
     },
 };
 use std::path::PathBuf;

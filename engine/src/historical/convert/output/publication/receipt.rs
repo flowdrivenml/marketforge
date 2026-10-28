@@ -1,17 +1,17 @@
-use super::combined_validation::CombinedValidationMetrics;
 use crate::historical::convert::execution::PhysicalCombinedConversionMetrics;
 use crate::historical::convert::execution::PhysicalDepthConversionMetrics;
 use crate::historical::convert::output::DepthConversionValidationMetrics;
-use crate::historical::convert::output::validation::ConversionValidationMetrics;
-use crate::{
-    error::{MarketForgeError, Result},
-    process::convert::execution::PhysicalConversionMetrics,
-};
+use crate::historical::convert::output::validation::combined::CombinedValidationMetrics;
+use crate::historical::convert::output::validation::trades::ConversionValidationMetrics;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
     io::BufWriter,
     path::Path,
+};
+use {
+    crate::historical::convert::execution::PhysicalConversionMetrics,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
 };
 
 pub const CONVERSION_RECEIPT_FILENAME: &str = "execution.json";

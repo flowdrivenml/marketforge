@@ -1,8 +1,4 @@
 use super::state::{ReferenceKey, ReferenceObservation};
-use crate::{
-    error::{MarketForgeError, Result},
-    process::{convert::ConversionDecimal, merge::PhysicalMergeManifest},
-};
 use arrow_array::{Array, Decimal256Array, Int64Array, RecordBatch, UInt32Array, UInt64Array};
 use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
 use parquet::file::reader::{FileReader, SerializedFileReader};
@@ -10,6 +6,10 @@ use std::{
     collections::HashMap,
     fs::File,
     path::{Path, PathBuf},
+};
+use {
+    crate::historical::convert::ConversionDecimal, crate::historical::merge::PhysicalMergeManifest,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
 };
 
 pub const REFERENCE_READ_BATCH_SIZE: usize = 65_536;

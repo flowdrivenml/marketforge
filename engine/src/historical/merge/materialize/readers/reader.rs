@@ -6,9 +6,12 @@ use std::{
 use arrow_array::RecordBatch;
 use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
-use super::{materialize_cache::CanonicalRowGroupCache, materialize_inventory::CanonicalFileSlice};
+use {
+    crate::historical::merge::materialize::readers::cache::CanonicalRowGroupCache,
+    crate::historical::merge::materialize::readers::inventory::CanonicalFileSlice,
+};
 
 const READ_BATCH_SIZE: usize = 8192;
 

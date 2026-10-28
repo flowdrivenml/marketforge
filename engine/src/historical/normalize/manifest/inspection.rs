@@ -8,7 +8,7 @@ use parquet::file::{
     statistics::Statistics,
 };
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
 use super::models::DatasetFile;
 

@@ -4,7 +4,6 @@ use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
 use marketforge_engine::{
-    canonical::Exchange,
     live::{
         config::{
             exchange::{ExchangeConfig, ExchangeId, MarketType},
@@ -20,6 +19,7 @@ use marketforge_engine::{
         },
         stream::request::{CreateSourceStreamRequest, QuantityType, SourceChannel},
     },
+    shared::domain::canonical::Exchange,
 };
 
 const STREAM: &str = "integration:binance:rest-sync";

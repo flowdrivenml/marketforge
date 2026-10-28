@@ -1,7 +1,6 @@
 use rust_decimal::Decimal;
 
 use marketforge_engine::{
-    canonical::{BookSide, L2LevelUpdate, SequenceMetadata},
     live::{
         config::format::DepthFormatConfig,
         infrastructure::normalization::{DepthMessageKind, NormalizedDepth},
@@ -10,9 +9,9 @@ use marketforge_engine::{
             DepthResourceLimits, DepthSourceBinding, DepthSourceEpoch,
         },
     },
+    shared::domain::canonical::{BookSide, L2LevelUpdate, SequenceMetadata},
 };
 use marketforge_engine::{
-    canonical::{EventEnvelope, Exchange, Trade, TradeSide},
     live::{
         infrastructure::{
             normalization::{NormalizationSource, NormalizedTrades, TradeRecordSemantics},
@@ -24,6 +23,7 @@ use marketforge_engine::{
             TradeSequenceKind, TradeSourceBinding, TradeSourceEpoch,
         },
     },
+    shared::domain::canonical::{EventEnvelope, Exchange, Trade, TradeSide},
 };
 
 // ============================================================

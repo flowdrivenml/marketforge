@@ -1,6 +1,9 @@
-use crate::error::Result;
+use crate::shared::error::Result;
 
-use super::{depth_stream::DepthEventRef, manifest::MergeSkippedInitialization};
+use {
+    crate::historical::merge::depth::stream::DepthEventRef,
+    crate::historical::merge::output::manifests::manifest::MergeSkippedInitialization,
+};
 
 // -----------------------------------------------------------------------------
 // Depth event source

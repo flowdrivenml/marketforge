@@ -7,11 +7,12 @@ use std::{
 use arrow_array::{Array, Int64Array};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
-use super::{
-    manifest::MergeTimelineFile, partition_executor::MergePartitionResult,
-    timeline::timeline_schema,
+use {
+    crate::historical::merge::output::manifests::manifest::MergeTimelineFile,
+    crate::historical::merge::output::writers::timeline::timeline_schema,
+    crate::historical::merge::partition::shared::partition_executor::MergePartitionResult,
 };
 
 // -----------------------------------------------------------------------------

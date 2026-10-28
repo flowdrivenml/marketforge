@@ -1,19 +1,17 @@
 use std::path::Path;
 
-use crate::{
-    error::{MarketForgeError, Result},
-    job::{ConvertJob, MergeParquetConfig},
-    process::{
-        convert::{
-            ConversionPlan,
-            output::{ConvertedParquetWriter, ConvertedTradeBatchBuilder},
-            reference::ReferenceState,
-        },
-        merge::PhysicalMergeManifest,
-    },
+use {
+    crate::historical::convert::ConversionPlan,
+    crate::historical::convert::output::ConvertedParquetWriter,
+    crate::historical::convert::output::ConvertedTradeBatchBuilder,
+    crate::historical::convert::reference::ReferenceState, crate::historical::job::ConvertJob,
+    crate::historical::job::MergeParquetConfig, crate::historical::merge::PhysicalMergeManifest,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
 };
 
-use super::{CONVERSION_READ_BATCH_SIZE, PhysicalConversionReader, TradeConversionKernel};
+use crate::historical::convert::execution::{
+    CONVERSION_READ_BATCH_SIZE, PhysicalConversionReader, TradeConversionKernel,
+};
 
 // -----------------------------------------------------------------------------
 // Metrics

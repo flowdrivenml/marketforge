@@ -1,5 +1,4 @@
 use marketforge_engine::{
-    canonical::{EventEnvelope, Exchange, Trade, TradeSide},
     live::{
         infrastructure::normalization::{
             NormalizationSource, NormalizedTrades, TradeRecordSemantics,
@@ -10,6 +9,7 @@ use marketforge_engine::{
             TradeSequenceKind, TradeSourceBinding, TradeSourceBindingError, TradeSourceEpoch,
         },
     },
+    shared::domain::canonical::{EventEnvelope, Exchange, Trade, TradeSide},
 };
 
 use rust_decimal::Decimal;

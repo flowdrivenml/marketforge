@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use marketforge_engine::{
-    canonical::Exchange,
     live::{
         config::{
             exchange::ExchangeConfig,
@@ -15,6 +14,7 @@ use marketforge_engine::{
             TradeIntegrityCompiler, TradeSourceBinding, TradeSourceEpoch,
         },
     },
+    shared::domain::canonical::Exchange,
 };
 
 // ============================================================

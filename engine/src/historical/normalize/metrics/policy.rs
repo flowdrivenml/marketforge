@@ -4,15 +4,15 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    error::{MarketForgeError, Result},
-    job::{IntegrityAction, IntegrityPolicy, IntegrityRule, IntegrityWindowRule},
+    historical::job::{IntegrityAction, IntegrityPolicy, IntegrityRule, IntegrityWindowRule},
+    shared::error::{MarketForgeError, Result},
 };
 
 use super::windows::{
     CategoryObservation, CategoryStatistics, IntegrityScope, ScopedIntegrityMetrics,
 };
 
-use crate::job::IntegrityCategory;
+use crate::shared::validation::IntegrityCategory;
 pub const MAX_POLICY_VIOLATIONS: usize = 100;
 // -----------------------------------------------------------------------------
 // Policy evaluation status

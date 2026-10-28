@@ -1,22 +1,21 @@
-use super::{
-    checkpoints::{ConversionCheckpointBuilder, ConversionReferenceCheckpoint},
-    partition::ConversionPartitionPlan,
-    reader::{CONVERSION_READ_BATCH_SIZE, PhysicalConversionReader},
-};
-use crate::job::ConvertJob;
-use crate::{
-    error::{MarketForgeError, Result},
-    process::{
-        convert::{
-            ConversionDecimal, ConversionPlan,
-            reference::{ReferenceKey, ReferenceObservation},
-        },
-        merge::PhysicalMergeManifest,
-    },
-};
+use crate::historical::job::ConvertJob;
 use arrow_array::{Array, Decimal256Array, UInt32Array, UInt64Array};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use {
+    crate::historical::convert::ConversionDecimal, crate::historical::convert::ConversionPlan,
+    crate::historical::convert::reference::ReferenceKey,
+    crate::historical::convert::reference::ReferenceObservation,
+    crate::historical::merge::PhysicalMergeManifest, crate::shared::error::MarketForgeError,
+    crate::shared::error::Result,
+};
+use {
+    crate::historical::convert::execution::shared::checkpoints::ConversionCheckpointBuilder,
+    crate::historical::convert::execution::shared::checkpoints::ConversionReferenceCheckpoint,
+    crate::historical::convert::execution::shared::partition::ConversionPartitionPlan,
+    crate::historical::convert::execution::shared::reader::CONVERSION_READ_BATCH_SIZE,
+    crate::historical::convert::execution::shared::reader::PhysicalConversionReader,
+};
 
 // -----------------------------------------------------------------------------
 // Reference prepass result

@@ -1,8 +1,11 @@
 use std::{fs, path::Path};
 
-use crate::error::{MarketForgeError, Result};
+use crate::shared::error::{MarketForgeError, Result};
 
-use super::materialize_manifest::{PhysicalMergeManifest, write_physical_merge_manifest};
+use {
+    crate::historical::merge::materialize::publication::manifest::PhysicalMergeManifest,
+    crate::historical::merge::materialize::publication::manifest::write_physical_merge_manifest,
+};
 
 pub fn prepare_physical_publication(
     staging: &Path,

@@ -5,12 +5,17 @@ use std::{
     time::Instant,
 };
 
-use marketforge_engine::{
-    job::{
-        ContentType, MergeJob, MergeOperation, MergeOutput, MergeParquetConfig, MergePartitioning,
-        MergeResources, MergeTimeRange,
-    },
-    process::merge::{PhysicalMergeManifest, execute_unified_merge_job},
+use {
+    marketforge_engine::historical::job::ContentType,
+    marketforge_engine::historical::job::MergeJob,
+    marketforge_engine::historical::job::MergeOperation,
+    marketforge_engine::historical::job::MergeOutput,
+    marketforge_engine::historical::job::MergeParquetConfig,
+    marketforge_engine::historical::job::MergePartitioning,
+    marketforge_engine::historical::job::MergeResources,
+    marketforge_engine::historical::job::MergeTimeRange,
+    marketforge_engine::historical::merge::PhysicalMergeManifest,
+    marketforge_engine::historical::merge::execute_unified_merge_job,
 };
 
 use serde::{Deserialize, Serialize};

@@ -1,5 +1,5 @@
-use super::execute_conversion_partition_with_progress;
-use super::{
+use crate::historical::convert::execution::execute_conversion_partition_with_progress;
+use crate::historical::convert::execution::{
     ConversionPartitionPlan, ConversionPartitionResult, ConversionPrepassResult,
     PhysicalConversionMetrics, execute_conversion_partition,
 };
@@ -7,16 +7,16 @@ use crate::historical::convert::progress::ConversionWorkerProgress;
 use crate::historical::convert::progress::{
     ConversionPartitionKey, ConversionProgress, ConversionProgressReporter,
 };
-use crate::{
-    error::{MarketForgeError, Result},
-    job::{ConvertJob, MergeParquetConfig},
-    process::{convert::ConversionPlan, merge::PhysicalMergeManifest},
-};
 use std::{
     collections::VecDeque,
     path::Path,
     sync::{Arc, Mutex},
     thread,
+};
+use {
+    crate::historical::convert::ConversionPlan, crate::historical::job::ConvertJob,
+    crate::historical::job::MergeParquetConfig, crate::historical::merge::PhysicalMergeManifest,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
 };
 
 // -----------------------------------------------------------------------------

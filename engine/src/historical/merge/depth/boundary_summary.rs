@@ -1,8 +1,9 @@
 use serde::Deserialize;
 
-use crate::{
-    canonical::Exchange,
-    process::boundary::{BoundaryContinuity, SnapshotCoverage},
+use {
+    crate::historical::normalize::boundary::BoundaryContinuity,
+    crate::historical::normalize::boundary::SnapshotCoverage,
+    crate::shared::domain::canonical::Exchange,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

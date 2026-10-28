@@ -513,8 +513,10 @@ mod tests {
     use rust_decimal::Decimal;
 
     use crate::{
-        canonical::{BookSide, EventEnvelope, Exchange, L2LevelUpdate, SequenceMetadata},
         live::{config::format::DepthFormatConfig, integrity::DepthContinuityCompiler},
+        shared::domain::canonical::{
+            BookSide, EventEnvelope, Exchange, L2LevelUpdate, SequenceMetadata,
+        },
     };
 
     fn plan(profile: &str) -> CompiledDepthContinuityPlan {

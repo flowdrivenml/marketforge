@@ -10,12 +10,14 @@ use parquet::{
 };
 
 use crate::{
-    error::{MarketForgeError, Result},
-    job::MergeParquetConfig,
+    historical::job::MergeParquetConfig,
+    shared::error::{MarketForgeError, Result},
 };
 
-use super::unified_timeline::{
-    UnifiedTimelineBatchBuilder, UnifiedTimelineRecord, unified_timeline_schema,
+use {
+    crate::historical::merge::output::writers::unified_timeline::UnifiedTimelineBatchBuilder,
+    crate::historical::merge::output::writers::unified_timeline::UnifiedTimelineRecord,
+    crate::historical::merge::output::writers::unified_timeline::unified_timeline_schema,
 }; // -----------------------------------------------------------------------------
 // Writer metrics
 // -----------------------------------------------------------------------------

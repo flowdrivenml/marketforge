@@ -5,11 +5,12 @@ use std::{
 
 use clap::{ArgGroup, Parser};
 
-use marketforge_engine::{
-    job::{ProcessingJob, load_processing_job},
-    process::{
-        execute_processing_job, load_processing_config, session::execute_processing_session,
-    },
+use {
+    marketforge_engine::historical::job::ProcessingJob,
+    marketforge_engine::historical::job::load_processing_job,
+    marketforge_engine::historical::normalize::execute_processing_job,
+    marketforge_engine::historical::normalize::load_processing_config,
+    marketforge_engine::historical::normalize::session::execute_processing_session,
 };
 
 #[cfg(feature = "monitor-tui")]

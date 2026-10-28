@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
-use crate::{
-    error::{MarketForgeError, Result},
-    job::ConvertJob,
-    process::merge::PhysicalMergeManifest,
+use {
+    crate::historical::job::ConvertJob, crate::historical::merge::PhysicalMergeManifest,
+    crate::shared::error::MarketForgeError, crate::shared::error::Result,
 };
 
-use super::{
+use crate::historical::convert::{
     ConversionPlan,
     reference::{
         ConversionUnavailable, PhysicalReferenceReader, REFERENCE_READ_BATCH_SIZE, ReferenceState,
