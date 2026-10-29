@@ -37,3 +37,29 @@ fn all_btc_profiles_construct_both_source_channels() {
         }
     }
 }
+
+pub fn definition(source: CreateSourceStreamRequest, id: &str) -> marketforge_engine::live::stream::persistence::PersistedStreamDefinition {
+    use marketforge_engine::live::stream::persistence::*;
+    PersistedStreamDefinition { stream_id: id.into(), recording_stream_key: Some(1), definition: StreamDefinition::Source(source),
+        desired: DesiredStreamState { enabled: true, activation_policy: ActivationPolicy::AlwaysOn }, revision: 1 }
+}
+
+#[test]
+fn all_btc_profiles_prepare_fresh_integrity() {
+    use marketforge_engine::live::stream::source::{SourceInitializationLimits, SourceRuntimeBuilder, SourceReadiness};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/.config/live");
+    let builder = SourceRuntimeBuilder::new(
+        Arc::new(ExchangeConfigStore::load_dir(root.join("exchanges")).unwrap()),
+        Arc::new(FormatConfigStore::load_dir(root.join("formats")).unwrap()), SourceInitializationLimits::default()).unwrap();
+    for request in requests() {
+        for channel in [SourceChannel::Trades, SourceChannel::Depth] {
+            let mut request = request.clone(); request.channel = channel;
+            let id = format!("prepared-{}-{channel:?}", request.instrument_id);
+            let prepared = builder.prepare(definition(request.clone(), &id)).unwrap();
+            assert_eq!(prepared.runner().stream_id(), id);
+            assert_ne!(prepared.runner().readiness(), SourceReadiness::Ready);
+            assert_eq!(prepared.stream_request().stream_id(), Some(id.as_str()));
+            println!("[{:?}/{:?}/{channel:?}] fresh integrity prepared", request.exchange, request.market_category);
+        }
+    }
+}
