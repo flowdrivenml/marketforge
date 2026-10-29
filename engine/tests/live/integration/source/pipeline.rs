@@ -447,3 +447,63 @@ async fn sustained_ordered_trade_throughput_uses_bounded_handoff() {
     recovery.shutdown().await.unwrap();
     timeout(DEADLINE, task).await.unwrap().unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shutdown_during_publication_waits_for_the_acknowledged_boundary() {
+    use tokio::sync::{oneshot, watch};
+    let profile = "bybit_spot";
+    let mut server = LocalSocket::start(profile).await;
+    let configs = Arc::new(rest_support::load_profile(profile, "http://127.0.0.1:1"));
+    let limiters = rest_support::build_limiters(&configs, profile);
+    let manager = manager(&configs, profile, &limiters, &server.url);
+    let definition = profiles::definition(profiles::requests().remove(0), "publication-shutdown");
+    let prepared = builder(configs.clone(), SourceInitializationLimits::default())
+        .prepare(definition)
+        .unwrap();
+    let (recovery, recovery_task) = recovery(configs, profile, limiters);
+    let executor = prepared
+        .attach(manager.clone(), recovery.clone())
+        .await
+        .unwrap();
+    let (shutdown, shutdown_rx) = oneshot::channel();
+    let (readiness_tx, readiness_rx) = watch::channel(SourceReadiness::AwaitingData);
+    let (entered, entered_rx) = oneshot::channel();
+    let mut entered = Some(entered);
+    let (release, release_rx) = std::sync::mpsc::sync_channel(1);
+    let task = tokio::spawn(async move {
+        executor
+            .run(
+                shutdown_rx,
+                readiness_tx,
+                |_| Ok(()),
+                move |payload| {
+                    assert_eq!(published(payload).len(), 1);
+                    entered.take().unwrap().send(()).unwrap();
+                    release_rx
+                        .recv_timeout(std::time::Duration::from_secs(2))
+                        .map_err(|_| "bounded handoff deadline".to_owned())?;
+                    Ok(())
+                },
+            )
+            .await
+    });
+    server.ack().await;
+    server.send.send(native(profile)).await.unwrap();
+    timeout(DEADLINE, entered_rx).await.unwrap().unwrap();
+    assert_ne!(
+        *readiness_rx.borrow(),
+        SourceReadiness::Ready,
+        "unacknowledged publication became ready"
+    );
+    shutdown.send(()).unwrap();
+    release.send(()).unwrap();
+    assert_eq!(
+        timeout(DEADLINE, task).await.unwrap().unwrap().unwrap(),
+        SourceExecutorExit::ShutdownRequested
+    );
+    assert_ne!(*readiness_rx.borrow(), SourceReadiness::Ready);
+    assert_eq!(manager.stream_count().await, 0);
+    manager.shutdown().await.unwrap();
+    recovery.shutdown().await.unwrap();
+    timeout(DEADLINE, recovery_task).await.unwrap().unwrap();
+}

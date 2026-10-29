@@ -49,8 +49,10 @@ pub fn load_profile_with(
         .unwrap()
         .as_nanos();
 
+    static NEXT_DIRECTORY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let sequence = NEXT_DIRECTORY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let directory = std::env::temp_dir().join(format!(
-        "marketforge-rest-profile-{}-{unique}",
+        "marketforge-rest-profile-{}-{unique}-{sequence}",
         std::process::id()
     ));
 

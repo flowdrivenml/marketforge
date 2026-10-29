@@ -530,3 +530,107 @@ async fn depth_buffer_overflow_revokes_snapshot_and_restarts_bounded_recovery() 
         "[binance_spot/depth] buffer_limit=2 third_delta invalidated attempt; HTTP attempts=2; obsolete snapshot not published; shutdown during replacement completed"
     );
 }
+
+#[tokio::test]
+async fn accepted_depth_gap_invalidates_and_recovers_through_rest() {
+    let (first, first_gate) = MockResponse::gated(REST);
+    let (second, second_gate) =
+        MockResponse::gated(REST.replace("\"lastUpdateId\":100", "\"lastUpdateId\":110"));
+    let http = MockExchange::start(vec![first, second]);
+    let mut socket = LocalSocket::start("binance_spot").await;
+    let configs = Arc::new(rest_support::load_profile("binance_spot", http.base_url()));
+    let limiters = rest_support::build_limiters(&configs, "binance_spot");
+    let manager = manager(&configs, "binance_spot", &limiters, &socket.url);
+    let mut request = profiles::requests().remove(3);
+    request.channel = SourceChannel::Depth;
+    let definition = profiles::definition(request, "depth-gap-rest");
+    let prepared = builder(configs.clone(), SourceInitializationLimits::default())
+        .prepare(definition.clone())
+        .unwrap();
+    let metrics = prepared.runner().instance().metrics_handle();
+    let (recovery, task) = recovery(configs, "binance_spot", limiters);
+    let executor = prepared
+        .attach(manager.clone(), recovery.clone())
+        .await
+        .unwrap();
+    let mut supervisor = supervisor(definition);
+    let (tx, mut rx) = mpsc::channel(8);
+    supervisor
+        .start(
+            "depth-gap-rest",
+            executor,
+            move |events| {
+                for event in events {
+                    tx.try_send(match event {
+                        DepthPublicationEvent::Snapshot { .. } => "snapshot",
+                        DepthPublicationEvent::Invalidated { .. } => "invalidated",
+                        _ => "delta",
+                    })
+                    .map_err(|e| e.to_string())?;
+                }
+                Ok(())
+            },
+            |_| Ok(()),
+        )
+        .unwrap();
+    let subscription = socket.ack().await;
+    socket
+        .send
+        .send(delta("binance_spot", &subscription))
+        .await
+        .unwrap();
+    timeout(DEADLINE, async {
+        while http.request_count() < 1 || metrics.messages_received_total() < 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    first_gate.release();
+    assert_eq!(
+        timeout(DEADLINE, rx.recv()).await.unwrap().unwrap(),
+        "snapshot"
+    );
+    wait_running(&mut supervisor, "depth-gap-rest").await;
+    let mut gap = delta("binance_spot", &subscription);
+    gap["U"] = 110.into();
+    gap["u"] = 110.into();
+    socket.send.send(gap).await.unwrap();
+    assert_eq!(
+        timeout(DEADLINE, rx.recv()).await.unwrap().unwrap(),
+        "invalidated"
+    );
+    timeout(DEADLINE, async {
+        while http.request_count() < 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let mut bridge = delta("binance_spot", &subscription);
+    bridge["U"] = 110.into();
+    bridge["u"] = 111.into();
+    socket.send.send(bridge).await.unwrap();
+    timeout(DEADLINE, async {
+        while metrics.messages_received_total() < 3 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    second_gate.release();
+    assert_eq!(
+        timeout(DEADLINE, rx.recv()).await.unwrap().unwrap(),
+        "snapshot"
+    );
+    wait_running(&mut supervisor, "depth-gap-rest").await;
+    timeout(DEADLINE, supervisor.stop("depth-gap-rest"))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(http.request_count(), 2);
+    assert_eq!(manager.stream_count().await, 0);
+    manager.shutdown().await.unwrap();
+    recovery.shutdown().await.unwrap();
+    timeout(DEADLINE, task).await.unwrap().unwrap();
+}
