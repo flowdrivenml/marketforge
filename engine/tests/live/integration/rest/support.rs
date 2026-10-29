@@ -23,6 +23,14 @@ use marketforge_engine::live::{
 };
 
 pub fn load_profile(profile: &str, mock_base_url: &str) -> ExchangeConfigStore {
+    load_profile_with(profile, mock_base_url, |_| {})
+}
+
+pub fn load_profile_with(
+    profile: &str,
+    mock_base_url: &str,
+    configure: impl FnOnce(&mut ExchangeConfig),
+) -> ExchangeConfigStore {
     let source = PathBuf::from(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../data/.config/live/exchanges"
@@ -33,6 +41,7 @@ pub fn load_profile(profile: &str, mock_base_url: &str) -> ExchangeConfigStore {
         ExchangeConfig::load(&source).unwrap_or_else(|error| panic!("{profile}: {error}"));
 
     config.rest.base_url = mock_base_url.to_owned();
+    configure(&mut config);
     config.validate().expect("invalid redirected configuration");
 
     let unique = SystemTime::now()
@@ -40,8 +49,10 @@ pub fn load_profile(profile: &str, mock_base_url: &str) -> ExchangeConfigStore {
         .unwrap()
         .as_nanos();
 
+    static NEXT_DIRECTORY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let sequence = NEXT_DIRECTORY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let directory = std::env::temp_dir().join(format!(
-        "marketforge-rest-profile-{}-{unique}",
+        "marketforge-rest-profile-{}-{unique}-{sequence}",
         std::process::id()
     ));
 

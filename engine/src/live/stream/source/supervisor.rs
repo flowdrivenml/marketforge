@@ -20,6 +20,9 @@ pub enum SourceSupervisorError {
     #[error(transparent)]
     Runtime(#[from] StreamRuntimeError),
 
+    #[error("executor belongs to another stream: {0}")]
+    WrongStream(String),
+
     #[error("stream already has an executor: {0}")]
     AlreadyActive(String),
 
@@ -94,6 +97,9 @@ impl SourceRuntimeSupervisor {
         D: for<'a> FnMut(&[DepthPublicationEvent<'a>]) -> Result<(), String> + Send + 'static,
         T: for<'a> FnMut(SourceTradePublication<'a>) -> Result<(), String> + Send + 'static,
     {
+        if executor.stream_id() != stream_id {
+            return Err(SourceSupervisorError::WrongStream(stream_id.to_owned()));
+        }
         if self.tasks.contains_key(stream_id) {
             return Err(SourceSupervisorError::AlreadyActive(stream_id.to_owned()));
         }

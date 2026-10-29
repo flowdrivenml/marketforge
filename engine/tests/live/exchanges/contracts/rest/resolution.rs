@@ -285,7 +285,11 @@ fn resolves_all_real_exchange_rest_endpoints() {
         }
     }
 
-    assert_eq!(total, 37, "unexpected REST endpoint count",);
+    assert_eq!(
+        total,
+        super::assert_endpoint_matrix(&configs),
+        "unexpected REST endpoint count"
+    );
 
     assert_eq!(
         resolved + skipped_auth + failures.len(),

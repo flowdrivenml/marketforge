@@ -3,7 +3,7 @@ use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     sync::{
-        Arc, Mutex,
+        Arc, Condvar, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     thread,
@@ -13,33 +13,62 @@ use std::{
 #[derive(Clone)]
 pub(crate) struct MockResponse {
     status: u16,
-    body: &'static str,
+    body: String,
+    gate: Option<ResponseGate>,
     retry_after: Option<&'static str>,
 }
 
 impl MockResponse {
-    pub(crate) fn ok(body: &'static str) -> Self {
+    pub(crate) fn ok(body: impl Into<String>) -> Self {
         Self {
             status: 200,
-            body,
+            body: body.into(),
+            gate: None,
             retry_after: None,
         }
     }
 
-    pub(crate) fn error(status: u16, body: &'static str) -> Self {
+    pub(crate) fn error(status: u16, body: impl Into<String>) -> Self {
         Self {
             status,
-            body,
+            body: body.into(),
+            gate: None,
             retry_after: None,
         }
+    }
+
+    pub(crate) fn gated(body: impl Into<String>) -> (Self, ResponseGate) {
+        let gate = ResponseGate::default();
+        let mut response = Self::ok(body);
+        response.gate = Some(gate.clone());
+        (response, gate)
     }
 
     pub(crate) fn throttled(retry_after: &'static str) -> Self {
         Self {
             status: 429,
-            body: r#"{"code":-1003,"msg":"Too many requests"}"#,
+            body: r#"{"code":-1003,"msg":"Too many requests"}"#.into(),
+            gate: None,
             retry_after: Some(retry_after),
         }
+    }
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct ResponseGate(Arc<(Mutex<bool>, Condvar)>);
+impl ResponseGate {
+    pub(crate) fn release(&self) {
+        let (lock, signal) = &*self.0;
+        *lock.lock().unwrap() = true;
+        signal.notify_all();
+    }
+    fn wait(&self) {
+        let (lock, signal) = &*self.0;
+        let _guard = signal
+            .wait_timeout_while(lock.lock().unwrap(), Duration::from_secs(5), |released| {
+                !*released
+            })
+            .unwrap();
     }
 }
 
@@ -99,6 +128,9 @@ impl MockExchange {
                             MockResponse::error(500, r#"{"error":"unexpected request"}"#)
                         });
 
+                        if let Some(gate) = &response.gate {
+                            gate.wait();
+                        }
                         write_response(&mut stream, &response);
                     }
 

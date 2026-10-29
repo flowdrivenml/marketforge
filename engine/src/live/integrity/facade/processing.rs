@@ -127,6 +127,38 @@ impl StreamIntegrityHandle {
         }
     }
 
+    /// Publish an ordinary trade batch before committing its identities and baseline.
+    /// Publication failure leaves the accepted baseline and identity history unchanged.
+    pub fn process_trades_with(
+        &mut self,
+        epoch: TradeSourceEpoch,
+        message: &NormalizedTrades,
+        mut publish: impl FnMut(&IntegrityOutcome) -> Result<(), String>,
+    ) -> Result<IntegrityOutcome, String> {
+        if let Some(reason) = self.admission.rejection() {
+            return Ok(IntegrityOutcome::AdmissionBlocked(reason));
+        }
+        let IntegrityState::Trades(ingress) = &mut self.state else {
+            return Ok(IntegrityOutcome::WrongChannel);
+        };
+        let mut published = false;
+        let result = ingress.on_websocket_with(epoch, message, |accepted| {
+            let outcome = IntegrityOutcome::Trades(BoundTradeIngressOutcome::Processed(accepted));
+            publish(&outcome)?;
+            published = true;
+            let IntegrityOutcome::Trades(BoundTradeIngressOutcome::Processed(accepted)) = outcome
+            else {
+                unreachable!("publication cannot replace its borrowed outcome")
+            };
+            Ok(accepted)
+        })?;
+        let outcome = IntegrityOutcome::Trades(result);
+        if !published {
+            publish(&outcome)?;
+        }
+        Ok(outcome)
+    }
+
     /// Process a sequence of normalized messages in order.
     ///
     /// Every input is processed using exactly the same

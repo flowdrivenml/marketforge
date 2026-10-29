@@ -12,8 +12,8 @@ use super::{
 use crate::live::infrastructure::normalization::{NormalizedMessage, NormalizedTrades};
 use crate::live::infrastructure::rest::HistoricalTradeCursor;
 use crate::live::infrastructure::websocket::StreamInput;
+use crate::live::integrity::DepthPublicationEvent;
 use crate::live::integrity::DepthPublicationPhase;
-use crate::live::integrity::{DepthPublicationEvent, IntegrityOutcome};
 use crate::live::integrity::{DepthSyncToken, RestDepthRequestContext};
 use crate::live::recovery::RecoveryOperation;
 use crate::live::recovery::StreamRecoveryHandle;
@@ -130,6 +130,9 @@ pub struct SourceStreamExecutor {
 }
 
 impl SourceStreamExecutor {
+    pub fn stream_id(&self) -> &str {
+        self.runner.stream_id()
+    }
     pub fn new(
         runner: SourceStreamRunner,
         attachment: SourceAttachment,
@@ -654,7 +657,6 @@ impl SourceStreamExecutor {
         let execution_result = loop {
             let retry_deadline = self.depth_retry_at;
             tokio::select! {
-            biased;
 
             _ = &mut shutdown => {
                 break Ok(SourceExecutorExit::ShutdownRequested);
@@ -799,7 +801,10 @@ impl SourceStreamExecutor {
                     }, if self.completed_trade_recovery.is_none() => {
                         let result = match completed {
                             Ok(Some(completed)) => {
-                                self.process_completed_trade_attempt(completed).await
+                                match self.process_completed_trade_attempt(completed).await {
+                                    Ok(()) => self.publish_completed_trade_recovery(&mut publish_trades),
+                                    Err(error) => Err(error),
+                                }
                             }
 
                             Ok(None) => Ok(()),
@@ -982,7 +987,7 @@ impl SourceStreamExecutor {
         &mut self,
         message: tokio_tungstenite::tungstenite::Message,
         publish_depth: &mut impl FnMut(&[DepthPublicationEvent<'_>]) -> Result<(), String>,
-        publish_trades: &mut impl FnMut(&IntegrityOutcome) -> Result<(), String>,
+        publish_trades: &mut impl for<'a> FnMut(SourceTradePublication<'a>) -> Result<(), String>,
     ) -> Result<(), SourceExecutorError> {
         use tokio_tungstenite::tungstenite::Message;
 
@@ -1291,25 +1296,7 @@ impl SourceStreamExecutor {
                     "historical trade pagination has no next cursor".into(),
                 )
             })?;
-        let from_id = self
-            .trade_pages
-            .as_ref()
-            .and_then(SourceTradePageCollector::next_from_id)
-            .ok_or_else(|| {
-                SourceExecutorError::RecoveryCompletion(
-                    "historical trade pagination has no next cursor".into(),
-                )
-            })?;
 
-        // INSERT THE NEW VALIDATION HERE.
-        // The cursor must come from the active collector.
-        // Do not reconstruct it from REST response data.
-
-        // Schedule the historical operation using the
-        // collector-authorized cursor.
-        let operation = policy
-            .operation_for_cursor(self.runner.stream_id(), &review, from_id)
-            .map_err(|error| SourceExecutorError::RecoveryCompletion(error.to_string()))?;
         let operation = policy
             .operation_for_cursor(self.runner.stream_id(), &review, from_id)
             .map_err(|error| SourceExecutorError::RecoveryCompletion(error.to_string()))?;
@@ -1427,6 +1414,32 @@ impl SourceStreamExecutor {
     ///
     /// Complete history undergoes reconciliation and integrity
     /// preflight, but is not published or committed here.
+    fn publish_completed_trade_recovery(
+        &mut self,
+        publish: &mut impl for<'a> FnMut(SourceTradePublication<'a>) -> Result<(), String>,
+    ) -> Result<(), SourceExecutorError> {
+        let Some(completed) = self.completed_trade_recovery.as_ref() else {
+            return Ok(());
+        };
+        let rest = self.completed_trade_rest.as_ref().ok_or_else(|| {
+            SourceExecutorError::TradeCompletionRejected("completed REST bridge is missing".into())
+        })?;
+        let prepared = self.runner.preflight_numeric_trade_recovery(
+            completed.context.epoch,
+            &completed.context.review,
+            rest,
+            MAX_TRADE_RECONCILIATION_RECORDS,
+        )?;
+        self.runner.complete_numeric_trade_recovery(
+            completed.context.epoch,
+            &completed.context.review,
+            prepared,
+            |trades| publish(SourceTradePublication::Recovery(trades)),
+        )?;
+        self.clear_trade_recovery_session();
+        Ok(())
+    }
+
     async fn process_completed_trade_attempt(
         &mut self,
         completed: CompletedTradeAttempt,
@@ -1512,28 +1525,7 @@ impl SourceStreamExecutor {
         // VALIDATE RESPONSE
         // --------------------------------------------------------
 
-        let response = validate_trade_response(&completed, "binance_spot")?;
-
-        // --------------------------------------------------------
-        // NORMALIZE REST TRADES
-        // --------------------------------------------------------
-
-        let normalized = self
-            .runner
-            .instance()
-            .normalizer()
-            .normalize_rest_trades(response, &completed.context.request)
-            .map_err(|error| {
-                SourceExecutorError::TradeCompletionRejected(format!(
-                    "REST trade normalization failed: {error}"
-                ))
-            })?;
-
-        let NormalizedMessage::Trades(trades) = normalized else {
-            return Err(SourceExecutorError::TradeCompletionRejected(
-                "REST normalization returned the wrong channel".into(),
-            ));
-        };
+        let trades = self.normalize_completed_trade_page(&completed)?;
 
         // --------------------------------------------------------
         // COLLECT VALIDATED PAGE

@@ -136,7 +136,17 @@ impl DepthContinuityValidator {
 ///
 /// The next required ID is:
 ///
-///     previous_last + 1
+/// ```
+/// use marketforge_engine::live::{config::format::DepthFormatConfig, integrity::{DepthContinuityCompiler, DepthContinuityValidator, DepthContinuityDecision, DepthSequenceBaseline}};
+/// use marketforge_engine::shared::domain::canonical::SequenceMetadata;
+/// let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/.config/live/formats/depth/binance_spot.toml");
+/// let plan = DepthContinuityCompiler::compile(&DepthFormatConfig::load(path).unwrap()).unwrap();
+/// let baseline = DepthSequenceBaseline {last_sequence:100, cross_sequence:None, synchronized:true};
+/// let sequence = SequenceMetadata {sequence_first:Some(101), sequence_last:Some(101), sequence_previous:None, cross_sequence:None};
+/// assert_eq!(DepthContinuityValidator::evaluate(&plan, baseline, &sequence, true), DepthContinuityDecision::Accept {next_sequence:101});
+/// let unsynchronized = DepthSequenceBaseline {synchronized:false, ..baseline};
+/// assert!(matches!(DepthContinuityValidator::evaluate(&plan, unsynchronized, &sequence, true), DepthContinuityDecision::Resynchronize {..}));
+/// ```
 ///
 /// An incoming range [first, last] must cover it.
 ///
@@ -181,7 +191,17 @@ fn evaluate_range(previous: u64, sequence: &SequenceMetadata) -> DepthContinuity
 
 /// Binance Futures requires:
 ///
-///     current.pu == previous.u
+/// ```
+/// use marketforge_engine::live::{config::format::DepthFormatConfig, integrity::{DepthContinuityCompiler, DepthContinuityValidator, DepthContinuityDecision, DepthSequenceBaseline}};
+/// use marketforge_engine::shared::domain::canonical::SequenceMetadata;
+/// let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/.config/live/formats/depth/binance_linear.toml");
+/// let plan = DepthContinuityCompiler::compile(&DepthFormatConfig::load(path).unwrap()).unwrap();
+/// let baseline = DepthSequenceBaseline {last_sequence:100, cross_sequence:None, synchronized:true};
+/// let sequence = SequenceMetadata {sequence_first:Some(101), sequence_last:Some(101), sequence_previous:Some(100), cross_sequence:None};
+/// assert_eq!(DepthContinuityValidator::evaluate(&plan, baseline, &sequence, true), DepthContinuityDecision::Accept {next_sequence:101});
+/// let unsynchronized = DepthSequenceBaseline {synchronized:false, ..baseline};
+/// assert!(matches!(DepthContinuityValidator::evaluate(&plan, unsynchronized, &sequence, true), DepthContinuityDecision::Resynchronize {..}));
+/// ```
 ///
 /// Native [U, u] range consistency is also checked.
 ///
@@ -232,7 +252,17 @@ fn evaluate_binance_futures(previous: u64, sequence: &SequenceMetadata) -> Depth
 
 /// Bitget requires:
 ///
-///     current.pseq == previous.seq
+/// ```
+/// use marketforge_engine::live::{config::format::DepthFormatConfig, integrity::{DepthContinuityCompiler, DepthContinuityValidator, DepthContinuityDecision, DepthSequenceBaseline}};
+/// use marketforge_engine::shared::domain::canonical::SequenceMetadata;
+/// let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/.config/live/formats/depth/bitget_spot.toml");
+/// let plan = DepthContinuityCompiler::compile(&DepthFormatConfig::load(path).unwrap()).unwrap();
+/// let baseline = DepthSequenceBaseline {last_sequence:100, cross_sequence:None, synchronized:true};
+/// let sequence = SequenceMetadata {sequence_first:None, sequence_last:Some(101), sequence_previous:Some(100), cross_sequence:None};
+/// assert_eq!(DepthContinuityValidator::evaluate(&plan, baseline, &sequence, true), DepthContinuityDecision::Accept {next_sequence:101});
+/// let unsynchronized = DepthSequenceBaseline {synchronized:false, ..baseline};
+/// assert!(matches!(DepthContinuityValidator::evaluate(&plan, unsynchronized, &sequence, true), DepthContinuityDecision::Resynchronize {..}));
+/// ```
 ///
 /// Sequence IDs are not universally consecutive.
 ///
@@ -278,7 +308,17 @@ fn evaluate_bitget(
 
 /// OKX requires:
 ///
-///     current.prevSeqId == previous.seqId
+/// ```
+/// use marketforge_engine::live::{config::format::DepthFormatConfig, integrity::{DepthContinuityCompiler, DepthContinuityValidator, DepthContinuityDecision, DepthSequenceBaseline}};
+/// use marketforge_engine::shared::domain::canonical::SequenceMetadata;
+/// let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/.config/live/formats/depth/okx_spot.toml");
+/// let plan = DepthContinuityCompiler::compile(&DepthFormatConfig::load(path).unwrap()).unwrap();
+/// let baseline = DepthSequenceBaseline {last_sequence:100, cross_sequence:None, synchronized:true};
+/// let sequence = SequenceMetadata {sequence_first:None, sequence_last:Some(101), sequence_previous:Some(100), cross_sequence:None};
+/// assert_eq!(DepthContinuityValidator::evaluate(&plan, baseline, &sequence, true), DepthContinuityDecision::Accept {next_sequence:101});
+/// let unsynchronized = DepthSequenceBaseline {synchronized:false, ..baseline};
+/// assert!(matches!(DepthContinuityValidator::evaluate(&plan, unsynchronized, &sequence, true), DepthContinuityDecision::Resynchronize {..}));
+/// ```
 ///
 /// Documented exceptions:
 ///

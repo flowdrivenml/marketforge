@@ -86,6 +86,7 @@ pub struct SourceStreamRunner {
     last_stream_generation: u64,
     accepted_trade_publication: bool,
     trade_buffer: Option<SourceTradeLiveBuffer>,
+    trade_buffer_limits: SourceTradeBufferLimits,
 }
 
 impl SourceStreamRunner {
@@ -105,8 +106,20 @@ impl SourceStreamRunner {
             active_epoch: None,
             accepted_trade_publication: false,
             trade_buffer: None,
+            trade_buffer_limits: Self::TRADE_BUFFER_LIMITS,
         })
     }
+    pub fn with_trade_buffer_limits(
+        mut self,
+        limits: SourceTradeBufferLimits,
+    ) -> Result<Self, SourceRunnerError> {
+        if self.state != SourceRunnerState::AwaitingConnection {
+            return Err(SourceRunnerError::AlreadyConnected);
+        }
+        self.trade_buffer_limits = limits.validate()?;
+        Ok(self)
+    }
+
     /// Current trusted acquisition epoch.
     ///
     /// None means the runner cannot admit source data.
@@ -286,7 +299,7 @@ impl SourceStreamRunner {
 
         let mut accepted_and_published = false;
 
-        self.processor.process_websocket(
+        let processing = self.processor.process_websocket(
             self.instance.normalizer(),
             payload,
             epoch,
@@ -303,7 +316,11 @@ impl SourceStreamRunner {
 
                 Ok(())
             },
-        )?;
+        );
+        if let Err(error) = processing {
+            self.accepted_trade_publication = false;
+            return Err(error.into());
+        }
         // The just-processed batch may have created a coverage hold.
         //
         // Integrity already retains that triggering batch.
@@ -670,7 +687,7 @@ impl SourceStreamRunner {
             self.trade_buffer = Some(SourceTradeLiveBuffer::new(
                 self.stream_id(),
                 epoch,
-                Self::TRADE_BUFFER_LIMITS,
+                self.trade_buffer_limits,
             )?);
         }
 

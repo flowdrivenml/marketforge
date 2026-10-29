@@ -664,17 +664,28 @@ impl LiveTradeController {
     ///
     /// The controller does not claim that the resulting
     /// output has been durably persisted or published.
+    #[cfg(test)]
     pub(in crate::live::integrity) fn process(
         &mut self,
         generation: u64,
         message: &NormalizedTrades,
     ) -> TradeControllerOutcome {
+        self.process_with(generation, message, Ok)
+            .expect("infallible integrity-only handoff")
+    }
+
+    pub(in crate::live::integrity) fn process_with(
+        &mut self,
+        generation: u64,
+        message: &NormalizedTrades,
+        publish: impl FnOnce(TradeControllerOutcome) -> Result<TradeControllerOutcome, String>,
+    ) -> Result<TradeControllerOutcome, String> {
         // ----------------------------------------------------
         // GENERATION FENCING
         // ----------------------------------------------------
 
         if generation != self.generation {
-            return TradeControllerOutcome::ObsoleteGeneration;
+            return Ok(TradeControllerOutcome::ObsoleteGeneration);
         }
         // ----------------------------------------------------
         // PERSISTENT COVERAGE HOLD
@@ -689,24 +700,30 @@ impl LiveTradeController {
         // stream lifecycle rather than continuing to publish
         // trades after a detected continuity problem.
         if self.coverage_hold.is_some() {
-            return TradeControllerOutcome::CoverageReviewPending {
+            return Ok(TradeControllerOutcome::CoverageReviewPending {
                 generation: self.generation,
-            };
+            });
         }
         // ----------------------------------------------------
         // SOURCE AND STREAM VALIDATION
         // ----------------------------------------------------
 
         if message.stream_id() != self.stream_id {
-            return TradeControllerOutcome::Rejected(TradeControllerError::WrongStream);
+            return Ok(TradeControllerOutcome::Rejected(
+                TradeControllerError::WrongStream,
+            ));
         }
 
         if message.source() != NormalizationSource::WebSocket {
-            return TradeControllerOutcome::Rejected(TradeControllerError::UnsupportedSource);
+            return Ok(TradeControllerOutcome::Rejected(
+                TradeControllerError::UnsupportedSource,
+            ));
         }
 
         if message.semantics() != TradeRecordSemantics::Individual {
-            return TradeControllerOutcome::Rejected(TradeControllerError::UnsupportedSemantics);
+            return Ok(TradeControllerOutcome::Rejected(
+                TradeControllerError::UnsupportedSemantics,
+            ));
         }
 
         // ----------------------------------------------------
@@ -720,8 +737,8 @@ impl LiveTradeController {
         // Match the tracker's admission limits before
         // performing any allocation-heavy preparation.
         if records.len() > limits.max_batch_records || records.len() > limits.max_ids {
-            return TradeControllerOutcome::Rejected(TradeControllerError::InvalidIdentity(
-                TradeIdentityError::BatchTooLarge,
+            return Ok(TradeControllerOutcome::Rejected(
+                TradeControllerError::InvalidIdentity(TradeIdentityError::BatchTooLarge),
             ));
         }
 
@@ -729,24 +746,26 @@ impl LiveTradeController {
 
         for (index, trade) in records.iter().enumerate() {
             if trade.envelope.stream_id != self.stream_id {
-                return TradeControllerOutcome::Rejected(TradeControllerError::WrongStream);
+                return Ok(TradeControllerOutcome::Rejected(
+                    TradeControllerError::WrongStream,
+                ));
             }
 
             let Some(id) = trade.trade_id.as_deref() else {
-                return TradeControllerOutcome::Rejected(TradeControllerError::MissingTradeId {
-                    index,
-                });
+                return Ok(TradeControllerOutcome::Rejected(
+                    TradeControllerError::MissingTradeId { index },
+                ));
             };
 
             if id.is_empty() {
-                return TradeControllerOutcome::Rejected(TradeControllerError::InvalidIdentity(
-                    TradeIdentityError::EmptyTradeId,
+                return Ok(TradeControllerOutcome::Rejected(
+                    TradeControllerError::InvalidIdentity(TradeIdentityError::EmptyTradeId),
                 ));
             }
 
             if id.len() > limits.max_id_bytes {
-                return TradeControllerOutcome::Rejected(TradeControllerError::InvalidIdentity(
-                    TradeIdentityError::TradeIdTooLong,
+                return Ok(TradeControllerOutcome::Rejected(
+                    TradeControllerError::InvalidIdentity(TradeIdentityError::TradeIdTooLong),
                 ));
             }
 
@@ -799,9 +818,9 @@ impl LiveTradeController {
                 Ok(evaluation) => evaluation,
 
                 Err(error) => {
-                    return TradeControllerOutcome::Rejected(
+                    return Ok(TradeControllerOutcome::Rejected(
                         TradeControllerError::InvalidEvaluation(error),
-                    );
+                    ));
                 }
             };
 
@@ -841,8 +860,35 @@ impl LiveTradeController {
             self.coverage_triggering_trades = Some(triggering_trades);
             self.coverage_hold = Some(hold);
 
-            return TradeControllerOutcome::CoverageReviewRequired { observations };
+            return Ok(TradeControllerOutcome::CoverageReviewRequired { observations });
         }
+
+        let will_truncate = self.identities.history_truncated()
+            || self
+                .identities
+                .retained_count()
+                .saturating_add(candidate_trades.len())
+                > limits.max_ids;
+        let accepted = AcceptedTradeBatch {
+            trades: candidate_trades,
+
+            received_records: records.len(),
+
+            duplicate_records: duplicates,
+
+            identity_history_truncated: will_truncate,
+
+            // A successful local admission does not erase
+            // earlier uncertainty about historical coverage.
+            coverage_history_unverified: self.generation_history_discontinuous
+                || will_truncate
+                || !evaluation.observations.is_empty(),
+
+            observations: evaluation.observations,
+
+            baseline: evaluation.next_baseline,
+        };
+        let accepted = publish(TradeControllerOutcome::Accepted(accepted))?;
 
         // ----------------------------------------------------
         // COMMIT IDENTITY HISTORY
@@ -856,8 +902,8 @@ impl LiveTradeController {
             Ok(decisions) => decisions,
 
             Err(error) => {
-                return TradeControllerOutcome::Rejected(TradeControllerError::InvalidIdentity(
-                    error,
+                return Ok(TradeControllerOutcome::Rejected(
+                    TradeControllerError::InvalidIdentity(error),
                 ));
             }
         };
@@ -882,27 +928,7 @@ impl LiveTradeController {
         // RETURN ACCEPTED RECORDS
         // ----------------------------------------------------
 
-        let identity_history_truncated = self.identities.history_truncated();
-
-        TradeControllerOutcome::Accepted(AcceptedTradeBatch {
-            trades: candidate_trades,
-
-            received_records: records.len(),
-
-            duplicate_records: duplicates,
-
-            identity_history_truncated,
-
-            // A successful local admission does not erase
-            // earlier uncertainty about historical coverage.
-            coverage_history_unverified: self.generation_history_discontinuous
-                || identity_history_truncated
-                || !evaluation.observations.is_empty(),
-
-            observations: evaluation.observations,
-
-            baseline: self.baseline,
-        })
+        Ok(accepted)
     }
 }
 // ============================================================

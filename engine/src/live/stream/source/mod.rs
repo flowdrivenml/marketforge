@@ -1,3 +1,8 @@
+mod builder;
+pub use builder::{
+    PreparedSourceStream, SourceInitializationError, SourceInitializationLimits,
+    SourceRuntimeBuilder,
+};
 mod acquisition;
 mod attachment;
 mod depth_attempt;

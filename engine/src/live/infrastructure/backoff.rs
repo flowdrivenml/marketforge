@@ -29,7 +29,15 @@ pub enum BackoffError {
 ///
 /// Jitter uses the equal-jitter strategy:
 ///
-///     actual_delay = base_delay / 2 + random(0..=base_delay / 2)
+/// ```
+/// use std::time::Duration;
+/// use marketforge_engine::live::infrastructure::backoff::{BackoffConfig, ExponentialBackoff};
+/// let config = BackoffConfig::new(Duration::from_millis(100), Duration::from_millis(400), true).unwrap();
+/// let mut backoff = ExponentialBackoff::new(config);
+/// let delay = backoff.next_delay();
+/// assert!((Duration::from_millis(50)..=Duration::from_millis(100)).contains(&delay));
+/// assert_eq!(backoff.consecutive_failures(), 1);
+/// ```
 ///
 /// This avoids synchronized retry storms while ensuring that
 /// the delay does not become arbitrarily close to zero.

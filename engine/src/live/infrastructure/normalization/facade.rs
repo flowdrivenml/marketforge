@@ -103,6 +103,7 @@ enum RestDecoder {
 pub struct Normalizer {
     context: NormalizationContext,
     websocket: WebSocketDecoder,
+    websocket_wrapper: Option<String>,
     rest: Option<RestDecoder>,
 }
 
@@ -128,6 +129,11 @@ impl Normalizer {
     // ========================================================
 
     pub fn normalize_ws(&self, message: &Value) -> Result<NormalizedMessage, NormalizerError> {
+        let message = self
+            .websocket_wrapper
+            .as_deref()
+            .and_then(|field| message.get(field))
+            .unwrap_or(message);
         match &self.websocket {
             WebSocketDecoder::Trades(decoder) => {
                 let normalized = decoder
@@ -433,6 +439,12 @@ impl NormalizerFactory {
         // ========================================================
 
         Ok(Normalizer {
+            websocket_wrapper: exchange
+                .websocket
+                .routing
+                .as_ref()
+                .filter(|routing| routing.mode == "combined")
+                .and_then(|routing| routing.combined_wrapper_field.clone()),
             context,
             websocket: WebSocketDecoder::Trades(websocket_decoder),
             rest,
@@ -538,6 +550,12 @@ impl NormalizerFactory {
         // ========================================================
 
         Ok(Normalizer {
+            websocket_wrapper: exchange
+                .websocket
+                .routing
+                .as_ref()
+                .filter(|routing| routing.mode == "combined")
+                .and_then(|routing| routing.combined_wrapper_field.clone()),
             context,
             websocket: WebSocketDecoder::Depth(websocket_decoder),
             rest,

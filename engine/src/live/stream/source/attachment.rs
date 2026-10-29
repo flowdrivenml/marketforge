@@ -28,6 +28,7 @@ pub struct SourceAttachment {
     manager: Arc<WebSocketManager>,
     binding: StreamBinding,
     receiver: mpsc::Receiver<StreamInput>,
+    detached: bool,
 }
 
 impl SourceAttachment {
@@ -40,18 +41,46 @@ impl SourceAttachment {
         request: StreamRequest,
         capacity: usize,
     ) -> Result<Self, SourceAttachmentError> {
+        Self::attach_configured(manager, request, capacity, None).await
+    }
+
+    /// Attach using the same immutable native format contracts as normalization.
+    /// Required when a shared channel identifies instruments inside its payload.
+    pub async fn attach_with_formats(
+        manager: Arc<WebSocketManager>,
+        request: StreamRequest,
+        capacity: usize,
+        formats: &crate::live::config::FormatConfigStore,
+    ) -> Result<Self, SourceAttachmentError> {
+        Self::attach_configured(manager, request, capacity, Some(formats)).await
+    }
+
+    async fn attach_configured(
+        manager: Arc<WebSocketManager>,
+        request: StreamRequest,
+        capacity: usize,
+        formats: Option<&crate::live::config::FormatConfigStore>,
+    ) -> Result<Self, SourceAttachmentError> {
         if capacity == 0 {
             return Err(SourceAttachmentError::InvalidCapacity);
         }
 
         let (sender, receiver) = mpsc::channel(capacity);
 
-        let binding = manager.attach_request(request, sender).await?;
+        let binding = match formats {
+            Some(formats) => {
+                manager
+                    .attach_request_with_formats(request, sender, formats)
+                    .await?
+            }
+            None => manager.attach_request(request, sender).await?,
+        };
 
         Ok(Self {
             manager,
             binding,
             receiver,
+            detached: false,
         })
     }
 
@@ -75,10 +104,29 @@ impl SourceAttachment {
     ///
     /// Detachment may rebuild a shared connection slot.
     /// The manager owns that procedure.
-    pub async fn detach(self) -> Result<(), SourceAttachmentError> {
+    pub async fn detach(mut self) -> Result<(), SourceAttachmentError> {
         self.manager.detach(self.binding).await?;
-
+        self.detached = true;
         Ok(())
+    }
+}
+
+// Explicit detach remains the awaited shutdown contract. If preparation is
+// rejected or its owning task is aborted, revoke local admission immediately
+// and ask the same manager to retire this exact attachment as a fallback.
+impl Drop for SourceAttachment {
+    fn drop(&mut self) {
+        self.receiver.close();
+        if self.detached {
+            return;
+        }
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let manager = self.manager.clone();
+            let binding = self.binding;
+            runtime.spawn(async move {
+                let _ = manager.detach(binding).await;
+            });
+        }
     }
 }
 

@@ -30,13 +30,14 @@ pub enum RestRetryPolicyError {
 /// max_attempts includes the initial attempt.
 ///
 /// Example:
-///     max_attempts = 3
-///
-///     Attempt 1
-///     Backoff
-///     Attempt 2
-///     Backoff
-///     Attempt 3
+/// ```
+/// use std::time::Duration;
+/// use marketforge_engine::live::infrastructure::{backoff::BackoffConfig, rest::RestRetryPolicy};
+/// let backoff = BackoffConfig::new(Duration::from_millis(10), Duration::from_millis(100), false).unwrap();
+/// let policy = RestRetryPolicy::new(3, Duration::from_secs(1), backoff).unwrap();
+/// assert_eq!(policy.max_attempts, 3); // Includes the initial HTTP attempt.
+/// assert!(RestRetryPolicy::new(0, Duration::from_secs(1), backoff).is_err());
+/// ```
 ///
 /// The overall timeout includes:
 /// - Rate-limit waiting.

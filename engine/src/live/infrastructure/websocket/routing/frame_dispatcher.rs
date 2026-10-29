@@ -97,11 +97,30 @@ impl NativeFrameDispatcher {
 
         Ok(())
     }
-    pub fn classify(&self, message: &Message) -> Result<String, NativeFrameDispatchError> {
-        Ok(self.router.classify(message)?.stream_id)
-    } // ========================================================
-    // DISPATCH
-    // ========================================================
+    pub fn route(
+        &self,
+        message: Message,
+    ) -> Result<Vec<(String, Message)>, NativeFrameDispatchError> {
+        Ok(self.router.route(message)?)
+    }
+
+    /// Deliver a previously classified native fragment under the original fence.
+    pub fn dispatch_to(
+        &self,
+        stream_id: &str,
+        stamp: &crate::live::infrastructure::websocket::ConnectionStamp,
+        message: Message,
+    ) -> Result<NativeFrameDispatchOutcome, NativeFrameDispatchError> {
+        let delivered = self
+            .fence
+            .with_connected(stamp, || self.streams.deliver(stream_id, stamp, message))
+            .ok_or(NativeFrameDispatchError::StaleGeneration)??;
+        Ok(if delivered {
+            NativeFrameDispatchOutcome::Delivered
+        } else {
+            NativeFrameDispatchOutcome::StreamUnavailable
+        })
+    }
 
     /// Process one generation-stamped native frame.
     ///
@@ -128,24 +147,7 @@ impl NativeFrameDispatcher {
         // Unknown or ambiguous messages are not guessed.
         let destination = self.router.classify(&message)?;
 
-        // Validate transport authority and synchronously
-        // deliver while holding the connection fence.
-        //
-        // A concurrent generation revocation cannot
-        // complete during this closure.
-        let delivered = self
-            .fence
-            .with_connected(&stamp, || {
-                self.streams
-                    .deliver(&destination.stream_id, &stamp, message)
-            })
-            .ok_or(NativeFrameDispatchError::StaleGeneration)??;
-
-        if delivered {
-            Ok(NativeFrameDispatchOutcome::Delivered)
-        } else {
-            Ok(NativeFrameDispatchOutcome::StreamUnavailable)
-        }
+        self.dispatch_to(&destination.stream_id, &stamp, message)
     }
 }
 
@@ -552,5 +554,52 @@ mod tests {
         assert!(matches!(rx.recv().await, Some(StreamInput::Connected(_))));
 
         assert!(rx.try_recv().is_err());
+    }
+    #[tokio::test]
+    async fn partitioned_batch_cannot_cross_a_revoked_physical_fence() {
+        use super::super::message_router::NativePayloadSelector;
+        let (fence, stamp) = ready_connection();
+        let streams = StreamDispatcher::new();
+        let mut router = NativeMessageRouter::new();
+        let mut receivers = Vec::new();
+        for symbol in ["BTC_USDT", "ETH_USDT"] {
+            let (tx, mut rx) = mpsc::channel(4);
+            streams.attach(symbol.into(), tx).unwrap();
+            streams.connected(symbol, stamp.clone()).unwrap();
+            assert!(matches!(rx.recv().await, Some(StreamInput::Connected(_))));
+            receivers.push(rx);
+            router
+                .register(
+                    symbol,
+                    NativeMessageSelector::new([
+                        ("/channel".into(), json!("futures.trades")),
+                        ("/event".into(), json!("update")),
+                    ])
+                    .unwrap()
+                    .with_payload(NativePayloadSelector {
+                        path: "/result".into(),
+                        instrument: "/contract".into(),
+                        symbol: symbol.into(),
+                        array: true,
+                    })
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+        let dispatcher = NativeFrameDispatcher::new(fence.clone(), router, streams);
+        let fragments = dispatcher.route(Message::Text(json!({"channel":"futures.trades","event":"update","result":[{"contract":"BTC_USDT"},{"contract":"ETH_USDT"}]}).to_string().into())).unwrap();
+        assert_eq!(fragments.len(), 2);
+        fence.failed(&stamp).unwrap();
+        let newer = fence.begin_connect().unwrap();
+        fence.connected(&newer).unwrap();
+        for (owner, frame) in fragments {
+            assert!(matches!(
+                dispatcher.dispatch_to(&owner, &stamp, frame),
+                Err(NativeFrameDispatchError::StaleGeneration)
+            ));
+        }
+        for mut rx in receivers {
+            assert!(rx.try_recv().is_err());
+        }
     }
 }

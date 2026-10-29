@@ -1032,7 +1032,21 @@ impl LiveDepthController {
     ///
     /// Required:
     ///
-    ///     delta.pseq <= snapshot.seq <= delta.seq
+    /// ```
+    /// use marketforge_engine::live::{config::format::DepthFormatConfig, integrity::*, infrastructure::normalization::*};
+    /// use marketforge_engine::shared::domain::canonical::{Exchange, SequenceMetadata};
+    /// let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/.config/live/formats/depth/bitget_spot.toml");
+    /// let plan = DepthContinuityCompiler::compile(&DepthFormatConfig::load(path).unwrap()).unwrap();
+    /// let epoch = DepthSourceEpoch {stream_generation:1, connection_generation:1, subscription_generation:1};
+    /// let binding = DepthSourceBinding::new("book", Exchange::Bitget, "spot", 1, "BTCUSDT", None, epoch).unwrap();
+    /// let mut ingress = BoundDepthIngress::new(binding, plan, DepthBufferLimits {max_messages:8,max_bytes:4096}, DepthResourceLimits::default()).unwrap();
+    /// let snapshot = NormalizedDepth::new("book", NormalizationSource::WebSocket, DepthMessageKind::Snapshot,
+    ///     SequenceMetadata {sequence_last:Some(100), sequence_previous:Some(0), ..Default::default()}, vec![], Some(1), None).unwrap();
+    /// assert!(matches!(ingress.on_websocket(epoch, snapshot, 128), DepthControllerOutcome::SnapshotStaged {snapshot_sequence:100}));
+    /// let delta = NormalizedDepth::new("book", NormalizationSource::WebSocket, DepthMessageKind::Delta,
+    ///     SequenceMetadata {sequence_last:Some(101), sequence_previous:Some(100), ..Default::default()}, vec![], Some(2), None).unwrap();
+    /// assert!(matches!(ingress.on_websocket(epoch, delta, 128), DepthControllerOutcome::Accepted {snapshot:true,..}));
+    /// ```
     ///
     /// A valid bridge is applied to the private candidate
     /// book before either the book or sequence baseline

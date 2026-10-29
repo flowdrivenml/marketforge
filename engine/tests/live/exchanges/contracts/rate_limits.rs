@@ -642,7 +642,11 @@ fn bootstraps_rest_for_all_real_exchange_profiles() {
         }
     }
 
-    assert_eq!(endpoint_count, 37, "unexpected REST endpoint count",);
+    assert_eq!(
+        endpoint_count,
+        super::rest::assert_endpoint_matrix(&configs),
+        "unexpected REST endpoint count"
+    );
 
     // ========================================================
     // VERIFY ALL APPLICATION RESPONSE DECLARATIONS
@@ -683,7 +687,10 @@ fn bootstraps_rest_for_all_real_exchange_profiles() {
         }
     }
 
-    assert_eq!(raw_count + envelope_count, 37,);
+    assert_eq!(
+        raw_count + envelope_count,
+        super::rest::assert_endpoint_matrix(&configs)
+    );
 
     // ========================================================
     // VERIFY PUBLIC REQUEST RESOLUTION
