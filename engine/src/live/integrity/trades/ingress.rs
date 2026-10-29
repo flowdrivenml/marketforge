@@ -306,7 +306,9 @@ impl BoundTradeIngress {
         // CANONICAL TRADE INTEGRITY
         // ----------------------------------------------------
 
-        let outcome = self.controller.process_with(epoch.stream_generation, message, publish)?;
+        let outcome = self
+            .controller
+            .process_with(epoch.stream_generation, message, publish)?;
 
         Ok(BoundTradeIngressOutcome::Processed(outcome))
     }

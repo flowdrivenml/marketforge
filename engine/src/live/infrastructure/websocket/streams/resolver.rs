@@ -130,6 +130,30 @@ impl StreamSourceResolver {
         })?;
 
         let fields = match routing.mode.as_str() {
+            "raw" => {
+                let symbol = routing
+                    .symbol_field
+                    .as_deref()
+                    .ok_or_else(|| incomplete("symbol_field"))?;
+                let event = routing
+                    .event_type_field
+                    .as_deref()
+                    .ok_or_else(|| incomplete("event_type_field"))?;
+                let expected = channel
+                    .event_type
+                    .as_deref()
+                    .ok_or_else(|| incomplete("channel.event_type"))?;
+                vec![
+                    (
+                        json_pointer(symbol),
+                        serde_json::Value::String(request.native_symbol().to_owned()),
+                    ),
+                    (
+                        json_pointer(event),
+                        serde_json::Value::String(expected.to_owned()),
+                    ),
+                ]
+            }
             // Binance combined streams:
             //
             // Subscription argument:

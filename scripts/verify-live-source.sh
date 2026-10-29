@@ -39,6 +39,11 @@ source_integration_tests() {
     --features "$FEATURES" \
     --test live_source \
     -- --nocapture
+  if [[ "${SOURCE_POSTGRES_TESTS:-0}" == "1" ]]; then
+    run cargo test "${CARGO_FLAGS[@]}" \
+      --no-default-features --features "$FEATURES" --test live_source \
+      database:: -- --ignored --nocapture
+  fi
 }
 
 related_integration_tests() {

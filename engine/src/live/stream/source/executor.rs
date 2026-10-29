@@ -12,8 +12,8 @@ use super::{
 use crate::live::infrastructure::normalization::{NormalizedMessage, NormalizedTrades};
 use crate::live::infrastructure::rest::HistoricalTradeCursor;
 use crate::live::infrastructure::websocket::StreamInput;
-use crate::live::integrity::DepthPublicationPhase;
 use crate::live::integrity::DepthPublicationEvent;
+use crate::live::integrity::DepthPublicationPhase;
 use crate::live::integrity::{DepthSyncToken, RestDepthRequestContext};
 use crate::live::recovery::RecoveryOperation;
 use crate::live::recovery::StreamRecoveryHandle;
@@ -130,6 +130,9 @@ pub struct SourceStreamExecutor {
 }
 
 impl SourceStreamExecutor {
+    pub fn stream_id(&self) -> &str {
+        self.runner.stream_id()
+    }
     pub fn new(
         runner: SourceStreamRunner,
         attachment: SourceAttachment,

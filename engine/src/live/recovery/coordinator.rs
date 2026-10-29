@@ -294,7 +294,7 @@ type AcquisitionOutput = (
     >,
 );
 
-type AcquisitionFuture<'a> = Pin<Box<dyn Future<Output = AcquisitionOutput> + 'a>>;
+type AcquisitionFuture<'a> = Pin<Box<dyn Future<Output = AcquisitionOutput> + Send + 'a>>;
 
 // ============================================================
 // COORDINATOR
@@ -396,7 +396,7 @@ impl RecoveryCoordinator {
     pub async fn run<F, Fut>(mut self, execute: F)
     where
         F: Fn(RecoveryScheduledJob) -> Fut,
-        Fut: Future<Output = Result<ExchangeRestResponse, RecoveryExecutionError>>,
+        Fut: Future<Output = Result<ExchangeRestResponse, RecoveryExecutionError>> + Send,
     {
         let mut running: FuturesUnordered<AcquisitionFuture<'_>> = FuturesUnordered::new();
 
@@ -628,7 +628,7 @@ impl RecoveryCoordinator {
         running: &mut FuturesUnordered<AcquisitionFuture<'a>>,
     ) where
         F: Fn(RecoveryScheduledJob) -> Fut,
-        Fut: Future<Output = Result<ExchangeRestResponse, RecoveryExecutionError>> + 'a,
+        Fut: Future<Output = Result<ExchangeRestResponse, RecoveryExecutionError>> + Send + 'a,
     {
         let jobs = self
             .scheduler
@@ -642,8 +642,9 @@ impl RecoveryCoordinator {
 
             self.aborts.insert(job_id, abort);
 
+            let execution = execute(job);
             let future = async move {
-                let result = Abortable::new(execute(job), registration).await;
+                let result = Abortable::new(execution, registration).await;
 
                 (job_id, result)
             };

@@ -57,20 +57,32 @@ impl StreamDefinitionRepository {
     ) -> Result<PersistedStreamDefinition, StreamDefinitionError> {
         validate_stream_id(stream_id)?;
         request.validate().map_err(StreamDefinitionError::Invalid)?;
-        let kind = match request.channel { SourceChannel::Trades => 1_i16, SourceChannel::Depth => 2_i16 };
+        let kind = match request.channel {
+            SourceChannel::Trades => 1_i16,
+            SourceChannel::Depth => 2_i16,
+        };
         let mut tx = self.pool.begin().await?;
+        validate_catalog_source(&mut tx, &request).await?;
         sqlx::query("INSERT INTO live.streams (stream_id, instrument_id, stream_kind) VALUES ($1,$2,$3) ON CONFLICT (stream_id) DO NOTHING")
             .bind(stream_id).bind(request.instrument_id).bind(kind).execute(&mut *tx).await?;
         let row = sqlx::query("SELECT id, instrument_id, stream_kind FROM live.streams WHERE stream_id=$1 FOR KEY SHARE")
             .bind(stream_id).fetch_one(&mut *tx).await?;
-        if row.try_get::<i64,_>("instrument_id")? != request.instrument_id || row.try_get::<i16,_>("stream_kind")? != kind {
-            return Err(StreamDefinitionError::RegistrationMismatch(stream_id.into()));
+        if row.try_get::<i64, _>("instrument_id")? != request.instrument_id
+            || row.try_get::<i16, _>("stream_kind")? != kind
+        {
+            return Err(StreamDefinitionError::RegistrationMismatch(
+                stream_id.into(),
+            ));
         }
         let key: i64 = row.try_get("id")?;
         let definition = StreamDefinition::Source(request);
         insert_definition(&mut tx, stream_id, Some(key), &definition, desired).await?;
         let persisted = PersistedStreamDefinition {
-            stream_id: stream_id.into(), recording_stream_key: Some(key), definition, desired, revision: 1,
+            stream_id: stream_id.into(),
+            recording_stream_key: Some(key),
+            definition,
+            desired,
+            revision: 1,
         };
         tx.commit().await?;
         Ok(persisted)
@@ -96,6 +108,7 @@ impl StreamDefinitionRepository {
         }
 
         let mut tx = self.pool.begin().await?;
+        validate_catalog_source(&mut tx, &request).await?;
 
         let row = sqlx::query(
             r#"
@@ -421,6 +434,38 @@ impl StreamDefinitionRepository {
             Err(error) => Err(error.into()),
         }
     }
+}
+
+async fn validate_catalog_source(
+    tx: &mut Transaction<'_, Postgres>,
+    request: &CreateSourceStreamRequest,
+) -> Result<(), StreamDefinitionError> {
+    let row = sqlx::query("SELECT i.symbol, i.market_category, i.instrument_type, i.base_asset, i.quote_asset, i.settlement_asset, e.code, s.quantity_type, s.contract_value, s.contract_value_asset FROM catalog.instruments i JOIN catalog.exchanges e ON e.id=i.exchange_id JOIN catalog.instrument_specs s ON s.instrument_id=i.id WHERE i.id=$1 FOR SHARE OF i,s,e")
+        .bind(request.instrument_id).fetch_optional(&mut **tx).await?
+        .ok_or_else(|| StreamDefinitionError::Invalid("catalog instrument or specifications are missing".into()))?;
+    let expected_value = request
+        .contract_value
+        .as_deref()
+        .map(str::parse::<rust_decimal::Decimal>)
+        .transpose()
+        .map_err(|_| StreamDefinitionError::Invalid("invalid contract value".into()))?;
+    let matches = row.try_get::<String, _>("symbol")? == request.symbol
+        && row.try_get::<String, _>("code")? == request.exchange.as_str()
+        && row.try_get::<String, _>("market_category")? == request.market_category.as_str()
+        && row.try_get::<String, _>("instrument_type")? == request.instrument_type
+        && row.try_get::<Option<String>, _>("base_asset")? == request.base_asset
+        && row.try_get::<Option<String>, _>("quote_asset")? == request.quote_asset
+        && row.try_get::<Option<String>, _>("settlement_asset")? == request.settlement_asset
+        && row.try_get::<String, _>("quantity_type")? == request.quantity_type.as_str()
+        && row.try_get::<Option<rust_decimal::Decimal>, _>("contract_value")? == expected_value
+        && row.try_get::<Option<String>, _>("contract_value_asset")?
+            == request.contract_value_asset;
+    if !matches {
+        return Err(StreamDefinitionError::Invalid(
+            "source identity or economics differ from the catalog".into(),
+        ));
+    }
+    Ok(())
 }
 
 async fn insert_definition(

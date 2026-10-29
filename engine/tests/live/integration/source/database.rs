@@ -1,16 +1,35 @@
-use std::{sync::Arc, time::{SystemTime, UNIX_EPOCH}};
+use super::{harness, profiles, rest_support};
 use futures_util::FutureExt;
+use marketforge_engine::live::stream::{
+    persistence::*,
+    registry::{StreamGraph, StreamLifecycleState, StreamRuntimeRegistry},
+    source::*,
+};
 use sqlx::{Row, postgres::PgPoolOptions};
-use marketforge_engine::live::stream::{persistence::*, registry::{StreamGraph,StreamRuntimeRegistry,StreamLifecycleState}, source::*};
-use super::{profiles,harness,rest_support};
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 #[tokio::test]
 #[ignore = "requires explicit scoped PostgreSQL write authorization and MARKETFORGE_DATABASE_URL"]
 async fn authorized_persistence_restoration_and_cleanup() {
-    let url = std::env::var("MARKETFORGE_DATABASE_URL").expect("authorized database environment required");
-    let pool = PgPoolOptions::new().max_connections(4).connect(&url).await.unwrap_or_else(|_| panic!("database connection failed; details suppressed"));
+    let url = std::env::var("MARKETFORGE_DATABASE_URL")
+        .expect("authorized database environment required");
+    let pool = PgPoolOptions::new()
+        .max_connections(4)
+        .connect(&url)
+        .await
+        .unwrap_or_else(|_| panic!("database connection failed; details suppressed"));
     let repository = StreamDefinitionRepository::new(pool.clone());
-    let prefix = format!("codex-source-{}-{}",std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos());
+    let prefix = format!(
+        "codex-source-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
     let requests = profiles::requests();
     let ids: Vec<String> = (0..16).map(|i| format!("{prefix}-{i}")).collect();
     let result = std::panic::AssertUnwindSafe(async {
@@ -49,6 +68,11 @@ async fn authorized_persistence_restoration_and_cleanup() {
             assert_eq!(restored.status(&ids[i]).unwrap().lifecycle,StreamLifecycleState::Stopped);
             println!("[{profile}/postgres] create/retrieve/duplicate/desired revision/restart/fresh authority PASS");
         }
+        let listed = repository.list().await.unwrap();
+        for id in &ids[..14] { assert!(listed.iter().any(|definition| &definition.stream_id==id)); }
+        repository.delete(&ids[0]).await.unwrap();
+        assert!(repository.find(&ids[0]).await.unwrap().is_none());
+        assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM live.streams WHERE stream_id=$1").bind(&ids[0]).fetch_one(&pool).await.unwrap(),1,"definition deletion must preserve historical registration");
         let request = requests[0].clone();
         let (a,b) = tokio::join!(repository.register_source(&ids[14],request.clone(),DesiredStreamState::default()),repository.register_source(&ids[14],request,DesiredStreamState::default()));
         assert_eq!(usize::from(a.is_ok())+usize::from(b.is_ok()),1);
@@ -57,7 +81,10 @@ async fn authorized_persistence_restoration_and_cleanup() {
         sqlx::query("INSERT INTO live.streams (stream_id,instrument_id,stream_kind) VALUES ($1,1,1)").bind(&ids[15]).execute(&mut *tx).await.unwrap();
         tx.rollback().await.unwrap();
         assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM live.streams WHERE stream_id=$1").bind(&ids[15]).fetch_one(&pool).await.unwrap(),0);
-        // A failed FK insertion must leave neither a definition nor registration.
+        let mut wrong_symbol = requests[0].clone(); wrong_symbol.symbol="WRONG".into();
+        assert!(matches!(repository.register_source(&ids[15],wrong_symbol,DesiredStreamState::default()).await,Err(StreamDefinitionError::Invalid(_))));
+        assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM live.streams WHERE stream_id=$1").bind(&ids[15]).fetch_one(&pool).await.unwrap(),0);
+        // A missing catalog instrument must leave neither definition nor registration.
         let mut invalid = requests[0].clone(); invalid.instrument_id=i64::MAX;
         assert!(repository.register_source(&ids[15],invalid,DesiredStreamState::default()).await.is_err());
         assert!(repository.find(&ids[15]).await.unwrap().is_none());
@@ -67,11 +94,33 @@ async fn authorized_persistence_restoration_and_cleanup() {
     }).catch_unwind().await;
     // Always clean up exactly these test-owned identities, including on assertion failure.
     let mut cleanup = pool.begin().await.unwrap();
-    let definitions_removed = sqlx::query("DELETE FROM live.stream_definitions WHERE stream_id=ANY($1)").bind(&ids).execute(&mut *cleanup).await.unwrap().rows_affected();
-    let registrations_removed = sqlx::query("DELETE FROM live.streams WHERE stream_id=ANY($1)").bind(&ids).execute(&mut *cleanup).await.unwrap().rows_affected();
+    let definitions_removed =
+        sqlx::query("DELETE FROM live.stream_definitions WHERE stream_id=ANY($1)")
+            .bind(&ids)
+            .execute(&mut *cleanup)
+            .await
+            .unwrap()
+            .rows_affected();
+    let registrations_removed = sqlx::query("DELETE FROM live.streams WHERE stream_id=ANY($1)")
+        .bind(&ids)
+        .execute(&mut *cleanup)
+        .await
+        .unwrap()
+        .rows_affected();
     cleanup.commit().await.unwrap();
-    assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM live.streams WHERE stream_id=ANY($1)").bind(&ids).fetch_one(&pool).await.unwrap(),0);
-    println!("[postgres] owner={prefix} registrations_removed={registrations_removed} definitions_removed={definitions_removed}; cleanup verified");
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM live.streams WHERE stream_id=ANY($1)")
+            .bind(&ids)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    println!(
+        "[postgres] owner={prefix} registrations_removed={registrations_removed} definitions_removed={definitions_removed}; cleanup verified"
+    );
     pool.close().await;
-    if let Err(error) = result { std::panic::resume_unwind(error); }
+    if let Err(error) = result {
+        std::panic::resume_unwind(error);
+    }
 }

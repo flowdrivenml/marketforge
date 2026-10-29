@@ -550,14 +550,20 @@ fn publication_failure_does_not_commit_trade_identity() {
     let mut integrity = integrity();
     let current = epoch(10, 20, 30);
     let batch = message("publication-retry");
-    let error = integrity.process_trades_with(current, &batch, |outcome| {
-        assert_eq!(outcome.decision(), IntegrityDecision::Accepted);
-        Err("injected ambiguous handoff".into())
-    }).unwrap_err();
+    let error = integrity
+        .process_trades_with(current, &batch, |outcome| {
+            assert_eq!(outcome.decision(), IntegrityDecision::Accepted);
+            Err("injected ambiguous handoff".into())
+        })
+        .unwrap_err();
     assert_eq!(error, "injected ambiguous handoff");
-    let outcome = integrity.process_trades_with(current, &batch, |_| Ok(())).unwrap();
+    let outcome = integrity
+        .process_trades_with(current, &batch, |_| Ok(()))
+        .unwrap();
     assert_eq!(accepted_ids(outcome), ["publication-retry"]);
-    let outcome = integrity.process_trades_with(current, &batch, |_| Ok(())).unwrap();
+    let outcome = integrity
+        .process_trades_with(current, &batch, |_| Ok(()))
+        .unwrap();
     assert!(accepted_ids(outcome).is_empty());
 }
 
@@ -570,11 +576,30 @@ fn publication_failure_does_not_advance_numeric_baseline() {
     numeric_plan.coverage_action = TradeCoverageAction::RequestRecovery;
     let current = epoch(10, 20, 30);
     let mut integrity = IntegrityFacadeFactory::trades(CreateTradeIntegrity {
-        binding: binding(current), plan: numeric_plan,
-        identity_limits: TradeIdentityLimits { max_ids: 100, max_id_bytes: 128, max_batch_records: 100 },
-    }).unwrap();
-    integrity.process_trades_with(current, &message("10"), |_| Ok(())).unwrap();
-    assert!(integrity.process_trades_with(current, &message("11"), |_| Err("full".into())).is_err());
-    assert_eq!(accepted_ids(integrity.process_trades_with(current, &message("11"), |_| Ok(())).unwrap()), ["11"]);
+        binding: binding(current),
+        plan: numeric_plan,
+        identity_limits: TradeIdentityLimits {
+            max_ids: 100,
+            max_id_bytes: 128,
+            max_batch_records: 100,
+        },
+    })
+    .unwrap();
+    integrity
+        .process_trades_with(current, &message("10"), |_| Ok(()))
+        .unwrap();
+    assert!(
+        integrity
+            .process_trades_with(current, &message("11"), |_| Err("full".into()))
+            .is_err()
+    );
+    assert_eq!(
+        accepted_ids(
+            integrity
+                .process_trades_with(current, &message("11"), |_| Ok(()))
+                .unwrap()
+        ),
+        ["11"]
+    );
     assert!(integrity.trade_coverage_hold().is_none());
 }

@@ -1,0 +1,236 @@
+{
+  "bybit_spot": {
+    "topic": "publicTrade.BTCUSDT",
+    "ts": 1792857635231,
+    "type": "snapshot",
+    "data": [
+      {
+        "i": "2290000001243319841",
+        "T": 1792857635230,
+        "p": "80000",
+        "v": "0.002132",
+        "S": "Buy",
+        "seq": 116064858169,
+        "s": "BTCUSDT",
+        "BT": false,
+        "RPI": false
+      }
+    ]
+  },
+  "bybit_linear": {
+    "topic": "publicTrade.BTCUSDT",
+    "type": "snapshot",
+    "ts": 1792857636262,
+    "data": [
+      {
+        "T": 1792857636261,
+        "s": "BTCUSDT",
+        "S": "Buy",
+        "v": "0.001",
+        "p": "80000",
+        "L": "PlusTick",
+        "i": "542e41fe-bcce-545d-9366-d156682cd041",
+        "BT": false,
+        "RPI": false,
+        "seq": 831897527226
+      }
+    ]
+  },
+  "bybit_inverse": {
+    "topic": "publicTrade.BTCUSD",
+    "type": "snapshot",
+    "ts": 1792857640000,
+    "data": [
+      {
+        "T": 1792857639999,
+        "s": "BTCUSD",
+        "S": "Sell",
+        "v": "399",
+        "p": "80000",
+        "L": "PlusTick",
+        "i": "e115ff9f-ae3c-5289-b3a4-c03650bfbafc",
+        "BT": false,
+        "RPI": false,
+        "seq": 119755865812
+      }
+    ]
+  },
+  "binance_spot": {
+    "e": "trade",
+    "E": 1792857625672,
+    "s": "BTCUSDT",
+    "t": 6788832214,
+    "p": "80000",
+    "q": "0.00080000",
+    "T": 1792857625671,
+    "m": false,
+    "M": true
+  },
+  "binance_linear": {
+    "e": "trade",
+    "E": 1792857625748,
+    "T": 1792857625747,
+    "s": "BTCUSDT",
+    "t": 8201542279,
+    "p": "80000",
+    "q": "0.344",
+    "X": "MARKET",
+    "m": false,
+    "st": 1
+  },
+  "binance_inverse": {
+    "e": "trade",
+    "E": 1792857625792,
+    "T": 1792857625792,
+    "s": "BTCUSD_PERP",
+    "t": 1160666495,
+    "p": "80000",
+    "q": "50",
+    "X": "MARKET",
+    "m": false,
+    "st": 2
+  },
+  "okx_spot": {
+    "arg": {
+      "channel": "trades-all",
+      "instId": "BTC-USDT"
+    },
+    "data": [
+      {
+        "instId": "BTC-USDT",
+        "tradeId": "1074243343",
+        "px": "80000",
+        "sz": "0.00001258",
+        "side": "buy",
+        "ts": "1792857637428",
+        "source": "0"
+      }
+    ]
+  },
+  "okx_linear": {
+    "arg": {
+      "channel": "trades-all",
+      "instId": "BTC-USDT-SWAP"
+    },
+    "data": [
+      {
+        "instId": "BTC-USDT-SWAP",
+        "tradeId": "3018228948",
+        "px": "80000",
+        "sz": "0.06",
+        "side": "sell",
+        "ts": "1792857637302",
+        "source": "0"
+      }
+    ]
+  },
+  "okx_inverse": {
+    "arg": {
+      "channel": "trades-all",
+      "instId": "BTC-USD-SWAP"
+    },
+    "data": [
+      {
+        "instId": "BTC-USD-SWAP",
+        "tradeId": "481377568",
+        "px": "80000",
+        "sz": "3",
+        "side": "buy",
+        "ts": "1792857638492",
+        "source": "0"
+      }
+    ]
+  },
+  "bitget_spot": {
+    "action": "snapshot",
+    "arg": {
+      "instType": "spot",
+      "topic": "publicTrade",
+      "symbol": "BTCUSDT"
+    },
+    "data": [
+      {
+        "i": "1497919000509399040",
+        "p": "80000",
+        "v": "0.000017",
+        "S": "sell",
+        "T": "1792857640387",
+        "L": "1497919000509399041",
+        "isRPI": "no"
+      }
+    ],
+    "ts": 1792857640530
+  },
+  "bitget_linear": {
+    "action": "snapshot",
+    "arg": {
+      "instType": "usdt-futures",
+      "topic": "publicTrade",
+      "symbol": "BTCUSDT"
+    },
+    "data": [
+      {
+        "i": "1497919005911695360",
+        "p": "80000",
+        "v": "0.0365",
+        "S": "buy",
+        "T": "1792857641675",
+        "L": "1497919005911695361",
+        "isRPI": "no"
+      }
+    ],
+    "ts": 1792857641829
+  },
+  "gateio_spot": {
+    "time": 1792858045,
+    "time_ms": 1792858045449,
+    "channel": "spot.trades",
+    "event": "update",
+    "result": {
+      "id": 224811410,
+      "id_market": 224811410,
+      "create_time": 1792858045,
+      "create_time_ms": "1792858045448.948000",
+      "side": "buy",
+      "currency_pair": "BTC_USDT",
+      "amount": "0.356382",
+      "price": "80000",
+      "range": "224811410-224811410",
+      "stock": "BTC",
+      "money": "USDT",
+      "trade_mode": 0
+    }
+  },
+  "gateio_linear": {
+    "time": 1792858045,
+    "time_ms": 1792858045625,
+    "channel": "futures.trades",
+    "event": "update",
+    "result": [
+      {
+        "id": 859834404,
+        "size": -8414,
+        "create_time": 1792858045,
+        "create_time_ms": 1792858045625,
+        "price": "80000",
+        "contract": "BTC_USDT"
+      }
+    ]
+  },
+  "gateio_inverse": {
+    "time": 1792857663,
+    "time_ms": 1792857663051,
+    "channel": "futures.trades",
+    "event": "update",
+    "result": [
+      {
+        "id": 49650737,
+        "size": -200,
+        "create_time": 1792857663,
+        "create_time_ms": 1792857663028,
+        "price": "80000",
+        "contract": "BTC_USD"
+      }
+    ]
+  }
+}

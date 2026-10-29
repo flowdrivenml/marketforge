@@ -146,7 +146,8 @@ impl StreamIntegrityHandle {
             let outcome = IntegrityOutcome::Trades(BoundTradeIngressOutcome::Processed(accepted));
             publish(&outcome)?;
             published = true;
-            let IntegrityOutcome::Trades(BoundTradeIngressOutcome::Processed(accepted)) = outcome else {
+            let IntegrityOutcome::Trades(BoundTradeIngressOutcome::Processed(accepted)) = outcome
+            else {
                 unreachable!("publication cannot replace its borrowed outcome")
             };
             Ok(accepted)

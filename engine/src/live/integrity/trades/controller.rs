@@ -709,15 +709,21 @@ impl LiveTradeController {
         // ----------------------------------------------------
 
         if message.stream_id() != self.stream_id {
-            return Ok(TradeControllerOutcome::Rejected(TradeControllerError::WrongStream));
+            return Ok(TradeControllerOutcome::Rejected(
+                TradeControllerError::WrongStream,
+            ));
         }
 
         if message.source() != NormalizationSource::WebSocket {
-            return Ok(TradeControllerOutcome::Rejected(TradeControllerError::UnsupportedSource));
+            return Ok(TradeControllerOutcome::Rejected(
+                TradeControllerError::UnsupportedSource,
+            ));
         }
 
         if message.semantics() != TradeRecordSemantics::Individual {
-            return Ok(TradeControllerOutcome::Rejected(TradeControllerError::UnsupportedSemantics));
+            return Ok(TradeControllerOutcome::Rejected(
+                TradeControllerError::UnsupportedSemantics,
+            ));
         }
 
         // ----------------------------------------------------
@@ -731,34 +737,36 @@ impl LiveTradeController {
         // Match the tracker's admission limits before
         // performing any allocation-heavy preparation.
         if records.len() > limits.max_batch_records || records.len() > limits.max_ids {
-            return Ok(TradeControllerOutcome::Rejected(TradeControllerError::InvalidIdentity(
-                TradeIdentityError::BatchTooLarge,
-            )));
+            return Ok(TradeControllerOutcome::Rejected(
+                TradeControllerError::InvalidIdentity(TradeIdentityError::BatchTooLarge),
+            ));
         }
 
         let mut ids = Vec::with_capacity(records.len());
 
         for (index, trade) in records.iter().enumerate() {
             if trade.envelope.stream_id != self.stream_id {
-                return Ok(TradeControllerOutcome::Rejected(TradeControllerError::WrongStream));
+                return Ok(TradeControllerOutcome::Rejected(
+                    TradeControllerError::WrongStream,
+                ));
             }
 
             let Some(id) = trade.trade_id.as_deref() else {
-                return Ok(TradeControllerOutcome::Rejected(TradeControllerError::MissingTradeId {
-                    index,
-                }));
+                return Ok(TradeControllerOutcome::Rejected(
+                    TradeControllerError::MissingTradeId { index },
+                ));
             };
 
             if id.is_empty() {
-                return Ok(TradeControllerOutcome::Rejected(TradeControllerError::InvalidIdentity(
-                    TradeIdentityError::EmptyTradeId,
-                )));
+                return Ok(TradeControllerOutcome::Rejected(
+                    TradeControllerError::InvalidIdentity(TradeIdentityError::EmptyTradeId),
+                ));
             }
 
             if id.len() > limits.max_id_bytes {
-                return Ok(TradeControllerOutcome::Rejected(TradeControllerError::InvalidIdentity(
-                    TradeIdentityError::TradeIdTooLong,
-                )));
+                return Ok(TradeControllerOutcome::Rejected(
+                    TradeControllerError::InvalidIdentity(TradeIdentityError::TradeIdTooLong),
+                ));
             }
 
             ids.push(id);
@@ -856,7 +864,11 @@ impl LiveTradeController {
         }
 
         let will_truncate = self.identities.history_truncated()
-            || self.identities.retained_count().saturating_add(candidate_trades.len()) > limits.max_ids;
+            || self
+                .identities
+                .retained_count()
+                .saturating_add(candidate_trades.len())
+                > limits.max_ids;
         let accepted = AcceptedTradeBatch {
             trades: candidate_trades,
 
@@ -890,9 +902,9 @@ impl LiveTradeController {
             Ok(decisions) => decisions,
 
             Err(error) => {
-                return Ok(TradeControllerOutcome::Rejected(TradeControllerError::InvalidIdentity(
-                    error,
-                )));
+                return Ok(TradeControllerOutcome::Rejected(
+                    TradeControllerError::InvalidIdentity(error),
+                ));
             }
         };
 
@@ -915,7 +927,6 @@ impl LiveTradeController {
         // ----------------------------------------------------
         // RETURN ACCEPTED RECORDS
         // ----------------------------------------------------
-
 
         Ok(accepted)
     }
