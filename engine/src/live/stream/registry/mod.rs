@@ -10,6 +10,6 @@ pub use graph::{StreamGraph, StreamGraphError};
 pub use reconcile::{LifecyclePlanner, ReconcileError, ReconcilePlan};
 
 pub use runtime::{
-    RuntimeGeneration, StreamLifecycleState, StreamRuntimeError, StreamRuntimeRegistry,
-    StreamRuntimeStatus,
+    RuntimeGeneration, RuntimePublicationAuthority, StreamLifecycleState, StreamRuntimeError,
+    StreamRuntimeRegistry, StreamRuntimeStatus,
 };

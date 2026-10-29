@@ -1,4 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 
 use thiserror::Error;
 
@@ -49,6 +53,55 @@ pub struct RuntimeGeneration(u64);
 impl RuntimeGeneration {
     pub fn get(self) -> u64 {
         self.0
+    }
+}
+
+/// Revocable publication permission issued only by the runtime owner.
+/// Revocation serializes with Router admission and delivery.
+#[derive(Debug, Clone)]
+pub struct RuntimePublicationAuthority {
+    stream_id: String,
+    pub(crate) definition: Arc<crate::live::stream::persistence::PersistedStreamDefinition>,
+    generation: RuntimeGeneration,
+    current: Arc<Mutex<bool>>,
+    claimed: Arc<AtomicBool>,
+    revoked: Arc<tokio::sync::Notify>,
+}
+impl RuntimePublicationAuthority {
+    pub fn stream_id(&self) -> &str {
+        &self.stream_id
+    }
+    pub fn generation(&self) -> RuntimeGeneration {
+        self.generation
+    }
+    /// One Router binding per runtime generation, including across Router instances.
+    pub(crate) fn claim(&self) -> bool {
+        self.claimed
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+    pub(crate) async fn revoked(&self) {
+        let notified = self.revoked.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        if !*self.guard() {
+            return;
+        }
+        notified.await;
+    }
+    fn revoke(&self) {
+        *self.guard() = false;
+        self.revoked.notify_waiters();
+    }
+    pub(crate) fn try_guard(&self) -> Option<std::sync::MutexGuard<'_, bool>> {
+        match self.current.try_lock() {
+            Ok(guard) => Some(guard),
+            Err(std::sync::TryLockError::Poisoned(error)) => Some(error.into_inner()),
+            Err(std::sync::TryLockError::WouldBlock) => None,
+        }
+    }
+    pub(crate) fn guard(&self) -> std::sync::MutexGuard<'_, bool> {
+        self.current.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -117,6 +170,7 @@ pub enum StreamRuntimeError {
 #[derive(Debug)]
 pub struct StreamRuntimeRegistry {
     streams: BTreeMap<String, StreamRuntimeStatus>,
+    authorities: BTreeMap<String, RuntimePublicationAuthority>,
 }
 
 impl StreamRuntimeRegistry {
@@ -140,7 +194,33 @@ impl StreamRuntimeRegistry {
             })
             .collect();
 
-        Self { streams }
+        let authorities = graph
+            .stream_ids()
+            .map(|id| {
+                (
+                    id.to_owned(),
+                    RuntimePublicationAuthority {
+                        stream_id: id.to_owned(),
+                        definition: Arc::new(graph.get(id).unwrap().clone()),
+                        generation: RuntimeGeneration(0),
+                        current: Arc::new(Mutex::new(false)),
+                        claimed: Arc::new(AtomicBool::new(false)),
+                        revoked: Arc::new(tokio::sync::Notify::new()),
+                    },
+                )
+            })
+            .collect();
+        Self {
+            streams,
+            authorities,
+        }
+    }
+
+    pub fn publication_authority(&self, stream_id: &str) -> Option<RuntimePublicationAuthority> {
+        self.authorities
+            .get(stream_id)
+            .filter(|a| *a.guard())
+            .cloned()
     }
 
     pub fn status(&self, stream_id: &str) -> Option<&StreamRuntimeStatus> {
@@ -222,7 +302,21 @@ impl StreamRuntimeRegistry {
         status.lifecycle = StreamLifecycleState::Starting;
         status.last_error = None;
 
-        Ok(status.generation)
+        let generation = status.generation;
+        if let Some(old) = self.authorities.insert(
+            stream_id.to_owned(),
+            RuntimePublicationAuthority {
+                stream_id: stream_id.to_owned(),
+                definition: self.authorities.get(stream_id).unwrap().definition.clone(),
+                generation,
+                current: Arc::new(Mutex::new(true)),
+                claimed: Arc::new(AtomicBool::new(false)),
+                revoked: Arc::new(tokio::sync::Notify::new()),
+            },
+        ) {
+            old.revoke();
+        }
+        Ok(generation)
     }
 
     /// Mark a generation ready only after the owning
@@ -311,7 +405,11 @@ impl StreamRuntimeRegistry {
         status.generation = RuntimeGeneration(next);
         status.lifecycle = StreamLifecycleState::Stopping;
 
-        Ok(status.generation)
+        let generation = status.generation;
+        if let Some(authority) = self.authorities.get(stream_id) {
+            authority.revoke();
+        }
+        Ok(generation)
     }
 
     /// Complete shutdown of the current operation generation.
@@ -364,6 +462,9 @@ impl StreamRuntimeRegistry {
 
         status.lifecycle = StreamLifecycleState::Failed;
         status.last_error = Some(error);
+        if let Some(authority) = self.authorities.get(stream_id) {
+            authority.revoke();
+        }
 
         Ok(true)
     }
@@ -717,5 +818,13 @@ mod tests {
             registry.begin_start("unknown"),
             Err(StreamRuntimeError::UnknownStream(_))
         ));
+    }
+}
+
+impl Drop for StreamRuntimeRegistry {
+    fn drop(&mut self) {
+        for authority in self.authorities.values() {
+            authority.revoke();
+        }
     }
 }
