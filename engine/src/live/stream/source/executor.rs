@@ -13,7 +13,7 @@ use crate::live::infrastructure::normalization::{NormalizedMessage, NormalizedTr
 use crate::live::infrastructure::rest::HistoricalTradeCursor;
 use crate::live::infrastructure::websocket::StreamInput;
 use crate::live::integrity::DepthPublicationPhase;
-use crate::live::integrity::{DepthPublicationEvent, IntegrityOutcome};
+use crate::live::integrity::DepthPublicationEvent;
 use crate::live::integrity::{DepthSyncToken, RestDepthRequestContext};
 use crate::live::recovery::RecoveryOperation;
 use crate::live::recovery::StreamRecoveryHandle;
@@ -982,7 +982,7 @@ impl SourceStreamExecutor {
         &mut self,
         message: tokio_tungstenite::tungstenite::Message,
         publish_depth: &mut impl FnMut(&[DepthPublicationEvent<'_>]) -> Result<(), String>,
-        publish_trades: &mut impl FnMut(&IntegrityOutcome) -> Result<(), String>,
+        publish_trades: &mut impl for<'a> FnMut(SourceTradePublication<'a>) -> Result<(), String>,
     ) -> Result<(), SourceExecutorError> {
         use tokio_tungstenite::tungstenite::Message;
 
