@@ -1,3 +1,5 @@
+> Historical initial audit. The retired-document blocker was resolved by the updated instructions. See [the resumed completion report](source-stream-completion-2026-10-29.md) for current status and verification.
+
 # Source Stream verification — 2026-10-29
 
 Status: **Blocked**. This is an audit and one verified repair, not completion or acceptance of the autonomous plan.
