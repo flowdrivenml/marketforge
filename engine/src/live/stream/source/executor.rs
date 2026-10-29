@@ -4,14 +4,18 @@ use super::{
     SourceDepthRecoveryError, SourceDepthRecoveryPolicy, SourceProcessingEpoch,
     SourceProcessorError, SourceReadiness, SourceRecoveryMailboxError, SourceRunnerError,
     SourceStreamRunner, SourceTradeAttempt, SourceTradeAttemptContext, SourceTradeCompletionError,
-    SourceTradeRecoveryPolicy, SourceTransportEvent, SourceTransportGate, SourceTransportGateError,
-    complete_depth_recovery, validate_trade_completion, validate_trade_response,
+    SourceTradePageCollector, SourceTradePageError, SourceTradePageLimits, SourceTradePageProgress,
+    SourceTradePublication, SourceTradeRecoveryPolicy, SourceTransportEvent, SourceTransportGate,
+    SourceTransportGateError, complete_depth_recovery, validate_trade_completion,
+    validate_trade_response,
 };
-use crate::live::infrastructure::normalization::NormalizedMessage;
+use crate::live::infrastructure::normalization::{NormalizedMessage, NormalizedTrades};
+use crate::live::infrastructure::rest::HistoricalTradeCursor;
 use crate::live::infrastructure::websocket::StreamInput;
 use crate::live::integrity::DepthPublicationPhase;
 use crate::live::integrity::{DepthPublicationEvent, IntegrityOutcome};
 use crate::live::integrity::{DepthSyncToken, RestDepthRequestContext};
+use crate::live::recovery::RecoveryOperation;
 use crate::live::recovery::StreamRecoveryHandle;
 use crate::live::stream::request::SourceChannel;
 use std::time::{Duration, Instant as StdInstant, SystemTime, UNIX_EPOCH};
@@ -87,12 +91,16 @@ pub enum SourceExecutorError {
 
     #[error("REST trade recovery completion could not be accepted: {0}")]
     TradeCompletionRejected(String),
+
+    #[error(transparent)]
+    TradePages(#[from] SourceTradePageError),
 }
 
 const MAX_DEPTH_ATTEMPTS_PER_ACQUISITION: u64 = 3;
-const DEPTH_RETRY_DELAY: Duration = Duration::from_millis(500);
 const MAX_TRADE_ATTEMPTS_PER_ACQUISITION: u64 = 3;
-const MAX_TRADE_RECONCILIATION_RECORDS: usize = 1000;
+const DEPTH_RETRY_DELAY: Duration = Duration::from_millis(500);
+const MAX_TRADE_RECONCILIATION_RECORDS: usize = 3000;
+const MAX_TRADE_RECOVERY_PAGES: usize = 3;
 /// Single-owner asynchronous execution context for one
 /// logical source-stream attachment.
 ///
@@ -117,6 +125,8 @@ pub struct SourceStreamExecutor {
     trade_policy: Option<SourceTradeRecoveryPolicy>,
     next_trade_attempt: u64,
     completed_trade_recovery: Option<CompletedTradeAttempt>,
+    trade_pages: Option<SourceTradePageCollector>,
+    completed_trade_rest: Option<NormalizedTrades>,
 }
 
 impl SourceStreamExecutor {
@@ -140,6 +150,8 @@ impl SourceStreamExecutor {
             trade_policy: None,
             next_trade_attempt: 1,
             completed_trade_recovery: None,
+            trade_pages: None,
+            completed_trade_rest: None,
         }
     }
     /// Install depth recovery resources for the current acquisition.
@@ -540,10 +552,15 @@ impl SourceStreamExecutor {
         &mut self,
         epoch: SourceProcessingEpoch,
     ) -> Result<(), SourceExecutorError> {
+        // A new trusted acquisition must never inherit
+        // REST pages from an earlier connection.
+        self.clear_trade_recovery_session();
+
         let Some(old_handle) = self.trade_recovery_handle.clone() else {
             return Ok(());
         };
-        self.completed_trade_recovery = None;
+        self.completed_trade_rest = None;
+        self.trade_pages = None;
         let SourceProcessingEpoch::Trades(_) = epoch else {
             return Err(SourceExecutorError::RecoveryCompletion(
                 "trade recovery configured for a depth stream".into(),
@@ -598,6 +615,23 @@ impl SourceStreamExecutor {
     fn clear_depth_retry(&mut self) {
         self.depth_retry_at = None;
     }
+    /// Discard all trade recovery data belonging to the
+    /// current acquisition.
+    ///
+    /// This does not clear the integrity coverage hold.
+    ///
+    /// The integrity controller remains authoritative
+    /// about whether trade continuity is established.
+    fn clear_trade_recovery_session(&mut self) {
+        // Discard partially collected historical REST pages.
+        self.trade_pages = None;
+
+        // Discard a complete but uncommitted REST bridge.
+        self.completed_trade_rest = None;
+
+        // Discard the retained completion and its request context.
+        self.completed_trade_recovery = None;
+    }
     /// Execute until explicit shutdown, channel closure,
     /// or a processing error.
     ///
@@ -614,7 +648,7 @@ impl SourceStreamExecutor {
         mut shutdown: oneshot::Receiver<()>,
         readiness_tx: watch::Sender<SourceReadiness>,
         mut publish_depth: impl FnMut(&[DepthPublicationEvent<'_>]) -> Result<(), String>,
-        mut publish_trades: impl FnMut(&IntegrityOutcome) -> Result<(), String>,
+        mut publish_trades: impl for<'a> FnMut(SourceTradePublication<'a>) -> Result<(), String>,
     ) -> Result<SourceExecutorExit, SourceExecutorError> {
         readiness_tx.send_replace(self.runner.readiness());
         let execution_result = loop {
@@ -765,7 +799,7 @@ impl SourceStreamExecutor {
                     }, if self.completed_trade_recovery.is_none() => {
                         let result = match completed {
                             Ok(Some(completed)) => {
-                                self.process_completed_trade_attempt(completed)
+                                self.process_completed_trade_attempt(completed).await
                             }
 
                             Ok(None) => Ok(()),
@@ -790,6 +824,7 @@ impl SourceStreamExecutor {
         // REVOKE PENDING RECOVERY COMPLETIONS
         // ==========================================
 
+        // Revoke all pending REST completion admission.
         if let Some(attempt) = self.depth_recovery.as_mut() {
             attempt.revoke_pending();
         }
@@ -798,9 +833,10 @@ impl SourceStreamExecutor {
             attempt.revoke_pending();
         }
 
-        // A completed REST acquisition must never survive
-        // shutdown of the source acquisition that authorized it.
-        self.completed_trade_recovery = None;
+        // No historical recovery data may survive shutdown.
+        self.clear_trade_recovery_session();
+        self.completed_trade_rest = None;
+        self.trade_pages = None;
 
         // Close local admission before final lifecycle work.
         self.attachment.close_input();
@@ -868,7 +904,7 @@ impl SourceStreamExecutor {
         &mut self,
         input: StreamInput,
         publish_depth: &mut impl FnMut(&[DepthPublicationEvent<'_>]) -> Result<(), String>,
-        publish_trades: &mut impl FnMut(&IntegrityOutcome) -> Result<(), String>,
+        publish_trades: &mut impl for<'a> FnMut(SourceTradePublication<'a>) -> Result<(), String>,
     ) -> Result<(), SourceExecutorError> {
         let event = self.gate.process(input)?;
 
@@ -900,14 +936,17 @@ impl SourceStreamExecutor {
 
             SourceTransportEvent::Disconnected(_) => {
                 self.clear_depth_retry();
-                self.completed_trade_recovery = None;
-                // Immediately revoke ordinary source admission.
-                // Any unresolved trade coverage remains unverified.
+
+                // Revoke all retained REST recovery data before
+                // processing the interruption lifecycle.
+                self.clear_trade_recovery_session();
+
+                // Integrity must observe the interruption before
+                // awaiting remote REST cancellation.
                 self.runner.disconnected(publish_depth)?;
 
-                // Retire REST work belonging to this acquisition.
-                // Cancellation failure propagates instead of leaving
-                // an apparently healthy recovery state.
+                // Cancel outstanding trade REST work belonging
+                // to the interrupted acquisition.
                 self.cancel_trade_recovery().await?;
             }
 
@@ -1124,6 +1163,9 @@ impl SourceStreamExecutor {
     /// No recovered data is committed or published here.
     async fn recover_held_trades(&mut self) -> Result<(), SourceExecutorError> {
         // Trade recovery is optional and independently configured.
+        if self.completed_trade_recovery.is_some() || self.completed_trade_rest.is_some() {
+            return Ok(());
+        }
         let Some(policy) = self.trade_policy.as_ref() else {
             return Ok(());
         };
@@ -1140,7 +1182,20 @@ impl SourceStreamExecutor {
         {
             return Ok(());
         }
+        // A REST request is already outstanding.
+        if self
+            .trade_recovery
+            .as_ref()
+            .is_some_and(SourceTradeAttempt::has_pending)
+        {
+            return Ok(());
+        }
 
+        // A complete REST bridge is awaiting final
+        // recovery authorization and publication.
+        if self.completed_trade_rest.is_some() || self.completed_trade_recovery.is_some() {
+            return Ok(());
+        }
         // Capture the authoritative review only while Integrity
         // has an unresolved coverage hold.
         let review = match self.runner.pending_trade_recovery() {
@@ -1165,7 +1220,60 @@ impl SourceStreamExecutor {
                 "trade coverage review changed before scheduling".into(),
             ));
         }
+        // Initialize the historical recovery session once.
+        //
+        // The target comes from the original triggering batch,
+        // not from a later REST response.
+        if self.trade_pages.is_none() {
+            let baseline = review.baseline.numeric_trade_id.ok_or_else(|| {
+                SourceExecutorError::RecoveryCompletion(
+                    "numeric recovery baseline is missing".into(),
+                )
+            })?;
 
+            let triggering = self
+                .runner
+                .processor()
+                .integrity()
+                .trade_coverage_triggering_trades()
+                .ok_or_else(|| {
+                    SourceExecutorError::RecoveryCompletion(
+                        "trade recovery triggering batch is missing".into(),
+                    )
+                })?;
+
+            let target = triggering
+                .iter()
+                .map(|trade| {
+                    trade
+                        .trade_id
+                        .as_deref()
+                        .and_then(|id| id.parse::<u64>().ok())
+                        .ok_or_else(|| {
+                            SourceExecutorError::RecoveryCompletion(
+                                "triggering trade has an invalid numeric ID".into(),
+                            )
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .max()
+                .ok_or_else(|| {
+                    SourceExecutorError::RecoveryCompletion(
+                        "trade recovery triggering batch is empty".into(),
+                    )
+                })?;
+
+            self.trade_pages = Some(SourceTradePageCollector::new(
+                self.runner.stream_id(),
+                baseline,
+                target,
+                SourceTradePageLimits {
+                    max_pages: MAX_TRADE_RECOVERY_PAGES,
+                    max_records: MAX_TRADE_RECONCILIATION_RECORDS,
+                },
+            )?);
+        }
         if self.next_trade_attempt > MAX_TRADE_ATTEMPTS_PER_ACQUISITION {
             return Err(SourceExecutorError::RecoveryCompletion(
                 "REST trade recovery attempt budget exhausted".into(),
@@ -1174,8 +1282,36 @@ impl SourceStreamExecutor {
 
         // The operation is selected by the installed exchange
         // policy, never inferred from untrusted trade payloads.
+        let from_id = self
+            .trade_pages
+            .as_ref()
+            .and_then(SourceTradePageCollector::next_from_id)
+            .ok_or_else(|| {
+                SourceExecutorError::RecoveryCompletion(
+                    "historical trade pagination has no next cursor".into(),
+                )
+            })?;
+        let from_id = self
+            .trade_pages
+            .as_ref()
+            .and_then(SourceTradePageCollector::next_from_id)
+            .ok_or_else(|| {
+                SourceExecutorError::RecoveryCompletion(
+                    "historical trade pagination has no next cursor".into(),
+                )
+            })?;
+
+        // INSERT THE NEW VALIDATION HERE.
+        // The cursor must come from the active collector.
+        // Do not reconstruct it from REST response data.
+
+        // Schedule the historical operation using the
+        // collector-authorized cursor.
         let operation = policy
-            .operation_for_review(self.runner.stream_id(), &review)
+            .operation_for_cursor(self.runner.stream_id(), &review, from_id)
+            .map_err(|error| SourceExecutorError::RecoveryCompletion(error.to_string()))?;
+        let operation = policy
+            .operation_for_cursor(self.runner.stream_id(), &review, from_id)
             .map_err(|error| SourceExecutorError::RecoveryCompletion(error.to_string()))?;
 
         let handle = self.trade_recovery_handle.as_ref().ok_or_else(|| {
@@ -1197,7 +1333,7 @@ impl SourceStreamExecutor {
         })?;
 
         let request = policy
-            .request_for_source(self.runner.instance().request(), &review)
+            .request_for_operation(self.runner.instance().request(), &review, &operation)
             .map_err(|error| SourceExecutorError::RecoveryCompletion(error.to_string()))?;
 
         let context = SourceTradeAttemptContext {
@@ -1236,24 +1372,16 @@ impl SourceStreamExecutor {
     /// - Clear the coverage hold.
     /// - Publish recovered trades.
     /// - Establish global historical completeness.
-    fn preflight_completed_trade_attempt(
+    /// Normalize one authorized historical REST page.
+    ///
+    /// Reconciliation must wait until all required
+    /// historical pages have been collected.
+    fn normalize_completed_trade_page(
         &self,
         completed: &CompletedTradeAttempt,
-    ) -> Result<(), SourceExecutorError> {
-        // --------------------------------------------------------
-        // REST RESPONSE
-        // --------------------------------------------------------
-
+    ) -> Result<NormalizedTrades, SourceExecutorError> {
         let response = validate_trade_response(completed, "binance_spot")?;
 
-        // --------------------------------------------------------
-        // REST NORMALIZATION
-        // --------------------------------------------------------
-
-        // The request is the original logical request retained
-        // when the REST acquisition was scheduled.
-        //
-        // Do not construct a new request from response contents.
         let normalized = self
             .runner
             .instance()
@@ -1267,52 +1395,11 @@ impl SourceStreamExecutor {
 
         let NormalizedMessage::Trades(trades) = normalized else {
             return Err(SourceExecutorError::TradeCompletionRejected(
-                "REST trade normalization returned the wrong channel".into(),
+                "REST normalization returned the wrong channel".into(),
             ));
         };
 
-        // --------------------------------------------------------
-        // CURRENT RECOVERY AUTHORITY
-        // --------------------------------------------------------
-
-        let context = &completed.context;
-
-        let review = self.runner.pending_trade_recovery().map_err(|error| {
-            SourceExecutorError::TradeCompletionRejected(format!(
-                "trade coverage review unavailable: {error}"
-            ))
-        })?;
-
-        if !review.is_current(self.runner.processor().integrity()) {
-            return Err(SourceExecutorError::TradeCompletionRejected(
-                "trade coverage review is no longer authoritative".into(),
-            ));
-        }
-
-        // --------------------------------------------------------
-        // RECONCILIATION AND INTEGRITY PREFLIGHT
-        // --------------------------------------------------------
-
-        // This operation combines:
-        //
-        // 1. REST-recovered trades.
-        // 2. The original triggering batch retained by Integrity.
-        // 3. Subsequent WebSocket batches retained by Source.
-        //
-        // It then performs the controller's authoritative
-        // generation-fenced numeric recovery preflight.
-        let prepared = self.runner.preflight_numeric_trade_recovery(
-            context.epoch,
-            &context.review,
-            &trades,
-            MAX_TRADE_RECONCILIATION_RECORDS,
-        )?;
-
-        // Successful preflight is necessary but insufficient
-        // for publication or recovery completion.
-        debug_assert!(prepared.record_count() > 0);
-
-        Ok(())
+        Ok(trades)
     }
     /// Accept a REST trade completion for further reconciliation.
     ///
@@ -1320,15 +1407,43 @@ impl SourceStreamExecutor {
     /// This method additionally validates current source authority.
     ///
     /// It deliberately does not clear the coverage hold.
-    fn process_completed_trade_attempt(
+    /// Process one authorized historical REST trade page.
+    ///
+    /// Each page must belong to the current acquisition,
+    /// recovery review, and collector-authorized cursor.
+    ///
+    /// Only a complete REST bridge may enter reconciliation.
+    ///
+    /// This method does not publish trades or commit identities.
+    /// Process one authorized historical REST trade page.
+    ///
+    /// Each completion is validated against:
+    /// - The current trusted acquisition epoch.
+    /// - The original coverage review.
+    /// - The request and response binding.
+    /// - The collector's exact next cursor.
+    ///
+    /// Incomplete history schedules another REST page.
+    ///
+    /// Complete history undergoes reconciliation and integrity
+    /// preflight, but is not published or committed here.
+    async fn process_completed_trade_attempt(
         &mut self,
         completed: CompletedTradeAttempt,
     ) -> Result<(), SourceExecutorError> {
-        if self.completed_trade_recovery.is_some() {
+        // --------------------------------------------------------
+        // REJECT DUPLICATE COMPLETION
+        // --------------------------------------------------------
+
+        if self.completed_trade_recovery.is_some() || self.completed_trade_rest.is_some() {
             return Err(SourceExecutorError::TradeCompletionRejected(
-                "another completed trade recovery is awaiting reconciliation".into(),
+                "completed trade recovery is already retained".into(),
             ));
         }
+
+        // --------------------------------------------------------
+        // VALIDATE CURRENT ACQUISITION
+        // --------------------------------------------------------
 
         let Some(SourceProcessingEpoch::Trades(epoch)) = self.runner.active_epoch() else {
             return Err(SourceTradeCompletionError::ObsoleteEpoch.into());
@@ -1344,10 +1459,11 @@ impl SourceStreamExecutor {
         }
 
         validate_trade_completion(&completed, self.runner.stream_id(), epoch, &review)?;
-        // The current automatic trade policy supports Binance Spot.
-        //
-        // Validate the REST acquisition envelope before retaining
-        // the result for normalization and reconciliation.
+
+        // --------------------------------------------------------
+        // VALIDATE RECOVERY POLICY
+        // --------------------------------------------------------
+
         let policy = self.trade_policy.as_ref().ok_or_else(|| {
             SourceExecutorError::TradeCompletionRejected("trade recovery policy is missing".into())
         })?;
@@ -1362,23 +1478,131 @@ impl SourceStreamExecutor {
             ));
         }
 
-        validate_trade_response(&completed, "binance_spot")?;
-        // Validate the REST acquisition envelope.
-        validate_trade_response(&completed, "binance_spot")?;
+        // --------------------------------------------------------
+        // VERIFY COLLECTOR CURSOR
+        // --------------------------------------------------------
 
-        // Normalize REST trades and verify the combined
-        // recovery candidate against authoritative Integrity.
-        //
-        // No identities are committed and no trades are published.
-        self.preflight_completed_trade_attempt(&completed)?;
+        let collector = self.trade_pages.as_ref().ok_or_else(|| {
+            SourceExecutorError::TradeCompletionRejected(
+                "historical recovery collector is missing".into(),
+            )
+        })?;
 
-        // Retain the original completed acquisition.
-        //
-        // Future recovery authorization must revalidate
-        // against the final live buffer before commit.
-        self.completed_trade_recovery = Some(completed);
+        let expected_cursor = collector.next_from_id().ok_or_else(|| {
+            SourceExecutorError::TradeCompletionRejected(
+                "historical recovery is already complete".into(),
+            )
+        })?;
 
-        Ok(())
+        let RecoveryOperation::HistoricalTrades { page } = &completed.context.operation else {
+            return Err(SourceTradeCompletionError::WrongOperation.into());
+        };
+
+        let HistoricalTradeCursor::TradeId { from_id } = &page.cursor else {
+            return Err(SourceTradeCompletionError::WrongOperation.into());
+        };
+
+        if *from_id != expected_cursor {
+            return Err(SourceExecutorError::TradeCompletionRejected(format!(
+                "historical REST cursor mismatch: expected {expected_cursor}, received {from_id}"
+            )));
+        }
+
+        // --------------------------------------------------------
+        // VALIDATE RESPONSE
+        // --------------------------------------------------------
+
+        let response = validate_trade_response(&completed, "binance_spot")?;
+
+        // --------------------------------------------------------
+        // NORMALIZE REST TRADES
+        // --------------------------------------------------------
+
+        let normalized = self
+            .runner
+            .instance()
+            .normalizer()
+            .normalize_rest_trades(response, &completed.context.request)
+            .map_err(|error| {
+                SourceExecutorError::TradeCompletionRejected(format!(
+                    "REST trade normalization failed: {error}"
+                ))
+            })?;
+
+        let NormalizedMessage::Trades(trades) = normalized else {
+            return Err(SourceExecutorError::TradeCompletionRejected(
+                "REST normalization returned the wrong channel".into(),
+            ));
+        };
+
+        // --------------------------------------------------------
+        // COLLECT VALIDATED PAGE
+        // --------------------------------------------------------
+
+        let progress = self
+            .trade_pages
+            .as_mut()
+            .ok_or_else(|| {
+                SourceExecutorError::TradeCompletionRejected(
+                    "historical recovery collector disappeared".into(),
+                )
+            })?
+            .push_page(&trades)?;
+
+        match progress {
+            // ----------------------------------------------------
+            // MORE HISTORICAL DATA REQUIRED
+            // ----------------------------------------------------
+            SourceTradePageProgress::MoreRequired { .. } => {
+                // The collector has advanced its authoritative
+                // cursor after validating this page.
+                //
+                // The original review and epoch remain unchanged.
+                // The next request receives a new attempt ID.
+                self.recover_held_trades().await?;
+
+                Ok(())
+            }
+
+            // ----------------------------------------------------
+            // COMPLETE REST BRIDGE
+            // ----------------------------------------------------
+            SourceTradePageProgress::Complete => {
+                let collector = self.trade_pages.take().ok_or_else(|| {
+                    SourceExecutorError::TradeCompletionRejected(
+                        "completed historical collector is missing".into(),
+                    )
+                })?;
+
+                let rest = collector.finish()?;
+
+                // The collector established a continuous REST
+                // bridge through the original triggering trade.
+                //
+                // Integrity must still validate the merged
+                // REST, triggering and buffered live candidate.
+                let prepared = self.runner.preflight_numeric_trade_recovery(
+                    completed.context.epoch,
+                    &completed.context.review,
+                    &rest,
+                    MAX_TRADE_RECONCILIATION_RECORDS,
+                )?;
+
+                debug_assert!(prepared.record_count() > 0);
+
+                // Retain the complete normalized REST bridge.
+                //
+                // We deliberately do not retain the prepared
+                // candidate: the live buffer may continue growing.
+                //
+                // The final publication stage must reconstruct
+                // and revalidate the candidate before committing.
+                self.completed_trade_rest = Some(rest);
+                self.completed_trade_recovery = Some(completed);
+
+                Ok(())
+            }
+        }
     }
 }
 

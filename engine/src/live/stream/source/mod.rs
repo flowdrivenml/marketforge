@@ -14,10 +14,18 @@ mod supervisor;
 mod trade_attempt;
 mod trade_buffer;
 mod trade_completion;
+mod trade_pages;
 mod trade_policy;
+mod trade_publication;
 mod trade_reconcile;
 mod trade_recovery;
 mod transport_gate;
+
+pub use trade_publication::SourceTradePublication;
+
+pub use trade_pages::{
+    SourceTradePageCollector, SourceTradePageError, SourceTradePageLimits, SourceTradePageProgress,
+};
 
 pub use trade_completion::{
     SourceTradeCompletionError, validate_trade_completion, validate_trade_response,

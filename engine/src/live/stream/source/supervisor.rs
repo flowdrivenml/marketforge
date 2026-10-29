@@ -1,8 +1,10 @@
 use super::SourceReadiness;
-use super::{SourceExecutorError, SourceExecutorExit, SourceStreamExecutor};
+use super::{
+    SourceExecutorError, SourceExecutorExit, SourceStreamExecutor, SourceTradePublication,
+};
 use crate::live::stream::registry::StreamLifecycleState;
 use crate::live::{
-    integrity::{DepthPublicationEvent, IntegrityOutcome},
+    integrity::DepthPublicationEvent,
     stream::registry::{RuntimeGeneration, StreamRuntimeError, StreamRuntimeRegistry},
 };
 use std::collections::BTreeMap;
@@ -90,7 +92,7 @@ impl SourceRuntimeSupervisor {
     ) -> Result<RuntimeGeneration, SourceSupervisorError>
     where
         D: for<'a> FnMut(&[DepthPublicationEvent<'a>]) -> Result<(), String> + Send + 'static,
-        T: FnMut(&IntegrityOutcome) -> Result<(), String> + Send + 'static,
+        T: for<'a> FnMut(SourceTradePublication<'a>) -> Result<(), String> + Send + 'static,
     {
         if self.tasks.contains_key(stream_id) {
             return Err(SourceSupervisorError::AlreadyActive(stream_id.to_owned()));

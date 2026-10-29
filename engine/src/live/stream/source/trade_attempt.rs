@@ -155,26 +155,58 @@ impl SourceTradeAttempt {
             }
         };
         if let RecoveryOperation::HistoricalTrades { page } = &context.operation {
-            if let HistoricalTradeCursor::TradeId { from_id } = &page.cursor {
-                let expected = context
-                    .review
-                    .baseline
-                    .numeric_trade_id
-                    .and_then(|id| id.checked_add(1));
+            let HistoricalTradeCursor::TradeId { from_id } = &page.cursor else {
+                return Err(SourceTradeAttemptError::WrongOperation);
+            };
 
-                if expected != Some(*from_id) {
-                    return Err(SourceTradeAttemptError::WrongReview);
-                }
+            // The original accepted baseline remains authoritative
+            // throughout the entire pagination session.
+            let first_required = context
+                .review
+                .baseline
+                .numeric_trade_id
+                .and_then(|id| id.checked_add(1))
+                .ok_or(SourceTradeAttemptError::WrongReview)?;
 
-                if context
-                    .request
-                    .parameters()
-                    .get("fromId")
-                    .map(String::as_str)
-                    != Some(from_id.to_string().as_str())
-                {
-                    return Err(SourceTradeAttemptError::WrongOperation);
-                }
+            // Initial request: baseline + 1.
+            // Continuation: collector-authorized cursor > baseline + 1.
+            //
+            // A request must never move backward into previously
+            // accepted history.
+            if *from_id < first_required {
+                return Err(SourceTradeAttemptError::WrongReview);
+            }
+
+            // The logical REST request must contain exactly
+            // the cursor selected by the recovery operation.
+            let request_from_id = context
+                .request
+                .parameters()
+                .get("fromId")
+                .and_then(|value| value.parse::<u64>().ok());
+
+            if request_from_id != Some(*from_id) {
+                return Err(SourceTradeAttemptError::WrongOperation);
+            }
+
+            // Pagination limits must also match the scheduled
+            // recovery operation.
+            let Some(limit) = page.limit else {
+                return Err(SourceTradeAttemptError::WrongOperation);
+            };
+
+            if limit == 0 {
+                return Err(SourceTradeAttemptError::WrongOperation);
+            }
+
+            let request_limit = context
+                .request
+                .parameters()
+                .get("limit")
+                .and_then(|value| value.parse::<u64>().ok());
+
+            if request_limit != Some(limit) {
+                return Err(SourceTradeAttemptError::WrongOperation);
             }
         }
         if context.request.endpoint() != expected_endpoint {
@@ -569,6 +601,58 @@ mod tests {
         sender.send(completion(8, &original)).unwrap();
 
         assert!(owner.recv().await.unwrap().is_none());
+        assert!(!owner.has_pending());
+    }
+    #[test]
+    fn accepts_historical_continuation_with_matching_cursor() {
+        let mut owner = SourceTradeAttempt::new(STREAM, context(10, 2).recovery_epoch());
+
+        let mut continuation = context(10, 2);
+
+        // The original baseline remains 100.
+        // The collector has supposedly validated IDs 101..200.
+        continuation.operation = RecoveryOperation::HistoricalTrades {
+            page: HistoricalTradePage::with_cursor(HistoricalTradeCursor::TradeId { from_id: 201 })
+                .with_limit(1000),
+        };
+
+        continuation.request = RestRequest::new("binance_spot", "historical_trades")
+            .with_parameter("symbol", "BTCUSDT")
+            .with_parameter("fromId", "201")
+            .with_parameter("limit", "1000");
+
+        let (ticket, _sender) = ticket(8);
+
+        owner.install(ticket, continuation).unwrap();
+
+        assert!(owner.has_pending());
+
+        let pending = owner.pending_context().unwrap();
+
+        assert_eq!(pending.review.baseline.numeric_trade_id, Some(100));
+
+        assert_eq!(pending.attempt, RecoveryAttemptId(2));
+    }
+    #[test]
+    fn rejects_historical_request_cursor_mismatch() {
+        let mut owner = SourceTradeAttempt::new(STREAM, context(10, 2).recovery_epoch());
+
+        let mut invalid = context(10, 2);
+
+        invalid.operation = RecoveryOperation::HistoricalTrades {
+            page: HistoricalTradePage::with_cursor(HistoricalTradeCursor::TradeId { from_id: 201 })
+                .with_limit(1000),
+        };
+
+        // The operation requests 201, but the logical
+        // REST request still contains 101.
+        let (ticket, _sender) = ticket(8);
+
+        assert!(matches!(
+            owner.install(ticket, invalid),
+            Err(SourceTradeAttemptError::WrongOperation)
+        ));
+
         assert!(!owner.has_pending());
     }
 }

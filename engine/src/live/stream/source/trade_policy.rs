@@ -26,6 +26,12 @@ pub enum SourceTradeRecoveryPolicyError {
 
     #[error("numeric trade recovery cursor is exhausted")]
     CursorExhausted,
+
+    #[error("historical trade cursor precedes the recovery baseline")]
+    InvalidContinuationCursor,
+
+    #[error("historical trade recovery operation does not match policy")]
+    InvalidOperation,
 }
 
 /// Permitted REST acquisition strategy for one source.
@@ -100,6 +106,80 @@ impl SourceTradeRecoveryPolicy {
             .with_limit(self.max_records_per_page);
 
         Ok(RecoveryOperation::HistoricalTrades { page })
+    }
+    /// Construct a historical REST operation for a validated
+    /// pagination cursor.
+    ///
+    /// The initial cursor is baseline + 1.
+    /// Continuation cursors must be authorized by the
+    /// SourceTradePageCollector before calling this method.
+    pub fn operation_for_cursor(
+        &self,
+        stream_id: &str,
+        review: &SourceTradeRecoveryReview,
+        from_id: u64,
+    ) -> Result<RecoveryOperation, SourceTradeRecoveryPolicyError> {
+        use SourceTradeRecoveryPolicyError as Error;
+
+        let initial = self.operation_for_review(stream_id, review)?;
+
+        let RecoveryOperation::HistoricalTrades { page } = initial else {
+            return Err(Error::InvalidOperation);
+        };
+
+        let HistoricalTradeCursor::TradeId {
+            from_id: first_required,
+        } = page.cursor
+        else {
+            return Err(Error::InvalidOperation);
+        };
+
+        if from_id < first_required {
+            return Err(Error::InvalidContinuationCursor);
+        }
+
+        Ok(RecoveryOperation::HistoricalTrades {
+            page: HistoricalTradePage::with_cursor(HistoricalTradeCursor::TradeId { from_id })
+                .with_limit(self.max_records_per_page),
+        })
+    }
+    /// Construct the logical REST request corresponding
+    /// to an explicitly selected recovery operation.
+    ///
+    /// The operation must be compatible with the source,
+    /// review and configured pagination limits.
+    pub fn request_for_operation(
+        &self,
+        source: &CreateSourceStreamRequest,
+        review: &SourceTradeRecoveryReview,
+        operation: &RecoveryOperation,
+    ) -> Result<RestRequest, SourceTradeRecoveryPolicyError> {
+        use SourceTradeRecoveryPolicyError as Error;
+
+        if Self::for_source(source)? != *self {
+            return Err(Error::UnsupportedProfile);
+        }
+
+        let RecoveryOperation::HistoricalTrades { page } = operation else {
+            return Err(Error::InvalidOperation);
+        };
+
+        let HistoricalTradeCursor::TradeId { from_id } = &page.cursor else {
+            return Err(Error::InvalidOperation);
+        };
+
+        // Validate that the cursor belongs to the same
+        // recovery review and does not precede its baseline.
+        self.operation_for_cursor(&review.stream_id, review, *from_id)?;
+
+        if page.limit != Some(self.max_records_per_page) {
+            return Err(Error::InvalidOperation);
+        }
+
+        Ok(RestRequest::new("binance_spot", "historical_trades")
+            .with_parameter("symbol", source.symbol.clone())
+            .with_parameter("fromId", from_id.to_string())
+            .with_parameter("limit", self.max_records_per_page.to_string()))
     }
     /// Build the logical REST request for a specific
     /// recovery review.
@@ -187,16 +267,6 @@ mod tests {
                 current: 105,
             }],
         }
-    }
-
-    #[test]
-    fn binance_spot_uses_bounded_recent_trades() {
-        let policy = SourceTradeRecoveryPolicy::for_source(&source()).unwrap();
-        let review = review();
-
-        let operation = policy
-            .operation_for_review(&review.stream_id, &review)
-            .unwrap();
     }
 
     #[test]
@@ -342,6 +412,58 @@ mod tests {
         assert!(matches!(
             policy.operation_for_review(&review.stream_id, &review),
             Err(SourceTradeRecoveryPolicyError::CursorExhausted)
+        ));
+    }
+    #[test]
+    fn historical_continuation_uses_explicit_cursor() {
+        let source = source();
+        let review = review();
+
+        let policy = SourceTradeRecoveryPolicy::for_source(&source).unwrap();
+
+        // The first page begins at baseline + 1 = 101.
+        //
+        // Assume the collector validated the first 100
+        // records and returned cursor 201.
+        let operation = policy
+            .operation_for_cursor(&review.stream_id, &review, 201)
+            .unwrap();
+
+        let RecoveryOperation::HistoricalTrades { page } = &operation else {
+            panic!("expected historical trade operation");
+        };
+
+        assert_eq!(page.cursor, HistoricalTradeCursor::TradeId { from_id: 201 });
+
+        assert_eq!(page.limit, Some(1000));
+
+        let request = policy
+            .request_for_operation(&source, &review, &operation)
+            .unwrap();
+
+        assert_eq!(request.endpoint(), "historical_trades");
+
+        assert_eq!(
+            request.parameters().get("fromId").map(String::as_str),
+            Some("201"),
+        );
+
+        assert_eq!(
+            request.parameters().get("symbol").map(String::as_str),
+            Some("BTCUSDT"),
+        );
+    }
+    #[test]
+    fn continuation_cannot_move_before_initial_cursor() {
+        let policy = SourceTradeRecoveryPolicy::for_source(&source()).unwrap();
+
+        let review = review();
+
+        let result = policy.operation_for_cursor(&review.stream_id, &review, 100);
+
+        assert!(matches!(
+            result,
+            Err(SourceTradeRecoveryPolicyError::InvalidContinuationCursor)
         ));
     }
 }

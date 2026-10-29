@@ -1,8 +1,8 @@
 use super::{
     SourceProcessingEpoch, SourceProcessor, SourceProcessorError, SourceReadiness,
     SourceStreamInstance, SourceTradeBufferError, SourceTradeBufferLimits, SourceTradeLiveBuffer,
-    SourceTradeNumericCandidate, SourceTradeReconcileError, SourceTradeRecoveryError,
-    SourceTradeRecoveryReview,
+    SourceTradeNumericCandidate, SourceTradePublication, SourceTradeReconcileError,
+    SourceTradeRecoveryError, SourceTradeRecoveryReview,
 };
 use crate::live::infrastructure::normalization::{
     NormalizationSource, NormalizedDepth, NormalizedMessage, NormalizedTrades,
@@ -261,7 +261,7 @@ impl SourceStreamRunner {
         payload: &Value,
         accounted_bytes: usize,
         publish_depth: impl FnMut(&[DepthPublicationEvent<'_>]) -> Result<(), String>,
-        mut publish_trades: impl FnMut(&crate::live::integrity::IntegrityOutcome) -> Result<(), String>,
+        mut publish_trades: impl for<'a> FnMut(SourceTradePublication<'a>) -> Result<(), String>,
     ) -> Result<(), SourceRunnerError> {
         if self.state == SourceRunnerState::Stopped {
             return Err(SourceRunnerError::Stopped);
@@ -295,7 +295,7 @@ impl SourceStreamRunner {
             |outcome| {
                 let accepted = outcome.decision() == IntegrityDecision::Accepted;
 
-                publish_trades(outcome)?;
+                publish_trades(SourceTradePublication::Integrity(outcome))?;
 
                 if accepted {
                     accepted_and_published = true;
