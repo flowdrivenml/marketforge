@@ -47,20 +47,45 @@ For each **authorized** package:
 
 When a difficult repair repeats without new information, change diagnostic strategy and record the blocker instead of retrying substantially identical failing commands indefinitely.
 
-## Rust verification
+## Verification
 
-Run Cargo commands from `engine/`. Prefer locked, offline checks when dependencies are already cached. Capture actual exit status and executed-test count; zero matching tests is not a pass.
+The authoritative MarketForge Live verification entry point is:
 
-```bash
-cargo fmt --check
-cargo check --locked --offline --no-default-features --features live
-cargo test --locked --offline --no-default-features --features live --lib
-cargo test --locked --offline --no-default-features --features live --test live_suite
-cargo test --locked --offline --no-default-features --features live --doc
-cargo check --locked --offline --no-default-features --features live,historical
-```
+    scripts/verify-live.sh
 
-Add package-specific checks and Live+TUI / historical-only / base-library checks when changes affect those boundaries. Target the registered integration test targets explicitly: a blanket `cargo test --no-default-features --features live` may try to compile historical-only tests. A previously observed unrelated historical zero-stream test mismatch is a **baseline finding to recheck and report**, not authorization to edit historical behavior or ignore new regressions. Do not alter `Cargo.lock` or dependencies without an explicit justified scope.
+Use the following profiles:
+
+- `quick`: During implementation and debugging.
+- `full`: Before declaring a work package ReadyForReview.
+- `tui`: When modifying Live TUI functionality.
+- `historical`: When shared-core compatibility requires regression testing.
+
+Run additional targeted tests, integration tests, property tests,
+fault-injection tests, and benchmarks required by the relevant
+work-package acceptance criteria.
+
+The `full` profile is the standard Live regression baseline.
+It does not substitute for package-specific acceptance tests.
+
+Verification requirements:
+
+- All commands must preserve actual exit codes.
+- Tests must execute the intended cases, not merely compile.
+- Report actual executed test counts.
+- Distinguish known baseline failures from new regressions.
+- Do not remove or weaken tests to manufacture success.
+- Do not claim production integration verification from fake adapters.
+- Store detailed logs under `engine/target/live-verification/`.
+- Include the verification log location and relevant results
+  in each work-package evidence report.
+
+When dependencies are cached, prefer offline Cargo execution.
+
+Dependency changes requiring network resolution are permitted
+within the authorized Rust implementation scope.
+
+Do not run multiple competing Cargo builds against the same
+target directory.
 
 ## Database, filesystem, and external-service safety
 
@@ -72,48 +97,19 @@ Add package-specific checks and Live+TUI / historical-only / base-library checks
 
 ## Git and unattended safety
 
-- Preserve pre-existing dirty/untracked changes. Before editing, record branch and working-tree inventory; do not assume the checkout is clean.
-- Do not push, merge, rebase, reset, clean, remove another owner's files, or rewrite history. **No commits unless explicitly authorized** by the current execution plan/user. If local checkpoint commits are authorized later, keep them on the designated development branch and never push automatically.
-- Stay within the current work-package scope. When a dependency requires editing outside that scope, document the precise reason and seek approval if it changes an accepted interface or another subsystem's semantics.
-- Do not access or modify unapproved production data, secrets, external paths, or system settings just to make a task pass.
-- Be candid about permissions, missing dependencies, unavailable tests, unsupported exchange behavior, and architectural blockers. Do not manufacture success evidence.
+- Codex is authorized to autonomously manage Git throughout implementation, including creating branches, staging changes, committing, amending, rebasing, cherry-picking, merging, and maintaining checkpoints.
+- Create meaningful local commits after completing and verifying each work package or significant implementation milestone. Use descriptive commit messages referencing the relevant work package.
+- Codex may reorganize or rewrite its own unshared development history when necessary. Never destroy unrelated user work or previously existing changes.
+- Preserve pre-existing dirty and untracked files unless they are explicitly part of the assigned implementation. Inspect the working tree before destructive operations.
+- Maintain a recoverable Git history. Establish checkpoints before risky refactoring, major integration changes, or potentially destructive operations.
+- Resolve ordinary merge conflicts independently when the correct resolution follows established contracts. Escalate genuine architectural conflicts.
+- Codex may freely manage local development branches, but must not push to remotes, force-push, or modify protected branches without explicit authorization.
+- Stay within the authorized implementation scope. Cross-module changes are permitted when necessary for correct integration, provided existing architectural decisions and compatibility guarantees are preserved.
+- Do not access or modify unapproved production data, secrets, external paths, or system settings merely to make tests pass.
+- Report significant Git operations, completed checkpoints, unresolved conflicts, and any remaining risks in the work-package evidence.
 
 ## Reporting and stopping
 
 At every package boundary, give a compact report: `status`, `implemented`, `verification`, `remaining blockers`, `changed files`, `evidence path`, and `next authorized package`. Stop for an unresolved decision with material consequences, unsafe/destructive access, exhausted permitted resources, or completion of the authorized sequence. Routine code decisions and compiler errors are not reasons to request user intervention.
 
 `AGENTS.md` defines durable repository behavior; `.planning/live/AUTONOMOUS_PLAN.md` (if present and explicitly authorized) defines the **current sequence, permitted operations, and stopping point**. Neither file grants permission to change accepted decisions, access production databases, or claim acceptance without evidence.
-
-
-## Live Exchange Configuration
-
-MarketForge Live uses exchange and normalization specifications under:
-
-    data/.config/live/
-
-The development environment contains:
-
-- 15 exchange connectivity profiles.
-- 15 trade normalization specifications.
-- 15 L2 normalization specifications.
-- Global Live configuration.
-- Runtime source and derived-stream configurations.
-
-These files are authoritative development inputs for the exchange
-configuration compiler, protocol adapters, and normalization pipeline.
-
-Inspect existing specifications before creating replacements.
-
-The specifications are drafts until their actual exchange behavior
-has been independently verified.
-
-Codex may inspect, validate, and correct these files as part of
-authorized work packages.
-
-Because these files are ignored by Git, their modifications are
-not protected by ordinary Git checkpoints.
-
-Before changing an ignored configuration file, create a durable,
-reproducible backup or a sanitized version-controlled reference.
-
-Never commit credentials, private endpoints, or sensitive data.

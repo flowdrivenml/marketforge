@@ -226,7 +226,7 @@ mod tests {
 
         assert!(availability.is_connected("btc"));
 
-        assert!(matches!(rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(rx.recv().await, Some(StreamInput::Connected(_))));
 
         assert!(rx.try_recv().is_err());
     }
@@ -255,7 +255,7 @@ mod tests {
             .subscription_confirmed("btc", stamp, &fence)
             .unwrap();
 
-        assert!(matches!(rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(rx.recv().await, Some(StreamInput::Connected(_))));
 
         // No duplicate Connected notification.
         assert!(rx.try_recv().is_err());
@@ -325,18 +325,24 @@ mod tests {
         assert_eq!(affected, 2);
         assert_eq!(availability.connected_count(), 0);
 
-        assert!(matches!(btc_rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(
+            btc_rx.recv().await,
+            Some(StreamInput::Connected(_))
+        ));
 
         assert!(matches!(
             btc_rx.recv().await,
-            Some(StreamInput::Disconnected)
+            Some(StreamInput::Disconnected(_))
         ));
-
-        assert!(matches!(eth_rx.recv().await, Some(StreamInput::Connected)));
 
         assert!(matches!(
             eth_rx.recv().await,
-            Some(StreamInput::Disconnected)
+            Some(StreamInput::Connected(_))
+        ));
+
+        assert!(matches!(
+            eth_rx.recv().await,
+            Some(StreamInput::Disconnected(_))
         ));
     }
 
@@ -376,14 +382,20 @@ mod tests {
         assert!(!availability.is_connected("btc"));
         assert!(availability.is_connected("eth"));
 
-        assert!(matches!(btc_rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(
+            btc_rx.recv().await,
+            Some(StreamInput::Connected(_))
+        ));
 
         assert!(matches!(
             btc_rx.recv().await,
-            Some(StreamInput::Disconnected)
+            Some(StreamInput::Disconnected(_))
         ));
 
-        assert!(matches!(eth_rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(
+            eth_rx.recv().await,
+            Some(StreamInput::Connected(_))
+        ));
 
         assert!(eth_rx.try_recv().is_err());
     }
@@ -458,14 +470,17 @@ mod tests {
 
         // Stream A received Connected, but Disconnected
         // could not be queued.
-        assert!(matches!(a_rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(a_rx.recv().await, Some(StreamInput::Connected(_))));
 
         assert!(a_rx.try_recv().is_err());
 
         // Stream B received both events despite A's failure.
-        assert!(matches!(b_rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(b_rx.recv().await, Some(StreamInput::Connected(_))));
 
-        assert!(matches!(b_rx.recv().await, Some(StreamInput::Disconnected)));
+        assert!(matches!(
+            b_rx.recv().await,
+            Some(StreamInput::Disconnected(_))
+        ));
 
         // A must not remain authorized to receive market data.
         assert!(
@@ -516,11 +531,14 @@ mod tests {
         // Generation 2 remains active.
         assert!(availability.is_connected("btc"));
 
-        assert!(matches!(rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(rx.recv().await, Some(StreamInput::Connected(_))));
 
-        assert!(matches!(rx.recv().await, Some(StreamInput::Disconnected)));
+        assert!(matches!(
+            rx.recv().await,
+            Some(StreamInput::Disconnected(_))
+        ));
 
-        assert!(matches!(rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(rx.recv().await, Some(StreamInput::Connected(_))));
 
         assert!(rx.try_recv().is_err());
     }

@@ -1,9 +1,11 @@
-use crate::shared::domain::book::BookStore;
-
 use super::admission::IntegrityAdmissionState;
+use crate::live::integrity::RestDepthSyncPhase;
 use crate::live::integrity::{
-    BoundDepthIngress, BoundTradeIngress, DepthCoverage, DepthSourceBinding, TradeSourceBinding,
+    BoundDepthIngress, BoundTradeIngress, DepthCoverage, DepthSourceBinding, TradeCoverageHold,
+    TradeSourceBinding,
 };
+use crate::shared::domain::book::BookStore;
+use crate::shared::domain::canonical::Trade;
 
 const STOPPED_GENERATION_ERROR: &str = "stopped integrity handle cannot begin another generation";
 // ============================================================
@@ -114,7 +116,18 @@ impl StreamIntegrityHandle {
             IntegrityState::Trades(ingress) => ingress.binding().epoch().stream_generation,
         }
     }
+    /// Read-only REST synchronization state.
+    ///
+    /// This does not grant permission to modify the controller.
+    /// All integrity mutations remain serialized through
+    /// StreamIntegrityHandle.
+    pub fn rest_depth_sync_phase(&self) -> Option<RestDepthSyncPhase> {
+        match &self.state {
+            IntegrityState::Depth(ingress) => ingress.rest_sync_phase(),
 
+            IntegrityState::Trades(_) => None,
+        }
+    }
     // ========================================================
     // STATUS
     // ========================================================
@@ -147,7 +160,34 @@ impl StreamIntegrityHandle {
             },
         }
     }
+    /// Read-only evidence for an unresolved trade coverage hold.
+    ///
+    /// None means either:
+    /// - this is not a trade stream; or
+    /// - no controller-level coverage hold exists.
+    ///
+    /// A missing hold does not establish historical completeness.
+    pub fn trade_coverage_hold(&self) -> Option<&TradeCoverageHold> {
+        match &self.state {
+            IntegrityState::Trades(ingress) => ingress.controller().coverage_hold(),
 
+            IntegrityState::Depth(_) => None,
+        }
+    }
+    /// Read-only canonical records that triggered the
+    /// current trade coverage hold.
+    ///
+    /// These records have not been accepted or published.
+    ///
+    /// Their presence does not prove that REST recovery
+    /// can establish complete historical coverage.
+    pub fn trade_coverage_triggering_trades(&self) -> Option<&[Trade]> {
+        match &self.state {
+            IntegrityState::Trades(ingress) => ingress.controller().coverage_triggering_trades(),
+
+            IntegrityState::Depth(_) => None,
+        }
+    }
     // ========================================================
     // AUTHORITATIVE ORDER BOOK
     // ========================================================

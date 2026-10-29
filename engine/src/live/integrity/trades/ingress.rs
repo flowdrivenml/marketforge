@@ -5,8 +5,13 @@ use crate::live::integrity::trades::binding::{
     TradeSourceBinding, TradeSourceBindingError, TradeSourceEpoch,
 };
 use crate::live::integrity::trades::compiler::CompiledTradeIntegrityPlan;
-use crate::live::integrity::trades::controller::{LiveTradeController, TradeControllerOutcome};
+use crate::live::integrity::trades::controller::{
+    AcceptedTradeBatch, LiveTradeController, TradeControllerOutcome, TradeRecoveryCommitError,
+    TradeRecoveryPreflight, TradeRecoveryPreflightError,
+};
+use crate::live::integrity::trades::evaluator::TradeIntegrityBaseline;
 use crate::live::integrity::trades::identity::TradeIdentityLimits;
+use crate::shared::domain::canonical::Trade;
 
 // ============================================================
 // INGRESS OUTCOMES
@@ -70,6 +75,15 @@ pub enum BoundTradeIngressOutcome {
 /// A quarantine does not prove executions were lost.
 /// It means the current acquisition routing cannot safely
 /// authorize further trade acceptance.
+///
+#[derive(Debug)]
+pub enum BoundTradeRecoveryCommitError {
+    ObsoleteEpoch,
+    SourceQuarantined,
+    InvalidCandidate(TradeRecoveryPreflightError),
+    Commit(TradeRecoveryCommitError),
+}
+
 #[derive(Debug)]
 pub struct BoundTradeIngress {
     binding: TradeSourceBinding,
@@ -133,7 +147,96 @@ impl BoundTradeIngress {
     pub fn can_accept_trades(&self) -> bool {
         !self.quarantined && self.controller.can_accept_trades()
     }
+    /// Validate a recovery candidate against this source's
+    /// current authoritative acquisition.
+    ///
+    /// This is a read-only preflight. It does not:
+    ///
+    /// - Commit trade identities.
+    /// - Advance ordering baselines.
+    /// - Clear the coverage hold.
+    /// - Publish recovered trades.
+    /// - Establish REST historical completeness.
+    pub(in crate::live::integrity) fn preflight_numeric_recovery(
+        &self,
+        epoch: TradeSourceEpoch,
+        expected_baseline: TradeIntegrityBaseline,
+        candidate: &[Trade],
+    ) -> Result<TradeRecoveryPreflight, TradeRecoveryPreflightError> {
+        use TradeRecoveryPreflightError as Error;
 
+        // Full acquisition identity, not stream generation alone.
+        // Obsolete requests must be rejected before examining
+        // the candidate or current quarantine state.
+        if self.binding.validate_epoch(epoch).is_err() {
+            return Err(Error::ObsoleteEpoch);
+        }
+
+        if self.quarantined {
+            return Err(Error::SourceQuarantined);
+        }
+
+        // Validate the complete candidate's canonical source
+        // identity before invoking controller-level preflight.
+        for trade in candidate {
+            if trade.envelope.stream_id != self.binding.stream_id() {
+                return Err(Error::WrongStream);
+            }
+
+            if trade.envelope.exchange != self.binding.exchange() {
+                return Err(Error::WrongExchange);
+            }
+
+            if trade.envelope.instrument_id != self.binding.instrument_id() {
+                return Err(Error::WrongInstrument);
+            }
+
+            if trade.envelope.symbol != self.binding.symbol() {
+                return Err(Error::WrongSymbol);
+            }
+        }
+
+        self.controller.preflight_numeric_recovery(
+            epoch.stream_generation,
+            expected_baseline,
+            candidate,
+        )
+    }
+    /// Complete a previously preflighted numeric recovery.
+    ///
+    /// The current authoritative acquisition is validated
+    /// before any downstream handoff occurs.
+    ///
+    /// The controller revalidates its held state before
+    /// invoking the publication callback.
+    pub(in crate::live::integrity) fn complete_numeric_recovery(
+        &mut self,
+        epoch: TradeSourceEpoch,
+        prepared: TradeRecoveryPreflight,
+        publish: impl FnOnce(&[Trade]) -> Result<(), String>,
+    ) -> Result<AcceptedTradeBatch, BoundTradeRecoveryCommitError> {
+        use BoundTradeRecoveryCommitError as Error;
+
+        // Do not allow a REST completion from an obsolete
+        // connection or subscription to publish recovered trades.
+        if self.binding.validate_epoch(epoch).is_err() {
+            return Err(Error::ObsoleteEpoch);
+        }
+
+        if self.quarantined {
+            return Err(Error::SourceQuarantined);
+        }
+
+        // A preflight from an earlier state is not permanent
+        // authorization. Revalidate every source identity
+        // against the current trusted binding.
+        self.preflight_numeric_recovery(epoch, prepared.baseline(), prepared.trades())
+            .map_err(Error::InvalidCandidate)?;
+
+        self.controller
+            .complete_numeric_recovery(prepared, publish)
+            .map_err(Error::Commit)
+    }
     // ========================================================
     // WEBSOCKET TRADE ADMISSION
     // ========================================================
@@ -287,7 +390,44 @@ mod tests {
             supports_individual_trades: true,
         }
     }
+    fn recovery_ingress() -> BoundTradeIngress {
+        let mut recovery_plan = plan();
 
+        recovery_plan.identity_kind = TradeIdentityKind::Numeric;
+        recovery_plan.detect_id_regression = true;
+        recovery_plan.detect_id_gaps = true;
+        recovery_plan.coverage_action = TradeCoverageAction::RequestRecovery;
+
+        BoundTradeIngress::new(binding(epoch(10, 20, 30)), limits(), recovery_plan).unwrap()
+    }
+
+    fn held_recovery_ingress() -> BoundTradeIngress {
+        let mut ingress = recovery_ingress();
+
+        let accepted = ingress.on_websocket(
+            epoch(10, 20, 30),
+            &message(vec![trade("100", Exchange::Bybit, 42)]),
+        );
+
+        assert!(matches!(
+            accepted,
+            BoundTradeIngressOutcome::Processed(TradeControllerOutcome::Accepted(_))
+        ));
+
+        let held = ingress.on_websocket(
+            epoch(10, 20, 30),
+            &message(vec![trade("105", Exchange::Bybit, 42)]),
+        );
+
+        assert!(matches!(
+            held,
+            BoundTradeIngressOutcome::Processed(
+                TradeControllerOutcome::CoverageReviewRequired { .. }
+            )
+        ));
+
+        ingress
+    }
     fn limits() -> TradeIdentityLimits {
         TradeIdentityLimits {
             max_ids: 100,
@@ -537,5 +677,180 @@ mod tests {
 
         assert!(controller.can_accept_trades());
         assert!(!controller.is_coverage_review_pending());
+    }
+    #[test]
+    fn recovery_preflight_accepts_current_full_epoch_without_commit() {
+        let ingress = held_recovery_ingress();
+
+        let baseline = ingress.controller().baseline();
+
+        let candidate = (101..=105)
+            .map(|id| trade(&id.to_string(), Exchange::Bybit, 42))
+            .collect::<Vec<_>>();
+
+        let preflight = ingress
+            .preflight_numeric_recovery(epoch(10, 20, 30), baseline, &candidate)
+            .unwrap();
+
+        assert_eq!(preflight.record_count(), 5);
+        assert_eq!(preflight.generation(), 10);
+
+        assert_eq!(ingress.controller().baseline(), baseline);
+
+        assert!(ingress.controller().is_coverage_review_pending());
+
+        assert!(!ingress.controller().identities().contains("105"));
+    }
+
+    #[test]
+    fn recovery_preflight_rejects_obsolete_connection_epoch() {
+        let ingress = held_recovery_ingress();
+
+        let result = ingress.preflight_numeric_recovery(
+            epoch(10, 19, 30),
+            ingress.controller().baseline(),
+            &[trade("101", Exchange::Bybit, 42)],
+        );
+
+        assert!(matches!(
+            result,
+            Err(TradeRecoveryPreflightError::ObsoleteEpoch)
+        ));
+
+        assert!(ingress.controller().is_coverage_review_pending());
+    }
+
+    #[test]
+    fn recovery_preflight_rejects_obsolete_subscription_epoch() {
+        let ingress = held_recovery_ingress();
+
+        let result = ingress.preflight_numeric_recovery(
+            epoch(10, 20, 29),
+            ingress.controller().baseline(),
+            &[trade("101", Exchange::Bybit, 42)],
+        );
+
+        assert!(matches!(
+            result,
+            Err(TradeRecoveryPreflightError::ObsoleteEpoch)
+        ));
+    }
+
+    #[test]
+    fn recovery_preflight_rejects_foreign_instrument() {
+        let ingress = held_recovery_ingress();
+
+        let candidate = vec![trade("101", Exchange::Bybit, 999)];
+
+        let result = ingress.preflight_numeric_recovery(
+            epoch(10, 20, 30),
+            ingress.controller().baseline(),
+            &candidate,
+        );
+
+        assert!(matches!(
+            result,
+            Err(TradeRecoveryPreflightError::WrongInstrument)
+        ));
+
+        assert!(!ingress.controller().identities().contains("101"));
+    }
+    #[test]
+    fn recovery_completion_rejects_obsolete_epoch_before_publication() {
+        let mut ingress = held_recovery_ingress();
+
+        let current_epoch = epoch(10, 20, 30);
+        let baseline = ingress.controller().baseline();
+
+        let candidate = (101..=105)
+            .map(|id| trade(&id.to_string(), Exchange::Bybit, 42))
+            .collect::<Vec<_>>();
+
+        let prepared = ingress
+            .preflight_numeric_recovery(current_epoch, baseline, &candidate)
+            .unwrap();
+
+        let result = ingress.complete_numeric_recovery(epoch(10, 19, 30), prepared, |_| {
+            panic!("obsolete recovery must not publish")
+        });
+
+        assert!(matches!(
+            result,
+            Err(BoundTradeRecoveryCommitError::ObsoleteEpoch)
+        ));
+
+        assert!(ingress.controller().is_coverage_review_pending());
+        assert_eq!(ingress.controller().baseline(), baseline);
+    }
+
+    #[test]
+    fn recovery_publication_failure_preserves_hold() {
+        let mut ingress = held_recovery_ingress();
+
+        let current_epoch = epoch(10, 20, 30);
+        let baseline = ingress.controller().baseline();
+
+        let candidate = (101..=105)
+            .map(|id| trade(&id.to_string(), Exchange::Bybit, 42))
+            .collect::<Vec<_>>();
+
+        let prepared = ingress
+            .preflight_numeric_recovery(current_epoch, baseline, &candidate)
+            .unwrap();
+
+        let result = ingress.complete_numeric_recovery(current_epoch, prepared, |_| {
+            Err("publication unavailable".into())
+        });
+
+        assert!(matches!(
+            result,
+            Err(BoundTradeRecoveryCommitError::Commit(
+                TradeRecoveryCommitError::Publication(_)
+            ))
+        ));
+
+        assert!(ingress.controller().is_coverage_review_pending());
+        assert_eq!(ingress.controller().baseline(), baseline);
+
+        for id in 101..=105 {
+            assert!(!ingress.controller().identities().contains(&id.to_string()));
+        }
+    }
+
+    #[test]
+    fn successful_recovery_completion_restores_trade_admission() {
+        let mut ingress = held_recovery_ingress();
+
+        let current_epoch = epoch(10, 20, 30);
+
+        let candidate = (101..=105)
+            .map(|id| trade(&id.to_string(), Exchange::Bybit, 42))
+            .collect::<Vec<_>>();
+
+        let prepared = ingress
+            .preflight_numeric_recovery(current_epoch, ingress.controller().baseline(), &candidate)
+            .unwrap();
+
+        let mut published = false;
+
+        let accepted = ingress
+            .complete_numeric_recovery(current_epoch, prepared, |trades| {
+                assert_eq!(trades.len(), 5);
+                published = true;
+                Ok(())
+            })
+            .unwrap();
+
+        assert!(published);
+        assert_eq!(accepted.trades.len(), 5);
+
+        assert_eq!(ingress.controller().baseline().numeric_trade_id, Some(105));
+
+        assert!(!ingress.controller().is_coverage_review_pending());
+        assert!(ingress.can_accept_trades());
+
+        for id in 101..=105 {
+            assert!(ingress.controller().identities().contains(&id.to_string()));
+        }
     }
 }

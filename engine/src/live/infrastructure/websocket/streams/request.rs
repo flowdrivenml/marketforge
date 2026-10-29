@@ -25,6 +25,8 @@ pub enum StreamRequestError {
 
     #[error("duplicate subscription parameter: {0}")]
     DuplicateParameter(String),
+    #[error("invalid logical stream ID")]
+    InvalidStreamId,
 }
 
 // ============================================================
@@ -47,7 +49,7 @@ pub struct StreamRequest {
     profile: String,
     native_symbol: String,
     channel: String,
-
+    stream_id: Option<String>,
     parameters: BTreeMap<String, String>,
 }
 
@@ -78,9 +80,37 @@ impl StreamRequest {
             native_symbol,
             channel,
             parameters: BTreeMap::new(),
+            stream_id: None,
         })
     }
+    /// Bind an authoritative MarketForge logical stream ID.
+    ///
+    /// When absent, the WebSocket resolver retains its existing
+    /// automatically generated stream-identity behavior.
+    ///
+    /// The live stream registry supplies this identity for
+    /// persistently managed source streams.
+    pub fn with_stream_id(
+        mut self,
+        stream_id: impl Into<String>,
+    ) -> Result<Self, StreamRequestError> {
+        let stream_id = stream_id.into();
 
+        if stream_id.is_empty()
+            || stream_id.trim() != stream_id
+            || stream_id.chars().any(char::is_control)
+        {
+            return Err(StreamRequestError::InvalidStreamId);
+        }
+
+        self.stream_id = Some(stream_id);
+
+        Ok(self)
+    }
+
+    pub fn stream_id(&self) -> Option<&str> {
+        self.stream_id.as_deref()
+    }
     /// Add an explicitly selected subscription parameter.
     ///
     /// Examples include depth, interval, and native

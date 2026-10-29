@@ -221,21 +221,32 @@ impl StreamSourceResolver {
         // EXISTING DESIRED SUBSCRIPTION
         // ----------------------------------------------------
 
-        let mut stream_id = format!(
-            "{}:{}:{}",
-            request.profile(),
-            request.native_symbol(),
-            request.channel(),
-        );
+        // The persistent Live registry may supply the authoritative
+        // logical stream identity.
+        //
+        // Legacy infrastructure callers retain deterministic,
+        // automatically generated identities.
+        let stream_id = if let Some(stream_id) = request.stream_id() {
+            stream_id.to_owned()
+        } else {
+            let mut generated = format!(
+                "{}:{}:{}",
+                request.profile(),
+                request.native_symbol(),
+                request.channel(),
+            );
 
-        // Parameterized subscriptions must have distinct
-        // logical identities.
-        for (name, value) in &variables {
-            stream_id.push(':');
-            stream_id.push_str(name);
-            stream_id.push('=');
-            stream_id.push_str(value);
-        }
+            // Preserve the existing identity semantics for
+            // parameterized subscriptions.
+            for (name, value) in &variables {
+                generated.push(':');
+                generated.push_str(name);
+                generated.push('=');
+                generated.push_str(value);
+            }
+
+            generated
+        };
 
         let mut subscription =
             DesiredSubscription::new(stream_id, request.channel(), request.native_symbol())
@@ -293,7 +304,7 @@ fn read_object_path<'a>(argument: &'a Value, path: &str) -> Option<&'a Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use crate::live::infrastructure::websocket::StreamRequestError;
     use std::path::PathBuf;
 
     use serde_json::json;
@@ -402,6 +413,41 @@ mod tests {
         assert!(matches!(
             result,
             Err(StreamSourceResolutionError::UnsupportedRoutingMode(_))
+        ));
+    }
+
+    #[test]
+    fn explicit_logical_stream_id_is_preserved() {
+        let exchange = profile("bybit_spot");
+
+        let request = StreamRequest::new("bybit_spot", "BTCUSDT", "trades")
+            .unwrap()
+            .with_stream_id("marketforge:btc:trades")
+            .unwrap();
+
+        let resolved = StreamSourceResolver::resolve(&exchange, &request).unwrap();
+
+        assert_eq!(resolved.stream_id(), "marketforge:btc:trades");
+    }
+
+    #[test]
+    fn generated_stream_id_remains_backward_compatible() {
+        let exchange = profile("bybit_spot");
+
+        let request = StreamRequest::new("bybit_spot", "BTCUSDT", "trades").unwrap();
+
+        let resolved = StreamSourceResolver::resolve(&exchange, &request).unwrap();
+
+        assert_eq!(resolved.stream_id(), "bybit_spot:BTCUSDT:trades");
+    }
+
+    #[test]
+    fn invalid_explicit_stream_id_is_rejected() {
+        let request = StreamRequest::new("binance_spot", "BTCUSDT", "trades").unwrap();
+
+        assert!(matches!(
+            request.with_stream_id(" invalid "),
+            Err(StreamRequestError::InvalidStreamId)
         ));
     }
 }

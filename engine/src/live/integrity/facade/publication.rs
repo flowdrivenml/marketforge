@@ -61,7 +61,9 @@ impl IntegrityPublicationAdapter {
 
         Ok(Self { fence })
     }
-
+    pub fn reset_invalidation_complete(&self) -> bool {
+        self.fence.reset_invalidation_complete()
+    }
     /// Prepare accepted depth data, or an invalidation
     /// resulting from an Integrity state transition.
     ///

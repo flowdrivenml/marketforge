@@ -101,3 +101,7 @@ target/
 *~
 
 handoff.md
+
+
+# Local secrets
+/.secrets/

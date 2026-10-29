@@ -85,7 +85,12 @@ enum RestDecoder {
         decoder: TradeDecoder,
         endpoint_name: String,
         endpoint: RestEndpoint,
+
+        // Optional additional endpoint with compatible
+        // canonical trade-record semantics.
+        historical_endpoint: Option<RestEndpoint>,
     },
+
     Depth {
         decoder: RestDepthDecoder,
     },
@@ -160,28 +165,34 @@ impl Normalizer {
             decoder,
             endpoint_name,
             endpoint,
+            historical_endpoint,
         }) = &self.rest
         else {
             return Err(NormalizerError::Unsupported(
-                "REST trade normalization is unavailable \
-                 for this source stream"
-                    .into(),
+                "REST trade normalization is unavailable for this stream".into(),
             ));
         };
 
-        if request.endpoint() != endpoint_name {
+        let selected_endpoint = if request.endpoint() == endpoint_name {
+            endpoint
+        } else if request.endpoint() == "historical_trades" {
+            historical_endpoint.as_ref().ok_or_else(|| {
+                NormalizerError::Unsupported(
+                    "historical REST trade normalization is unavailable".into(),
+                )
+            })?
+        } else {
             return Err(NormalizerError::Configuration(format!(
-                "REST endpoint mismatch: expected '{}', got '{}'",
-                endpoint_name,
+                "unsupported REST trade endpoint '{}'",
                 request.endpoint(),
             )));
-        }
+        };
 
         let normalized = RestTradeDecoder::decode_bound_exchange_response(
             decoder,
             response,
             request,
-            endpoint,
+            selected_endpoint,
             &self.context,
         )
         .map_err(|error| NormalizerError::Decode(error.to_string()))?;
@@ -387,10 +398,31 @@ impl NormalizerFactory {
             let decoder = TradeDecoder::new(rest_plan)
                 .map_err(|error| NormalizerError::Configuration(error.to_string()))?;
 
+            let historical_endpoint = if profile == "binance_spot" {
+                exchange.endpoint("historical_trades").map(|historical| {
+                    let mut configured = historical.clone();
+
+                    // Binance Spot historicalTrades uses the same
+                    // individual trade-record fields as recent trades.
+                    //
+                    // Reuse only the record normalization mapping.
+                    // Preserve historical endpoint-specific response
+                    // validation and request configuration.
+                    if configured.trade_normalization.is_none() {
+                        configured.trade_normalization = endpoint.trade_normalization.clone();
+                    }
+
+                    configured
+                })
+            } else {
+                None
+            };
+
             Some(RestDecoder::Trades {
                 decoder,
                 endpoint_name: endpoint_name.to_owned(),
                 endpoint: endpoint.clone(),
+                historical_endpoint,
             })
         } else {
             None

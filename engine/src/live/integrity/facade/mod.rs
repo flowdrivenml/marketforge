@@ -22,6 +22,9 @@ pub use processing::{IntegrityBatchResult, IntegrityInput, IntegrityOutcome};
 
 pub use publication::{IntegrityPublicationAdapter, IntegrityPublicationError};
 
-pub use recovery::{IntegrityRecoveryError, IntegrityRecoveryResult};
+pub use recovery::{
+    IntegrityRecoveryError, IntegrityRecoveryResult, IntegrityTradeRecoveryCommitError,
+    IntegrityTradeRecoveryError, TradeRecoveryPreflight,
+};
 
 pub use admission::{IntegrityAdmissionError, IntegrityAdmissionState};

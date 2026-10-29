@@ -45,7 +45,8 @@ pub use facade::{
     IntegrityFacadeFactory, IntegrityFactoryError, IntegrityInput, IntegrityLifecycleError,
     IntegrityLifecycleEvent, IntegrityLifecycleOutcome, IntegrityOutcome,
     IntegrityPublicationAdapter, IntegrityPublicationError, IntegrityRecoveryError,
-    IntegrityRecoveryResult, RestDepthEndpointConfig, StreamIntegrityHandle, StreamIntegrityStatus,
+    IntegrityRecoveryResult, IntegrityTradeRecoveryCommitError, IntegrityTradeRecoveryError,
+    RestDepthEndpointConfig, StreamIntegrityHandle, StreamIntegrityStatus, TradeRecoveryPreflight,
 };
 pub use incidents::lifecycle::{
     ClassifiedEpisodeOutcome, ClosedIntegrityEpisode, EpisodeReportOutcome, IntegrityEpisodeError,

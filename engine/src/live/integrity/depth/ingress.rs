@@ -1,5 +1,6 @@
 use crate::live::config::{exchange::ExchangeConfig, format::DepthFormatConfig};
 use crate::live::infrastructure::normalization::{NormalizationSource, NormalizedDepth};
+use crate::live::integrity::RestDepthSyncPhase;
 use crate::live::integrity::depth::binding::{
     DepthSourceBinding, DepthSourceBindingError, DepthSourceEpoch,
 };
@@ -159,6 +160,17 @@ impl BoundDepthIngress {
             BoundDepthMode::WebSocket(controller) => controller.is_synchronized(),
 
             BoundDepthMode::Rest(coordinator) => coordinator.is_synchronized(),
+        }
+    }
+    /// Current REST synchronization phase, if this depth
+    /// ingress uses REST snapshot synchronization.
+    ///
+    /// None indicates a WebSocket-snapshot depth source.
+    pub fn rest_sync_phase(&self) -> Option<RestDepthSyncPhase> {
+        match &self.mode {
+            BoundDepthMode::Rest(coordinator) => Some(coordinator.phase()),
+
+            BoundDepthMode::WebSocket(_) => None,
         }
     }
     /// REST request limit associated with the current synchronized book.

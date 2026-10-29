@@ -14,11 +14,31 @@ use tokio_tungstenite::tungstenite::Message;
 /// The only WebSocket information a stream processor receives.
 ///
 /// This does not represent market-data integrity readiness.
+/// One ACK-confirmed logical stream acquisition.
+///
+/// The physical connection identity originates from
+/// ConnectionFence, not from exchange-controlled payloads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamAcquisition {
+    pub connection: ConnectionStamp,
+
+    /// Monotonically increasing within one logical attachment.
+    ///
+    /// A newer ACK-confirmed acquisition receives a new value,
+    /// even if the physical connection stamp is unchanged.
+    pub generation: u64,
+}
+
 #[derive(Debug)]
 pub enum StreamInput {
-    Connected,
-    Disconnected,
-    Data(Message),
+    Connected(StreamAcquisition),
+
+    Disconnected(StreamAcquisition),
+
+    Data {
+        acquisition: StreamAcquisition,
+        message: Message,
+    },
 }
 
 /// Identifies a transport attachment.
@@ -61,6 +81,8 @@ pub enum StreamDispatchError {
 
     #[error("stream dispatcher lock poisoned")]
     Poisoned,
+    #[error("logical stream acquisition generation exhausted")]
+    AcquisitionGenerationExhausted,
 }
 
 // ============================================================
@@ -69,13 +91,15 @@ pub enum StreamDispatchError {
 
 struct Attachment {
     binding: StreamBinding,
-
     destination: mpsc::Sender<StreamInput>,
 
-    /// Current authorized transport generation.
+    /// Currently authorized logical acquisition.
+    acquisition: Option<StreamAcquisition>,
+
+    /// Most recently allocated logical acquisition generation.
     ///
-    /// None means the source is unavailable.
-    generation: Option<ConnectionStamp>,
+    /// Must survive ordinary disconnects.
+    last_acquisition_generation: u64,
 }
 
 struct DispatcherState {
@@ -139,11 +163,15 @@ impl StreamDispatcher {
             .get_mut(stream_id)
             .ok_or_else(|| StreamDispatchError::UnknownStream(stream_id.to_owned()))?;
 
-        if entry.generation.take().is_none() {
+        let Some(acquisition) = entry.acquisition.take() else {
             return Ok(());
-        }
+        };
 
-        Self::send(stream_id, &entry.destination, StreamInput::Disconnected)
+        Self::send(
+            stream_id,
+            &entry.destination,
+            StreamInput::Disconnected(acquisition),
+        )
     }
 
     /// Look up an attachment without exposing the dispatcher's
@@ -181,7 +209,8 @@ impl StreamDispatcher {
             Attachment {
                 binding,
                 destination,
-                generation: None,
+                acquisition: None,
+                last_acquisition_generation: 0,
             },
         );
 
@@ -249,17 +278,34 @@ impl StreamDispatcher {
             .get_mut(stream_id)
             .ok_or_else(|| StreamDispatchError::UnknownStream(stream_id.to_owned()))?;
 
-        if entry.generation.as_ref() == Some(&stamp) {
-            return Ok(());
-        }
+        if let Some(current) = &entry.acquisition {
+            if current.connection == stamp {
+                return Ok(());
+            }
 
-        if entry.generation.is_some() {
             return Err(StreamDispatchError::StaleBinding);
         }
 
-        Self::send(stream_id, &entry.destination, StreamInput::Connected)?;
+        let next = entry
+            .last_acquisition_generation
+            .checked_add(1)
+            .ok_or(StreamDispatchError::AcquisitionGenerationExhausted)?;
 
-        entry.generation = Some(stamp);
+        let acquisition = StreamAcquisition {
+            connection: stamp,
+            generation: next,
+        };
+
+        // Commit only after the notification is accepted
+        // by the bounded destination queue.
+        Self::send(
+            stream_id,
+            &entry.destination,
+            StreamInput::Connected(acquisition.clone()),
+        )?;
+
+        entry.last_acquisition_generation = next;
+        entry.acquisition = Some(acquisition);
 
         Ok(())
     }
@@ -284,13 +330,26 @@ impl StreamDispatcher {
             .get_mut(stream_id)
             .ok_or_else(|| StreamDispatchError::UnknownStream(stream_id.to_owned()))?;
 
-        if entry.generation.as_ref() != Some(stamp) {
+        let Some(acquisition) = entry.acquisition.as_ref() else {
+            return Ok(());
+        };
+
+        if &acquisition.connection != stamp {
             return Ok(());
         }
 
-        entry.generation = None;
+        let acquisition = acquisition.clone();
 
-        Self::send(stream_id, &entry.destination, StreamInput::Disconnected)
+        // Revoke availability before notifying the destination.
+        // A notification failure requires the supervising
+        // connection slot to fail closed.
+        entry.acquisition = None;
+
+        Self::send(
+            stream_id,
+            &entry.destination,
+            StreamInput::Disconnected(acquisition),
+        )
     }
 
     // ========================================================
@@ -317,11 +376,22 @@ impl StreamDispatcher {
             .get(stream_id)
             .ok_or_else(|| StreamDispatchError::UnknownStream(stream_id.to_owned()))?;
 
-        if entry.generation.as_ref() != Some(stamp) {
+        let Some(acquisition) = entry.acquisition.as_ref() else {
+            return Ok(false);
+        };
+
+        if &acquisition.connection != stamp {
             return Ok(false);
         }
 
-        Self::send(stream_id, &entry.destination, StreamInput::Data(message))?;
+        Self::send(
+            stream_id,
+            &entry.destination,
+            StreamInput::Data {
+                acquisition: acquisition.clone(),
+                message,
+            },
+        )?;
 
         Ok(true)
     }
@@ -408,11 +478,14 @@ mod tests {
 
         assert!(delivered);
 
-        assert!(matches!(rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(rx.recv().await, Some(StreamInput::Connected(_))));
 
         assert!(matches!(
             rx.recv().await,
-            Some(StreamInput::Data(Message::Text(_)))
+            Some(StreamInput::Data {
+                message: Message::Text(_),
+                ..
+            })
         ));
     }
 
@@ -442,11 +515,17 @@ mod tests {
             .unwrap();
 
         // BTC receives its availability event.
-        assert!(matches!(btc_rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(
+            btc_rx.recv().await,
+            Some(StreamInput::Connected(_))
+        ));
 
         // BTC receives its own message.
         match btc_rx.recv().await.unwrap() {
-            StreamInput::Data(Message::Text(text)) => {
+            StreamInput::Data {
+                message: Message::Text(text),
+                ..
+            } => {
                 assert_eq!(text.as_str(), "btc-message");
             }
 
@@ -454,7 +533,10 @@ mod tests {
         }
 
         // ETH receives its availability event.
-        assert!(matches!(eth_rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(
+            eth_rx.recv().await,
+            Some(StreamInput::Connected(_))
+        ));
 
         // ETH must NOT receive BTC market data.
         assert!(eth_rx.try_recv().is_err());
@@ -495,14 +577,20 @@ mod tests {
 
         assert!(delivered);
 
-        assert!(matches!(rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(rx.recv().await, Some(StreamInput::Connected(_))));
 
-        assert!(matches!(rx.recv().await, Some(StreamInput::Disconnected)));
+        assert!(matches!(
+            rx.recv().await,
+            Some(StreamInput::Disconnected(_))
+        ));
 
-        assert!(matches!(rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(rx.recv().await, Some(StreamInput::Connected(_))));
 
         match rx.recv().await.unwrap() {
-            StreamInput::Data(Message::Text(text)) => {
+            StreamInput::Data {
+                message: Message::Text(text),
+                ..
+            } => {
                 assert_eq!(text.as_str(), "current");
             }
 
@@ -596,10 +684,13 @@ mod tests {
 
         assert!(delivered);
 
-        assert!(matches!(rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(rx.recv().await, Some(StreamInput::Connected(_))));
 
         match rx.recv().await.unwrap() {
-            StreamInput::Data(Message::Text(text)) => {
+            StreamInput::Data {
+                message: Message::Text(text),
+                ..
+            } => {
                 assert_eq!(text.as_str(), "correct-slot");
             }
 
@@ -607,5 +698,60 @@ mod tests {
         }
 
         assert!(rx.try_recv().is_err());
+    }
+    #[tokio::test]
+    async fn reconnect_advances_logical_acquisition_generation() {
+        let dispatcher = StreamDispatcher::new();
+
+        let (tx, mut rx) = mpsc::channel(16);
+
+        dispatcher.attach("btc".into(), tx).unwrap();
+
+        let first_connection = stamp("slot-1", 1);
+        let second_connection = stamp("slot-1", 2);
+
+        dispatcher
+            .connected("btc", first_connection.clone())
+            .unwrap();
+
+        let first = match rx.recv().await.unwrap() {
+            StreamInput::Connected(acquisition) => acquisition,
+            other => panic!("expected Connected: {other:?}"),
+        };
+
+        dispatcher.disconnected("btc", &first_connection).unwrap();
+
+        let disconnected = match rx.recv().await.unwrap() {
+            StreamInput::Disconnected(acquisition) => acquisition,
+            other => panic!("expected Disconnected: {other:?}"),
+        };
+
+        assert_eq!(first, disconnected);
+
+        dispatcher
+            .connected("btc", second_connection.clone())
+            .unwrap();
+
+        let second = match rx.recv().await.unwrap() {
+            StreamInput::Connected(acquisition) => acquisition,
+            other => panic!("expected Connected: {other:?}"),
+        };
+
+        assert!(second.generation > first.generation);
+
+        assert_eq!(second.connection, second_connection);
+
+        // The old physical connection cannot deliver data
+        // into the newer logical acquisition.
+        let delivered = dispatcher
+            .deliver("btc", &first_connection, Message::Text("obsolete".into()))
+            .unwrap();
+
+        assert!(!delivered);
+
+        assert!(matches!(
+            rx.try_recv(),
+            Err(mpsc::error::TryRecvError::Empty)
+        ));
     }
 }

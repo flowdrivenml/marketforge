@@ -264,13 +264,13 @@ async fn wait_connected(rx: &mut mpsc::Receiver<StreamInput>, label: &str) {
             .unwrap_or_else(|| panic!("{label} channel closed before Connected"));
 
         match event {
-            StreamInput::Connected => return,
+            StreamInput::Connected(_) => return,
 
-            StreamInput::Disconnected => {
+            StreamInput::Disconnected(_) => {
                 println!("[{label}] Disconnected while awaiting Connected");
             }
 
-            StreamInput::Data(_) => {
+            StreamInput::Data { .. } => {
                 panic!("{label} received data before Connected");
             }
         }
@@ -291,13 +291,13 @@ async fn wait_disconnected(rx: &mut mpsc::Receiver<StreamInput>, label: &str) {
             .unwrap_or_else(|| panic!("{label} channel closed before Disconnected"));
 
         match event {
-            StreamInput::Disconnected => return,
+            StreamInput::Disconnected(_) => return,
 
             // Previously queued data may legitimately precede
             // Disconnected in this stream's ordered channel.
-            StreamInput::Data(_) => {}
+            StreamInput::Data { .. } => {}
 
-            StreamInput::Connected => {
+            StreamInput::Connected(_) => {
                 panic!(
                     "{label} received duplicate Connected \
                      without Disconnected"
@@ -331,21 +331,24 @@ async fn wait_trade(rx: &mut mpsc::Receiver<StreamInput>, expected_symbol: &str)
             });
 
         match event {
-            StreamInput::Connected => {
+            StreamInput::Connected(_) => {
                 panic!(
                     "{expected_symbol} received unexpected \
                      Connected while waiting for trade"
                 );
             }
 
-            StreamInput::Disconnected => {
+            StreamInput::Disconnected(_) => {
                 panic!(
                     "{expected_symbol} disconnected \
                      while waiting for trade"
                 );
             }
 
-            StreamInput::Data(Message::Text(text)) => {
+            StreamInput::Data {
+                message: Message::Text(text),
+                ..
+            } => {
                 let value: Value =
                     serde_json::from_str(text.as_str()).expect("native market-data JSON");
 
@@ -378,7 +381,7 @@ async fn wait_trade(rx: &mut mpsc::Receiver<StreamInput>, expected_symbol: &str)
                 return value;
             }
 
-            StreamInput::Data(other) => {
+            StreamInput::Data { message: other, .. } => {
                 panic!(
                     "unexpected native frame for \
                      {expected_symbol}: {other:?}"
@@ -615,7 +618,7 @@ async fn websocket_manager_backpressure_must_close_stream() {
     // Connected was the first accepted event.
     assert!(matches!(
         time::timeout(Duration::from_secs(5), rx.recv()).await,
-        Ok(Some(StreamInput::Connected))
+        Ok(Some(StreamInput::Connected(_)))
     ));
 
     // After a fatal delivery failure, the consumer must
@@ -731,7 +734,10 @@ async fn websocket_manager_backpressure_isolated_between_slots() {
     assert_eq!(manager.stream_count().await, 1);
 
     // BTC's initial Connected event may still be queued.
-    assert!(matches!(btc_rx.recv().await, Some(StreamInput::Connected)));
+    assert!(matches!(
+        btc_rx.recv().await,
+        Some(StreamInput::Connected(_))
+    ));
 
     // After draining the queued event, its channel must
     // close because the manager retired the attachment.

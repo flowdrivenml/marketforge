@@ -3,6 +3,8 @@ pub mod control;
 pub mod infrastructure;
 pub mod integrity;
 pub mod metrics;
+#[cfg(feature = "postgres")]
+pub mod recording;
 pub mod recovery;
 pub mod stream;
 pub mod tui;

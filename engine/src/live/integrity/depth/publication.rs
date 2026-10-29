@@ -255,7 +255,17 @@ impl DepthPublicationFence {
             fence_id,
         })
     }
-
+    /// Whether a failed publication has been fully invalidated
+    /// at the downstream publication boundary.
+    ///
+    /// This does not mean the book is synchronized or ready.
+    /// A new authoritative snapshot is still required.
+    pub fn reset_invalidation_complete(&self) -> bool {
+        self.phase == DepthPublicationPhase::ResetRequired
+            && self.outstanding.is_none()
+            && self.state.published_book_generation.is_none()
+            && self.uncertain_book.is_none()
+    }
     // ========================================================
     // INSPECTION
     // ========================================================

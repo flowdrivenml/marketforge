@@ -232,11 +232,14 @@ mod tests {
 
         assert_eq!(outcome, NativeFrameDispatchOutcome::Delivered);
 
-        assert!(matches!(rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(rx.recv().await, Some(StreamInput::Connected(_))));
 
         assert!(matches!(
             rx.recv().await,
-            Some(StreamInput::Data(Message::Text(_)))
+            Some(StreamInput::Data {
+                message: Message::Text(_),
+                ..
+            })
         ));
     }
 
@@ -276,15 +279,27 @@ mod tests {
             .dispatch(native_frame(stamp, "btcusdt@trade"))
             .unwrap();
 
-        assert!(matches!(btc_rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(
+            btc_rx.recv().await,
+            Some(StreamInput::Connected(_))
+        ));
 
-        assert!(matches!(eth_rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(
+            eth_rx.recv().await,
+            Some(StreamInput::Connected(_))
+        ));
 
         // Each logical stream receives exactly one
         // matching market-data message.
-        assert!(matches!(btc_rx.recv().await, Some(StreamInput::Data(_))));
+        assert!(matches!(
+            btc_rx.recv().await,
+            Some(StreamInput::Data { .. })
+        ));
 
-        assert!(matches!(eth_rx.recv().await, Some(StreamInput::Data(_))));
+        assert!(matches!(
+            eth_rx.recv().await,
+            Some(StreamInput::Data { .. })
+        ));
 
         assert!(btc_rx.try_recv().is_err());
         assert!(eth_rx.try_recv().is_err());
@@ -323,7 +338,7 @@ mod tests {
         ));
 
         // Only the already-queued availability event.
-        assert!(matches!(rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(rx.recv().await, Some(StreamInput::Connected(_))));
 
         assert!(rx.try_recv().is_err());
     }
@@ -359,7 +374,7 @@ mod tests {
             ))
         ));
 
-        assert!(matches!(rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(rx.recv().await, Some(StreamInput::Connected(_))));
 
         assert!(rx.try_recv().is_err());
     }
@@ -464,9 +479,9 @@ mod tests {
 
         assert_eq!(outcome, NativeFrameDispatchOutcome::Delivered);
 
-        assert!(matches!(rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(rx.recv().await, Some(StreamInput::Connected(_))));
 
-        assert!(matches!(rx.recv().await, Some(StreamInput::Data(_))));
+        assert!(matches!(rx.recv().await, Some(StreamInput::Data { .. })));
 
         // Transport delivery does not imply publication readiness.
         assert!(fence.with_ready(&stamp, || ()).is_none());
@@ -534,7 +549,7 @@ mod tests {
             Err(NativeFrameDispatchError::StaleGeneration)
         ));
 
-        assert!(matches!(rx.recv().await, Some(StreamInput::Connected)));
+        assert!(matches!(rx.recv().await, Some(StreamInput::Connected(_))));
 
         assert!(rx.try_recv().is_err());
     }

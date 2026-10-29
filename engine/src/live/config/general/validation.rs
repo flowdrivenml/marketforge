@@ -1,6 +1,6 @@
-use std::{net::SocketAddr, path::Path};
-
 use super::model::GeneralConfig;
+use super::model::RecordingConfig;
+use std::{net::SocketAddr, path::Path};
 
 // ============================================================
 // PUBLIC VALIDATION ENTRY POINT
@@ -12,7 +12,7 @@ pub fn validate(config: &GeneralConfig) -> Result<(), String> {
     validate_runtime(config)?;
     validate_publication(config)?;
     validate_control(config)?;
-    validate_recording(config)?;
+    config.recording.validate()?;
     validate_metrics(config)?;
     validate_logging(config)?;
     validate_recovery(config)?;
@@ -92,19 +92,18 @@ fn validate_control(config: &GeneralConfig) -> Result<(), String> {
 // RECORDING
 // ============================================================
 
-fn validate_recording(config: &GeneralConfig) -> Result<(), String> {
-    // These settings must be valid even when recording is
-    // currently disabled, since recording can be enabled later.
+impl RecordingConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.batch_max_records == 0 {
+            return Err("recording.batch_max_records must be greater than zero".into());
+        }
 
-    if config.recording.batch_max_records == 0 {
-        return Err("recording.batch_max_records must be greater than zero".into());
+        if self.batch_max_delay_ms == 0 {
+            return Err("recording.batch_max_delay_ms must be greater than zero".into());
+        }
+
+        Ok(())
     }
-
-    if config.recording.batch_max_delay_ms == 0 {
-        return Err("recording.batch_max_delay_ms must be greater than zero".into());
-    }
-
-    Ok(())
 }
 
 // ============================================================

@@ -22,7 +22,9 @@ pub use lifecycle::state::{
 };
 pub use manager::bootstrap::{WebSocketManagerRuntime, WebSocketProfileRuntime};
 pub use manager::facade::{WebSocketManager, WebSocketManagerError};
-pub use routing::stream_dispatcher::{StreamBinding, StreamDispatchError, StreamInput};
+pub use routing::stream_dispatcher::{
+    StreamAcquisition, StreamBinding, StreamDispatchError, StreamInput,
+};
 pub use slots::runner::ConnectionSlotRunner;
 pub use streams::recovery::{
     RecoveryStreamKind, StreamRecoveryCoordinator, StreamRecoveryError, StreamRecoveryPhase,

@@ -128,7 +128,29 @@ impl StreamRecoveryHandle {
     // ========================================================
     // DEPTH
     // ========================================================
+    /// Create a recovery handle for a new trusted source epoch.
+    ///
+    /// Preserves the shared recovery coordinator, source request,
+    /// and configuration generation.
+    ///
+    /// Does not cancel requests belonging to the old epoch.
+    /// The owning executor must coordinate cancellation first.
+    pub fn rebind_epoch(&self, epoch: RecoverySourceEpoch) -> Result<Self, StreamRecoveryError> {
+        if epoch.stream_generation == 0 {
+            return Err(StreamRecoveryError::InvalidBinding(
+                "source stream generation cannot be zero".into(),
+            ));
+        }
 
+        let binding = StreamRecoveryBinding::new(
+            self.binding.stream_id.clone(),
+            self.binding.source.clone(),
+            self.binding.configuration_generation,
+            epoch,
+        )?;
+
+        Ok(Self::new(self.manager.clone(), binding))
+    }
     pub async fn request_depth_snapshot(
         &self,
         attempt: RecoveryAttemptId,

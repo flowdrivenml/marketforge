@@ -131,6 +131,72 @@ pub enum TradeControllerOutcome {
 /// - Publication or recording.
 ///
 /// The source runtime must serialize processing calls.
+///
+///
+/// ============================================================
+// TRADE RECOVERY PREFLIGHT
+// ============================================================
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TradeRecoveryPreflightError {
+    ObsoleteGeneration,
+    NoCoverageHold,
+    UnsupportedIdentityPolicy,
+    BaselineMismatch,
+    EmptyCandidate,
+    CandidateTooLarge,
+    WrongStream,
+    MissingTradeId,
+    InvalidNumericTradeId,
+    NonConsecutiveTradeIds,
+    PreviouslyAcceptedIdentity,
+    MissingTriggeringTrade,
+    ObsoleteEpoch,
+    SourceQuarantined,
+    WrongExchange,
+    WrongInstrument,
+    WrongSymbol,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TradeRecoveryCommitError {
+    Preflight(TradeRecoveryPreflightError),
+    Evaluation(TradeIntegrityEvaluationError),
+    Publication(String),
+    IdentityCommit(TradeIdentityError),
+    UnexpectedCoverageObservation,
+}
+/// A candidate validated against the current trade controller.
+///
+/// This is NOT a commitment or publication authorization.
+///
+/// In particular, successful numeric validation does not
+/// prove that the REST endpoint returned complete exchange
+/// execution history.
+#[derive(Debug)]
+pub struct TradeRecoveryPreflight {
+    generation: u64,
+    baseline: TradeIntegrityBaseline,
+    trades: Vec<Trade>,
+}
+
+impl TradeRecoveryPreflight {
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub fn baseline(&self) -> TradeIntegrityBaseline {
+        self.baseline
+    }
+
+    pub fn trades(&self) -> &[Trade] {
+        &self.trades
+    }
+
+    pub fn record_count(&self) -> usize {
+        self.trades.len()
+    }
+}
 #[derive(Debug)]
 pub struct LiveTradeController {
     stream_id: String,
@@ -155,6 +221,13 @@ pub struct LiveTradeController {
     /// ordering history crossed an unverified
     /// generation boundary.
     generation_history_discontinuous: bool,
+    /// The canonical batch that triggered the current coverage hold.
+    ///
+    /// Retained only while that hold exists.
+    ///
+    /// Its size is bounded by TradeIdentityLimits::max_batch_records.
+    /// These trades have not been accepted or published.
+    coverage_triggering_trades: Option<Vec<Trade>>,
 }
 
 impl LiveTradeController {
@@ -196,6 +269,7 @@ impl LiveTradeController {
             baseline: TradeIntegrityBaseline::default(),
             generation_history_discontinuous: false,
             coverage_hold: None,
+            coverage_triggering_trades: None,
         })
     }
 
@@ -235,7 +309,281 @@ impl LiveTradeController {
     pub fn coverage_hold(&self) -> Option<&TradeCoverageHold> {
         self.coverage_hold.as_ref()
     }
+    /// Canonical trades from the batch that triggered
+    /// the unresolved coverage hold.
+    ///
+    /// These records are not committed to identity history
+    /// and must not be published as accepted trades.
+    ///
+    /// None means there is no retained triggering batch.
+    pub fn coverage_triggering_trades(&self) -> Option<&[Trade]> {
+        self.coverage_triggering_trades.as_deref()
+    }
+    /// Validate a numerically reconciled recovery candidate
+    /// against the authoritative held generation.
+    ///
+    /// This operation is read-only:
+    ///
+    /// - Does not insert trade identities.
+    /// - Does not advance the accepted baseline.
+    /// - Does not clear the coverage hold.
+    /// - Does not authorize publication.
+    ///
+    /// Source provenance, REST request identity, full acquisition
+    /// fencing, and exchange-specific coverage guarantees must
+    /// be validated by the surrounding recovery workflow.
+    pub(in crate::live::integrity) fn preflight_numeric_recovery(
+        &self,
+        generation: u64,
+        expected_baseline: TradeIntegrityBaseline,
+        candidate: &[Trade],
+    ) -> Result<TradeRecoveryPreflight, TradeRecoveryPreflightError> {
+        use TradeRecoveryPreflightError as Error;
 
+        // --------------------------------------------------------
+        // GENERATION AND HOLD
+        // --------------------------------------------------------
+
+        if generation != self.generation {
+            return Err(Error::ObsoleteGeneration);
+        }
+
+        let hold = self.coverage_hold.as_ref().ok_or(Error::NoCoverageHold)?;
+
+        if hold.generation != generation {
+            return Err(Error::ObsoleteGeneration);
+        }
+
+        if hold.baseline != expected_baseline || self.baseline != expected_baseline {
+            return Err(Error::BaselineMismatch);
+        }
+
+        // --------------------------------------------------------
+        // SUPPORTED RECOVERY POLICY
+        // --------------------------------------------------------
+
+        if self.plan.identity_kind != super::compiler::TradeIdentityKind::Numeric
+            || !self.plan.detect_id_gaps
+            || self.plan.coverage_action != TradeCoverageAction::RequestRecovery
+        {
+            return Err(Error::UnsupportedIdentityPolicy);
+        }
+
+        // --------------------------------------------------------
+        // BOUNDED INPUT
+        // --------------------------------------------------------
+
+        if candidate.is_empty() {
+            return Err(Error::EmptyCandidate);
+        }
+
+        let limits = self.identities.limits();
+
+        if candidate.len() > limits.max_ids || candidate.len() > limits.max_batch_records {
+            return Err(Error::CandidateTooLarge);
+        }
+
+        // --------------------------------------------------------
+        // NUMERIC CONTINUITY AND IDENTITY VALIDATION
+        // --------------------------------------------------------
+
+        let mut previous = expected_baseline
+            .numeric_trade_id
+            .ok_or(Error::BaselineMismatch)?;
+
+        let mut candidate_ids = HashSet::with_capacity(candidate.len());
+
+        for trade in candidate {
+            if trade.envelope.stream_id != self.stream_id {
+                return Err(Error::WrongStream);
+            }
+
+            let id = trade.trade_id.as_deref().ok_or(Error::MissingTradeId)?;
+
+            if id.is_empty() || id.len() > limits.max_id_bytes {
+                return Err(Error::InvalidNumericTradeId);
+            }
+
+            let numeric = id
+                .parse::<u64>()
+                .map_err(|_| Error::InvalidNumericTradeId)?;
+
+            // The candidate must continue the last accepted
+            // numeric baseline exactly.
+            //
+            // This also rejects regressions and repeated IDs.
+            if previous.checked_add(1) != Some(numeric) {
+                return Err(Error::NonConsecutiveTradeIds);
+            }
+
+            if self.identities.contains(id) {
+                return Err(Error::PreviouslyAcceptedIdentity);
+            }
+
+            candidate_ids.insert(numeric);
+            previous = numeric;
+        }
+
+        // --------------------------------------------------------
+        // PRESERVED TRIGGERING BATCH
+        // --------------------------------------------------------
+
+        let triggering = self
+            .coverage_triggering_trades
+            .as_deref()
+            .ok_or(Error::MissingTriggeringTrade)?;
+
+        if triggering.is_empty() {
+            return Err(Error::MissingTriggeringTrade);
+        }
+
+        // Every triggering trade beyond the accepted baseline
+        // must appear in the candidate.
+        //
+        // The source reconciliation layer separately checks
+        // conflicting canonical contents across REST and WS.
+        let baseline_id = expected_baseline
+            .numeric_trade_id
+            .ok_or(Error::BaselineMismatch)?;
+
+        for trade in triggering {
+            let id = trade
+                .trade_id
+                .as_deref()
+                .ok_or(Error::MissingTradeId)?
+                .parse::<u64>()
+                .map_err(|_| Error::InvalidNumericTradeId)?;
+
+            if id > baseline_id && !candidate_ids.contains(&id) {
+                return Err(Error::MissingTriggeringTrade);
+            }
+        }
+
+        // --------------------------------------------------------
+        // READ-ONLY RESULT
+        // --------------------------------------------------------
+
+        Ok(TradeRecoveryPreflight {
+            generation,
+            baseline: expected_baseline,
+            trades: candidate.to_vec(),
+        })
+    }
+    /// Complete one bounded numeric trade recovery.
+    ///
+    /// The caller must have independently validated:
+    /// - REST request/response provenance.
+    /// - The complete trusted acquisition epoch.
+    /// - The exchange-specific recovery coverage policy.
+    ///
+    /// The publication callback acknowledges synchronous handoff
+    /// to the downstream publication boundary, not durable storage.
+    ///
+    /// A failed callback preserves the coverage hold, triggering
+    /// batch, identities, and accepted ordering baseline.
+    ///
+    /// This method does not establish globally complete trade
+    /// history or exactly-once delivery.
+    pub(in crate::live::integrity) fn complete_numeric_recovery(
+        &mut self,
+        prepared: TradeRecoveryPreflight,
+        publish: impl FnOnce(&[Trade]) -> Result<(), String>,
+    ) -> Result<AcceptedTradeBatch, TradeRecoveryCommitError> {
+        use TradeRecoveryCommitError as Error;
+
+        // Revalidate the current authoritative controller state.
+        //
+        // A preflight is not a permanent authorization. Another
+        // lifecycle transition may have made it obsolete.
+        self.preflight_numeric_recovery(prepared.generation, prepared.baseline, &prepared.trades)
+            .map_err(Error::Preflight)?;
+
+        // Establish the complete proposed ordering transition
+        // BEFORE performing the downstream handoff.
+        let evaluation =
+            TradeIntegrityEvaluator::evaluate(&self.plan, self.baseline, &prepared.trades)
+                .map_err(Error::Evaluation)?;
+
+        if evaluation.has_observations() {
+            return Err(Error::UnexpectedCoverageObservation);
+        }
+
+        // All identities are checked before publication.
+        //
+        // The existing preflight guarantees nonempty,
+        // bounded, valid numeric IDs.
+        let ids: Vec<&str> = prepared
+            .trades
+            .iter()
+            .map(|trade| {
+                trade
+                    .trade_id
+                    .as_deref()
+                    .expect("preflight validated every trade identity")
+            })
+            .collect();
+
+        // --------------------------------------------------------
+        // PUBLICATION HANDOFF
+        // --------------------------------------------------------
+
+        // No authoritative controller mutation has occurred.
+        //
+        // An error leaves the hold and accepted baseline intact.
+        publish(&prepared.trades).map_err(Error::Publication)?;
+
+        // --------------------------------------------------------
+        // AUTHORITATIVE COMMIT
+        // --------------------------------------------------------
+
+        // All fallible input validation occurred before handoff.
+        //
+        // This existing identity tracker is the authoritative
+        // deduplication owner. Do not construct another tracker.
+        // The preflight validated every identity and the batch limits.
+        // The single-owner controller has not changed since revalidation.
+        //
+        // Failure here would be an internal invariant violation AFTER
+        // downstream publication, not a recoverable exchange-data error.
+        let decisions = self
+            .identities
+            .observe_batch(&ids)
+            .expect("validated trade recovery identity commit must succeed");
+
+        assert!(
+            decisions
+                .iter()
+                .all(|decision| { matches!(decision, TradeIdentityDecision::NewWithinWindow) }),
+            "recovery preflight and identity commit diverged"
+        );
+
+        let received_records = ids.len();
+
+        self.baseline = evaluation.next_baseline;
+
+        self.coverage_hold = None;
+        self.coverage_triggering_trades = None;
+
+        // Numeric reconciliation does not, by itself, prove
+        // globally complete exchange execution history.
+        //
+        // Preserve this uncertainty until an explicit
+        // exchange-specific coverage contract can establish
+        // a stronger guarantee.
+        self.generation_history_discontinuous = true;
+
+        let history_truncated = self.identities.history_truncated();
+
+        Ok(AcceptedTradeBatch {
+            trades: prepared.trades,
+            received_records: received_records,
+            duplicate_records: 0,
+            identity_history_truncated: history_truncated,
+            coverage_history_unverified: true,
+            observations: evaluation.observations,
+            baseline: self.baseline,
+        })
+    }
     /// Whether the controller can currently evaluate new
     /// trade batches for acceptance.
     ///
@@ -288,7 +636,7 @@ impl LiveTradeController {
         // This does NOT mean the previous coverage failure
         // was successfully reconciled.
         self.coverage_hold = None;
-
+        self.coverage_triggering_trades = None;
         // Any generation transition makes continuity with
         // the preceding generation unverified until an
         // external recovery/coverage process establishes
@@ -481,6 +829,16 @@ impl LiveTradeController {
 
             let observations = hold.observations.clone();
 
+            // The entire batch was already checked against the
+            // controller's configured bounded record limit.
+            //
+            // Retain its canonical records because none of them
+            // were committed when the coverage hold was created.
+            let triggering_trades = records.to_vec();
+
+            // Commit the hold and its corresponding triggering
+            // batch together, before returning to the source runtime.
+            self.coverage_triggering_trades = Some(triggering_trades);
             self.coverage_hold = Some(hold);
 
             return TradeControllerOutcome::CoverageReviewRequired { observations };
@@ -591,7 +949,19 @@ mod tests {
     };
     use crate::shared::domain::canonical::{EventEnvelope, Exchange, TradeSide};
     const STREAM_ID: &str = "bybit:spot:BTCUSDT:trades";
-
+    fn recovery_numeric_controller() -> LiveTradeController {
+        LiveTradeController::new(
+            STREAM_ID,
+            10,
+            TradeIdentityLimits {
+                max_ids: 100,
+                max_id_bytes: 64,
+                max_batch_records: 100,
+            },
+            numeric_plan(),
+        )
+        .unwrap()
+    }
     fn limits() -> TradeIdentityLimits {
         TradeIdentityLimits {
             max_ids: 3,
@@ -1315,5 +1685,320 @@ mod tests {
         assert!(controller.is_coverage_review_pending());
 
         assert_eq!(controller.baseline().numeric_trade_id, Some(100),);
+    }
+    #[test]
+    fn coverage_hold_retains_complete_triggering_batch() {
+        let mut controller = numeric_controller();
+
+        // Establish the last accepted baseline.
+        let accepted = controller.process(10, &message(&["100"]));
+
+        assert!(matches!(accepted, TradeControllerOutcome::Accepted(_)));
+
+        // The first record is continuous, but the second
+        // introduces a discontinuity.
+        //
+        // Neither record may be committed because the
+        // controller evaluates the batch atomically.
+        let outcome = controller.process(10, &message(&["101", "105"]));
+
+        assert!(matches!(
+            outcome,
+            TradeControllerOutcome::CoverageReviewRequired { .. }
+        ));
+
+        let retained = controller
+            .coverage_triggering_trades()
+            .expect("triggering batch must be retained");
+
+        let ids: Vec<_> = retained
+            .iter()
+            .map(|trade| trade.trade_id.as_deref().unwrap())
+            .collect();
+
+        assert_eq!(ids, vec!["101", "105"]);
+
+        assert_eq!(controller.baseline().numeric_trade_id, Some(100));
+
+        assert!(!controller.identities().contains("101"));
+        assert!(!controller.identities().contains("105"));
+
+        assert_eq!(controller.coverage_hold().unwrap().received_records, 2);
+    }
+
+    #[test]
+    fn pending_coverage_hold_preserves_original_triggering_batch() {
+        let mut controller = numeric_controller();
+
+        controller.process(10, &message(&["100"]));
+
+        controller.process(10, &message(&["105"]));
+
+        // Subsequent messages cannot replace the batch
+        // that originally triggered the coverage hold.
+        let outcome = controller.process(10, &message(&["106", "107"]));
+
+        assert!(matches!(
+            outcome,
+            TradeControllerOutcome::CoverageReviewPending { generation: 10 }
+        ));
+
+        let retained = controller.coverage_triggering_trades().unwrap();
+
+        assert_eq!(retained.len(), 1);
+        assert_eq!(retained[0].trade_id.as_deref(), Some("105"));
+
+        assert!(!controller.identities().contains("105"));
+        assert!(!controller.identities().contains("106"));
+    }
+
+    #[test]
+    fn newer_generation_retires_triggering_batch() {
+        let mut controller = numeric_controller();
+
+        controller.process(10, &message(&["100"]));
+        controller.process(10, &message(&["105"]));
+
+        assert!(controller.coverage_hold().is_some());
+        assert!(controller.coverage_triggering_trades().is_some());
+
+        controller.begin_generation(11).unwrap();
+
+        assert!(controller.coverage_hold().is_none());
+        assert!(controller.coverage_triggering_trades().is_none());
+
+        // The new generation is locally admissible,
+        // but continuity with the previous generation
+        // remains unverified.
+        assert!(controller.can_accept_trades());
+
+        assert!(controller.generation_history_discontinuous());
+    }
+
+    #[test]
+    fn rejected_batch_is_not_retained_as_recovery_data() {
+        let mut controller = numeric_controller();
+
+        let result = controller.process(10, &message(&["100", "not-numeric"]));
+
+        assert!(matches!(result, TradeControllerOutcome::Rejected(_)));
+
+        assert!(controller.coverage_hold().is_none());
+
+        assert!(controller.coverage_triggering_trades().is_none());
+
+        assert_eq!(controller.identities().retained_count(), 0);
+    }
+    #[test]
+    fn recovery_preflight_preserves_authoritative_state() {
+        let mut controller = recovery_numeric_controller();
+
+        controller.process(10, &message(&["100"]));
+        controller.process(10, &message(&["105"]));
+
+        let baseline = controller.baseline();
+        let original_hold = controller.coverage_hold().unwrap().clone();
+
+        let candidate = ["101", "102", "103", "104", "105"]
+            .into_iter()
+            .map(|id| trade(Some(id)))
+            .collect::<Vec<_>>();
+
+        let prepared = controller
+            .preflight_numeric_recovery(10, baseline, &candidate)
+            .unwrap();
+
+        assert_eq!(prepared.record_count(), 5);
+        assert_eq!(prepared.generation(), 10);
+        assert_eq!(prepared.baseline(), baseline);
+
+        // No recovery records have been committed.
+        assert!(!controller.identities().contains("101"));
+        assert!(!controller.identities().contains("105"));
+
+        assert_eq!(controller.baseline(), baseline);
+        assert_eq!(controller.coverage_hold(), Some(&original_hold));
+
+        assert!(controller.is_coverage_review_pending());
+    }
+    #[test]
+    fn recovery_preflight_rejects_obsolete_generation() {
+        let mut controller = recovery_numeric_controller();
+
+        controller.process(10, &message(&["100"]));
+        controller.process(10, &message(&["105"]));
+
+        let result =
+            controller.preflight_numeric_recovery(9, controller.baseline(), &[trade(Some("101"))]);
+
+        assert!(matches!(
+            result,
+            Err(TradeRecoveryPreflightError::ObsoleteGeneration)
+        ));
+
+        assert!(controller.is_coverage_review_pending());
+    }
+    #[test]
+    fn recovery_preflight_requires_triggering_trade() {
+        let mut controller = recovery_numeric_controller();
+
+        controller.process(10, &message(&["100"]));
+        controller.process(10, &message(&["105"]));
+
+        let candidate = ["101", "102", "103"]
+            .into_iter()
+            .map(|id| trade(Some(id)))
+            .collect::<Vec<_>>();
+
+        let result = controller.preflight_numeric_recovery(10, controller.baseline(), &candidate);
+
+        assert!(matches!(
+            result,
+            Err(TradeRecoveryPreflightError::MissingTriggeringTrade)
+        ));
+
+        assert!(controller.is_coverage_review_pending());
+    }
+    #[test]
+    fn recovery_preflight_rejects_discontinuous_candidate() {
+        let mut controller = recovery_numeric_controller();
+
+        controller.process(10, &message(&["100"]));
+        controller.process(10, &message(&["105"]));
+
+        let candidate = ["101", "103", "104", "105"]
+            .into_iter()
+            .map(|id| trade(Some(id)))
+            .collect::<Vec<_>>();
+
+        let result = controller.preflight_numeric_recovery(10, controller.baseline(), &candidate);
+
+        assert!(matches!(
+            result,
+            Err(TradeRecoveryPreflightError::NonConsecutiveTradeIds)
+        ));
+
+        assert_eq!(controller.baseline().numeric_trade_id, Some(100));
+
+        assert!(!controller.identities().contains("105"));
+    }
+    #[test]
+    fn failed_recovery_publication_preserves_coverage_hold() {
+        let mut controller = recovery_numeric_controller();
+
+        controller.process(10, &message(&["100"]));
+        controller.process(10, &message(&["105"]));
+
+        let baseline = controller.baseline();
+        let original_hold = controller.coverage_hold().unwrap().clone();
+
+        let candidate = ["101", "102", "103", "104", "105"]
+            .into_iter()
+            .map(|id| trade(Some(id)))
+            .collect::<Vec<_>>();
+
+        let prepared = controller
+            .preflight_numeric_recovery(10, baseline, &candidate)
+            .unwrap();
+
+        let result = controller
+            .complete_numeric_recovery(prepared, |_| Err("downstream unavailable".into()));
+
+        assert!(matches!(
+            result,
+            Err(TradeRecoveryCommitError::Publication(_))
+        ));
+
+        assert_eq!(controller.baseline(), baseline);
+        assert_eq!(controller.coverage_hold(), Some(&original_hold));
+
+        assert!(controller.coverage_triggering_trades().is_some());
+
+        for id in ["101", "102", "103", "104", "105"] {
+            assert!(!controller.identities().contains(id));
+        }
+
+        assert!(controller.is_coverage_review_pending());
+    }
+    #[test]
+    fn successful_recovery_handoff_commits_and_clears_hold() {
+        let mut controller = recovery_numeric_controller();
+
+        controller.process(10, &message(&["100"]));
+        controller.process(10, &message(&["105"]));
+
+        let candidate = ["101", "102", "103", "104", "105"]
+            .into_iter()
+            .map(|id| trade(Some(id)))
+            .collect::<Vec<_>>();
+
+        let prepared = controller
+            .preflight_numeric_recovery(10, controller.baseline(), &candidate)
+            .unwrap();
+
+        let mut published_ids = Vec::new();
+
+        let accepted = controller
+            .complete_numeric_recovery(prepared, |trades| {
+                published_ids = trades
+                    .iter()
+                    .map(|trade| trade.trade_id.clone().unwrap())
+                    .collect();
+
+                Ok(())
+            })
+            .unwrap();
+
+        assert_eq!(published_ids, ["101", "102", "103", "104", "105"]);
+
+        assert_eq!(accepted.trades.len(), 5);
+
+        assert_eq!(controller.baseline().numeric_trade_id, Some(105));
+
+        for id in ["101", "102", "103", "104", "105"] {
+            assert!(controller.identities().contains(id));
+        }
+
+        assert!(controller.coverage_hold().is_none());
+        assert!(controller.coverage_triggering_trades().is_none());
+
+        assert!(controller.can_accept_trades());
+
+        // No global completeness guarantee is fabricated.
+        assert!(accepted.coverage_history_unverified);
+    }
+    #[test]
+    fn obsolete_recovery_preflight_cannot_publish() {
+        let mut controller = recovery_numeric_controller();
+
+        controller.process(10, &message(&["100"]));
+        controller.process(10, &message(&["105"]));
+
+        let candidate = ["101", "102", "103", "104", "105"]
+            .into_iter()
+            .map(|id| trade(Some(id)))
+            .collect::<Vec<_>>();
+
+        let prepared = controller
+            .preflight_numeric_recovery(10, controller.baseline(), &candidate)
+            .unwrap();
+
+        // A newer authoritative acquisition retires
+        // the previous generation's coverage hold.
+        controller.begin_generation(11).unwrap();
+
+        let result = controller.complete_numeric_recovery(prepared, |_| {
+            panic!("obsolete recovery must never publish")
+        });
+
+        assert!(matches!(
+            result,
+            Err(TradeRecoveryCommitError::Preflight(
+                TradeRecoveryPreflightError::ObsoleteGeneration
+            ))
+        ));
+
+        assert_eq!(controller.generation(), 11);
+        assert!(controller.coverage_hold().is_none());
     }
 }
