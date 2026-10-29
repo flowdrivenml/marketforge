@@ -1115,3 +1115,8 @@ required-features = ["historical"]
 name = "source_compatibility"
 path = "tests/shared/integration/source/compatibility.rs"
 required-features = ["historical"]
+
+[[test]]
+name = "live_router"
+path = "tests/live/integration/router/main.rs"
+required-features = ["live"]
