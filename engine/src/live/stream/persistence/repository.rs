@@ -47,6 +47,35 @@ impl StreamDefinitionRepository {
         Self { pool }
     }
 
+    /// Atomically accept a source registration and its durable desired definition.
+    /// A duplicate or failed definition cannot leave an orphan registration.
+    pub async fn register_source(
+        &self,
+        stream_id: &str,
+        request: CreateSourceStreamRequest,
+        desired: DesiredStreamState,
+    ) -> Result<PersistedStreamDefinition, StreamDefinitionError> {
+        validate_stream_id(stream_id)?;
+        request.validate().map_err(StreamDefinitionError::Invalid)?;
+        let kind = match request.channel { SourceChannel::Trades => 1_i16, SourceChannel::Depth => 2_i16 };
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("INSERT INTO live.streams (stream_id, instrument_id, stream_kind) VALUES ($1,$2,$3) ON CONFLICT (stream_id) DO NOTHING")
+            .bind(stream_id).bind(request.instrument_id).bind(kind).execute(&mut *tx).await?;
+        let row = sqlx::query("SELECT id, instrument_id, stream_kind FROM live.streams WHERE stream_id=$1 FOR KEY SHARE")
+            .bind(stream_id).fetch_one(&mut *tx).await?;
+        if row.try_get::<i64,_>("instrument_id")? != request.instrument_id || row.try_get::<i16,_>("stream_kind")? != kind {
+            return Err(StreamDefinitionError::RegistrationMismatch(stream_id.into()));
+        }
+        let key: i64 = row.try_get("id")?;
+        let definition = StreamDefinition::Source(request);
+        insert_definition(&mut tx, stream_id, Some(key), &definition, desired).await?;
+        let persisted = PersistedStreamDefinition {
+            stream_id: stream_id.into(), recording_stream_key: Some(key), definition, desired, revision: 1,
+        };
+        tx.commit().await?;
+        Ok(persisted)
+    }
+
     /// Persist a source definition after its existing
     /// live.streams registration has been established.
     pub async fn create_source(
