@@ -29,7 +29,7 @@ impl ProducerHandle {
         if records.is_empty() {
             return Ok(());
         }
-        self.try_publish(RouterPublication::Trades {
+        self.publish_for_source(RouterPublication::Trades {
             records: records.into(),
             recovered,
             integrity,
@@ -44,7 +44,7 @@ impl ProducerHandle {
         if events.is_empty() {
             return Ok(());
         }
-        match self.try_publish(RouterPublication::depth(events)) {
+        match self.publish_for_source(RouterPublication::depth(events)) {
             Ok(_) => Ok(()),
             // A terminal Router fence already invalidates every consumer. This
             // acknowledges Source cleanup, not acceptance of fresh market data.

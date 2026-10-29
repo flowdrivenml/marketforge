@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{
-    Arc, Mutex,
+    Arc,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -63,7 +63,7 @@ pub struct RuntimePublicationAuthority {
     stream_id: String,
     pub(crate) definition: Arc<crate::live::stream::persistence::PersistedStreamDefinition>,
     generation: RuntimeGeneration,
-    current: Arc<Mutex<bool>>,
+    current: Arc<parking_lot::Mutex<bool>>,
     claimed: Arc<AtomicBool>,
     revoked: Arc<tokio::sync::Notify>,
 }
@@ -93,15 +93,17 @@ impl RuntimePublicationAuthority {
         *self.guard() = false;
         self.revoked.notify_waiters();
     }
-    pub(crate) fn try_guard(&self) -> Option<std::sync::MutexGuard<'_, bool>> {
-        match self.current.try_lock() {
-            Ok(guard) => Some(guard),
-            Err(std::sync::TryLockError::Poisoned(error)) => Some(error.into_inner()),
-            Err(std::sync::TryLockError::WouldBlock) => None,
-        }
+    pub(crate) fn try_guard(&self) -> Option<parking_lot::MutexGuard<'_, bool>> {
+        self.current.try_lock()
     }
-    pub(crate) fn guard(&self) -> std::sync::MutexGuard<'_, bool> {
-        self.current.lock().unwrap_or_else(|e| e.into_inner())
+    pub(crate) fn guard_until(
+        &self,
+        deadline: std::time::Instant,
+    ) -> Option<parking_lot::MutexGuard<'_, bool>> {
+        self.current.try_lock_until(deadline)
+    }
+    pub(crate) fn guard(&self) -> parking_lot::MutexGuard<'_, bool> {
+        self.current.lock()
     }
 }
 
@@ -203,7 +205,7 @@ impl StreamRuntimeRegistry {
                         stream_id: id.to_owned(),
                         definition: Arc::new(graph.get(id).unwrap().clone()),
                         generation: RuntimeGeneration(0),
-                        current: Arc::new(Mutex::new(false)),
+                        current: Arc::new(parking_lot::Mutex::new(false)),
                         claimed: Arc::new(AtomicBool::new(false)),
                         revoked: Arc::new(tokio::sync::Notify::new()),
                     },
@@ -309,7 +311,7 @@ impl StreamRuntimeRegistry {
                 stream_id: stream_id.to_owned(),
                 definition: self.authorities.get(stream_id).unwrap().definition.clone(),
                 generation,
-                current: Arc::new(Mutex::new(true)),
+                current: Arc::new(parking_lot::Mutex::new(true)),
                 claimed: Arc::new(AtomicBool::new(false)),
                 revoked: Arc::new(tokio::sync::Notify::new()),
             },

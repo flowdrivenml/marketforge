@@ -6,7 +6,8 @@ use crate::live::stream::{
 };
 use std::{
     collections::{BTreeMap, VecDeque},
-    sync::{Arc, Mutex, MutexGuard, TryLockError},
+    sync::{Arc, Mutex, MutexGuard},
+    time::{Duration, Instant},
 };
 use thiserror::Error;
 use tokio::sync::Notify;
@@ -31,6 +32,9 @@ pub struct RouterConfig {
     pub consumer: QueueLimits,
     pub max_subscriptions: usize,
     pub max_producers: usize,
+    /// Source callbacks may wait this long in total to acquire admission locks.
+    /// Does not wait for ingress capacity or consumer processing. Range: (0, 1s].
+    pub source_lock_timeout: Duration,
 }
 impl Default for RouterConfig {
     fn default() -> Self {
@@ -45,6 +49,7 @@ impl Default for RouterConfig {
             },
             max_subscriptions: 1024,
             max_producers: 1024,
+            source_lock_timeout: Duration::from_millis(50),
         }
     }
 }
@@ -91,6 +96,8 @@ pub enum RouterError {
 pub enum PublishError {
     #[error("Router admission is busy; retry without committing source state")]
     Busy,
+    #[error("Router Source publication lock deadline exceeded")]
+    ContentionTimeout,
     #[error("Router is shut down")]
     Shutdown,
     #[error("producer is detached or revoked")]
@@ -173,7 +180,9 @@ struct State {
 struct Shared {
     config: RouterConfig,
     context: RouterContext,
-    state: Mutex<State>,
+    state: parking_lot::Mutex<State>,
+    #[cfg(test)]
+    source_wait: Mutex<Option<std::sync::mpsc::SyncSender<&'static str>>>,
     wake: Notify,
 }
 /// Owns one dispatch task. Dropping the facade cancels all volatile work.
@@ -199,6 +208,8 @@ impl StreamRouter {
             || config.consumer.bytes == 0
             || config.max_subscriptions == 0
             || config.max_producers == 0
+            || config.source_lock_timeout.is_zero()
+            || config.source_lock_timeout > Duration::from_secs(1)
             || config
                 .consumer
                 .bytes
@@ -217,7 +228,9 @@ impl StreamRouter {
         let shared = Arc::new(Shared {
             config,
             context,
-            state: Mutex::new(State {
+            #[cfg(test)]
+            source_wait: Mutex::new(None),
+            state: parking_lot::Mutex::new(State {
                 bindings: BTreeMap::new(),
                 consumers: BTreeMap::new(),
                 ingress: VecDeque::new(),
@@ -239,7 +252,7 @@ impl StreamRouter {
         request: AttachProducerRequest,
     ) -> Result<ProducerHandle, RouterError> {
         let stream = request.authority.stream_id().to_owned();
-        let mut state = lock(&self.shared.state);
+        let mut state = self.shared.state.lock();
         if state.status.shutdown {
             return Err(RouterError::Shutdown);
         }
@@ -288,7 +301,7 @@ impl StreamRouter {
         &self,
         request: SubscribeRequest,
     ) -> Result<SubscriptionHandle, RouterError> {
-        let mut state = lock(&self.shared.state);
+        let mut state = self.shared.state.lock();
         if state.status.shutdown {
             return Err(RouterError::Shutdown);
         }
@@ -342,7 +355,7 @@ impl StreamRouter {
         })
     }
     pub fn status(&self) -> RouterStatus {
-        let state = lock(&self.shared.state);
+        let state = self.shared.state.lock();
         let mut status = state.status.clone();
         status.producers = state.bindings.len();
         status.subscriptions = state.consumers.len();
@@ -365,7 +378,7 @@ impl StreamRouter {
                 .await
                 .map_err(|e| RouterError::Worker(e.to_string()))?;
         }
-        let state = lock(&self.shared.state);
+        let state = self.shared.state.lock();
         if let Some(error) = &state.status.cleanup_error {
             return Err(RouterError::Demand(error.clone()));
         }
@@ -391,6 +404,13 @@ fn next_id(state: &mut State) -> Result<u64, RouterError> {
     Ok(id)
 }
 impl Shared {
+    #[cfg(test)]
+    fn note_source_wait(&self, lock_name: &'static str) {
+        if let Some(observer) = lock(&self.source_wait).as_ref() {
+            let _ = observer.try_send(lock_name);
+        }
+    }
+
     fn source(
         &self,
         stream: &str,
@@ -416,6 +436,8 @@ impl Shared {
             if reason.is_some() {
                 state.status.consumer_failures = state.status.consumer_failures.saturating_add(1);
             }
+            #[cfg(test)]
+            self.note_source_wait("demand-release");
             if let Err(error) = lock(&self.context.demand).release(
                 &self.context.graph,
                 &consumer.owner,
@@ -441,7 +463,7 @@ impl Shared {
         }
     }
     fn stop(&self, reason: ContinuityFailure) {
-        let mut state = lock(&self.state);
+        let mut state = self.state.lock();
         if state.status.shutdown {
             return;
         }
@@ -463,10 +485,40 @@ impl ProducerHandle {
         &self,
         publication: RouterPublication,
     ) -> Result<RouterAcceptance, PublishError> {
+        self.admit(publication, None)
+    }
+
+    /// Source-only bounded lock acquisition. Exactly one admission attempt follows
+    /// successful acquisition; errors after that point are never retried.
+    pub(super) fn publish_for_source(
+        &self,
+        publication: RouterPublication,
+    ) -> Result<RouterAcceptance, PublishError> {
+        let deadline = Instant::now() + self.shared.config.source_lock_timeout;
+        let result = self.admit(publication, Some(deadline));
+        #[cfg(test)]
+        if matches!(result, Err(PublishError::ContentionTimeout)) {
+            self.shared.note_source_wait("timeout");
+        }
+        result
+    }
+
+    fn admit(
+        &self,
+        publication: RouterPublication,
+        deadline: Option<Instant>,
+    ) -> Result<RouterAcceptance, PublishError> {
         let mut state = match self.shared.state.try_lock() {
-            Ok(s) => s,
-            Err(TryLockError::WouldBlock) => return Err(PublishError::Busy),
-            Err(TryLockError::Poisoned(e)) => e.into_inner(),
+            Some(state) => state,
+            None => {
+                let deadline = deadline.ok_or(PublishError::Busy)?;
+                #[cfg(test)]
+                self.shared.note_source_wait("state");
+                self.shared
+                    .state
+                    .try_lock_until(deadline)
+                    .ok_or(PublishError::ContentionTimeout)?
+            }
         };
         if state.status.shutdown {
             return Err(PublishError::Shutdown);
@@ -477,10 +529,23 @@ impl ProducerHandle {
             .filter(|b| b.id == self.binding)
             .ok_or(PublishError::Revoked)?;
         let authority = binding.authority.clone();
-        let guard = authority.try_guard().ok_or(PublishError::Busy)?;
+        let guard = match authority.try_guard() {
+            Some(guard) => guard,
+            None => {
+                let deadline = deadline.ok_or(PublishError::Busy)?;
+                #[cfg(test)]
+                self.shared.note_source_wait("authority");
+                authority
+                    .guard_until(deadline)
+                    .ok_or(PublishError::ContentionTimeout)?
+            }
+        };
         if !*guard {
             self.shared.wake.notify_one();
             return Err(PublishError::Revoked);
+        }
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            return Err(PublishError::ContentionTimeout);
         }
         let source = self
             .shared
@@ -533,7 +598,7 @@ impl ProducerHandle {
 
 impl Drop for ProducerHandle {
     fn drop(&mut self) {
-        let mut state = lock(&self.shared.state);
+        let mut state = self.shared.state.lock();
         if state
             .bindings
             .get(&self.stream)
@@ -566,7 +631,7 @@ impl SubscriptionHandle {
             let notified = self.consumer.notify.notified();
             {
                 // Serialize extraction with producer replacement and runtime revocation.
-                let mut state = lock(&self.shared.state);
+                let mut state = self.shared.state.lock();
                 if let Some(binding) = state.bindings.get(&self.consumer.stream) {
                     let authority = binding.authority.clone();
                     let guard = authority.guard();
@@ -584,7 +649,7 @@ impl SubscriptionHandle {
         }
     }
     pub async fn close(self) -> Result<(), RouterError> {
-        let mut state = lock(&self.shared.state);
+        let mut state = self.shared.state.lock();
         self.shared.remove(&mut state, self.consumer.id, None);
         if let Some(error) = &state.status.cleanup_error {
             return Err(RouterError::Demand(error.clone()));
@@ -612,7 +677,7 @@ fn take_delivery(consumer: &Consumer) -> Option<Option<RouterDelivery>> {
 }
 impl Drop for SubscriptionHandle {
     fn drop(&mut self) {
-        let mut state = lock(&self.shared.state);
+        let mut state = self.shared.state.lock();
         self.shared.remove(&mut state, self.consumer.id, None);
     }
 }
@@ -697,7 +762,7 @@ async fn dispatch(shared: Arc<Shared>) {
     loop {
         let notified = shared.wake.notified();
         let did_work = {
-            let mut state = lock(&shared.state);
+            let mut state = shared.state.lock();
             if state.status.shutdown {
                 return;
             }
@@ -771,7 +836,9 @@ async fn dispatch(shared: Arc<Shared>) {
             tokio::task::yield_now().await;
         } else {
             use futures_util::StreamExt;
-            let authorities: Vec<_> = lock(&shared.state)
+            let authorities: Vec<_> = shared
+                .state
+                .lock()
                 .bindings
                 .values()
                 .map(|b| b.authority.clone())
@@ -785,7 +852,7 @@ async fn dispatch(shared: Arc<Shared>) {
             tokio::select! {
                 _ = notified => {},
                 _ = revoked.next(), if !revoked.is_empty() => {
-                    let mut state = lock(&shared.state);
+                    let mut state = shared.state.lock();
                     let streams: Vec<_> = state.bindings.iter().filter(|(_, b)| !*b.authority.guard()).map(|(id, _)| id.clone()).collect();
                     for stream in streams { shared.retire(&mut state, &stream); }
                 }
@@ -797,3 +864,11 @@ async fn dispatch(shared: Arc<Shared>) {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod contention_tests {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/live/integration/router/contention.rs"
+    ));
+}

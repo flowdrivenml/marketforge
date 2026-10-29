@@ -172,7 +172,7 @@ async fn nonblocking_contention_rejects_without_admission() {
         })
         .unwrap();
     {
-        let state = lock(&router.shared.state);
+        let state = router.shared.state.lock();
         assert_eq!(producer.try_publish(snapshot()), Err(PublishError::Busy));
         assert_eq!(state.status.accepted, 0);
         assert!(state.ingress.is_empty());
@@ -188,7 +188,10 @@ async fn sequence_exhaustion_does_not_commit_depth_authority_or_capacity() {
             authority: runtime.publication_authority("unit").unwrap(),
         })
         .unwrap();
-    lock(&router.shared.state)
+    router
+        .shared
+        .state
+        .lock()
         .bindings
         .get_mut("unit")
         .unwrap()
@@ -197,7 +200,7 @@ async fn sequence_exhaustion_does_not_commit_depth_authority_or_capacity() {
         producer.try_publish(snapshot()),
         Err(PublishError::Exhausted)
     );
-    let state = lock(&router.shared.state);
+    let state = router.shared.state.lock();
     let binding = &state.bindings["unit"];
     assert_eq!(binding.book, None);
     assert_eq!(binding.source_generation, None);
@@ -254,4 +257,33 @@ async fn wrong_type_and_empty_batches_cannot_change_admission_sequence() {
     );
     assert_eq!(producer.try_publish(snapshot()).unwrap().sequence, 1);
     assert_eq!(router.status().accepted, 1);
+}
+
+#[tokio::test]
+async fn source_lock_budget_is_finite_and_validated() {
+    for timeout in [Duration::ZERO, Duration::from_secs(2), Duration::MAX] {
+        let mut config = RouterConfig::default();
+        config.source_lock_timeout = timeout;
+        assert!(matches!(
+            StreamRouter::new(config, context()),
+            Err(RouterError::InvalidConfig)
+        ));
+    }
+}
+#[tokio::test]
+async fn elapsed_source_deadline_cannot_admit_or_advance_sequence() {
+    let (router, mut runtime) = router_with_source("depth");
+    runtime.begin_start("unit").unwrap();
+    let producer = router
+        .attach_producer(AttachProducerRequest {
+            authority: runtime.publication_authority("unit").unwrap(),
+        })
+        .unwrap();
+    assert_eq!(
+        producer.admit(snapshot(), Some(Instant::now())),
+        Err(PublishError::ContentionTimeout)
+    );
+    assert_eq!(router.status().accepted, 0);
+    assert_eq!(router.status().ingress_bytes, 0);
+    assert_eq!(producer.try_publish(snapshot()).unwrap().sequence, 1);
 }

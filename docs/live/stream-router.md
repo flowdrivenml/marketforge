@@ -42,8 +42,19 @@ Insertion into bounded ingress is the admission linearization point. Successful
 acceptance means complete bounded **volatile Router ownership**. It does not mean
 durability, complete fanout, consumer processing, or historical coverage. Source
 commits accepted trade identities only after this synchronous acknowledgment.
-Source currently fails closed on a callback error, including `Busy`; the Router
-does not silently retry or commit Source data on its behalf.
+Source callbacks use a separate bounded lock-acquisition path rather than turning
+an immediate `Busy` into a handoff failure. `RouterConfig::source_lock_timeout`
+defaults to 50 ms and must be greater than zero and at most one second. Both the
+Router state lock and runtime-authority lock share one monotonic deadline. Only
+these two private mutexes use timed `parking_lot` locking; the dependency is enabled
+by the Live feature. There is no polling/retry loop or extra publication queue.
+After both locks are acquired, the same validation and atomic admission body runs
+exactly once. Capacity exhaustion, shutdown, and revoked authority remain distinct
+errors and are not retried. A lock held beyond the budget returns the explicit
+`ContentionTimeout` error without admission; Source still fails closed for this
+prolonged stall. No integrity state is committed until the callback returns success.
+A synchronous callback can occupy its Tokio worker for the configured acquisition
+budget; operating-system scheduling is not a hard real-time guarantee.
 
 One dispatch task processes ingress in order. Each publication is shared by
 `Arc` among eligible subscribers. Subscriptions start at their creation boundary;

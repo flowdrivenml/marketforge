@@ -34,6 +34,7 @@ live = [
     "dep:reqwest",
     "dep:tokio-tungstenite",
     "dep:futures-util",
+    "dep:parking_lot",
 ]
 monitor-tui = [
     "dep:ratatui",
@@ -44,6 +45,7 @@ arrow-select = [
 ]
 
 [dependencies]
+parking_lot = { version = "0.12.5", optional = true }
 toml_edit = {
     version = "=0.25.17",
     default-features = false,
