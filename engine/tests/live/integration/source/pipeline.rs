@@ -54,24 +54,6 @@ async fn trade_profile_capability_matrix() {
         };
         let metrics = prepared.runner().instance().metrics_handle();
         let (recovery, recovery_task) = recovery(configs, &profile, limiters);
-        if profile.starts_with("gateio") {
-            let result = prepared.attach(manager.clone(), recovery.clone()).await;
-            assert!(
-                result
-                    .err()
-                    .unwrap()
-                    .to_string()
-                    .contains("instrument-aware")
-            );
-            assert_eq!(manager.stream_count().await, 0);
-            manager.shutdown().await.unwrap();
-            recovery.shutdown().await.unwrap();
-            timeout(DEADLINE, recovery_task).await.unwrap().unwrap();
-            println!(
-                "[{profile}/trades] UNSUPPORTED: existing channel resolver lacks instrument-aware routing; no acquisition admitted"
-            );
-            continue;
-        }
         let executor = prepared
             .attach(manager.clone(), recovery.clone())
             .await

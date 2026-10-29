@@ -128,39 +128,30 @@ impl SlotEventCoordinator {
             return Err(SlotEventCoordinatorError::StaleGeneration);
         }
 
-        let stream_id = self.frames.classify(&message)?;
-
-        if self.availability.is_connected(&stream_id) {
-            let outcome = self.frames.dispatch(FencedMessage::new(stamp, message))?;
-
-            return match outcome {
-                NativeFrameDispatchOutcome::Delivered => Ok(()),
-
-                NativeFrameDispatchOutcome::StreamUnavailable => {
-                    Err(SlotEventCoordinatorError::DeliveryUnavailable)
-                }
-            };
-        }
-
-        // The stream has not yet received its confirmed
-        // subscription notification.
-        //
-        // Buffer the original stamped message rather than
-        // dropping it.
-        //
-        // Buffer capacity is shared across all streams
-        // assigned to this connection slot.
-
-        if self.early_count >= self.maximum_early_frames {
+        let routed = self.frames.route(message)?;
+        let needed = routed
+            .iter()
+            .filter(|(stream_id, _)| !self.availability.is_connected(stream_id))
+            .count();
+        if self.early_count.saturating_add(needed) > self.maximum_early_frames {
             return Err(SlotEventCoordinatorError::EarlyFrameOverflow);
         }
-
-        self.early
-            .entry(stream_id)
-            .or_default()
-            .push_back(FencedMessage::new(stamp, message));
-
-        self.early_count += 1;
+        // All records have been validated before admitting any native fragment.
+        // Every fragment retains its original physical acquisition provenance.
+        for (stream_id, message) in routed {
+            if self.availability.is_connected(&stream_id) {
+                let outcome = self.frames.dispatch_to(&stream_id, &stamp, message)?;
+                if outcome != NativeFrameDispatchOutcome::Delivered {
+                    return Err(SlotEventCoordinatorError::DeliveryUnavailable);
+                }
+            } else {
+                self.early
+                    .entry(stream_id)
+                    .or_default()
+                    .push_back(FencedMessage::new(stamp.clone(), message));
+                self.early_count += 1;
+            }
+        }
 
         Ok(())
     }

@@ -37,6 +37,12 @@ pub enum NativeMessageRouterError {
     #[error("native message matches multiple streams")]
     AmbiguousMessage,
 
+    #[error("invalid instrument-aware native payload")]
+    InvalidPayload,
+
+    #[error("native routing resource limit exceeded")]
+    CapacityExceeded,
+
     #[error("native message matches no registered stream")]
     UnknownMessage,
 }
@@ -71,6 +77,16 @@ pub enum NativeMessageRouterError {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NativeMessageSelector {
     fields: BTreeMap<String, Value>,
+    payload: Option<NativePayloadSelector>,
+}
+
+/// Compiled from the same record/instrument paths used by normalization.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NativePayloadSelector {
+    pub path: String,
+    pub instrument: String,
+    pub symbol: String,
+    pub array: bool,
 }
 
 impl NativeMessageSelector {
@@ -110,13 +126,54 @@ impl NativeMessageSelector {
             return Err(NativeMessageRouterError::EmptySelector);
         }
 
-        Ok(Self { fields: resolved })
+        Ok(Self {
+            fields: resolved,
+            payload: None,
+        })
     }
 
-    pub fn matches(&self, value: &Value) -> bool {
+    pub fn with_payload(
+        mut self,
+        payload: NativePayloadSelector,
+    ) -> Result<Self, NativeMessageRouterError> {
+        // Reuse selector path validation for both pointers.
+        Self::new([
+            (payload.path.clone(), Value::Null),
+            (payload.instrument.clone(), Value::Null),
+        ])?;
+        if payload.symbol.is_empty() {
+            return Err(NativeMessageRouterError::InvalidPayload);
+        }
+        self.payload = Some(payload);
+        Ok(self)
+    }
+    fn matches_envelope(&self, value: &Value) -> bool {
         self.fields
             .iter()
             .all(|(path, expected)| value.pointer(path) == Some(expected))
+    }
+    pub fn matches(&self, value: &Value) -> bool {
+        if !self.matches_envelope(value) {
+            return false;
+        }
+        let Some(payload) = &self.payload else {
+            return true;
+        };
+        let Some(records) = value.pointer(&payload.path) else {
+            return false;
+        };
+        let matches_record = |record: &Value| {
+            record.is_object()
+                && record.pointer(&payload.instrument).and_then(Value::as_str)
+                    == Some(payload.symbol.as_str())
+        };
+        if payload.array {
+            records
+                .as_array()
+                .is_some_and(|records| !records.is_empty() && records.iter().all(matches_record))
+        } else {
+            matches_record(records)
+        }
     }
 }
 
@@ -267,6 +324,135 @@ impl NativeMessageRouter {
     // ========================================================
     // CLASSIFY
     // ========================================================
+
+    /// Partition one native record batch before any destination is mutated.
+    /// Unknown/malformed/ambiguous records reject the complete message.
+    pub fn route(
+        &self,
+        message: Message,
+    ) -> Result<Vec<(String, Message)>, NativeMessageRouterError> {
+        const MAX_BYTES: usize = 16 * 1024 * 1024;
+        const MAX_RECORDS: usize = 1024;
+        const MAX_DESTINATIONS: usize = 64;
+        const MAX_ENVELOPE_BYTES: usize = 64 * 1024;
+        let bytes = match &message {
+            Message::Text(text) => text.as_bytes(),
+            Message::Binary(bytes) => bytes.as_ref(),
+            _ => return Err(NativeMessageRouterError::UnsupportedFrame),
+        };
+        if bytes.len() > MAX_BYTES {
+            return Err(NativeMessageRouterError::CapacityExceeded);
+        }
+        let mut native: Value =
+            serde_json::from_slice(bytes).map_err(|_| NativeMessageRouterError::InvalidJson)?;
+        let candidates: Vec<_> = self
+            .selectors
+            .iter()
+            .filter(|(_, selector)| selector.matches_envelope(&native))
+            .collect();
+        if candidates.is_empty() {
+            return Err(NativeMessageRouterError::UnknownMessage);
+        }
+        let Some(contract) = candidates[0].1.payload.as_ref() else {
+            if candidates
+                .iter()
+                .any(|(_, selector)| selector.payload.is_some())
+            {
+                return Err(NativeMessageRouterError::AmbiguousMessage);
+            }
+            let destination = self.classify_value(&native)?;
+            return Ok(vec![(destination.stream_id, message)]);
+        };
+        if candidates.iter().any(|(_, selector)| {
+            selector.payload.as_ref().is_none_or(|other| {
+                other.path != contract.path
+                    || other.instrument != contract.instrument
+                    || other.array != contract.array
+            })
+        }) {
+            return Err(NativeMessageRouterError::AmbiguousMessage);
+        }
+        let payload = native
+            .pointer(&contract.path)
+            .ok_or(NativeMessageRouterError::InvalidPayload)?;
+        let records: Vec<&Value> = if contract.array {
+            let records = payload
+                .as_array()
+                .ok_or(NativeMessageRouterError::InvalidPayload)?;
+            if records.len() > MAX_RECORDS {
+                return Err(NativeMessageRouterError::CapacityExceeded);
+            }
+            records.iter().collect()
+        } else {
+            vec![payload]
+        };
+        if records.is_empty() {
+            return Err(NativeMessageRouterError::InvalidPayload);
+        }
+        let mut groups: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+        for (index, record) in records.iter().enumerate() {
+            if !record.is_object() {
+                return Err(NativeMessageRouterError::InvalidPayload);
+            }
+            let symbol = record
+                .pointer(&contract.instrument)
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .ok_or(NativeMessageRouterError::InvalidPayload)?;
+            let mut matched = candidates
+                .iter()
+                .filter(|(_, selector)| selector.payload.as_ref().unwrap().symbol == symbol);
+            let (stream_id, _) = matched
+                .next()
+                .ok_or(NativeMessageRouterError::UnknownMessage)?;
+            if matched.next().is_some() {
+                return Err(NativeMessageRouterError::AmbiguousMessage);
+            }
+            groups.entry((*stream_id).clone()).or_default().push(index);
+            if groups.len() > MAX_DESTINATIONS {
+                return Err(NativeMessageRouterError::CapacityExceeded);
+            }
+        }
+        if groups.len() == 1 {
+            return Ok(vec![(groups.into_keys().next().unwrap(), message)]);
+        }
+        // Remove the complete payload before cloning envelopes; never clone a
+        // large original batch once per instrument. All limits precede fanout.
+        let records = native.pointer_mut(&contract.path).unwrap().take();
+        if serde_json::to_vec(&native)
+            .map_err(|_| NativeMessageRouterError::InvalidJson)?
+            .len()
+            > MAX_ENVELOPE_BYTES
+        {
+            return Err(NativeMessageRouterError::CapacityExceeded);
+        }
+        let records = records
+            .as_array()
+            .ok_or(NativeMessageRouterError::InvalidPayload)?;
+        let mut routed = Vec::with_capacity(groups.len());
+        for (stream_id, indices) in groups {
+            let mut envelope = native.clone();
+            *envelope.pointer_mut(&contract.path).unwrap() = Value::Array(
+                indices
+                    .into_iter()
+                    .map(|index| records[index].clone())
+                    .collect(),
+            );
+            let bytes =
+                serde_json::to_vec(&envelope).map_err(|_| NativeMessageRouterError::InvalidJson)?;
+            let frame = if matches!(message, Message::Binary(_)) {
+                Message::Binary(bytes.into())
+            } else {
+                Message::Text(
+                    String::from_utf8(bytes)
+                        .map_err(|_| NativeMessageRouterError::InvalidJson)?
+                        .into(),
+                )
+            };
+            routed.push((stream_id, frame));
+        }
+        Ok(routed)
+    }
 
     pub fn classify(
         &self,
@@ -740,3 +926,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "payload_tests.rs"]
+mod payload_tests;

@@ -172,6 +172,28 @@ impl WebSocketManager {
         request: StreamRequest,
         destination: mpsc::Sender<StreamInput>,
     ) -> Result<StreamBinding, WebSocketManagerError> {
+        self.attach_request_configured(request, destination, None)
+            .await
+    }
+
+    /// Resolve instrument-aware native payloads using the same immutable format
+    /// generation used by Source normalization. Performs no canonical routing.
+    pub async fn attach_request_with_formats(
+        &self,
+        request: StreamRequest,
+        destination: mpsc::Sender<StreamInput>,
+        formats: &crate::live::config::FormatConfigStore,
+    ) -> Result<StreamBinding, WebSocketManagerError> {
+        self.attach_request_configured(request, destination, Some(formats))
+            .await
+    }
+
+    async fn attach_request_configured(
+        &self,
+        request: StreamRequest,
+        destination: mpsc::Sender<StreamInput>,
+        formats: Option<&crate::live::config::FormatConfigStore>,
+    ) -> Result<StreamBinding, WebSocketManagerError> {
         // Obtain the already-loaded exchange profile.
         //
         // Do not hold the manager lock while performing the
@@ -195,8 +217,13 @@ impl WebSocketManager {
                 })?
         };
 
-        let source = StreamSourceResolver::resolve(&exchange, &request)
-            .map_err(|error| WebSocketManagerError::Configuration(error.to_string()))?;
+        let source = match formats {
+            Some(formats) => {
+                StreamSourceResolver::resolve_with_formats(&exchange, &request, Some(formats))
+            }
+            None => StreamSourceResolver::resolve(&exchange, &request),
+        }
+        .map_err(|error| WebSocketManagerError::Configuration(error.to_string()))?;
 
         self.attach(source, destination).await
     }

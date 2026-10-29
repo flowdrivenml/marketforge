@@ -24,6 +24,9 @@ pub struct LocalSocket {
 }
 impl LocalSocket {
     pub async fn start(profile: &str) -> Self {
+        Self::start_scripted(profile, None).await
+    }
+    pub async fn start_scripted(profile: &str, mut stale: Option<Value>) -> Self {
         let listener = super::websocket_server::listen().await;
         let url = format!("ws://{}", listener.local_addr().unwrap());
         let (send, mut messages) = mpsc::channel::<Value>(32);
@@ -39,6 +42,11 @@ impl LocalSocket {
                             match frame {
                                 Some(Ok(Message::Text(text))) => {
                                     let request: Value = serde_json::from_str(text.as_str()).unwrap();
+                                    if let Some(payload) = stale.take() {
+                                        socket.send(Message::Text(payload.to_string().into())).await.unwrap();
+                                        let _ = socket.close(None).await;
+                                        break;
+                                    }
                                     let ack = if profile.starts_with("binance") { json!({"result":null,"id":request["id"]}) }
                                     else if profile.starts_with("bybit") { json!({"success":true,"op":request["op"],"req_id":request["req_id"]}) }
                                     else if profile.starts_with("gateio") { json!({"event":request["event"],"channel":request["channel"],"id":request["id"],"result":{"status":"success"}}) }

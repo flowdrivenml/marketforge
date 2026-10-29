@@ -67,6 +67,14 @@ impl StreamSource {
         })
     }
 
+    pub(crate) fn with_payload(
+        mut self,
+        payload: crate::live::infrastructure::websocket::routing::message_router::NativePayloadSelector,
+    ) -> Result<Self, StreamSourceError> {
+        self.routing = self.routing.with_payload(payload)?;
+        Ok(self)
+    }
+
     pub fn profile(&self) -> &str {
         &self.profile
     }

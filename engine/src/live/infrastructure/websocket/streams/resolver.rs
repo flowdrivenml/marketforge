@@ -66,6 +66,14 @@ impl StreamSourceResolver {
         exchange: &ExchangeConfig,
         request: &StreamRequest,
     ) -> Result<StreamSource, StreamSourceResolutionError> {
+        Self::resolve_with_formats(exchange, request, None)
+    }
+
+    pub fn resolve_with_formats(
+        exchange: &ExchangeConfig,
+        request: &StreamRequest,
+        formats: Option<&crate::live::config::FormatConfigStore>,
+    ) -> Result<StreamSource, StreamSourceResolutionError> {
         if exchange.profile() != request.profile() {
             return Err(StreamSourceResolutionError::ProfileMismatch);
         }
@@ -223,15 +231,35 @@ impl StreamSourceResolver {
                 fields
             }
 
-            // Gate.io cannot be safely demultiplexed using
-            // the channel alone. Its native payload requires
-            // an additional instrument-aware routing contract.
             "channel" => {
-                return Err(StreamSourceResolutionError::UnsupportedRoutingMode(
-                    "channel requires instrument-aware \
-                             payload routing"
-                        .into(),
-                ));
+                let field = routing
+                    .channel_field
+                    .as_deref()
+                    .ok_or_else(|| incomplete("channel_field"))?;
+                let event = routing
+                    .event_field
+                    .as_deref()
+                    .ok_or_else(|| incomplete("event_field"))?;
+                vec![
+                    (
+                        json_pointer(field),
+                        Value::String(
+                            channel
+                                .channel
+                                .clone()
+                                .ok_or_else(|| incomplete("channel.channel"))?,
+                        ),
+                    ),
+                    (
+                        json_pointer(event),
+                        Value::String(
+                            routing
+                                .update_event
+                                .clone()
+                                .ok_or_else(|| incomplete("update_event"))?,
+                        ),
+                    ),
+                ]
             }
 
             other => {
@@ -282,7 +310,67 @@ impl StreamSourceResolver {
             subscription = subscription.with_variable(name, value);
         }
 
-        StreamSource::new(request.profile(), subscription, fields).map_err(Into::into)
+        let source = StreamSource::new(request.profile(), subscription, fields)?;
+        if routing.mode != "channel" {
+            return Ok(source);
+        }
+        let formats = formats
+            .ok_or_else(|| incomplete("instrument-aware routing requires normalization formats"))?;
+        let (identity, message, records, mappings, instrument) = match request.channel() {
+            "trades" => {
+                let format = formats
+                    .trade(exchange.profile())
+                    .ok_or_else(|| incomplete("trade format"))?;
+                (
+                    &format.format,
+                    &format.message,
+                    &format.records,
+                    &format.fields,
+                    &format.instrument,
+                )
+            }
+            "depth" => {
+                let format = formats
+                    .depth(exchange.profile())
+                    .ok_or_else(|| incomplete("depth format"))?;
+                (
+                    &format.format,
+                    &format.message,
+                    &format.records,
+                    &format.fields,
+                    &format.instrument,
+                )
+            }
+            _ => return Err(incomplete("instrument-aware channel format")),
+        };
+        let records = records.as_ref().ok_or_else(|| incomplete("records"))?;
+        if message.root != "$"
+            || records.record_type != "object"
+            || identity.channel != request.channel()
+            || identity.id != exchange.profile()
+            || identity.exchange != exchange.exchange.id
+            || identity.market != exchange.market()
+            || message.channel_value.as_deref() != channel.channel.as_deref()
+            || message.event_value != routing.update_event
+            || message.channel_field != routing.channel_field
+            || message.event_field != routing.event_field
+            || instrument.exchange != identity.exchange
+            || instrument.market != identity.market
+            || message.payload_path.as_deref() != Some(records.path.as_str())
+        {
+            return Err(incomplete("routing and normalization contracts disagree"));
+        }
+        let field = mappings
+            .get(&instrument.source)
+            .ok_or_else(|| incomplete("instrument source mapping"))?;
+        let array = match records.representation.as_str() {
+            "array" => true,
+            "object" => false,
+            _ => return Err(incomplete("record representation")),
+        };
+        source.with_payload(crate::live::infrastructure::websocket::routing::message_router::NativePayloadSelector {
+            path: json_pointer(&records.path), instrument: json_pointer(field), symbol: request.native_symbol().to_owned(), array,
+        }).map_err(Into::into)
     }
 }
 
@@ -431,12 +519,12 @@ mod tests {
     }
 
     #[test]
-    fn gate_channel_only_routing_is_rejected() {
+    fn gate_channel_without_format_contract_is_rejected() {
         let result = resolve("gateio_linear", "BTC_USDT", "trades");
 
         assert!(matches!(
             result,
-            Err(StreamSourceResolutionError::UnsupportedRoutingMode(_))
+            Err(StreamSourceResolutionError::IncompleteRouting(ref reason)) if reason.contains("normalization formats")
         ));
     }
 
@@ -473,5 +561,56 @@ mod tests {
             request.with_stream_id(" invalid "),
             Err(StreamRequestError::InvalidStreamId)
         ));
+    }
+    #[test]
+    fn gate_payload_contracts_match_only_the_subscribed_instrument() {
+        let formats = crate::live::config::FormatConfigStore::load_dir(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/live/formats"),
+        )
+        .unwrap();
+        for name in ["gateio_spot", "gateio_linear", "gateio_inverse"] {
+            for channel in ["trades", "depth"] {
+                let config = profile(name);
+                let symbol = if name == "gateio_inverse" {
+                    "BTC_USD"
+                } else {
+                    "BTC_USDT"
+                };
+                let request = StreamRequest::new(name, symbol, channel).unwrap();
+                let source =
+                    StreamSourceResolver::resolve_with_formats(&config, &request, Some(&formats))
+                        .unwrap();
+                assert_eq!(source.subscription().native_symbol, symbol);
+                let field = if channel == "depth" {
+                    "s"
+                } else if name == "gateio_spot" {
+                    "currency_pair"
+                } else {
+                    "contract"
+                };
+                let mut record = json!({});
+                record[field] = symbol.into();
+                let array = channel == "trades" && name != "gateio_spot";
+                let mut frame = json!({"channel":config.channel(channel).unwrap().channel,"event":"update","result":if array {json!([record])} else {record}});
+                assert!(source.routing().matches(&frame), "{name}/{channel}");
+                if array {
+                    frame["result"][0][field] = "ETH_USDT".into();
+                } else {
+                    frame["result"][field] = "ETH_USDT".into();
+                }
+                assert!(!source.routing().matches(&frame));
+                let mut conflicting = config.clone();
+                conflicting.websocket.routing.as_mut().unwrap().update_event =
+                    Some("different-event".into());
+                assert!(matches!(
+                    StreamSourceResolver::resolve_with_formats(
+                        &conflicting,
+                        &request,
+                        Some(&formats)
+                    ),
+                    Err(StreamSourceResolutionError::IncompleteRouting(_))
+                ));
+            }
+        }
     }
 }

@@ -41,13 +41,40 @@ impl SourceAttachment {
         request: StreamRequest,
         capacity: usize,
     ) -> Result<Self, SourceAttachmentError> {
+        Self::attach_configured(manager, request, capacity, None).await
+    }
+
+    /// Attach using the same immutable native format contracts as normalization.
+    /// Required when a shared channel identifies instruments inside its payload.
+    pub async fn attach_with_formats(
+        manager: Arc<WebSocketManager>,
+        request: StreamRequest,
+        capacity: usize,
+        formats: &crate::live::config::FormatConfigStore,
+    ) -> Result<Self, SourceAttachmentError> {
+        Self::attach_configured(manager, request, capacity, Some(formats)).await
+    }
+
+    async fn attach_configured(
+        manager: Arc<WebSocketManager>,
+        request: StreamRequest,
+        capacity: usize,
+        formats: Option<&crate::live::config::FormatConfigStore>,
+    ) -> Result<Self, SourceAttachmentError> {
         if capacity == 0 {
             return Err(SourceAttachmentError::InvalidCapacity);
         }
 
         let (sender, receiver) = mpsc::channel(capacity);
 
-        let binding = manager.attach_request(request, sender).await?;
+        let binding = match formats {
+            Some(formats) => {
+                manager
+                    .attach_request_with_formats(request, sender, formats)
+                    .await?
+            }
+            None => manager.attach_request(request, sender).await?,
+        };
 
         Ok(Self {
             manager,

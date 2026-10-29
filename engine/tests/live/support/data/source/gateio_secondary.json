@@ -1,0 +1,30 @@
+[
+  {
+    "instrument_id": 17546,
+    "exchange": "gateio",
+    "symbol": "ETH_USDT",
+    "market_category": "linear",
+    "instrument_type": "perpetual",
+    "base_asset": "ETH",
+    "quote_asset": "USDT",
+    "settlement_asset": "USDT",
+    "quantity_type": "contracts",
+    "contract_value": "0.01",
+    "contract_value_asset": "ETH",
+    "channel": "trades"
+  },
+  {
+    "instrument_id": 15710,
+    "exchange": "gateio",
+    "symbol": "ETH_USDT",
+    "market_category": "spot",
+    "instrument_type": "spot",
+    "base_asset": "ETH",
+    "quote_asset": "USDT",
+    "settlement_asset": null,
+    "quantity_type": "base",
+    "contract_value": null,
+    "contract_value_asset": null,
+    "channel": "trades"
+  }
+]

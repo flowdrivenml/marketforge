@@ -7,6 +7,7 @@ mod websocket_server;
 
 mod database;
 mod depth;
+mod gateio;
 mod harness;
 mod pipeline;
 mod recovery;

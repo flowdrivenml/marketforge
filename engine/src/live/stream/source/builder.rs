@@ -79,6 +79,7 @@ pub struct PreparedSourceStream {
     depth_policy: Option<SourceDepthRecoveryPolicy>,
     trade_policy: Option<SourceTradeRecoveryPolicy>,
     input_capacity: usize,
+    formats: Arc<FormatConfigStore>,
 }
 
 impl SourceRuntimeBuilder {
@@ -277,6 +278,7 @@ impl SourceRuntimeBuilder {
             depth_policy,
             trade_policy,
             input_capacity: self.limits.input_capacity,
+            formats: self.formats.clone(),
         })
     }
 }
@@ -332,9 +334,14 @@ impl PreparedSourceStream {
             .map_err(|e| fail(e.to_string()))?,
         );
         // Validate everything fallible before attaching; an error must not leak an attachment.
-        let attachment = SourceAttachment::attach(manager, self.request, self.input_capacity)
-            .await
-            .map_err(|e| fail(e.to_string()))?;
+        let attachment = SourceAttachment::attach_with_formats(
+            manager,
+            self.request,
+            self.input_capacity,
+            &self.formats,
+        )
+        .await
+        .map_err(|e| fail(e.to_string()))?;
         let mut executor = SourceStreamExecutor::new(self.runner, attachment, self.binder);
         if let Some(policy) = self.depth_policy {
             executor = executor

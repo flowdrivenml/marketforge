@@ -23,6 +23,14 @@ fn snapshot(profile: &str, symbol: &str, subscription: &Value) -> Value {
     }
 }
 fn delta(profile: &str, subscription: &Value) -> Value {
+    if profile.starts_with("gateio") {
+        return super::gateio::depth_update(
+            profile,
+            subscription["payload"][0].as_str().unwrap(),
+            101,
+            101,
+        );
+    }
     if profile.starts_with("binance") {
         let data = json!({"e":"depthUpdate","E":1720000000000_u64,"T":1720000000000_u64,"s":if profile=="binance_inverse" {"BTCUSD_PERP"}else{"BTCUSDT"},"U":100,"u":101,"pu":99,"b":[["80000","4"]],"a":[["100000","3"]]});
         if profile == "binance_spot" {
@@ -45,7 +53,12 @@ async fn depth_profile_capability_matrix() {
             request.exchange.as_str(),
             request.market_category.as_str()
         );
-        let (response, gate) = MockResponse::gated(REST);
+        let body = if profile.starts_with("gateio") {
+            super::gateio::snapshot_body(&profile)
+        } else {
+            REST.to_owned()
+        };
+        let (response, gate) = MockResponse::gated(body);
         let http = MockExchange::start(vec![response]);
         let mut socket = LocalSocket::start(&profile).await;
         let configs = Arc::new(rest_support::load_profile(&profile, http.base_url()));
@@ -66,24 +79,6 @@ async fn depth_profile_capability_matrix() {
         };
         let metrics = prepared.runner().instance().metrics_handle();
         let (recovery, task) = recovery(configs, &profile, limiters);
-        if profile.starts_with("gateio") {
-            assert!(
-                prepared
-                    .attach(manager.clone(), recovery.clone())
-                    .await
-                    .err()
-                    .unwrap()
-                    .to_string()
-                    .contains("instrument-aware")
-            );
-            println!(
-                "[{profile}/depth] UNSUPPORTED: existing instrument-aware channel resolver unavailable"
-            );
-            manager.shutdown().await.unwrap();
-            recovery.shutdown().await.unwrap();
-            timeout(DEADLINE, task).await.unwrap().unwrap();
-            continue;
-        }
         let executor = prepared
             .attach(manager.clone(), recovery.clone())
             .await
@@ -116,7 +111,7 @@ async fn depth_profile_capability_matrix() {
             )
             .unwrap();
         let subscription = socket.ack().await;
-        if profile.starts_with("binance") {
+        if profile.starts_with("binance") || profile.starts_with("gateio") {
             socket
                 .send
                 .send(delta(&profile, &subscription))
