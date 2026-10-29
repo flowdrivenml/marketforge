@@ -263,10 +263,13 @@ impl SourceProcessor {
             }
 
             (NormalizedMessage::Trades(message), SourceProcessingEpoch::Trades(epoch)) => {
-                self.integrity.process(IntegrityInput::Trades {
-                    epoch,
-                    message: &message,
-                })
+                self.integrity
+                    .process_trades_with(epoch, &message, |outcome| {
+                        Self::publish_trade_outcome(outcome, &mut publish_trades)
+                            .map_err(|error| error.to_string())
+                    })
+                    .map_err(SourceProcessorError::Handoff)?;
+                return Ok(());
             }
 
             _ => return Err(SourceProcessorError::WrongChannel),

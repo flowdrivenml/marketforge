@@ -257,12 +257,22 @@ impl BoundTradeIngress {
         epoch: TradeSourceEpoch,
         message: &NormalizedTrades,
     ) -> BoundTradeIngressOutcome {
+        self.on_websocket_with(epoch, message, Ok)
+            .expect("infallible integrity-only handoff")
+    }
+
+    pub(in crate::live::integrity) fn on_websocket_with(
+        &mut self,
+        epoch: TradeSourceEpoch,
+        message: &NormalizedTrades,
+        publish: impl FnOnce(TradeControllerOutcome) -> Result<TradeControllerOutcome, String>,
+    ) -> Result<BoundTradeIngressOutcome, String> {
         // ----------------------------------------------------
         // EPOCH FENCING
         // ----------------------------------------------------
 
         if self.binding.validate_epoch(epoch).is_err() {
-            return BoundTradeIngressOutcome::ObsoleteEpoch;
+            return Ok(BoundTradeIngressOutcome::ObsoleteEpoch);
         }
 
         // ----------------------------------------------------
@@ -270,9 +280,9 @@ impl BoundTradeIngress {
         // ----------------------------------------------------
 
         if self.quarantined {
-            return BoundTradeIngressOutcome::AdmissionSuspended {
+            return Ok(BoundTradeIngressOutcome::AdmissionSuspended {
                 generation: self.binding.epoch().stream_generation,
-            };
+            });
         }
 
         // ----------------------------------------------------
@@ -289,16 +299,16 @@ impl BoundTradeIngress {
             // current-epoch source routing or provenance.
             self.quarantined = true;
 
-            return BoundTradeIngressOutcome::SourceQuarantined { reason };
+            return Ok(BoundTradeIngressOutcome::SourceQuarantined { reason });
         }
 
         // ----------------------------------------------------
         // CANONICAL TRADE INTEGRITY
         // ----------------------------------------------------
 
-        let outcome = self.controller.process(epoch.stream_generation, message);
+        let outcome = self.controller.process_with(epoch.stream_generation, message, publish)?;
 
-        BoundTradeIngressOutcome::Processed(outcome)
+        Ok(BoundTradeIngressOutcome::Processed(outcome))
     }
 
     // ========================================================

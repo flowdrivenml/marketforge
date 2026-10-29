@@ -26,6 +26,7 @@ parquet = [
     "dep:parquet"
 ]
 live = [
+    "postgres",
     "dep:toml",
     "dep:tokio",
     "dep:rand",
@@ -1092,6 +1093,15 @@ required-features = ["live"]
 [[test]]
 name = "live_recovery"
 path = "tests/live/integration/recovery/main.rs"
+required-features = ["live"]
+
+# ============================================================
+# LIVE — SOURCE STREAM INTEGRATION TESTS
+# ============================================================
+
+[[test]]
+name = "live_source"
+path = "tests/live/integration/source/main.rs"
 required-features = ["live"]
 
 
