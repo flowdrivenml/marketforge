@@ -53,6 +53,8 @@ fn serializes_failure_report() {
 
     metrics.counters.records_read = 100;
     metrics.counters.records_matched = 50;
+    metrics.counters.records_skipped_instrument = 50;
+    metrics.counters.records_processed = 48;
     metrics.counters.records_rejected = 2;
     metrics.counters.events_normalized = 48;
     metrics.counters.events_written = 48;
