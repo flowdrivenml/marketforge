@@ -1,0 +1,434 @@
+[
+  {
+    "profile": "binance.spot.spot.binance-t1.v1",
+    "physical": "trades-fb8a8cd3be764571",
+    "raw_format": [
+      "binance",
+      "BINANCE-T1",
+      "spot",
+      "spot"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "binance.linear.perpetual.binance-t2.v1",
+    "physical": "trades-8e67686feb09e160",
+    "raw_format": [
+      "binance",
+      "BINANCE-T2",
+      "perpetual",
+      "linear"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "binance.inverse.perpetual.binance-t3.v1",
+    "physical": "trades-bfe8e251a21dcfc4",
+    "raw_format": [
+      "binance",
+      "BINANCE-T3",
+      "perpetual",
+      "inverse"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "binance.linear.future.binance-t2.v1",
+    "physical": "trades-8e67686feb09e160",
+    "raw_format": [
+      "binance",
+      "BINANCE-T2",
+      "future",
+      "linear"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "binance.inverse.future.binance-t3.v1",
+    "physical": "trades-bfe8e251a21dcfc4",
+    "raw_format": [
+      "binance",
+      "BINANCE-T3",
+      "future",
+      "inverse"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "bitget.spot.spot.bitget-t1.v1",
+    "physical": "trades-27795f74ebf55560",
+    "raw_format": [
+      "bitget",
+      "BITGET-T1",
+      "spot",
+      "spot"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "bitget.linear.perpetual.bitget-t1.v1",
+    "physical": "trades-27795f74ebf55560",
+    "raw_format": [
+      "bitget",
+      "BITGET-T1",
+      "perpetual",
+      "linear"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "bitget.spot.spot.bitget-b1.v1",
+    "physical": "depth-27f3e7c2cf493bf6",
+    "raw_format": [
+      "bitget",
+      "BITGET-B1",
+      "spot",
+      "spot"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "bitget.linear.perpetual.bitget-b1.v1",
+    "physical": "depth-27f3e7c2cf493bf6",
+    "raw_format": [
+      "bitget",
+      "BITGET-B1",
+      "perpetual",
+      "linear"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "bitget.inverse.perpetual.bitget-b1.v1",
+    "physical": "depth-b056fca0cb1f113d",
+    "raw_format": [
+      "bitget",
+      "BITGET-B1",
+      "perpetual",
+      "inverse"
+    ],
+    "rules": 1,
+    "supported": false
+  },
+  {
+    "profile": "bybit.spot.spot.bybit-t1.v1",
+    "physical": "trades-8f03e8ad9adedc8e",
+    "raw_format": [
+      "bybit",
+      "BYBIT-T1",
+      "spot",
+      "spot"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "bybit.linear.perpetual.bybit-t2.v1",
+    "physical": "trades-38cb71e2f2d3b0c3",
+    "raw_format": [
+      "bybit",
+      "BYBIT-T2",
+      "perpetual",
+      "linear"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "bybit.inverse.perpetual.bybit-t2.v1",
+    "physical": "trades-38cb71e2f2d3b0c3",
+    "raw_format": [
+      "bybit",
+      "BYBIT-T2",
+      "perpetual",
+      "inverse"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "bybit.option.option.bybit-t3.v1",
+    "physical": "trades-d2a778e788ff4fda",
+    "raw_format": [
+      "bybit",
+      "BYBIT-T3",
+      "option",
+      "option"
+    ],
+    "rules": 1,
+    "supported": false
+  },
+  {
+    "profile": "bybit.spot.spot.bybit-b1.v1",
+    "physical": "depth-ffc80404cf5abb13",
+    "raw_format": [
+      "bybit",
+      "BYBIT-B1",
+      "spot",
+      "spot"
+    ],
+    "rules": 2,
+    "supported": true
+  },
+  {
+    "profile": "bybit.linear.perpetual.bybit-b1.v1",
+    "physical": "depth-ffc80404cf5abb13",
+    "raw_format": [
+      "bybit",
+      "BYBIT-B1",
+      "perpetual",
+      "linear"
+    ],
+    "rules": 2,
+    "supported": true
+  },
+  {
+    "profile": "bybit.inverse.perpetual.bybit-b1.v1",
+    "physical": "depth-ffc80404cf5abb13",
+    "raw_format": [
+      "bybit",
+      "BYBIT-B1",
+      "perpetual",
+      "inverse"
+    ],
+    "rules": 2,
+    "supported": true
+  },
+  {
+    "profile": "bybit.option.option.bybit-b2.v1",
+    "physical": "depth-0da18a2459405ace",
+    "raw_format": [
+      "bybit",
+      "BYBIT-B2",
+      "option",
+      "option"
+    ],
+    "rules": 2,
+    "supported": false
+  },
+  {
+    "profile": "gateio.spot.spot.gate-t1.v1",
+    "physical": "trades-72767b3278c7a2cf",
+    "raw_format": [
+      "gateio",
+      "GATE-T1",
+      "spot",
+      "spot"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "gateio.linear.perpetual.gate-t2.v1",
+    "physical": "trades-d6e392b67b0dc5e3",
+    "raw_format": [
+      "gateio",
+      "GATE-T2",
+      "perpetual",
+      "linear"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "gateio.inverse.perpetual.gate-t2.v1",
+    "physical": "trades-d6e392b67b0dc5e3",
+    "raw_format": [
+      "gateio",
+      "GATE-T2",
+      "perpetual",
+      "inverse"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "gateio.spot.spot.gate-b1.v1",
+    "physical": "depth-fc599eca882889a6",
+    "raw_format": [
+      "gateio",
+      "GATE-B1",
+      "spot",
+      "spot"
+    ],
+    "rules": 2,
+    "supported": true
+  },
+  {
+    "profile": "gateio.linear.perpetual.gate-b2.v1",
+    "physical": "depth-47e7da4aee7e68ad",
+    "raw_format": [
+      "gateio",
+      "GATE-B2",
+      "perpetual",
+      "linear"
+    ],
+    "rules": 2,
+    "supported": true
+  },
+  {
+    "profile": "gateio.inverse.perpetual.gate-b2.v1",
+    "physical": "depth-47e7da4aee7e68ad",
+    "raw_format": [
+      "gateio",
+      "GATE-B2",
+      "perpetual",
+      "inverse"
+    ],
+    "rules": 2,
+    "supported": true
+  },
+  {
+    "profile": "okx.spot.spot.okx-t1.v1",
+    "physical": "trades-f76fece6f379b1f9",
+    "raw_format": [
+      "okx",
+      "OKX-T1",
+      "spot",
+      "spot"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "okx.linear.perpetual.okx-t1.v1",
+    "physical": "trades-f76fece6f379b1f9",
+    "raw_format": [
+      "okx",
+      "OKX-T1",
+      "perpetual",
+      "linear"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "okx.inverse.perpetual.okx-t1.v1",
+    "physical": "trades-f76fece6f379b1f9",
+    "raw_format": [
+      "okx",
+      "OKX-T1",
+      "perpetual",
+      "inverse"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "okx.option.option.okx-t1.v1",
+    "physical": "trades-9757d1280c728b84",
+    "raw_format": [
+      "okx",
+      "OKX-T1",
+      "option",
+      "option"
+    ],
+    "rules": 1,
+    "supported": false
+  },
+  {
+    "profile": "okx.spot.spot.okx-b1.v1",
+    "physical": "depth-34de574f546f04eb",
+    "raw_format": [
+      "okx",
+      "OKX-B1",
+      "spot",
+      "spot"
+    ],
+    "rules": 2,
+    "supported": true
+  },
+  {
+    "profile": "okx.linear.perpetual.okx-b1.v1",
+    "physical": "depth-34de574f546f04eb",
+    "raw_format": [
+      "okx",
+      "OKX-B1",
+      "perpetual",
+      "linear"
+    ],
+    "rules": 2,
+    "supported": true
+  },
+  {
+    "profile": "okx.inverse.perpetual.okx-b1.v1",
+    "physical": "depth-34de574f546f04eb",
+    "raw_format": [
+      "okx",
+      "OKX-B1",
+      "perpetual",
+      "inverse"
+    ],
+    "rules": 2,
+    "supported": true
+  },
+  {
+    "profile": "okx.linear.future.okx-t1.v1",
+    "physical": "trades-f76fece6f379b1f9",
+    "raw_format": [
+      "okx",
+      "OKX-T1",
+      "future",
+      "linear"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "okx.inverse.future.okx-t1.v1",
+    "physical": "trades-f76fece6f379b1f9",
+    "raw_format": [
+      "okx",
+      "OKX-T1",
+      "future",
+      "inverse"
+    ],
+    "rules": 1,
+    "supported": true
+  },
+  {
+    "profile": "okx.linear.future.okx-b1.v1",
+    "physical": "depth-34de574f546f04eb",
+    "raw_format": [
+      "okx",
+      "OKX-B1",
+      "future",
+      "linear"
+    ],
+    "rules": 2,
+    "supported": true
+  },
+  {
+    "profile": "okx.inverse.future.okx-b1.v1",
+    "physical": "depth-34de574f546f04eb",
+    "raw_format": [
+      "okx",
+      "OKX-B1",
+      "future",
+      "inverse"
+    ],
+    "rules": 2,
+    "supported": true
+  },
+  {
+    "profile": "okx.option.option.okx-b2.v1",
+    "physical": "depth-8f9b705d40e16cca",
+    "raw_format": [
+      "okx",
+      "OKX-B2",
+      "option",
+      "option"
+    ],
+    "rules": 2,
+    "supported": false
+  }
+]

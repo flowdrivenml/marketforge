@@ -141,6 +141,12 @@ fn lightweight_and_legacy_jobs_resolve_identically() {
     let a = load_document_with_catalog(t.job(&legacy), &c).unwrap();
     let b = load_document_with_catalog(t.job(&lightweight(legacy, &c)), &c).unwrap();
     assert_eq!(a.tasks, b.tasks);
+    let example = load_document_with_catalog(
+        root().join("engine/fixtures/jobs/historical-profile-v2.json"),
+        &c,
+    )
+    .unwrap();
+    assert_eq!(example.tasks[0].normalizations, a.tasks[0].normalizations);
     assert_eq!(
         b.protocol_version,
         marketforge_engine::historical::job::PROCESSING_PROTOCOL_VERSION

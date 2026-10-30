@@ -1,0 +1,81 @@
+{
+  "protocol_version": 2,
+  "job_id": 104,
+  "dataset_id": 104,
+  "operation": "process",
+  "tasks": [
+    {
+      "task_id": 0,
+      "stream_id": "bybit:spot:spot:BTCUSDT:trade",
+      "input_path": "/tmp/marketforge-example/input.csv.gz",
+      "exchange": "bybit",
+      "instrument_id": 1,
+      "symbol": "BTCUSDT",
+      "instrument": {
+        "instrument_kind": "spot",
+        "contract_kind": null,
+        "tick_size": "0.1",
+        "contract_value": null,
+        "contract_value_asset": null
+      },
+      "archive_member": null,
+      "format_profile": "bybit.spot.spot.bybit-t1.v1"
+    }
+  ],
+  "streams": [
+    {
+      "stream_id": "bybit:spot:spot:BTCUSDT:trade",
+      "stream_rank": 0
+    }
+  ],
+  "ordering": {
+    "primary": "event_timestamp_ns",
+    "tie_break": "stream_rank"
+  },
+  "integrity_policy": {
+    "profile": "standard",
+    "parse_failure": {
+      "action": "degrade",
+      "max_count": null
+    },
+    "invalid_record": {
+      "action": "degrade",
+      "max_count": null
+    },
+    "sequence_gap": {
+      "action": "degrade",
+      "max_count": null
+    },
+    "timestamp_regression": {
+      "action": "degrade",
+      "max_count": null
+    },
+    "missing_snapshot": {
+      "action": "fail",
+      "max_count": null
+    },
+    "invalid_book": {
+      "action": "fail",
+      "max_count": null
+    },
+    "transformation_failure": {
+      "action": "fail",
+      "max_count": null
+    }
+  },
+  "resources": {
+    "workers": 4,
+    "memory_budget_bytes": 4294967296,
+    "scratch_path": "/tmp/marketforge-example/scratch",
+    "scratch_budget_bytes": 21474836480,
+    "parquet": {
+      "row_group_target_bytes": 134217728,
+      "file_target_bytes": 536870912
+    }
+  },
+  "output": {
+    "content_type": "trades",
+    "staging_path": "/tmp/marketforge-example/staging",
+    "dataset_path": "/tmp/marketforge-example/dataset"
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "original_historical_targets": 160,
+  "normal_targets": 3,
+  "slow_targets": 3,
+  "original_cases": 781,
+  "preserved_cases": 781,
+  "missing": [],
+  "new_cases": [
+    [
+      "historical_normalize",
+      "configuration::complete_profile_inventory_compiles_and_resolves_uniquely"
+    ],
+    [
+      "historical_normalize",
+      "configuration::conflicts_unknown_fields_and_fingerprints_fail_closed"
+    ],
+    [
+      "historical_normalize",
+      "configuration::duplicate_profile_and_physical_definitions_are_rejected"
+    ],
+    [
+      "historical_normalize",
+      "configuration::errors_identify_file_and_invalid_configuration"
+    ],
+    [
+      "historical_normalize",
+      "configuration::every_existing_job_matches_resolved_toml_configuration"
+    ],
+    [
+      "historical_normalize",
+      "configuration::incompatible_instrument_and_container_cannot_override_profile"
+    ],
+    [
+      "historical_normalize",
+      "configuration::lightweight_and_legacy_jobs_resolve_identically"
+    ],
+    [
+      "historical_normalize",
+      "configuration::profile_fingerprint_is_independent_of_file_location_and_whitespace"
+    ],
+    [
+      "historical_normalize",
+      "configuration::resolved_job_provenance_can_be_reloaded_without_changing_fingerprint"
+    ],
+    [
+      "historical_normalize",
+      "configuration::unknown_and_unsupported_profiles_have_explicit_errors"
+    ],
+    [
+      "historical_normalize",
+      "configuration::unsupported_transform_unknown_rule_and_missing_source_fail_at_load"
+    ],
+    [
+      "historical_normalize",
+      "equivalence::real_trade_prefix_archives_legacy_and_toml_have_exact_events_and_counters"
+    ],
+    [
+      "historical_normalize",
+      "equivalence::small_depth_archives_legacy_and_toml_preserve_snapshots_deltas_sequences_and_errors"
+    ]
+  ],
+  "counts": {
+    "depth_spec": 1,
+    "depth_xlsx_decoder": 6,
+    "depth_csv_adapter": 4,
+    "depth_scalar": 2,
+    "historical_merge": 233,
+    "historical_normalize": 112,
+    "depth_processor": 4,
+    "depth_transforms": 14,
+    "historical_convert": 170,
+    "historical_slow_normalize": 39,
+    "historical_slow_convert": 160,
+    "historical_slow_merge": 80
+  },
+  "changed_ignore_states": []
+}
