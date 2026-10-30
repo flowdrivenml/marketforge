@@ -26,6 +26,23 @@ pub struct GeneralConfig {
 #[serde(deny_unknown_fields)]
 pub struct RuntimeConfig {
     pub shutdown_timeout_seconds: u64,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processing: Option<ProcessingConfig>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProcessingConfig {
+    /// Number of dedicated CPU-processing threads.
+    pub workers: usize,
+
+    /// Maximum number of runnable processor activations queued.
+    /// This does not limit per-processor market-data mailboxes.
+    pub ready_queue_capacity: usize,
+
+    /// Maximum number of events processed during one scheduling turn.
+    pub max_events_per_turn: usize,
 }
 
 // ============================================================

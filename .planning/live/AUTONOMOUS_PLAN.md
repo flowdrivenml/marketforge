@@ -1,1062 +1,896 @@
-# MarketForge Live — Autonomous Implementation Plan
+# MarketForge Live — Autonomous Plan: Canonical Stream Router
 
-**Status:** Active execution policy
-**Execution model:** One Codex agent, sequential work packages
 **Project:** MarketForge Live
-**Implementation language:** Rust
-**Target:** Complete the approved MarketForge Live v1 implementation
-
-**Current assignment boundary (2026-10-21):** WP-05 authoritative documentation
-reconciliation only. No implementation, tests, schemas, configuration or dependency
-changes; no new package starts. Create one local documentation checkpoint, do not
-push, then stop. This explicit assignment overrides the broader execution sequence
-for the current task; later implementation requires renewed task authorization.
+**Repository:** `/home/pasha/projects/bybit-history-downloader`
+**Branch:** `codex/stream-router`
+**Milestone:** Canonical Stream Router
+**Status:** Authorized for autonomous implementation
+**Scope:** Rust Live subsystem only
 
 ---
 
-## 1. Mission
-Implement MarketForge Live according to the accepted architecture,
-implementation roadmap, and recorded decisions.
+## 1. Objective
 
-The goal is a fully integrated, continuously operating Rust service
-that provides:
+Implement the production-quality Canonical Stream Router for MarketForge Live.
 
-- Multi-exchange trade and L2 acquisition.
-- Generic protocol decoding and canonical normalization.
-- Connection, subscription, and stream lifecycle management.
-- Integrity validation and recovery.
-- Canonical event distribution.
-- Unix-domain socket publication.
-- RAM/Parquet retention and cursor-based replay.
-- Optional PostgreSQL recording.
-- Derived stream merging and currency conversion.
-- Native metrics, health, and operational diagnostics.
-- Versioned runtime configuration and control.
-- Independent Ratatui management interface.
-- Deterministic testing and fault tolerance.
+Source Stream is complete and has passed deterministic integration tests for all 14 supported BTC exchange profiles, including PostgreSQL persistence and restoration.
 
-Complete the approved v1 requirements rather than producing partial
-demonstrations or placeholder implementations.
+The Router is the next architectural component.
 
-Do not implement Python orchestration, historical processing,
-Bootstrap orchestration, feature engineering, trading strategies,
-or unrelated systems.
+Its responsibility is to accept canonical market-data publications and distribute them to subscribed consumers while preserving:
+
+- Stream identity and producer authority.
+- Per-stream publication ordering.
+- Subscription and demand ownership.
+- Bounded memory and backpressure.
+- Consumer isolation.
+- Generation fencing.
+- Explicit publication acknowledgment semantics.
+- Correct lifecycle and shutdown behavior.
+
+The Router must support direct in-process Rust consumers without serialization or interprocess communication.
+
+Future consumers will include PostgreSQL recording, Unix-domain socket publication, Derived Streams, and potentially Spectra.
+
+Only implement the Router core and its Source Stream integration in this milestone.
 
 ---
 
-## 2. Authoritative Sources
+## 2. Architectural Authority
 
-Read and follow:
+Before implementation, read:
 
-1. `AGENTS.md`
-2. `.planning/live/decisions.md`
-3. `docs/live/17 — Implementation Roadmap.md`
-4. Relevant subsystem specifications under `docs/live/`
-5. `.planning/live/STATUS.md`
-6. Current Rust implementation and tests
-7. Relevant implementation evidence
+- `.planning/live/AGENTS.md`
+- `.planning/live/objective.md`
+- `.planning/live/AUTONOMOUS_PLAN.md`
+- Existing Rust implementation and public contracts.
+- Existing integration tests.
+- Existing PostgreSQL schema.
 
-Existing code establishes what is implemented.
+Retired architecture documents must not be restored or required.
 
-Documentation and approved decisions establish what must be implemented.
+Preserve existing architectural decisions unless a concrete correctness issue requires adjustment.
 
-A previous status report is not proof that its corresponding
-implementation still satisfies the requirements.
+The completed Source Stream implementation is an established subsystem.
 
-Do not treat historical evidence as a replacement for inspecting
-the current source.
+Do not redesign Source Stream normalization, integrity, recovery, acquisition, or persistence.
 
-If a document is missing, locate the authoritative equivalent.
-Do not fabricate its contents.
+PostgreSQL remains mandatory infrastructure for MarketForge Live.
 
----
+### Git Safety
 
-## 3. Standing Execution Authorization
+Work exclusively on:
 
-The user authorizes autonomous implementation of the remaining
-MarketForge Live work packages in the sequence defined below.
+`codex/stream-router`
 
-Codex may independently:
+Before modifying code:
 
-- Inspect source code and documentation.
-- Design implementation details within approved contracts.
-- Implement production Rust functionality.
-- Create and modify tests.
-- Add justified dependencies.
-- Refactor existing Live components when required.
-- Integrate dependent subsystems.
-- Run compilation, formatting, tests, and benchmarks.
-- Diagnose and repair implementation failures.
-- Create local Git branches, commits, and checkpoints.
-- Maintain implementation status and evidence.
-- Proceed to subsequent authorized work packages.
+1. Inspect Git status and the current HEAD.
+2. Confirm the Source Stream checkpoint exists.
+3. Preserve all existing changes.
+4. Do not reset, rebase, force-push, or overwrite unrelated work.
 
-Do not request user approval for ordinary implementation choices,
-compiler errors, borrow-checker problems, test failures, or
-routine integration work.
+Use logically grouped commits.
 
-Architectural changes require approval when they materially alter
-an accepted contract, financial semantics, ownership, persistence
-guarantee, event identity, or external protocol.
-
-Standing authorization does not include:
-
-- Remote Git pushes or merging into protected branches.
-- Changes to Python or historical Rust execution.
-- Destructive operations against the existing database.
-- Access to unapproved production credentials or private data.
-- Destructive modification of user-owned files.
-- Unapproved real-exchange traffic.
-- Installation or modification of system-wide infrastructure.
-
-Use available permissions; do not bypass sandbox restrictions.
+Do not push unless explicitly authorized.
 
 ---
 
-## 4. Current Implementation Baseline
+## 3. Existing Infrastructure
 
-The repository already contains substantial MarketForge Live work.
+Inspect and reuse the existing modules:
 
-### WP-05 identity/metadata authority and current integration boundary
+    engine/src/live/stream/registry/
+    engine/src/live/stream/persistence/
+    engine/src/live/stream/request/
+    engine/src/live/stream/source/
 
-DEC-035–038 now record user-approved Option A, existing PostgreSQL catalog
-metadata authority, full lookup/classification and identity safety. They supersede
-old uncertainty about which metadata source/family mechanism to use; they do not
-settle OPEN-006–011 (removal/history/non-reuse, reintroduction, allocation,
-historical bindings, activation freshness, concrete SQL adapter package).
+    engine/src/live/integrity/
+    engine/src/live/recovery/
+    engine/src/live/infrastructure/websocket/
 
-Verified implementation checkpoint `63f2526` supplies bounded identity evidence,
-prospective validation, checked derived boundaries and immutable metadata fixtures.
-See [WP-05 evidence](evidence/WP-05-implementation.md) and the authoritative
-[documentation reconciliation](evidence/wp05-documentation-reconciliation.md).
-WP-05 remains **Partial — Not Accepted**, not ReadyForReview. Available model
-contracts are not proof of actual compiler, SQL, registry or daemon integration.
+In particular, examine:
 
-| Package | Preserved responsibility / next consumer obligation |
+    stream/registry/demand.rs
+    stream/registry/graph.rs
+    stream/registry/reconcile.rs
+    stream/registry/runtime.rs
+
+    stream/source/builder.rs
+    stream/source/executor.rs
+    stream/source/runner.rs
+    stream/source/supervisor.rs
+
+    stream/persistence/repository.rs
+
+Reuse existing concepts for:
+
+- Stream identity.
+- Runtime generation.
+- Demand ownership.
+- Dependency relationships.
+- Runtime lifecycle.
+- Durable stream registration.
+- Source publication.
+- Acquisition fencing.
+
+Do not implement parallel registries or competing identity systems.
+
+The Router may maintain ephemeral producer bindings and delivery subscriptions, but they must integrate with existing infrastructure.
+
+---
+
+## 4. Target Architecture
+
+    Source Stream ─────┐
+                       │
+    Source Stream ─────┤
+                       │
+                       ▼
+                STREAM ROUTER
+                       │
+           ┌───────────┼────────────┐
+           │           │            │
+           ▼           ▼            ▼
+       PostgreSQL     Unix       Derived
+        Recorder     Socket      Streams
+                     Output         │
+                                    ▼
+                                  Spectra
+                                  (Future)
+
+All destinations should use the same generic Router consumer interface.
+
+The Router must not know whether its consumer is a recorder, socket publisher, derived processor, or financial-engineering system.
+
+The Router is responsible for transport-independent canonical event distribution.
+
+It must not implement:
+
+- Exchange normalization.
+- Trade or depth integrity calculation.
+- REST recovery.
+- Financial transformations.
+- Feature engineering.
+- Trading execution.
+
+---
+
+## 5. Public Router Facade
+
+Provide a small public Rust facade.
+
+Desired conceptual API:
+
+```rust
+pub struct StreamRouter;
+
+impl StreamRouter {
+    pub fn new(
+        config: RouterConfig,
+        context: RouterContext,
+    ) -> Result<Self, RouterError>;
+
+    pub fn attach_producer(
+        &self,
+        request: AttachProducerRequest,
+    ) -> Result<ProducerHandle, RouterError>;
+
+    pub async fn subscribe(
+        &self,
+        request: SubscribeRequest,
+    ) -> Result<SubscriptionHandle, RouterError>;
+
+    pub fn status(&self) -> RouterStatus;
+
+    pub async fn shutdown(&self) -> Result<(), RouterError>;
+}
+```
+
+### Producer Handle
+
+```rust
+pub struct ProducerHandle;
+
+impl ProducerHandle {
+    pub fn try_publish(
+        &self,
+        publication: RouterPublication,
+    ) -> Result<RouterAcceptance, PublishError>;
+}
+```
+
+### Subscription Handle
+
+```rust
+pub struct SubscriptionHandle;
+
+impl SubscriptionHandle {
+    pub async fn recv(&mut self) -> Option<RouterDelivery>;
+
+    pub async fn close(self) -> Result<(), RouterError>;
+}
+```
+
+These signatures describe the desired API, not mandatory exact implementations.
+
+Adapt them where necessary to preserve correctness and existing contracts.
+
+### Facade Requirements
+
+The facade must provide:
+
+- Router construction.
+- Authorized producer attachment.
+- Consumer subscription.
+- Synchronous nonblocking publication.
+- Explicit consumer closure.
+- Router status.
+- Graceful shutdown.
+
+Use simple request objects.
+
+Avoid exposing internal locks, registries, channels, and task handles.
+
+A downstream Rust component should need only a few imports.
+
+---
+
+## 6. Proposed Module Structure
+
+Introduce:
+
+    engine/src/live/stream/router/
+    ├── mod.rs
+    ├── facade.rs
+    ├── event.rs
+    ├── ingress.rs
+    ├── producer.rs
+    ├── subscription.rs
+    ├── dispatch.rs
+    ├── capacity.rs
+    ├── lifecycle.rs
+    └── status.rs
+
+This is a suggested structure.
+
+Adapt it to existing project conventions where appropriate.
+
+Do not introduce unnecessary abstractions or excessive module fragmentation.
+
+---
+
+## 7. Canonical Router Events
+
+Reuse existing canonical Rust types.
+
+Do not introduce alternative trade or depth schemas.
+
+The Router must support:
+
+- Canonical trade publications.
+- Canonical L2 snapshots.
+- Canonical L2 deltas.
+- Depth invalidation events.
+
+Preserve relevant identity, provenance, sequence, and generation metadata.
+
+Use immutable owned publication payloads.
+
+Prefer shared ownership such as `Arc<T>` for efficient fanout when appropriate.
+
+Do not deep-clone large depth snapshots for every subscriber unnecessarily.
+
+### Atomic Publications
+
+Each publication is an atomic admission unit.
+
+A batch must be either completely accepted or completely rejected.
+
+Never acknowledge partial acceptance.
+
+Maintain ordering within each publication.
+
+---
+
+## 8. Publication Acknowledgment Contract
+
+This is a critical requirement.
+
+Source Stream currently commits integrity state after successful publication acknowledgment.
+
+The Router must preserve this guarantee.
+
+Define successful Router acceptance as:
+
+**Complete acceptance into bounded volatile Router ownership.**
+
+Successful acceptance does not imply:
+
+- PostgreSQL durability.
+- Successful external socket delivery.
+- Completion of consumer processing.
+- Delivery to every subscriber.
+
+These are separate guarantees.
+
+The Router must return an error when it cannot accept the complete publication.
+
+Source Stream must not commit unpublished trades after failed Router admission.
+
+### Synchronous Publication
+
+Existing Source Stream publication callbacks are synchronous.
+
+The Router must provide compatible nonblocking admission.
+
+Do not indefinitely block Tokio workers waiting for consumer processing.
+
+### Downstream Failure
+
+Define explicit behavior when Router admission succeeds but downstream delivery subsequently fails.
+
+Do not silently claim end-to-end lossless delivery.
+
+Consumers requiring complete continuity must receive an explicit failure or desynchronization indication when delivery cannot be guaranteed.
+
+---
+
+## 9. Producer Ownership and Generation Fencing
+
+Producer handles must be associated with validated stream identity and runtime authority.
+
+Reject:
+
+- Unknown streams.
+- Unauthorized producer bindings.
+- Detached producer handles.
+- Revoked generations.
+- Incorrect payload types.
+- Publication after Router shutdown.
+- Old-generation publication after producer replacement.
+
+Do not confuse runtime stream generations with Source Stream acquisition epochs.
+
+Preserve existing acquisition fencing.
+
+Ensure queued stale publications cannot cross a revoked generation boundary.
+
+Concurrent producer attachment and replacement must have deterministic semantics.
+
+---
+
+## 10. Consumer Subscriptions
+
+Support multiple independent subscribers for one stream.
+
+Each subscription must have:
+
+- Stable identity.
+- Explicit demand ownership.
+- Bound stream identity.
+- Bounded capacity.
+- Lifecycle state.
+- Defined continuity policy.
+- Explicit cleanup.
+
+Distinguish:
+
+**Demand Registry:** Determines whether a stream is required.
+
+**Router Subscription Registry:** Determines where publications are delivered.
+
+Reuse existing demand infrastructure.
+
+Removing one consumer must not stop a stream still required by another owner.
+
+Removing the final ephemeral owner must release its demand.
+
+Dropping a subscription must not leak ownership.
+
+Preserve always-on demand where applicable.
+
+---
+
+## 11. Event Ordering
+
+Preserve successful admission order independently for each stream.
+
+For example:
+
+    Producer:  A B C D
+    Consumer:  A B C D
+
+Never:
+
+    Consumer:  A C B D
+
+Define an explicit linearization point for concurrent publication.
+
+Do not fabricate global event ordering between independent exchanges.
+
+Maintain per-stream ordering across publication batches.
+
+Consumers must not silently skip required events while remaining synchronized.
+
+---
+
+## 12. Fanout and Consumer Isolation
+
+Support one producer and multiple consumers.
+
+Example:
+
+    Source
+       │
+       ▼
+     Router
+       │
+       ├── Consumer A
+       ├── Consumer B
+       └── Consumer C
+
+Consumers should receive shared immutable canonical events directly in Rust.
+
+A slow or failed consumer must not corrupt unrelated consumers.
+
+The Router must explicitly handle a full consumer queue.
+
+Choose and document a coherent policy for partial fanout failure.
+
+Acceptable designs may include:
+
+- Atomic reservation before admission.
+- Explicit consumer invalidation after failed delivery.
+- Another bounded mechanism with equivalent guarantees.
+
+Never silently claim successful delivery to all subscribers when some have missed events.
+
+Do not execute arbitrary consumer computations on the Router dispatch path.
+
+---
+
+## 13. Resource Management
+
+Every Router-controlled queue must be bounded.
+
+Implement configurable limits for:
+
+- Ingress pending publications.
+- Ingress pending bytes.
+- Consumer queue publications.
+- Consumer queue bytes.
+- Active subscriptions.
+- Active producer bindings.
+
+Enforce actual limits.
+
+A depth snapshot may be much larger than an ordinary trade publication.
+
+Therefore, queue-length limits alone are insufficient.
+
+Account for retained event memory.
+
+Use checked arithmetic where appropriate.
+
+Avoid:
+
+- Unbounded channels.
+- Busy polling.
+- Per-event Tokio task spawning.
+- Global locks held across `.await`.
+- Unnecessary serialization.
+- Uncontrolled payload cloning.
+
+### Backpressure
+
+Required behavior:
+
+- Reject admission when ingress capacity is exhausted.
+- Explicitly handle exhausted consumer capacity.
+- Prevent unlimited memory accumulation.
+- Release capacity after consumption or cancellation.
+- Release resources after shutdown.
+- Preserve accurate operational counters.
+
+Consumer continuity failures must never be silently hidden.
+
+---
+
+## 14. Depth Synchronization
+
+Depth routing must preserve:
+
+    Snapshot
+       │
+       ▼
+    Delta
+       │
+       ▼
+    Delta
+       │
+       ▼
+    Invalidation
+       │
+       ▼
+    Recovery Snapshot
+       │
+       ▼
+    Delta
+
+The Router must preserve publication ordering and book-generation authority.
+
+### Late Subscribers
+
+A consumer subscribing after the original snapshot cannot automatically treat subsequent deltas as a synchronized book.
+
+Inspect existing Source Stream book and publication contracts.
+
+Reuse an authoritative snapshot/bootstrap mechanism if available.
+
+If no suitable mechanism exists, represent the consumer as unsynchronized until an authoritative initialization event becomes available.
+
+Do not implement a competing order book inside the Router.
+
+Do not fabricate complete snapshots from incomplete depth information.
+
+### Recovery
+
+After source invalidation:
+
+- Old book authority must not remain valid.
+- Old-generation deltas must not be accepted as current.
+- Recovery snapshots must establish new authority.
+- Consumer synchronization must be explicit.
+
+---
+
+## 15. Lifecycle and Shutdown
+
+Implement lifecycle handling for:
+
+- Router initialization.
+- Producer attachment.
+- Producer replacement.
+- Producer detachment.
+- Subscription creation.
+- Subscription closure.
+- Consumer failure.
+- Source restart.
+- Router shutdown.
+
+Shutdown must stop new admissions, revoke authority, and resolve pending work according to documented guarantees.
+
+Release subscriptions, demand ownership, and capacity accounting.
+
+Do not report clean shutdown if required cleanup has failed.
+
+Avoid deadlocks between publication, shutdown, and subscription removal.
+
+---
+
+## 16. Future In-Process Rust Consumers
+
+The Router must support direct Rust consumers without Unix sockets.
+
+This is required for future Derived Streams and potentially Spectra.
+
+Example:
+
+```rust
+let mut consumer = router.subscribe(request).await?;
+
+while let Some(delivery) = consumer.recv().await {
+    process(delivery);
+}
+```
+
+The interface must not require:
+
+- JSON conversion.
+- Socket serialization.
+- A separate executable.
+- A separate Tokio runtime.
+
+Consumers may use their own workers or execution pools.
+
+The Router must remain independent of those execution decisions.
+
+Do not implement Spectra or CPU scheduling in this milestone.
+
+---
+
+## 17. Integration Tests
+
+Create a dedicated Cargo test target:
+
+`live_router`
+
+Entrypoint:
+
+    engine/tests/live/integration/router/main.rs
+
+Suggested organization:
+
+    engine/tests/live/integration/router/
+    ├── main.rs
+    ├── harness.rs
+    ├── ingress.rs
+    ├── dispatch.rs
+    ├── subscriptions.rs
+    ├── ownership.rs
+    ├── backpressure.rs
+    ├── lifecycle.rs
+    ├── integrity.rs
+    └── pipeline.rs
+
+Use actual production Router components.
+
+Use deterministic synchronization mechanisms rather than arbitrary timing delays wherever possible.
+
+### Required Test Matrix
+
+| Category | Required scenarios |
 |---|---|
-| WP-05 | Domain identity, mapping and metadata-resolution contracts; expose missing historical proof and unresolved lifecycle rather than invent reuse permission. |
-| WP-07 | Approved service-port integration of model contracts; no automatic frozen-port change or concrete adapter assignment. |
-| WP-09 | Configuration compilation, identity checks against authoritative current/retained state and durable acceptance; reuse the journal/worker/service and pass committed plans onward. |
-| WP-11 | Operational registration, canonical dedup, transient allocation, independent demand ownership and restart reconstruction from validated committed configuration. |
-| WP-12 | Exchange-profile compilation, catalog/protocol integration and verified native normalization capability; this does not settle concrete SQL adapter ownership. |
-| WP-23 | Derived semantic compilation and execution, including checked generation boundaries; WP-09 consumes validated results. |
-| WP-24 | Runtime composition/reconciliation through actual owners, committed persistent reconstruction and applied/adopted observations. |
+| Admission | Valid, invalid identity, wrong type, oversized publication |
+| Atomicity | Complete acceptance or rejection, never partial |
+| Ordering | Multiple batches, concurrent submissions, per-stream ordering |
+| Fanout | One producer, multiple consumers, exact event contents |
+| Isolation | Slow and failed consumers do not corrupt others |
+| Ownership | Shared demand, final-owner removal, dropped handles |
+| Fencing | Stale producer, revoked generation, producer replacement |
+| Depth | Snapshot, deltas, invalidation, replacement snapshot |
+| Late subscription | No false synchronization |
+| Backpressure | Event and byte capacity exhaustion |
+| Lifecycle | Startup, shutdown, reconnect, repeated lifetimes |
+| Resources | No leaks after cancellation, failure, or shutdown |
+| Pipeline | Real Source Stream to Router to multiple consumers |
 
-The read-only PostgreSQL adapter package is explicitly unassigned (OPEN-011);
-activation freshness is OPEN-010. Earlier implementation evidence assigning the
-adapter to WP-12 is not an accepted architectural decision. Do not move obligations
-or change the approved package order to make WP-05/WP-09 appear complete. Early
-contract witnesses can use deterministic fixtures; actual production integration
-must separately prove approved ports, economics, provenance and lifecycle behavior.
+### Exact Fanout Test
 
-### Current WP-10 disposition
+Start one producer and three consumers.
 
-**ReadyForReview — Not Accepted**, implementation/audit checkpoint `d631b4d`.
-The authoritative component evidence is
-[evidence/WP-10-implementation.md](evidence/WP-10-implementation.md).
-Its external integrations remain unverified work of their original owning
-packages below. Do not reopen WP-10 merely because a concrete sink, daemon or
-Control server does not exist; reopen only for a demonstrated router-owned defect.
-Only the user/integration owner may mark Accepted.
+Publish 1,000 ordered canonical trade records.
 
-### Historical baseline (superseded by STATUS.md and current evidence)
+Verify that each continuously synchronized consumer receives exactly the expected records in order.
 
-Previously implemented or partially implemented:
+Then fail one consumer deliberately.
 
-- WP-00 through WP-04: foundational work.
-- WP-05: domain models and related contracts.
-- WP-06: event, delivery, recording, and replay contracts.
-- WP-07: management and observation contracts.
-- WP-10: early canonical-router infrastructure.
+Verify that remaining consumers continue correctly.
 
-WP-06 and WP-07 have been undergoing active Codex implementation.
+Confirm failed consumer status and resource cleanup.
 
-The exact completion state must be determined from the current
-working tree, tests, decisions, evidence, and STATUS.md.
+### Depth Continuity Test
 
-This section is historical orientation, not an acceptance claim.
+Publish:
 
-### Initial reconciliation
+    Snapshot
+    Delta 1
+    Delta 2
+    Invalidation
+    Recovery Snapshot
+    Delta 3
 
-Before executing the next package:
+Assert exact ordering, generation transitions, and consumer synchronization state.
 
-1. Inspect the current Git branch and working tree.
-2. Identify work already in progress.
-3. Read STATUS.md and the latest package evidence.
-4. Verify the actual state of WP-05, WP-06, and WP-07.
-5. Identify incomplete requirements or blocked prerequisites.
-6. Preserve existing WP-10 implementation.
-7. Determine the first executable work package.
+### Backpressure Test
 
-Do not restart completed work from scratch.
+Use deliberately small capacities.
 
-Do not duplicate existing implementations.
+Force consumer queue saturation.
 
-Do not overwrite an active Codex session's work.
+Verify bounded behavior, explicit failure semantics, and unaffected consumers where the selected policy permits isolation.
 
-If another writer is active, do not start a competing writer.
+Do not use timing alone as proof of resource bounds.
 
 ---
 
-## 5. Authorized Work-Package Sequence
+## 18. Production Pipeline Integration
 
-The authoritative requirements and acceptance criteria are defined
-in Document 17.
+The final integration tests must exercise:
 
-Execute in dependency order.
+    Local WebSocket Server
+             │
+             ▼
+    Production WebSocket Manager
+             │
+             ▼
+    Production Source Stream
+             │
+             ▼
+    Production Normalization
+             │
+             ▼
+    Production Integrity
+             │
+             ▼
+    Production Router
+             │
+             ▼
+    Multiple Rust Consumers
 
-### Initial completion gates
+Do not replace Source Stream or Router internals with mocks.
 
-| Package | Responsibility |
-|---------|----------------|
-| WP-05 | Verify and complete domain contracts |
-| WP-06 | Complete event, delivery, recording, and replay contracts |
-| WP-07 | Complete management and observation contracts |
+Use controlled local WebSocket and HTTP servers as appropriate.
 
-Preserve completed functionality.
+Representative profiles:
 
-Resolve outstanding requirements before treating their dependent
-production implementations as verified.
+- Binance Spot Trades.
+- Binance Spot Depth.
+- Bybit Spot Depth.
+- Bitget Linear Depth.
+- Gate.io Linear Trades.
 
-### Production implementation
+Test actual canonical contents, ordering, acknowledgments, ownership, and lifecycle.
 
-| Order | Package | Responsibility |
-|-------|---------|----------------|
-| 08 | Foundations and native observability | Clocks, cancellation, budgets, metrics, health |
-| 09 | Configuration system | Compilation, validation, revisions, persistence |
-| 10 | Canonical event router | Ordered admission, delivery, acknowledgements |
-| 11 | Source registry | Deduplication, demand ownership, lifecycle |
-| 12 | Exchange protocols | Profiles, decoders, normalization plans |
-| 13 | WebSocket manager | Connections, supervision, heartbeats |
-| 14 | REST infrastructure | Requests, quotas, scheduling, retries |
-| 15 | Subscription manager | Activation, acknowledgements, restoration |
-| 16 | Trade processing | Normalization, deduplication, continuity |
-| 17 | L2 processing | Book synchronization, sequencing, recovery |
-| 18 | Recovery coordination | Incidents, recovery scheduling, escalation |
-| 19 | Acquisition integration | Complete simulated acquisition pipeline |
-| 20 | Live retention | RAM/Parquet, protection, replay, recovery |
-| 21 | PostgreSQL recording | Transactions, idempotency, coverage, reads |
-| 22 | Unix publisher | Binary protocol, sessions, replay/handoff |
-| 23 | Derived streams | Merging, ordering, currency conversion |
-| 24 | Runtime composition | Daemon, supervision, reconciliation |
-| 25 | Control server/client | Versioned management protocol |
-| 26 | Ratatui client | Five management views |
-| 27 | Native observability integration | Internal metrics, diagnostics, health, snapshots, and read-only API integration |
-| 28 | Exchange certification | Verification of supported exchange families |
-| 29 | Hardening and release | Fault testing, performance, deployment |
+The Router is exchange-independent.
 
-The sequence is authorized.
+Do not unnecessarily duplicate all exchange-specific Source Stream tests.
 
-However, authorization to attempt a package is not evidence that
-its prerequisites are satisfied.
-
-Do not bypass unresolved foundational contracts.
-
-An already partially implemented package must be inspected and
-completed rather than replaced unnecessarily.
+Preserve the existing 14-profile regression coverage.
 
 ---
 
-### WP-10 consumer integration obligations
+## 19. Unit Tests
 
-This is the action ledger for the seven external boundaries identified by the
-WP-10 audit. It supplements, and never replaces or weakens, each complete
-Document 17 package entry. Source/owner/interface/test traceability and existing
-witnesses are in
-[evidence/wp10-cross-package-reconciliation.md](evidence/wp10-cross-package-reconciliation.md).
-All integrations below remain outstanding; an available interface is not an
-implemented consumer. Working Rust code stays with its current owner/module.
+Add focused unit tests covering:
 
-#### WP-09 — Configuration acceptance
+- Producer validation.
+- Subscription identity.
+- Generation fencing.
+- Admission state transitions.
+- Atomic batches.
+- Ordering.
+- Capacity accounting.
+- Overflow arithmetic.
+- Consumer failure transitions.
+- Demand ownership cleanup.
+- Shutdown state.
+- Invalid configuration.
+- Resource release.
 
-- **Behavior/reuse:** Complete validated, durably accepted desired revisions and
-  impact/boundary plans through `ConfigurationCompilerPort` and
-  `ConfigurationStorePort`; hand committed plans to WP-24's
-  `ConfigurationApplyPort`. Reuse WP-10's registry
-  revision/instance fencing and measurement boundary as application targets
-  **through the WP-24 reconciler**, not direct pre-persistence router mutation.
-- **Remaining/prerequisites:** Reuse the existing composed compiler/store/worker
-  and history/management service (WP-09 remains Partial). Complete draft schema
-  mappings, semantic/economic/resource validation and impact plans; integrate
-  WP-05 canonical identity/candidate checks and immutable full-tuple metadata
-  through approved WP-07 ports. Use WP-06 contracts/WP-08 foundations and verified
-  WP-12 capabilities/WP-23 semantic results. Keep missing metadata and identity
-  history explicit; OPEN-006–011 are not automatic reuse/freshness/adapter policies.
-  The PostgreSQL authority/classification choice is resolved (DEC-036/037), while
-  production port/adapter integration remains unverified.
-- **Acceptance/boundary:** Test invalid proposals, failed/uncertain persistence,
-  conflicting revisions and restore-as-new-revision with zero premature router
-  effects; verify affected-resource plans and admission/measurement boundaries
-  through a deterministic apply-port consumer. WP-09 owns acceptance/plan output;
-  WP-24 owns actual destination execution and applied/adopted observations.
+Tests should establish correctness through explicit assertions.
 
-#### WP-18 — Recovery coordination
-
-- **Behavior/reuse:** Consume typed delivery failures without reassigning cursors
-  or guessing ambiguous obligations. Reuse `IngressReporter`,
-  `FinalizationReporter`, charged `IngressRecord`/`RetainedDelivery`/
-  `FinalizedDelivery`/`WorkerOutcome` and `RouterRuntime` transfer, restore and
-  tracking-reconciliation methods. Keep `RecoveryPort` orchestration distinct
-  from ownership of those payloads. WP-24 binds/supervises report consumers;
-  WP-25 authorizes supported manual actions, not automatic integrity decisions.
-- **Remaining/prerequisites:** Implement incidents, bounded scheduling/retries,
-  generation/demand fences, restored-guarantee results and persistent-gap
-  coordination using WP-05/06/07/08/10 and the WP-11/14/16/17 execution ports.
-  WP-20/21 own their segment/transaction evidence; later bindings provide actual
-  storage recovery. Operational history remains local (DEC-031).
-- **Acceptance/boundary:** Exercise real router-to-recovery transfers, full and
-  foreign-owner rejection with charges intact, post-deadline restoration,
-  ambiguous outcomes, retry/escalation and partial/unrecoverable coverage.
-  Reuse the existing return/receipt witnesses. Component tests may use explicit
-  backend ports; actual storage repair requires later real-adapter evidence.
-  Failure acknowledgement/current readiness must never imply restored history.
-
-#### WP-20 — Live retention
-
-- **Behavior/reuse:** Bind a retention adapter behind `EventDestinationPort`
-  using the immutable `EventBatch`, `DestinationKind::Retention` and exact
-  `DestinationCompletion` cursor/stage correlation via
-  `RouterRuntime::apply_completion`. Keep RAM acceptance, segment commitment
-  and configured crash durability separate. Reuse router queues/permits rather
-  than introducing a competing router or cursor allocator.
-- **Remaining/prerequisites:** Complete RAM/spill/manifest/protection/replay,
-  restart and coverage behavior in Document 17 WP-20. Consume WP-05/06/07/08/10
-  contracts, shared Arrow/Parquet primitives and the approved epoch/checkpoint
-  contract; bind `SegmentStoragePort`/`RetentionReaderPort`/`RetentionControlPort`.
-- **Acceptance/boundary:** Feed the real router into the real retention owner;
-  verify grouped-event identity on Parquet/replay, full buffers/disk, faults at
-  file/manifest boundaries, protected readers, restart and replay-to-live handoff.
-  Withhold Committed/Durable on failed persistence and retain required ownership
-  through deadline shutdown. Retention owns storage evidence, WP-18 recovery
-  orchestration; neither database recording nor the final daemon is a prerequisite
-  for retention component verification.
-
-#### WP-21 — PostgreSQL recording
-
-- **Behavior/reuse:** Implement the recorder behind `EventDestinationPort` and
-  `RecordingBackendPort`; return separately correlated `DestinationCompletion`
-  through `RouterRuntime::apply_completion`. Reuse `EventBatch` and existing
-  explicit policy/stage validation. Register recording demand through WP-11;
-  WP-24 applies accepted enable/disable boundaries and registers the adapter.
-- **Remaining/prerequisites:** Complete real SQL mapping/transactions, batching,
-  ambiguous-commit reconciliation, contiguous coverage, protected reads/cleanup
-  and retention catch-up. Depend on WP-05/06/07/10, configuration policy,
-  WP-11 demand, WP-18 recovery and WP-20 retention interfaces. Resolve the C06
-  mapping/timestamp/fault and C12 adapter gates as applicable; any migration still
-  needs its specific authorization. Writable tests require verified isolated
-  database/role permissions that cannot mutate the real `marketforge` database.
-- **Acceptance/boundary:** Exercise the composed router/recorder against isolated
-  real PostgreSQL: exact values, grouped-depth atomicity, duplicate/out-of-order
-  batches, lost commit acknowledgement, restart/outage/catch-up and protected
-  cleanup. Committed alone cannot settle Durable; unknown commits stay unknown.
-  Test disabled recording creates no connection and leaves publication working.
-  Mock contracts cannot complete SQL correctness or coverage acceptance.
-
-#### WP-22 — Unix publication
-
-- **Behavior/reuse:** Bind the publisher behind `EventDestinationPort` with
-  Publication policy and correlated Delivered evidence; consume the existing
-  router optional-outcome/retirement/queue contracts. The publisher owns its
-  session/subscriber routing and bounded queues; that does not duplicate the
-  canonical router or create independent acquisition ownership.
-- **Remaining/prerequisites:** Complete binary framing, negotiation, local socket
-  lifecycle, session-generation fencing, source demand, slow-client policy,
-  replay/book handoff and finite publication shutdown. Use WP-05/06/07/10/11/17
-  and WP-20 replay/protection/book-cut interfaces; PostgreSQL is optional.
-- **Acceptance/boundary:** Drive the real router into local Unix sessions with
-  fragmented/invalid frames, slow/disconnected readers and healthy peer/storage
-  sinks; verify bounds, stale completions, grouped L2 identity, protected replay
-  and snapshot-to-live handoff. Report precise publication gaps and unfinished
-  shutdown obligations. Socket write/Delivered is not consumer processing.
-
-#### WP-24 — Runtime composition and reconciliation
-
-- **Behavior/reuse:** Construct one validated `RouterRuntime` using
-  `RouterResources::validate` and `RouterServices`; pass `producer()` as the
-  owned `EventRouterPort`, schedule bounded `drive` turns, route actual adapter
-  completions to `apply_completion`, and drive `shutdown` to an explicit result.
-  Reuse native `snapshot`, namespace registration/retirement, destination
-  register/unregister, metric scheduling and charged recovery/optional transfers.
-- **Remaining/prerequisites:** Bind real bounded clocks/timers/tasks, local
-  reporting/operational acceptance consumers, metrics and available sinks;
-  implement startup, signals and generation/revision-safe configuration execution
-  behind `ConfigurationApplyPort` and lifecycle ports. Consume WP-09 committed
-  plans plus the earlier owner contracts/implementations through WP-23; preserve
-  independent transient demands and report partial desired/applied/adopted state.
-- **Acceptance/boundary:** Exercise headless startup, restart reconstruction,
-  accepted-versus-applied revisions, replacement races, owner/report-consumer
-  failure, bounded retry scheduling and finite shutdown with real owners/sinks
-  where available. Disabled recording creates no DB connection; Control clients
-  need not be connected for local progress. A dropped/disabled diagnostic sample
-  is not accepted market-data recovery responsibility. Keep transferred charges
-  until accepted by their next owner; map DeadlineReached/unfinished work into
-  the service ShutdownReport rather than claiming complete merely on task join.
-  This package owns real daemon wiring, not storage transactions or a second router.
-
-#### WP-25 — Control server/client
-
-- **Behavior/reuse:** Dispatch approved `ManagementPort`/`ManagementClientPort`
-  commands to authoritative owners; project `RouterRuntime::snapshot`/native
-  metrics without exposing mutable locks. Supported retry/resolution operations
-  delegate to `retry_ingress`, `retry_terminal_report`,
-  `prepare_terminal_resolution` and `commit_terminal_resolution`, using original
-  journal/sink tokens. Native methods do not automatically become wire commands.
-- **Remaining/prerequisites:** Complete bounded JSON transport/correlation,
-  authorization, audit, operations/idempotency and fresh snapshots using WP-07
-  schemas and WP-24/09/18 authoritative owner services. No control handler owns
-  desired configuration, recovery policy, delivery tracking or task lifecycle.
-- **Acceptance/boundary:** Test read-only denial/no effects, stale revisions,
-  disconnect-after-acceptance retries, foreign/stale resolution receipts,
-  operation objectives, snapshot freshness and slow clients alongside ongoing
-  market delivery. Any unsupported external command returns an explicit error.
-  Accepted failure resolution preserves the original failure and never certifies
-  payload repair. Control readiness is a WP-25 gate, not a WP-10 prerequisite.
-
-### Sequence and completion boundary check
-
-Document 17 order is unchanged. WP-09 produces committed plans through the
-apply port; it need not import a concrete WP-10/WP-24 owner to validate them.
-WP-18 may test later storage backends through their existing ports before
-WP-20/21 implement them; it cannot certify real storage recovery from those tests.
-WP-20/21/22 test their actual adapters against the existing router without waiting
-for the final daemon. WP-24 binds the concrete owners, then WP-25 adds management
-transport. Composition witnesses grow incrementally under Document 17 §13.2;
-WP-19's collector destinations are intentional and do not replace WP-20/21/22.
-No backward requirement for the complete daemon/Control server is imposed on
-WP-10 or its earlier consumers. Existing foundational/capability gates remain;
-no package was reordered or declared accepted by this reconciliation.
-The pre-existing WP-27 exporter-title inconsistency is recorded in the report;
-DEC-032 governs and no external monitoring requirement is added here.
+Avoid tests that merely check that an operation returned `Ok`.
 
 ---
 
-## 6. Autonomous Work-Package Procedure
+## 20. Verification
 
-For every work package, perform the following procedure.
+Use Live features only.
 
-### Phase A — Inspect
+Router integration tests:
 
-Read:
+```bash
+cargo test \
+  --manifest-path engine/Cargo.toml \
+  --locked --offline \
+  --no-default-features \
+  --features live \
+  --test live_router \
+  -- --nocapture 2>&1 | cpout
+```
 
-- The package definition in Document 17.
-- Relevant requirements from Documents 00–16.
-- Accepted architectural decisions.
-- Existing implementation.
-- Existing tests.
-- Downstream consumer requirements.
+Run focused Router unit tests.
 
-Identify:
+Preserve Source Stream regression coverage:
 
-1. Implemented requirements.
-2. Missing requirements.
-3. Incomplete integrations.
-4. Existing limitations.
-5. Required dependencies.
-6. Acceptance criteria.
-7. Genuine architectural blockers.
+```bash
+scripts/verify-live-source.sh quick 2>&1 | cpout
+scripts/verify-live-source.sh integration 2>&1 | cpout
+```
 
-Avoid broad repository-wide analysis when focused inspection is
-sufficient.
+Run relevant:
 
-### Phase B — Plan
+- WebSocket tests.
+- Integrity tests.
+- Recovery tests.
+- PostgreSQL registration tests where affected.
+- Existing Live integration tests.
 
-Create a concise internal implementation plan.
+Once implementation stabilizes, execute full Live verification.
 
-Identify the authoritative owner of mutable state.
+Do not run multiple Cargo test processes concurrently against the same target directory.
 
-Determine the necessary interfaces, errors, resources,
-cancellation behavior, observability, and integration points.
+Do not repeatedly execute expensive full suites while fixing isolated issues.
 
-Examine downstream consumers before freezing public interfaces.
+Never weaken or remove tests merely to obtain a passing result.
 
-Do not implement hypothetical future requirements.
-
-Do include all currently approved v1 requirements.
-
-### Phase C — Implement
-
-Implement production behavior.
-
-Requirements include, where applicable:
-
-- Correct domain behavior.
-- Validation and error handling.
-- Resource limits and accounting.
-- Cancellation and shutdown.
-- Retry and recovery semantics.
-- Generation and revision fencing.
-- Configuration integration.
-- Metrics and health observations.
-- Operational diagnostics.
-- State persistence.
-- Replay and continuity guarantees.
-- Integration with existing owners.
-
-Avoid temporary production substitutes.
-
-A fake adapter may support deterministic testing, but it must not
-silently replace required production functionality.
-
-### Phase D — Test
-
-Add deterministic tests covering:
-
-- Normal operation.
-- Invalid inputs.
-- Boundary conditions.
-- Failure handling.
-- Resource exhaustion.
-- Cancellation.
-- Concurrent operations.
-- Recovery and restart.
-- Relevant consumer integration.
-- Serialization compatibility.
-- Historical compatibility when shared contracts are affected.
-
-Use actual production logic in tests.
-
-Do not duplicate algorithms solely to generate expected results.
-
-Do not weaken existing assertions to obtain a passing result.
-
-### Phase E — Verify
-
-Run relevant checks.
-
-From `engine/`, the standard Live verification targets are:
-
-    cargo fmt --check
-
-    cargo check --locked --offline \
-      --no-default-features --features live
-
-    cargo test --locked --offline \
-      --no-default-features --features live --lib
-
-    cargo test --locked --offline \
-      --no-default-features --features live \
-      --test live_suite
-
-    cargo test --locked --offline \
-      --no-default-features --features live --doc
-
-Include additional feature combinations and subsystem-specific
-integration tests as required.
-
-Offline mode is preferred when dependencies are already cached.
-If an authorized dependency change requires network resolution,
-record the reason and preserve reproducible dependency versions.
-
-Do not claim test success from a command executing zero relevant
-tests.
-
-Capture actual command exit codes.
-
-Distinguish existing unrelated failures from regressions introduced
-by the current implementation.
-
-### Phase F — Integrate
-
-Verify that the component works through its real interfaces.
-
-Use deterministic test implementations for dependencies that
-have not yet been implemented.
-
-Do not replace actual component behavior with a demonstration
-implementation merely to pass integration tests.
-
-Inspect effects on downstream consumers.
-
-Resolve ordinary integration defects independently.
-
-### Phase G — Checkpoint
-
-After meaningful verification:
-
-1. Inspect the Git diff.
-2. Check for unintended modifications.
-3. Stage relevant implementation files.
-4. Create a descriptive local commit.
-5. Record the checkpoint identifier.
-6. Update implementation evidence.
-
-Commits are authorized on local development branches.
-
-Do not push automatically.
-
-A Git commit is a recovery checkpoint, not formal acceptance.
-
-### Phase H — Report and Continue
-
-Update:
-
-    .planning/live/STATUS.md
-
-Create or update one concise package evidence report.
-
-Record:
-
-- Implemented requirements.
-- Relevant changed files.
-- Tests executed and results.
-- Integration evidence.
-- Remaining limitations.
-- Architectural blockers.
-- Git checkpoint.
-- Recommended completion status.
-
-Allowed implementation statuses:
-
-- InProgress
-- ReadyForReview
-- Partial
-- Blocked
-
-Only the user or designated integration owner may mark a package
-Accepted.
-
-After reporting, continue to the next authorized package if its
-technical prerequisites are satisfied.
-
-Formal user review need not interrupt independent, authorized
-implementation when the next package can proceed safely.
+Document all failures and corrective changes.
 
 ---
 
-## 7. Dependency and Integration Policy
+## 21. Completion Criteria
 
-Implement components using the already approved architecture.
+The Router milestone is complete only when:
 
-The preferred order is:
+- Public facade is usable.
+- Source Stream publication integration works.
+- Producer authority is validated.
+- Per-stream ordering is preserved.
+- Multi-consumer fanout works.
+- Subscription ownership is correct.
+- Backpressure is bounded.
+- Consumer continuity failures are explicit.
+- Depth invalidation and generation fencing work.
+- Producer replacement is safe.
+- Shutdown releases resources.
+- Deterministic production-pipeline integration tests pass.
+- Existing Source Stream regressions pass.
+- No unrelated architectural regressions are introduced.
 
-    Domain contracts
-         |
-         v
-    Infrastructure ports
-         |
-         v
-    Concrete component implementations
-         |
-         v
-    Runtime composition
-         |
-         v
-    External clients
-
-A component may use a deterministic fake implementation of a
-not-yet-implemented dependency.
-
-The fake must implement the same authoritative contract.
-
-When a real dependency becomes available, integrate it through
-that contract.
-
-If integration reveals a defect in an earlier component:
-
-1. Identify the failing invariant.
-2. Add a regression test.
-3. Make the smallest correct change.
-4. Verify affected consumers.
-5. Document the reason for reopening the component.
-
-Do not redesign completed components merely for stylistic reasons.
-
-Do not introduce a second authoritative owner for the same state.
+Passing tests alone does not establish production readiness.
 
 ---
 
-## 8. Architecture and Decision Handling
+## 22. Explicit Exclusions
 
-Codex may independently decide ordinary implementation details:
+Do not implement:
 
-- Private Rust structure layout.
-- Local algorithm organization.
-- Error propagation mechanics.
-- Internal helper abstractions.
-- Test arrangement.
-- Appropriate standard-library usage.
-- Performance improvements preserving semantics.
+- Spectra.
+- Financial feature engineering.
+- Derived Stream computation.
+- PostgreSQL market-data recording.
+- Unix socket publisher.
+- Axum Control API.
+- Ratatui management interface.
+- Trading execution.
+- Historical processing.
+- A replacement canonical schema.
+- A replacement Source Stream.
+- A replacement PostgreSQL registry.
 
-Codex must not independently redefine:
-
-- Canonical financial values.
-- Event identity or grouping.
-- Generation and epoch semantics.
-- Ownership boundaries.
-- Accepted delivery guarantees.
-- Persistence durability.
-- Recovery correctness requirements.
-- External wire compatibility.
-- Supported exchange economic semantics.
-- Approved product scope.
-
-When an implementation-critical conflict is found:
-
-1. Identify the conflicting requirements.
-2. Quote the relevant authoritative passages.
-3. Explain the behavioral consequence.
-4. Describe the affected components.
-5. Propose one or more solutions.
-6. Record the blocker in STATUS.md.
-
-Do not silently choose a conflicting architectural interpretation.
-
-Continue independent authorized work where possible.
-
-Do not repeatedly ask for approval for questions already resolved
-in decisions.md or the implementation roadmap.
+Preserve future compatibility without implementing future subsystems prematurely.
 
 ---
 
-## 9. Handling Failures Without Supervision
+## 23. Final Report
 
-### Compiler or test failure
+After implementation, provide:
 
-Investigate and fix independently.
+### Implementation Summary
 
-Do not abandon work after one failed command.
+- Public facade and types.
+- Internal Router architecture.
+- Existing components reused.
+- Source Stream integration.
+- Admission and acknowledgment guarantees.
+- Consumer delivery semantics.
+- Capacity and lifecycle policies.
 
-### Repeated identical failure
+### Verification Evidence
 
-Avoid endlessly repeating substantially identical commands.
+Report:
 
-Change diagnostic strategy.
+- Exact test commands.
+- Test counts.
+- Passed, failed, and ignored tests.
+- Relevant regression results.
+- Known limitations.
+- Remaining architectural questions.
 
-Inspect source, assumptions, dependencies, and failure output.
+### Git State
 
-If progress genuinely requires external intervention, record the
-blocker and continue independent authorized work.
+Report:
 
-### Missing dependency
+- Branch.
+- HEAD.
+- Implementation commits.
+- Working tree status.
+- Modified paths.
 
-Determine whether an approved dependency already exists.
-
-If a new dependency is justified, add it reproducibly within
-the permitted Rust scope.
-
-Do not introduce redundant libraries or overlapping owners.
-
-### Missing external infrastructure
-
-Do not fabricate successful integration results.
-
-Use deterministic mocks where appropriate.
-
-Mark actual external verification unavailable.
-
-Continue work that does not depend on the missing infrastructure.
-
-### Unavailable exchange capability
-
-Do not invent protocol fields, quantity units, API limits,
-authentication behavior, or sequencing rules.
-
-Record the unverified capability.
-
-Fail configuration validation for capabilities that cannot be
-implemented safely.
-
-Continue with independently verified capabilities.
-
-### Exhausted resources or permissions
-
-Preserve current work and evidence where possible.
-
-Do not bypass sandbox restrictions, disable protections, or
-perform unsafe cleanup.
-
-Record the precise blocker.
+Do not mark the milestone accepted on behalf of the user.
 
 ---
 
-## 10. PostgreSQL Rules
+## 24. Execution Authorization
 
-The existing PostgreSQL database named `marketforge` contains
-real project data and is not disposable.
+Codex is authorized to implement the Canonical Stream Router, create relevant integration tests, run focused verification, repair discovered defects within scope, and commit completed work to the designated development branch.
 
-The approved canonical recording direction uses the additive
-`live_canonical` schema without destroying the legacy schema.
+Proceed autonomously.
 
-Codex may inspect the existing database read-only when authorized.
+Preserve the existing architecture.
 
-Do not:
+Prefer correctness, bounded resources, explicit ownership, and understandable code over unnecessary abstractions.
 
-- Drop existing schemas.
-- Truncate existing tables.
-- Delete existing records.
-- Modify historical schema ownership.
-- Run destructive migrations.
-- Treat production data as disposable test fixtures.
-
-Writable PostgreSQL integration tests must use an explicitly
-authorized isolated test database with appropriately restricted
-credentials.
-
-Before executing such tests, verify that the active connection
-targets the authorized test database.
-
-Tests must not rely solely on a database name supplied by
-untrusted configuration.
-
-If isolated writable access is unavailable:
-
-1. Complete the independent recording logic and contract tests.
-2. Record which database integration tests remain blocked.
-3. Do not claim full PostgreSQL transaction verification.
-4. Continue other authorized work packages.
-
-The production PostgreSQL recorder belongs to WP-21.
-
-Do not implement competing recorder ownership in earlier packages.
-
----
-
-## 11. Exchange and Network Testing
-
-Ordinary correctness tests must use deterministic fixtures and
-controlled fake transports.
-
-Actual exchange API behavior must be verified against current
-primary exchange documentation before certification.
-
-Real-exchange smoke testing requires explicit authorization.
-
-Do not perform unrestricted network requests, high-volume
-subscriptions, or potentially rate-limited recovery operations
-merely to demonstrate success.
-
-The intended exchange matrix includes:
-
-- Binance: Spot, Linear, Inverse.
-- Bybit: Spot, Linear, Inverse.
-- OKX: Spot, Linear, Inverse.
-- Bitget: Spot, Linear, Inverse.
-- Gate.io: Spot, Linear, Inverse.
-
-Trade and L2 capabilities must be verified independently.
-
-Unsupported or unverified combinations must remain visible.
-
-Do not reduce the intended v1 scope without approval.
-
----
-
-## 12. Git Checkpoint Strategy
-
-Maintain a recoverable local implementation history.
-
-Before beginning a package:
-
-    Inspect branch
-    Inspect dirty state
-    Inspect untracked files
-    Identify previous checkpoints
-
-During implementation:
-
-    Make focused changes
-    Run relevant tests
-    Create meaningful local checkpoints
-
-At package completion:
-
-    Verify scope
-    Verify tests
-    Record commit identifier
-    Update evidence
-    Continue
-
-Codex may autonomously manage its own local development branches,
-commits, merges, cherry-picks, and unshared history according to
-AGENTS.md.
-
-Never destroy unrelated work.
-
-Never push to a remote without explicit authorization.
-
-Avoid including credentials, private database contents, temporary
-build logs, or large generated artifacts in commits.
-
----
-
-## 13. Evidence and Documentation Policy
-
-Documentation should make implementation easier to understand,
-not become a substitute for implementation.
-
-Produce one authoritative implementation report per package.
-
-Prefer:
-
-    .planning/live/evidence/WP-08-implementation.md
-    .planning/live/evidence/WP-09-implementation.md
-    .planning/live/evidence/WP-10-implementation.md
-
-Existing evidence filenames may be retained when already in use.
-
-Do not create dozens of near-identical reports for routine
-compiler fixes.
-
-Keep full diagnostic logs outside the compact evidence index
-unless they are necessary to reproduce a particular failure.
-
-Every package report should identify:
-
-- Requirements satisfied.
-- Code implementing the requirements.
-- Tests proving the behavior.
-- Important failure cases.
-- Integration verification.
-- Remaining blockers.
-- Commit/checkpoint identifier.
-
-Maintain STATUS.md as the current progress ledger.
-
-Do not mark a package complete merely because its source files
-exist or its implementation compiles.
-
----
-
-## 14. Performance and Quality
-
-MarketForge Live is a high-throughput market-data system.
-
-Prioritize:
-
-1. Correct canonical semantics.
-2. Explicit ownership and ordering.
-3. Bounded resource consumption.
-4. Failure isolation and recovery.
-5. Predictable latency.
-6. Efficient memory and CPU usage.
-
-Avoid unnecessary hot-path:
-
-- Allocations.
-- Serialization.
-- Configuration parsing.
-- Dynamic lookups.
-- Global locks.
-- Synchronous filesystem operations.
-- Database queries.
-- Excessive dynamic dispatch.
-
-Do not prematurely optimize at the expense of correctness.
-
-For performance-critical components, measure relevant behavior
-and retain reproducible benchmark inputs.
-
-Do not invent performance claims without measurements.
-
----
-
-## 15. Unattended Execution Rules
-
-The user may leave Codex executing for extended periods without
-interactive supervision.
-
-Operate independently within the authorized scope.
-
-Do not stop merely because:
-
-- A task requires multiple implementation steps.
-- Compiler errors occur.
-- Additional tests are needed.
-- Integration exposes ordinary defects.
-- A work package requires many files.
-- The conversation or execution session becomes lengthy.
-
-Use the repository's persistent planning files to preserve
-the state required for continuation.
-
-If context is compacted or a new session begins, reconstruct
-the task from current repository evidence rather than assuming
-that prior conversational state was retained.
-
-At meaningful milestones, record progress in STATUS.md.
-
-Prefer completing coherent implementation work to generating
-frequent progress documentation.
-
-Do not perform unbounded retry loops.
-
-Do not conceal unresolved failures.
-
-Do not claim completion when critical verification is unavailable.
-
----
-
-## 16. Stop Conditions
-
-Stop the affected work when:
-
-1. An unresolved architectural decision prevents correct implementation.
-2. Continuing would require destructive or unauthorized operations.
-3. Required financial or protocol semantics cannot be verified.
-4. A shared contract would need an unapproved incompatible change.
-5. Required infrastructure is unavailable and no independent work remains.
-6. Persistent failures cannot be resolved safely.
-7. The authorized implementation sequence has been exhausted.
-
-A localized blocker does not automatically stop the entire
-development campaign.
-
-Continue other authorized work only when its prerequisites
-are genuinely independent.
-
-Never bypass a required acceptance or safety guarantee solely
-to continue the schedule.
-
----
-
-## 17. Special Gates for WP-28 and WP-29
-
-WP-28 may perform offline capability verification, fixture testing,
-configuration validation, and documentation-based protocol research.
-
-Real-exchange certification requires separately authorized smoke
-tests and suitable verified evidence.
-
-WP-29 may perform deterministic fault testing, profiling,
-benchmarks, and deployment preparation.
-
-Do not publish releases, deploy services, install system-wide
-daemons, alter external infrastructure, or claim production
-certification without explicit authorization.
-
-If release acceptance requires unavailable external verification,
-record the outstanding gate truthfully.
-
----
-
-## 18. Final Objective
-
-The implementation campaign succeeds when the approved
-MarketForge Live v1 functionality has been implemented,
-integrated, tested, and documented.
-
-The final deliverable should include:
-
-- Production Rust Live implementation.
-- Working headless daemon.
-- Working independent Ratatui management interface.
-- Supported exchange integrations.
-- Canonical event publication.
-- Recovery and integrity handling.
-- Optional PostgreSQL recording.
-- RAM/Parquet retention and replay.
-- Derived streams and currency conversion.
-- Runtime configuration and management.
-- Native metrics and operational health.
-- Deterministic integration and fault tests.
-- Performance verification.
-- Reproducible build and deployment instructions.
-- A clear record of unsupported or unverified capabilities.
-
-Codex reports implementation readiness.
-
-The user approves final acceptance.
-
-**Implement completely. Verify rigorously. Preserve architectural
-decisions. Maintain recoverable progress. Continue autonomously
-while safe, authorized work remains.**
+**The final Router must be a reusable infrastructure component, not an implementation specialized for Source Stream, PostgreSQL, Unix sockets, Derived Streams, or Spectra.**

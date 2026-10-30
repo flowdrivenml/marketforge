@@ -46,6 +46,20 @@ fn validate_runtime(config: &GeneralConfig) -> Result<(), String> {
         return Err("runtime.shutdown_timeout_seconds must be greater than zero".into());
     }
 
+    if let Some(processing) = &config.runtime.processing {
+        if processing.workers == 0 {
+            return Err("runtime.processing.workers must be greater than zero".into());
+        }
+
+        if processing.ready_queue_capacity == 0 {
+            return Err("runtime.processing.ready_queue_capacity must be greater than zero".into());
+        }
+
+        if processing.max_events_per_turn == 0 {
+            return Err("runtime.processing.max_events_per_turn must be greater than zero".into());
+        }
+    }
+
     Ok(())
 }
 

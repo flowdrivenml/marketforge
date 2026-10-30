@@ -22,5 +22,6 @@ pub use format::{
 
 pub use general::{
     ControlConfig, DefaultsConfig, GeneralConfig, LogLevel, LoggingConfig, MetricsConfig,
-    PrometheusConfig, PublicationConfig, RecordingConfig, RecoveryDefaultsConfig, RuntimeConfig,
+    ProcessingConfig, PrometheusConfig, PublicationConfig, RecordingConfig, RecoveryDefaultsConfig,
+    RuntimeConfig,
 };

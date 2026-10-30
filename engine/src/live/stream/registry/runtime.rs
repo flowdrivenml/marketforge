@@ -515,14 +515,23 @@ impl StreamRuntimeRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use crate::live::stream::{
         persistence::{DesiredStreamState, PersistedStreamDefinition, StreamDefinition},
         registry::DemandOwner,
         request::CreateSourceStreamRequest,
     };
-
+    use crate::live::{
+        config::ProcessingConfig,
+        infrastructure::processing::{
+            DerivedProcessorController, FailureReconcileOutcome, MailboxLimits, ProcessingPool,
+            Processor, ProcessorInstance, ProcessorMailbox, ProcessorToken,
+            reconcile_processor_failure,
+        },
+    };
     use serde_json::json;
+    use std::sync::{Arc, mpsc};
+    use std::time::Duration;
+    use std::time::Instant;
 
     fn graph() -> StreamGraph {
         let request: CreateSourceStreamRequest = serde_json::from_value(json!({
@@ -820,6 +829,529 @@ mod tests {
             registry.begin_start("unknown"),
             Err(StreamRuntimeError::UnknownStream(_))
         ));
+    }
+    #[test]
+    fn processor_failure_transitions_authoritative_stream() {
+        struct PanickingProcessor;
+
+        impl Processor for PanickingProcessor {
+            fn run_turn(&mut self, _: usize) -> bool {
+                panic!("simulated derived processor failure");
+            }
+        }
+
+        let mut registry = StreamRuntimeRegistry::new(&graph());
+
+        let stream_generation = registry.begin_start("btc").unwrap();
+
+        assert!(registry.mark_running("btc", stream_generation).unwrap());
+
+        let mut pool = ProcessingPool::new(ProcessingConfig {
+            workers: 1,
+            ready_queue_capacity: 8,
+            max_events_per_turn: 16,
+        })
+        .unwrap();
+
+        let processor = ProcessorToken {
+            id: 42,
+            generation: 1,
+        };
+
+        pool.register(processor, PanickingProcessor).unwrap();
+
+        pool.notify(processor).unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+
+        while pool.failure(processor.id).is_none() {
+            assert!(
+                Instant::now() < deadline,
+                "processor failure was not recorded"
+            );
+
+            std::thread::yield_now();
+        }
+
+        assert_eq!(
+            reconcile_processor_failure(&mut registry, &pool, "btc", stream_generation, processor,)
+                .unwrap(),
+            FailureReconcileOutcome::Applied
+        );
+
+        let status = registry.status("btc").unwrap();
+
+        assert_eq!(status.lifecycle, StreamLifecycleState::Failed);
+
+        assert!(
+            status
+                .last_error
+                .as_ref()
+                .unwrap()
+                .contains("derived processor")
+        );
+
+        // The failure is acknowledged only after the
+        // authoritative registry records it.
+        assert!(pool.failure(processor.id).is_none());
+
+        // Failed streams cannot retain publication authority.
+        assert!(registry.publication_authority("btc").is_none());
+
+        pool.shutdown();
+    }
+    #[test]
+    fn obsolete_processor_failure_cannot_fail_new_stream_generation() {
+        struct PanickingProcessor;
+
+        impl Processor for PanickingProcessor {
+            fn run_turn(&mut self, _: usize) -> bool {
+                panic!("obsolete processor failure");
+            }
+        }
+
+        let mut registry = StreamRuntimeRegistry::new(&graph());
+
+        let old_generation = registry.begin_start("btc").unwrap();
+
+        let stopping = registry.begin_stop("btc").unwrap();
+
+        registry.mark_stopped("btc", stopping).unwrap();
+
+        let new_generation = registry.begin_start("btc").unwrap();
+
+        registry.mark_running("btc", new_generation).unwrap();
+
+        let mut pool = ProcessingPool::new(ProcessingConfig {
+            workers: 1,
+            ready_queue_capacity: 8,
+            max_events_per_turn: 16,
+        })
+        .unwrap();
+
+        let processor = ProcessorToken {
+            id: 42,
+            generation: 1,
+        };
+
+        pool.register(processor, PanickingProcessor).unwrap();
+
+        pool.notify(processor).unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+
+        while pool.failure(processor.id).is_none() {
+            assert!(
+                Instant::now() < deadline,
+                "obsolete processor failure was not recorded"
+            );
+
+            std::thread::yield_now();
+        }
+
+        assert_eq!(
+            reconcile_processor_failure(&mut registry, &pool, "btc", old_generation, processor,)
+                .unwrap(),
+            FailureReconcileOutcome::Stale
+        );
+
+        assert_eq!(
+            registry.status("btc").unwrap().lifecycle,
+            StreamLifecycleState::Running
+        );
+
+        assert_eq!(registry.status("btc").unwrap().generation, new_generation);
+
+        // The stale failure remains available for explicit cleanup.
+        assert!(pool.failure(processor.id).is_some());
+
+        assert!(pool.acknowledge_failure(processor));
+
+        pool.shutdown();
+    }
+    #[test]
+    fn derived_controller_fences_publication_before_retirement() {
+        struct BlockingProcessor {
+            started: mpsc::Sender<()>,
+            release: mpsc::Receiver<()>,
+        }
+
+        impl Processor for BlockingProcessor {
+            fn run_turn(&mut self, _: usize) -> bool {
+                self.started.send(()).unwrap();
+                self.release.recv().unwrap();
+                false
+            }
+        }
+
+        let mut registry = StreamRuntimeRegistry::new(&graph());
+
+        let stream_generation = registry.begin_start("btc").unwrap();
+
+        registry.mark_running("btc", stream_generation).unwrap();
+
+        let pool = Arc::new(
+            ProcessingPool::new(ProcessingConfig {
+                workers: 1,
+                ready_queue_capacity: 16,
+                max_events_per_turn: 8,
+            })
+            .unwrap(),
+        );
+
+        let token = ProcessorToken {
+            id: 42,
+            generation: 1,
+        };
+
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+
+        let instance = ProcessorInstance::<u64>::start(
+            Arc::clone(&pool),
+            token,
+            MailboxLimits {
+                max_events: 16,
+                max_bytes: 1024,
+            },
+            move |_mailbox: Arc<ProcessorMailbox<u64>>| BlockingProcessor {
+                started: started_tx,
+                release: release_rx,
+            },
+        )
+        .unwrap();
+
+        let mut controller =
+            DerivedProcessorController::new("btc".to_string(), stream_generation, instance);
+
+        // Arrange an executing processor turn.
+        pool.notify(token).unwrap();
+
+        started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+
+        // Stop needs a separate thread because retirement blocks.
+        let stop_thread = std::thread::spawn(move || {
+            let result = controller.stop(&mut registry);
+            (result, registry)
+        });
+
+        // Registry.begin_stop() executes before retirement.
+        //
+        // The test cannot inspect the moved registry until
+        // stop() returns, but the production method's ordering
+        // makes publication fencing precede the blocking wait.
+        release_tx.send(()).unwrap();
+
+        let (outcome, registry) = stop_thread.join().unwrap();
+
+        let outcome = outcome.unwrap();
+
+        assert!(outcome.failure.is_none());
+
+        assert_eq!(
+            registry.status("btc").unwrap().lifecycle,
+            StreamLifecycleState::Stopped,
+        );
+
+        assert!(registry.publication_authority("btc").is_none());
+
+        assert_eq!(pool.registered_count(), 0);
+    }
+    #[test]
+    fn stale_derived_controller_cannot_stop_new_generation() {
+        struct NoopProcessor;
+
+        impl Processor for NoopProcessor {
+            fn run_turn(&mut self, _: usize) -> bool {
+                false
+            }
+        }
+
+        let mut registry = StreamRuntimeRegistry::new(&graph());
+
+        let old_generation = registry.begin_start("btc").unwrap();
+
+        let stopping = registry.begin_stop("btc").unwrap();
+
+        registry.mark_stopped("btc", stopping).unwrap();
+
+        let new_generation = registry.begin_start("btc").unwrap();
+
+        registry.mark_running("btc", new_generation).unwrap();
+
+        let pool = Arc::new(
+            ProcessingPool::new(ProcessingConfig {
+                workers: 1,
+                ready_queue_capacity: 16,
+                max_events_per_turn: 8,
+            })
+            .unwrap(),
+        );
+
+        let instance = ProcessorInstance::<u64>::start(
+            Arc::clone(&pool),
+            ProcessorToken {
+                id: 42,
+                generation: 1,
+            },
+            MailboxLimits {
+                max_events: 16,
+                max_bytes: 1024,
+            },
+            |_mailbox| NoopProcessor,
+        )
+        .unwrap();
+
+        let mut controller =
+            DerivedProcessorController::new("btc".into(), old_generation, instance);
+
+        assert!(matches!(
+            controller.stop(&mut registry),
+            Err(crate::live::infrastructure::processing::ControllerError::StaleGeneration)
+        ));
+
+        assert_eq!(
+            registry.status("btc").unwrap().lifecycle,
+            StreamLifecycleState::Running,
+        );
+
+        assert_eq!(registry.status("btc").unwrap().generation, new_generation,);
+
+        // Explicit cleanup of the unattached test processor.
+        // In production, the owner must perform this cleanup
+        // before releasing the controller.
+        pool.retire(controller.processor()).unwrap();
+    }
+    #[test]
+    fn derived_controller_requires_correct_stop_phase_order() {
+        struct NoopProcessor;
+
+        impl Processor for NoopProcessor {
+            fn run_turn(&mut self, _: usize) -> bool {
+                false
+            }
+        }
+
+        let mut registry = StreamRuntimeRegistry::new(&graph());
+
+        let generation = registry.begin_start("btc").unwrap();
+
+        registry.mark_running("btc", generation).unwrap();
+
+        let pool = Arc::new(
+            ProcessingPool::new(ProcessingConfig {
+                workers: 1,
+                ready_queue_capacity: 16,
+                max_events_per_turn: 8,
+            })
+            .unwrap(),
+        );
+
+        let token = ProcessorToken {
+            id: 50,
+            generation: 1,
+        };
+
+        let instance = ProcessorInstance::<u64>::start(
+            Arc::clone(&pool),
+            token,
+            MailboxLimits {
+                max_events: 16,
+                max_bytes: 1024,
+            },
+            |_mailbox| NoopProcessor,
+        )
+        .unwrap();
+
+        let mut controller = DerivedProcessorController::new("btc".into(), generation, instance);
+
+        // Cannot retire before publication fencing.
+        assert!(matches!(
+            controller.retire_processor(),
+            Err(crate::live::infrastructure::processing::ControllerError::InvalidPhase(_))
+        ));
+
+        // Cannot finalize before retirement.
+        assert!(matches!(
+            controller.complete_stop(&mut registry),
+            Err(crate::live::infrastructure::processing::ControllerError::InvalidPhase(_))
+        ));
+
+        let stop_generation = controller.begin_stop(&mut registry).unwrap();
+
+        assert_ne!(stop_generation, generation);
+
+        // Retrying phase A must not advance the generation.
+        assert_eq!(
+            controller.begin_stop(&mut registry).unwrap(),
+            stop_generation
+        );
+
+        assert_eq!(
+            registry.status("btc").unwrap().lifecycle,
+            StreamLifecycleState::Stopping
+        );
+
+        assert!(registry.publication_authority("btc").is_none());
+
+        controller.retire_processor().unwrap();
+
+        // Retrying completed resource retirement is harmless.
+        controller.retire_processor().unwrap();
+
+        let outcome = controller.complete_stop(&mut registry).unwrap();
+
+        assert!(outcome.failure.is_none());
+        assert!(outcome.unprocessed.is_empty());
+
+        assert_eq!(
+            registry.status("btc").unwrap().lifecycle,
+            StreamLifecycleState::Stopped
+        );
+
+        assert_eq!(pool.registered_count(), 0);
+    }
+    #[test]
+    fn processor_retirement_does_not_hold_registry_lock() {
+        use std::sync::{Arc, Mutex, mpsc};
+        use std::time::Duration;
+
+        struct BlockingProcessor {
+            started: mpsc::Sender<()>,
+            release: mpsc::Receiver<()>,
+        }
+
+        impl Processor for BlockingProcessor {
+            fn run_turn(&mut self, _: usize) -> bool {
+                self.started.send(()).unwrap();
+
+                // Simulate an expensive CPU-processing turn.
+                self.release.recv().unwrap();
+
+                false
+            }
+        }
+
+        let registry = Arc::new(Mutex::new(StreamRuntimeRegistry::new(&graph())));
+
+        let generation = {
+            let mut registry = registry.lock().unwrap();
+
+            let generation = registry.begin_start("btc").unwrap();
+            registry.mark_running("btc", generation).unwrap();
+
+            generation
+        };
+
+        let pool = Arc::new(
+            ProcessingPool::new(ProcessingConfig {
+                workers: 1,
+                ready_queue_capacity: 16,
+                max_events_per_turn: 8,
+            })
+            .unwrap(),
+        );
+
+        let token = ProcessorToken {
+            id: 51,
+            generation: 1,
+        };
+
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let (fenced_tx, fenced_rx) = mpsc::channel();
+        let (completed_tx, completed_rx) = mpsc::channel();
+
+        let instance = ProcessorInstance::<u64>::start(
+            Arc::clone(&pool),
+            token,
+            MailboxLimits {
+                max_events: 16,
+                max_bytes: 1024,
+            },
+            move |_mailbox| BlockingProcessor {
+                started: started_tx,
+                release: release_rx,
+            },
+        )
+        .unwrap();
+
+        let mut controller = DerivedProcessorController::new("btc".into(), generation, instance);
+
+        pool.notify(token).unwrap();
+
+        started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+
+        let controller_registry = Arc::clone(&registry);
+
+        let shutdown_thread = std::thread::spawn(move || {
+            // Phase A: brief exclusive access to the registry.
+            {
+                let mut registry = controller_registry.lock().unwrap();
+
+                controller.begin_stop(&mut registry).unwrap();
+            }
+
+            fenced_tx.send(()).unwrap();
+
+            // Phase B: potentially blocking CPU retirement.
+            // No registry mutex guard exists in this scope.
+            controller.retire_processor().unwrap();
+
+            // Phase C: brief registry access for finalization.
+            {
+                let mut registry = controller_registry.lock().unwrap();
+
+                controller.complete_stop(&mut registry).unwrap();
+            }
+
+            completed_tx.send(()).unwrap();
+        });
+
+        // Publication fencing must happen before retirement finishes.
+        let fenced = fenced_rx.recv_timeout(Duration::from_secs(2)).is_ok();
+
+        // While the CPU worker is still blocked, the main thread
+        // should be able to inspect the authoritative registry.
+        let registry_accessible = registry.try_lock().ok().map(|registry| {
+            (
+                registry.status("btc").unwrap().lifecycle,
+                registry.publication_authority("btc").is_none(),
+            )
+        });
+
+        // The blocked CPU turn should prevent shutdown completion.
+        let finished_early = completed_rx
+            .recv_timeout(Duration::from_millis(100))
+            .is_ok();
+
+        // Always release the worker before assertions.
+        // Otherwise a failing assertion could strand shutdown.
+        release_tx.send(()).unwrap();
+
+        let completed = completed_rx.recv_timeout(Duration::from_secs(2)).is_ok();
+
+        shutdown_thread.join().unwrap();
+
+        assert!(fenced, "publication was not fenced");
+
+        assert_eq!(
+            registry_accessible,
+            Some((StreamLifecycleState::Stopping, true)),
+            "registry was inaccessible or publication remained enabled"
+        );
+
+        assert!(
+            !finished_early,
+            "shutdown completed before the processor finished"
+        );
+
+        assert!(completed, "shutdown did not finish");
+
+        assert_eq!(
+            registry.lock().unwrap().status("btc").unwrap().lifecycle,
+            StreamLifecycleState::Stopped
+        );
     }
 }
 
