@@ -55,3 +55,6 @@ mod convert_partitions;
 
 #[path = "execution/execution_reader_bounded.rs"]
 mod convert_execution_reader;
+
+#[path = "execution/core_regression.rs"]
+mod core_regression;

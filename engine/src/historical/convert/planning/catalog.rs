@@ -7,7 +7,7 @@ use std::{
 use {
     crate::historical::job::ConvertJob, crate::historical::job::load_processing_job,
     crate::historical::merge::PhysicalMergeManifest, crate::historical::merge::UnifiedMergeMode,
-    crate::historical::merge::UnifiedMergeStreamKind, crate::shared::domain::instrument::Currency,
+    crate::historical::merge::UnifiedMergeStreamKind,
     crate::shared::domain::instrument::InstrumentCatalog,
     crate::shared::domain::instrument::InstrumentIdentity, crate::shared::error::MarketForgeError,
     crate::shared::error::Result,
@@ -17,17 +17,7 @@ use {
 // Resolved instruments
 // -----------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
-pub struct ResolvedConversionInstrument {
-    pub dataset_id: u64,
-    pub stream_rank: u32,
-    pub stream_id: String,
-
-    pub identity: InstrumentIdentity,
-
-    pub base_currency: Currency,
-    pub quote_currency: Currency,
-}
+pub use crate::shared::conversion::planner::ResolvedConversionInstrument;
 
 #[derive(Debug, Clone)]
 pub struct ResolvedConversionCatalog {

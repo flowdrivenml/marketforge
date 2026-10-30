@@ -1,3 +1,4 @@
+pub mod conversion;
 pub mod domain;
 pub mod error;
 pub mod formats;
