@@ -1,5 +1,5 @@
 //! Grouped Historical convert tests. Opt-in only; do not execute during ordinary verification.
-#[path = "../../convert/combined/combined_alignment.rs"]
+#[path = "../../convert/combined/combined_alignment_external.rs"]
 mod convert_combined_alignment;
 #[path = "../../convert/combined/combined_checkpoints.rs"]
 mod convert_combined_checkpoints;
@@ -57,8 +57,6 @@ mod convert_parallel_publication;
 mod convert_parallel_validation;
 #[path = "../../convert/execution/partition_reader.rs"]
 mod convert_partition_reader;
-#[path = "../../convert/execution/partitions.rs"]
-mod convert_partitions;
 #[path = "../../convert/trades/persistent_fixture.rs"]
 mod convert_persistent_fixture;
 #[path = "../../convert/execution/prepass.rs"]
@@ -80,3 +78,6 @@ mod convert_source_preservation;
 
 #[path = "../../convert/output/output_validation.rs"]
 mod convert_output_validation;
+
+#[path = "../../convert/trades/validate_values.rs"]
+mod convert_validate_values;

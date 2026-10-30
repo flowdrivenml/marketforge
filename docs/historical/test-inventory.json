@@ -23,9 +23,15 @@
   {
     "old_target": "convert_combined_alignment",
     "path": "tests/historical/convert/combined/combined_alignment.rs",
-    "new_target": "historical_slow_convert",
-    "slow": true,
-    "reason": "unverified dataset-backed scan/equivalence workload (combined checkpoint reached prior 30s bound); conservative opt-in"
+    "new_target": "split_by_case",
+    "slow": null,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_convert",
+      "historical_slow_convert"
+    ],
+    "normal_cases": 7,
+    "slow_cases": 2
   },
   {
     "old_target": "convert_combined_checkpoint_ordering",
@@ -219,9 +225,15 @@
   {
     "old_target": "convert_execution_reader",
     "path": "tests/historical/convert/execution/execution_reader.rs",
-    "new_target": "historical_slow_convert",
-    "slow": true,
-    "reason": "unverified dataset-backed scan/equivalence workload (combined checkpoint reached prior 30s bound); conservative opt-in"
+    "new_target": "split_by_case",
+    "slow": null,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_convert",
+      "historical_slow_convert"
+    ],
+    "normal_cases": 8,
+    "slow_cases": 2
   },
   {
     "old_target": "convert_executor",
@@ -331,9 +343,14 @@
   {
     "old_target": "convert_partitions",
     "path": "tests/historical/convert/execution/partitions.rs",
-    "new_target": "historical_slow_convert",
-    "slow": true,
-    "reason": "unverified dataset-backed scan/equivalence workload (combined checkpoint reached prior 30s bound); conservative opt-in"
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_convert"
+    ],
+    "normal_cases": 10,
+    "slow_cases": 0
   },
   {
     "old_target": "convert_persistent_fixture",
@@ -380,9 +397,15 @@
   {
     "old_target": "convert_reference_reader",
     "path": "tests/historical/convert/reference/reference_reader.rs",
-    "new_target": "historical_slow_convert",
-    "slow": true,
-    "reason": "unverified dataset-backed scan/equivalence workload (combined checkpoint reached prior 30s bound); conservative opt-in"
+    "new_target": "split_by_case",
+    "slow": null,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_convert",
+      "historical_slow_convert"
+    ],
+    "normal_cases": 5,
+    "slow_cases": 2
   },
   {
     "old_target": "convert_reference_seek",
@@ -863,9 +886,15 @@
   {
     "old_target": "merge_trade_stream",
     "path": "tests/historical/merge/trades/merge_trade_stream.rs",
-    "new_target": "historical_slow_merge",
-    "slow": true,
-    "reason": "unverified dataset I/O or indirect real-dataset fixture; depth index validation reached a 30s bound"
+    "new_target": "split_by_case",
+    "slow": null,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_merge",
+      "historical_slow_merge"
+    ],
+    "normal_cases": 1,
+    "slow_cases": 2
   },
   {
     "old_target": "merge_unified_boundary_stress",
@@ -884,9 +913,14 @@
   {
     "old_target": "merge_unified_failure",
     "path": "tests/historical/merge/execution/merge_unified_failure.rs",
-    "new_target": "historical_slow_merge",
-    "slow": true,
-    "reason": "production dataset merge through indirect support fixture; no bounded timing evidence"
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_merge"
+    ],
+    "normal_cases": 7,
+    "slow_cases": 0
   },
   {
     "old_target": "merge_unified_file_rotation",
@@ -961,9 +995,15 @@
   {
     "old_target": "merge_unified_timeline",
     "path": "tests/historical/merge/combined/merge_unified_timeline.rs",
-    "new_target": "historical_slow_merge",
-    "slow": true,
-    "reason": "unverified external dataset processing; conservative opt-in"
+    "new_target": "split_by_case",
+    "slow": null,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_merge",
+      "historical_slow_merge"
+    ],
+    "normal_cases": 5,
+    "slow_cases": 1
   },
   {
     "old_target": "merge_unified_writer",
@@ -1094,9 +1134,14 @@
   {
     "old_target": "trade_integrity_enforcement",
     "path": "tests/historical/normalize/trades/trade_integrity_enforcement.rs",
-    "new_target": "historical_slow_normalize",
-    "slow": true,
-    "reason": "unverified external dataset processing; conservative opt-in"
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_normalize"
+    ],
+    "normal_cases": 5,
+    "slow_cases": 0
   },
   {
     "old_target": "trade_real_archives",
@@ -1115,8 +1160,14 @@
   {
     "old_target": "trade_worker_metrics",
     "path": "tests/historical/normalize/trades/trade_worker_metrics.rs",
-    "new_target": "historical_slow_normalize",
-    "slow": true,
-    "reason": "unverified external dataset processing; conservative opt-in"
+    "new_target": "split_by_case",
+    "slow": null,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_normalize",
+      "historical_slow_normalize"
+    ],
+    "normal_cases": 1,
+    "slow_cases": 2
   }
 ]

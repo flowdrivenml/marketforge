@@ -1,0 +1,296 @@
+[
+  {
+    "group": "merge",
+    "module": "merge_unified_timeline",
+    "name": "validates_unified_timeline_schema",
+    "evidence": "In-memory schema and Arrow batches of at most three synthetic records; no dataset access in these cases."
+  },
+  {
+    "group": "merge",
+    "module": "merge_unified_timeline",
+    "name": "converts_trade_event_to_unified_record",
+    "evidence": "In-memory schema and Arrow batches of at most three synthetic records; no dataset access in these cases."
+  },
+  {
+    "group": "merge",
+    "module": "merge_unified_timeline",
+    "name": "writes_trade_records_to_arrow_batch",
+    "evidence": "In-memory schema and Arrow batches of at most three synthetic records; no dataset access in these cases."
+  },
+  {
+    "group": "merge",
+    "module": "merge_unified_timeline",
+    "name": "handles_empty_unified_batch",
+    "evidence": "In-memory schema and Arrow batches of at most three synthetic records; no dataset access in these cases."
+  },
+  {
+    "group": "merge",
+    "module": "merge_unified_timeline",
+    "name": "reuses_unified_batch_builder",
+    "evidence": "In-memory schema and Arrow batches of at most three synthetic records; no dataset access in these cases."
+  },
+  {
+    "group": "merge",
+    "module": "merge_trade_stream",
+    "name": "accepts_dataset_with_empty_source_task",
+    "evidence": "Reads only dataset 120 metadata/inventory, with exactly 162 canonical rows; does not stream data."
+  },
+  {
+    "group": "normalize",
+    "module": "trade_worker_metrics",
+    "name": "retains_metrics_after_sink_failure",
+    "evidence": "Sink fails on the tenth matched trade from an explicit ZIP member; bounded prefix, no full-archive scan."
+  },
+  {
+    "group": "convert",
+    "module": "convert_reference_reader",
+    "name": "opens_real_physical_dataset",
+    "evidence": "Reader construction or a prefix of at most 1,000 observations. Full streaming and the unbounded search for all instruments stay opt-in."
+  },
+  {
+    "group": "convert",
+    "module": "convert_reference_reader",
+    "name": "rejects_zero_batch_size",
+    "evidence": "Reader construction or a prefix of at most 1,000 observations. Full streaming and the unbounded search for all instruments stay opt-in."
+  },
+  {
+    "group": "convert",
+    "module": "convert_reference_reader",
+    "name": "decodes_first_reference_observation",
+    "evidence": "Reader construction or a prefix of at most 1,000 observations. Full streaming and the unbounded search for all instruments stay opt-in."
+  },
+  {
+    "group": "convert",
+    "module": "convert_reference_reader",
+    "name": "preserves_decimal256_price",
+    "evidence": "Reader construction or a prefix of at most 1,000 observations. Full streaming and the unbounded search for all instruments stay opt-in."
+  },
+  {
+    "group": "convert",
+    "module": "convert_reference_reader",
+    "name": "first_thousand_events_are_ordered",
+    "evidence": "Reader construction or a prefix of at most 1,000 observations. Full streaming and the unbounded search for all instruments stay opt-in."
+  },
+  {
+    "group": "normalize",
+    "module": "trade_integrity_enforcement",
+    "name": "fail_action_stops_on_invalid_record",
+    "evidence": "Plain synthetic CSV with two or three records; existing jobs provide metadata only."
+  },
+  {
+    "group": "normalize",
+    "module": "trade_integrity_enforcement",
+    "name": "degrade_action_skips_invalid_records",
+    "evidence": "Plain synthetic CSV with two or three records; existing jobs provide metadata only."
+  },
+  {
+    "group": "normalize",
+    "module": "trade_integrity_enforcement",
+    "name": "disabled_enforcement_still_records_errors",
+    "evidence": "Plain synthetic CSV with two or three records; existing jobs provide metadata only."
+  },
+  {
+    "group": "normalize",
+    "module": "trade_integrity_enforcement",
+    "name": "count_threshold_stops_processing",
+    "evidence": "Plain synthetic CSV with two or three records; existing jobs provide metadata only."
+  },
+  {
+    "group": "normalize",
+    "module": "trade_integrity_enforcement",
+    "name": "previous_task_violations_contribute_to_absolute_limit",
+    "evidence": "Plain synthetic CSV with two or three records; existing jobs provide metadata only."
+  },
+  {
+    "group": "convert",
+    "module": "convert_combined_alignment",
+    "name": "accepts_internal_reference_after_event",
+    "evidence": "In-memory state only; external-data helper and its two tests split into combined_alignment_external.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_combined_alignment",
+    "name": "rejects_duplicate_internal_reference",
+    "evidence": "In-memory state only; external-data helper and its two tests split into combined_alignment_external.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_combined_alignment",
+    "name": "ignores_unselected_internal_streams",
+    "evidence": "In-memory state only; external-data helper and its two tests split into combined_alignment_external.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_combined_alignment",
+    "name": "rejects_overlapping_reference_sources",
+    "evidence": "In-memory state only; external-data helper and its two tests split into combined_alignment_external.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_combined_alignment",
+    "name": "rejects_missing_external_cursor",
+    "evidence": "In-memory state only; external-data helper and its two tests split into combined_alignment_external.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_combined_alignment",
+    "name": "preserves_internal_reference_ordering",
+    "evidence": "In-memory state only; external-data helper and its two tests split into combined_alignment_external.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_combined_alignment",
+    "name": "reference_snapshot_preserves_state",
+    "evidence": "In-memory state only; external-data helper and its two tests split into combined_alignment_external.rs."
+  },
+  {
+    "group": "merge",
+    "module": "merge_unified_failure",
+    "name": "rejects_missing_input_dataset",
+    "evidence": "Failure paths reject missing/corrupt metadata, existing destinations/staging, or insufficient resources before event processing; fixtures read dataset metadata only."
+  },
+  {
+    "group": "merge",
+    "module": "merge_unified_failure",
+    "name": "rejects_corrupted_source_manifest",
+    "evidence": "Failure paths reject missing/corrupt metadata, existing destinations/staging, or insufficient resources before event processing; fixtures read dataset metadata only."
+  },
+  {
+    "group": "merge",
+    "module": "merge_unified_failure",
+    "name": "rejects_missing_processing_job",
+    "evidence": "Failure paths reject missing/corrupt metadata, existing destinations/staging, or insufficient resources before event processing; fixtures read dataset metadata only."
+  },
+  {
+    "group": "merge",
+    "module": "merge_unified_failure",
+    "name": "rejects_existing_output_without_modification",
+    "evidence": "Failure paths reject missing/corrupt metadata, existing destinations/staging, or insufficient resources before event processing; fixtures read dataset metadata only."
+  },
+  {
+    "group": "merge",
+    "module": "merge_unified_failure",
+    "name": "rejects_existing_staging_directory",
+    "evidence": "Failure paths reject missing/corrupt metadata, existing destinations/staging, or insufficient resources before event processing; fixtures read dataset metadata only."
+  },
+  {
+    "group": "merge",
+    "module": "merge_unified_failure",
+    "name": "rejects_insufficient_memory_budget",
+    "evidence": "Failure paths reject missing/corrupt metadata, existing destinations/staging, or insufficient resources before event processing; fixtures read dataset metadata only."
+  },
+  {
+    "group": "merge",
+    "module": "merge_unified_failure",
+    "name": "rejects_insufficient_file_budget",
+    "evidence": "Failure paths reject missing/corrupt metadata, existing destinations/staging, or insufficient resources before event processing; fixtures read dataset metadata only."
+  },
+  {
+    "group": "convert",
+    "module": "convert_partitions",
+    "name": "discovers_all_physical_row_groups",
+    "evidence": "Partition planning opens Parquet footers for 42 row groups; no event batches are decoded. Source verified in execution/shared/partition.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_partitions",
+    "name": "partitions_cover_every_row_group_exactly_once",
+    "evidence": "Partition planning opens Parquet footers for 42 row groups; no event batches are decoded. Source verified in execution/shared/partition.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_partitions",
+    "name": "partitions_are_contiguous",
+    "evidence": "Partition planning opens Parquet footers for 42 row groups; no event batches are decoded. Source verified in execution/shared/partition.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_partitions",
+    "name": "partition_row_counts_match_row_groups",
+    "evidence": "Partition planning opens Parquet footers for 42 row groups; no event batches are decoded. Source verified in execution/shared/partition.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_partitions",
+    "name": "respects_requested_worker_counts",
+    "evidence": "Partition planning opens Parquet footers for 42 row groups; no event batches are decoded. Source verified in execution/shared/partition.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_partitions",
+    "name": "rejects_zero_workers",
+    "evidence": "Partition planning opens Parquet footers for 42 row groups; no event batches are decoded. Source verified in execution/shared/partition.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_partitions",
+    "name": "never_creates_empty_partitions",
+    "evidence": "Partition planning opens Parquet footers for 42 row groups; no event batches are decoded. Source verified in execution/shared/partition.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_partitions",
+    "name": "partition_planning_is_deterministic",
+    "evidence": "Partition planning opens Parquet footers for 42 row groups; no event batches are decoded. Source verified in execution/shared/partition.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_partitions",
+    "name": "row_group_offsets_are_contiguous",
+    "evidence": "Partition planning opens Parquet footers for 42 row groups; no event batches are decoded. Source verified in execution/shared/partition.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_partitions",
+    "name": "prints_partition_distribution",
+    "evidence": "Partition planning opens Parquet footers for 42 row groups; no event batches are decoded. Source verified in execution/shared/partition.rs."
+  },
+  {
+    "group": "convert",
+    "module": "convert_execution_reader",
+    "name": "opens_physical_dataset",
+    "evidence": "Construction, explicit missing-file rejection, or at most 1,280 decoded records. 1.3-million-row identity scan and full 12.6-million-row stream remain opt-in."
+  },
+  {
+    "group": "convert",
+    "module": "convert_execution_reader",
+    "name": "rejects_zero_batch_size",
+    "evidence": "Construction, explicit missing-file rejection, or at most 1,280 decoded records. 1.3-million-row identity scan and full 12.6-million-row stream remain opt-in."
+  },
+  {
+    "group": "convert",
+    "module": "convert_execution_reader",
+    "name": "preserves_physical_trade_schema",
+    "evidence": "Construction, explicit missing-file rejection, or at most 1,280 decoded records. 1.3-million-row identity scan and full 12.6-million-row stream remain opt-in."
+  },
+  {
+    "group": "convert",
+    "module": "convert_execution_reader",
+    "name": "preserves_original_arrow_values",
+    "evidence": "Construction, explicit missing-file rejection, or at most 1,280 decoded records. 1.3-million-row identity scan and full 12.6-million-row stream remain opt-in."
+  },
+  {
+    "group": "convert",
+    "module": "convert_execution_reader",
+    "name": "respects_batch_size",
+    "evidence": "Construction, explicit missing-file rejection, or at most 1,280 decoded records. 1.3-million-row identity scan and full 12.6-million-row stream remain opt-in."
+  },
+  {
+    "group": "convert",
+    "module": "convert_execution_reader",
+    "name": "tracks_records_read",
+    "evidence": "Construction, explicit missing-file rejection, or at most 1,280 decoded records. 1.3-million-row identity scan and full 12.6-million-row stream remain opt-in."
+  },
+  {
+    "group": "convert",
+    "module": "convert_execution_reader",
+    "name": "first_thousand_events_are_ordered",
+    "evidence": "Construction, explicit missing-file rejection, or at most 1,280 decoded records. 1.3-million-row identity scan and full 12.6-million-row stream remain opt-in."
+  },
+  {
+    "group": "convert",
+    "module": "convert_execution_reader",
+    "name": "rejects_missing_parquet_file",
+    "evidence": "Construction, explicit missing-file rejection, or at most 1,280 decoded records. 1.3-million-row identity scan and full 12.6-million-row stream remain opt-in."
+  }
+]

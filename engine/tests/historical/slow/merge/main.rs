@@ -49,8 +49,6 @@ mod merge_trade_kway_real;
 mod merge_trade_stream;
 #[path = "../../merge/execution/merge_unified_commit.rs"]
 mod merge_unified_commit;
-#[path = "../../merge/execution/merge_unified_failure.rs"]
-mod merge_unified_failure;
 #[path = "../../merge/execution/merge_unified_manifest_builder.rs"]
 mod merge_unified_manifest_builder;
 #[path = "../../merge/execution/merge_unified_output_validation.rs"]

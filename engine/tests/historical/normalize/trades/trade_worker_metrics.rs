@@ -222,56 +222,6 @@ fn records_trade_processing_metrics() {
 }
 
 #[test]
-fn retains_metrics_after_sink_failure() {
-    struct FailingSink {
-        writes: u64,
-    }
-
-    impl TradeSink for FailingSink {
-        fn write_trade(&mut self, _trade: Trade) -> Result<()> {
-            self.writes += 1;
-
-            if self.writes == 10 {
-                return Err(
-                    marketforge_engine::shared::error::MarketForgeError::InvalidConfiguration(
-                        "intentional sink failure".to_owned(),
-                    ),
-                );
-            }
-
-            Ok(())
-        }
-
-        fn finish(&mut self) -> Result<()> {
-            Ok(())
-        }
-    }
-
-    let job = load_job();
-    let task = &job.tasks[0];
-
-    let mut sink = FailingSink { writes: 0 };
-    let mut metrics = TaskMetrics::default();
-
-    let result = process_trade_task_with_metrics(
-        task,
-        &mut sink,
-        &mut metrics,
-        &load_policy(),
-        &ScopedIntegrityMetrics::default(),
-    );
-
-    assert!(result.is_err());
-
-    assert_eq!(metrics.counters.tasks_failed, 1);
-    assert_eq!(metrics.counters.tasks_completed, 0);
-
-    assert!(metrics.counters.records_read >= 10);
-    assert!(metrics.counters.events_written > 0);
-    assert_eq!(metrics.counters.events_written, 9);
-}
-
-#[test]
 fn successful_trade_processing_has_no_integrity_violations() {
     let job = load_job();
     let task = &job.tasks[0];

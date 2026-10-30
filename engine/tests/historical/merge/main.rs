@@ -57,3 +57,12 @@ mod merge_unified_boundary_stress;
 mod merge_unified_file_rotation;
 #[path = "execution/merge_unified_manifest.rs"]
 mod merge_unified_manifest;
+
+#[path = "combined/merge_unified_timeline_bounded.rs"]
+mod merge_unified_timeline;
+
+#[path = "trades/merge_trade_stream_bounded.rs"]
+mod merge_trade_stream;
+
+#[path = "execution/merge_unified_failure.rs"]
+mod merge_unified_failure;

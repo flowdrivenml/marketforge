@@ -37,3 +37,9 @@ mod resource_file_budget;
 mod trade_formats;
 #[path = "trades/trade_real_archives.rs"]
 mod trade_real_archives;
+
+#[path = "trades/trade_worker_metrics_bounded.rs"]
+mod trade_worker_metrics;
+
+#[path = "trades/trade_integrity_enforcement.rs"]
+mod trade_integrity_enforcement;

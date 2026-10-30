@@ -43,3 +43,15 @@ mod convert_reference_selection;
 mod convert_reference_state;
 #[path = "trades/trade.rs"]
 mod convert_trade;
+
+#[path = "combined/combined_alignment.rs"]
+mod convert_combined_alignment;
+
+#[path = "reference/reference_reader_bounded.rs"]
+mod convert_reference_reader;
+
+#[path = "execution/partitions.rs"]
+mod convert_partitions;
+
+#[path = "execution/execution_reader_bounded.rs"]
+mod convert_execution_reader;

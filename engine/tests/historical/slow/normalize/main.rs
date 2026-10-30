@@ -25,8 +25,6 @@ mod process_session;
 mod process_session_finalization;
 #[path = "../../normalize/trades/trade_all_archives.rs"]
 mod trade_all_archives;
-#[path = "../../normalize/trades/trade_integrity_enforcement.rs"]
-mod trade_integrity_enforcement;
 #[path = "../../normalize/trades/trade_worker.rs"]
 mod trade_worker;
 #[path = "../../normalize/trades/trade_worker_metrics.rs"]
