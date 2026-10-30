@@ -6,7 +6,9 @@ edition = "2024"
 [features]
 default = []
 postgres = ["dep:sqlx"]
+historical-slow-tests = ["historical"]
 historical = [
+    "dep:toml",
     "dep:num-integer",
     "dep:num-traits",
     "dep:num-bigint",
@@ -34,6 +36,7 @@ live = [
     "dep:reqwest",
     "dep:tokio-tungstenite",
     "dep:futures-util",
+    "dep:parking_lot",
 ]
 monitor-tui = [
     "dep:ratatui",
@@ -44,6 +47,7 @@ arrow-select = [
 ]
 
 [dependencies]
+parking_lot = { version = "0.12.5", optional = true }
 toml_edit = {
     version = "=0.25.17",
     default-features = false,
@@ -142,156 +146,6 @@ required-features = ["monitor-tui"]
 # Organized integration tests
 
 [[test]]
-name = "merge_cursor_benchmark"
-path = "tests/historical/merge/benchmarks/merge_cursor_benchmark.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_combined_real"
-path = "tests/historical/merge/combined/merge_combined_real.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_job"
-path = "tests/historical/merge/core/merge_job.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_kway"
-path = "tests/historical/merge/core/merge_kway.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_kway_event"
-path = "tests/historical/merge/core/merge_kway_event.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_checkpoint"
-path = "tests/historical/merge/depth/merge_checkpoint.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_depth_cursor"
-path = "tests/historical/merge/depth/merge_depth_cursor.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_depth_cursor_range"
-path = "tests/historical/merge/depth/merge_depth_cursor_range.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_depth_stream"
-path = "tests/historical/merge/depth/merge_depth_stream.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_event_validation"
-path = "tests/historical/merge/depth/merge_event_validation.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_indexed_cursor"
-path = "tests/historical/merge/depth/merge_indexed_cursor.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_inventory"
-path = "tests/historical/merge/depth/merge_inventory.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_commit"
-path = "tests/historical/merge/execution/merge_commit.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_executor"
-path = "tests/historical/merge/execution/merge_executor.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_manifest_builder"
-path = "tests/historical/merge/execution/merge_manifest_builder.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_output_validation"
-path = "tests/historical/merge/execution/merge_output_validation.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_parallel"
-path = "tests/historical/merge/execution/merge_parallel.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_parallel_commit"
-path = "tests/historical/merge/execution/merge_parallel_commit.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_resolver"
-path = "tests/historical/merge/execution/merge_resolver.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_resource_estimation"
-path = "tests/historical/merge/execution/merge_resource_estimation.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_timeline_writer"
-path = "tests/historical/merge/execution/merge_timeline_writer.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_full_equivalence"
-path = "tests/historical/merge/partition/merge_full_equivalence.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_partition_coverage"
-path = "tests/historical/merge/partition/merge_partition_coverage.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_partition_equivalence"
-path = "tests/historical/merge/partition/merge_partition_equivalence.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_partition_executor"
-path = "tests/historical/merge/partition/merge_partition_executor.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_partition_input"
-path = "tests/historical/merge/partition/merge_partition_input.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_trade_cursor"
-path = "tests/historical/merge/trades/merge_trade_cursor.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_trade_cursor_indexed"
-path = "tests/historical/merge/trades/merge_trade_cursor_indexed.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_trade_kway_real"
-path = "tests/historical/merge/trades/merge_trade_kway_real.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_trade_stream"
-path = "tests/historical/merge/trades/merge_trade_stream.rs"
-required-features = ["historical"]
-
-[[test]]
 name = "book_batch"
 path = "tests/shared/contracts/book/book_batch.rs"
 
@@ -312,33 +166,8 @@ name = "book_store"
 path = "tests/shared/contracts/book/book_store.rs"
 
 [[test]]
-name = "depth_archive_continuity"
-path = "tests/historical/normalize/depth/depth_archive_continuity.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "depth_boundary"
-path = "tests/historical/normalize/depth/depth_boundary.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "depth_boundary_recovery"
-path = "tests/historical/normalize/depth/depth_boundary_recovery.rs"
-required-features = ["historical"]
-
-[[test]]
 name = "depth_csv_adapter"
 path = "tests/shared/contracts/decode/depth_csv_adapter.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "depth_csv_pipeline"
-path = "tests/historical/normalize/depth/depth_csv_pipeline.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "depth_formats"
-path = "tests/historical/normalize/depth/depth_formats.rs"
 required-features = ["historical"]
 
 [[test]]
@@ -350,23 +179,8 @@ name = "depth_outcome"
 path = "tests/shared/contracts/depth/depth_outcome.rs"
 
 [[test]]
-name = "depth_parquet_replay"
-path = "tests/historical/normalize/depth/depth_parquet_replay.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "depth_pipeline_recovery"
-path = "tests/historical/normalize/depth/depth_pipeline_recovery.rs"
-required-features = ["historical"]
-
-[[test]]
 name = "depth_processor"
 path = "tests/shared/contracts/depth/depth_processor.rs"
-
-[[test]]
-name = "depth_real_archive"
-path = "tests/historical/normalize/depth/depth_real_archive.rs"
-required-features = ["historical"]
 
 [[test]]
 name = "depth_relative"
@@ -375,16 +189,6 @@ path = "tests/shared/contracts/depth/depth_relative.rs"
 [[test]]
 name = "depth_scalar"
 path = "tests/shared/contracts/depth/depth_scalar.rs"
-
-[[test]]
-name = "depth_sequence_ranges"
-path = "tests/historical/normalize/depth/depth_sequence_ranges.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "depth_sink"
-path = "tests/historical/normalize/depth/depth_sink.rs"
-required-features = ["historical"]
 
 [[test]]
 name = "depth_snapshot_assembler"
@@ -412,71 +216,6 @@ path = "tests/shared/contracts/decode/depth_xlsx_decoder.rs"
 required-features = ["historical"]
 
 [[test]]
-name = "depth_xlsx_pipeline"
-path = "tests/historical/normalize/depth/depth_xlsx_pipeline.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "process_executor"
-path = "tests/historical/normalize/execution/process_executor.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "process_executor_failure"
-path = "tests/historical/normalize/execution/process_executor_failure.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "process_failure"
-path = "tests/historical/normalize/execution/process_failure.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "process_metrics"
-path = "tests/historical/normalize/execution/process_metrics.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "process_parallel_consistency"
-path = "tests/historical/normalize/execution/process_parallel_consistency.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "process_scheduler"
-path = "tests/historical/normalize/execution/process_scheduler.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "process_session"
-path = "tests/historical/normalize/execution/process_session.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "process_session_finalization"
-path = "tests/historical/normalize/execution/process_session_finalization.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "process_session_validation"
-path = "tests/historical/normalize/execution/process_session_validation.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "process_task"
-path = "tests/historical/normalize/execution/process_task.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "processing_config"
-path = "tests/historical/normalize/execution/processing_config.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "processing_metrics_aggregation"
-path = "tests/historical/normalize/execution/processing_metrics_aggregation.rs"
-required-features = ["historical"]
-
-[[test]]
 name = "parquet_decimal"
 path = "tests/shared/integration/parquet/parquet_decimal.rs"
 required-features = ["parquet"]
@@ -492,11 +231,6 @@ path = "tests/shared/integration/parquet/parquet_depth_events.rs"
 required-features = ["parquet"]
 
 [[test]]
-name = "parquet_depth_real_archive"
-path = "tests/historical/normalize/parquet/parquet_depth_real_archive.rs"
-required-features = ["historical"]
-
-[[test]]
 name = "parquet_depth_segments"
 path = "tests/shared/integration/parquet/parquet_depth_segments.rs"
 required-features = ["parquet"]
@@ -505,11 +239,6 @@ required-features = ["parquet"]
 name = "parquet_depth_writer"
 path = "tests/shared/integration/parquet/parquet_depth_writer.rs"
 required-features = ["parquet"]
-
-[[test]]
-name = "parquet_discovery"
-path = "tests/historical/normalize/parquet/parquet_discovery.rs"
-required-features = ["historical"]
 
 [[test]]
 name = "parquet_trade_batch"
@@ -522,533 +251,8 @@ path = "tests/shared/integration/parquet/parquet_writer.rs"
 required-features = ["parquet"]
 
 [[test]]
-name = "integrity_policy"
-path = "tests/historical/normalize/resources/integrity_policy.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "resource_file_budget"
-path = "tests/historical/normalize/resources/resource_file_budget.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "trade_all_archives"
-path = "tests/historical/normalize/trades/trade_all_archives.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "trade_formats"
-path = "tests/historical/normalize/trades/trade_formats.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "trade_integrity_enforcement"
-path = "tests/historical/normalize/trades/trade_integrity_enforcement.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "trade_real_archives"
-path = "tests/historical/normalize/trades/trade_real_archives.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "trade_worker"
-path = "tests/historical/normalize/trades/trade_worker.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "trade_worker_metrics"
-path = "tests/historical/normalize/trades/trade_worker_metrics.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_unified_timeline"
-path = "tests/historical/merge/combined/merge_unified_timeline.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_unified_writer"
-path = "tests/historical/merge/combined/merge_unified_writer.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_unified_partition_input"
-path = "tests/historical/merge/partition/merge_unified_partition_input.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_unified_partition_executor"
-path = "tests/historical/merge/partition/merge_unified_partition_executor.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_unified_parallel_equivalence"
-path = "tests/historical/merge/partition/merge_unified_parallel_equivalence.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_unified_manifest"
-path = "tests/historical/merge/execution/merge_unified_manifest.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_unified_manifest_builder"
-path = "tests/historical/merge/execution/merge_unified_manifest_builder.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_unified_output_validation"
-path = "tests/historical/merge/execution/merge_unified_output_validation.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_unified_stream_resolver"
-path = "tests/historical/merge/execution/merge_unified_stream_resolver.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_unified_commit"
-path = "tests/historical/merge/execution/merge_unified_commit.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_unified_failure"
-path = "tests/historical/merge/execution/merge_unified_failure.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_unified_boundary_stress"
-path = "tests/historical/merge/partition/merge_unified_boundary_stress.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_unified_reference_integrity"
-path = "tests/historical/merge/execution/merge_unified_reference_integrity.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_unified_file_rotation"
-path = "tests/historical/merge/output/merge_unified_file_rotation.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_unified_production_rotation"
-path = "tests/historical/merge/output/merge_unified_production_rotation.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_reader"
-path = "tests/historical/merge/materialize/reader.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_cache"
-path = "tests/historical/merge/materialize/cache.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_cached_reader"
-path = "tests/historical/merge/materialize/cached_reader.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_resolver"
-path = "tests/historical/merge/materialize/resolver.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_row_groups"
-path = "tests/historical/merge/materialize/row_groups.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_planner"
-path = "tests/historical/merge/materialize/planner.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_window"
-path = "tests/historical/merge/materialize/window.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_trade_builder"
-path = "tests/historical/merge/materialize/trade_builder.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_depth_metadata"
-path = "tests/historical/merge/materialize/depth_metadata.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_depth_builder"
-path = "tests/historical/merge/materialize/depth_builder.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_combined_builder"
-path = "tests/historical/merge/materialize/combined_builder.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_writer"
-path = "tests/historical/merge/materialize/writer.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_resources"
-path = "tests/historical/merge/materialize/resources.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_timeline_reader"
-path = "tests/historical/merge/materialize/timeline_reader.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_partition"
-path = "tests/historical/merge/materialize/partition.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_manifest"
-path = "tests/historical/merge/materialize/manifest.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_checkpoints"
-path = "tests/historical/merge/materialize/checkpoints.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_reconstruction"
-path = "tests/historical/merge/materialize/reconstruction.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "materialize_publish"
-path = "tests/historical/merge/materialize/publish.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "merge_boundary_summary"
-path = "tests/historical/merge/depth/boundary_summary.rs"
-required-features = ["historical"]
-
-[[test]]
 name = "instrument_catalog"
 path = "tests/shared/contracts/instrument/catalog.rs"
-
-[[test]]
-name = "convert_job"
-path = "tests/historical/convert/planning/job.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_catalog"
-path = "tests/historical/convert/planning/catalog.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_graph"
-path = "tests/historical/convert/planning/graph.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_planner"
-path = "tests/historical/convert/planning/planner.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_reference_state"
-path = "tests/historical/convert/reference/reference_state.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_decimal"
-path = "tests/historical/convert/planning/decimal.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_reference_evaluation"
-path = "tests/historical/convert/reference/reference_evaluation.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_reference_reader"
-path = "tests/historical/convert/reference/reference_reader.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_executor"
-path = "tests/historical/convert/execution/executor.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_output_schema"
-path = "tests/historical/convert/output/output_schema.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_trade"
-path = "tests/historical/convert/trades/trade.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_output_trade"
-path = "tests/historical/convert/output/output_trade.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_output_writer"
-path = "tests/historical/convert/output/output_writer.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_execution_reader"
-path = "tests/historical/convert/execution/execution_reader.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_materialize"
-path = "tests/historical/convert/execution/materialize.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_materialize_multihop"
-path = "tests/historical/convert/execution/materialize_multihop.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_persistent_fixture"
-path = "tests/historical/convert/trades/persistent_fixture.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_reference_selection"
-path = "tests/historical/convert/reference/reference_selection.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_output_validation"
-path = "tests/historical/convert/output/output_validation.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_source_preservation"
-path = "tests/historical/convert/output/source_preservation.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_output_manifest"
-path = "tests/historical/convert/output/output_manifest.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_atomic_publication"
-path = "tests/historical/convert/output/atomic_publication.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_publication"
-path = "tests/historical/convert/output/publication.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_receipt"
-path = "tests/historical/convert/output/receipt.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_checkpoints"
-path = "tests/historical/convert/execution/checkpoints.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_partitions"
-path = "tests/historical/convert/execution/partitions.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_prepass"
-path = "tests/historical/convert/execution/prepass.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_partition_reader"
-path = "tests/historical/convert/execution/partition_reader.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_worker"
-path = "tests/historical/convert/execution/worker.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_parallel"
-path = "tests/historical/convert/execution/parallel.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_parallel_validation"
-path = "tests/historical/convert/execution/parallel_validation.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_parallel_publication"
-path = "tests/historical/convert/execution/parallel_publication.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_depth_schema"
-path = "tests/historical/convert/depth/depth_schema.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_depth_arithmetic"
-path = "tests/historical/convert/depth/depth_arithmetic.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_depth_builder"
-path = "tests/historical/convert/depth/depth_builder.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_external_reference"
-path = "tests/historical/convert/reference/external_reference.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_depth_planner"
-path = "tests/historical/convert/depth/depth_planner.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_depth_alignment"
-path = "tests/historical/convert/depth/depth_alignment.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_depth_materialize"
-path = "tests/historical/convert/depth/depth_materialize.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_depth_validation"
-path = "tests/historical/convert/depth/depth_validation.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_depth_preservation"
-path = "tests/historical/convert/depth/depth_preservation.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_reference_seek"
-path = "tests/historical/convert/reference/reference_seek.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_depth_checkpoints"
-path = "tests/historical/convert/depth/depth_checkpoints.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_depth_parallel"
-path = "tests/historical/convert/depth/depth_parallel.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_depth_equivalence"
-path = "tests/historical/convert/depth/depth_equivalence.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_depth_publication"
-path = "tests/historical/convert/depth/depth_publication.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_combined_schema"
-path = "tests/historical/convert/combined/combined_schema.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_combined_references"
-path = "tests/historical/convert/combined/combined_references.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_combined_alignment"
-path = "tests/historical/convert/combined/combined_alignment.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_combined_depth_adapter"
-path = "tests/historical/convert/combined/combined_depth_adapter.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_combined_conversion"
-path = "tests/historical/convert/combined/combined_conversion.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_combined_equivalence"
-path = "tests/historical/convert/combined/combined_equivalence.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_combined_writer"
-path = "tests/historical/convert/combined/combined_writer.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_combined_materialize"
-path = "tests/historical/convert/combined/combined_materialize.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_combined_checkpoints"
-path = "tests/historical/convert/combined/combined_checkpoints.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_combined_restoration"
-path = "tests/historical/convert/combined/combined_restoration.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_combined_checkpoint_ordering"
-path = "tests/historical/convert/combined/combined_checkpoint_ordering.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_combined_worker"
-path = "tests/historical/convert/combined/combined_worker.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_combined_parallel"
-path = "tests/historical/convert/combined/combined_parallel.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_combined_validation"
-path = "tests/historical/convert/combined/combined_validation.rs"
-required-features = ["historical"]
-
-[[test]]
-name = "convert_combined_publication"
-path = "tests/historical/convert/combined/combined_publication.rs"
-required-features = ["historical"]
-
-# ============================================================
-# LIVE — EXCHANGE CONFIGURATION TESTS
-# ============================================================
-
 
 [[test]]
 name = "live_websocket"
@@ -1107,11 +311,41 @@ required-features = ["live"]
 
 
 [[test]]
-name = "dataset_manifest"
-path = "tests/historical/normalize/dataset_manifest.rs"
-required-features = ["historical"]
-
-[[test]]
 name = "source_compatibility"
 path = "tests/shared/integration/source/compatibility.rs"
 required-features = ["historical"]
+
+[[test]]
+name = "live_router"
+path = "tests/live/integration/router/main.rs"
+required-features = ["live"]
+
+[[test]]
+name = "historical_convert"
+path = "tests/historical/convert/main.rs"
+required-features = ["historical"]
+
+[[test]]
+name = "historical_merge"
+path = "tests/historical/merge/main.rs"
+required-features = ["historical"]
+
+[[test]]
+name = "historical_normalize"
+path = "tests/historical/normalize/main.rs"
+required-features = ["historical"]
+
+[[test]]
+name = "historical_slow_convert"
+path = "tests/historical/slow/convert/main.rs"
+required-features = ["historical-slow-tests"]
+
+[[test]]
+name = "historical_slow_merge"
+path = "tests/historical/slow/merge/main.rs"
+required-features = ["historical-slow-tests"]
+
+[[test]]
+name = "historical_slow_normalize"
+path = "tests/historical/slow/normalize/main.rs"
+required-features = ["historical-slow-tests"]

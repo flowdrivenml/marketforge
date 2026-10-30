@@ -24,11 +24,13 @@ pub enum DepthOperation {
 // -----------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct FieldSpec {
     pub source: String,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct LevelArraySpec {
     pub source: String,
     pub price_index: usize,
@@ -42,6 +44,7 @@ pub struct LevelArraySpec {
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ScalarLevelSpec {
     pub price: FieldSpec,
     pub quantity: QuantityFieldSpec,
@@ -49,6 +52,7 @@ pub struct ScalarLevelSpec {
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct QuantityFieldSpec {
     pub source: String,
 
@@ -57,6 +61,7 @@ pub struct QuantityFieldSpec {
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct SideSpec {
     pub source: String,
 
@@ -78,6 +83,7 @@ pub struct SideSpec {
 // -----------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct EventFilter {
     pub source: String,
 
@@ -109,6 +115,7 @@ impl EventFilter {
 // -----------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct SnapshotSpec {
     #[serde(rename = "type")]
     pub kind: String,
@@ -122,6 +129,7 @@ pub struct SnapshotSpec {
 // -----------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct RelativeUpdateSpec {
     pub action_source: String,
     pub add_action: String,
@@ -166,6 +174,7 @@ pub struct DepthSpec {
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct InstrumentFieldSpec {
     pub source: String,
 
@@ -174,6 +183,7 @@ pub struct InstrumentFieldSpec {
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct InputOrderingSpec {
     pub order: String,
     pub sort_by: String,
@@ -184,6 +194,7 @@ pub struct InputOrderingSpec {
 // -----------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DepthRules {
     event_timestamp: FieldSpec,
 
@@ -228,9 +239,14 @@ struct DepthRules {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct UpdateSemanticsSpec {
     #[serde(rename = "type")]
     kind: String,
+    #[serde(default)]
+    zero_quantity: Option<String>,
+    #[serde(default)]
+    nonzero_quantity: Option<String>,
 
     #[serde(default)]
     action_source: Option<String>,
@@ -272,6 +288,7 @@ impl DepthSpec {
             filter.validate()?;
         }
 
+        validate_rules(&rules)?;
         let operation = match (rules.snapshot, rules.update_semantics) {
             (Some(snapshot), None) => DepthOperation::Snapshot(snapshot),
 
@@ -379,4 +396,101 @@ fn required(value: Option<String>, name: &str) -> Result<String> {
 
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(MarketForgeError::InvalidConfiguration(message.into()))
+}
+
+fn validate_rules(r: &DepthRules) -> Result<()> {
+    if r.bids.is_some() != r.asks.is_some() {
+        return invalid("depth arrays require both bids and asks");
+    }
+    let field = |name: &str| -> Result<()> {
+        if name.trim().is_empty() {
+            invalid("empty depth source field")
+        } else {
+            Ok(())
+        }
+    };
+    field(&r.event_timestamp.source)?;
+    for f in [
+        &r.system_timestamp,
+        &r.sequence_start,
+        &r.sequence_count,
+        &r.price,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        field(&f.source)?;
+    }
+    if r.sequence_count.is_some() && r.sequence_start.is_none() {
+        return invalid("sequence_count requires sequence_start");
+    }
+    for a in [&r.bids, &r.asks].into_iter().flatten() {
+        field(&a.source)?;
+        if a.decode.as_deref().is_some_and(|v| v != "json") {
+            return invalid("unsupported level-array decode");
+        }
+        if a.price_index == a.quantity_index {
+            return invalid("depth price and quantity indices must differ");
+        }
+    }
+    if let Some(q) = &r.quantity {
+        field(&q.source)?;
+        if q.transform.as_deref().is_some_and(|s| s != "abs") {
+            return invalid("unsupported depth quantity transform");
+        }
+    }
+    if let Some(side) = &r.side {
+        field(&side.source)?;
+        match side.transform.as_deref() {
+            None => {}
+            Some("map") => {
+                let values = side
+                    .values
+                    .as_ref()
+                    .and_then(Value::as_object)
+                    .filter(|v| !v.is_empty())
+                    .ok_or_else(|| {
+                        MarketForgeError::InvalidConfiguration("missing book-side mapping".into())
+                    })?;
+                if values
+                    .values()
+                    .any(|v| !matches!(v.as_str(), Some("bid" | "ask")))
+                {
+                    return invalid("unsupported book-side mapping target");
+                }
+            }
+            Some("sign_to_book_side") => {
+                if side.positive.as_deref().is_some_and(|s| s != "bid")
+                    || side.negative.as_deref().is_some_and(|s| s != "ask")
+                {
+                    return invalid("unsupported signed book-side mapping");
+                }
+            }
+            Some(_) => return invalid("unsupported depth side transform"),
+        }
+    }
+    if let Some(i) = &r.instrument {
+        field(&i.source)?;
+        if i.lookup.as_deref().is_some_and(|v| v != "catalog") {
+            return invalid("unsupported instrument lookup");
+        }
+    }
+    if let Some(order) = &r.input_ordering {
+        if order.order != "ascending" || order.sort_by != r.event_timestamp.source {
+            return invalid("unsupported depth input ordering");
+        }
+    }
+    if let Some(u) = &r.update_semantics {
+        if u.zero_quantity.as_deref().is_some_and(|s| s != "delete")
+            || u.nonzero_quantity.as_deref().is_some_and(|s| s != "set")
+            || u.zero_result.as_deref().is_some_and(|s| s != "delete")
+            || u.nonzero_result.as_deref().is_some_and(|s| s != "set")
+            || u.emit
+                .as_deref()
+                .is_some_and(|s| s != "resulting_absolute_level")
+        {
+            return invalid("unsupported depth update transformation");
+        }
+    }
+    Ok(())
 }

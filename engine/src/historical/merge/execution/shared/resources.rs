@@ -44,11 +44,7 @@ pub fn estimate_merge_stream_resources(
     parquet: &MergeParquetConfig,
 ) -> Result<ResourceRequirements> {
     if input_streams == 0 {
-        return Ok(ResourceRequirements {
-            memory_bytes: 384 * MIB,
-            scratch_bytes: 0,
-            open_files: 0,
-        });
+        return invalid("merge stream resource estimation requires at least one active stream");
     }
 
     if parquet.row_group_target_mb == 0 {

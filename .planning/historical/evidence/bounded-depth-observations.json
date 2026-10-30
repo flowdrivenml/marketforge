@@ -1,0 +1,390 @@
+[
+  {
+    "exchange": "bitget",
+    "market_category": "linear",
+    "instrument_type": "perpetual",
+    "format_code": "BITGET-B1",
+    "job": "bitget-perpetual-linear-BTCUSDT-l2-20260901-20260904-d94.json",
+    "instrument_id": 14215,
+    "source_compression": "zip",
+    "byte_bound": 4194304,
+    "record_bound": 65536,
+    "levels": [],
+    "archive_members": [
+      {
+        "name": "20260901_4.xlsx",
+        "uncompressed_bytes": 16990752
+      }
+    ],
+    "inspection": "Outer ZIP metadata only; inner workbook requires complete random-access container. No full workbook extraction or processing performed."
+  },
+  {
+    "exchange": "bitget",
+    "market_category": "spot",
+    "instrument_type": "spot",
+    "format_code": "BITGET-B1",
+    "job": "bitget-spot-spot-BTCUSDT-l2-20260901-20260904-d110.json",
+    "instrument_id": 11545,
+    "source_compression": "zip",
+    "byte_bound": 4194304,
+    "record_bound": 65536,
+    "levels": [],
+    "archive_members": [
+      {
+        "name": "20260901_6.xlsx",
+        "uncompressed_bytes": 13813387
+      }
+    ],
+    "inspection": "Outer ZIP metadata only; inner workbook requires complete random-access container. No full workbook extraction or processing performed."
+  },
+  {
+    "exchange": "bybit",
+    "market_category": "inverse",
+    "instrument_type": "perpetual",
+    "format_code": "BYBIT-B1",
+    "job": "bybit-perpetual-inverse-BTCUSD-l2-20260901-20260904-d132.json",
+    "instrument_id": 1427,
+    "source_compression": "zip",
+    "byte_bound": 4194304,
+    "record_bound": 65536,
+    "levels": [
+      {
+        "side": "bid",
+        "price": "78517.30",
+        "native_quantity": "8121",
+        "metadata_quantity_encoding": "quote",
+        "expected_quote": "8121",
+        "expected_base_decimal50": "0.10342943529642511905019658088090140644163770277378"
+      },
+      {
+        "side": "ask",
+        "price": "78517.40",
+        "native_quantity": "8503",
+        "metadata_quantity_encoding": "quote",
+        "expected_quote": "8503",
+        "expected_base_decimal50": "0.10829446721363672256085912167239363504140483510661"
+      }
+    ],
+    "archive_member": "2026-09-01_BTCUSD_ob200.data",
+    "characters_inspected": 8013,
+    "records_inspected": 1,
+    "inspection": "First JSON book event only; no TAR member inventory or whole-archive scan.",
+    "observed_instrument": "BTCUSD"
+  },
+  {
+    "exchange": "bybit",
+    "market_category": "linear",
+    "instrument_type": "perpetual",
+    "format_code": "BYBIT-B1",
+    "job": "bybit-perpetual-linear-BTCUSDT-l2-20260901-20260904-d131.json",
+    "instrument_id": 688,
+    "source_compression": "zip",
+    "byte_bound": 4194304,
+    "record_bound": 65536,
+    "levels": [
+      {
+        "side": "bid",
+        "price": "78541.70",
+        "native_quantity": "3.983",
+        "metadata_quantity_encoding": "base",
+        "expected_base": "3.983",
+        "expected_quote": "312831.59110"
+      },
+      {
+        "side": "ask",
+        "price": "78541.80",
+        "native_quantity": "11.837",
+        "metadata_quantity_encoding": "base",
+        "expected_base": "11.837",
+        "expected_quote": "929699.28660"
+      }
+    ],
+    "archive_member": "2026-09-01_BTCUSDT_ob200.data",
+    "characters_inspected": 8560,
+    "records_inspected": 1,
+    "inspection": "First JSON book event only; no TAR member inventory or whole-archive scan.",
+    "observed_instrument": "BTCUSDT"
+  },
+  {
+    "exchange": "bybit",
+    "market_category": "spot",
+    "instrument_type": "spot",
+    "format_code": "BYBIT-B1",
+    "job": "bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json",
+    "instrument_id": 1,
+    "source_compression": "zip",
+    "byte_bound": 4194304,
+    "record_bound": 65536,
+    "levels": [
+      {
+        "side": "bid",
+        "price": "78579.3",
+        "native_quantity": "0.022154",
+        "metadata_quantity_encoding": "base",
+        "expected_base": "0.022154",
+        "expected_quote": "1740.8458122"
+      },
+      {
+        "side": "ask",
+        "price": "78579.4",
+        "native_quantity": "0.192745",
+        "metadata_quantity_encoding": "base",
+        "expected_base": "0.192745",
+        "expected_quote": "15145.7864530"
+      }
+    ],
+    "archive_member": "2026-09-01_BTCUSDT_ob200.data",
+    "characters_inspected": 9081,
+    "records_inspected": 1,
+    "inspection": "First JSON book event only; no TAR member inventory or whole-archive scan.",
+    "observed_instrument": "BTCUSDT"
+  },
+  {
+    "exchange": "gateio",
+    "market_category": "inverse",
+    "instrument_type": "perpetual",
+    "format_code": "GATE-B2",
+    "job": "gateio-perpetual-inverse-BTC_USD-l2-20260901-20260904-d103.json",
+    "instrument_id": 18256,
+    "source_compression": "gzip",
+    "byte_bound": 4194304,
+    "record_bound": 65536,
+    "levels": [
+      {
+        "side": "bid",
+        "price": "78492.2",
+        "native_quantity": "53.0",
+        "metadata_quantity_encoding": "contracts",
+        "expected_contracts": "53.0",
+        "contract_value": "1",
+        "contract_value_asset": "USD",
+        "expected_quote": "53.0",
+        "expected_base_decimal50": "0.00067522632822114808859988635813494844073678658516388"
+      },
+      {
+        "side": "ask",
+        "price": "78523.9",
+        "native_quantity": "53.0",
+        "metadata_quantity_encoding": "contracts",
+        "expected_contracts": "53.0",
+        "contract_value": "1",
+        "contract_value_asset": "USD",
+        "expected_quote": "53.0",
+        "expected_base_decimal50": "0.00067495374019884391885782545186879408689583680892060"
+      }
+    ],
+    "records_inspected": 1721,
+    "characters_inspected": 71962,
+    "inspection": "Bounded initial snapshot prefix; native sides read from dedicated book format."
+  },
+  {
+    "exchange": "gateio",
+    "market_category": "linear",
+    "instrument_type": "perpetual",
+    "format_code": "GATE-B2",
+    "job": "gateio-perpetual-linear-BTC_USDT-l2-20260901-20260904-d96.json",
+    "instrument_id": 17397,
+    "source_compression": "gzip",
+    "byte_bound": 4194304,
+    "record_bound": 65536,
+    "levels": [
+      {
+        "side": "bid",
+        "price": "78549.9",
+        "native_quantity": "32187.0",
+        "metadata_quantity_encoding": "contracts",
+        "expected_contracts": "32187.0",
+        "contract_value": "0.0001",
+        "contract_value_asset": "BTC",
+        "expected_base": "3.21870",
+        "expected_quote": "252828.563130"
+      },
+      {
+        "side": "ask",
+        "price": "78550.0",
+        "native_quantity": "170297.0",
+        "metadata_quantity_encoding": "contracts",
+        "expected_contracts": "170297.0",
+        "contract_value": "0.0001",
+        "contract_value_asset": "BTC",
+        "expected_base": "17.02970",
+        "expected_quote": "1337682.935000"
+      }
+    ],
+    "records_inspected": 44062,
+    "characters_inspected": 1900736,
+    "inspection": "Bounded initial snapshot prefix; native sides read from dedicated book format."
+  },
+  {
+    "exchange": "gateio",
+    "market_category": "spot",
+    "instrument_type": "spot",
+    "format_code": "GATE-B1",
+    "job": "gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json",
+    "instrument_id": 15850,
+    "source_compression": "gzip",
+    "byte_bound": 4194304,
+    "record_bound": 65536,
+    "levels": [
+      {
+        "side": "bid",
+        "price": "78585.6",
+        "native_quantity": "3.6309320000000000",
+        "metadata_quantity_encoding": "base",
+        "expected_base": "3.6309320000000000",
+        "expected_quote": "285338.96977920000000000"
+      },
+      {
+        "side": "ask",
+        "price": "78585.7",
+        "native_quantity": "2.1443450000000000",
+        "metadata_quantity_encoding": "base",
+        "expected_base": "2.1443450000000000",
+        "expected_quote": "168514.85286650000000000"
+      }
+    ],
+    "records_inspected": 53924,
+    "characters_inspected": 3137645,
+    "inspection": "Bounded initial snapshot prefix; native sides read from dedicated book format."
+  },
+  {
+    "exchange": "okx",
+    "market_category": "inverse",
+    "instrument_type": "future",
+    "format_code": "OKX-B1",
+    "job": "okx-future-inverse-BTC-USD-261225-l2-20260901-20260904-d123.json",
+    "instrument_id": 4545,
+    "source_compression": "tar_gzip",
+    "byte_bound": 4194304,
+    "record_bound": 65536,
+    "levels": [],
+    "inspection_error": "AssertionError: Requested member is not first; bounded inspection stops"
+  },
+  {
+    "exchange": "okx",
+    "market_category": "linear",
+    "instrument_type": "future",
+    "format_code": "OKX-B1",
+    "job": "okx-future-linear-BTC-USD_UM-261225-l2-20260901-20260904-d121.json",
+    "instrument_id": 4551,
+    "source_compression": "tar_gzip",
+    "byte_bound": 4194304,
+    "record_bound": 65536,
+    "levels": [],
+    "inspection_error": "AssertionError: Requested member is not first; bounded inspection stops"
+  },
+  {
+    "exchange": "okx",
+    "market_category": "inverse",
+    "instrument_type": "perpetual",
+    "format_code": "OKX-B1",
+    "job": "okx-perpetual-inverse-BTC-USD-SWAP-l2-20260901-20260904-d101.json",
+    "instrument_id": 4048,
+    "source_compression": "tar_gzip",
+    "byte_bound": 4194304,
+    "record_bound": 65536,
+    "levels": [
+      {
+        "side": "bid",
+        "price": "78530",
+        "native_quantity": "37",
+        "metadata_quantity_encoding": "contracts",
+        "expected_contracts": "37",
+        "contract_value": "100",
+        "contract_value_asset": "USD",
+        "expected_quote": "3700",
+        "expected_base_decimal50": "0.047115751941933019228320387113205144530752578632370"
+      },
+      {
+        "side": "ask",
+        "price": "78530.1",
+        "native_quantity": "890.4",
+        "metadata_quantity_encoding": "contracts",
+        "expected_contracts": "890.4",
+        "contract_value": "100",
+        "contract_value_asset": "USD",
+        "expected_quote": "89040.0",
+        "expected_base_decimal50": "1.1338327596679489775258149422960113383275966794898"
+      }
+    ],
+    "archive_member": "BTC-USD-SWAP-L2orderbook-5000lv-2026-09-01.data",
+    "characters_inspected": 217113,
+    "records_inspected": 1,
+    "inspection": "First JSON book event only; no TAR member inventory or whole-archive scan.",
+    "observed_instrument": "BTC-USD-SWAP"
+  },
+  {
+    "exchange": "okx",
+    "market_category": "linear",
+    "instrument_type": "perpetual",
+    "format_code": "OKX-B1",
+    "job": "okx-perpetual-linear-BTC-USDT-SWAP-l2-20260901-20260904-d133.json",
+    "instrument_id": 4063,
+    "source_compression": "tar_gzip",
+    "byte_bound": 4194304,
+    "record_bound": 65536,
+    "levels": [
+      {
+        "side": "bid",
+        "price": "78549.9",
+        "native_quantity": "83.23",
+        "metadata_quantity_encoding": "contracts",
+        "expected_contracts": "83.23",
+        "contract_value": "0.01",
+        "contract_value_asset": "BTC",
+        "expected_base": "0.8323",
+        "expected_quote": "65377.08177"
+      },
+      {
+        "side": "ask",
+        "price": "78550",
+        "native_quantity": "654.1",
+        "metadata_quantity_encoding": "contracts",
+        "expected_contracts": "654.1",
+        "contract_value": "0.01",
+        "contract_value_asset": "BTC",
+        "expected_base": "6.541",
+        "expected_quote": "513795.550"
+      }
+    ],
+    "archive_member": "BTC-USDT-SWAP-L2orderbook-5000lv-2026-09-01.data",
+    "characters_inspected": 228789,
+    "records_inspected": 1,
+    "inspection": "First JSON book event only; no TAR member inventory or whole-archive scan.",
+    "observed_instrument": "BTC-USDT-SWAP"
+  },
+  {
+    "exchange": "okx",
+    "market_category": "spot",
+    "instrument_type": "spot",
+    "format_code": "OKX-B1",
+    "job": "okx-spot-spot-BTC-USDT-l2-20260901-20260904-d108.json",
+    "instrument_id": 3336,
+    "source_compression": "tar_gzip",
+    "byte_bound": 4194304,
+    "record_bound": 65536,
+    "levels": [
+      {
+        "side": "bid",
+        "price": "78582.1",
+        "native_quantity": "0.10115746",
+        "metadata_quantity_encoding": "base",
+        "expected_base": "0.10115746",
+        "expected_quote": "7949.165637466"
+      },
+      {
+        "side": "ask",
+        "price": "78582.2",
+        "native_quantity": "0.2063347",
+        "metadata_quantity_encoding": "base",
+        "expected_base": "0.2063347",
+        "expected_quote": "16214.23466234"
+      }
+    ],
+    "archive_member": "BTC-USDT-L2orderbook-5000lv-2026-09-01.data",
+    "characters_inspected": 286432,
+    "records_inspected": 1,
+    "inspection": "First JSON book event only; no TAR member inventory or whole-archive scan.",
+    "observed_instrument": "BTC-USDT"
+  }
+]

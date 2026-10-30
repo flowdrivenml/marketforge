@@ -250,33 +250,3 @@ fn streams_real_trade_timestamp_ranges() {
     println!("{}", "=".repeat(90));
     println!("TRADE STREAM RANGES: PASS");
 }
-
-#[test]
-fn accepts_dataset_with_empty_source_task() {
-    let root = project_root();
-
-    let input = resolve_trade_dataset(&root, 120);
-
-    assert_eq!(input.manifest.source_tasks, vec![0, 1, 2]);
-
-    let inventory = build_trade_inventory(&[input]).expect("build trade inventory");
-
-    let task_ids = inventory
-        .iter()
-        .map(|task| task.task_id)
-        .collect::<Vec<_>>();
-
-    assert_eq!(task_ids, vec![0, 2]);
-
-    let total_rows: u64 = inventory.iter().map(|task| task.canonical_rows).sum();
-
-    assert_eq!(total_rows, 162);
-
-    println!("\nMARKETFORGE — EMPTY TRADE SOURCE TASK");
-    println!("{}", "=".repeat(80));
-    println!("Dataset      : 120");
-    println!("Source tasks : 3");
-    println!("Active tasks : 2");
-    println!("Trade rows   : {total_rows}");
-    println!("Result       : PASS");
-}

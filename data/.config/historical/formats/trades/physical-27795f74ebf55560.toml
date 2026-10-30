@@ -1,0 +1,7 @@
+schema_version = 1
+kind = "physical"
+id = "trades-27795f74ebf55560"
+container_format = "csv"
+record_format = "rows"
+supported_containers = ["zip"]
+raw_schema = { "fields" = [{ "name" = "trade_id", "type" = "integer/string" }, { "name" = "timestamp", "type" = "integer", "unit" = "milliseconds", "representation" = "unix_epoch", "observed_effective_precision" = "second" }, { "name" = "price", "type" = "decimal" }, { "name" = "side", "type" = "string" }, { "name" = "volume(quote)", "type" = "decimal" }, { "name" = "size(base)", "type" = "decimal" }], "header" = true, "ordering" = "chronological", "granularity" = "daily", "daily_packaging" = "numbered_zip_chunks", "archive_day_boundary" = "UTC+8" }

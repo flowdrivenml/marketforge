@@ -1,0 +1,7 @@
+schema_version = 1
+kind = "physical"
+id = "depth-0da18a2459405ace"
+container_format = "jsonl"
+record_format = "events"
+supported_containers = ["zip"]
+raw_schema = { "granularity" = "daily", "ordering" = "chronological", "archive_members" = "multiple_option_contracts", "maximum_depth_per_side" = 25, "fields" = [{ "name" = "topic", "type" = "string" }, { "name" = "ts", "type" = "integer", "representation" = "unix_epoch", "unit" = "milliseconds", "precision" = "millisecond" }, { "name" = "type", "type" = "string", "values" = ["snapshot", "delta"] }, { "name" = "id", "type" = "string" }, { "name" = "data.s", "type" = "string" }, { "name" = "data.b", "type" = "array", "level_schema" = ["price", "quantity"] }, { "name" = "data.a", "type" = "array", "level_schema" = ["price", "quantity"] }, { "name" = "data.u", "type" = "integer" }, { "name" = "data.seq", "type" = "integer" }, { "name" = "cts", "type" = "integer", "representation" = "unix_epoch", "unit" = "milliseconds", "precision" = "millisecond" }], "order_book" = { "event_model" = "snapshot_and_incremental_delta", "maximum_depth_per_side" = 25, "update_id" = "data.u", "cross_sequence" = "data.seq", "event_id" = "id", "delta_delete_quantity" = "0", "reconstruction_required" = true, "reconstruction_scope" = "per_option_contract" } }

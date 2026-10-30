@@ -1,0 +1,15 @@
+schema_version = 1
+kind = "profile"
+id = "bybit.spot.spot.bybit-t1.v1"
+physical = "trades-8f03e8ad9adedc8e"
+format_code = "BYBIT-T1"
+exchange = "bybit"
+instrument_type = "spot"
+market_category = "spot"
+source_ordering = "source_ordered"
+
+[[rules]]
+target = "trade"
+timestamp_encoding = "milliseconds"
+quantity_encoding = "base"
+rules = { "side" = { "source" = "side", "transform" = "casefold" }, "price" = { "source" = "price" }, "optional" = { "is_rpi" = { "source" = "rpi", "transform" = "bool" } }, "quantity" = { "source" = "volume" }, "trade_id" = { "source" = "id" }, "event_timestamp" = { "source" = "timestamp" } }

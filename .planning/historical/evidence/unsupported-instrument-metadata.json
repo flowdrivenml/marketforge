@@ -1,0 +1,20 @@
+[
+  {
+    "exchange": "bybit",
+    "instrument_type": "option",
+    "market_category": "option",
+    "quantity_type": "base",
+    "instruments": 1002,
+    "with_contract_value": 0,
+    "with_contract_value_asset": 0
+  },
+  {
+    "exchange": "okx",
+    "instrument_type": "option",
+    "market_category": "option",
+    "quantity_type": "contracts",
+    "instruments": 1996,
+    "with_contract_value": 1996,
+    "with_contract_value_asset": 1996
+  }
+]

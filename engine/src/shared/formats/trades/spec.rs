@@ -131,6 +131,24 @@ impl TradeSpec {
             _ => {}
         }
 
+        for source in [self.trade_id.as_ref(), self.sequence.as_ref()]
+            .into_iter()
+            .flatten()
+        {
+            if source.source.trim().is_empty() {
+                return Err(MarketForgeError::InvalidConfiguration(
+                    "optional trade source must not be empty".into(),
+                ));
+            }
+        }
+        if self.side.values.iter().any(|(key, value)| {
+            key != &key.to_ascii_lowercase()
+                || !matches!(value.to_ascii_lowercase().as_str(), "buy" | "sell")
+        }) {
+            return Err(MarketForgeError::InvalidConfiguration(
+                "invalid side mapping key or canonical target".into(),
+            ));
+        }
         if let Some(optional) = &self.optional {
             if let Some(rpi) = &optional.is_rpi {
                 if matches!(rpi.transform, BoolTransform::Equals) && rpi.value.is_none() {

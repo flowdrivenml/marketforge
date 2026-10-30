@@ -1,0 +1,17 @@
+schema_version = 1
+kind = "profile"
+id = "okx.option.option.okx-b2.v1"
+physical = "depth-8f9b705d40e16cca"
+format_code = "OKX-B2"
+exchange = "okx"
+instrument_type = "option"
+market_category = "option"
+unsupported_reason = "Options processing is deferred: per_member_instrument archive scope requires option-chain member discovery and independent instrument/book orchestration."
+
+[[rules]]
+target = "l2_snapshot"
+rules = { "event_timestamp" = { "source" = "ts" }, "instrument" = { "source" = "instId", "lookup" = "catalog" }, "bids" = { "source" = "bids", "price_index" = 0, "quantity_index" = 1, "order_count_index" = 2 }, "asks" = { "source" = "asks", "price_index" = 0, "quantity_index" = 1, "order_count_index" = 2 }, "event_filter" = { "source" = "action", "equals" = "snapshot" }, "snapshot" = { "type" = "single_event" }, "archive_scope" = { "type" = "per_member_instrument" } }
+
+[[rules]]
+target = "l2_update"
+rules = { "event_timestamp" = { "source" = "ts" }, "instrument" = { "source" = "instId", "lookup" = "catalog" }, "bids" = { "source" = "bids", "price_index" = 0, "quantity_index" = 1, "order_count_index" = 2 }, "asks" = { "source" = "asks", "price_index" = 0, "quantity_index" = 1, "order_count_index" = 2 }, "event_filter" = { "source" = "action", "equals" = "update" }, "update_semantics" = { "type" = "absolute_level", "zero_quantity" = "delete", "nonzero_quantity" = "set" }, "archive_scope" = { "type" = "per_member_instrument" } }

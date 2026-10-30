@@ -11,7 +11,7 @@ fn project_root() -> PathBuf {
 
 fn load_test_job(mode: &str) -> ConvertJob {
     let path = project_root()
-        .join("data/.jobs/convert")
+        .join("engine/tests/historical/convert/fixtures/jobs")
         .join(format!("convert-{mode}.json"));
 
     load_convert_job(path).unwrap()

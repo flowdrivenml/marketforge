@@ -1,0 +1,161 @@
+{
+  "original_historical_targets": 160,
+  "normal_targets": 3,
+  "slow_targets": 3,
+  "original_cases": 781,
+  "preserved_cases": 781,
+  "missing": [],
+  "new_cases": [
+    [
+      "historical_normalize",
+      "configuration::complete_profile_inventory_compiles_and_resolves_uniquely"
+    ],
+    [
+      "historical_normalize",
+      "configuration::conflicts_unknown_fields_and_fingerprints_fail_closed"
+    ],
+    [
+      "historical_normalize",
+      "configuration::duplicate_profile_and_physical_definitions_are_rejected"
+    ],
+    [
+      "historical_normalize",
+      "configuration::errors_identify_file_and_invalid_configuration"
+    ],
+    [
+      "historical_normalize",
+      "configuration::every_existing_job_matches_resolved_toml_configuration"
+    ],
+    [
+      "historical_normalize",
+      "configuration::incompatible_instrument_and_container_cannot_override_profile"
+    ],
+    [
+      "historical_normalize",
+      "configuration::lightweight_and_legacy_jobs_resolve_identically"
+    ],
+    [
+      "historical_normalize",
+      "configuration::profile_fingerprint_is_independent_of_file_location_and_whitespace"
+    ],
+    [
+      "historical_normalize",
+      "configuration::resolved_job_provenance_can_be_reloaded_without_changing_fingerprint"
+    ],
+    [
+      "historical_normalize",
+      "configuration::unknown_and_unsupported_profiles_have_explicit_errors"
+    ],
+    [
+      "historical_normalize",
+      "configuration::unsupported_transform_unknown_rule_and_missing_source_fail_at_load"
+    ],
+    [
+      "historical_normalize",
+      "equivalence::real_trade_prefix_archives_legacy_and_toml_have_exact_events_and_counters"
+    ],
+    [
+      "historical_normalize",
+      "equivalence::small_depth_archives_legacy_and_toml_preserve_snapshots_deltas_sequences_and_errors"
+    ]
+  ],
+  "counts": {
+    "depth_spec": 1,
+    "depth_xlsx_decoder": 6,
+    "depth_csv_adapter": 4,
+    "depth_scalar": 2,
+    "historical_merge": 233,
+    "historical_normalize": 112,
+    "depth_processor": 4,
+    "depth_transforms": 14,
+    "historical_convert": 170,
+    "historical_slow_normalize": 39,
+    "historical_slow_convert": 160,
+    "historical_slow_merge": 80
+  },
+  "changed_ignore_states": [],
+  "finalization": {
+    "before_cases": 794,
+    "after_cases": 801,
+    "preserved_cases": 794,
+    "missing": [],
+    "added": [
+      "configuration::lightweight_jobs_reject_unsupported_profiles_and_incompatible_instruments",
+      "configuration::multiple_archive_containers_require_explicit_selection",
+      "configuration::read_only_database_snapshot_matches_complete_catalog",
+      "configuration::resolved_snapshot_rejects_changed_profile_identity_or_fingerprint",
+      "convert_validate_values::independently_validates_converted_values",
+      "equivalence::committed_configuration_preserves_effective_runtime_settings_and_checksum",
+      "equivalence::observed_gateio_spot_snapshot_keeps_bid_and_ask_orientation"
+    ],
+    "changed_ignore_states": [],
+    "reclassified_from_slow_to_normal": [
+      "convert_combined_alignment::accepts_internal_reference_after_event",
+      "convert_combined_alignment::ignores_unselected_internal_streams",
+      "convert_combined_alignment::preserves_internal_reference_ordering",
+      "convert_combined_alignment::reference_snapshot_preserves_state",
+      "convert_combined_alignment::rejects_duplicate_internal_reference",
+      "convert_combined_alignment::rejects_missing_external_cursor",
+      "convert_combined_alignment::rejects_overlapping_reference_sources",
+      "convert_execution_reader::first_thousand_events_are_ordered",
+      "convert_execution_reader::opens_physical_dataset",
+      "convert_execution_reader::preserves_original_arrow_values",
+      "convert_execution_reader::preserves_physical_trade_schema",
+      "convert_execution_reader::rejects_missing_parquet_file",
+      "convert_execution_reader::rejects_zero_batch_size",
+      "convert_execution_reader::respects_batch_size",
+      "convert_execution_reader::tracks_records_read",
+      "convert_partitions::discovers_all_physical_row_groups",
+      "convert_partitions::never_creates_empty_partitions",
+      "convert_partitions::partition_planning_is_deterministic",
+      "convert_partitions::partition_row_counts_match_row_groups",
+      "convert_partitions::partitions_are_contiguous",
+      "convert_partitions::partitions_cover_every_row_group_exactly_once",
+      "convert_partitions::prints_partition_distribution",
+      "convert_partitions::rejects_zero_workers",
+      "convert_partitions::respects_requested_worker_counts",
+      "convert_partitions::row_group_offsets_are_contiguous",
+      "convert_reference_reader::decodes_first_reference_observation",
+      "convert_reference_reader::first_thousand_events_are_ordered",
+      "convert_reference_reader::opens_real_physical_dataset",
+      "convert_reference_reader::preserves_decimal256_price",
+      "convert_reference_reader::rejects_zero_batch_size",
+      "merge_trade_stream::accepts_dataset_with_empty_source_task",
+      "merge_unified_failure::rejects_corrupted_source_manifest",
+      "merge_unified_failure::rejects_existing_output_without_modification",
+      "merge_unified_failure::rejects_existing_staging_directory",
+      "merge_unified_failure::rejects_insufficient_file_budget",
+      "merge_unified_failure::rejects_insufficient_memory_budget",
+      "merge_unified_failure::rejects_missing_input_dataset",
+      "merge_unified_failure::rejects_missing_processing_job",
+      "merge_unified_timeline::converts_trade_event_to_unified_record",
+      "merge_unified_timeline::handles_empty_unified_batch",
+      "merge_unified_timeline::reuses_unified_batch_builder",
+      "merge_unified_timeline::validates_unified_timeline_schema",
+      "merge_unified_timeline::writes_trade_records_to_arrow_batch",
+      "trade_integrity_enforcement::count_threshold_stops_processing",
+      "trade_integrity_enforcement::degrade_action_skips_invalid_records",
+      "trade_integrity_enforcement::disabled_enforcement_still_records_errors",
+      "trade_integrity_enforcement::fail_action_stops_on_invalid_record",
+      "trade_integrity_enforcement::previous_task_violations_contribute_to_absolute_limit",
+      "trade_worker_metrics::retains_metrics_after_sink_failure"
+    ],
+    "before_counts": {
+      "historical_merge": 233,
+      "historical_normalize": 112,
+      "historical_convert": 170,
+      "historical_slow_normalize": 39,
+      "historical_slow_convert": 160,
+      "historical_slow_merge": 80
+    },
+    "after_counts": {
+      "historical_normalize": 124,
+      "historical_convert": 200,
+      "historical_merge": 246,
+      "historical_slow_normalize": 33,
+      "historical_slow_merge": 67,
+      "historical_slow_convert": 131
+    },
+    "original_direct_test_bodies_unchanged": 767
+  }
+}

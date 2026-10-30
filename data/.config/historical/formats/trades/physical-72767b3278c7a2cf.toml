@@ -1,0 +1,7 @@
+schema_version = 1
+kind = "physical"
+id = "trades-72767b3278c7a2cf"
+container_format = "csv"
+record_format = "rows"
+supported_containers = ["gzip"]
+raw_schema = { "fields" = [{ "name" = "timestamp", "type" = "decimal", "unit" = "seconds", "position" = 1, "precision" = "microsecond", "representation" = "unix_epoch", "fractional_digits" = 6 }, { "name" = "dealid", "type" = "integer", "position" = 2 }, { "name" = "price", "type" = "decimal", "position" = 3 }, { "name" = "amount", "type" = "decimal", "position" = 4 }, { "name" = "side", "type" = "integer", "position" = 5 }], "header" = false, "ordering" = "chronological", "granularity" = "monthly" }

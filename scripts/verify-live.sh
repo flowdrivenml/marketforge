@@ -132,7 +132,8 @@ verify_live_integration() {
   local target
   for target in \
     live_websocket live_rest live_normalization live_integrity \
-    live_config live_metrics live_exchange_contracts; do
+    live_config live_metrics live_exchange_contracts \
+    live_recovery live_source live_router; do
     run_gate \
       "$target" \
       cargo test \

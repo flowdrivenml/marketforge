@@ -143,7 +143,7 @@ fn execute_processing_session_inner(
     // -------------------------------------------------------------
 
     for job in jobs {
-        prepare_staging(job)?;
+        prepare_staging(job, config)?;
     }
 
     // -------------------------------------------------------------

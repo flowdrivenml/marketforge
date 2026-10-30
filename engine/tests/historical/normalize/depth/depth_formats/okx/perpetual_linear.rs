@@ -1,4 +1,4 @@
-use crate::common::run_depth_format_test;
+use crate::depth_formats::common::run_depth_format_test;
 use marketforge_engine::shared::domain::book::SequencePolicy;
 use rust_decimal::Decimal;
 use std::str::FromStr;

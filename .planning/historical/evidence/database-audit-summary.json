@@ -1,0 +1,16 @@
+{
+  "captured_at_utc": "2026-10-30T01:02:32.327244+00:00",
+  "read_only": true,
+  "raw_formats": 36,
+  "normalization_mappings": 49,
+  "profiles": 36,
+  "physical_definitions": 19,
+  "supported": 31,
+  "unsupported": 5,
+  "status_counts": {
+    "EXACT MATCH": 30,
+    "UNSUPPORTED": 5,
+    "JUSTIFIED CORRECTION": 1
+  },
+  "database_snapshot_sha256": "e6b19ab4113d08c3bc160007cf2f3af101a394a07bf46e9bccbf1176e1f83b77"
+}

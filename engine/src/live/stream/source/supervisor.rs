@@ -20,6 +20,9 @@ pub enum SourceSupervisorError {
     #[error(transparent)]
     Runtime(#[from] StreamRuntimeError),
 
+    #[error(transparent)]
+    Router(#[from] crate::live::stream::router::RouterError),
+
     #[error("executor belongs to another stream: {0}")]
     WrongStream(String),
 
@@ -106,6 +109,66 @@ impl SourceRuntimeSupervisor {
 
         let generation = self.registry.begin_start(stream_id)?;
 
+        self.spawn_registered(
+            stream_id,
+            executor,
+            generation,
+            publish_depth,
+            publish_trades,
+        )
+    }
+
+    /// Start a Source with runtime-authorized Router publication callbacks.
+    /// Normalization, acquisition fencing and integrity acknowledgment remain unchanged.
+    pub fn start_routed(
+        &mut self,
+        stream_id: &str,
+        executor: SourceStreamExecutor,
+        router: &crate::live::stream::router::StreamRouter,
+    ) -> Result<RuntimeGeneration, SourceSupervisorError> {
+        if executor.stream_id() != stream_id {
+            return Err(SourceSupervisorError::WrongStream(stream_id.into()));
+        }
+        if self.tasks.contains_key(stream_id) {
+            return Err(SourceSupervisorError::AlreadyActive(stream_id.into()));
+        }
+        let generation = self.registry.begin_start(stream_id)?;
+        let authority = self
+            .registry
+            .publication_authority(stream_id)
+            .expect("new runtime authority");
+        let producer = match router
+            .attach_producer(crate::live::stream::router::AttachProducerRequest { authority })
+        {
+            Ok(producer) => std::sync::Arc::new(producer),
+            Err(error) => {
+                self.registry
+                    .mark_failed(stream_id, generation, error.to_string())?;
+                return Err(error.into());
+            }
+        };
+        let depth = producer.clone();
+        self.spawn_registered(
+            stream_id,
+            executor,
+            generation,
+            move |events| depth.publish_source_depth(events),
+            move |trades| producer.publish_source_trades(trades),
+        )
+    }
+
+    fn spawn_registered<D, T>(
+        &mut self,
+        stream_id: &str,
+        executor: SourceStreamExecutor,
+        generation: RuntimeGeneration,
+        publish_depth: D,
+        publish_trades: T,
+    ) -> Result<RuntimeGeneration, SourceSupervisorError>
+    where
+        D: for<'a> FnMut(&[DepthPublicationEvent<'a>]) -> Result<(), String> + Send + 'static,
+        T: for<'a> FnMut(SourceTradePublication<'a>) -> Result<(), String> + Send + 'static,
+    {
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
         let (readiness_tx, readiness_rx) = watch::channel(SourceReadiness::AwaitingData);

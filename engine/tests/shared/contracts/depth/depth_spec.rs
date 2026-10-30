@@ -77,14 +77,15 @@ fn compiles_all_depth_normalization_specs() {
     println!("Absolute updates : {absolute_updates}");
     println!("Relative updates : {relative_updates}");
 
-    assert_eq!(jobs, 15);
-    assert_eq!(tasks, 252);
+    // Current fixture job inventory includes the four OKX future depth jobs.
+    assert_eq!(jobs, 19);
+    assert_eq!(tasks, 264);
 
-    assert_eq!(snapshots, 252);
-    assert_eq!(absolute_updates, 27);
+    assert_eq!(snapshots, 264);
+    assert_eq!(absolute_updates, 39);
     assert_eq!(relative_updates, 216);
 
-    assert_eq!(specs, 495);
+    assert_eq!(specs, 519);
 
     println!("RESULT           : PASS");
 }

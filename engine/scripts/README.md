@@ -20,3 +20,12 @@ Execution exits nonzero if any discovered case is failed, timed out, blocked, or
 See [the shared refactor report](../../docs/architecture/SHARED_REFACTOR_REPORT.md) for the exact migration commands, exclusions, identity maps, and recorded results.
 
 The [focused follow-up report](../../docs/architecture/SHARED_REFACTOR_FOLLOWUP_REPORT.md) records the subsequent storage-directory removal and validation under `target/refactor-followup-validation/`.
+
+## Historical grouped verification
+
+Historical format/profile jobs and test grouping are documented in
+[Historical modernization](../../docs/historical/modernization.md).
+Use `scripts/verify-historical.sh normal` from the repository root for normal
+per-case bounded execution, or `compile` for compilation-only verification.
+Historical slow targets require `historical-slow-tests`; the verifier only compiles
+them and never runs them. Keep a fresh output directory for selective bounded runs.

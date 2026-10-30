@@ -1,0 +1,7 @@
+schema_version = 1
+kind = "physical"
+id = "depth-b056fca0cb1f113d"
+container_format = "xlsx"
+record_format = "snapshot_rows"
+supported_containers = ["zip"]
+raw_schema = { "header" = true, "granularity" = "daily", "archive_day_boundary" = "UTC+8", "workbook_sheets" = 1, "ordering" = "not_chronological", "sorting_required" = true, "fields" = [{ "name" = "timestamp", "type" = "integer", "representation" = "unix_epoch", "unit" = "seconds", "precision" = "second" }, { "name" = "asks", "type" = "string", "encoding" = "json", "level_schema" = ["price", "quantity"], "ordering" = "price_ascending" }, { "name" = "bids", "type" = "string", "encoding" = "json", "level_schema" = ["price", "quantity"], "ordering" = "price_descending" }], "order_book" = { "event_model" = "standalone_snapshot", "delta_updates" = false, "sequence_id" = false, "update_id" = false, "reconstruction_required" = false, "snapshot_depth" = "variable" } }

@@ -3,8 +3,8 @@ use {
     marketforge_engine::shared::domain::book::SequencePolicy,
 };
 
-use crate::common::{ExpectedDepthEvent, run_depth_format_test_with_events};
-use crate::common::{ExpectedDepthLevel, verify_snapshot_quantities};
+use crate::depth_formats::common::{ExpectedDepthEvent, run_depth_format_test_with_events};
+use crate::depth_formats::common::{ExpectedDepthLevel, verify_snapshot_quantities};
 use marketforge_engine::shared::domain::canonical::BookSide;
 
 #[test]

@@ -1,0 +1,937 @@
+[
+  {
+    "profile_id": "binance.spot.spot.binance-t1.v1",
+    "quantity_encoding": [
+      "base"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily ZIP/deflate archive containing headerless CSV. Trade IDs were consecutive in the inspected fixture. Quote quantity matched price multiplied by quantity. is_best_match was true for every observed record.",
+    "database_normalization_notes": [
+      "Spot quantity is base-asset quantity. Quote quantity exists in the raw format but canonical quantity normalization is driven by instrument_specs. is_best_match is not retained in the canonical Trade schema."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "binance-spot-spot-BTCUSDT-trade-20260901-20260904-d106.json",
+        "instrument_id": 6163,
+        "symbol": "BTCUSDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/binance/spot/spot/trade_ticks/BTCUSDT/BTCUSDT-trades-2026-09-01.zip"
+      },
+      {
+        "job": "binance-spot-spot-ETHBTC-trade-20260901-20260904-d129.json",
+        "instrument_id": 6152,
+        "symbol": "ETHBTC",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/binance/spot/spot/trade_ticks/ETHBTC/ETHBTC-trades-2026-09-01.zip"
+      },
+      {
+        "job": "binance-spot-spot-ETHUSDC-trade-20260901-20260904-d115.json",
+        "instrument_id": 6570,
+        "symbol": "ETHUSDC",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/binance/spot/spot/trade_ticks/ETHUSDC/ETHUSDC-trades-2026-09-01.zip"
+      },
+      {
+        "job": "binance-spot-spot-BTCUSDC-trade-20260901-20260904-d130.json",
+        "instrument_id": 6569,
+        "symbol": "BTCUSDC",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/binance/spot/spot/trade_ticks/BTCUSDC/BTCUSDC-trades-2026-09-01.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "binance.linear.perpetual.binance-t2.v1",
+    "quantity_encoding": [
+      "base"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily ZIP/deflate archive containing headered CSV. Trade IDs were unique but not contiguous in the inspected fixture. Quote quantity matched price multiplied by quantity.",
+    "database_normalization_notes": [
+      "Linear perpetual qty is normalized according to instrument_specs. quote_qty is redundant with canonical quantity conversion and is not independently retained."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "binance-perpetual-linear-BTCUSDT-trade-20260901-20260904-d90.json",
+        "instrument_id": 9872,
+        "symbol": "BTCUSDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/binance/perpetual/linear/trade_ticks/BTCUSDT/BTCUSDT-trades-2026-09-01.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "binance.inverse.perpetual.binance-t3.v1",
+    "quantity_encoding": [
+      "contracts"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily ZIP/deflate archive containing headered CSV. qty is contract quantity and base_qty is base-asset quantity. The inspected BTCUSD_PERP fixture satisfied base_qty = qty * 100 / price, but the 100 contract value must not be assumed universal and belongs to instrument metadata.",
+    "database_normalization_notes": [
+      "Inverse perpetual qty is contract quantity. Contract value and contract-value asset are obtained from instrument_specs rather than hardcoded. Raw base_qty is redundant with canonical quantity conversion and is not independently retained."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "binance-perpetual-inverse-BTCUSD_PERP-trade-20260901-20260904-d99.json",
+        "instrument_id": 10792,
+        "symbol": "BTCUSD_PERP",
+        "database_quantity_type": "contracts",
+        "contract_value": "100",
+        "contract_value_asset": "USD",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/binance/perpetual/inverse/trade_ticks/BTCUSD_PERP/BTCUSD_PERP-trades-2026-09-01.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "bitget.spot.spot.bitget-t1.v1",
+    "quantity_encoding": [
+      "base"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily UTC+8 archive packaged as one or more numbered ZIP chunks. Each archive contains one headered CSV. Observed timestamps were encoded as milliseconds but had effective one-second precision.",
+    "database_normalization_notes": [
+      "Spot size(base) is the authoritative raw quantity. volume(quote) is redundant with canonical quantity normalization and is not independently retained."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "bitget-spot-spot-BTCUSDT-trade-20260901-20260904-d109.json",
+        "instrument_id": 11545,
+        "symbol": "BTCUSDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bitget/spot/spot/trade_ticks/BTCUSDT/USDT-BTCUSDT_20260901_001.zip"
+      },
+      {
+        "job": "bitget-spot-spot-ETHUSDC-trade-20260901-20260904-d116.json",
+        "instrument_id": 11550,
+        "symbol": "ETHUSDC",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bitget/spot/spot/trade_ticks/ETHUSDC/USDC-ETHUSDC_20260901_001.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "bitget.linear.perpetual.bitget-t1.v1",
+    "quantity_encoding": [
+      "base"
+    ],
+    "supported": true,
+    "database_raw_notes": "Same physical trade format as Bitget Spot. Daily UTC+8 archive may be split across multiple numbered ZIP chunks. Observed timestamps were encoded as milliseconds but had effective one-second precision.",
+    "database_normalization_notes": [
+      "Linear perpetual trade files use the same physical format as Spot. size(base) is used as the authoritative quantity source and normalized according to instrument_specs. volume(quote) is not independently retained."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "bitget-perpetual-linear-BTCUSDT-trade-20260901-20260904-d93.json",
+        "instrument_id": 14215,
+        "symbol": "BTCUSDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bitget/perpetual/linear/trade_ticks/BTCUSDT/BTCUSDT-BTCUSDT_20260901_001.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "bitget.spot.spot.bitget-b1.v1",
+    "quantity_encoding": [
+      "base"
+    ],
+    "supported": true,
+    "database_raw_notes": "ZIP contains an XLSX workbook with one sheet. Rows are independent full snapshots and raw workbook order is not chronological. Snapshots must be sorted by timestamp. Observed Spot snapshots contained exactly 500 asks and 500 bids.",
+    "database_normalization_notes": [
+      "Each raw XLSX row is an independent full snapshot. Raw rows are not chronologically ordered and must be sorted by timestamp before canonical emission. No L2Update records are generated."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "bitget-spot-spot-ETHUSDC-l2-20260901-20260904-d117.json",
+        "instrument_id": 11550,
+        "symbol": "ETHUSDC",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bitget/spot/spot/order_book_l2/ETHUSDC/USDC-ETHUSDC_1_20260901.zip"
+      },
+      {
+        "job": "bitget-spot-spot-BTCUSDT-l2-20260901-20260904-d110.json",
+        "instrument_id": 11545,
+        "symbol": "BTCUSDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bitget/spot/spot/order_book_l2/BTCUSDT/USDT-BTCUSDT_1_20260901.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "bitget.linear.perpetual.bitget-b1.v1",
+    "quantity_encoding": [
+      "base"
+    ],
+    "supported": true,
+    "database_raw_notes": "ZIP contains an XLSX workbook with one sheet. Rows are independent full snapshots and raw workbook order is not chronological. Snapshots must be sorted by timestamp. Observed Linear snapshots contained exactly 500 asks and 500 bids.",
+    "database_normalization_notes": [
+      "Each raw row is an independent full snapshot. Raw rows must be sorted by timestamp. Level quantities are normalized using derivative instrument_specs. No L2Update records are generated."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "bitget-perpetual-linear-BTCUSDT-l2-20260901-20260904-d94.json",
+        "instrument_id": 14215,
+        "symbol": "BTCUSDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bitget/perpetual/linear/order_book_l2/BTCUSDT/BTCUSDT-BTCUSDT_3_20260901.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "bitget.inverse.perpetual.bitget-b1.v1",
+    "quantity_encoding": [
+      "unresolved"
+    ],
+    "supported": false,
+    "database_raw_notes": "ZIP contains an XLSX workbook with one sheet. Rows are independent snapshots and raw workbook order is not chronological. Snapshots must be sorted by timestamp. Observed inverse snapshot depth was variable.",
+    "database_normalization_notes": [
+      "Each raw row is an independent snapshot. Raw rows must be sorted by timestamp. Snapshot depth may vary. Level quantities are normalized using inverse instrument_specs. No L2Update records are generated."
+    ],
+    "instrument_witnesses": [],
+    "discrepancies": [],
+    "assessment": "UNSUPPORTED"
+  },
+  {
+    "profile_id": "bybit.spot.spot.bybit-t1.v1",
+    "quantity_encoding": [
+      "base"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily GZIP CSV. id is a sequential row/trade identifier within the archive. side represents taker side.",
+    "database_normalization_notes": [
+      "Spot volume is base-asset quantity. Raw side is taker/aggressor side. RPI is retained as canonical is_rpi."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "bybit-spot-spot-BTCUSDT-trade-20260901-20260904-d104.json",
+        "instrument_id": 1,
+        "symbol": "BTCUSDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bybit/spot/spot/trade_ticks/BTCUSDT/BTCUSDT_2026-09-01.csv.gz"
+      },
+      {
+        "job": "bybit-spot-spot-ETHUSDC-trade-20260901-20260904-d113.json",
+        "instrument_id": 64,
+        "symbol": "ETHUSDC",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bybit/spot/spot/trade_ticks/ETHUSDC/ETHUSDC_2026-09-01.csv.gz"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "bybit.linear.perpetual.bybit-t2.v1",
+    "quantity_encoding": [
+      "base"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily GZIP CSV. Physical parser is shared with Bybit inverse perpetual trades. Linear and inverse notional semantics differ and must be handled during normalization.",
+    "database_normalization_notes": [
+      "Linear perpetual size is normalized using instrument_specs. homeNotional, foreignNotional, and grossValue are not used as authoritative canonical quantity fields."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "bybit-perpetual-linear-BTCUSDT-trade-20260901-20260904-d88.json",
+        "instrument_id": 688,
+        "symbol": "BTCUSDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bybit/perpetual/linear/trade_ticks/BTCUSDT/BTCUSDT2026-09-01.csv.gz"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "bybit.inverse.perpetual.bybit-t2.v1",
+    "quantity_encoding": [
+      "quote"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily GZIP CSV. Physical parser is shared with Bybit linear perpetual trades. Linear and inverse notional semantics differ and must be handled during normalization.",
+    "database_normalization_notes": [
+      "Inverse perpetual size is normalized using instrument_specs. Contract interpretation must not be inferred from homeNotional, foreignNotional, or hardcoded contract values."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "bybit-perpetual-inverse-BTCUSD-trade-20260901-20260904-d97.json",
+        "instrument_id": 1427,
+        "symbol": "BTCUSD",
+        "database_quantity_type": "quote",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bybit/perpetual/inverse/trade_ticks/BTCUSD/BTCUSD2026-09-01.csv.gz"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "bybit.option.option.bybit-t3.v1",
+    "quantity_encoding": [
+      "unresolved"
+    ],
+    "supported": false,
+    "database_raw_notes": "Daily ZIP containing option trades. trade_seq may be shared by multiple trades; trade_id is the unique trade identifier. Includes trade IV, mark IV, index price, and mark price.",
+    "database_normalization_notes": [
+      "Option archives contain multiple instruments, so instrument_name is resolved through the catalog. trade_id is the trade identifier and trade_seq is retained separately as canonical sequence."
+    ],
+    "instrument_witnesses": [],
+    "discrepancies": [],
+    "assessment": "UNSUPPORTED"
+  },
+  {
+    "profile_id": "bybit.spot.spot.bybit-b1.v1",
+    "quantity_encoding": [
+      "base"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily ZIP containing JSON Lines. Snapshot plus incremental delta stream with 200 levels per side. Start from a snapshot and apply deltas using update ID data.u.",
+    "database_normalization_notes": [
+      "A raw snapshot event directly produces one canonical L2Snapshot. Bid and ask quantities are normalized using instrument_specs.",
+      "Each raw delta level is normalized independently. Non-zero quantity produces canonical set; zero quantity produces canonical delete."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "bybit-spot-spot-ETHUSDC-l2-20260901-20260904-d114.json",
+        "instrument_id": 64,
+        "symbol": "ETHUSDC",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bybit/spot/spot/order_book_l2/ETHUSDC/2026-09-01_ETHUSDC_ob200.data.zip"
+      },
+      {
+        "job": "bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json",
+        "instrument_id": 1,
+        "symbol": "BTCUSDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bybit/spot/spot/order_book_l2/BTCUSDT/2026-09-01_BTCUSDT_ob200.data.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "bybit.linear.perpetual.bybit-b1.v1",
+    "quantity_encoding": [
+      "base"
+    ],
+    "supported": true,
+    "database_raw_notes": "Same physical L2 representation and reconstruction model as Bybit Spot BYBIT-B1.",
+    "database_normalization_notes": [
+      "Same physical snapshot representation as BYBIT-B1 Spot. Level quantities are interpreted using derivative instrument_specs.",
+      "Non-zero quantities set the resulting level quantity. Zero quantity deletes the level."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "bybit-perpetual-linear-BTCUSDT-l2-20260901-20260904-d131.json",
+        "instrument_id": 688,
+        "symbol": "BTCUSDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bybit/perpetual/linear/order_book_l2/BTCUSDT/2026-09-01_BTCUSDT_ob200.data.zip"
+      },
+      {
+        "job": "bybit-perpetual-linear-BTCUSDT-l2-20260901-20260904-d89.json",
+        "instrument_id": 688,
+        "symbol": "BTCUSDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bybit/perpetual/linear/order_book_l2/BTCUSDT/2026-09-01_BTCUSDT_ob200.data.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "bybit.inverse.perpetual.bybit-b1.v1",
+    "quantity_encoding": [
+      "quote"
+    ],
+    "supported": true,
+    "database_raw_notes": "Same physical L2 representation and reconstruction model as Bybit Spot and Linear Perpetual BYBIT-B1.",
+    "database_normalization_notes": [
+      "Same physical snapshot representation as other BYBIT-B1 markets. Inverse quantity conversion is resolved through instrument_specs.",
+      "Non-zero quantities set the resulting level quantity. Zero quantity deletes the level. Inverse quantity conversion uses instrument_specs."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "bybit-perpetual-inverse-BTCUSD-l2-20260901-20260904-d132.json",
+        "instrument_id": 1427,
+        "symbol": "BTCUSD",
+        "database_quantity_type": "quote",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bybit/perpetual/inverse/order_book_l2/BTCUSD/2026-09-01_BTCUSD_ob200.data.zip"
+      },
+      {
+        "job": "bybit-perpetual-inverse-BTCUSD-l2-20260901-20260904-d98.json",
+        "instrument_id": 1427,
+        "symbol": "BTCUSD",
+        "database_quantity_type": "quote",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/bybit/perpetual/inverse/order_book_l2/BTCUSD/2026-09-01_BTCUSD_ob200.data.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "bybit.option.option.bybit-b2.v1",
+    "quantity_encoding": [
+      "unresolved"
+    ],
+    "supported": false,
+    "database_raw_notes": "Daily ZIP contains independent members for many option contracts. Each contract is reconstructed independently. Depth 25 is a maximum; snapshots may contain fewer populated levels. Event representation resembles BYBIT-B1 but packaging, depth, and top-level event id differ.",
+    "database_normalization_notes": [
+      "Each option contract is reconstructed independently. A snapshot event produces one canonical L2Snapshot for that option instrument.",
+      "Each option contract maintains independent book state. Non-zero quantity produces canonical set and zero quantity produces canonical delete."
+    ],
+    "instrument_witnesses": [],
+    "discrepancies": [],
+    "assessment": "UNSUPPORTED"
+  },
+  {
+    "profile_id": "gateio.spot.spot.gate-t1.v1",
+    "quantity_encoding": [
+      "base"
+    ],
+    "supported": true,
+    "database_raw_notes": "Monthly GZIP containing headerless CSV. Timestamps are Unix seconds with six fractional digits. The raw side field uses Gate-specific integer encoding.",
+    "database_normalization_notes": [
+      "Spot amount is base-asset quantity. Gate side encoding 1=sell and 2=buy is converted to canonical aggressor side."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "gateio-spot-spot-BTC_USDT-trade-20260901-20261001-d111.json",
+        "instrument_id": 15850,
+        "symbol": "BTC_USDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/gateio/spot/spot/trade_ticks/BTC_USDT/BTC_USDT-202609.csv.gz"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "gateio.linear.perpetual.gate-t2.v1",
+    "quantity_encoding": [
+      "contracts"
+    ],
+    "supported": true,
+    "database_raw_notes": "Monthly GZIP containing headerless CSV. size is signed and combines quantity magnitude with trade direction. Physical parser is shared with Gate inverse perpetual trades. Contract interpretation belongs to normalization and instrument metadata.",
+    "database_normalization_notes": [
+      "Signed size encodes both direction and quantity. Absolute size is normalized through instrument_specs."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "gateio-perpetual-linear-BTC_USDT-trade-20260901-20261001-d95.json",
+        "instrument_id": 17397,
+        "symbol": "BTC_USDT",
+        "database_quantity_type": "contracts",
+        "contract_value": "0.0001",
+        "contract_value_asset": "BTC",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/gateio/perpetual/linear/trade_ticks/BTC_USDT/BTC_USDT-202609.csv.gz"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "gateio.inverse.perpetual.gate-t2.v1",
+    "quantity_encoding": [
+      "contracts"
+    ],
+    "supported": true,
+    "database_raw_notes": "Monthly GZIP containing headerless CSV. size is signed and combines quantity magnitude with trade direction. Physical parser is shared with Gate linear perpetual trades. Contract interpretation belongs to normalization and instrument metadata.",
+    "database_normalization_notes": [
+      "Signed size encodes both direction and quantity. Absolute contract quantity is normalized using inverse instrument_specs."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "gateio-perpetual-inverse-BTC_USD-trade-20260901-20261001-d102.json",
+        "instrument_id": 18256,
+        "symbol": "BTC_USD",
+        "database_quantity_type": "contracts",
+        "contract_value": "1",
+        "contract_value_asset": "USD",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/gateio/perpetual/inverse/trade_ticks/BTC_USD/BTC_USD-202609.csv.gz"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "gateio.spot.spot.gate-b1.v1",
+    "quantity_encoding": [
+      "base"
+    ],
+    "supported": true,
+    "database_raw_notes": "Hourly GZIP containing headerless 7-column CSV. Each file begins with a complete set snapshot represented across many physical rows, followed by make/take updates. Updates use approximately 100 ms timestamp resolution.",
+    "database_normalization_notes": [
+      "Initial set rows collectively form one canonical snapshot. The raw snapshot is represented by many physical rows.",
+      "Gate make/take updates are interpreted against maintained book state. Canonical output describes resulting absolute level state rather than preserving make/take operations."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "parallel-depth-test.json",
+        "instrument_id": 15850,
+        "symbol": "BTC_USDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/gateio/spot/spot/order_book_l2/BTC_USDT/BTC_USDT-2026090100.csv.gz"
+      },
+      {
+        "job": "gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json",
+        "instrument_id": 15850,
+        "symbol": "BTC_USDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/gateio/spot/spot/order_book_l2/BTC_USDT/BTC_USDT-2026090100.csv.gz"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "gateio.linear.perpetual.gate-b2.v1",
+    "quantity_encoding": [
+      "contracts"
+    ],
+    "supported": true,
+    "database_raw_notes": "Hourly GZIP containing headerless 6-column CSV. Initial set rows form one logical full snapshot, followed by make/take updates. Book side is encoded by the sign of size. Physical parser is shared with inverse perpetual L2.",
+    "database_normalization_notes": [
+      "Initial set rows collectively form one canonical snapshot. Book side is derived from the sign of size and canonical quantity uses abs(size).",
+      "make/take operations are applied to maintained book state. The emitted canonical update contains resulting absolute quantity and set/delete action."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "gateio-perpetual-linear-BTC_USDT-l2-20260901-20260904-d96.json",
+        "instrument_id": 17397,
+        "symbol": "BTC_USDT",
+        "database_quantity_type": "contracts",
+        "contract_value": "0.0001",
+        "contract_value_asset": "BTC",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/gateio/perpetual/linear/order_book_l2/BTC_USDT/BTC_USDT-2026090100.csv.gz"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "gateio.inverse.perpetual.gate-b2.v1",
+    "quantity_encoding": [
+      "contracts"
+    ],
+    "supported": true,
+    "database_raw_notes": "Hourly GZIP containing headerless 6-column CSV. Initial set rows form one logical full snapshot, followed by make/take updates. Book side is encoded by the sign of size. Physical parser is shared with linear perpetual L2.",
+    "database_normalization_notes": [
+      "Initial set rows collectively form one canonical snapshot. Signed size determines book side; absolute quantity is normalized using inverse instrument_specs.",
+      "make/take operations are applied to maintained book state. Canonical output contains resulting absolute quantity rather than Gate-specific relative update semantics."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "gateio-perpetual-inverse-BTC_USD-l2-20260901-20260904-d103.json",
+        "instrument_id": 18256,
+        "symbol": "BTC_USD",
+        "database_quantity_type": "contracts",
+        "contract_value": "1",
+        "contract_value_asset": "USD",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/gateio/perpetual/inverse/order_book_l2/BTC_USD/BTC_USD-2026090100.csv.gz"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "okx.spot.spot.okx-t1.v1",
+    "quantity_encoding": [
+      "base"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily UTC+8 ZIP containing headered CSV. Physical parser is shared by all inspected OKX trade datasets. For Spot, size represents base-asset quantity.",
+    "database_normalization_notes": [
+      "Spot size is base-asset quantity. source=1 identifies RPI trades and is normalized to is_rpi."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "okx-spot-spot-BTC-USDT-trade-20260901-20260904-d107.json",
+        "instrument_id": 3336,
+        "symbol": "BTC-USDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/okx/spot/spot/trade_ticks/BTC-USDT/BTC-USDT-trades-2026-09-01.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "okx.linear.perpetual.okx-t1.v1",
+    "quantity_encoding": [
+      "contracts"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily UTC+8 ZIP containing headered CSV. Physical parser is shared by all inspected OKX trade datasets. For Linear Perpetual, size represents contracts.",
+    "database_normalization_notes": [
+      "Linear perpetual size is contract quantity and is normalized using instrument_specs. source=1 is retained as is_rpi."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "okx-perpetual-linear-BTC-USDT-SWAP-trade-20260901-20260904-d91.json",
+        "instrument_id": 4063,
+        "symbol": "BTC-USDT-SWAP",
+        "database_quantity_type": "contracts",
+        "contract_value": "0.01",
+        "contract_value_asset": "BTC",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/okx/perpetual/linear/trade_ticks/BTC-USDT-SWAP/BTC-USDT-SWAP-trades-2026-09-01.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "okx.inverse.perpetual.okx-t1.v1",
+    "quantity_encoding": [
+      "contracts"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily UTC+8 ZIP containing headered CSV. Physical parser is shared by all inspected OKX trade datasets. For Inverse Perpetual, size represents contracts.",
+    "database_normalization_notes": [
+      "Inverse perpetual size is contract quantity and is normalized using instrument_specs. source=1 is retained as is_rpi."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "okx-perpetual-inverse-BTC-USD-SWAP-trade-20260901-20260904-d100.json",
+        "instrument_id": 4048,
+        "symbol": "BTC-USD-SWAP",
+        "database_quantity_type": "contracts",
+        "contract_value": "100",
+        "contract_value_asset": "USD",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/okx/perpetual/inverse/trade_ticks/BTC-USD-SWAP/BTC-USD-SWAP-trades-2026-09-01.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "okx.option.option.okx-t1.v1",
+    "quantity_encoding": [
+      "unresolved"
+    ],
+    "supported": false,
+    "database_raw_notes": "Daily UTC+8 option-chain ZIP containing one CSV with trades from many option instruments. Rows are not globally chronological. trade_id is scoped to instrument_name, so raw trade identity is at least (instrument_name, trade_id).",
+    "database_normalization_notes": [
+      "Option archives contain trades from multiple instruments. instrument_name is resolved through the catalog. trade_id is scoped to instrument, so raw identity uses (instrument_name, trade_id). Raw rows are not globally chronological and are sorted by created_time before canonical emission."
+    ],
+    "instrument_witnesses": [],
+    "discrepancies": [],
+    "assessment": "UNSUPPORTED"
+  },
+  {
+    "profile_id": "okx.spot.spot.okx-b1.v1",
+    "quantity_encoding": [
+      "base"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily UTC TAR.GZ containing one JSON Lines instrument stream. Periodic full snapshots are followed by incremental updates. No sequence or update identifier is present.",
+    "database_normalization_notes": [
+      "Each snapshot event replaces the complete known book. Level quantities are Spot base quantities.",
+      "Each update level supplies the resulting absolute quantity. Zero quantity deletes the level; non-zero quantity sets it."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "okx-spot-spot-BTC-USDT-l2-20260901-20260904-d108.json",
+        "instrument_id": 3336,
+        "symbol": "BTC-USDT",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/okx/spot/spot/order_book_l2/BTC-USDT/BTC-USDT-L2orderbook-5000lv-2026-09-01.tar.gz"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "okx.linear.perpetual.okx-b1.v1",
+    "quantity_encoding": [
+      "contracts"
+    ],
+    "supported": true,
+    "database_raw_notes": "Same physical L2 parser and reconstruction model as OKX Spot. Level quantity represents derivative contract quantity rather than Spot base quantity.",
+    "database_normalization_notes": [
+      "Snapshot level quantities represent derivative contracts and are normalized using instrument_specs.",
+      "Update quantities are absolute contract quantities. Zero quantity deletes the level; non-zero quantity sets it."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "okx-perpetual-linear-BTC-USDT-SWAP-l2-20260901-20260904-d92.json",
+        "instrument_id": 4063,
+        "symbol": "BTC-USDT-SWAP",
+        "database_quantity_type": "contracts",
+        "contract_value": "0.01",
+        "contract_value_asset": "BTC",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/okx/perpetual/linear/order_book_l2/BTC-USDT-SWAP/BTC-USDT-SWAP-L2orderbook-5000lv-2026-09-01.tar.gz"
+      },
+      {
+        "job": "okx-perpetual-linear-BTC-USDT-SWAP-l2-20260901-20260904-d133.json",
+        "instrument_id": 4063,
+        "symbol": "BTC-USDT-SWAP",
+        "database_quantity_type": "contracts",
+        "contract_value": "0.01",
+        "contract_value_asset": "BTC",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/okx/perpetual/linear/order_book_l2/BTC-USDT-SWAP/BTC-USDT-SWAP-L2orderbook-5000lv-2026-09-01.tar.gz"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "okx.inverse.perpetual.okx-b1.v1",
+    "quantity_encoding": [
+      "contracts"
+    ],
+    "supported": true,
+    "database_raw_notes": "Same physical L2 parser and reconstruction model as OKX Spot and Linear Perpetual. Level quantity represents derivative contract quantity.",
+    "database_normalization_notes": [
+      "Snapshot level quantities represent inverse contracts and are normalized using instrument_specs.",
+      "Update quantities are absolute inverse contract quantities. Zero quantity deletes the level; non-zero quantity sets it."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "okx-perpetual-inverse-BTC-USD-SWAP-l2-20260901-20260904-d101.json",
+        "instrument_id": 4048,
+        "symbol": "BTC-USD-SWAP",
+        "database_quantity_type": "contracts",
+        "contract_value": "100",
+        "contract_value_asset": "USD",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/okx/perpetual/inverse/order_book_l2/BTC-USD-SWAP/BTC-USD-SWAP-L2orderbook-5000lv-2026-09-01.tar.gz"
+      },
+      {
+        "job": "okx-perpetual-inverse-BTC-USD-SWAP-l2-20260901-20260904-d134.json",
+        "instrument_id": 4048,
+        "symbol": "BTC-USD-SWAP",
+        "database_quantity_type": "contracts",
+        "contract_value": "100",
+        "contract_value_asset": "USD",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/okx/perpetual/inverse/order_book_l2/BTC-USD-SWAP/BTC-USD-SWAP-L2orderbook-5000lv-2026-09-01.tar.gz"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "okx.option.option.okx-b2.v1",
+    "quantity_encoding": [
+      "unresolved"
+    ],
+    "supported": false,
+    "database_raw_notes": "Daily option-chain TAR.GZ containing separate members for many option instruments. Event representation matches OKX-B1, but each option contract must be reconstructed independently. Actual populated depth may be far below the 5000-level maximum.",
+    "database_normalization_notes": [
+      "Option archive members represent separate instruments. Each contract is normalized independently. Actual populated depth may be substantially below the format maximum.",
+      "Each option contract maintains independent book state. Zero quantity deletes a level and non-zero quantity sets the resulting absolute quantity."
+    ],
+    "instrument_witnesses": [],
+    "discrepancies": [],
+    "assessment": "UNSUPPORTED"
+  },
+  {
+    "profile_id": "binance.linear.future.binance-t2.v1",
+    "quantity_encoding": [
+      "base"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily ZIP/deflate archive containing headered CSV. Linear dated futures use the same physical trade format as linear perpetual contracts.",
+    "database_normalization_notes": [
+      "Linear future qty is normalized according to instrument_specs. quote_qty is redundant with canonical quantity conversion and is not independently retained."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "binance-future-linear-BTCUSDT_261225-trade-20260901-20260904-d118.json",
+        "instrument_id": 10671,
+        "symbol": "BTCUSDT_261225",
+        "database_quantity_type": "base",
+        "contract_value": null,
+        "contract_value_asset": null,
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/binance/future/linear/trade_ticks/BTCUSDT_261225/BTCUSDT_261225-trades-2026-09-01.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "binance.inverse.future.binance-t3.v1",
+    "quantity_encoding": [
+      "contracts"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily ZIP/deflate archive containing headered CSV. Inverse dated futures use the same physical trade format as inverse perpetual contracts. Contract value belongs to instrument metadata.",
+    "database_normalization_notes": [
+      "Inverse future qty is contract quantity. Contract value and contract-value asset are obtained from instrument_specs rather than hardcoded. Raw base_qty is redundant with canonical quantity conversion and is not independently retained."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "binance-future-inverse-BTCUSD_261225-trade-20260901-20260904-d119.json",
+        "instrument_id": 10813,
+        "symbol": "BTCUSD_261225",
+        "database_quantity_type": "contracts",
+        "contract_value": "100",
+        "contract_value_asset": "USD",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/binance/future/inverse/trade_ticks/BTCUSD_261225/BTCUSD_261225-trades-2026-09-01.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "okx.linear.future.okx-t1.v1",
+    "quantity_encoding": [
+      "contracts"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily UTC+8 ZIP containing headered CSV. Physical parser is shared by all inspected OKX trade datasets. For Linear Future, size represents contracts.",
+    "database_normalization_notes": [
+      "Linear future size is contract quantity and is normalized using instrument_specs. source=1 is retained as is_rpi."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json",
+        "instrument_id": 4551,
+        "symbol": "BTC-USD_UM-261225",
+        "database_quantity_type": "contracts",
+        "contract_value": "0.01",
+        "contract_value_asset": "BTC",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/okx/future/linear/trade_ticks/BTC-USD_UM-261225/BTC-USD_UM-futureschain-trades-2026-09-01.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "okx.inverse.future.okx-t1.v1",
+    "quantity_encoding": [
+      "contracts"
+    ],
+    "supported": true,
+    "database_raw_notes": "Daily UTC+8 ZIP containing headered CSV. Physical parser is shared by all inspected OKX trade datasets. For Inverse Future, size represents contracts.",
+    "database_normalization_notes": [
+      "Inverse future size is contract quantity and is normalized using instrument_specs. source=1 is retained as is_rpi."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "okx-future-inverse-BTC-USD-261225-trade-20260901-20260904-d122.json",
+        "instrument_id": 4545,
+        "symbol": "BTC-USD-261225",
+        "database_quantity_type": "contracts",
+        "contract_value": "100",
+        "contract_value_asset": "USD",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/okx/future/inverse/trade_ticks/BTC-USD-261225/BTC-USD-futureschain-trades-2026-09-01.zip"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "okx.linear.future.okx-b1.v1",
+    "quantity_encoding": [
+      "contracts"
+    ],
+    "supported": true,
+    "database_raw_notes": "Same physical L2 parser and reconstruction model as OKX Spot and Perpetual. Level quantity represents linear future contract quantity.",
+    "database_normalization_notes": [
+      "Snapshot level quantities represent linear future contracts and are normalized using instrument_specs.",
+      "Update quantities are absolute linear future contract quantities. Zero quantity deletes the level; non-zero quantity sets it."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "okx-future-linear-BTC-USD_UM-261225-l2-20260901-20260904-d121.json",
+        "instrument_id": 4551,
+        "symbol": "BTC-USD_UM-261225",
+        "database_quantity_type": "contracts",
+        "contract_value": "0.01",
+        "contract_value_asset": "BTC",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/okx/future/linear/order_book_l2/BTC-USD_UM-261225/BTC-USD_UM-futureschain-L2orderbook-5000lv-2026-09-01.tar.gz"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  },
+  {
+    "profile_id": "okx.inverse.future.okx-b1.v1",
+    "quantity_encoding": [
+      "contracts"
+    ],
+    "supported": true,
+    "database_raw_notes": "Same physical L2 parser and reconstruction model as OKX Spot and Perpetual. Level quantity represents inverse future contract quantity.",
+    "database_normalization_notes": [
+      "Snapshot level quantities represent inverse future contracts and are normalized using instrument_specs.",
+      "Update quantities are absolute inverse future contract quantities. Zero quantity deletes the level; non-zero quantity sets it."
+    ],
+    "instrument_witnesses": [
+      {
+        "job": "okx-future-inverse-BTC-USD-261225-l2-20260901-20260904-d123.json",
+        "instrument_id": 4545,
+        "symbol": "BTC-USD-261225",
+        "database_quantity_type": "contracts",
+        "contract_value": "100",
+        "contract_value_asset": "USD",
+        "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/okx/future/inverse/order_book_l2/BTC-USD-261225/BTC-USD-futureschain-L2orderbook-5000lv-2026-09-01.tar.gz"
+      }
+    ],
+    "discrepancies": [],
+    "assessment": "Database instrument metadata agrees; raw quantity denomination retained separately for each trade/depth profile."
+  }
+]

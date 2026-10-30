@@ -1,0 +1,21 @@
+schema_version = 1
+kind = "profile"
+id = "bybit.spot.spot.bybit-b1.v1"
+physical = "depth-ffc80404cf5abb13"
+format_code = "BYBIT-B1"
+exchange = "bybit"
+instrument_type = "spot"
+market_category = "spot"
+source_ordering = "source_ordered"
+
+[[rules]]
+target = "l2_snapshot"
+timestamp_encoding = "milliseconds"
+quantity_encoding = "base"
+rules = { "asks" = { "source" = "data.a", "price_index" = 0, "quantity_index" = 1 }, "bids" = { "source" = "data.b", "price_index" = 0, "quantity_index" = 1 }, "snapshot" = { "type" = "single_event" }, "instrument" = { "lookup" = "catalog", "source" = "data.s" }, "event_filter" = { "equals" = "snapshot", "source" = "type" }, "sequence_start" = { "source" = "data.u" }, "event_timestamp" = { "source" = "cts" }, "system_timestamp" = { "source" = "ts" } }
+
+[[rules]]
+target = "l2_update"
+timestamp_encoding = "milliseconds"
+quantity_encoding = "base"
+rules = { "asks" = { "source" = "data.a", "price_index" = 0, "quantity_index" = 1 }, "bids" = { "source" = "data.b", "price_index" = 0, "quantity_index" = 1 }, "instrument" = { "lookup" = "catalog", "source" = "data.s" }, "event_filter" = { "equals" = "delta", "source" = "type" }, "sequence_start" = { "source" = "data.u" }, "event_timestamp" = { "source" = "cts" }, "system_timestamp" = { "source" = "ts" }, "update_semantics" = { "type" = "absolute_level", "zero_quantity" = "delete", "nonzero_quantity" = "set" } }

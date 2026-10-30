@@ -1,0 +1,1173 @@
+[
+  {
+    "old_target": "convert_atomic_publication",
+    "path": "tests/historical/convert/output/atomic_publication.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_catalog",
+    "path": "tests/historical/convert/planning/catalog.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "convert_checkpoints",
+    "path": "tests/historical/convert/execution/checkpoints.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_combined_alignment",
+    "path": "tests/historical/convert/combined/combined_alignment.rs",
+    "new_target": "split_by_case",
+    "slow": null,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_convert",
+      "historical_slow_convert"
+    ],
+    "normal_cases": 7,
+    "slow_cases": 2
+  },
+  {
+    "old_target": "convert_combined_checkpoint_ordering",
+    "path": "tests/historical/convert/combined/combined_checkpoint_ordering.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_combined_checkpoints",
+    "path": "tests/historical/convert/combined/combined_checkpoints.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified dataset-backed scan/equivalence workload (combined checkpoint reached prior 30s bound); conservative opt-in"
+  },
+  {
+    "old_target": "convert_combined_conversion",
+    "path": "tests/historical/convert/combined/combined_conversion.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_combined_depth_adapter",
+    "path": "tests/historical/convert/combined/combined_depth_adapter.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified dataset-backed scan/equivalence workload (combined checkpoint reached prior 30s bound); conservative opt-in"
+  },
+  {
+    "old_target": "convert_combined_equivalence",
+    "path": "tests/historical/convert/combined/combined_equivalence.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified dataset-backed scan/equivalence workload (combined checkpoint reached prior 30s bound); conservative opt-in"
+  },
+  {
+    "old_target": "convert_combined_materialize",
+    "path": "tests/historical/convert/combined/combined_materialize.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_combined_parallel",
+    "path": "tests/historical/convert/combined/combined_parallel.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_combined_publication",
+    "path": "tests/historical/convert/combined/combined_publication.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_combined_references",
+    "path": "tests/historical/convert/combined/combined_references.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified dataset-backed scan/equivalence workload (combined checkpoint reached prior 30s bound); conservative opt-in"
+  },
+  {
+    "old_target": "convert_combined_restoration",
+    "path": "tests/historical/convert/combined/combined_restoration.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified dataset-backed scan/equivalence workload (combined checkpoint reached prior 30s bound); conservative opt-in"
+  },
+  {
+    "old_target": "convert_combined_schema",
+    "path": "tests/historical/convert/combined/combined_schema.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_combined_validation",
+    "path": "tests/historical/convert/combined/combined_validation.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_combined_worker",
+    "path": "tests/historical/convert/combined/combined_worker.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_combined_writer",
+    "path": "tests/historical/convert/combined/combined_writer.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified dataset-backed scan/equivalence workload (combined checkpoint reached prior 30s bound); conservative opt-in"
+  },
+  {
+    "old_target": "convert_decimal",
+    "path": "tests/historical/convert/planning/decimal.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "convert_depth_alignment",
+    "path": "tests/historical/convert/depth/depth_alignment.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified dataset-backed scan/equivalence workload (combined checkpoint reached prior 30s bound); conservative opt-in"
+  },
+  {
+    "old_target": "convert_depth_arithmetic",
+    "path": "tests/historical/convert/depth/depth_arithmetic.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_depth_builder",
+    "path": "tests/historical/convert/depth/depth_builder.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_depth_checkpoints",
+    "path": "tests/historical/convert/depth/depth_checkpoints.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified dataset-backed scan/equivalence workload (combined checkpoint reached prior 30s bound); conservative opt-in"
+  },
+  {
+    "old_target": "convert_depth_equivalence",
+    "path": "tests/historical/convert/depth/depth_equivalence.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "known large/ignored/benchmark workload or prior timeout"
+  },
+  {
+    "old_target": "convert_depth_materialize",
+    "path": "tests/historical/convert/depth/depth_materialize.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_depth_parallel",
+    "path": "tests/historical/convert/depth/depth_parallel.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_depth_planner",
+    "path": "tests/historical/convert/depth/depth_planner.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_depth_preservation",
+    "path": "tests/historical/convert/depth/depth_preservation.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_depth_publication",
+    "path": "tests/historical/convert/depth/depth_publication.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_depth_schema",
+    "path": "tests/historical/convert/depth/depth_schema.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_depth_validation",
+    "path": "tests/historical/convert/depth/depth_validation.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_execution_reader",
+    "path": "tests/historical/convert/execution/execution_reader.rs",
+    "new_target": "split_by_case",
+    "slow": null,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_convert",
+      "historical_slow_convert"
+    ],
+    "normal_cases": 8,
+    "slow_cases": 2
+  },
+  {
+    "old_target": "convert_executor",
+    "path": "tests/historical/convert/execution/executor.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_external_reference",
+    "path": "tests/historical/convert/reference/external_reference.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified dataset-backed scan/equivalence workload (combined checkpoint reached prior 30s bound); conservative opt-in"
+  },
+  {
+    "old_target": "convert_graph",
+    "path": "tests/historical/convert/planning/graph.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "convert_job",
+    "path": "tests/historical/convert/planning/job.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "convert_materialize",
+    "path": "tests/historical/convert/execution/materialize.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_materialize_multihop",
+    "path": "tests/historical/convert/execution/materialize_multihop.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_output_manifest",
+    "path": "tests/historical/convert/output/output_manifest.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "dataset-backed manifest fixture exceeded bounded 30s execution; remainder conservatively unexecuted"
+  },
+  {
+    "old_target": "convert_output_schema",
+    "path": "tests/historical/convert/output/output_schema.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_output_trade",
+    "path": "tests/historical/convert/output/output_trade.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_output_validation",
+    "path": "tests/historical/convert/output/output_validation.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "full converted-dataset validation exceeded 30s bound; no re-execution permitted"
+  },
+  {
+    "old_target": "convert_output_writer",
+    "path": "tests/historical/convert/output/output_writer.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_parallel",
+    "path": "tests/historical/convert/execution/parallel.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_parallel_publication",
+    "path": "tests/historical/convert/execution/parallel_publication.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_parallel_validation",
+    "path": "tests/historical/convert/execution/parallel_validation.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_partition_reader",
+    "path": "tests/historical/convert/execution/partition_reader.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified dataset-backed scan/equivalence workload (combined checkpoint reached prior 30s bound); conservative opt-in"
+  },
+  {
+    "old_target": "convert_partitions",
+    "path": "tests/historical/convert/execution/partitions.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_convert"
+    ],
+    "normal_cases": 10,
+    "slow_cases": 0
+  },
+  {
+    "old_target": "convert_persistent_fixture",
+    "path": "tests/historical/convert/trades/persistent_fixture.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_planner",
+    "path": "tests/historical/convert/planning/planner.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "convert_prepass",
+    "path": "tests/historical/convert/execution/prepass.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_publication",
+    "path": "tests/historical/convert/output/publication.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "convert_receipt",
+    "path": "tests/historical/convert/output/receipt.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_reference_evaluation",
+    "path": "tests/historical/convert/reference/reference_evaluation.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_reference_reader",
+    "path": "tests/historical/convert/reference/reference_reader.rs",
+    "new_target": "split_by_case",
+    "slow": null,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_convert",
+      "historical_slow_convert"
+    ],
+    "normal_cases": 5,
+    "slow_cases": 2
+  },
+  {
+    "old_target": "convert_reference_seek",
+    "path": "tests/historical/convert/reference/reference_seek.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified dataset-backed scan/equivalence workload (combined checkpoint reached prior 30s bound); conservative opt-in"
+  },
+  {
+    "old_target": "convert_reference_selection",
+    "path": "tests/historical/convert/reference/reference_selection.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_reference_state",
+    "path": "tests/historical/convert/reference/reference_state.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "convert_source_preservation",
+    "path": "tests/historical/convert/output/source_preservation.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "full external source-preservation scan; conservatively stopped and isolated"
+  },
+  {
+    "old_target": "convert_trade",
+    "path": "tests/historical/convert/trades/trade.rs",
+    "new_target": "historical_convert",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "convert_worker",
+    "path": "tests/historical/convert/execution/worker.rs",
+    "new_target": "historical_slow_convert",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "dataset_manifest",
+    "path": "tests/historical/normalize/dataset_manifest.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "depth_archive_continuity",
+    "path": "tests/historical/normalize/depth/depth_archive_continuity.rs",
+    "new_target": "historical_slow_normalize",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "depth_boundary",
+    "path": "tests/historical/normalize/depth/depth_boundary.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "depth_boundary_recovery",
+    "path": "tests/historical/normalize/depth/depth_boundary_recovery.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "depth_csv_pipeline",
+    "path": "tests/historical/normalize/depth/depth_csv_pipeline.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "depth_formats",
+    "path": "tests/historical/normalize/depth/depth_formats.rs",
+    "new_target": "historical_slow_normalize",
+    "slow": true,
+    "reason": "helper executes entire depth archives; no bounded timing evidence"
+  },
+  {
+    "old_target": "depth_parquet_replay",
+    "path": "tests/historical/normalize/depth/depth_parquet_replay.rs",
+    "new_target": "historical_slow_normalize",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "depth_pipeline_recovery",
+    "path": "tests/historical/normalize/depth/depth_pipeline_recovery.rs",
+    "new_target": "historical_slow_normalize",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "depth_real_archive",
+    "path": "tests/historical/normalize/depth/depth_real_archive.rs",
+    "new_target": "historical_slow_normalize",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "depth_sequence_ranges",
+    "path": "tests/historical/normalize/depth/depth_sequence_ranges.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "depth_sink",
+    "path": "tests/historical/normalize/depth/depth_sink.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "depth_xlsx_pipeline",
+    "path": "tests/historical/normalize/depth/depth_xlsx_pipeline.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "inspected bounded synthetic workbook fixture (three snapshots), not the real full-day archive"
+  },
+  {
+    "old_target": "integrity_policy",
+    "path": "tests/historical/normalize/resources/integrity_policy.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "materialize_cache",
+    "path": "tests/historical/merge/materialize/cache.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_cached_reader",
+    "path": "tests/historical/merge/materialize/cached_reader.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_checkpoints",
+    "path": "tests/historical/merge/materialize/checkpoints.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_combined_builder",
+    "path": "tests/historical/merge/materialize/combined_builder.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_depth_builder",
+    "path": "tests/historical/merge/materialize/depth_builder.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_depth_metadata",
+    "path": "tests/historical/merge/materialize/depth_metadata.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_manifest",
+    "path": "tests/historical/merge/materialize/manifest.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_partition",
+    "path": "tests/historical/merge/materialize/partition.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_planner",
+    "path": "tests/historical/merge/materialize/planner.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_publish",
+    "path": "tests/historical/merge/materialize/publish.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_reader",
+    "path": "tests/historical/merge/materialize/reader.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_reconstruction",
+    "path": "tests/historical/merge/materialize/reconstruction.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_resolver",
+    "path": "tests/historical/merge/materialize/resolver.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_resources",
+    "path": "tests/historical/merge/materialize/resources.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_row_groups",
+    "path": "tests/historical/merge/materialize/row_groups.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_timeline_reader",
+    "path": "tests/historical/merge/materialize/timeline_reader.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_trade_builder",
+    "path": "tests/historical/merge/materialize/trade_builder.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_window",
+    "path": "tests/historical/merge/materialize/window.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "materialize_writer",
+    "path": "tests/historical/merge/materialize/writer.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "merge_boundary_summary",
+    "path": "tests/historical/merge/depth/boundary_summary.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "merge_checkpoint",
+    "path": "tests/historical/merge/depth/merge_checkpoint.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified dataset I/O or indirect real-dataset fixture; depth index validation reached a 30s bound"
+  },
+  {
+    "old_target": "merge_combined_real",
+    "path": "tests/historical/merge/combined/merge_combined_real.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "merge_commit",
+    "path": "tests/historical/merge/execution/merge_commit.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "merge_cursor_benchmark",
+    "path": "tests/historical/merge/benchmarks/merge_cursor_benchmark.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "known large/ignored/benchmark workload or prior timeout"
+  },
+  {
+    "old_target": "merge_depth_cursor",
+    "path": "tests/historical/merge/depth/merge_depth_cursor.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "merge_depth_cursor_range",
+    "path": "tests/historical/merge/depth/merge_depth_cursor_range.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "merge_depth_stream",
+    "path": "tests/historical/merge/depth/merge_depth_stream.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "merge_event_validation",
+    "path": "tests/historical/merge/depth/merge_event_validation.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified dataset I/O or indirect real-dataset fixture; depth index validation reached a 30s bound"
+  },
+  {
+    "old_target": "merge_executor",
+    "path": "tests/historical/merge/execution/merge_executor.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "merge_full_equivalence",
+    "path": "tests/historical/merge/partition/merge_full_equivalence.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "known large/ignored/benchmark workload or prior timeout"
+  },
+  {
+    "old_target": "merge_indexed_cursor",
+    "path": "tests/historical/merge/depth/merge_indexed_cursor.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "merge_inventory",
+    "path": "tests/historical/merge/depth/merge_inventory.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified dataset I/O or indirect real-dataset fixture; depth index validation reached a 30s bound"
+  },
+  {
+    "old_target": "merge_job",
+    "path": "tests/historical/merge/core/merge_job.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "merge_kway",
+    "path": "tests/historical/merge/core/merge_kway.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "merge_kway_event",
+    "path": "tests/historical/merge/core/merge_kway_event.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "merge_manifest_builder",
+    "path": "tests/historical/merge/execution/merge_manifest_builder.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "merge_output_validation",
+    "path": "tests/historical/merge/execution/merge_output_validation.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "merge_parallel",
+    "path": "tests/historical/merge/execution/merge_parallel.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "merge_parallel_commit",
+    "path": "tests/historical/merge/execution/merge_parallel_commit.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "merge_partition_coverage",
+    "path": "tests/historical/merge/partition/merge_partition_coverage.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "merge_partition_equivalence",
+    "path": "tests/historical/merge/partition/merge_partition_equivalence.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "merge_partition_executor",
+    "path": "tests/historical/merge/partition/merge_partition_executor.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "merge_partition_input",
+    "path": "tests/historical/merge/partition/merge_partition_input.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified dataset I/O or indirect real-dataset fixture; depth index validation reached a 30s bound"
+  },
+  {
+    "old_target": "merge_resolver",
+    "path": "tests/historical/merge/execution/merge_resolver.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified dataset I/O or indirect real-dataset fixture; depth index validation reached a 30s bound"
+  },
+  {
+    "old_target": "merge_resource_estimation",
+    "path": "tests/historical/merge/execution/merge_resource_estimation.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "recorded bounded execution under 30s"
+  },
+  {
+    "old_target": "merge_timeline_writer",
+    "path": "tests/historical/merge/execution/merge_timeline_writer.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "merge_trade_cursor",
+    "path": "tests/historical/merge/trades/merge_trade_cursor.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified dataset I/O or indirect real-dataset fixture; depth index validation reached a 30s bound"
+  },
+  {
+    "old_target": "merge_trade_cursor_indexed",
+    "path": "tests/historical/merge/trades/merge_trade_cursor_indexed.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified dataset I/O or indirect real-dataset fixture; depth index validation reached a 30s bound"
+  },
+  {
+    "old_target": "merge_trade_kway_real",
+    "path": "tests/historical/merge/trades/merge_trade_kway_real.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified dataset I/O or indirect real-dataset fixture; depth index validation reached a 30s bound"
+  },
+  {
+    "old_target": "merge_trade_stream",
+    "path": "tests/historical/merge/trades/merge_trade_stream.rs",
+    "new_target": "split_by_case",
+    "slow": null,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_merge",
+      "historical_slow_merge"
+    ],
+    "normal_cases": 1,
+    "slow_cases": 2
+  },
+  {
+    "old_target": "merge_unified_boundary_stress",
+    "path": "tests/historical/merge/partition/merge_unified_boundary_stress.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "merge_unified_commit",
+    "path": "tests/historical/merge/execution/merge_unified_commit.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "production dataset merge through indirect support fixture; no bounded timing evidence"
+  },
+  {
+    "old_target": "merge_unified_failure",
+    "path": "tests/historical/merge/execution/merge_unified_failure.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_merge"
+    ],
+    "normal_cases": 7,
+    "slow_cases": 0
+  },
+  {
+    "old_target": "merge_unified_file_rotation",
+    "path": "tests/historical/merge/output/merge_unified_file_rotation.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "merge_unified_manifest",
+    "path": "tests/historical/merge/execution/merge_unified_manifest.rs",
+    "new_target": "historical_merge",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "merge_unified_manifest_builder",
+    "path": "tests/historical/merge/execution/merge_unified_manifest_builder.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified dataset I/O or indirect real-dataset fixture; depth index validation reached a 30s bound"
+  },
+  {
+    "old_target": "merge_unified_output_validation",
+    "path": "tests/historical/merge/execution/merge_unified_output_validation.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified dataset I/O or indirect real-dataset fixture; depth index validation reached a 30s bound"
+  },
+  {
+    "old_target": "merge_unified_parallel_equivalence",
+    "path": "tests/historical/merge/partition/merge_unified_parallel_equivalence.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified dataset I/O or indirect real-dataset fixture; depth index validation reached a 30s bound"
+  },
+  {
+    "old_target": "merge_unified_partition_executor",
+    "path": "tests/historical/merge/partition/merge_unified_partition_executor.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "merge_unified_partition_input",
+    "path": "tests/historical/merge/partition/merge_unified_partition_input.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified dataset I/O or indirect real-dataset fixture; depth index validation reached a 30s bound"
+  },
+  {
+    "old_target": "merge_unified_production_rotation",
+    "path": "tests/historical/merge/output/merge_unified_production_rotation.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "production dataset merge through indirect support fixture; no bounded timing evidence"
+  },
+  {
+    "old_target": "merge_unified_reference_integrity",
+    "path": "tests/historical/merge/execution/merge_unified_reference_integrity.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified dataset I/O or indirect real-dataset fixture; depth index validation reached a 30s bound"
+  },
+  {
+    "old_target": "merge_unified_stream_resolver",
+    "path": "tests/historical/merge/execution/merge_unified_stream_resolver.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified dataset I/O or indirect real-dataset fixture; depth index validation reached a 30s bound"
+  },
+  {
+    "old_target": "merge_unified_timeline",
+    "path": "tests/historical/merge/combined/merge_unified_timeline.rs",
+    "new_target": "split_by_case",
+    "slow": null,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_merge",
+      "historical_slow_merge"
+    ],
+    "normal_cases": 5,
+    "slow_cases": 1
+  },
+  {
+    "old_target": "merge_unified_writer",
+    "path": "tests/historical/merge/combined/merge_unified_writer.rs",
+    "new_target": "historical_slow_merge",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "parquet_depth_real_archive",
+    "path": "tests/historical/normalize/parquet/parquet_depth_real_archive.rs",
+    "new_target": "historical_slow_normalize",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "parquet_discovery",
+    "path": "tests/historical/normalize/parquet/parquet_discovery.rs",
+    "new_target": "historical_slow_normalize",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "process_executor",
+    "path": "tests/historical/normalize/execution/process_executor.rs",
+    "new_target": "historical_slow_normalize",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "process_executor_failure",
+    "path": "tests/historical/normalize/execution/process_executor_failure.rs",
+    "new_target": "historical_slow_normalize",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "process_failure",
+    "path": "tests/historical/normalize/execution/process_failure.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "process_metrics",
+    "path": "tests/historical/normalize/execution/process_metrics.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "process_parallel_consistency",
+    "path": "tests/historical/normalize/execution/process_parallel_consistency.rs",
+    "new_target": "historical_slow_normalize",
+    "slow": true,
+    "reason": "known large/ignored/benchmark workload or prior timeout"
+  },
+  {
+    "old_target": "process_scheduler",
+    "path": "tests/historical/normalize/execution/process_scheduler.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "process_session",
+    "path": "tests/historical/normalize/execution/process_session.rs",
+    "new_target": "historical_slow_normalize",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "process_session_finalization",
+    "path": "tests/historical/normalize/execution/process_session_finalization.rs",
+    "new_target": "historical_slow_normalize",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "process_session_validation",
+    "path": "tests/historical/normalize/execution/process_session_validation.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "inspected OKX fixture: 4201 source rows / 116 matching rows, or pre-execution rejection"
+  },
+  {
+    "old_target": "process_task",
+    "path": "tests/historical/normalize/execution/process_task.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "inspected OKX fixture: 4201 source rows / 116 matching rows, or pre-execution rejection"
+  },
+  {
+    "old_target": "processing_config",
+    "path": "tests/historical/normalize/execution/processing_config.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "processing_metrics_aggregation",
+    "path": "tests/historical/normalize/execution/processing_metrics_aggregation.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "resource_file_budget",
+    "path": "tests/historical/normalize/resources/resource_file_budget.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "trade_all_archives",
+    "path": "tests/historical/normalize/trades/trade_all_archives.rs",
+    "new_target": "historical_slow_normalize",
+    "slow": true,
+    "reason": "known large/ignored/benchmark workload or prior timeout"
+  },
+  {
+    "old_target": "trade_formats",
+    "path": "tests/historical/normalize/trades/trade_formats.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "trade_integrity_enforcement",
+    "path": "tests/historical/normalize/trades/trade_integrity_enforcement.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_normalize"
+    ],
+    "normal_cases": 5,
+    "slow_cases": 0
+  },
+  {
+    "old_target": "trade_real_archives",
+    "path": "tests/historical/normalize/trades/trade_real_archives.rs",
+    "new_target": "historical_normalize",
+    "slow": false,
+    "reason": "small local/synthetic/configuration workload"
+  },
+  {
+    "old_target": "trade_worker",
+    "path": "tests/historical/normalize/trades/trade_worker.rs",
+    "new_target": "historical_slow_normalize",
+    "slow": true,
+    "reason": "unverified external dataset processing; conservative opt-in"
+  },
+  {
+    "old_target": "trade_worker_metrics",
+    "path": "tests/historical/normalize/trades/trade_worker_metrics.rs",
+    "new_target": "split_by_case",
+    "slow": null,
+    "reason": "Per-case bounded workload review; see .planning/historical/evidence/reclassified-tests.json.",
+    "new_targets": [
+      "historical_normalize",
+      "historical_slow_normalize"
+    ],
+    "normal_cases": 1,
+    "slow_cases": 2
+  }
+]

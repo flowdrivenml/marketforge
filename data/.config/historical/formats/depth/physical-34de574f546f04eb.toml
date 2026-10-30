@@ -1,0 +1,7 @@
+schema_version = 1
+kind = "physical"
+id = "depth-34de574f546f04eb"
+container_format = "jsonl"
+record_format = "events"
+supported_containers = ["tar_gzip"]
+raw_schema = { "fields" = [{ "name" = "instId", "type" = "string" }, { "name" = "action", "type" = "string", "values" = ["snapshot", "update"] }, { "name" = "ts", "type" = "string/integer", "unit" = "milliseconds", "precision" = "millisecond", "representation" = "unix_epoch" }, { "name" = "asks", "type" = "array", "level_schema" = ["price", "quantity", "order_count"] }, { "name" = "bids", "type" = "array", "level_schema" = ["price", "quantity", "order_count"] }], "ordering" = "chronological", "granularity" = "daily", "order_book" = { "update_id" = false, "event_model" = "periodic_snapshot_and_incremental_updates", "sequence_id" = false, "update_frequency" = "approximately_1_second", "snapshot_frequency" = "approximately_15_minutes", "snapshot_resets_book" = true, "delta_delete_quantity" = "0", "maximum_depth_per_side" = 5000, "reconstruction_required" = true }, "archive_day_boundary" = "UTC", "maximum_depth_per_side" = 5000 }

@@ -1,0 +1,627 @@
+[
+  {
+    "profile_id": "binance.spot.spot.binance-t1.v1",
+    "database_raw_format_id": 1,
+    "normalization_mapping_ids": [
+      1
+    ],
+    "profile_file": "data/.config/historical/formats/trades/binance.spot.spot.binance-t1.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-fb8a8cd3be764571.toml",
+    "physical_id": "trades-fb8a8cd3be764571",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "binance.linear.perpetual.binance-t2.v1",
+    "database_raw_format_id": 2,
+    "normalization_mapping_ids": [
+      2
+    ],
+    "profile_file": "data/.config/historical/formats/trades/binance.linear.perpetual.binance-t2.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-8e67686feb09e160.toml",
+    "physical_id": "trades-8e67686feb09e160",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "binance.inverse.perpetual.binance-t3.v1",
+    "database_raw_format_id": 3,
+    "normalization_mapping_ids": [
+      3
+    ],
+    "profile_file": "data/.config/historical/formats/trades/binance.inverse.perpetual.binance-t3.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-bfe8e251a21dcfc4.toml",
+    "physical_id": "trades-bfe8e251a21dcfc4",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "bitget.spot.spot.bitget-t1.v1",
+    "database_raw_format_id": 4,
+    "normalization_mapping_ids": [
+      4
+    ],
+    "profile_file": "data/.config/historical/formats/trades/bitget.spot.spot.bitget-t1.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-27795f74ebf55560.toml",
+    "physical_id": "trades-27795f74ebf55560",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "bitget.linear.perpetual.bitget-t1.v1",
+    "database_raw_format_id": 5,
+    "normalization_mapping_ids": [
+      5
+    ],
+    "profile_file": "data/.config/historical/formats/trades/bitget.linear.perpetual.bitget-t1.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-27795f74ebf55560.toml",
+    "physical_id": "trades-27795f74ebf55560",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "bitget.spot.spot.bitget-b1.v1",
+    "database_raw_format_id": 6,
+    "normalization_mapping_ids": [
+      6
+    ],
+    "profile_file": "data/.config/historical/formats/depth/bitget.spot.spot.bitget-b1.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-27f3e7c2cf493bf6.toml",
+    "physical_id": "depth-27f3e7c2cf493bf6",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "bitget.linear.perpetual.bitget-b1.v1",
+    "database_raw_format_id": 7,
+    "normalization_mapping_ids": [
+      7
+    ],
+    "profile_file": "data/.config/historical/formats/depth/bitget.linear.perpetual.bitget-b1.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-27f3e7c2cf493bf6.toml",
+    "physical_id": "depth-27f3e7c2cf493bf6",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "bitget.inverse.perpetual.bitget-b1.v1",
+    "database_raw_format_id": 8,
+    "normalization_mapping_ids": [
+      8
+    ],
+    "profile_file": "data/.config/historical/formats/depth/bitget.inverse.perpetual.bitget-b1.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-b056fca0cb1f113d.toml",
+    "physical_id": "depth-b056fca0cb1f113d",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": false,
+    "status": "UNSUPPORTED",
+    "discrepancy": null,
+    "evidence": "Database rule objects are preserved exactly. Inverse book quantity denomination is not established, and the current database has no Bitget inverse instrument metadata; native base, quote or contract semantics cannot be chosen safely. See unsupported-instrument-metadata.json and Shared TradeSpec/DepthSpec boundaries.",
+    "resolution": "Reject processing explicitly: Inverse book quantity denomination is not established, and the current database has no Bitget inverse instrument metadata; native base, quote or contract semantics cannot be chosen safely."
+  },
+  {
+    "profile_id": "bybit.spot.spot.bybit-t1.v1",
+    "database_raw_format_id": 9,
+    "normalization_mapping_ids": [
+      9
+    ],
+    "profile_file": "data/.config/historical/formats/trades/bybit.spot.spot.bybit-t1.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-8f03e8ad9adedc8e.toml",
+    "physical_id": "trades-8f03e8ad9adedc8e",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "bybit.linear.perpetual.bybit-t2.v1",
+    "database_raw_format_id": 10,
+    "normalization_mapping_ids": [
+      10
+    ],
+    "profile_file": "data/.config/historical/formats/trades/bybit.linear.perpetual.bybit-t2.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-38cb71e2f2d3b0c3.toml",
+    "physical_id": "trades-38cb71e2f2d3b0c3",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "bybit.inverse.perpetual.bybit-t2.v1",
+    "database_raw_format_id": 11,
+    "normalization_mapping_ids": [
+      11
+    ],
+    "profile_file": "data/.config/historical/formats/trades/bybit.inverse.perpetual.bybit-t2.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-38cb71e2f2d3b0c3.toml",
+    "physical_id": "trades-38cb71e2f2d3b0c3",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "bybit.option.option.bybit-t3.v1",
+    "database_raw_format_id": 12,
+    "normalization_mapping_ids": [
+      12
+    ],
+    "profile_file": "data/.config/historical/formats/trades/bybit.option.option.bybit-t3.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-d2a778e788ff4fda.toml",
+    "physical_id": "trades-d2a778e788ff4fda",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": false,
+    "status": "UNSUPPORTED",
+    "discrepancy": null,
+    "evidence": "Database rule objects are preserved exactly. Options processing is deferred: TradeSpec does not implement catalog instrument lookup or the required IV, index-price and mark-price mappings. See unsupported-instrument-metadata.json and Shared TradeSpec/DepthSpec boundaries.",
+    "resolution": "Reject processing explicitly: Options processing is deferred: TradeSpec does not implement catalog instrument lookup or the required IV, index-price and mark-price mappings."
+  },
+  {
+    "profile_id": "bybit.spot.spot.bybit-b1.v1",
+    "database_raw_format_id": 13,
+    "normalization_mapping_ids": [
+      13,
+      14
+    ],
+    "profile_file": "data/.config/historical/formats/depth/bybit.spot.spot.bybit-b1.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-ffc80404cf5abb13.toml",
+    "physical_id": "depth-ffc80404cf5abb13",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "bybit.linear.perpetual.bybit-b1.v1",
+    "database_raw_format_id": 14,
+    "normalization_mapping_ids": [
+      15,
+      16
+    ],
+    "profile_file": "data/.config/historical/formats/depth/bybit.linear.perpetual.bybit-b1.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-ffc80404cf5abb13.toml",
+    "physical_id": "depth-ffc80404cf5abb13",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "bybit.inverse.perpetual.bybit-b1.v1",
+    "database_raw_format_id": 15,
+    "normalization_mapping_ids": [
+      17,
+      18
+    ],
+    "profile_file": "data/.config/historical/formats/depth/bybit.inverse.perpetual.bybit-b1.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-ffc80404cf5abb13.toml",
+    "physical_id": "depth-ffc80404cf5abb13",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "bybit.option.option.bybit-b2.v1",
+    "database_raw_format_id": 16,
+    "normalization_mapping_ids": [
+      19,
+      20
+    ],
+    "profile_file": "data/.config/historical/formats/depth/bybit.option.option.bybit-b2.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-0da18a2459405ace.toml",
+    "physical_id": "depth-0da18a2459405ace",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": false,
+    "status": "UNSUPPORTED",
+    "discrepancy": null,
+    "evidence": "Database rule objects are preserved exactly. Options processing is deferred: per_member_instrument archive scope requires option-chain member discovery and independent instrument/book orchestration. See unsupported-instrument-metadata.json and Shared TradeSpec/DepthSpec boundaries.",
+    "resolution": "Reject processing explicitly: Options processing is deferred: per_member_instrument archive scope requires option-chain member discovery and independent instrument/book orchestration."
+  },
+  {
+    "profile_id": "gateio.spot.spot.gate-t1.v1",
+    "database_raw_format_id": 17,
+    "normalization_mapping_ids": [
+      21
+    ],
+    "profile_file": "data/.config/historical/formats/trades/gateio.spot.spot.gate-t1.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-72767b3278c7a2cf.toml",
+    "physical_id": "trades-72767b3278c7a2cf",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "gateio.linear.perpetual.gate-t2.v1",
+    "database_raw_format_id": 18,
+    "normalization_mapping_ids": [
+      22
+    ],
+    "profile_file": "data/.config/historical/formats/trades/gateio.linear.perpetual.gate-t2.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-d6e392b67b0dc5e3.toml",
+    "physical_id": "trades-d6e392b67b0dc5e3",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "gateio.inverse.perpetual.gate-t2.v1",
+    "database_raw_format_id": 19,
+    "normalization_mapping_ids": [
+      23
+    ],
+    "profile_file": "data/.config/historical/formats/trades/gateio.inverse.perpetual.gate-t2.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-d6e392b67b0dc5e3.toml",
+    "physical_id": "trades-d6e392b67b0dc5e3",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "gateio.spot.spot.gate-b1.v1",
+    "database_raw_format_id": 20,
+    "normalization_mapping_ids": [
+      24,
+      25
+    ],
+    "profile_file": "data/.config/historical/formats/depth/gateio.spot.spot.gate-b1.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-fc599eca882889a6.toml",
+    "physical_id": "depth-fc599eca882889a6",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "JUSTIFIED CORRECTION",
+    "supported": true,
+    "status": "JUSTIFIED CORRECTION",
+    "discrepancy": "side 0\u2192bid replaced by observed 2\u2192bid in both snapshot/update",
+    "evidence": "DB rules 24/25 map 0 to bid. Legacy jobs and observed 65,536-row sample map 2 to bid: first snapshot max side-2 price 78585.6 < min side-1 price 78585.7; zero side-0 rows. See gateio-spot-sample.json and captured production-worker regression.",
+    "resolution": "Retain TOML correction; database unchanged"
+  },
+  {
+    "profile_id": "gateio.linear.perpetual.gate-b2.v1",
+    "database_raw_format_id": 21,
+    "normalization_mapping_ids": [
+      26,
+      27
+    ],
+    "profile_file": "data/.config/historical/formats/depth/gateio.linear.perpetual.gate-b2.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-47e7da4aee7e68ad.toml",
+    "physical_id": "depth-47e7da4aee7e68ad",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "gateio.inverse.perpetual.gate-b2.v1",
+    "database_raw_format_id": 22,
+    "normalization_mapping_ids": [
+      28,
+      29
+    ],
+    "profile_file": "data/.config/historical/formats/depth/gateio.inverse.perpetual.gate-b2.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-47e7da4aee7e68ad.toml",
+    "physical_id": "depth-47e7da4aee7e68ad",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "okx.spot.spot.okx-t1.v1",
+    "database_raw_format_id": 23,
+    "normalization_mapping_ids": [
+      30
+    ],
+    "profile_file": "data/.config/historical/formats/trades/okx.spot.spot.okx-t1.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-f76fece6f379b1f9.toml",
+    "physical_id": "trades-f76fece6f379b1f9",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "okx.linear.perpetual.okx-t1.v1",
+    "database_raw_format_id": 24,
+    "normalization_mapping_ids": [
+      31
+    ],
+    "profile_file": "data/.config/historical/formats/trades/okx.linear.perpetual.okx-t1.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-f76fece6f379b1f9.toml",
+    "physical_id": "trades-f76fece6f379b1f9",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "okx.inverse.perpetual.okx-t1.v1",
+    "database_raw_format_id": 25,
+    "normalization_mapping_ids": [
+      32
+    ],
+    "profile_file": "data/.config/historical/formats/trades/okx.inverse.perpetual.okx-t1.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-f76fece6f379b1f9.toml",
+    "physical_id": "trades-f76fece6f379b1f9",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "okx.option.option.okx-t1.v1",
+    "database_raw_format_id": 26,
+    "normalization_mapping_ids": [
+      33
+    ],
+    "profile_file": "data/.config/historical/formats/trades/okx.option.option.okx-t1.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-9757d1280c728b84.toml",
+    "physical_id": "trades-9757d1280c728b84",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": false,
+    "status": "UNSUPPORTED",
+    "discrepancy": null,
+    "evidence": "Database rule objects are preserved exactly. Options processing is deferred: TradeSpec does not implement catalog instrument lookup, composite instrument/trade identity or sorting of multi-instrument option-chain files. See unsupported-instrument-metadata.json and Shared TradeSpec/DepthSpec boundaries.",
+    "resolution": "Reject processing explicitly: Options processing is deferred: TradeSpec does not implement catalog instrument lookup, composite instrument/trade identity or sorting of multi-instrument option-chain files."
+  },
+  {
+    "profile_id": "okx.spot.spot.okx-b1.v1",
+    "database_raw_format_id": 27,
+    "normalization_mapping_ids": [
+      34,
+      35
+    ],
+    "profile_file": "data/.config/historical/formats/depth/okx.spot.spot.okx-b1.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-34de574f546f04eb.toml",
+    "physical_id": "depth-34de574f546f04eb",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "okx.linear.perpetual.okx-b1.v1",
+    "database_raw_format_id": 28,
+    "normalization_mapping_ids": [
+      36,
+      37
+    ],
+    "profile_file": "data/.config/historical/formats/depth/okx.linear.perpetual.okx-b1.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-34de574f546f04eb.toml",
+    "physical_id": "depth-34de574f546f04eb",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "okx.inverse.perpetual.okx-b1.v1",
+    "database_raw_format_id": 29,
+    "normalization_mapping_ids": [
+      38,
+      39
+    ],
+    "profile_file": "data/.config/historical/formats/depth/okx.inverse.perpetual.okx-b1.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-34de574f546f04eb.toml",
+    "physical_id": "depth-34de574f546f04eb",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "okx.option.option.okx-b2.v1",
+    "database_raw_format_id": 30,
+    "normalization_mapping_ids": [
+      40,
+      41
+    ],
+    "profile_file": "data/.config/historical/formats/depth/okx.option.option.okx-b2.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-8f9b705d40e16cca.toml",
+    "physical_id": "depth-8f9b705d40e16cca",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": false,
+    "status": "UNSUPPORTED",
+    "discrepancy": null,
+    "evidence": "Database rule objects are preserved exactly. Options processing is deferred: per_member_instrument archive scope requires option-chain member discovery and independent instrument/book orchestration. See unsupported-instrument-metadata.json and Shared TradeSpec/DepthSpec boundaries.",
+    "resolution": "Reject processing explicitly: Options processing is deferred: per_member_instrument archive scope requires option-chain member discovery and independent instrument/book orchestration."
+  },
+  {
+    "profile_id": "binance.linear.future.binance-t2.v1",
+    "database_raw_format_id": 274,
+    "normalization_mapping_ids": [
+      291
+    ],
+    "profile_file": "data/.config/historical/formats/trades/binance.linear.future.binance-t2.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-8e67686feb09e160.toml",
+    "physical_id": "trades-8e67686feb09e160",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "binance.inverse.future.binance-t3.v1",
+    "database_raw_format_id": 275,
+    "normalization_mapping_ids": [
+      292
+    ],
+    "profile_file": "data/.config/historical/formats/trades/binance.inverse.future.binance-t3.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-bfe8e251a21dcfc4.toml",
+    "physical_id": "trades-bfe8e251a21dcfc4",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "okx.linear.future.okx-t1.v1",
+    "database_raw_format_id": 334,
+    "normalization_mapping_ids": [
+      372
+    ],
+    "profile_file": "data/.config/historical/formats/trades/okx.linear.future.okx-t1.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-f76fece6f379b1f9.toml",
+    "physical_id": "trades-f76fece6f379b1f9",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "okx.inverse.future.okx-t1.v1",
+    "database_raw_format_id": 335,
+    "normalization_mapping_ids": [
+      373
+    ],
+    "profile_file": "data/.config/historical/formats/trades/okx.inverse.future.okx-t1.v1.toml",
+    "physical_file": "data/.config/historical/formats/trades/physical-f76fece6f379b1f9.toml",
+    "physical_id": "trades-f76fece6f379b1f9",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "okx.linear.future.okx-b1.v1",
+    "database_raw_format_id": 336,
+    "normalization_mapping_ids": [
+      374,
+      375
+    ],
+    "profile_file": "data/.config/historical/formats/depth/okx.linear.future.okx-b1.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-34de574f546f04eb.toml",
+    "physical_id": "depth-34de574f546f04eb",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  },
+  {
+    "profile_id": "okx.inverse.future.okx-b1.v1",
+    "database_raw_format_id": 337,
+    "normalization_mapping_ids": [
+      376,
+      377
+    ],
+    "profile_file": "data/.config/historical/formats/depth/okx.inverse.future.okx-b1.v1.toml",
+    "physical_file": "data/.config/historical/formats/depth/physical-34de574f546f04eb.toml",
+    "physical_id": "depth-34de574f546f04eb",
+    "physical_schema_match": "EXACT MATCH",
+    "normalization_match": "EXACT MATCH",
+    "supported": true,
+    "status": "EXACT MATCH",
+    "discrepancy": null,
+    "evidence": "Full parsed database schema and rule objects equal TOML objects; identity tuple unique. Wrapper alias tar.gz=tar_gzip where applicable.",
+    "resolution": "No correction required"
+  }
+]

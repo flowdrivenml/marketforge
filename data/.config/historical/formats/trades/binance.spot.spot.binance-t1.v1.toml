@@ -1,0 +1,15 @@
+schema_version = 1
+kind = "profile"
+id = "binance.spot.spot.binance-t1.v1"
+physical = "trades-fb8a8cd3be764571"
+format_code = "BINANCE-T1"
+exchange = "binance"
+instrument_type = "spot"
+market_category = "spot"
+source_ordering = "source_ordered"
+
+[[rules]]
+target = "trade"
+timestamp_encoding = "microseconds"
+quantity_encoding = "base"
+rules = { "side" = { "source" = "is_buyer_maker", "values" = { "true" = "sell", "false" = "buy" }, "transform" = "map" }, "price" = { "source" = "price" }, "quantity" = { "source" = "quantity" }, "trade_id" = { "source" = "trade_id" }, "event_timestamp" = { "source" = "timestamp" } }

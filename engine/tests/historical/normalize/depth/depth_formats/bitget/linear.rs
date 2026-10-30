@@ -1,4 +1,4 @@
-use crate::common::{ExpectedDepthLevel, run_depth_format_test, verify_snapshot_quantities};
+use crate::depth_formats::common::{ExpectedDepthLevel, run_depth_format_test, verify_snapshot_quantities};
 
 use marketforge_engine::shared::domain::canonical::BookSide;
 

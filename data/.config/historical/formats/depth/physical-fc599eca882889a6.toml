@@ -1,0 +1,7 @@
+schema_version = 1
+kind = "physical"
+id = "depth-fc599eca882889a6"
+container_format = "csv"
+record_format = "book_rows"
+supported_containers = ["gzip"]
+raw_schema = { "fields" = [{ "name" = "timestamp", "type" = "decimal", "unit" = "seconds", "position" = 1, "representation" = "unix_epoch", "update_precision" = "100ms", "snapshot_precision" = "second" }, { "name" = "side", "type" = "integer", "position" = 2 }, { "name" = "action", "type" = "string", "values" = ["set", "make", "take"], "position" = 3 }, { "name" = "price", "type" = "decimal", "position" = 4 }, { "name" = "amount", "type" = "decimal", "position" = 5 }, { "name" = "begin_id", "type" = "integer", "position" = 6 }, { "name" = "merged_count", "type" = "integer", "position" = 7 }], "header" = false, "ordering" = "chronological", "granularity" = "hourly", "order_book" = { "sequence" = { "begin_id" = "begin_id", "merged_count" = "merged_count", "continuity_rule" = "next.begin_id = current.begin_id + current.merged_count" }, "side_field" = "side", "event_model" = "row_snapshot_and_incremental_updates", "update_actions" = ["make", "take"], "snapshot_action" = "set", "reconstruction_required" = true } }

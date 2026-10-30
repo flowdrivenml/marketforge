@@ -85,6 +85,7 @@ fn sample_metrics(events_written: u64) -> ProcessingMetricsReport {
 
     metrics.counters.records_read = events_written;
     metrics.counters.records_matched = events_written;
+    metrics.counters.records_processed = events_written;
     metrics.counters.events_normalized = events_written;
     metrics.counters.events_written = events_written;
 

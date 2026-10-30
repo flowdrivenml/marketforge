@@ -1,0 +1,296 @@
+[
+  {
+    "table_schema": "catalog",
+    "table_name": "exchanges",
+    "column_name": "id",
+    "data_type": "bigint"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "exchanges",
+    "column_name": "code",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "exchanges",
+    "column_name": "name",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "exchanges",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instrument_specs",
+    "column_name": "instrument_id",
+    "data_type": "bigint"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instrument_specs",
+    "column_name": "quantity_type",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instrument_specs",
+    "column_name": "contract_value",
+    "data_type": "numeric"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instrument_specs",
+    "column_name": "contract_value_asset",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instrument_specs",
+    "column_name": "tick_size",
+    "data_type": "numeric"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instrument_specs",
+    "column_name": "qty_step",
+    "data_type": "numeric"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instrument_specs",
+    "column_name": "min_qty",
+    "data_type": "numeric"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instrument_specs",
+    "column_name": "max_qty",
+    "data_type": "numeric"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instrument_specs",
+    "column_name": "min_notional",
+    "data_type": "numeric"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instrument_specs",
+    "column_name": "fetched_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instruments",
+    "column_name": "id",
+    "data_type": "bigint"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instruments",
+    "column_name": "exchange_id",
+    "data_type": "bigint"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instruments",
+    "column_name": "symbol",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instruments",
+    "column_name": "instrument_type",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instruments",
+    "column_name": "market_category",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instruments",
+    "column_name": "base_asset",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instruments",
+    "column_name": "quote_asset",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instruments",
+    "column_name": "settlement_asset",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instruments",
+    "column_name": "launch_time_ns",
+    "data_type": "bigint"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instruments",
+    "column_name": "expiry_ns",
+    "data_type": "bigint"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instruments",
+    "column_name": "strike",
+    "data_type": "numeric"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instruments",
+    "column_name": "option_type",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instruments",
+    "column_name": "status",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instruments",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "instruments",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "normalization_rules",
+    "column_name": "id",
+    "data_type": "bigint"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "normalization_rules",
+    "column_name": "raw_format_id",
+    "data_type": "bigint"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "normalization_rules",
+    "column_name": "target_schema",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "normalization_rules",
+    "column_name": "rules_json",
+    "data_type": "jsonb"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "normalization_rules",
+    "column_name": "notes",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "normalization_rules",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "normalization_rules",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "raw_formats",
+    "column_name": "id",
+    "data_type": "bigint"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "raw_formats",
+    "column_name": "exchange_id",
+    "data_type": "bigint"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "raw_formats",
+    "column_name": "format_code",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "raw_formats",
+    "column_name": "dataset",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "raw_formats",
+    "column_name": "instrument_type",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "raw_formats",
+    "column_name": "market_category",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "raw_formats",
+    "column_name": "container_format",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "raw_formats",
+    "column_name": "compression",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "raw_formats",
+    "column_name": "record_format",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "raw_formats",
+    "column_name": "schema_json",
+    "data_type": "jsonb"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "raw_formats",
+    "column_name": "notes",
+    "data_type": "text"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "raw_formats",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_schema": "catalog",
+    "table_name": "raw_formats",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone"
+  }
+]

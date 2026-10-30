@@ -3,7 +3,7 @@ use {
     marketforge_engine::shared::domain::book::SequencePolicy,
 };
 
-use crate::common::run_depth_format_test;
+use crate::depth_formats::common::run_depth_format_test;
 
 #[test]
 fn validates_bybit_inverse_btcusd() {

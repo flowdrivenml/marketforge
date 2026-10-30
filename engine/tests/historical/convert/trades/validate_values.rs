@@ -1,11 +1,4 @@
-use std::{
-    fs::{self, File},
-    path::{Path, PathBuf},
-    process::Command,
-};
-
-use arrow_array::{Array, RecordBatch};
-use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use std::{path::PathBuf, process::Command};
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

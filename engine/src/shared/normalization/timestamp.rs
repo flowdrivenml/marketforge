@@ -4,6 +4,7 @@ use crate::{
     shared::error::{MarketForgeError, Result},
     shared::normalization::TimestampEncoding,
 };
+use rust_decimal::prelude::ToPrimitive;
 
 pub fn parse_timestamp_ns(value: &[u8], encoding: TimestampEncoding) -> Result<TimestampNs> {
     let value = std::str::from_utf8(value).map_err(|error| {
@@ -32,7 +33,7 @@ fn scale_integer_timestamp(value: &str, multiplier: i64) -> Result<TimestampNs> 
 }
 
 fn parse_seconds(value: &str) -> Result<TimestampNs> {
-    let seconds = value.parse::<rust_decimal::Decimal>().map_err(|error| {
+    let seconds = super::parse_decimal(value.as_bytes(), "seconds timestamp").map_err(|error| {
         MarketForgeError::InvalidCanonical(format!("invalid seconds timestamp {value}: {error}",))
     })?;
 
@@ -43,15 +44,16 @@ fn parse_seconds(value: &str) -> Result<TimestampNs> {
             message: format!("timestamp overflow: {value}"),
         })?;
 
-    nanoseconds
-        .trunc()
-        .to_string()
-        .parse::<i64>()
-        .map_err(|error| {
-            MarketForgeError::InvalidCanonical(format!(
-                "timestamp cannot be represented as nanoseconds: {value}: {error}",
-            ))
-        })
+    if !nanoseconds.fract().is_zero() {
+        return Err(MarketForgeError::InvalidCanonical(format!(
+            "timestamp cannot be represented exactly in nanoseconds: {value}"
+        )));
+    }
+    nanoseconds.to_i64().ok_or_else(|| {
+        MarketForgeError::InvalidCanonical(format!(
+            "timestamp cannot be represented as nanoseconds: {value}",
+        ))
+    })
 }
 
 #[cfg(test)]
@@ -80,5 +82,23 @@ mod tests {
             parse_timestamp_ns(b"1.5", TimestampEncoding::Seconds).expect("parse timestamp");
 
         assert_eq!(timestamp, 1_500_000_000,);
+    }
+}
+
+#[cfg(test)]
+mod exact_timestamp_tests {
+    use super::*;
+    #[test]
+    fn rejects_subnanosecond_seconds_instead_of_truncating() {
+        assert!(parse_timestamp_ns(b"1.0000000001", TimestampEncoding::Seconds).is_err());
+        assert!(parse_timestamp_ns(b"-1.0000000001", TimestampEncoding::Seconds).is_err());
+        assert_eq!(
+            parse_timestamp_ns(b"1.000000001", TimestampEncoding::Seconds).unwrap(),
+            1_000_000_001
+        );
+        assert_eq!(
+            parse_timestamp_ns(b"1.5e0", TimestampEncoding::Seconds).unwrap(),
+            1_500_000_000
+        );
     }
 }

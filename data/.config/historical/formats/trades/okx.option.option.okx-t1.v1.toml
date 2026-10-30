@@ -1,0 +1,13 @@
+schema_version = 1
+kind = "profile"
+id = "okx.option.option.okx-t1.v1"
+physical = "trades-9757d1280c728b84"
+format_code = "OKX-T1"
+exchange = "okx"
+instrument_type = "option"
+market_category = "option"
+unsupported_reason = "Options processing is deferred: TradeSpec does not implement catalog instrument lookup, composite instrument/trade identity or sorting of multi-instrument option-chain files."
+
+[[rules]]
+target = "trade"
+rules = { "event_timestamp" = { "source" = "created_time" }, "trade_id" = { "source" = "trade_id" }, "side" = { "source" = "side", "transform" = "casefold" }, "price" = { "source" = "price" }, "quantity" = { "source" = "size" }, "optional" = { "is_rpi" = { "source" = "source", "transform" = "equals", "value" = 1 } }, "instrument" = { "source" = "instrument_name", "lookup" = "catalog" }, "identity" = { "fields" = ["instrument_name", "trade_id"] }, "input_ordering" = { "sort_by" = "created_time", "order" = "ascending" } }

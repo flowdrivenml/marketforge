@@ -2,7 +2,7 @@ mod policy;
 mod spec;
 mod transforms;
 
-#[cfg(feature = "historical")]
+#[cfg(all(feature = "historical", test))]
 mod csv;
 
 #[cfg(feature = "historical")]

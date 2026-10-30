@@ -1,0 +1,36 @@
+{
+  "normal_run_directory": "engine/target/historical-verification/20261030T010602Z-522122",
+  "post_cleanup_compile_directory": "engine/target/historical-verification/20261030T011056Z-529183",
+  "normal_status_counts": {
+    "PASS": 601
+  },
+  "normal_by_target": {
+    "depth_xlsx_decoder": 6,
+    "depth_processor": 4,
+    "depth_spec": 1,
+    "depth_csv_adapter": 4,
+    "depth_transforms": 14,
+    "historical_normalize": 124,
+    "depth_scalar": 2,
+    "historical_convert": 200,
+    "historical_merge": 246
+  },
+  "selected_library_status_counts": {
+    "NOT_RUN": 127,
+    "PASS": 28
+  },
+  "library_run_directory": "engine/target/historical-finalization-lib-run",
+  "slow_cases_compiled_and_discovered_only": 231,
+  "slow_cases_executed": 0,
+  "existing_slow_ignored": 5,
+  "historical_only_check": "PASS",
+  "live_only_library_check": "PASS",
+  "minimal_library_check": "PASS",
+  "normal_targets_compilation": "PASS",
+  "slow_targets_compilation": "PASS",
+  "longest_normal_seconds": 11.884757969997736,
+  "historical_targets_before": 6,
+  "historical_targets_after": 6,
+  "package_integration_targets_before": 43,
+  "package_integration_targets_after": 43
+}
