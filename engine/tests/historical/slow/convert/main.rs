@@ -49,6 +49,10 @@ mod convert_external_reference;
 mod convert_materialize;
 #[path = "../../convert/execution/materialize_multihop.rs"]
 mod convert_materialize_multihop;
+#[path = "../../convert/output/output_manifest.rs"]
+mod convert_output_manifest;
+#[path = "../../convert/output/output_validation.rs"]
+mod convert_output_validation;
 #[path = "../../convert/execution/parallel.rs"]
 mod convert_parallel;
 #[path = "../../convert/execution/parallel_publication.rs"]
@@ -67,17 +71,9 @@ mod convert_publication;
 mod convert_reference_reader;
 #[path = "../../convert/reference/reference_seek.rs"]
 mod convert_reference_seek;
-#[path = "../../convert/execution/worker.rs"]
-mod convert_worker;
-
-#[path = "../../convert/output/output_manifest.rs"]
-mod convert_output_manifest;
-
 #[path = "../../convert/output/source_preservation.rs"]
 mod convert_source_preservation;
-
-#[path = "../../convert/output/output_validation.rs"]
-mod convert_output_validation;
-
 #[path = "../../convert/trades/validate_values.rs"]
 mod convert_validate_values;
+#[path = "../../convert/execution/worker.rs"]
+mod convert_worker;
