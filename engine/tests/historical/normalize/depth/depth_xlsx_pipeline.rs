@@ -72,7 +72,7 @@ fn decimal(value: &str) -> Decimal {
 // Synthetic XLSX workbook
 // -----------------------------------------------------------------------------
 
-fn create_xlsx() -> Vec<u8> {
+pub(super) fn create_xlsx() -> Vec<u8> {
     let worksheet = r#"
     <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
       <sheetData>

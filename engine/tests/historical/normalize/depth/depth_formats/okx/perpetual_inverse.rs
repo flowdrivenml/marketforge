@@ -1,7 +1,7 @@
 use marketforge_engine::shared::domain::book::SequencePolicy;
 use rust_decimal::Decimal;
 
-use crate::common::run_depth_format_test;
+use crate::depth_formats::common::run_depth_format_test;
 
 #[test]
 fn validates_okx_perpetual_inverse_btcusd() {

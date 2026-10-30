@@ -399,6 +399,9 @@ fn invalid<T>(message: impl Into<String>) -> Result<T> {
 }
 
 fn validate_rules(r: &DepthRules) -> Result<()> {
+    if r.bids.is_some() != r.asks.is_some() {
+        return invalid("depth arrays require both bids and asks");
+    }
     let field = |name: &str| -> Result<()> {
         if name.trim().is_empty() {
             invalid("empty depth source field")
