@@ -1,0 +1,15 @@
+schema_version = 1
+kind = "profile"
+id = "bybit.linear.perpetual.bybit-t2.v1"
+physical = "trades-38cb71e2f2d3b0c3"
+format_code = "BYBIT-T2"
+exchange = "bybit"
+instrument_type = "perpetual"
+market_category = "linear"
+source_ordering = "source_ordered"
+
+[[rules]]
+target = "trade"
+timestamp_encoding = "seconds"
+quantity_encoding = "base"
+rules = { "side" = { "source" = "side", "transform" = "casefold" }, "price" = { "source" = "price" }, "optional" = { "is_rpi" = { "source" = "RPI", "transform" = "bool" } }, "quantity" = { "source" = "size" }, "trade_id" = { "source" = "trdMatchID" }, "event_timestamp" = { "source" = "timestamp" } }

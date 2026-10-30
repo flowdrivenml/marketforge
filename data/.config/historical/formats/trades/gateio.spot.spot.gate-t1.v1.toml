@@ -1,0 +1,15 @@
+schema_version = 1
+kind = "profile"
+id = "gateio.spot.spot.gate-t1.v1"
+physical = "trades-72767b3278c7a2cf"
+format_code = "GATE-T1"
+exchange = "gateio"
+instrument_type = "spot"
+market_category = "spot"
+source_ordering = "source_ordered"
+
+[[rules]]
+target = "trade"
+timestamp_encoding = "seconds"
+quantity_encoding = "base"
+rules = { "side" = { "source" = "side", "values" = { "1" = "sell", "2" = "buy" }, "transform" = "map" }, "price" = { "source" = "price" }, "quantity" = { "source" = "amount" }, "trade_id" = { "source" = "dealid" }, "event_timestamp" = { "source" = "timestamp" } }

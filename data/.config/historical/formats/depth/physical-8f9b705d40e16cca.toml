@@ -1,0 +1,7 @@
+schema_version = 1
+kind = "physical"
+id = "depth-8f9b705d40e16cca"
+container_format = "jsonl"
+record_format = "events"
+supported_containers = ["tar_gzip"]
+raw_schema = { "granularity" = "daily", "archive_day_boundary" = "UTC", "ordering" = "chronological", "maximum_depth_per_side" = 5000, "fields" = [{ "name" = "instId", "type" = "string" }, { "name" = "action", "type" = "string", "values" = ["snapshot", "update"] }, { "name" = "ts", "type" = "string/integer", "representation" = "unix_epoch", "unit" = "milliseconds", "precision" = "millisecond" }, { "name" = "asks", "type" = "array", "level_schema" = ["price", "quantity", "order_count"] }, { "name" = "bids", "type" = "array", "level_schema" = ["price", "quantity", "order_count"] }], "order_book" = { "event_model" = "periodic_snapshot_and_incremental_updates", "maximum_depth_per_side" = 5000, "snapshot_frequency" = "approximately_15_minutes", "update_frequency" = "approximately_1_second", "sequence_id" = false, "update_id" = false, "delta_delete_quantity" = "0", "reconstruction_required" = true, "snapshot_resets_book" = true, "reconstruction_scope" = "per_option_contract", "actual_depth" = "variable_sparse" }, "archive_members" = "multiple_option_contracts", "member_coverage" = "depends_on_option_lifetime" }

@@ -1,0 +1,15 @@
+schema_version = 1
+kind = "profile"
+id = "okx.spot.spot.okx-t1.v1"
+physical = "trades-f76fece6f379b1f9"
+format_code = "OKX-T1"
+exchange = "okx"
+instrument_type = "spot"
+market_category = "spot"
+source_ordering = "source_ordered"
+
+[[rules]]
+target = "trade"
+timestamp_encoding = "milliseconds"
+quantity_encoding = "base"
+rules = { "side" = { "source" = "side", "transform" = "casefold" }, "price" = { "source" = "price" }, "optional" = { "is_rpi" = { "value" = 1, "source" = "source", "transform" = "equals" } }, "quantity" = { "source" = "size" }, "trade_id" = { "source" = "trade_id" }, "event_timestamp" = { "source" = "created_time" } }

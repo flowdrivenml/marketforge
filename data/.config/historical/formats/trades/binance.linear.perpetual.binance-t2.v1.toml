@@ -1,0 +1,15 @@
+schema_version = 1
+kind = "profile"
+id = "binance.linear.perpetual.binance-t2.v1"
+physical = "trades-8e67686feb09e160"
+format_code = "BINANCE-T2"
+exchange = "binance"
+instrument_type = "perpetual"
+market_category = "linear"
+source_ordering = "source_ordered"
+
+[[rules]]
+target = "trade"
+timestamp_encoding = "milliseconds"
+quantity_encoding = "base"
+rules = { "side" = { "source" = "is_buyer_maker", "values" = { "true" = "sell", "false" = "buy" }, "transform" = "map" }, "price" = { "source" = "price" }, "quantity" = { "source" = "qty" }, "trade_id" = { "source" = "id" }, "event_timestamp" = { "source" = "time" } }

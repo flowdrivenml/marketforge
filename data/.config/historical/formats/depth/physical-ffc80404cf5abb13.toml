@@ -1,0 +1,7 @@
+schema_version = 1
+kind = "physical"
+id = "depth-ffc80404cf5abb13"
+container_format = "jsonl"
+record_format = "events"
+supported_containers = ["zip"]
+raw_schema = { "fields" = [{ "name" = "topic", "type" = "string" }, { "name" = "ts", "type" = "integer", "unit" = "milliseconds", "precision" = "millisecond", "representation" = "unix_epoch" }, { "name" = "type", "type" = "string", "values" = ["snapshot", "delta"] }, { "name" = "data.s", "type" = "string" }, { "name" = "data.b", "type" = "array", "level_schema" = ["price", "quantity"] }, { "name" = "data.a", "type" = "array", "level_schema" = ["price", "quantity"] }, { "name" = "data.u", "type" = "integer" }, { "name" = "data.seq", "type" = "integer" }, { "name" = "cts", "type" = "integer", "unit" = "milliseconds", "precision" = "millisecond", "representation" = "unix_epoch" }], "ordering" = "chronological", "granularity" = "daily", "order_book" = { "update_id" = "data.u", "event_model" = "snapshot_and_incremental_delta", "cross_sequence" = "data.seq", "snapshot_depth" = { "asks" = 200, "bids" = 200 }, "delta_delete_quantity" = "0", "reconstruction_required" = true }, "maximum_depth_per_side" = 200 }

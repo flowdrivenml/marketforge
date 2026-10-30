@@ -1,0 +1,7 @@
+schema_version = 1
+kind = "physical"
+id = "trades-bfe8e251a21dcfc4"
+container_format = "csv"
+record_format = "rows"
+supported_containers = ["zip"]
+raw_schema = { "fields" = [{ "name" = "id", "type" = "integer" }, { "name" = "price", "type" = "decimal" }, { "name" = "qty", "type" = "decimal" }, { "name" = "base_qty", "type" = "decimal" }, { "name" = "time", "type" = "integer", "unit" = "milliseconds", "precision" = "millisecond", "representation" = "unix_epoch" }, { "name" = "is_buyer_maker", "type" = "boolean" }], "header" = true, "ordering" = "chronological", "granularity" = "daily" }

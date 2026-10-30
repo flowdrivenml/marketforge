@@ -1,0 +1,21 @@
+schema_version = 1
+kind = "profile"
+id = "gateio.spot.spot.gate-b1.v1"
+physical = "depth-fc599eca882889a6"
+format_code = "GATE-B1"
+exchange = "gateio"
+instrument_type = "spot"
+market_category = "spot"
+source_ordering = "source_ordered"
+
+[[rules]]
+target = "l2_snapshot"
+timestamp_encoding = "seconds"
+quantity_encoding = "base"
+rules = { "side" = { "source" = "side", "values" = { "1" = "ask", "2" = "bid" }, "transform" = "map" }, "price" = { "source" = "price" }, "quantity" = { "source" = "amount" }, "snapshot" = { "type" = "group_rows", "group_by" = "timestamp" }, "event_filter" = { "equals" = "set", "source" = "action" }, "sequence_count" = { "source" = "merged_count" }, "sequence_start" = { "source" = "begin_id" }, "event_timestamp" = { "source" = "timestamp" } }
+
+[[rules]]
+target = "l2_update"
+timestamp_encoding = "seconds"
+quantity_encoding = "base"
+rules = { "side" = { "source" = "side", "values" = { "1" = "ask", "2" = "bid" }, "transform" = "map" }, "price" = { "source" = "price" }, "quantity" = { "source" = "amount" }, "event_filter" = { "in" = ["make", "take"], "source" = "action" }, "sequence_count" = { "source" = "merged_count" }, "sequence_start" = { "source" = "begin_id" }, "event_timestamp" = { "source" = "timestamp" }, "update_semantics" = { "emit" = "resulting_absolute_level", "type" = "relative_level", "add_action" = "make", "zero_result" = "delete", "action_source" = "action", "nonzero_result" = "set", "subtract_action" = "take" } }

@@ -1,0 +1,15 @@
+schema_version = 1
+kind = "profile"
+id = "bitget.spot.spot.bitget-t1.v1"
+physical = "trades-27795f74ebf55560"
+format_code = "BITGET-T1"
+exchange = "bitget"
+instrument_type = "spot"
+market_category = "spot"
+source_ordering = "source_ordered"
+
+[[rules]]
+target = "trade"
+timestamp_encoding = "milliseconds"
+quantity_encoding = "base"
+rules = { "side" = { "source" = "side", "transform" = "casefold" }, "price" = { "source" = "price" }, "quantity" = { "source" = "size(base)" }, "trade_id" = { "source" = "trade_id" }, "event_timestamp" = { "source" = "timestamp" } }

@@ -6,7 +6,9 @@ edition = "2024"
 [features]
 default = []
 postgres = ["dep:sqlx"]
+historical-slow-tests = ["historical"]
 historical = [
+    "dep:toml",
     "dep:num-integer",
     "dep:num-traits",
     "dep:num-bigint",

@@ -1,0 +1,17 @@
+schema_version = 1
+kind = "profile"
+id = "bybit.option.option.bybit-b2.v1"
+physical = "depth-0da18a2459405ace"
+format_code = "BYBIT-B2"
+exchange = "bybit"
+instrument_type = "option"
+market_category = "option"
+unsupported_reason = "Options processing is deferred: multi-instrument identity and optional canonical fields are not implemented."
+
+[[rules]]
+target = "l2_snapshot"
+rules = { "event_timestamp" = { "source" = "cts" }, "system_timestamp" = { "source" = "ts" }, "instrument" = { "source" = "data.s", "lookup" = "catalog" }, "bids" = { "source" = "data.b", "price_index" = 0, "quantity_index" = 1 }, "asks" = { "source" = "data.a", "price_index" = 0, "quantity_index" = 1 }, "sequence_start" = { "source" = "data.u" }, "event_filter" = { "source" = "type", "equals" = "snapshot" }, "snapshot" = { "type" = "single_event" }, "archive_scope" = { "type" = "per_member_instrument" } }
+
+[[rules]]
+target = "l2_update"
+rules = { "event_timestamp" = { "source" = "cts" }, "system_timestamp" = { "source" = "ts" }, "instrument" = { "source" = "data.s", "lookup" = "catalog" }, "bids" = { "source" = "data.b", "price_index" = 0, "quantity_index" = 1 }, "asks" = { "source" = "data.a", "price_index" = 0, "quantity_index" = 1 }, "sequence_start" = { "source" = "data.u" }, "event_filter" = { "source" = "type", "equals" = "delta" }, "update_semantics" = { "type" = "absolute_level", "zero_quantity" = "delete", "nonzero_quantity" = "set" }, "archive_scope" = { "type" = "per_member_instrument" } }

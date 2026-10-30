@@ -1,0 +1,21 @@
+schema_version = 1
+kind = "profile"
+id = "okx.spot.spot.okx-b1.v1"
+physical = "depth-34de574f546f04eb"
+format_code = "OKX-B1"
+exchange = "okx"
+instrument_type = "spot"
+market_category = "spot"
+source_ordering = "source_ordered"
+
+[[rules]]
+target = "l2_snapshot"
+timestamp_encoding = "milliseconds"
+quantity_encoding = "base"
+rules = { "asks" = { "source" = "asks", "price_index" = 0, "quantity_index" = 1, "order_count_index" = 2 }, "bids" = { "source" = "bids", "price_index" = 0, "quantity_index" = 1, "order_count_index" = 2 }, "snapshot" = { "type" = "single_event" }, "instrument" = { "lookup" = "catalog", "source" = "instId" }, "event_filter" = { "equals" = "snapshot", "source" = "action" }, "event_timestamp" = { "source" = "ts" } }
+
+[[rules]]
+target = "l2_update"
+timestamp_encoding = "milliseconds"
+quantity_encoding = "base"
+rules = { "asks" = { "source" = "asks", "price_index" = 0, "quantity_index" = 1, "order_count_index" = 2 }, "bids" = { "source" = "bids", "price_index" = 0, "quantity_index" = 1, "order_count_index" = 2 }, "instrument" = { "lookup" = "catalog", "source" = "instId" }, "event_filter" = { "equals" = "update", "source" = "action" }, "event_timestamp" = { "source" = "ts" }, "update_semantics" = { "type" = "absolute_level", "zero_quantity" = "delete", "nonzero_quantity" = "set" } }

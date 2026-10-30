@@ -5,3 +5,6 @@ pub mod job;
 pub mod merge;
 #[cfg(feature = "historical")]
 pub mod normalize;
+
+#[cfg(feature = "historical")]
+pub mod config;

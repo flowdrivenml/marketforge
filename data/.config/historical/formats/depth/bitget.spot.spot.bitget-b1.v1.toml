@@ -1,0 +1,15 @@
+schema_version = 1
+kind = "profile"
+id = "bitget.spot.spot.bitget-b1.v1"
+physical = "depth-27f3e7c2cf493bf6"
+format_code = "BITGET-B1"
+exchange = "bitget"
+instrument_type = "spot"
+market_category = "spot"
+source_ordering = "timestamp_sortable"
+
+[[rules]]
+target = "l2_snapshot"
+timestamp_encoding = "seconds"
+quantity_encoding = "base"
+rules = { "asks" = { "decode" = "json", "source" = "asks", "price_index" = 0, "quantity_index" = 1 }, "bids" = { "decode" = "json", "source" = "bids", "price_index" = 0, "quantity_index" = 1 }, "snapshot" = { "type" = "single_row" }, "input_ordering" = { "order" = "ascending", "sort_by" = "timestamp" }, "event_timestamp" = { "source" = "timestamp" } }

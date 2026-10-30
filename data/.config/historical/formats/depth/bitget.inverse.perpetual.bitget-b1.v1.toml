@@ -1,0 +1,13 @@
+schema_version = 1
+kind = "profile"
+id = "bitget.inverse.perpetual.bitget-b1.v1"
+physical = "depth-b056fca0cb1f113d"
+format_code = "BITGET-B1"
+exchange = "bitget"
+instrument_type = "perpetual"
+market_category = "inverse"
+unsupported_reason = "Inverse Bitget depth quantity encoding is not established; the format inspection explicitly forbids inferring it."
+
+[[rules]]
+target = "l2_snapshot"
+rules = { "event_timestamp" = { "source" = "timestamp" }, "bids" = { "source" = "bids", "decode" = "json", "price_index" = 0, "quantity_index" = 1 }, "asks" = { "source" = "asks", "decode" = "json", "price_index" = 0, "quantity_index" = 1 }, "snapshot" = { "type" = "single_row" }, "input_ordering" = { "sort_by" = "timestamp", "order" = "ascending" } }

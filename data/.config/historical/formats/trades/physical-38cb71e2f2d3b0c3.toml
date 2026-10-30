@@ -1,0 +1,7 @@
+schema_version = 1
+kind = "physical"
+id = "trades-38cb71e2f2d3b0c3"
+container_format = "csv"
+record_format = "rows"
+supported_containers = ["gzip"]
+raw_schema = { "fields" = [{ "name" = "timestamp", "type" = "decimal", "unit" = "seconds", "precision" = "up_to_4_fractional_digits", "representation" = "unix_epoch" }, { "name" = "symbol", "type" = "string" }, { "name" = "side", "type" = "string" }, { "name" = "size", "type" = "decimal" }, { "name" = "price", "type" = "decimal" }, { "name" = "tickDirection", "type" = "string" }, { "name" = "trdMatchID", "type" = "uuid/string" }, { "name" = "grossValue", "type" = "decimal" }, { "name" = "homeNotional", "type" = "decimal" }, { "name" = "foreignNotional", "type" = "decimal" }, { "name" = "RPI", "type" = "integer/bool" }], "header" = true, "ordering" = "chronological", "granularity" = "daily" }
