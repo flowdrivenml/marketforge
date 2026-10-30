@@ -1,0 +1,4077 @@
+{
+  "raw_formats": [
+    {
+      "id": 1,
+      "exchange_id": 2,
+      "format_code": "BINANCE-T1",
+      "dataset": "trade",
+      "instrument_type": "spot",
+      "market_category": "spot",
+      "container_format": "csv",
+      "compression": "zip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "trade_id",
+            "type": "integer",
+            "position": 1
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "position": 2
+          },
+          {
+            "name": "quantity",
+            "type": "decimal",
+            "position": 3
+          },
+          {
+            "name": "quote_quantity",
+            "type": "decimal",
+            "position": 4
+          },
+          {
+            "name": "timestamp",
+            "type": "integer",
+            "unit": "microseconds",
+            "position": 5,
+            "precision": "microsecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "is_buyer_maker",
+            "type": "boolean",
+            "position": 6
+          },
+          {
+            "name": "is_best_match",
+            "type": "boolean",
+            "position": 7
+          }
+        ],
+        "header": false,
+        "ordering": "chronological",
+        "granularity": "daily"
+      },
+      "notes": "Daily ZIP/deflate archive containing headerless CSV. Trade IDs were consecutive in the inspected fixture. Quote quantity matched price multiplied by quantity. is_best_match was true for every observed record.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 2,
+      "exchange_id": 2,
+      "format_code": "BINANCE-T2",
+      "dataset": "trade",
+      "instrument_type": "perpetual",
+      "market_category": "linear",
+      "container_format": "csv",
+      "compression": "zip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "qty",
+            "type": "decimal"
+          },
+          {
+            "name": "quote_qty",
+            "type": "decimal"
+          },
+          {
+            "name": "time",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "is_buyer_maker",
+            "type": "boolean"
+          }
+        ],
+        "header": true,
+        "ordering": "chronological",
+        "granularity": "daily"
+      },
+      "notes": "Daily ZIP/deflate archive containing headered CSV. Trade IDs were unique but not contiguous in the inspected fixture. Quote quantity matched price multiplied by quantity.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 3,
+      "exchange_id": 2,
+      "format_code": "BINANCE-T3",
+      "dataset": "trade",
+      "instrument_type": "perpetual",
+      "market_category": "inverse",
+      "container_format": "csv",
+      "compression": "zip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "qty",
+            "type": "decimal"
+          },
+          {
+            "name": "base_qty",
+            "type": "decimal"
+          },
+          {
+            "name": "time",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "is_buyer_maker",
+            "type": "boolean"
+          }
+        ],
+        "header": true,
+        "ordering": "chronological",
+        "granularity": "daily"
+      },
+      "notes": "Daily ZIP/deflate archive containing headered CSV. qty is contract quantity and base_qty is base-asset quantity. The inspected BTCUSD_PERP fixture satisfied base_qty = qty * 100 / price, but the 100 contract value must not be assumed universal and belongs to instrument metadata.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 4,
+      "exchange_id": 4,
+      "format_code": "BITGET-T1",
+      "dataset": "trade",
+      "instrument_type": "spot",
+      "market_category": "spot",
+      "container_format": "csv",
+      "compression": "zip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "trade_id",
+            "type": "integer/string"
+          },
+          {
+            "name": "timestamp",
+            "type": "integer",
+            "unit": "milliseconds",
+            "representation": "unix_epoch",
+            "observed_effective_precision": "second"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "side",
+            "type": "string"
+          },
+          {
+            "name": "volume(quote)",
+            "type": "decimal"
+          },
+          {
+            "name": "size(base)",
+            "type": "decimal"
+          }
+        ],
+        "header": true,
+        "ordering": "chronological",
+        "granularity": "daily",
+        "daily_packaging": "numbered_zip_chunks",
+        "archive_day_boundary": "UTC+8"
+      },
+      "notes": "Daily UTC+8 archive packaged as one or more numbered ZIP chunks. Each archive contains one headered CSV. Observed timestamps were encoded as milliseconds but had effective one-second precision.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 5,
+      "exchange_id": 4,
+      "format_code": "BITGET-T1",
+      "dataset": "trade",
+      "instrument_type": "perpetual",
+      "market_category": "linear",
+      "container_format": "csv",
+      "compression": "zip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "trade_id",
+            "type": "integer/string"
+          },
+          {
+            "name": "timestamp",
+            "type": "integer",
+            "unit": "milliseconds",
+            "representation": "unix_epoch",
+            "observed_effective_precision": "second"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "side",
+            "type": "string"
+          },
+          {
+            "name": "volume(quote)",
+            "type": "decimal"
+          },
+          {
+            "name": "size(base)",
+            "type": "decimal"
+          }
+        ],
+        "header": true,
+        "ordering": "chronological",
+        "granularity": "daily",
+        "daily_packaging": "numbered_zip_chunks",
+        "archive_day_boundary": "UTC+8"
+      },
+      "notes": "Same physical trade format as Bitget Spot. Daily UTC+8 archive may be split across multiple numbered ZIP chunks. Observed timestamps were encoded as milliseconds but had effective one-second precision.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 6,
+      "exchange_id": 4,
+      "format_code": "BITGET-B1",
+      "dataset": "l2",
+      "instrument_type": "spot",
+      "market_category": "spot",
+      "container_format": "xlsx",
+      "compression": "zip",
+      "record_format": "snapshot_rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "timestamp",
+            "type": "integer",
+            "unit": "seconds",
+            "precision": "second",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "asks",
+            "type": "string",
+            "encoding": "json",
+            "ordering": "price_ascending",
+            "level_schema": [
+              "price",
+              "quantity"
+            ]
+          },
+          {
+            "name": "bids",
+            "type": "string",
+            "encoding": "json",
+            "ordering": "price_descending",
+            "level_schema": [
+              "price",
+              "quantity"
+            ]
+          }
+        ],
+        "header": true,
+        "ordering": "not_chronological",
+        "order_book": {
+          "update_id": false,
+          "event_model": "standalone_snapshot",
+          "sequence_id": false,
+          "delta_updates": false,
+          "snapshot_depth": {
+            "asks": 500,
+            "bids": 500
+          },
+          "reconstruction_required": false
+        },
+        "granularity": "daily",
+        "workbook_sheets": 1,
+        "sorting_required": true,
+        "archive_day_boundary": "UTC+8"
+      },
+      "notes": "ZIP contains an XLSX workbook with one sheet. Rows are independent full snapshots and raw workbook order is not chronological. Snapshots must be sorted by timestamp. Observed Spot snapshots contained exactly 500 asks and 500 bids.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 7,
+      "exchange_id": 4,
+      "format_code": "BITGET-B1",
+      "dataset": "l2",
+      "instrument_type": "perpetual",
+      "market_category": "linear",
+      "container_format": "xlsx",
+      "compression": "zip",
+      "record_format": "snapshot_rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "timestamp",
+            "type": "integer",
+            "unit": "seconds",
+            "precision": "second",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "asks",
+            "type": "string",
+            "encoding": "json",
+            "ordering": "price_ascending",
+            "level_schema": [
+              "price",
+              "quantity"
+            ]
+          },
+          {
+            "name": "bids",
+            "type": "string",
+            "encoding": "json",
+            "ordering": "price_descending",
+            "level_schema": [
+              "price",
+              "quantity"
+            ]
+          }
+        ],
+        "header": true,
+        "ordering": "not_chronological",
+        "order_book": {
+          "update_id": false,
+          "event_model": "standalone_snapshot",
+          "sequence_id": false,
+          "delta_updates": false,
+          "snapshot_depth": {
+            "asks": 500,
+            "bids": 500
+          },
+          "reconstruction_required": false
+        },
+        "granularity": "daily",
+        "workbook_sheets": 1,
+        "sorting_required": true,
+        "archive_day_boundary": "UTC+8"
+      },
+      "notes": "ZIP contains an XLSX workbook with one sheet. Rows are independent full snapshots and raw workbook order is not chronological. Snapshots must be sorted by timestamp. Observed Linear snapshots contained exactly 500 asks and 500 bids.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 8,
+      "exchange_id": 4,
+      "format_code": "BITGET-B1",
+      "dataset": "l2",
+      "instrument_type": "perpetual",
+      "market_category": "inverse",
+      "container_format": "xlsx",
+      "compression": "zip",
+      "record_format": "snapshot_rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "timestamp",
+            "type": "integer",
+            "unit": "seconds",
+            "precision": "second",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "asks",
+            "type": "string",
+            "encoding": "json",
+            "ordering": "price_ascending",
+            "level_schema": [
+              "price",
+              "quantity"
+            ]
+          },
+          {
+            "name": "bids",
+            "type": "string",
+            "encoding": "json",
+            "ordering": "price_descending",
+            "level_schema": [
+              "price",
+              "quantity"
+            ]
+          }
+        ],
+        "header": true,
+        "ordering": "not_chronological",
+        "order_book": {
+          "update_id": false,
+          "event_model": "standalone_snapshot",
+          "sequence_id": false,
+          "delta_updates": false,
+          "snapshot_depth": "variable",
+          "reconstruction_required": false
+        },
+        "granularity": "daily",
+        "workbook_sheets": 1,
+        "sorting_required": true,
+        "archive_day_boundary": "UTC+8"
+      },
+      "notes": "ZIP contains an XLSX workbook with one sheet. Rows are independent snapshots and raw workbook order is not chronological. Snapshots must be sorted by timestamp. Observed inverse snapshot depth was variable.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 9,
+      "exchange_id": 1,
+      "format_code": "BYBIT-T1",
+      "dataset": "trade",
+      "instrument_type": "spot",
+      "market_category": "spot",
+      "container_format": "csv",
+      "compression": "gzip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "timestamp",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "volume",
+            "type": "decimal"
+          },
+          {
+            "name": "side",
+            "type": "string"
+          },
+          {
+            "name": "rpi",
+            "type": "integer/bool"
+          }
+        ],
+        "header": true,
+        "ordering": "chronological",
+        "granularity": "daily"
+      },
+      "notes": "Daily GZIP CSV. id is a sequential row/trade identifier within the archive. side represents taker side.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 10,
+      "exchange_id": 1,
+      "format_code": "BYBIT-T2",
+      "dataset": "trade",
+      "instrument_type": "perpetual",
+      "market_category": "linear",
+      "container_format": "csv",
+      "compression": "gzip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "timestamp",
+            "type": "decimal",
+            "unit": "seconds",
+            "precision": "up_to_4_fractional_digits",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "symbol",
+            "type": "string"
+          },
+          {
+            "name": "side",
+            "type": "string"
+          },
+          {
+            "name": "size",
+            "type": "decimal"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "tickDirection",
+            "type": "string"
+          },
+          {
+            "name": "trdMatchID",
+            "type": "uuid/string"
+          },
+          {
+            "name": "grossValue",
+            "type": "decimal"
+          },
+          {
+            "name": "homeNotional",
+            "type": "decimal"
+          },
+          {
+            "name": "foreignNotional",
+            "type": "decimal"
+          },
+          {
+            "name": "RPI",
+            "type": "integer/bool"
+          }
+        ],
+        "header": true,
+        "ordering": "chronological",
+        "granularity": "daily"
+      },
+      "notes": "Daily GZIP CSV. Physical parser is shared with Bybit inverse perpetual trades. Linear and inverse notional semantics differ and must be handled during normalization.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 11,
+      "exchange_id": 1,
+      "format_code": "BYBIT-T2",
+      "dataset": "trade",
+      "instrument_type": "perpetual",
+      "market_category": "inverse",
+      "container_format": "csv",
+      "compression": "gzip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "timestamp",
+            "type": "decimal",
+            "unit": "seconds",
+            "precision": "up_to_4_fractional_digits",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "symbol",
+            "type": "string"
+          },
+          {
+            "name": "side",
+            "type": "string"
+          },
+          {
+            "name": "size",
+            "type": "decimal"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "tickDirection",
+            "type": "string"
+          },
+          {
+            "name": "trdMatchID",
+            "type": "uuid/string"
+          },
+          {
+            "name": "grossValue",
+            "type": "decimal"
+          },
+          {
+            "name": "homeNotional",
+            "type": "decimal"
+          },
+          {
+            "name": "foreignNotional",
+            "type": "decimal"
+          },
+          {
+            "name": "RPI",
+            "type": "integer/bool"
+          }
+        ],
+        "header": true,
+        "ordering": "chronological",
+        "granularity": "daily"
+      },
+      "notes": "Daily GZIP CSV. Physical parser is shared with Bybit linear perpetual trades. Linear and inverse notional semantics differ and must be handled during normalization.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 12,
+      "exchange_id": 1,
+      "format_code": "BYBIT-T3",
+      "dataset": "trade",
+      "instrument_type": "option",
+      "market_category": "option",
+      "container_format": "csv",
+      "compression": "zip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "trade_id",
+            "type": "uuid/string"
+          },
+          {
+            "name": "trade_seq",
+            "type": "integer"
+          },
+          {
+            "name": "timestamp",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "instrument_name",
+            "type": "string"
+          },
+          {
+            "name": "direction",
+            "type": "string"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "amount",
+            "type": "decimal"
+          },
+          {
+            "name": "iv",
+            "type": "decimal"
+          },
+          {
+            "name": "index_price",
+            "type": "decimal"
+          },
+          {
+            "name": "mark_price",
+            "type": "decimal"
+          },
+          {
+            "name": "mark_iv",
+            "type": "decimal"
+          }
+        ],
+        "header": true,
+        "ordering": "chronological",
+        "granularity": "daily"
+      },
+      "notes": "Daily ZIP containing option trades. trade_seq may be shared by multiple trades; trade_id is the unique trade identifier. Includes trade IV, mark IV, index price, and mark price.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 13,
+      "exchange_id": 1,
+      "format_code": "BYBIT-B1",
+      "dataset": "l2",
+      "instrument_type": "spot",
+      "market_category": "spot",
+      "container_format": "jsonl",
+      "compression": "zip",
+      "record_format": "events",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "topic",
+            "type": "string"
+          },
+          {
+            "name": "ts",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "values": [
+              "snapshot",
+              "delta"
+            ]
+          },
+          {
+            "name": "data.s",
+            "type": "string"
+          },
+          {
+            "name": "data.b",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity"
+            ]
+          },
+          {
+            "name": "data.a",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity"
+            ]
+          },
+          {
+            "name": "data.u",
+            "type": "integer"
+          },
+          {
+            "name": "data.seq",
+            "type": "integer"
+          },
+          {
+            "name": "cts",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          }
+        ],
+        "ordering": "chronological",
+        "order_book": {
+          "update_id": "data.u",
+          "event_model": "snapshot_and_incremental_delta",
+          "cross_sequence": "data.seq",
+          "snapshot_depth": {
+            "asks": 200,
+            "bids": 200
+          },
+          "delta_delete_quantity": "0",
+          "reconstruction_required": true
+        },
+        "granularity": "daily",
+        "maximum_depth_per_side": 200
+      },
+      "notes": "Daily ZIP containing JSON Lines. Snapshot plus incremental delta stream with 200 levels per side. Start from a snapshot and apply deltas using update ID data.u.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 14,
+      "exchange_id": 1,
+      "format_code": "BYBIT-B1",
+      "dataset": "l2",
+      "instrument_type": "perpetual",
+      "market_category": "linear",
+      "container_format": "jsonl",
+      "compression": "zip",
+      "record_format": "events",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "topic",
+            "type": "string"
+          },
+          {
+            "name": "ts",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "values": [
+              "snapshot",
+              "delta"
+            ]
+          },
+          {
+            "name": "data.s",
+            "type": "string"
+          },
+          {
+            "name": "data.b",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity"
+            ]
+          },
+          {
+            "name": "data.a",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity"
+            ]
+          },
+          {
+            "name": "data.u",
+            "type": "integer"
+          },
+          {
+            "name": "data.seq",
+            "type": "integer"
+          },
+          {
+            "name": "cts",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          }
+        ],
+        "ordering": "chronological",
+        "order_book": {
+          "update_id": "data.u",
+          "event_model": "snapshot_and_incremental_delta",
+          "cross_sequence": "data.seq",
+          "snapshot_depth": {
+            "asks": 200,
+            "bids": 200
+          },
+          "delta_delete_quantity": "0",
+          "reconstruction_required": true
+        },
+        "granularity": "daily",
+        "maximum_depth_per_side": 200
+      },
+      "notes": "Same physical L2 representation and reconstruction model as Bybit Spot BYBIT-B1.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 15,
+      "exchange_id": 1,
+      "format_code": "BYBIT-B1",
+      "dataset": "l2",
+      "instrument_type": "perpetual",
+      "market_category": "inverse",
+      "container_format": "jsonl",
+      "compression": "zip",
+      "record_format": "events",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "topic",
+            "type": "string"
+          },
+          {
+            "name": "ts",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "values": [
+              "snapshot",
+              "delta"
+            ]
+          },
+          {
+            "name": "data.s",
+            "type": "string"
+          },
+          {
+            "name": "data.b",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity"
+            ]
+          },
+          {
+            "name": "data.a",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity"
+            ]
+          },
+          {
+            "name": "data.u",
+            "type": "integer"
+          },
+          {
+            "name": "data.seq",
+            "type": "integer"
+          },
+          {
+            "name": "cts",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          }
+        ],
+        "ordering": "chronological",
+        "order_book": {
+          "update_id": "data.u",
+          "event_model": "snapshot_and_incremental_delta",
+          "cross_sequence": "data.seq",
+          "snapshot_depth": {
+            "asks": 200,
+            "bids": 200
+          },
+          "delta_delete_quantity": "0",
+          "reconstruction_required": true
+        },
+        "granularity": "daily",
+        "maximum_depth_per_side": 200
+      },
+      "notes": "Same physical L2 representation and reconstruction model as Bybit Spot and Linear Perpetual BYBIT-B1.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 16,
+      "exchange_id": 1,
+      "format_code": "BYBIT-B2",
+      "dataset": "l2",
+      "instrument_type": "option",
+      "market_category": "option",
+      "container_format": "jsonl",
+      "compression": "zip",
+      "record_format": "events",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "topic",
+            "type": "string"
+          },
+          {
+            "name": "ts",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "values": [
+              "snapshot",
+              "delta"
+            ]
+          },
+          {
+            "name": "id",
+            "type": "string"
+          },
+          {
+            "name": "data.s",
+            "type": "string"
+          },
+          {
+            "name": "data.b",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity"
+            ]
+          },
+          {
+            "name": "data.a",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity"
+            ]
+          },
+          {
+            "name": "data.u",
+            "type": "integer"
+          },
+          {
+            "name": "data.seq",
+            "type": "integer"
+          },
+          {
+            "name": "cts",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          }
+        ],
+        "ordering": "chronological",
+        "order_book": {
+          "event_id": "id",
+          "update_id": "data.u",
+          "event_model": "snapshot_and_incremental_delta",
+          "cross_sequence": "data.seq",
+          "reconstruction_scope": "per_option_contract",
+          "delta_delete_quantity": "0",
+          "maximum_depth_per_side": 25,
+          "reconstruction_required": true
+        },
+        "granularity": "daily",
+        "archive_members": "multiple_option_contracts",
+        "maximum_depth_per_side": 25
+      },
+      "notes": "Daily ZIP contains independent members for many option contracts. Each contract is reconstructed independently. Depth 25 is a maximum; snapshots may contain fewer populated levels. Event representation resembles BYBIT-B1 but packaging, depth, and top-level event id differ.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 17,
+      "exchange_id": 5,
+      "format_code": "GATE-T1",
+      "dataset": "trade",
+      "instrument_type": "spot",
+      "market_category": "spot",
+      "container_format": "csv",
+      "compression": "gzip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "timestamp",
+            "type": "decimal",
+            "unit": "seconds",
+            "position": 1,
+            "precision": "microsecond",
+            "representation": "unix_epoch",
+            "fractional_digits": 6
+          },
+          {
+            "name": "dealid",
+            "type": "integer",
+            "position": 2
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "position": 3
+          },
+          {
+            "name": "amount",
+            "type": "decimal",
+            "position": 4
+          },
+          {
+            "name": "side",
+            "type": "integer",
+            "position": 5
+          }
+        ],
+        "header": false,
+        "ordering": "chronological",
+        "granularity": "monthly"
+      },
+      "notes": "Monthly GZIP containing headerless CSV. Timestamps are Unix seconds with six fractional digits. The raw side field uses Gate-specific integer encoding.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 18,
+      "exchange_id": 5,
+      "format_code": "GATE-T2",
+      "dataset": "trade",
+      "instrument_type": "perpetual",
+      "market_category": "linear",
+      "container_format": "csv",
+      "compression": "gzip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "timestamp",
+            "type": "decimal",
+            "unit": "seconds",
+            "position": 1,
+            "precision": "microsecond",
+            "representation": "unix_epoch",
+            "fractional_digits": 6
+          },
+          {
+            "name": "trade_id",
+            "type": "integer",
+            "position": 2
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "position": 3
+          },
+          {
+            "name": "size",
+            "type": "signed_integer",
+            "position": 4
+          }
+        ],
+        "header": false,
+        "ordering": "chronological",
+        "granularity": "monthly"
+      },
+      "notes": "Monthly GZIP containing headerless CSV. size is signed and combines quantity magnitude with trade direction. Physical parser is shared with Gate inverse perpetual trades. Contract interpretation belongs to normalization and instrument metadata.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 19,
+      "exchange_id": 5,
+      "format_code": "GATE-T2",
+      "dataset": "trade",
+      "instrument_type": "perpetual",
+      "market_category": "inverse",
+      "container_format": "csv",
+      "compression": "gzip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "timestamp",
+            "type": "decimal",
+            "unit": "seconds",
+            "position": 1,
+            "precision": "microsecond",
+            "representation": "unix_epoch",
+            "fractional_digits": 6
+          },
+          {
+            "name": "trade_id",
+            "type": "integer",
+            "position": 2
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "position": 3
+          },
+          {
+            "name": "size",
+            "type": "signed_integer",
+            "position": 4
+          }
+        ],
+        "header": false,
+        "ordering": "chronological",
+        "granularity": "monthly"
+      },
+      "notes": "Monthly GZIP containing headerless CSV. size is signed and combines quantity magnitude with trade direction. Physical parser is shared with Gate linear perpetual trades. Contract interpretation belongs to normalization and instrument metadata.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 20,
+      "exchange_id": 5,
+      "format_code": "GATE-B1",
+      "dataset": "l2",
+      "instrument_type": "spot",
+      "market_category": "spot",
+      "container_format": "csv",
+      "compression": "gzip",
+      "record_format": "book_rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "timestamp",
+            "type": "decimal",
+            "unit": "seconds",
+            "position": 1,
+            "representation": "unix_epoch",
+            "update_precision": "100ms",
+            "snapshot_precision": "second"
+          },
+          {
+            "name": "side",
+            "type": "integer",
+            "position": 2
+          },
+          {
+            "name": "action",
+            "type": "string",
+            "values": [
+              "set",
+              "make",
+              "take"
+            ],
+            "position": 3
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "position": 4
+          },
+          {
+            "name": "amount",
+            "type": "decimal",
+            "position": 5
+          },
+          {
+            "name": "begin_id",
+            "type": "integer",
+            "position": 6
+          },
+          {
+            "name": "merged_count",
+            "type": "integer",
+            "position": 7
+          }
+        ],
+        "header": false,
+        "ordering": "chronological",
+        "order_book": {
+          "sequence": {
+            "begin_id": "begin_id",
+            "merged_count": "merged_count",
+            "continuity_rule": "next.begin_id = current.begin_id + current.merged_count"
+          },
+          "side_field": "side",
+          "event_model": "row_snapshot_and_incremental_updates",
+          "update_actions": [
+            "make",
+            "take"
+          ],
+          "snapshot_action": "set",
+          "reconstruction_required": true
+        },
+        "granularity": "hourly"
+      },
+      "notes": "Hourly GZIP containing headerless 7-column CSV. Each file begins with a complete set snapshot represented across many physical rows, followed by make/take updates. Updates use approximately 100 ms timestamp resolution.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 21,
+      "exchange_id": 5,
+      "format_code": "GATE-B2",
+      "dataset": "l2",
+      "instrument_type": "perpetual",
+      "market_category": "linear",
+      "container_format": "csv",
+      "compression": "gzip",
+      "record_format": "book_rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "timestamp",
+            "type": "decimal",
+            "unit": "seconds",
+            "position": 1,
+            "representation": "unix_epoch",
+            "update_precision": "100ms",
+            "snapshot_precision": "second"
+          },
+          {
+            "name": "action",
+            "type": "string",
+            "values": [
+              "set",
+              "make",
+              "take"
+            ],
+            "position": 2
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "position": 3
+          },
+          {
+            "name": "size",
+            "type": "signed_decimal",
+            "position": 4
+          },
+          {
+            "name": "begin_id",
+            "type": "integer",
+            "position": 5
+          },
+          {
+            "name": "merged_count",
+            "type": "integer",
+            "position": 6
+          }
+        ],
+        "header": false,
+        "order_book": {
+          "sequence": {
+            "begin_id": "begin_id",
+            "merged_count": "merged_count",
+            "continuity_rule": "next.begin_id = current.begin_id + current.merged_count"
+          },
+          "event_model": "row_snapshot_and_incremental_updates",
+          "side_encoding": "size_sign",
+          "update_actions": [
+            "make",
+            "take"
+          ],
+          "snapshot_action": "set",
+          "reconstruction_required": true
+        },
+        "granularity": "hourly"
+      },
+      "notes": "Hourly GZIP containing headerless 6-column CSV. Initial set rows form one logical full snapshot, followed by make/take updates. Book side is encoded by the sign of size. Physical parser is shared with inverse perpetual L2.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 22,
+      "exchange_id": 5,
+      "format_code": "GATE-B2",
+      "dataset": "l2",
+      "instrument_type": "perpetual",
+      "market_category": "inverse",
+      "container_format": "csv",
+      "compression": "gzip",
+      "record_format": "book_rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "timestamp",
+            "type": "decimal",
+            "unit": "seconds",
+            "position": 1,
+            "representation": "unix_epoch",
+            "update_precision": "100ms",
+            "snapshot_precision": "second"
+          },
+          {
+            "name": "action",
+            "type": "string",
+            "values": [
+              "set",
+              "make",
+              "take"
+            ],
+            "position": 2
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "position": 3
+          },
+          {
+            "name": "size",
+            "type": "signed_decimal",
+            "position": 4
+          },
+          {
+            "name": "begin_id",
+            "type": "integer",
+            "position": 5
+          },
+          {
+            "name": "merged_count",
+            "type": "integer",
+            "position": 6
+          }
+        ],
+        "header": false,
+        "order_book": {
+          "sequence": {
+            "begin_id": "begin_id",
+            "merged_count": "merged_count",
+            "continuity_rule": "next.begin_id = current.begin_id + current.merged_count"
+          },
+          "event_model": "row_snapshot_and_incremental_updates",
+          "side_encoding": "size_sign",
+          "update_actions": [
+            "make",
+            "take"
+          ],
+          "snapshot_action": "set",
+          "reconstruction_required": true
+        },
+        "granularity": "hourly"
+      },
+      "notes": "Hourly GZIP containing headerless 6-column CSV. Initial set rows form one logical full snapshot, followed by make/take updates. Book side is encoded by the sign of size. Physical parser is shared with linear perpetual L2.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 23,
+      "exchange_id": 3,
+      "format_code": "OKX-T1",
+      "dataset": "trade",
+      "instrument_type": "spot",
+      "market_category": "spot",
+      "container_format": "csv",
+      "compression": "zip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "instrument_name",
+            "type": "string"
+          },
+          {
+            "name": "trade_id",
+            "type": "integer/string"
+          },
+          {
+            "name": "side",
+            "type": "string"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "size",
+            "type": "decimal"
+          },
+          {
+            "name": "created_time",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "source",
+            "type": "integer"
+          }
+        ],
+        "header": true,
+        "ordering": "chronological",
+        "granularity": "daily",
+        "archive_day_boundary": "UTC+8"
+      },
+      "notes": "Daily UTC+8 ZIP containing headered CSV. Physical parser is shared by all inspected OKX trade datasets. For Spot, size represents base-asset quantity.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 24,
+      "exchange_id": 3,
+      "format_code": "OKX-T1",
+      "dataset": "trade",
+      "instrument_type": "perpetual",
+      "market_category": "linear",
+      "container_format": "csv",
+      "compression": "zip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "instrument_name",
+            "type": "string"
+          },
+          {
+            "name": "trade_id",
+            "type": "integer/string"
+          },
+          {
+            "name": "side",
+            "type": "string"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "size",
+            "type": "decimal"
+          },
+          {
+            "name": "created_time",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "source",
+            "type": "integer"
+          }
+        ],
+        "header": true,
+        "ordering": "chronological",
+        "granularity": "daily",
+        "archive_day_boundary": "UTC+8"
+      },
+      "notes": "Daily UTC+8 ZIP containing headered CSV. Physical parser is shared by all inspected OKX trade datasets. For Linear Perpetual, size represents contracts.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 25,
+      "exchange_id": 3,
+      "format_code": "OKX-T1",
+      "dataset": "trade",
+      "instrument_type": "perpetual",
+      "market_category": "inverse",
+      "container_format": "csv",
+      "compression": "zip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "instrument_name",
+            "type": "string"
+          },
+          {
+            "name": "trade_id",
+            "type": "integer/string"
+          },
+          {
+            "name": "side",
+            "type": "string"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "size",
+            "type": "decimal"
+          },
+          {
+            "name": "created_time",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "source",
+            "type": "integer"
+          }
+        ],
+        "header": true,
+        "ordering": "chronological",
+        "granularity": "daily",
+        "archive_day_boundary": "UTC+8"
+      },
+      "notes": "Daily UTC+8 ZIP containing headered CSV. Physical parser is shared by all inspected OKX trade datasets. For Inverse Perpetual, size represents contracts.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 26,
+      "exchange_id": 3,
+      "format_code": "OKX-T1",
+      "dataset": "trade",
+      "instrument_type": "option",
+      "market_category": "option",
+      "container_format": "csv",
+      "compression": "zip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "instrument_name",
+            "type": "string"
+          },
+          {
+            "name": "trade_id",
+            "type": "integer/string"
+          },
+          {
+            "name": "side",
+            "type": "string"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "size",
+            "type": "decimal"
+          },
+          {
+            "name": "created_time",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "source",
+            "type": "integer"
+          }
+        ],
+        "header": true,
+        "ordering": "not_globally_chronological",
+        "granularity": "daily",
+        "trade_id_scope": "per_instrument",
+        "archive_members": 1,
+        "instrument_scope": "multiple_option_instruments",
+        "sorting_required": true,
+        "archive_day_boundary": "UTC+8"
+      },
+      "notes": "Daily UTC+8 option-chain ZIP containing one CSV with trades from many option instruments. Rows are not globally chronological. trade_id is scoped to instrument_name, so raw trade identity is at least (instrument_name, trade_id).",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 27,
+      "exchange_id": 3,
+      "format_code": "OKX-B1",
+      "dataset": "l2",
+      "instrument_type": "spot",
+      "market_category": "spot",
+      "container_format": "jsonl",
+      "compression": "tar.gz",
+      "record_format": "events",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "instId",
+            "type": "string"
+          },
+          {
+            "name": "action",
+            "type": "string",
+            "values": [
+              "snapshot",
+              "update"
+            ]
+          },
+          {
+            "name": "ts",
+            "type": "string/integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "asks",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity",
+              "order_count"
+            ]
+          },
+          {
+            "name": "bids",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity",
+              "order_count"
+            ]
+          }
+        ],
+        "ordering": "chronological",
+        "order_book": {
+          "update_id": false,
+          "event_model": "periodic_snapshot_and_incremental_updates",
+          "sequence_id": false,
+          "update_frequency": "approximately_1_second",
+          "snapshot_frequency": "approximately_15_minutes",
+          "snapshot_resets_book": true,
+          "delta_delete_quantity": "0",
+          "maximum_depth_per_side": 5000,
+          "reconstruction_required": true
+        },
+        "granularity": "daily",
+        "archive_day_boundary": "UTC",
+        "maximum_depth_per_side": 5000
+      },
+      "notes": "Daily UTC TAR.GZ containing one JSON Lines instrument stream. Periodic full snapshots are followed by incremental updates. No sequence or update identifier is present.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 28,
+      "exchange_id": 3,
+      "format_code": "OKX-B1",
+      "dataset": "l2",
+      "instrument_type": "perpetual",
+      "market_category": "linear",
+      "container_format": "jsonl",
+      "compression": "tar.gz",
+      "record_format": "events",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "instId",
+            "type": "string"
+          },
+          {
+            "name": "action",
+            "type": "string",
+            "values": [
+              "snapshot",
+              "update"
+            ]
+          },
+          {
+            "name": "ts",
+            "type": "string/integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "asks",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity",
+              "order_count"
+            ]
+          },
+          {
+            "name": "bids",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity",
+              "order_count"
+            ]
+          }
+        ],
+        "ordering": "chronological",
+        "order_book": {
+          "update_id": false,
+          "event_model": "periodic_snapshot_and_incremental_updates",
+          "sequence_id": false,
+          "update_frequency": "approximately_1_second",
+          "snapshot_frequency": "approximately_15_minutes",
+          "snapshot_resets_book": true,
+          "delta_delete_quantity": "0",
+          "maximum_depth_per_side": 5000,
+          "reconstruction_required": true
+        },
+        "granularity": "daily",
+        "archive_day_boundary": "UTC",
+        "maximum_depth_per_side": 5000
+      },
+      "notes": "Same physical L2 parser and reconstruction model as OKX Spot. Level quantity represents derivative contract quantity rather than Spot base quantity.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 29,
+      "exchange_id": 3,
+      "format_code": "OKX-B1",
+      "dataset": "l2",
+      "instrument_type": "perpetual",
+      "market_category": "inverse",
+      "container_format": "jsonl",
+      "compression": "tar.gz",
+      "record_format": "events",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "instId",
+            "type": "string"
+          },
+          {
+            "name": "action",
+            "type": "string",
+            "values": [
+              "snapshot",
+              "update"
+            ]
+          },
+          {
+            "name": "ts",
+            "type": "string/integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "asks",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity",
+              "order_count"
+            ]
+          },
+          {
+            "name": "bids",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity",
+              "order_count"
+            ]
+          }
+        ],
+        "ordering": "chronological",
+        "order_book": {
+          "update_id": false,
+          "event_model": "periodic_snapshot_and_incremental_updates",
+          "sequence_id": false,
+          "update_frequency": "approximately_1_second",
+          "snapshot_frequency": "approximately_15_minutes",
+          "snapshot_resets_book": true,
+          "delta_delete_quantity": "0",
+          "maximum_depth_per_side": 5000,
+          "reconstruction_required": true
+        },
+        "granularity": "daily",
+        "archive_day_boundary": "UTC",
+        "maximum_depth_per_side": 5000
+      },
+      "notes": "Same physical L2 parser and reconstruction model as OKX Spot and Linear Perpetual. Level quantity represents derivative contract quantity.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 30,
+      "exchange_id": 3,
+      "format_code": "OKX-B2",
+      "dataset": "l2",
+      "instrument_type": "option",
+      "market_category": "option",
+      "container_format": "jsonl",
+      "compression": "tar.gz",
+      "record_format": "events",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "instId",
+            "type": "string"
+          },
+          {
+            "name": "action",
+            "type": "string",
+            "values": [
+              "snapshot",
+              "update"
+            ]
+          },
+          {
+            "name": "ts",
+            "type": "string/integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "asks",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity",
+              "order_count"
+            ]
+          },
+          {
+            "name": "bids",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity",
+              "order_count"
+            ]
+          }
+        ],
+        "ordering": "chronological",
+        "order_book": {
+          "update_id": false,
+          "event_model": "periodic_snapshot_and_incremental_updates",
+          "sequence_id": false,
+          "actual_depth": "variable_sparse",
+          "update_frequency": "approximately_1_second",
+          "snapshot_frequency": "approximately_15_minutes",
+          "reconstruction_scope": "per_option_contract",
+          "snapshot_resets_book": true,
+          "delta_delete_quantity": "0",
+          "maximum_depth_per_side": 5000,
+          "reconstruction_required": true
+        },
+        "granularity": "daily",
+        "archive_members": "multiple_option_contracts",
+        "member_coverage": "depends_on_option_lifetime",
+        "archive_day_boundary": "UTC",
+        "maximum_depth_per_side": 5000
+      },
+      "notes": "Daily option-chain TAR.GZ containing separate members for many option instruments. Event representation matches OKX-B1, but each option contract must be reconstructed independently. Actual populated depth may be far below the 5000-level maximum.",
+      "created_at": "2026-10-02T19:21:32.374984+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 274,
+      "exchange_id": 2,
+      "format_code": "BINANCE-T2",
+      "dataset": "trade",
+      "instrument_type": "future",
+      "market_category": "linear",
+      "container_format": "csv",
+      "compression": "zip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "qty",
+            "type": "decimal"
+          },
+          {
+            "name": "quote_qty",
+            "type": "decimal"
+          },
+          {
+            "name": "time",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "is_buyer_maker",
+            "type": "boolean"
+          }
+        ],
+        "header": true,
+        "ordering": "chronological",
+        "granularity": "daily"
+      },
+      "notes": "Daily ZIP/deflate archive containing headered CSV. Linear dated futures use the same physical trade format as linear perpetual contracts.",
+      "created_at": "2026-10-07T12:34:57.318803+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 275,
+      "exchange_id": 2,
+      "format_code": "BINANCE-T3",
+      "dataset": "trade",
+      "instrument_type": "future",
+      "market_category": "inverse",
+      "container_format": "csv",
+      "compression": "zip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "qty",
+            "type": "decimal"
+          },
+          {
+            "name": "base_qty",
+            "type": "decimal"
+          },
+          {
+            "name": "time",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "is_buyer_maker",
+            "type": "boolean"
+          }
+        ],
+        "header": true,
+        "ordering": "chronological",
+        "granularity": "daily"
+      },
+      "notes": "Daily ZIP/deflate archive containing headered CSV. Inverse dated futures use the same physical trade format as inverse perpetual contracts. Contract value belongs to instrument metadata.",
+      "created_at": "2026-10-07T12:34:57.318803+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 334,
+      "exchange_id": 3,
+      "format_code": "OKX-T1",
+      "dataset": "trade",
+      "instrument_type": "future",
+      "market_category": "linear",
+      "container_format": "csv",
+      "compression": "zip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "instrument_name",
+            "type": "string"
+          },
+          {
+            "name": "trade_id",
+            "type": "integer/string"
+          },
+          {
+            "name": "side",
+            "type": "string"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "size",
+            "type": "decimal"
+          },
+          {
+            "name": "created_time",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "source",
+            "type": "integer"
+          }
+        ],
+        "header": true,
+        "ordering": "chronological",
+        "granularity": "daily",
+        "archive_day_boundary": "UTC+8"
+      },
+      "notes": "Daily UTC+8 ZIP containing headered CSV. Physical parser is shared by all inspected OKX trade datasets. For Linear Future, size represents contracts.",
+      "created_at": "2026-10-07T12:37:55.738361+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 335,
+      "exchange_id": 3,
+      "format_code": "OKX-T1",
+      "dataset": "trade",
+      "instrument_type": "future",
+      "market_category": "inverse",
+      "container_format": "csv",
+      "compression": "zip",
+      "record_format": "rows",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "instrument_name",
+            "type": "string"
+          },
+          {
+            "name": "trade_id",
+            "type": "integer/string"
+          },
+          {
+            "name": "side",
+            "type": "string"
+          },
+          {
+            "name": "price",
+            "type": "decimal"
+          },
+          {
+            "name": "size",
+            "type": "decimal"
+          },
+          {
+            "name": "created_time",
+            "type": "integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "source",
+            "type": "integer"
+          }
+        ],
+        "header": true,
+        "ordering": "chronological",
+        "granularity": "daily",
+        "archive_day_boundary": "UTC+8"
+      },
+      "notes": "Daily UTC+8 ZIP containing headered CSV. Physical parser is shared by all inspected OKX trade datasets. For Inverse Future, size represents contracts.",
+      "created_at": "2026-10-07T12:37:55.738361+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 336,
+      "exchange_id": 3,
+      "format_code": "OKX-B1",
+      "dataset": "l2",
+      "instrument_type": "future",
+      "market_category": "linear",
+      "container_format": "jsonl",
+      "compression": "tar.gz",
+      "record_format": "events",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "instId",
+            "type": "string"
+          },
+          {
+            "name": "action",
+            "type": "string",
+            "values": [
+              "snapshot",
+              "update"
+            ]
+          },
+          {
+            "name": "ts",
+            "type": "string/integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "asks",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity",
+              "order_count"
+            ]
+          },
+          {
+            "name": "bids",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity",
+              "order_count"
+            ]
+          }
+        ],
+        "ordering": "chronological",
+        "order_book": {
+          "update_id": false,
+          "event_model": "periodic_snapshot_and_incremental_updates",
+          "sequence_id": false,
+          "update_frequency": "approximately_1_second",
+          "snapshot_frequency": "approximately_15_minutes",
+          "snapshot_resets_book": true,
+          "delta_delete_quantity": "0",
+          "maximum_depth_per_side": 5000,
+          "reconstruction_required": true
+        },
+        "granularity": "daily",
+        "archive_day_boundary": "UTC",
+        "maximum_depth_per_side": 5000
+      },
+      "notes": "Same physical L2 parser and reconstruction model as OKX Spot and Perpetual. Level quantity represents linear future contract quantity.",
+      "created_at": "2026-10-07T12:37:55.738361+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 337,
+      "exchange_id": 3,
+      "format_code": "OKX-B1",
+      "dataset": "l2",
+      "instrument_type": "future",
+      "market_category": "inverse",
+      "container_format": "jsonl",
+      "compression": "tar.gz",
+      "record_format": "events",
+      "schema_json": {
+        "fields": [
+          {
+            "name": "instId",
+            "type": "string"
+          },
+          {
+            "name": "action",
+            "type": "string",
+            "values": [
+              "snapshot",
+              "update"
+            ]
+          },
+          {
+            "name": "ts",
+            "type": "string/integer",
+            "unit": "milliseconds",
+            "precision": "millisecond",
+            "representation": "unix_epoch"
+          },
+          {
+            "name": "asks",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity",
+              "order_count"
+            ]
+          },
+          {
+            "name": "bids",
+            "type": "array",
+            "level_schema": [
+              "price",
+              "quantity",
+              "order_count"
+            ]
+          }
+        ],
+        "ordering": "chronological",
+        "order_book": {
+          "update_id": false,
+          "event_model": "periodic_snapshot_and_incremental_updates",
+          "sequence_id": false,
+          "update_frequency": "approximately_1_second",
+          "snapshot_frequency": "approximately_15_minutes",
+          "snapshot_resets_book": true,
+          "delta_delete_quantity": "0",
+          "maximum_depth_per_side": 5000,
+          "reconstruction_required": true
+        },
+        "granularity": "daily",
+        "archive_day_boundary": "UTC",
+        "maximum_depth_per_side": 5000
+      },
+      "notes": "Same physical L2 parser and reconstruction model as OKX Spot and Perpetual. Level quantity represents inverse future contract quantity.",
+      "created_at": "2026-10-07T12:37:55.738361+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    }
+  ],
+  "normalization_rules": [
+    {
+      "id": 1,
+      "raw_format_id": 1,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "is_buyer_maker",
+          "values": {
+            "true": "sell",
+            "false": "buy"
+          },
+          "transform": "map"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "quantity"
+        },
+        "trade_id": {
+          "source": "trade_id"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Spot quantity is base-asset quantity. Quote quantity exists in the raw format but canonical quantity normalization is driven by instrument_specs. is_best_match is not retained in the canonical Trade schema.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 2,
+      "raw_format_id": 2,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "is_buyer_maker",
+          "values": {
+            "true": "sell",
+            "false": "buy"
+          },
+          "transform": "map"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "qty"
+        },
+        "trade_id": {
+          "source": "id"
+        },
+        "event_timestamp": {
+          "source": "time"
+        }
+      },
+      "notes": "Linear perpetual qty is normalized according to instrument_specs. quote_qty is redundant with canonical quantity conversion and is not independently retained.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 3,
+      "raw_format_id": 3,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "is_buyer_maker",
+          "values": {
+            "true": "sell",
+            "false": "buy"
+          },
+          "transform": "map"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "qty"
+        },
+        "trade_id": {
+          "source": "id"
+        },
+        "event_timestamp": {
+          "source": "time"
+        }
+      },
+      "notes": "Inverse perpetual qty is contract quantity. Contract value and contract-value asset are obtained from instrument_specs rather than hardcoded. Raw base_qty is redundant with canonical quantity conversion and is not independently retained.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 4,
+      "raw_format_id": 4,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "side",
+          "transform": "casefold"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "size(base)"
+        },
+        "trade_id": {
+          "source": "trade_id"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Spot size(base) is the authoritative raw quantity. volume(quote) is redundant with canonical quantity normalization and is not independently retained.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 5,
+      "raw_format_id": 5,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "side",
+          "transform": "casefold"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "size(base)"
+        },
+        "trade_id": {
+          "source": "trade_id"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Linear perpetual trade files use the same physical format as Spot. size(base) is used as the authoritative quantity source and normalized according to instrument_specs. volume(quote) is not independently retained.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 6,
+      "raw_format_id": 6,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "asks": {
+          "decode": "json",
+          "source": "asks",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "bids": {
+          "decode": "json",
+          "source": "bids",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "snapshot": {
+          "type": "single_row"
+        },
+        "input_ordering": {
+          "order": "ascending",
+          "sort_by": "timestamp"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Each raw XLSX row is an independent full snapshot. Raw rows are not chronologically ordered and must be sorted by timestamp before canonical emission. No L2Update records are generated.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 7,
+      "raw_format_id": 7,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "asks": {
+          "decode": "json",
+          "source": "asks",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "bids": {
+          "decode": "json",
+          "source": "bids",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "snapshot": {
+          "type": "single_row"
+        },
+        "input_ordering": {
+          "order": "ascending",
+          "sort_by": "timestamp"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Each raw row is an independent full snapshot. Raw rows must be sorted by timestamp. Level quantities are normalized using derivative instrument_specs. No L2Update records are generated.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 8,
+      "raw_format_id": 8,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "asks": {
+          "decode": "json",
+          "source": "asks",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "bids": {
+          "decode": "json",
+          "source": "bids",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "snapshot": {
+          "type": "single_row"
+        },
+        "input_ordering": {
+          "order": "ascending",
+          "sort_by": "timestamp"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Each raw row is an independent snapshot. Raw rows must be sorted by timestamp. Snapshot depth may vary. Level quantities are normalized using inverse instrument_specs. No L2Update records are generated.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 9,
+      "raw_format_id": 9,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "side",
+          "transform": "casefold"
+        },
+        "price": {
+          "source": "price"
+        },
+        "optional": {
+          "is_rpi": {
+            "source": "rpi",
+            "transform": "bool"
+          }
+        },
+        "quantity": {
+          "source": "volume"
+        },
+        "trade_id": {
+          "source": "id"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Spot volume is base-asset quantity. Raw side is taker/aggressor side. RPI is retained as canonical is_rpi.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 10,
+      "raw_format_id": 10,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "side",
+          "transform": "casefold"
+        },
+        "price": {
+          "source": "price"
+        },
+        "optional": {
+          "is_rpi": {
+            "source": "RPI",
+            "transform": "bool"
+          }
+        },
+        "quantity": {
+          "source": "size"
+        },
+        "trade_id": {
+          "source": "trdMatchID"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Linear perpetual size is normalized using instrument_specs. homeNotional, foreignNotional, and grossValue are not used as authoritative canonical quantity fields.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 11,
+      "raw_format_id": 11,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "side",
+          "transform": "casefold"
+        },
+        "price": {
+          "source": "price"
+        },
+        "optional": {
+          "is_rpi": {
+            "source": "RPI",
+            "transform": "bool"
+          }
+        },
+        "quantity": {
+          "source": "size"
+        },
+        "trade_id": {
+          "source": "trdMatchID"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Inverse perpetual size is normalized using instrument_specs. Contract interpretation must not be inferred from homeNotional, foreignNotional, or hardcoded contract values.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 12,
+      "raw_format_id": 12,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "direction",
+          "transform": "casefold"
+        },
+        "price": {
+          "source": "price"
+        },
+        "optional": {
+          "mark_iv": {
+            "source": "mark_iv"
+          },
+          "trade_iv": {
+            "source": "iv"
+          },
+          "mark_price": {
+            "source": "mark_price"
+          },
+          "index_price": {
+            "source": "index_price"
+          }
+        },
+        "quantity": {
+          "source": "amount"
+        },
+        "sequence": {
+          "source": "trade_seq"
+        },
+        "trade_id": {
+          "source": "trade_id"
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "instrument_name"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Option archives contain multiple instruments, so instrument_name is resolved through the catalog. trade_id is the trade identifier and trade_seq is retained separately as canonical sequence.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 13,
+      "raw_format_id": 13,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "asks": {
+          "source": "data.a",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "bids": {
+          "source": "data.b",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "snapshot": {
+          "type": "single_event"
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "data.s"
+        },
+        "event_filter": {
+          "equals": "snapshot",
+          "source": "type"
+        },
+        "sequence_start": {
+          "source": "data.u"
+        },
+        "event_timestamp": {
+          "source": "cts"
+        },
+        "system_timestamp": {
+          "source": "ts"
+        }
+      },
+      "notes": "A raw snapshot event directly produces one canonical L2Snapshot. Bid and ask quantities are normalized using instrument_specs.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 14,
+      "raw_format_id": 13,
+      "target_schema": "l2_update",
+      "rules_json": {
+        "asks": {
+          "source": "data.a",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "bids": {
+          "source": "data.b",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "data.s"
+        },
+        "event_filter": {
+          "equals": "delta",
+          "source": "type"
+        },
+        "sequence_start": {
+          "source": "data.u"
+        },
+        "event_timestamp": {
+          "source": "cts"
+        },
+        "system_timestamp": {
+          "source": "ts"
+        },
+        "update_semantics": {
+          "type": "absolute_level",
+          "zero_quantity": "delete",
+          "nonzero_quantity": "set"
+        }
+      },
+      "notes": "Each raw delta level is normalized independently. Non-zero quantity produces canonical set; zero quantity produces canonical delete.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 15,
+      "raw_format_id": 14,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "asks": {
+          "source": "data.a",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "bids": {
+          "source": "data.b",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "snapshot": {
+          "type": "single_event"
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "data.s"
+        },
+        "event_filter": {
+          "equals": "snapshot",
+          "source": "type"
+        },
+        "sequence_start": {
+          "source": "data.u"
+        },
+        "event_timestamp": {
+          "source": "cts"
+        },
+        "system_timestamp": {
+          "source": "ts"
+        }
+      },
+      "notes": "Same physical snapshot representation as BYBIT-B1 Spot. Level quantities are interpreted using derivative instrument_specs.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 16,
+      "raw_format_id": 14,
+      "target_schema": "l2_update",
+      "rules_json": {
+        "asks": {
+          "source": "data.a",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "bids": {
+          "source": "data.b",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "data.s"
+        },
+        "event_filter": {
+          "equals": "delta",
+          "source": "type"
+        },
+        "sequence_start": {
+          "source": "data.u"
+        },
+        "event_timestamp": {
+          "source": "cts"
+        },
+        "system_timestamp": {
+          "source": "ts"
+        },
+        "update_semantics": {
+          "type": "absolute_level",
+          "zero_quantity": "delete",
+          "nonzero_quantity": "set"
+        }
+      },
+      "notes": "Non-zero quantities set the resulting level quantity. Zero quantity deletes the level.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 17,
+      "raw_format_id": 15,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "asks": {
+          "source": "data.a",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "bids": {
+          "source": "data.b",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "snapshot": {
+          "type": "single_event"
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "data.s"
+        },
+        "event_filter": {
+          "equals": "snapshot",
+          "source": "type"
+        },
+        "sequence_start": {
+          "source": "data.u"
+        },
+        "event_timestamp": {
+          "source": "cts"
+        },
+        "system_timestamp": {
+          "source": "ts"
+        }
+      },
+      "notes": "Same physical snapshot representation as other BYBIT-B1 markets. Inverse quantity conversion is resolved through instrument_specs.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 18,
+      "raw_format_id": 15,
+      "target_schema": "l2_update",
+      "rules_json": {
+        "asks": {
+          "source": "data.a",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "bids": {
+          "source": "data.b",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "data.s"
+        },
+        "event_filter": {
+          "equals": "delta",
+          "source": "type"
+        },
+        "sequence_start": {
+          "source": "data.u"
+        },
+        "event_timestamp": {
+          "source": "cts"
+        },
+        "system_timestamp": {
+          "source": "ts"
+        },
+        "update_semantics": {
+          "type": "absolute_level",
+          "zero_quantity": "delete",
+          "nonzero_quantity": "set"
+        }
+      },
+      "notes": "Non-zero quantities set the resulting level quantity. Zero quantity deletes the level. Inverse quantity conversion uses instrument_specs.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 19,
+      "raw_format_id": 16,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "asks": {
+          "source": "data.a",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "bids": {
+          "source": "data.b",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "snapshot": {
+          "type": "single_event"
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "data.s"
+        },
+        "event_filter": {
+          "equals": "snapshot",
+          "source": "type"
+        },
+        "archive_scope": {
+          "type": "per_member_instrument"
+        },
+        "sequence_start": {
+          "source": "data.u"
+        },
+        "event_timestamp": {
+          "source": "cts"
+        },
+        "system_timestamp": {
+          "source": "ts"
+        }
+      },
+      "notes": "Each option contract is reconstructed independently. A snapshot event produces one canonical L2Snapshot for that option instrument.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 20,
+      "raw_format_id": 16,
+      "target_schema": "l2_update",
+      "rules_json": {
+        "asks": {
+          "source": "data.a",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "bids": {
+          "source": "data.b",
+          "price_index": 0,
+          "quantity_index": 1
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "data.s"
+        },
+        "event_filter": {
+          "equals": "delta",
+          "source": "type"
+        },
+        "archive_scope": {
+          "type": "per_member_instrument"
+        },
+        "sequence_start": {
+          "source": "data.u"
+        },
+        "event_timestamp": {
+          "source": "cts"
+        },
+        "system_timestamp": {
+          "source": "ts"
+        },
+        "update_semantics": {
+          "type": "absolute_level",
+          "zero_quantity": "delete",
+          "nonzero_quantity": "set"
+        }
+      },
+      "notes": "Each option contract maintains independent book state. Non-zero quantity produces canonical set and zero quantity produces canonical delete.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 21,
+      "raw_format_id": 17,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "side",
+          "values": {
+            "1": "sell",
+            "2": "buy"
+          },
+          "transform": "map"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "amount"
+        },
+        "trade_id": {
+          "source": "dealid"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Spot amount is base-asset quantity. Gate side encoding 1=sell and 2=buy is converted to canonical aggressor side.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 22,
+      "raw_format_id": 18,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "size",
+          "negative": "sell",
+          "positive": "buy",
+          "transform": "sign_to_side"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "size",
+          "transform": "abs"
+        },
+        "trade_id": {
+          "source": "trade_id"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Signed size encodes both direction and quantity. Absolute size is normalized through instrument_specs.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 23,
+      "raw_format_id": 19,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "size",
+          "negative": "sell",
+          "positive": "buy",
+          "transform": "sign_to_side"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "size",
+          "transform": "abs"
+        },
+        "trade_id": {
+          "source": "trade_id"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Signed size encodes both direction and quantity. Absolute contract quantity is normalized using inverse instrument_specs.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 24,
+      "raw_format_id": 20,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "side": {
+          "source": "side",
+          "values": {
+            "0": "bid",
+            "1": "ask"
+          },
+          "transform": "map"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "amount"
+        },
+        "snapshot": {
+          "type": "group_rows",
+          "group_by": "timestamp"
+        },
+        "event_filter": {
+          "equals": "set",
+          "source": "action"
+        },
+        "sequence_count": {
+          "source": "merged_count"
+        },
+        "sequence_start": {
+          "source": "begin_id"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Initial set rows collectively form one canonical snapshot. The raw snapshot is represented by many physical rows.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 25,
+      "raw_format_id": 20,
+      "target_schema": "l2_update",
+      "rules_json": {
+        "side": {
+          "source": "side",
+          "values": {
+            "0": "bid",
+            "1": "ask"
+          },
+          "transform": "map"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "amount"
+        },
+        "event_filter": {
+          "in": [
+            "make",
+            "take"
+          ],
+          "source": "action"
+        },
+        "sequence_count": {
+          "source": "merged_count"
+        },
+        "sequence_start": {
+          "source": "begin_id"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        },
+        "update_semantics": {
+          "emit": "resulting_absolute_level",
+          "type": "relative_level",
+          "add_action": "make",
+          "zero_result": "delete",
+          "action_source": "action",
+          "nonzero_result": "set",
+          "subtract_action": "take"
+        }
+      },
+      "notes": "Gate make/take updates are interpreted against maintained book state. Canonical output describes resulting absolute level state rather than preserving make/take operations.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 26,
+      "raw_format_id": 21,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "side": {
+          "source": "size",
+          "negative": "ask",
+          "positive": "bid",
+          "transform": "sign_to_book_side"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "size",
+          "transform": "abs"
+        },
+        "snapshot": {
+          "type": "group_rows",
+          "group_by": "timestamp"
+        },
+        "event_filter": {
+          "equals": "set",
+          "source": "action"
+        },
+        "sequence_count": {
+          "source": "merged_count"
+        },
+        "sequence_start": {
+          "source": "begin_id"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Initial set rows collectively form one canonical snapshot. Book side is derived from the sign of size and canonical quantity uses abs(size).",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 27,
+      "raw_format_id": 21,
+      "target_schema": "l2_update",
+      "rules_json": {
+        "side": {
+          "source": "size",
+          "negative": "ask",
+          "positive": "bid",
+          "transform": "sign_to_book_side"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "size",
+          "transform": "abs"
+        },
+        "event_filter": {
+          "in": [
+            "make",
+            "take"
+          ],
+          "source": "action"
+        },
+        "sequence_count": {
+          "source": "merged_count"
+        },
+        "sequence_start": {
+          "source": "begin_id"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        },
+        "update_semantics": {
+          "emit": "resulting_absolute_level",
+          "type": "relative_level",
+          "add_action": "make",
+          "zero_result": "delete",
+          "action_source": "action",
+          "nonzero_result": "set",
+          "subtract_action": "take"
+        }
+      },
+      "notes": "make/take operations are applied to maintained book state. The emitted canonical update contains resulting absolute quantity and set/delete action.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 28,
+      "raw_format_id": 22,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "side": {
+          "source": "size",
+          "negative": "ask",
+          "positive": "bid",
+          "transform": "sign_to_book_side"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "size",
+          "transform": "abs"
+        },
+        "snapshot": {
+          "type": "group_rows",
+          "group_by": "timestamp"
+        },
+        "event_filter": {
+          "equals": "set",
+          "source": "action"
+        },
+        "sequence_count": {
+          "source": "merged_count"
+        },
+        "sequence_start": {
+          "source": "begin_id"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        }
+      },
+      "notes": "Initial set rows collectively form one canonical snapshot. Signed size determines book side; absolute quantity is normalized using inverse instrument_specs.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 29,
+      "raw_format_id": 22,
+      "target_schema": "l2_update",
+      "rules_json": {
+        "side": {
+          "source": "size",
+          "negative": "ask",
+          "positive": "bid",
+          "transform": "sign_to_book_side"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "size",
+          "transform": "abs"
+        },
+        "event_filter": {
+          "in": [
+            "make",
+            "take"
+          ],
+          "source": "action"
+        },
+        "sequence_count": {
+          "source": "merged_count"
+        },
+        "sequence_start": {
+          "source": "begin_id"
+        },
+        "event_timestamp": {
+          "source": "timestamp"
+        },
+        "update_semantics": {
+          "emit": "resulting_absolute_level",
+          "type": "relative_level",
+          "add_action": "make",
+          "zero_result": "delete",
+          "action_source": "action",
+          "nonzero_result": "set",
+          "subtract_action": "take"
+        }
+      },
+      "notes": "make/take operations are applied to maintained book state. Canonical output contains resulting absolute quantity rather than Gate-specific relative update semantics.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 30,
+      "raw_format_id": 23,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "side",
+          "transform": "casefold"
+        },
+        "price": {
+          "source": "price"
+        },
+        "optional": {
+          "is_rpi": {
+            "value": 1,
+            "source": "source",
+            "transform": "equals"
+          }
+        },
+        "quantity": {
+          "source": "size"
+        },
+        "trade_id": {
+          "source": "trade_id"
+        },
+        "event_timestamp": {
+          "source": "created_time"
+        }
+      },
+      "notes": "Spot size is base-asset quantity. source=1 identifies RPI trades and is normalized to is_rpi.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 31,
+      "raw_format_id": 24,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "side",
+          "transform": "casefold"
+        },
+        "price": {
+          "source": "price"
+        },
+        "optional": {
+          "is_rpi": {
+            "value": 1,
+            "source": "source",
+            "transform": "equals"
+          }
+        },
+        "quantity": {
+          "source": "size"
+        },
+        "trade_id": {
+          "source": "trade_id"
+        },
+        "event_timestamp": {
+          "source": "created_time"
+        }
+      },
+      "notes": "Linear perpetual size is contract quantity and is normalized using instrument_specs. source=1 is retained as is_rpi.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 32,
+      "raw_format_id": 25,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "side",
+          "transform": "casefold"
+        },
+        "price": {
+          "source": "price"
+        },
+        "optional": {
+          "is_rpi": {
+            "value": 1,
+            "source": "source",
+            "transform": "equals"
+          }
+        },
+        "quantity": {
+          "source": "size"
+        },
+        "trade_id": {
+          "source": "trade_id"
+        },
+        "event_timestamp": {
+          "source": "created_time"
+        }
+      },
+      "notes": "Inverse perpetual size is contract quantity and is normalized using instrument_specs. source=1 is retained as is_rpi.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 33,
+      "raw_format_id": 26,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "side",
+          "transform": "casefold"
+        },
+        "price": {
+          "source": "price"
+        },
+        "identity": {
+          "fields": [
+            "instrument_name",
+            "trade_id"
+          ]
+        },
+        "optional": {
+          "is_rpi": {
+            "value": 1,
+            "source": "source",
+            "transform": "equals"
+          }
+        },
+        "quantity": {
+          "source": "size"
+        },
+        "trade_id": {
+          "source": "trade_id"
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "instrument_name"
+        },
+        "input_ordering": {
+          "order": "ascending",
+          "sort_by": "created_time"
+        },
+        "event_timestamp": {
+          "source": "created_time"
+        }
+      },
+      "notes": "Option archives contain trades from multiple instruments. instrument_name is resolved through the catalog. trade_id is scoped to instrument, so raw identity uses (instrument_name, trade_id). Raw rows are not globally chronological and are sorted by created_time before canonical emission.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 34,
+      "raw_format_id": 27,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "asks": {
+          "source": "asks",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "bids": {
+          "source": "bids",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "snapshot": {
+          "type": "single_event"
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "instId"
+        },
+        "event_filter": {
+          "equals": "snapshot",
+          "source": "action"
+        },
+        "event_timestamp": {
+          "source": "ts"
+        }
+      },
+      "notes": "Each snapshot event replaces the complete known book. Level quantities are Spot base quantities.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 35,
+      "raw_format_id": 27,
+      "target_schema": "l2_update",
+      "rules_json": {
+        "asks": {
+          "source": "asks",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "bids": {
+          "source": "bids",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "instId"
+        },
+        "event_filter": {
+          "equals": "update",
+          "source": "action"
+        },
+        "event_timestamp": {
+          "source": "ts"
+        },
+        "update_semantics": {
+          "type": "absolute_level",
+          "zero_quantity": "delete",
+          "nonzero_quantity": "set"
+        }
+      },
+      "notes": "Each update level supplies the resulting absolute quantity. Zero quantity deletes the level; non-zero quantity sets it.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 36,
+      "raw_format_id": 28,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "asks": {
+          "source": "asks",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "bids": {
+          "source": "bids",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "snapshot": {
+          "type": "single_event"
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "instId"
+        },
+        "event_filter": {
+          "equals": "snapshot",
+          "source": "action"
+        },
+        "event_timestamp": {
+          "source": "ts"
+        }
+      },
+      "notes": "Snapshot level quantities represent derivative contracts and are normalized using instrument_specs.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 37,
+      "raw_format_id": 28,
+      "target_schema": "l2_update",
+      "rules_json": {
+        "asks": {
+          "source": "asks",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "bids": {
+          "source": "bids",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "instId"
+        },
+        "event_filter": {
+          "equals": "update",
+          "source": "action"
+        },
+        "event_timestamp": {
+          "source": "ts"
+        },
+        "update_semantics": {
+          "type": "absolute_level",
+          "zero_quantity": "delete",
+          "nonzero_quantity": "set"
+        }
+      },
+      "notes": "Update quantities are absolute contract quantities. Zero quantity deletes the level; non-zero quantity sets it.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 38,
+      "raw_format_id": 29,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "asks": {
+          "source": "asks",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "bids": {
+          "source": "bids",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "snapshot": {
+          "type": "single_event"
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "instId"
+        },
+        "event_filter": {
+          "equals": "snapshot",
+          "source": "action"
+        },
+        "event_timestamp": {
+          "source": "ts"
+        }
+      },
+      "notes": "Snapshot level quantities represent inverse contracts and are normalized using instrument_specs.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 39,
+      "raw_format_id": 29,
+      "target_schema": "l2_update",
+      "rules_json": {
+        "asks": {
+          "source": "asks",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "bids": {
+          "source": "bids",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "instId"
+        },
+        "event_filter": {
+          "equals": "update",
+          "source": "action"
+        },
+        "event_timestamp": {
+          "source": "ts"
+        },
+        "update_semantics": {
+          "type": "absolute_level",
+          "zero_quantity": "delete",
+          "nonzero_quantity": "set"
+        }
+      },
+      "notes": "Update quantities are absolute inverse contract quantities. Zero quantity deletes the level; non-zero quantity sets it.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 40,
+      "raw_format_id": 30,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "asks": {
+          "source": "asks",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "bids": {
+          "source": "bids",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "snapshot": {
+          "type": "single_event"
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "instId"
+        },
+        "event_filter": {
+          "equals": "snapshot",
+          "source": "action"
+        },
+        "archive_scope": {
+          "type": "per_member_instrument"
+        },
+        "event_timestamp": {
+          "source": "ts"
+        }
+      },
+      "notes": "Option archive members represent separate instruments. Each contract is normalized independently. Actual populated depth may be substantially below the format maximum.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 41,
+      "raw_format_id": 30,
+      "target_schema": "l2_update",
+      "rules_json": {
+        "asks": {
+          "source": "asks",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "bids": {
+          "source": "bids",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "instId"
+        },
+        "event_filter": {
+          "equals": "update",
+          "source": "action"
+        },
+        "archive_scope": {
+          "type": "per_member_instrument"
+        },
+        "event_timestamp": {
+          "source": "ts"
+        },
+        "update_semantics": {
+          "type": "absolute_level",
+          "zero_quantity": "delete",
+          "nonzero_quantity": "set"
+        }
+      },
+      "notes": "Each option contract maintains independent book state. Zero quantity deletes a level and non-zero quantity sets the resulting absolute quantity.",
+      "created_at": "2026-10-02T20:37:27.949934+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 291,
+      "raw_format_id": 274,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "is_buyer_maker",
+          "values": {
+            "true": "sell",
+            "false": "buy"
+          },
+          "transform": "map"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "qty"
+        },
+        "trade_id": {
+          "source": "id"
+        },
+        "event_timestamp": {
+          "source": "time"
+        }
+      },
+      "notes": "Linear future qty is normalized according to instrument_specs. quote_qty is redundant with canonical quantity conversion and is not independently retained.",
+      "created_at": "2026-10-07T12:34:57.318803+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 292,
+      "raw_format_id": 275,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "is_buyer_maker",
+          "values": {
+            "true": "sell",
+            "false": "buy"
+          },
+          "transform": "map"
+        },
+        "price": {
+          "source": "price"
+        },
+        "quantity": {
+          "source": "qty"
+        },
+        "trade_id": {
+          "source": "id"
+        },
+        "event_timestamp": {
+          "source": "time"
+        }
+      },
+      "notes": "Inverse future qty is contract quantity. Contract value and contract-value asset are obtained from instrument_specs rather than hardcoded. Raw base_qty is redundant with canonical quantity conversion and is not independently retained.",
+      "created_at": "2026-10-07T12:34:57.318803+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 372,
+      "raw_format_id": 334,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "side",
+          "transform": "casefold"
+        },
+        "price": {
+          "source": "price"
+        },
+        "optional": {
+          "is_rpi": {
+            "value": 1,
+            "source": "source",
+            "transform": "equals"
+          }
+        },
+        "quantity": {
+          "source": "size"
+        },
+        "trade_id": {
+          "source": "trade_id"
+        },
+        "event_timestamp": {
+          "source": "created_time"
+        }
+      },
+      "notes": "Linear future size is contract quantity and is normalized using instrument_specs. source=1 is retained as is_rpi.",
+      "created_at": "2026-10-07T12:37:55.738361+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 373,
+      "raw_format_id": 335,
+      "target_schema": "trade",
+      "rules_json": {
+        "side": {
+          "source": "side",
+          "transform": "casefold"
+        },
+        "price": {
+          "source": "price"
+        },
+        "optional": {
+          "is_rpi": {
+            "value": 1,
+            "source": "source",
+            "transform": "equals"
+          }
+        },
+        "quantity": {
+          "source": "size"
+        },
+        "trade_id": {
+          "source": "trade_id"
+        },
+        "event_timestamp": {
+          "source": "created_time"
+        }
+      },
+      "notes": "Inverse future size is contract quantity and is normalized using instrument_specs. source=1 is retained as is_rpi.",
+      "created_at": "2026-10-07T12:37:55.738361+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 374,
+      "raw_format_id": 336,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "asks": {
+          "source": "asks",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "bids": {
+          "source": "bids",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "snapshot": {
+          "type": "single_event"
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "instId"
+        },
+        "event_filter": {
+          "equals": "snapshot",
+          "source": "action"
+        },
+        "event_timestamp": {
+          "source": "ts"
+        }
+      },
+      "notes": "Snapshot level quantities represent linear future contracts and are normalized using instrument_specs.",
+      "created_at": "2026-10-07T12:37:55.738361+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 375,
+      "raw_format_id": 336,
+      "target_schema": "l2_update",
+      "rules_json": {
+        "asks": {
+          "source": "asks",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "bids": {
+          "source": "bids",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "instId"
+        },
+        "event_filter": {
+          "equals": "update",
+          "source": "action"
+        },
+        "event_timestamp": {
+          "source": "ts"
+        },
+        "update_semantics": {
+          "type": "absolute_level",
+          "zero_quantity": "delete",
+          "nonzero_quantity": "set"
+        }
+      },
+      "notes": "Update quantities are absolute linear future contract quantities. Zero quantity deletes the level; non-zero quantity sets it.",
+      "created_at": "2026-10-07T12:37:55.738361+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 376,
+      "raw_format_id": 337,
+      "target_schema": "l2_snapshot",
+      "rules_json": {
+        "asks": {
+          "source": "asks",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "bids": {
+          "source": "bids",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "snapshot": {
+          "type": "single_event"
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "instId"
+        },
+        "event_filter": {
+          "equals": "snapshot",
+          "source": "action"
+        },
+        "event_timestamp": {
+          "source": "ts"
+        }
+      },
+      "notes": "Snapshot level quantities represent inverse future contracts and are normalized using instrument_specs.",
+      "created_at": "2026-10-07T12:37:55.738361+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    },
+    {
+      "id": 377,
+      "raw_format_id": 337,
+      "target_schema": "l2_update",
+      "rules_json": {
+        "asks": {
+          "source": "asks",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "bids": {
+          "source": "bids",
+          "price_index": 0,
+          "quantity_index": 1,
+          "order_count_index": 2
+        },
+        "instrument": {
+          "lookup": "catalog",
+          "source": "instId"
+        },
+        "event_filter": {
+          "equals": "update",
+          "source": "action"
+        },
+        "event_timestamp": {
+          "source": "ts"
+        },
+        "update_semantics": {
+          "type": "absolute_level",
+          "zero_quantity": "delete",
+          "nonzero_quantity": "set"
+        }
+      },
+      "notes": "Update quantities are absolute inverse future contract quantities. Zero quantity deletes the level; non-zero quantity sets it.",
+      "created_at": "2026-10-07T12:37:55.738361+01:00",
+      "updated_at": "2026-10-07T12:37:55.738361+01:00"
+    }
+  ],
+  "exchanges": [
+    {
+      "id": 1,
+      "code": "bybit",
+      "name": "Bybit",
+      "created_at": "2026-10-01T22:02:26.620888+01:00"
+    },
+    {
+      "id": 2,
+      "code": "binance",
+      "name": "Binance",
+      "created_at": "2026-10-01T22:02:26.620888+01:00"
+    },
+    {
+      "id": 3,
+      "code": "okx",
+      "name": "OKX",
+      "created_at": "2026-10-01T22:02:26.620888+01:00"
+    },
+    {
+      "id": 4,
+      "code": "bitget",
+      "name": "Bitget",
+      "created_at": "2026-10-01T22:02:26.620888+01:00"
+    },
+    {
+      "id": 5,
+      "code": "gateio",
+      "name": "Gate.io",
+      "created_at": "2026-10-01T22:02:26.620888+01:00"
+    }
+  ]
+}

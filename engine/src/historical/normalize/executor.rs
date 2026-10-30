@@ -142,7 +142,7 @@ fn execute_process(
         )));
     }
 
-    prepare_staging(job)?;
+    prepare_staging(job, config)?;
 
     let mut context = ExecutionContext::default();
 
@@ -507,7 +507,7 @@ pub(crate) fn prepare_staging_path(path: &Path) -> Result<()> {
 // Staging preparation
 // -----------------------------------------------------------------------------
 
-pub(crate) fn prepare_staging(job: &ProcessingJob) -> Result<()> {
+pub(crate) fn prepare_staging(job: &ProcessingJob, config: &ProcessingConfig) -> Result<()> {
     prepare_staging_path(&job.output.staging_path)?;
     // Commit the resolved, exact configuration alongside the dataset. Includes
     // immutable profile identity/fingerprint without changing canonical schemas.
@@ -517,6 +517,25 @@ pub(crate) fn prepare_staging(job: &ProcessingJob) -> Result<()> {
         .create_new(true)
         .open(&path)
         .map_err(|e| MarketForgeError::InvalidConfiguration(format!("{}: {e}", path.display())))?;
-    serde_json::to_writer_pretty(file, job)
-        .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))
+    // Runtime configuration is authoritative; the legacy job fields may differ.
+    let mut resolved = job.clone();
+    resolved.resources = config.resources.clone();
+    resolved.integrity_policy = config.integrity_policy.clone();
+    let bytes = serde_json::to_vec_pretty(&resolved)
+        .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
+    use sha2::{Digest, Sha256};
+    use std::io::Write;
+    let hash: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let mut file = file;
+    file.write_all(&bytes)
+        .map_err(|e| MarketForgeError::InvalidConfiguration(format!("{}: {e}", path.display())))?;
+    std::fs::write(
+        job.output.staging_path.join("processing-job.sha256"),
+        format!("{hash}  processing-job.json\n"),
+    )
+    .map_err(|e| MarketForgeError::InvalidConfiguration(format!("provenance checksum: {e}")))?;
+    Ok(())
 }

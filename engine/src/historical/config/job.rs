@@ -67,10 +67,16 @@ pub fn load_document_with_catalog(
                 let mut job: ProcessingJob =
                     serde_json::from_value(value).map_err(|e| invalid(e.to_string()))?;
                 for task in &mut job.tasks {
-                    if let Some(object) = task.raw_schema.as_object_mut() {
-                        object.remove("marketforge_profile");
-                    }
+                    let provenance = task
+                        .raw_schema
+                        .as_object_mut()
+                        .and_then(|object| object.remove("marketforge_profile"));
                     if let Some(profile) = catalog.for_task(task)? {
+                        check_provenance(
+                            provenance.as_ref(),
+                            &profile.definition.id,
+                            &profile.fingerprint,
+                        )?;
                         catalog.check_task(task, profile)?;
                         // A provenance tag is descriptive, never executable configuration.
                         let mut raw = task.raw_schema.clone();
@@ -113,6 +119,7 @@ pub fn load_document_with_catalog(
                             task.source_ordering,
                             task.source_compression,
                         ))?;
+                        check_provenance(provenance.as_ref(), "legacy-inline", &hash)?;
                         tag(task, "legacy-inline", &hash)?;
                     }
                 }
@@ -154,9 +161,19 @@ pub fn load_document_with_catalog(
                             .definition
                             .source_ordering
                             .ok_or_else(|| invalid("profile missing ordering"))?,
-                        source_compression: task
-                            .source_compression
-                            .unwrap_or(profile.physical.supported_containers[0]),
+                        source_compression: match task.source_compression {
+                            Some(container) => container,
+                            None => match profile.physical.supported_containers.as_slice() {
+                                [container] => *container,
+                                _ => {
+                                    return Err(invalid(format!(
+                                        "profile {} ({}): source_compression is required when multiple archive containers are supported",
+                                        profile.definition.id,
+                                        profile.path.display()
+                                    )));
+                                }
+                            },
+                        },
                     };
                     catalog.check_task(&resolved, profile)?;
                     tag(&mut resolved, &profile.definition.id, &profile.fingerprint)?;
@@ -187,6 +204,17 @@ pub fn load_document_with_catalog(
     })();
     result.map_err(|e| invalid(format!("processing job {}: {e}", path.display())))
 }
+fn check_provenance(provenance: Option<&Value>, id: &str, hash: &str) -> Result<()> {
+    if let Some(provenance) = provenance {
+        if provenance["id"].as_str() != Some(id) || provenance["sha256"].as_str() != Some(hash) {
+            return Err(invalid(format!(
+                "resolved profile {id} provenance fingerprint or identity mismatch"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn compile_inline(task: &WorkTask) -> Result<()> {
     if task.normalizations.is_empty() {
         return Err(invalid("legacy task has no normalizations"));

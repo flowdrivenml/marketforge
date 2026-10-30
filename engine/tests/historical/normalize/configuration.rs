@@ -307,3 +307,194 @@ fn resolved_job_provenance_can_be_reloaded_without_changing_fingerprint() {
     let b = load_document_with_catalog(t.job(&value), &c).unwrap();
     assert_eq!(a, b);
 }
+
+#[test]
+fn multiple_archive_containers_require_explicit_selection() {
+    let t = Temp::new();
+    let (_, physical) = one_profile_fixture(&t);
+    let source = fs::read_to_string(&physical).unwrap();
+    assert!(source.contains("supported_containers = [\"gzip\"]"));
+    fs::write(
+        &physical,
+        source.replace(
+            "supported_containers = [\"gzip\"]",
+            "supported_containers = [\"gzip\", \"plain\"]",
+        ),
+    )
+    .unwrap();
+    let c = FormatCatalog::load(&t.0).unwrap();
+    let mut job = lightweight(sample(), &c);
+    let error = load_document_with_catalog(t.job(&job), &c)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("source_compression is required"), "{error}");
+    for task in job["tasks"].as_array_mut().unwrap() {
+        task["source_compression"] = "gzip".into();
+    }
+    assert!(load_document_with_catalog(t.job(&job), &c).is_ok());
+    job["tasks"][0]["source_compression"] = "zip".into();
+    assert!(load_document_with_catalog(t.job(&job), &c).is_err());
+}
+
+#[test]
+fn resolved_snapshot_rejects_changed_profile_identity_or_fingerprint() {
+    let c = formats();
+    let t = Temp::new();
+    let resolved = load_document_with_catalog(t.job(&sample()), &c).unwrap();
+    for field in ["id", "sha256"] {
+        let mut value = serde_json::to_value(&resolved).unwrap();
+        value["tasks"][0]["raw_schema"]["marketforge_profile"][field] = "changed".into();
+        let error = load_document_with_catalog(t.job(&value), &c)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("provenance"), "{error}");
+    }
+}
+
+#[test]
+fn read_only_database_snapshot_matches_complete_catalog() {
+    let database: serde_json::Value = serde_json::from_slice(
+        &fs::read(root().join(".planning/historical/evidence/database-catalog.json")).unwrap(),
+    )
+    .unwrap();
+    let c = formats();
+    let raw = database["raw_formats"].as_array().unwrap();
+    let mappings = database["normalization_rules"].as_array().unwrap();
+    assert_eq!(raw.len(), 36);
+    assert_eq!(mappings.len(), 49);
+    let mut compared = 0;
+    for row in raw {
+        let exchange = database["exchanges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["id"] == row["exchange_id"])
+            .unwrap()["code"]
+            .as_str()
+            .unwrap();
+        let candidates: Vec<_> = c
+            .profiles()
+            .filter(|p| {
+                serde_json::to_value(p.definition.exchange).unwrap() == exchange
+                    && p.definition.format_code == row["format_code"].as_str().unwrap()
+                    && serde_json::to_value(p.definition.instrument_type).unwrap()
+                        == row["instrument_type"]
+                    && serde_json::to_value(p.definition.market_category).unwrap()
+                        == row["market_category"]
+            })
+            .collect();
+        assert_eq!(candidates.len(), 1, "raw identity {}", row["id"]);
+        let p = candidates[0];
+        assert_eq!(
+            p.physical.raw_schema, row["schema_json"],
+            "{}",
+            p.definition.id
+        );
+        assert_eq!(
+            serde_json::to_value(p.physical.container_format).unwrap(),
+            row["container_format"]
+        );
+        assert_eq!(
+            serde_json::to_value(p.physical.record_format).unwrap(),
+            row["record_format"]
+        );
+        let compression = if row["compression"] == "tar.gz" {
+            "tar_gzip"
+        } else {
+            row["compression"].as_str().unwrap()
+        };
+        assert!(
+            p.physical
+                .supported_containers
+                .iter()
+                .any(|x| serde_json::to_value(x).unwrap() == compression)
+        );
+        let rules: Vec<_> = mappings
+            .iter()
+            .filter(|n| n["raw_format_id"] == row["id"])
+            .collect();
+        assert_eq!(rules.len(), p.definition.rules.len());
+        for rule in rules {
+            let profile_rule = p
+                .definition
+                .rules
+                .iter()
+                .find(|r| serde_json::to_value(r.target).unwrap() == rule["target_schema"])
+                .unwrap();
+            let mut original = rule["rules_json"].clone();
+            if p.definition.id == "gateio.spot.spot.gate-b1.v1" {
+                // Independently captured archive evidence establishes 2=bid.
+                assert!(rule["id"] == 24 || rule["id"] == 25);
+                let values = original["side"]["values"].as_object_mut().unwrap();
+                assert_eq!(values.remove("0").unwrap(), "bid");
+                assert!(values.insert("2".into(), "bid".into()).is_none());
+            }
+            assert_eq!(
+                profile_rule.rules, original,
+                "{} mapping {}",
+                p.definition.id, rule["id"]
+            );
+            compared += 1;
+        }
+    }
+    assert_eq!(compared, 49);
+}
+
+#[test]
+fn lightweight_jobs_reject_unsupported_profiles_and_incompatible_instruments() {
+    let c = formats();
+    let t = Temp::new();
+    for profile in c
+        .profiles()
+        .filter(|p| p.definition.unsupported_reason.is_some())
+    {
+        let mut job = lightweight(sample(), &c);
+        job["tasks"][0]["format_profile"] = profile.definition.id.clone().into();
+        let error = load_document_with_catalog(t.job(&job), &c)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("unsupported"), "{error}");
+    }
+    for (field, value) in [
+        ("format_profile", serde_json::json!("unknown.profile")),
+        ("exchange", serde_json::json!("binance")),
+        ("instrument_id", serde_json::json!(0)),
+        ("symbol", serde_json::json!("")),
+    ] {
+        let mut job = lightweight(sample(), &c);
+        job["tasks"][0][field] = value;
+        assert!(
+            load_document_with_catalog(t.job(&job), &c).is_err(),
+            "accepted {field}"
+        );
+    }
+    for (field, value) in [("instrument_kind", "future"), ("contract_kind", "inverse")] {
+        let mut job = lightweight(sample(), &c);
+        job["tasks"][0]["instrument"][field] = value.into();
+        assert!(
+            load_document_with_catalog(t.job(&job), &c).is_err(),
+            "accepted {field}"
+        );
+    }
+    let contract_job = fs::read_dir(root().join("data/.jobs/process"))
+        .unwrap()
+        .map(|p| {
+            serde_json::from_slice::<serde_json::Value>(&fs::read(p.unwrap().path()).unwrap())
+                .unwrap()
+        })
+        .find(|j| j["tasks"][0]["normalizations"][0]["quantity_encoding"] == "contracts")
+        .unwrap();
+    for (field, value) in [
+        ("contract_value", serde_json::Value::Null),
+        ("contract_value", serde_json::json!("0")),
+        ("contract_value_asset", serde_json::Value::Null),
+        ("contract_value_asset", serde_json::json!("")),
+    ] {
+        let mut job = lightweight(contract_job.clone(), &c);
+        job["tasks"][0]["instrument"][field] = value;
+        let error = load_document_with_catalog(t.job(&job), &c)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("contract"), "{error}");
+    }
+}
