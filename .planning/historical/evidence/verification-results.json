@@ -1,0 +1,4763 @@
+[
+  {
+    "target": "depth_xlsx_decoder",
+    "name": "decodes_and_sorts_xlsx_snapshots",
+    "status": "PASS",
+    "seconds": 0.003676516997074941
+  },
+  {
+    "target": "depth_xlsx_decoder",
+    "name": "decodes_reordered_cells",
+    "status": "PASS",
+    "seconds": 0.0035052290004387032
+  },
+  {
+    "target": "depth_xlsx_decoder",
+    "name": "preserves_decimal_precision",
+    "status": "PASS",
+    "seconds": 0.0035586610028985888
+  },
+  {
+    "target": "depth_xlsx_decoder",
+    "name": "preserves_source_order_for_duplicate_timestamps",
+    "status": "PASS",
+    "seconds": 0.003533940001943847
+  },
+  {
+    "target": "depth_xlsx_decoder",
+    "name": "rejects_duplicate_cells",
+    "status": "PASS",
+    "seconds": 0.003564751001249533
+  },
+  {
+    "target": "depth_xlsx_decoder",
+    "name": "rejects_missing_columns",
+    "status": "PASS",
+    "seconds": 0.003567961997759994
+  },
+  {
+    "target": "depth_processor",
+    "name": "invalidation_requires_new_snapshot",
+    "status": "PASS",
+    "seconds": 0.015714458000729792
+  },
+  {
+    "target": "depth_processor",
+    "name": "processes_snapshot_and_absolute_updates",
+    "status": "PASS",
+    "seconds": 0.01599250000072061
+  },
+  {
+    "target": "depth_processor",
+    "name": "rejects_delta_before_snapshot",
+    "status": "PASS",
+    "seconds": 0.016092294001282426
+  },
+  {
+    "target": "depth_processor",
+    "name": "rejects_invalid_batch_without_modifying_book",
+    "status": "PASS",
+    "seconds": 0.016057482000178425
+  },
+  {
+    "target": "depth_spec",
+    "name": "compiles_all_depth_normalization_specs",
+    "status": "PASS",
+    "seconds": 0.11428448800143087
+  },
+  {
+    "target": "depth_csv_adapter",
+    "name": "adapts_headerless_spot_row",
+    "status": "PASS",
+    "seconds": 0.0016026980010792613
+  },
+  {
+    "target": "depth_csv_adapter",
+    "name": "adapts_signed_perpetual_row",
+    "status": "PASS",
+    "seconds": 0.0015008230002422351
+  },
+  {
+    "target": "depth_csv_adapter",
+    "name": "rejects_duplicate_positions",
+    "status": "PASS",
+    "seconds": 0.0013854690005246084
+  },
+  {
+    "target": "depth_csv_adapter",
+    "name": "rejects_incorrect_column_count",
+    "status": "PASS",
+    "seconds": 0.001367598000797443
+  },
+  {
+    "target": "depth_transforms",
+    "name": "accepts_missing_sequence_configuration",
+    "status": "PASS",
+    "seconds": 0.0015430060011567548
+  },
+  {
+    "target": "depth_transforms",
+    "name": "extracts_bybit_millisecond_timestamp",
+    "status": "PASS",
+    "seconds": 0.001457321999623673
+  },
+  {
+    "target": "depth_transforms",
+    "name": "extracts_bybit_price_levels",
+    "status": "PASS",
+    "seconds": 0.0015378650023194496
+  },
+  {
+    "target": "depth_transforms",
+    "name": "extracts_decimal_from_json_number",
+    "status": "PASS",
+    "seconds": 0.0014366110008268151
+  },
+  {
+    "target": "depth_transforms",
+    "name": "extracts_decimal_from_string",
+    "status": "PASS",
+    "seconds": 0.0014466809989244211
+  },
+  {
+    "target": "depth_transforms",
+    "name": "extracts_fractional_seconds_exactly",
+    "status": "PASS",
+    "seconds": 0.0014378810010384768
+  },
+  {
+    "target": "depth_transforms",
+    "name": "extracts_nested_sequence",
+    "status": "PASS",
+    "seconds": 0.0014792130023124628
+  },
+  {
+    "target": "depth_transforms",
+    "name": "extracts_okx_levels_with_order_counts",
+    "status": "PASS",
+    "seconds": 0.0013581680032075383
+  },
+  {
+    "target": "depth_transforms",
+    "name": "extracts_okx_string_timestamp",
+    "status": "PASS",
+    "seconds": 0.0014552409993484616
+  },
+  {
+    "target": "depth_transforms",
+    "name": "rejects_invalid_decimal",
+    "status": "PASS",
+    "seconds": 0.0014623019997088704
+  },
+  {
+    "target": "depth_transforms",
+    "name": "rejects_invalid_sequence",
+    "status": "PASS",
+    "seconds": 0.0014469210000243038
+  },
+  {
+    "target": "depth_transforms",
+    "name": "rejects_negative_level_quantity",
+    "status": "PASS",
+    "seconds": 0.001421820001269225
+  },
+  {
+    "target": "depth_transforms",
+    "name": "rejects_subnanosecond_precision",
+    "status": "PASS",
+    "seconds": 0.0015785569994477555
+  },
+  {
+    "target": "depth_transforms",
+    "name": "rejects_zero_price",
+    "status": "PASS",
+    "seconds": 0.001471012998081278
+  },
+  {
+    "target": "historical_normalize",
+    "name": "configuration::complete_profile_inventory_compiles_and_resolves_uniquely",
+    "status": "PASS",
+    "seconds": 0.015805682000063825
+  },
+  {
+    "target": "historical_normalize",
+    "name": "configuration::conflicts_unknown_fields_and_fingerprints_fail_closed",
+    "status": "PASS",
+    "seconds": 0.015738549001980573
+  },
+  {
+    "target": "historical_normalize",
+    "name": "configuration::duplicate_profile_and_physical_definitions_are_rejected",
+    "status": "PASS",
+    "seconds": 0.032099064002977684
+  },
+  {
+    "target": "historical_normalize",
+    "name": "configuration::errors_identify_file_and_invalid_configuration",
+    "status": "PASS",
+    "seconds": 0.0037701599976571742
+  },
+  {
+    "target": "historical_normalize",
+    "name": "configuration::every_existing_job_matches_resolved_toml_configuration",
+    "status": "PASS",
+    "seconds": 0.11405691800246132
+  },
+  {
+    "target": "historical_normalize",
+    "name": "configuration::incompatible_instrument_and_container_cannot_override_profile",
+    "status": "PASS",
+    "seconds": 0.031945417998940684
+  },
+  {
+    "target": "historical_normalize",
+    "name": "configuration::lightweight_and_legacy_jobs_resolve_identically",
+    "status": "PASS",
+    "seconds": 0.015948658001434524
+  },
+  {
+    "target": "historical_normalize",
+    "name": "configuration::lightweight_jobs_reject_unsupported_profiles_and_incompatible_instruments",
+    "status": "PASS",
+    "seconds": 0.06416976800028351
+  },
+  {
+    "target": "historical_normalize",
+    "name": "configuration::multiple_archive_containers_require_explicit_selection",
+    "status": "PASS",
+    "seconds": 0.032004749999032356
+  },
+  {
+    "target": "historical_normalize",
+    "name": "configuration::profile_fingerprint_is_independent_of_file_location_and_whitespace",
+    "status": "PASS",
+    "seconds": 0.03196936899985303
+  },
+  {
+    "target": "historical_normalize",
+    "name": "configuration::read_only_database_snapshot_matches_complete_catalog",
+    "status": "PASS",
+    "seconds": 0.03199334999953862
+  },
+  {
+    "target": "historical_normalize",
+    "name": "configuration::resolved_job_provenance_can_be_reloaded_without_changing_fingerprint",
+    "status": "PASS",
+    "seconds": 0.03204357200229424
+  },
+  {
+    "target": "historical_normalize",
+    "name": "configuration::resolved_snapshot_rejects_changed_profile_identity_or_fingerprint",
+    "status": "PASS",
+    "seconds": 0.015983068999048555
+  },
+  {
+    "target": "historical_normalize",
+    "name": "configuration::unknown_and_unsupported_profiles_have_explicit_errors",
+    "status": "PASS",
+    "seconds": 0.01585211400015396
+  },
+  {
+    "target": "historical_normalize",
+    "name": "configuration::unsupported_transform_unknown_rule_and_missing_source_fail_at_load",
+    "status": "PASS",
+    "seconds": 0.06416789799914113
+  },
+  {
+    "target": "historical_normalize",
+    "name": "dataset_manifest::creates_valid_dataset_manifest",
+    "status": "PASS",
+    "seconds": 0.06426336200092919
+  },
+  {
+    "target": "historical_normalize",
+    "name": "dataset_manifest::rejects_duplicate_manifest",
+    "status": "PASS",
+    "seconds": 0.01611797500299872
+  },
+  {
+    "target": "historical_normalize",
+    "name": "dataset_manifest::rejects_failed_integrity_evaluation",
+    "status": "PASS",
+    "seconds": 0.016075842999271117
+  },
+  {
+    "target": "historical_normalize",
+    "name": "dataset_manifest::rejects_metrics_parquet_row_mismatch",
+    "status": "PASS",
+    "seconds": 0.015899555997748394
+  },
+  {
+    "target": "historical_normalize",
+    "name": "dataset_manifest::rejects_missing_parquet_directory",
+    "status": "PASS",
+    "seconds": 0.015969639000104507
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary::book_side_changes_fingerprint",
+    "status": "PASS",
+    "seconds": 0.0037829900029464625
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary::book_store_produces_deterministic_boundary_state",
+    "status": "PASS",
+    "seconds": 0.0035727920003409963
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary::boundary_snapshot_preserves_fingerprint",
+    "status": "PASS",
+    "seconds": 0.0037530390000029
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary::boundary_state_json_roundtrip_preserves_values",
+    "status": "PASS",
+    "seconds": 0.0036482350005826447
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary::different_quantities_change_fingerprint",
+    "status": "PASS",
+    "seconds": 0.0036407650004548486
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary::empty_book_has_deterministic_fingerprint",
+    "status": "PASS",
+    "seconds": 0.0035775119977188297
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary::equivalent_decimal_scales_have_identical_fingerprints",
+    "status": "PASS",
+    "seconds": 0.00355668100019102
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary::identical_books_have_identical_fingerprints",
+    "status": "PASS",
+    "seconds": 0.0035766719993262086
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary::missing_and_zero_quantities_are_distinct",
+    "status": "PASS",
+    "seconds": 0.0035707619972527027
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary::order_count_changes_fingerprint",
+    "status": "PASS",
+    "seconds": 0.003595193000364816
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary::uninitialized_book_has_no_boundary_state",
+    "status": "PASS",
+    "seconds": 0.0035645809984998778
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary_recovery::authoritative_snapshot_recovers_after_gap",
+    "status": "PASS",
+    "seconds": 0.003615203997469507
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary_recovery::consecutive_source_events_produce_verified_boundary",
+    "status": "PASS",
+    "seconds": 0.0035906330012949184
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary_recovery::missing_initial_snapshot_is_not_verified",
+    "status": "PASS",
+    "seconds": 0.0035032290033996105
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary_recovery::sequence_gap_invalidates_final_boundary",
+    "status": "PASS",
+    "seconds": 0.003578151998226531
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_boundary_recovery::unsequenced_source_cannot_claim_verified_continuity",
+    "status": "PASS",
+    "seconds": 0.003645144999609329
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_csv_pipeline::flushes_gateio_snapshot_at_eof",
+    "status": "PASS",
+    "seconds": 0.06399149099888746
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_csv_pipeline::processes_gateio_spot_csv_pipeline",
+    "status": "PASS",
+    "seconds": 0.06424683099976392
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_csv_pipeline::recovers_after_gateio_sequence_gap",
+    "status": "PASS",
+    "seconds": 0.03212206500029424
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_csv_pipeline::recovers_after_malformed_gateio_snapshot",
+    "status": "PASS",
+    "seconds": 0.032056832998932805
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_csv_pipeline::rejects_incomplete_initial_snapshot_at_eof",
+    "status": "PASS",
+    "seconds": 0.03193757800181629
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_csv_pipeline::rejects_incomplete_replacement_snapshot_at_eof",
+    "status": "PASS",
+    "seconds": 0.06420856899785576
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sequence_ranges::accepts_consecutive_ranges",
+    "status": "PASS",
+    "seconds": 0.003759440001886105
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sequence_ranges::preserves_consecutive_policy",
+    "status": "PASS",
+    "seconds": 0.003674226001749048
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sequence_ranges::preserves_unsequenced_policy",
+    "status": "PASS",
+    "seconds": 0.0037309889994503465
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sequence_ranges::rejects_overlapping_ranges",
+    "status": "PASS",
+    "seconds": 0.0036802260001422837
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sequence_ranges::rejects_sequence_gap",
+    "status": "PASS",
+    "seconds": 0.0036268240000936203
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sequence_ranges::rejects_sequence_overflow",
+    "status": "PASS",
+    "seconds": 0.0035294799999974202
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sequence_ranges::rejects_zero_sequence_count",
+    "status": "PASS",
+    "seconds": 0.0035206299980927724
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sink::accepts_incremental_changes",
+    "status": "PASS",
+    "seconds": 0.0036430850013857707
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sink::accepts_initial_snapshot",
+    "status": "PASS",
+    "seconds": 0.0035445809990051202
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sink::accepts_zero_change_outcomes",
+    "status": "PASS",
+    "seconds": 0.003537871001753956
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sink::creates_recovery_segment",
+    "status": "PASS",
+    "seconds": 0.0035290099986013956
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sink::preserves_event_order",
+    "status": "PASS",
+    "seconds": 0.00346444699971471
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sink::rejects_changes_before_initialization",
+    "status": "PASS",
+    "seconds": 0.003459668001596583
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sink::rejects_empty_initialization",
+    "status": "PASS",
+    "seconds": 0.0034993989975191653
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sink::rejects_invalid_outcome_atomically",
+    "status": "PASS",
+    "seconds": 0.003479736998997396
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_sink::rejects_writes_after_finish",
+    "status": "PASS",
+    "seconds": 0.0035424310008238535
+  },
+  {
+    "target": "historical_normalize",
+    "name": "depth_xlsx_pipeline::processes_bitget_xlsx_pipeline",
+    "status": "PASS",
+    "seconds": 0.031824863002839265
+  },
+  {
+    "target": "historical_normalize",
+    "name": "equivalence::committed_configuration_preserves_effective_runtime_settings_and_checksum",
+    "status": "PASS",
+    "seconds": 0.11426860700157704
+  },
+  {
+    "target": "historical_normalize",
+    "name": "equivalence::observed_gateio_spot_snapshot_keeps_bid_and_ask_orientation",
+    "status": "PASS",
+    "seconds": 0.06401304999963031
+  },
+  {
+    "target": "historical_normalize",
+    "name": "equivalence::real_trade_prefix_archives_legacy_and_toml_have_exact_events_and_counters",
+    "status": "PASS",
+    "seconds": 0.11421725499894819
+  },
+  {
+    "target": "historical_normalize",
+    "name": "equivalence::small_depth_archives_legacy_and_toml_preserve_snapshots_deltas_sequences_and_errors",
+    "status": "PASS",
+    "seconds": 0.11423230500076897
+  },
+  {
+    "target": "historical_normalize",
+    "name": "integrity_policy::absolute_count_threshold_fails",
+    "status": "PASS",
+    "seconds": 0.0038557429979846347
+  },
+  {
+    "target": "historical_normalize",
+    "name": "integrity_policy::clean_dataset_passes",
+    "status": "PASS",
+    "seconds": 0.0037544489969150163
+  },
+  {
+    "target": "historical_normalize",
+    "name": "integrity_policy::disabled_enforcement_accepts_violations_as_degraded",
+    "status": "PASS",
+    "seconds": 0.0036992569985159207
+  },
+  {
+    "target": "historical_normalize",
+    "name": "integrity_policy::disabled_enforcement_preserves_clean_status",
+    "status": "PASS",
+    "seconds": 0.0037231980022625066
+  },
+  {
+    "target": "historical_normalize",
+    "name": "integrity_policy::fatal_category_fails_immediately",
+    "status": "PASS",
+    "seconds": 0.003580322998459451
+  },
+  {
+    "target": "historical_normalize",
+    "name": "integrity_policy::global_rate_threshold_fails",
+    "status": "PASS",
+    "seconds": 0.003599572999519296
+  },
+  {
+    "target": "historical_normalize",
+    "name": "integrity_policy::immediate_enforcement_defers_rate_thresholds",
+    "status": "PASS",
+    "seconds": 0.0036173130029055756
+  },
+  {
+    "target": "historical_normalize",
+    "name": "integrity_policy::immediate_enforcement_rejects_count_threshold",
+    "status": "PASS",
+    "seconds": 0.0035838919975503813
+  },
+  {
+    "target": "historical_normalize",
+    "name": "integrity_policy::immediate_enforcement_rejects_fatal_category",
+    "status": "PASS",
+    "seconds": 0.0036206640033924486
+  },
+  {
+    "target": "historical_normalize",
+    "name": "integrity_policy::immediate_enforcement_respects_disabled_policy",
+    "status": "PASS",
+    "seconds": 0.0035829329972330015
+  },
+  {
+    "target": "historical_normalize",
+    "name": "integrity_policy::minimum_samples_defers_rate_check",
+    "status": "PASS",
+    "seconds": 0.003557830998033751
+  },
+  {
+    "target": "historical_normalize",
+    "name": "integrity_policy::policy_violation_reports_are_bounded",
+    "status": "PASS",
+    "seconds": 0.0035848719999194145
+  },
+  {
+    "target": "historical_normalize",
+    "name": "integrity_policy::tolerated_errors_degrade_dataset",
+    "status": "PASS",
+    "seconds": 0.00777764099984779
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_failure::rejects_duplicate_failure_report",
+    "status": "PASS",
+    "seconds": 0.015868654998485
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_failure::rejects_missing_staging_directory",
+    "status": "PASS",
+    "seconds": 0.016008269998565083
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_failure::serializes_failure_report",
+    "status": "PASS",
+    "seconds": 0.015932317000988405
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_metrics::integrity_categories_are_serializable",
+    "status": "PASS",
+    "seconds": 0.0038364130014088005
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_metrics::integrity_metrics_count_all_violations",
+    "status": "PASS",
+    "seconds": 0.0036613550000765827
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_metrics::processing_counters_merge",
+    "status": "PASS",
+    "seconds": 0.003565101000276627
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_metrics::processing_counters_reject_inconsistent_accounting",
+    "status": "PASS",
+    "seconds": 0.0035806020023301244
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_metrics::processing_counters_validate",
+    "status": "PASS",
+    "seconds": 0.003596663002099376
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_scheduler::handles_empty_task_list",
+    "status": "PASS",
+    "seconds": 0.0035555409995140508
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_scheduler::handles_more_workers_than_tasks",
+    "status": "PASS",
+    "seconds": 0.003554201000952162
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_scheduler::preserves_individual_task_errors",
+    "status": "PASS",
+    "seconds": 0.0035389200020290446
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_scheduler::preserves_input_order",
+    "status": "PASS",
+    "seconds": 0.06389048600249225
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_scheduler::rejects_zero_workers",
+    "status": "PASS",
+    "seconds": 0.0037714300015068147
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_scheduler::respects_worker_limit",
+    "status": "PASS",
+    "seconds": 0.06402105099914479
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_scheduler::single_worker_executes_sequentially",
+    "status": "PASS",
+    "seconds": 0.0038645540007564705
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_session_validation::rejects_duplicate_task_ids",
+    "status": "PASS",
+    "seconds": 0.015967158000421477
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_session_validation::rejects_identical_staging_and_dataset_paths",
+    "status": "PASS",
+    "seconds": 0.016015410001273267
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_session_validation::rejects_missing_normalization",
+    "status": "PASS",
+    "seconds": 0.01594320699950913
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_session_validation::rejects_multiple_normalizations",
+    "status": "PASS",
+    "seconds": 0.0159216270003526
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_session_validation::rejects_overlapping_job_paths",
+    "status": "PASS",
+    "seconds": 0.01612027499868418
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_session_validation::rejects_zero_workers",
+    "status": "PASS",
+    "seconds": 0.015944178001518594
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_task::executes_trade_task_into_isolated_output",
+    "status": "PASS",
+    "seconds": 0.031987239002774004
+  },
+  {
+    "target": "historical_normalize",
+    "name": "process_task::failed_task_preserves_metrics",
+    "status": "PASS",
+    "seconds": 0.015924606999760726
+  },
+  {
+    "target": "historical_normalize",
+    "name": "processing_config::accepts_legacy_integrity_rules",
+    "status": "PASS",
+    "seconds": 0.003677356999105541
+  },
+  {
+    "target": "historical_normalize",
+    "name": "processing_config::global_integrity_enforcement_is_enabled",
+    "status": "PASS",
+    "seconds": 0.0035776219992840197
+  },
+  {
+    "target": "historical_normalize",
+    "name": "processing_config::legacy_standard_profile_is_accepted",
+    "status": "PASS",
+    "seconds": 0.0035480309998092707
+  },
+  {
+    "target": "historical_normalize",
+    "name": "processing_config::legacy_strict_profile_is_accepted",
+    "status": "PASS",
+    "seconds": 0.0035798329990939237
+  },
+  {
+    "target": "historical_normalize",
+    "name": "processing_config::loads_global_processing_configuration",
+    "status": "PASS",
+    "seconds": 0.0035590309998951852
+  },
+  {
+    "target": "historical_normalize",
+    "name": "processing_config::rejects_invalid_global_rate",
+    "status": "PASS",
+    "seconds": 0.003506428998662159
+  },
+  {
+    "target": "historical_normalize",
+    "name": "processing_config::rejects_negative_rate",
+    "status": "PASS",
+    "seconds": 0.003628253998613218
+  },
+  {
+    "target": "historical_normalize",
+    "name": "processing_config::rejects_non_finite_rate",
+    "status": "PASS",
+    "seconds": 0.003543601000274066
+  },
+  {
+    "target": "historical_normalize",
+    "name": "processing_config::supports_global_integrity_thresholds",
+    "status": "PASS",
+    "seconds": 0.00347080699793878
+  },
+  {
+    "target": "historical_normalize",
+    "name": "processing_metrics_aggregation::aggregates_multiple_tasks",
+    "status": "PASS",
+    "seconds": 0.003502878997096559
+  },
+  {
+    "target": "historical_normalize",
+    "name": "processing_metrics_aggregation::aggregation_overflow_is_atomic",
+    "status": "PASS",
+    "seconds": 0.003513049003231572
+  },
+  {
+    "target": "historical_normalize",
+    "name": "processing_metrics_aggregation::preserves_integrity_diagnostics",
+    "status": "PASS",
+    "seconds": 0.003628634000051534
+  },
+  {
+    "target": "historical_normalize",
+    "name": "processing_metrics_aggregation::rejects_duplicate_task_reports",
+    "status": "PASS",
+    "seconds": 0.0035997430022689514
+  },
+  {
+    "target": "historical_normalize",
+    "name": "resource_file_budget::legacy_constructor_preserves_behavior",
+    "status": "PASS",
+    "seconds": 0.0035321710020070896
+  },
+  {
+    "target": "historical_normalize",
+    "name": "resource_file_budget::rejects_requirements_exceeding_capacity",
+    "status": "PASS",
+    "seconds": 0.0035598909998952877
+  },
+  {
+    "target": "historical_normalize",
+    "name": "resource_file_budget::reserves_and_releases_open_files",
+    "status": "PASS",
+    "seconds": 0.003565420996892499
+  },
+  {
+    "target": "historical_normalize",
+    "name": "resource_file_budget::waits_for_available_file_capacity",
+    "status": "PASS",
+    "seconds": 0.11400570499972673
+  },
+  {
+    "target": "historical_normalize",
+    "name": "trade_formats::all_trade_job_configurations_are_supported",
+    "status": "PASS",
+    "seconds": 0.11435581100158743
+  },
+  {
+    "target": "historical_normalize",
+    "name": "trade_integrity_enforcement::count_threshold_stops_processing",
+    "status": "PASS",
+    "seconds": 0.01599613000144018
+  },
+  {
+    "target": "historical_normalize",
+    "name": "trade_integrity_enforcement::degrade_action_skips_invalid_records",
+    "status": "PASS",
+    "seconds": 0.01599571000042488
+  },
+  {
+    "target": "historical_normalize",
+    "name": "trade_integrity_enforcement::disabled_enforcement_still_records_errors",
+    "status": "PASS",
+    "seconds": 0.01597562900133198
+  },
+  {
+    "target": "historical_normalize",
+    "name": "trade_integrity_enforcement::fail_action_stops_on_invalid_record",
+    "status": "PASS",
+    "seconds": 0.015910747002635617
+  },
+  {
+    "target": "historical_normalize",
+    "name": "trade_integrity_enforcement::previous_task_violations_contribute_to_absolute_limit",
+    "status": "PASS",
+    "seconds": 0.01596521800092887
+  },
+  {
+    "target": "historical_normalize",
+    "name": "trade_real_archives::normalize_real_trade_archives",
+    "status": "PASS",
+    "seconds": 0.11434387999906903
+  },
+  {
+    "target": "historical_normalize",
+    "name": "trade_worker_metrics::retains_metrics_after_sink_failure",
+    "status": "PASS",
+    "seconds": 0.03203234100146801
+  },
+  {
+    "target": "depth_scalar",
+    "name": "extracts_signed_perpetual_ask",
+    "status": "PASS",
+    "seconds": 0.0015941879973979667
+  },
+  {
+    "target": "depth_scalar",
+    "name": "extracts_spot_bid",
+    "status": "PASS",
+    "seconds": 0.001433291003195336
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_atomic_publication::concurrent_publication_has_exactly_one_winner",
+    "status": "PASS",
+    "seconds": 0.003433215999393724
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_atomic_publication::publishes_directory_atomically",
+    "status": "PASS",
+    "seconds": 0.0035100989989587106
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_atomic_publication::rejects_existing_destination",
+    "status": "PASS",
+    "seconds": 0.001377589000185253
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_atomic_publication::rejects_identical_paths",
+    "status": "PASS",
+    "seconds": 0.0013037860007898416
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_atomic_publication::rejects_missing_staging_directory",
+    "status": "PASS",
+    "seconds": 0.0013178260014683474
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_catalog::preserves_merge_stream_ranks",
+    "status": "PASS",
+    "seconds": 0.015716747999249492
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_catalog::rejects_missing_catalog_instrument",
+    "status": "PASS",
+    "seconds": 0.015816593000636203
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_catalog::rejects_missing_reference_instrument",
+    "status": "PASS",
+    "seconds": 0.015859694001846947
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_catalog::rejects_processing_identity_mismatch",
+    "status": "PASS",
+    "seconds": 0.015878524001891492
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_catalog::resolves_all_multihop_instruments",
+    "status": "PASS",
+    "seconds": 0.01588359499874059
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_catalog::resolves_correct_currencies",
+    "status": "PASS",
+    "seconds": 0.03192456699980539
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_checkpoints::checkpoint_contains_latest_reference_observations",
+    "status": "PASS",
+    "seconds": 0.0038085919986770023
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_checkpoints::checkpoint_excludes_boundary_event",
+    "status": "PASS",
+    "seconds": 0.003720979002537206
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_checkpoints::checkpoint_preserves_staleness_behavior",
+    "status": "PASS",
+    "seconds": 0.0036547749987221323
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_checkpoints::checkpointed_execution_matches_sequential_reference_state",
+    "status": "PASS",
+    "seconds": 0.003558920998329995
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_checkpoints::checkpoints_are_independent_snapshots",
+    "status": "PASS",
+    "seconds": 0.0035319400012667757
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_checkpoints::counts_all_events_including_non_references",
+    "status": "PASS",
+    "seconds": 0.003685366002173396
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_checkpoints::ignores_non_reference_streams",
+    "status": "PASS",
+    "seconds": 0.004292961999453837
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_checkpoints::initial_checkpoint_is_empty",
+    "status": "PASS",
+    "seconds": 0.00366381600179011
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_combined_alignment::accepts_internal_reference_after_event",
+    "status": "PASS",
+    "seconds": 0.0036499150010058656
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_combined_alignment::ignores_unselected_internal_streams",
+    "status": "PASS",
+    "seconds": 0.003594572001020424
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_combined_alignment::preserves_internal_reference_ordering",
+    "status": "PASS",
+    "seconds": 0.003581272998417262
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_combined_alignment::reference_snapshot_preserves_state",
+    "status": "PASS",
+    "seconds": 0.0036382550024427474
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_combined_alignment::rejects_duplicate_internal_reference",
+    "status": "PASS",
+    "seconds": 0.0035818319993268233
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_combined_alignment::rejects_missing_external_cursor",
+    "status": "PASS",
+    "seconds": 0.0035475500008033123
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_combined_alignment::rejects_overlapping_reference_sources",
+    "status": "PASS",
+    "seconds": 0.003654094998637447
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_combined_checkpoint_ordering::checkpoint_preserves_equal_timestamp_internal_references",
+    "status": "PASS",
+    "seconds": 0.003524260002450319
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_combined_checkpoint_ordering::checkpoint_rejects_future_equal_timestamp_reference",
+    "status": "PASS",
+    "seconds": 0.0035574610010371543
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_combined_checkpoint_ordering::checkpoint_snapshot_is_independent",
+    "status": "PASS",
+    "seconds": 0.003733248999196803
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_combined_conversion::converts_real_combined_timeline",
+    "status": "PASS",
+    "seconds": 2.77281502200276
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_combined_schema::combined_conversion_has_nullable_target_payloads",
+    "status": "PASS",
+    "seconds": 0.0038118219999887515
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_combined_schema::combined_conversion_preserves_event_discriminator",
+    "status": "PASS",
+    "seconds": 0.003615234003518708
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_combined_schema::combined_conversion_preserves_source_fields",
+    "status": "PASS",
+    "seconds": 0.003735768998012645
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::accepts_maximum_decimal256_precision",
+    "status": "PASS",
+    "seconds": 0.0036947669977962505
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::computes_inverse",
+    "status": "PASS",
+    "seconds": 0.0036150730011286214
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::constructs_zero_and_one",
+    "status": "PASS",
+    "seconds": 0.0036811460013268515
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::conversion_is_deterministic",
+    "status": "PASS",
+    "seconds": 0.0035552410008676816
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::converts_usdc_to_usdt_using_inverse_path",
+    "status": "PASS",
+    "seconds": 0.0035176199999114033
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::divides_exactly",
+    "status": "PASS",
+    "seconds": 0.003515459000482224
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::divides_repeating_decimal",
+    "status": "PASS",
+    "seconds": 0.0013927389991295058
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::multiplication_detects_precision_overflow",
+    "status": "PASS",
+    "seconds": 0.0014422310014197137
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::multiplication_preserves_fractional_precision",
+    "status": "PASS",
+    "seconds": 0.001388118998875143
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::multiplication_uses_large_intermediate",
+    "status": "PASS",
+    "seconds": 0.0013888190005673096
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::multiplies_ethbtc_by_btcusdt",
+    "status": "PASS",
+    "seconds": 0.0014573720000043977
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::preserves_28_decimal_places",
+    "status": "PASS",
+    "seconds": 0.0037584000019705854
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::rejects_decimal256_precision_overflow",
+    "status": "PASS",
+    "seconds": 0.0034879089980677236
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::rejects_division_by_zero",
+    "status": "PASS",
+    "seconds": 0.001522444999864092
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::rounds_half_to_even_down",
+    "status": "PASS",
+    "seconds": 0.0014173300005495548
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::rounds_half_to_even_up",
+    "status": "PASS",
+    "seconds": 0.0014351710015034769
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_decimal::rounds_negative_half_to_even",
+    "status": "PASS",
+    "seconds": 0.0013670279986399692
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_arithmetic::avoids_intermediate_rate_rounding",
+    "status": "PASS",
+    "seconds": 0.0013397869988693856
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_arithmetic::converts_depth_price_and_quote_quantity",
+    "status": "PASS",
+    "seconds": 0.0013448169993353076
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_arithmetic::identity_preserves_depth_values",
+    "status": "PASS",
+    "seconds": 0.0013879589969292283
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_arithmetic::preserves_missing_quote_quantity",
+    "status": "PASS",
+    "seconds": 0.0013996990019222721
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_arithmetic::preserves_zero_quote_quantity",
+    "status": "PASS",
+    "seconds": 0.0013657179988513235
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_arithmetic::rejects_decimal_overflow",
+    "status": "PASS",
+    "seconds": 0.00350415900174994
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_arithmetic::supports_inverse_conversion",
+    "status": "PASS",
+    "seconds": 0.0014401900007214863
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_builder::converts_nested_level_values",
+    "status": "PASS",
+    "seconds": 0.003422606001549866
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_builder::preserves_all_original_columns",
+    "status": "PASS",
+    "seconds": 0.003452706998359645
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_builder::preserves_depth_list_offsets",
+    "status": "PASS",
+    "seconds": 0.0034555870006443
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_builder::preserves_output_schema",
+    "status": "PASS",
+    "seconds": 0.003524539999489207
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_builder::preserves_zero_level_events",
+    "status": "PASS",
+    "seconds": 0.003500349001114955
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_builder::rejects_incorrect_level_count",
+    "status": "PASS",
+    "seconds": 0.003591323002183344
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_builder::rejects_unavailable_event_with_converted_levels",
+    "status": "PASS",
+    "seconds": 0.0036386440006026533
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_builder::unavailable_event_has_null_converted_levels",
+    "status": "PASS",
+    "seconds": 0.0035043390016653575
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_planner::plans_real_depth_conversion",
+    "status": "PASS",
+    "seconds": 0.06404627099982463
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_schema::contains_no_duplicate_field_names",
+    "status": "PASS",
+    "seconds": 0.003688266999233747
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_schema::conversion_metadata_matches_trade_schema",
+    "status": "PASS",
+    "seconds": 0.0036484849988482893
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_schema::converted_levels_use_decimal256",
+    "status": "PASS",
+    "seconds": 0.003581842000130564
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_schema::preserves_original_depth_columns",
+    "status": "PASS",
+    "seconds": 0.0035775119977188297
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_depth_schema::preserves_source_schema_metadata",
+    "status": "PASS",
+    "seconds": 0.003550380999513436
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_execution_reader::first_thousand_events_are_ordered",
+    "status": "PASS",
+    "seconds": 0.03196643799674348
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_execution_reader::opens_physical_dataset",
+    "status": "PASS",
+    "seconds": 0.0038381829981517512
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_execution_reader::preserves_original_arrow_values",
+    "status": "PASS",
+    "seconds": 0.063967017998948
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_execution_reader::preserves_physical_trade_schema",
+    "status": "PASS",
+    "seconds": 0.031977759001165396
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_execution_reader::rejects_missing_parquet_file",
+    "status": "PASS",
+    "seconds": 0.003679376000945922
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_execution_reader::rejects_zero_batch_size",
+    "status": "PASS",
+    "seconds": 0.0036148330000287388
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_execution_reader::respects_batch_size",
+    "status": "PASS",
+    "seconds": 0.031813382000109414
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_execution_reader::tracks_records_read",
+    "status": "PASS",
+    "seconds": 0.031926605999615276
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_graph::finds_direct_btc_to_usdt",
+    "status": "PASS",
+    "seconds": 0.01586240500182612
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_graph::finds_eth_to_usdc",
+    "status": "PASS",
+    "seconds": 0.01595164799800841
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_graph::finds_eth_to_usdt_multihop",
+    "status": "PASS",
+    "seconds": 0.03193257599923527
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_graph::finds_inverse_usdt_to_btc",
+    "status": "PASS",
+    "seconds": 0.01584661300148582
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_graph::finds_usdc_to_usdt_multihop",
+    "status": "PASS",
+    "seconds": 0.015833613000722835
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_graph::identity_conversion_has_zero_edges",
+    "status": "PASS",
+    "seconds": 0.015832192999369
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_graph::path_enumeration_is_deterministic",
+    "status": "PASS",
+    "seconds": 0.03200260999801685
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_graph::paths_do_not_repeat_currencies",
+    "status": "PASS",
+    "seconds": 0.01583023200146272
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_graph::preserves_reference_stream_identity",
+    "status": "PASS",
+    "seconds": 0.01584470299712848
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_graph::rejects_zero_hop_limit",
+    "status": "PASS",
+    "seconds": 0.015935826999339042
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_graph::respects_maximum_hops",
+    "status": "PASS",
+    "seconds": 0.01597958899947116
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_graph::returns_no_path_for_unknown_currency",
+    "status": "PASS",
+    "seconds": 0.015857813999900827
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_job::loads_combined_conversion_job",
+    "status": "PASS",
+    "seconds": 0.003708047999680275
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_job::loads_depth_conversion_job",
+    "status": "PASS",
+    "seconds": 0.0036177740003040526
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_job::loads_trade_conversion_job",
+    "status": "PASS",
+    "seconds": 0.003560981000191532
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_job::rejects_duplicate_reference_instruments",
+    "status": "PASS",
+    "seconds": 0.0015676469993195496
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_job::rejects_existing_input_as_output",
+    "status": "PASS",
+    "seconds": 0.001361467999231536
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_job::rejects_invalid_hop_limit",
+    "status": "PASS",
+    "seconds": 0.0014259710005717352
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_job::rejects_invalid_reference_identity",
+    "status": "PASS",
+    "seconds": 0.0035241799996583723
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_job::rejects_relative_input_path",
+    "status": "PASS",
+    "seconds": 0.0035674819991982076
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_job::rejects_unknown_configuration_fields",
+    "status": "PASS",
+    "seconds": 0.00359503300205688
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_job::rejects_zero_staleness",
+    "status": "PASS",
+    "seconds": 0.003527350003423635
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_job::validates_all_production_configs",
+    "status": "PASS",
+    "seconds": 0.001419080999767175
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_schema::contains_no_duplicate_field_names",
+    "status": "PASS",
+    "seconds": 0.0035565710022638086
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_schema::conversion_failure_codes_are_distinct",
+    "status": "PASS",
+    "seconds": 0.0014385009999386966
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_schema::conversion_fields_are_appended_in_fixed_order",
+    "status": "PASS",
+    "seconds": 0.003549611003109021
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_schema::conversion_status_codes_are_distinct",
+    "status": "PASS",
+    "seconds": 0.0014774129995203111
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_schema::converted_values_use_decimal256",
+    "status": "PASS",
+    "seconds": 0.003671476002637064
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_schema::preserves_all_original_fields",
+    "status": "PASS",
+    "seconds": 0.0035859420022461563
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_schema::preserves_original_field_order",
+    "status": "PASS",
+    "seconds": 0.0035893729982490186
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_schema::preserves_original_field_types_and_nullability",
+    "status": "PASS",
+    "seconds": 0.003506989000015892
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_schema::validates_conversion_metadata_fields",
+    "status": "PASS",
+    "seconds": 0.0035900529983337037
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_schema::validates_conversion_path_schema",
+    "status": "PASS",
+    "seconds": 0.0034738770009425934
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_schema::validates_reference_provenance_schema",
+    "status": "PASS",
+    "seconds": 0.003513359999487875
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_trade::appends_eight_conversion_columns",
+    "status": "PASS",
+    "seconds": 0.03183457299746806
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_trade::preserves_original_arrow_arrays",
+    "status": "PASS",
+    "seconds": 0.031879354999546194
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_trade::preserves_source_row_count",
+    "status": "PASS",
+    "seconds": 0.03202384100222844
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_trade::rejects_invalid_converted_path",
+    "status": "PASS",
+    "seconds": 0.032021191000239924
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_trade::rejects_invalid_identity_conversion",
+    "status": "PASS",
+    "seconds": 0.031929906999721425
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_trade::rejects_invalid_unavailable_conversion",
+    "status": "PASS",
+    "seconds": 0.03189867599940044
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_trade::rejects_row_count_mismatch",
+    "status": "PASS",
+    "seconds": 0.03211787500185892
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_trade::writes_conversion_paths",
+    "status": "PASS",
+    "seconds": 0.03194818799966015
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_trade::writes_conversion_statuses",
+    "status": "PASS",
+    "seconds": 0.03208047299995087
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_trade::writes_converted_decimal_values",
+    "status": "PASS",
+    "seconds": 0.0319591780025803
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_trade::writes_failure_codes",
+    "status": "PASS",
+    "seconds": 0.032087174000480445
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_trade::writes_nullable_quote_quantities",
+    "status": "PASS",
+    "seconds": 0.03196006800135365
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_trade::writes_reference_provenance",
+    "status": "PASS",
+    "seconds": 0.0318898250006896
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_writer::finalization_is_idempotent",
+    "status": "PASS",
+    "seconds": 0.031856644000072265
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_writer::preserves_nested_reference_provenance",
+    "status": "PASS",
+    "seconds": 0.03189578599995002
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_writer::rejects_incompatible_arrow_schema",
+    "status": "PASS",
+    "seconds": 0.06393685700095375
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_writer::rejects_invalid_row_group_configuration",
+    "status": "PASS",
+    "seconds": 0.031948988002113765
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_writer::rejects_writes_after_finalization",
+    "status": "PASS",
+    "seconds": 0.03199318999759271
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_writer::tracks_written_events",
+    "status": "PASS",
+    "seconds": 0.031936888000927866
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_output_writer::writes_and_reads_converted_trade_batch",
+    "status": "PASS",
+    "seconds": 0.03183479300059844
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_partitions::discovers_all_physical_row_groups",
+    "status": "PASS",
+    "seconds": 0.03194443800020963
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_partitions::never_creates_empty_partitions",
+    "status": "PASS",
+    "seconds": 0.031876674001978245
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_partitions::partition_planning_is_deterministic",
+    "status": "PASS",
+    "seconds": 0.06401999100125977
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_partitions::partition_row_counts_match_row_groups",
+    "status": "PASS",
+    "seconds": 0.031892824998067226
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_partitions::partitions_are_contiguous",
+    "status": "PASS",
+    "seconds": 0.03190129499853356
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_partitions::partitions_cover_every_row_group_exactly_once",
+    "status": "PASS",
+    "seconds": 0.032067412001197226
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_partitions::prints_partition_distribution",
+    "status": "PASS",
+    "seconds": 0.03203678099816898
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_partitions::rejects_zero_workers",
+    "status": "PASS",
+    "seconds": 0.0036608250011340715
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_partitions::respects_requested_worker_counts",
+    "status": "PASS",
+    "seconds": 0.03189337499861722
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_partitions::row_group_offsets_are_contiguous",
+    "status": "PASS",
+    "seconds": 0.007650705003470648
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_planner::btcusdc_uses_inverse_then_direct",
+    "status": "PASS",
+    "seconds": 0.01577198000086355
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_planner::btcusdt_requires_no_reference_conversion",
+    "status": "PASS",
+    "seconds": 0.03191349600092508
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_planner::ethbtc_uses_btcusdt_reference",
+    "status": "PASS",
+    "seconds": 0.015813371999684023
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_planner::one_hop_limit_makes_btcusdc_unresolved",
+    "status": "PASS",
+    "seconds": 0.03187032499772613
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_planner::planning_is_deterministic",
+    "status": "PASS",
+    "seconds": 0.03202679199966951
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_planner::plans_all_multihop_streams",
+    "status": "PASS",
+    "seconds": 0.015903326002444373
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_planner::preserves_source_stream_order",
+    "status": "PASS",
+    "seconds": 0.015913846000330523
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_planner::rejects_invalid_target_currency",
+    "status": "PASS",
+    "seconds": 0.015905105999991065
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_receipt::reconciles_valid_receipt",
+    "status": "PASS",
+    "seconds": 0.0037706799994339235
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_receipt::rejects_incorrect_event_count",
+    "status": "PASS",
+    "seconds": 0.0035154700017301366
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_receipt::rejects_incorrect_file_inventory",
+    "status": "PASS",
+    "seconds": 0.0035347699995327275
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_receipt::rejects_incorrect_status_accounting",
+    "status": "PASS",
+    "seconds": 0.0036037429999851156
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_receipt::rejects_wrong_job_id",
+    "status": "PASS",
+    "seconds": 0.003585423000913579
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_receipt::serializes_receipt",
+    "status": "PASS",
+    "seconds": 0.0035167290006938856
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_evaluation::accepts_equal_timestamp_earlier_rank",
+    "status": "PASS",
+    "seconds": 0.00353314000312821
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_evaluation::evaluates_direct_conversion",
+    "status": "PASS",
+    "seconds": 0.0036173840016999748
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_evaluation::evaluates_eth_to_usdt_multihop",
+    "status": "PASS",
+    "seconds": 0.003568042000551941
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_evaluation::evaluates_identity_conversion",
+    "status": "PASS",
+    "seconds": 0.003471607000392396
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_evaluation::evaluates_inverse_conversion",
+    "status": "PASS",
+    "seconds": 0.003403424001589883
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_evaluation::evaluates_usdc_to_usdt_multihop",
+    "status": "PASS",
+    "seconds": 0.003474886998446891
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_evaluation::evaluation_is_deterministic",
+    "status": "PASS",
+    "seconds": 0.003511219001666177
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_evaluation::preserves_reference_provenance",
+    "status": "PASS",
+    "seconds": 0.0034086250016116537
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_evaluation::rejects_equal_timestamp_later_rank",
+    "status": "PASS",
+    "seconds": 0.0033836239999800455
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_evaluation::rejects_future_reference",
+    "status": "PASS",
+    "seconds": 0.0013115049987391103
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_evaluation::rejects_missing_reference",
+    "status": "PASS",
+    "seconds": 0.0012814239998988342
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_evaluation::rejects_reference_dataset_mismatch",
+    "status": "PASS",
+    "seconds": 0.003320611001981888
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_evaluation::rejects_stale_reference",
+    "status": "PASS",
+    "seconds": 0.0013080150019959547
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_reader::decodes_first_reference_observation",
+    "status": "PASS",
+    "seconds": 0.03162347399847931
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_reader::first_thousand_events_are_ordered",
+    "status": "PASS",
+    "seconds": 0.03199162999953842
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_reader::opens_real_physical_dataset",
+    "status": "PASS",
+    "seconds": 0.0037226079984975513
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_reader::preserves_decimal256_price",
+    "status": "PASS",
+    "seconds": 0.031913976003124844
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_reader::rejects_zero_batch_size",
+    "status": "PASS",
+    "seconds": 0.0037226280001050327
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_selection::selects_latest_eligible_reference_observations",
+    "status": "PASS",
+    "seconds": 0.007664315999136306
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_state::accepts_equal_timestamp_earlier_stream_rank",
+    "status": "PASS",
+    "seconds": 0.00362806399789406
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_state::accepts_reference_at_staleness_boundary",
+    "status": "PASS",
+    "seconds": 0.0036022729982505552
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_state::accepts_same_timestamp_with_later_ordinal",
+    "status": "PASS",
+    "seconds": 0.003577912000764627
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_state::detects_stale_reference",
+    "status": "PASS",
+    "seconds": 0.003648844998679124
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_state::maintains_independent_reference_streams",
+    "status": "PASS",
+    "seconds": 0.003721588000189513
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_state::newer_observation_refreshes_staleness",
+    "status": "PASS",
+    "seconds": 0.0035398899999563582
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_state::preserves_reference_provenance",
+    "status": "PASS",
+    "seconds": 0.0037139080013730563
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_state::rejects_duplicate_observation_key",
+    "status": "PASS",
+    "seconds": 0.0035729720002564136
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_state::rejects_equal_timestamp_future_stream_rank",
+    "status": "PASS",
+    "seconds": 0.003644795000582235
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_state::rejects_negative_reference_price",
+    "status": "PASS",
+    "seconds": 0.0014646729978267103
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_state::rejects_timestamp_regression",
+    "status": "PASS",
+    "seconds": 0.0035322200019436423
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_state::rejects_zero_reference_price",
+    "status": "PASS",
+    "seconds": 0.0035544010024750605
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_state::reports_missing_reference",
+    "status": "PASS",
+    "seconds": 0.0035838830008287914
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_reference_state::stores_latest_reference",
+    "status": "PASS",
+    "seconds": 0.0035859320014424156
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_trade::conversion_is_deterministic",
+    "status": "PASS",
+    "seconds": 0.0035935320011049043
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_trade::converts_btcusdc_to_usdt",
+    "status": "PASS",
+    "seconds": 0.0035422100008872803
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_trade::converts_ethbtc_to_usdt",
+    "status": "PASS",
+    "seconds": 0.003552550999302184
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_trade::identity_preserves_trade_values",
+    "status": "PASS",
+    "seconds": 0.003635224002209725
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_trade::preserves_null_quote_quantity",
+    "status": "PASS",
+    "seconds": 0.0035891430015908554
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_trade::preserves_small_decimal_values",
+    "status": "PASS",
+    "seconds": 0.0034999290000996552
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_trade::rejects_decimal256_precision_overflow",
+    "status": "PASS",
+    "seconds": 0.0035126890034007374
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_trade::rounds_half_even_down",
+    "status": "PASS",
+    "seconds": 0.003641444000095362
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_trade::rounds_half_even_up",
+    "status": "PASS",
+    "seconds": 0.003453876001003664
+  },
+  {
+    "target": "historical_convert",
+    "name": "convert_trade::supports_large_intermediate_products",
+    "status": "PASS",
+    "seconds": 0.00351728899840964
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_cache::clear_releases_entries",
+    "status": "PASS",
+    "seconds": 0.0035814729999401607
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_cache::evicts_least_recently_used",
+    "status": "PASS",
+    "seconds": 0.0034980189993802924
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_cache::memory_budget_is_enforced",
+    "status": "PASS",
+    "seconds": 0.0034944389990414493
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_cache::missing_entry_counts_miss",
+    "status": "PASS",
+    "seconds": 0.0035681020017364062
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_cache::oversized_entry_bypasses_cache",
+    "status": "PASS",
+    "seconds": 0.0035690810000232887
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_cache::repeated_lookup_hits_cache",
+    "status": "PASS",
+    "seconds": 0.0038127320003695786
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_cached_reader::reads_across_cached_row_groups",
+    "status": "PASS",
+    "seconds": 0.00766480500169564
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_cached_reader::repeated_reads_hit_cache",
+    "status": "PASS",
+    "seconds": 0.0036605659988708794
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_cached_reader::small_cache_evicts_row_groups",
+    "status": "PASS",
+    "seconds": 0.0036076739997952245
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_cached_reader::zero_row_reference_does_not_touch_cache",
+    "status": "PASS",
+    "seconds": 0.003556521001883084
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_checkpoints::accepts_explicitly_skipped_initialization",
+    "status": "PASS",
+    "seconds": 0.0035711919990717433
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_checkpoints::checkpoint_row_offsets_are_file_relative",
+    "status": "PASS",
+    "seconds": 0.0077919309987919405
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_checkpoints::ignores_canonical_checkpoints_outside_requested_interval",
+    "status": "PASS",
+    "seconds": 0.007794820998242358
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_checkpoints::rejects_depth_checkpoints_in_trade_only_mode",
+    "status": "PASS",
+    "seconds": 0.0036612750009226147
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_checkpoints::rejects_duplicate_skipped_initializations",
+    "status": "PASS",
+    "seconds": 0.0036251730016374495
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_checkpoints::rejects_materialized_skipped_initialization",
+    "status": "PASS",
+    "seconds": 0.007666495999728795
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_checkpoints::rejects_missing_initialization",
+    "status": "PASS",
+    "seconds": 0.007795992001774721
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_checkpoints::resolves_retained_initialization",
+    "status": "PASS",
+    "seconds": 0.007813952001015423
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_combined_builder::combined_preserves_zero_level_depth_event",
+    "status": "PASS",
+    "seconds": 0.0036998370014771353
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_combined_builder::nullable_payloads_are_mutually_exclusive",
+    "status": "PASS",
+    "seconds": 0.003605262998462422
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_combined_builder::parquet_round_trip_preserves_combined_events",
+    "status": "PASS",
+    "seconds": 0.007642944998224266
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_combined_builder::preserves_decimal256_trade_values",
+    "status": "PASS",
+    "seconds": 0.0036474850021477323
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_combined_builder::preserves_interleaved_chronological_order",
+    "status": "PASS",
+    "seconds": 0.003613553002651315
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_combined_builder::preserves_nested_depth_changes",
+    "status": "PASS",
+    "seconds": 0.003720868000527844
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_combined_builder::supports_depth_only_combined_batch",
+    "status": "PASS",
+    "seconds": 0.0035491409980750177
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_combined_builder::supports_trade_only_combined_batch",
+    "status": "PASS",
+    "seconds": 0.0036633759991673287
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_builder::builds_one_row_per_depth_event",
+    "status": "PASS",
+    "seconds": 0.0036271140015742276
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_builder::parquet_round_trip_preserves_nested_levels",
+    "status": "PASS",
+    "seconds": 0.007596952997118933
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_builder::preserves_depth_metadata",
+    "status": "PASS",
+    "seconds": 0.0036527859992929734
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_builder::preserves_levels_across_multiple_batches",
+    "status": "PASS",
+    "seconds": 0.0035707620008906815
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_builder::preserves_zero_level_events",
+    "status": "PASS",
+    "seconds": 0.003629884999099886
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_builder::rejects_canonical_identity_mismatch",
+    "status": "PASS",
+    "seconds": 0.0035043790012423415
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_builder::rejects_incorrect_level_count",
+    "status": "PASS",
+    "seconds": 0.003556480998668121
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::indexed_range_preserves_ordinal_gaps",
+    "status": "PASS",
+    "seconds": 0.007543211002484895
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::indexed_range_rejects_duplicate_registration",
+    "status": "PASS",
+    "seconds": 0.007671166000363883
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::indexed_range_rejects_invalid_interval",
+    "status": "PASS",
+    "seconds": 0.0036566050002875272
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::indexed_range_supports_empty_partition",
+    "status": "PASS",
+    "seconds": 0.007637605001946213
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::indexed_range_supports_interleaved_tasks",
+    "status": "PASS",
+    "seconds": 0.007736858002317604
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::indexed_range_supports_zero_level_events",
+    "status": "PASS",
+    "seconds": 0.003686465999635402
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::preserves_zero_level_event_metadata",
+    "status": "PASS",
+    "seconds": 0.00354855999830761
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::rejects_backward_ordinal_requests",
+    "status": "PASS",
+    "seconds": 0.007701357000769349
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::rejects_boundary_mismatch",
+    "status": "PASS",
+    "seconds": 0.0036112130001129117
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::rejects_duplicate_task_registration",
+    "status": "PASS",
+    "seconds": 0.003618292997998651
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::rejects_incorrect_canonical_row_range",
+    "status": "PASS",
+    "seconds": 0.0035570719992392696
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::rejects_missing_source_ordinal",
+    "status": "PASS",
+    "seconds": 0.007774890000291634
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::rejects_source_operation_mismatch",
+    "status": "PASS",
+    "seconds": 0.0077179090003483
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::rejects_timestamp_mismatch",
+    "status": "PASS",
+    "seconds": 0.007722728001681389
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::rejects_trade_references",
+    "status": "PASS",
+    "seconds": 0.007780420997733017
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::resolves_consecutive_ordinals",
+    "status": "PASS",
+    "seconds": 0.007832193001377163
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::resolves_gaps_in_source_ordinals",
+    "status": "PASS",
+    "seconds": 0.007763009998598136
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::resolves_late_partition_without_earlier_events",
+    "status": "PASS",
+    "seconds": 0.0077214279990585055
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::skips_unrequested_source_events",
+    "status": "PASS",
+    "seconds": 0.003652335002698237
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_depth_metadata::supports_interleaved_source_tasks",
+    "status": "PASS",
+    "seconds": 0.007675256001675734
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_manifest::physical_manifest_json_roundtrip",
+    "status": "PASS",
+    "seconds": 0.00359972300066147
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_manifest::physical_manifest_preserves_file_metadata",
+    "status": "PASS",
+    "seconds": 0.003432186000281945
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_manifest::rejects_duplicate_input_datasets",
+    "status": "PASS",
+    "seconds": 0.0013588580004579853
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_manifest::rejects_duplicate_physical_files",
+    "status": "PASS",
+    "seconds": 0.0015837669998290949
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_manifest::rejects_event_count_mismatch",
+    "status": "PASS",
+    "seconds": 0.0035597909991338383
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_manifest::rejects_file_count_mismatch",
+    "status": "PASS",
+    "seconds": 0.0014787629988859408
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_manifest::rejects_file_row_count_mismatch",
+    "status": "PASS",
+    "seconds": 0.003610242998547619
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_manifest::rejects_invalid_combined_streams",
+    "status": "PASS",
+    "seconds": 0.0036104640021221712
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_manifest::rejects_invalid_file_timestamp_range",
+    "status": "PASS",
+    "seconds": 0.0035091090030618943
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_manifest::rejects_invalid_merge_time_range",
+    "status": "PASS",
+    "seconds": 0.0035883119999198243
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_manifest::rejects_missing_file_metadata",
+    "status": "PASS",
+    "seconds": 0.003482977997919079
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_manifest::rejects_stream_rank_mismatch",
+    "status": "PASS",
+    "seconds": 0.0035556610018829815
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_manifest::rejects_unknown_json_fields",
+    "status": "PASS",
+    "seconds": 0.003581151999242138
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_manifest::rejects_unsupported_protocol_version",
+    "status": "PASS",
+    "seconds": 0.0035658820015669335
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_manifest::rejects_unsupported_schema_version",
+    "status": "PASS",
+    "seconds": 0.0034688469968386926
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::global_validator_accepts_empty_partitions",
+    "status": "PASS",
+    "seconds": 0.007741319001070224
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::global_validator_accepts_multiple_partitions",
+    "status": "PASS",
+    "seconds": 0.015762809998705052
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::global_validator_rejects_duplicate_partition_ids",
+    "status": "PASS",
+    "seconds": 0.007736198997008614
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::global_validator_rejects_incorrect_counts",
+    "status": "PASS",
+    "seconds": 0.007704937001108192
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::global_validator_rejects_missing_physical_files",
+    "status": "PASS",
+    "seconds": 0.003629544000432361
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::global_validator_rejects_overlapping_partitions",
+    "status": "PASS",
+    "seconds": 0.007719767996604787
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::global_validator_rejects_unordered_partitions",
+    "status": "PASS",
+    "seconds": 0.007879184999183053
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::materializes_combined_partition_end_to_end",
+    "status": "PASS",
+    "seconds": 0.01589714600049774
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::materializes_depth_partition_end_to_end",
+    "status": "PASS",
+    "seconds": 0.015871324001636822
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::materializes_multiple_partitions_in_parallel",
+    "status": "PASS",
+    "seconds": 0.015904056002909783
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::materializes_trade_partition_end_to_end",
+    "status": "PASS",
+    "seconds": 0.015814882000995567
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::parallel_propagates_worker_failure",
+    "status": "PASS",
+    "seconds": 0.003691166999487905
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::parallel_rejects_duplicate_partition_ids",
+    "status": "PASS",
+    "seconds": 0.003693876999022905
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::parallel_rejects_insufficient_file_budget",
+    "status": "PASS",
+    "seconds": 0.0035745320019486826
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::parallel_rejects_insufficient_memory",
+    "status": "PASS",
+    "seconds": 0.003652685001725331
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::parallel_rejects_overlapping_partitions",
+    "status": "PASS",
+    "seconds": 0.0035957729996880516
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::physical_validator_rejects_canonical_range_overflow",
+    "status": "PASS",
+    "seconds": 0.007686666998779401
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::physical_validator_rejects_incorrect_event_count",
+    "status": "PASS",
+    "seconds": 0.0076848570024594665
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::physical_validator_rejects_missing_file",
+    "status": "PASS",
+    "seconds": 0.003751398999156663
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::physical_validator_rejects_null_provenance",
+    "status": "PASS",
+    "seconds": 0.0035742020008910913
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::physical_validator_rejects_timestamp_regression",
+    "status": "PASS",
+    "seconds": 0.00772648800193565
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::physical_validator_rejects_unexpected_partition_file",
+    "status": "PASS",
+    "seconds": 0.007674966000195127
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_partition::physical_validator_rejects_wrong_schema",
+    "status": "PASS",
+    "seconds": 0.00783788300032029
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_planner::empty_batch_produces_empty_plan",
+    "status": "PASS",
+    "seconds": 0.0037108069991518278
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_planner::groups_references_by_row_group",
+    "status": "PASS",
+    "seconds": 0.0078105720021994784
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_planner::preserves_chronological_reference_order",
+    "status": "PASS",
+    "seconds": 0.007810121001966763
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_planner::preserves_zero_level_depth_event",
+    "status": "PASS",
+    "seconds": 0.003691377001814544
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_planner::rejects_invalid_trade_cardinality",
+    "status": "PASS",
+    "seconds": 0.0035923920004279353
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_planner::rejects_unknown_task",
+    "status": "PASS",
+    "seconds": 0.0035501009988365695
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_planner::splits_depth_event_across_files",
+    "status": "PASS",
+    "seconds": 0.0035474709984555375
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_planner::splits_depth_event_across_row_groups",
+    "status": "PASS",
+    "seconds": 0.0035804919971269555
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_publish::publishes_only_physical_timeline",
+    "status": "PASS",
+    "seconds": 0.003503099000226939
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_publish::rejects_existing_publication_manifest",
+    "status": "PASS",
+    "seconds": 0.003503129002638161
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_publish::rejects_existing_publication_timeline",
+    "status": "PASS",
+    "seconds": 0.003536119998898357
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_publish::rejects_invalid_physical_manifest",
+    "status": "PASS",
+    "seconds": 0.003536280000844272
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_publish::rejects_missing_physical_timeline",
+    "status": "PASS",
+    "seconds": 0.0035406099996180274
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reader::forward_cursor_handles_zero_rows",
+    "status": "PASS",
+    "seconds": 0.0035445409994281363
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reader::forward_cursor_reads_across_row_groups",
+    "status": "PASS",
+    "seconds": 0.0035830820015689824
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reader::forward_cursor_reads_consecutive_ranges",
+    "status": "PASS",
+    "seconds": 0.0035421610009507276
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reader::forward_cursor_rejects_backward_reads",
+    "status": "PASS",
+    "seconds": 0.0036197240006003994
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reader::forward_cursor_rejects_out_of_bounds",
+    "status": "PASS",
+    "seconds": 0.0035868519989890046
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reader::forward_cursor_skips_gaps",
+    "status": "PASS",
+    "seconds": 0.0035472109993861523
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reader::forward_cursor_starts_inside_later_row_group",
+    "status": "PASS",
+    "seconds": 0.0035548199994082097
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reader::preserves_zero_row_references",
+    "status": "PASS",
+    "seconds": 0.0035439109997241758
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reader::reads_across_files",
+    "status": "PASS",
+    "seconds": 0.003584771999157965
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reader::reads_across_row_groups",
+    "status": "PASS",
+    "seconds": 0.003499749000184238
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reader::reads_exact_single_row",
+    "status": "PASS",
+    "seconds": 0.003552291000232799
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reader::rejects_out_of_bounds",
+    "status": "PASS",
+    "seconds": 0.0035073990002274513
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reconstruction::identifies_available_boundary_checkpoint",
+    "status": "PASS",
+    "seconds": 0.003591562999645248
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reconstruction::identifies_prior_external_checkpoint",
+    "status": "PASS",
+    "seconds": 0.003533761002472602
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reconstruction::identifies_unavailable_initialization",
+    "status": "PASS",
+    "seconds": 0.0036104539976804517
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reconstruction::rejects_duplicate_initial_datasets",
+    "status": "PASS",
+    "seconds": 0.003474126999208238
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_reconstruction::rejects_out_of_range_physical_checkpoint",
+    "status": "PASS",
+    "seconds": 0.003423304999159882
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resolver::forward_decoder_continues_within_same_row_group_after_eviction",
+    "status": "PASS",
+    "seconds": 0.015828651998162968
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resolver::forward_decoder_rejects_backward_read_after_eviction",
+    "status": "PASS",
+    "seconds": 0.007731058998615481
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resolver::forward_decoder_reopens_evicted_cursors",
+    "status": "PASS",
+    "seconds": 0.015822892000869615
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resolver::grouped_decoder_matches_sequential_resolver",
+    "status": "PASS",
+    "seconds": 0.015876534998824354
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resolver::grouped_decoder_preserves_depth_across_row_groups",
+    "status": "PASS",
+    "seconds": 0.007850343998143217
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resolver::grouped_decoder_preserves_forward_progress_across_windows",
+    "status": "PASS",
+    "seconds": 0.007902995999756968
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resolver::grouped_decoder_preserves_zero_level_events",
+    "status": "PASS",
+    "seconds": 0.007813891999830958
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resolver::grouped_decoder_rejects_duplicate_planned_slice",
+    "status": "PASS",
+    "seconds": 0.007701196998823434
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resolver::grouped_decoder_rejects_missing_planned_slice",
+    "status": "PASS",
+    "seconds": 0.007652905998838833
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resolver::grouped_decoder_rejects_timestamp_mismatch",
+    "status": "PASS",
+    "seconds": 0.007683116000407608
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resolver::preserves_exact_decimal256_values",
+    "status": "PASS",
+    "seconds": 0.007736938001471572
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resolver::preserves_zero_level_depth_event",
+    "status": "PASS",
+    "seconds": 0.007723837999947136
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resolver::rejects_canonical_timestamp_mismatch",
+    "status": "PASS",
+    "seconds": 0.007835233001969755
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resolver::rejects_unknown_canonical_task",
+    "status": "PASS",
+    "seconds": 0.0078021119988989085
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resolver::resolves_mixed_events_in_chronological_order",
+    "status": "PASS",
+    "seconds": 0.007819941998604918
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resources::allocates_bounded_forward_cursors",
+    "status": "PASS",
+    "seconds": 0.003668315999675542
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resources::creates_valid_window_limits",
+    "status": "PASS",
+    "seconds": 0.0036755760011146776
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resources::estimates_multiple_tasks",
+    "status": "PASS",
+    "seconds": 0.003609903000324266
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resources::estimates_single_task",
+    "status": "PASS",
+    "seconds": 0.003664805000880733
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resources::rejects_excessive_input_tasks",
+    "status": "PASS",
+    "seconds": 0.0036018729988427367
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resources::rejects_insufficient_worker_memory",
+    "status": "PASS",
+    "seconds": 0.0015775960018800106
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resources::rejects_invalid_parquet_targets",
+    "status": "PASS",
+    "seconds": 0.0013748790006502531
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resources::rejects_memory_overflow",
+    "status": "PASS",
+    "seconds": 0.0013224760004959535
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resources::rejects_row_group_overflow",
+    "status": "PASS",
+    "seconds": 0.0013004450011067092
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resources::rejects_zero_input_tasks",
+    "status": "PASS",
+    "seconds": 0.001283454999793321
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resources::rejects_zero_memory_budget",
+    "status": "PASS",
+    "seconds": 0.0012704540022241417
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resources::rejects_zero_workers",
+    "status": "PASS",
+    "seconds": 0.0012745540007017553
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_resources::resource_estimate_is_independent_of_worker_count",
+    "status": "PASS",
+    "seconds": 0.0013758589993813075
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_row_groups::accepts_zero_row_reference",
+    "status": "PASS",
+    "seconds": 0.0034179350004706066
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_row_groups::immutable_index_is_thread_shareable",
+    "status": "PASS",
+    "seconds": 0.0014123799992376007
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_row_groups::indexes_parquet_row_groups",
+    "status": "PASS",
+    "seconds": 0.003530939997290261
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_row_groups::rejects_out_of_bounds_reference",
+    "status": "PASS",
+    "seconds": 0.0034905379980045836
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_row_groups::rejects_range_overflow",
+    "status": "PASS",
+    "seconds": 0.0034395570000924636
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_row_groups::resolves_across_row_groups",
+    "status": "PASS",
+    "seconds": 0.0035455709985399153
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_row_groups::resolves_single_row_group",
+    "status": "PASS",
+    "seconds": 0.0036616550023609307
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_timeline_reader::open_directory_discovers_sorted_files",
+    "status": "PASS",
+    "seconds": 0.003641585000877967
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_timeline_reader::preserves_equal_timestamps_with_deterministic_order",
+    "status": "PASS",
+    "seconds": 0.007645794998097699
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_timeline_reader::reads_across_small_arrow_batches",
+    "status": "PASS",
+    "seconds": 0.007774000001518289
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_timeline_reader::reads_multiple_timeline_files",
+    "status": "PASS",
+    "seconds": 0.0078532939987781
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_timeline_reader::reads_single_timeline_file",
+    "status": "PASS",
+    "seconds": 0.007767299000988714
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_timeline_reader::rejects_cross_file_ordering_regression",
+    "status": "PASS",
+    "seconds": 0.007765809998090845
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_timeline_reader::rejects_duplicate_or_unsorted_paths",
+    "status": "PASS",
+    "seconds": 0.0036225740004738327
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_timeline_reader::rejects_invalid_depth_metadata",
+    "status": "PASS",
+    "seconds": 0.0035398100008023903
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_timeline_reader::rejects_invalid_trade_metadata",
+    "status": "PASS",
+    "seconds": 0.003570361997844884
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_timeline_reader::rejects_missing_timeline_file",
+    "status": "PASS",
+    "seconds": 0.0035692120000021532
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_timeline_reader::rejects_timestamp_regression",
+    "status": "PASS",
+    "seconds": 0.007742309000605019
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_timeline_reader::rejects_zero_batch_size",
+    "status": "PASS",
+    "seconds": 0.00357825199898798
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_timeline_reader::supports_empty_partition",
+    "status": "PASS",
+    "seconds": 0.0036177829970256425
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_trade_builder::builds_physical_trade_batch",
+    "status": "PASS",
+    "seconds": 0.003678156001114985
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_trade_builder::empty_input_produces_no_batch",
+    "status": "PASS",
+    "seconds": 0.003695666997373337
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_trade_builder::preserves_chronological_order",
+    "status": "PASS",
+    "seconds": 0.0035276899980090093
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_trade_builder::preserves_decimal256",
+    "status": "PASS",
+    "seconds": 0.003476098001556238
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_trade_builder::preserves_provenance",
+    "status": "PASS",
+    "seconds": 0.003560721001122147
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_trade_builder::rejects_depth_events",
+    "status": "PASS",
+    "seconds": 0.003620283998316154
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_window::oversized_depth_event_is_atomic",
+    "status": "PASS",
+    "seconds": 0.003532689999701688
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_window::preserves_chronological_order",
+    "status": "PASS",
+    "seconds": 0.002463345001160633
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_window::rejects_invalid_limits",
+    "status": "PASS",
+    "seconds": 0.003624764001870062
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_window::splits_on_canonical_row_limit",
+    "status": "PASS",
+    "seconds": 0.0035123790003126487
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_window::splits_on_event_limit",
+    "status": "PASS",
+    "seconds": 0.0013902990031056106
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_window::zero_row_events_are_preserved",
+    "status": "PASS",
+    "seconds": 0.0013811190001433715
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_writer::empty_partition_creates_no_files",
+    "status": "PASS",
+    "seconds": 0.0035624909978650976
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_writer::preserves_decimal256_after_parquet_roundtrip",
+    "status": "PASS",
+    "seconds": 0.007682675997784827
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_writer::preserves_order_across_batches",
+    "status": "PASS",
+    "seconds": 0.007661495001229923
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_writer::preserves_zero_level_depth_event",
+    "status": "PASS",
+    "seconds": 0.007716308002272854
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_writer::rejects_timestamp_regression",
+    "status": "PASS",
+    "seconds": 0.007807152000168571
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_writer::rejects_writes_after_finalization",
+    "status": "PASS",
+    "seconds": 0.007784990997606656
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_writer::rejects_wrong_physical_schema",
+    "status": "PASS",
+    "seconds": 0.0037746509988210164
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_writer::rotates_files_without_losing_events",
+    "status": "PASS",
+    "seconds": 1.6666115139996691
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_writer::writes_combined_parquet_schema",
+    "status": "PASS",
+    "seconds": 0.007903615998657187
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_writer::writes_nested_depth_parquet",
+    "status": "PASS",
+    "seconds": 0.007870155001000967
+  },
+  {
+    "target": "historical_merge",
+    "name": "materialize_writer::writes_physical_trade_parquet",
+    "status": "PASS",
+    "seconds": 0.007887365001806756
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_boundary_summary::lightweight_boundary_matches_full_manifest",
+    "status": "PASS",
+    "seconds": 0.0035907919991586823
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_boundary_summary::lightweight_boundary_preserves_snapshot_metadata",
+    "status": "PASS",
+    "seconds": 0.004215398999804165
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_commit::commits_staged_merge_dataset",
+    "status": "PASS",
+    "seconds": 0.003546501000528224
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_commit::rejects_destination_created_after_prepare",
+    "status": "PASS",
+    "seconds": 0.0036213339990354143
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_commit::rejects_existing_destination",
+    "status": "PASS",
+    "seconds": 0.0035957519976363983
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_commit::rejects_existing_staging_directory",
+    "status": "PASS",
+    "seconds": 0.0014879539994581137
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_commit::rejects_missing_staging_during_commit",
+    "status": "PASS",
+    "seconds": 0.001643849001993658
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_job::accepts_valid_merge_job",
+    "status": "PASS",
+    "seconds": 0.0036988470019423403
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_job::rejects_duplicate_inputs",
+    "status": "PASS",
+    "seconds": 0.003646885001217015
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_job::rejects_invalid_time_range",
+    "status": "PASS",
+    "seconds": 0.003539360001013847
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_job::rejects_relative_output_path",
+    "status": "PASS",
+    "seconds": 0.0035487300010572653
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_job::rejects_unknown_configuration_fields",
+    "status": "PASS",
+    "seconds": 0.003631413997936761
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_job::rejects_zero_workers",
+    "status": "PASS",
+    "seconds": 0.0035562109987949952
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_kway::merges_real_depth_events_chronologically",
+    "status": "PASS",
+    "seconds": 11.884757969997736
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_kway_event::handles_empty_sources",
+    "status": "PASS",
+    "seconds": 0.0037074669999128673
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_kway_event::merges_trade_streams_deterministically",
+    "status": "PASS",
+    "seconds": 0.0035262989986222237
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_kway_event::rejects_unsorted_trade_source",
+    "status": "PASS",
+    "seconds": 0.003444877002038993
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_resource_estimation::counts_distinct_streams_not_tasks",
+    "status": "PASS",
+    "seconds": 0.003499518999888096
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_resource_estimation::estimates_empty_partition",
+    "status": "PASS",
+    "seconds": 0.0034497060005378444
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_resource_estimation::estimates_four_stream_partition",
+    "status": "PASS",
+    "seconds": 0.00348132799990708
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_resource_estimation::rejects_row_group_overflow",
+    "status": "PASS",
+    "seconds": 0.0034948489992530085
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_resource_estimation::rejects_zero_row_group_target",
+    "status": "PASS",
+    "seconds": 0.003497617999528302
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_timeline_writer::writes_and_reads_timeline_parquet",
+    "status": "PASS",
+    "seconds": 0.06397823699808214
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_trade_stream::accepts_dataset_with_empty_source_task",
+    "status": "PASS",
+    "seconds": 1.3662548920001427
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_boundary_stress::assigns_boundary_events_to_exactly_one_partition",
+    "status": "PASS",
+    "seconds": 0.0036883060020045377
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_boundary_stress::handles_empty_partitions_without_changing_order",
+    "status": "PASS",
+    "seconds": 0.003615884001192171
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_boundary_stress::orders_equal_timestamps_by_stream_rank",
+    "status": "PASS",
+    "seconds": 0.003670065001642797
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_boundary_stress::orders_equal_timestamps_by_task_and_ordinal",
+    "status": "PASS",
+    "seconds": 0.003597202998207649
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_boundary_stress::preserves_tie_order_at_partition_boundaries",
+    "status": "PASS",
+    "seconds": 0.0034979279989784118
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_boundary_stress::rejects_source_ordering_regression",
+    "status": "PASS",
+    "seconds": 0.0035668419986905064
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_failure::rejects_corrupted_source_manifest",
+    "status": "PASS",
+    "seconds": 0.31437130000267643
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_failure::rejects_existing_output_without_modification",
+    "status": "PASS",
+    "seconds": 0.3645448009992833
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_failure::rejects_existing_staging_directory",
+    "status": "PASS",
+    "seconds": 0.3645868919993518
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_failure::rejects_insufficient_file_budget",
+    "status": "PASS",
+    "seconds": 0.3646195330002229
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_failure::rejects_insufficient_memory_budget",
+    "status": "PASS",
+    "seconds": 0.3645657509987359
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_failure::rejects_missing_input_dataset",
+    "status": "PASS",
+    "seconds": 0.31485491000057664
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_failure::rejects_missing_processing_job",
+    "status": "PASS",
+    "seconds": 0.3647019559975888
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_file_rotation::empty_writer_creates_no_files",
+    "status": "PASS",
+    "seconds": 0.003918746999261202
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_file_rotation::rejects_writes_after_finish",
+    "status": "PASS",
+    "seconds": 0.003699126998981228
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_file_rotation::repeated_finish_does_not_create_files",
+    "status": "PASS",
+    "seconds": 0.0036803770017286297
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_file_rotation::rotates_unified_parquet_files_without_losing_events",
+    "status": "PASS",
+    "seconds": 1.517395351002051
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_manifest::accepts_combined_manifest",
+    "status": "PASS",
+    "seconds": 0.004017530998680741
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_manifest::accepts_depth_only_manifest",
+    "status": "PASS",
+    "seconds": 0.0037081769987707958
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_manifest::accepts_trade_only_manifest",
+    "status": "PASS",
+    "seconds": 0.0036747660014953
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_manifest::rejects_combined_mode_without_depth",
+    "status": "PASS",
+    "seconds": 0.0036044029984623194
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_manifest::rejects_duplicate_dataset_ids",
+    "status": "PASS",
+    "seconds": 0.0035065589981968515
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_manifest::rejects_event_count_mismatch",
+    "status": "PASS",
+    "seconds": 0.0014641620000475086
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_manifest::rejects_incorrect_merge_mode",
+    "status": "PASS",
+    "seconds": 0.003509849000693066
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_manifest::rejects_invalid_stream_rank",
+    "status": "PASS",
+    "seconds": 0.003493847998470301
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_timeline::converts_trade_event_to_unified_record",
+    "status": "PASS",
+    "seconds": 0.0035078190012427513
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_timeline::handles_empty_unified_batch",
+    "status": "PASS",
+    "seconds": 0.0035736309982894454
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_timeline::reuses_unified_batch_builder",
+    "status": "PASS",
+    "seconds": 0.0036594150005839765
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_timeline::validates_unified_timeline_schema",
+    "status": "PASS",
+    "seconds": 0.0035573810018831864
+  },
+  {
+    "target": "historical_merge",
+    "name": "merge_unified_timeline::writes_trade_records_to_arrow_batch",
+    "status": "PASS",
+    "seconds": 0.0014642719979747199
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_archive_continuity::validates_gateio_inverse_hourly_continuity",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_archive_continuity::validates_gateio_linear_hourly_continuity",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_archive_continuity::validates_gateio_spot_hourly_continuity",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_formats::bitget::linear::validates_bitget_linear_btcusdt",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_formats::bitget::spot::validates_bitget_spot_btcusdt",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_formats::bitget::spot::validates_bitget_spot_ethusdc",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_formats::bybit::inverse::validates_bybit_inverse_btcusd",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_formats::bybit::linear::validates_bybit_linear_btcusdt",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_formats::bybit::spot::validates_bybit_spot_ethusdc",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_formats::gateio::inverse::validates_gateio_inverse_btcusd",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_formats::gateio::linear::validates_gateio_linear_btcusdt",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_formats::gateio::spot::validates_gateio_spot_btcusdt",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_formats::okx::future_inverse::validates_okx_future_inverse_btcusd",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_formats::okx::future_linear::validates_okx_future_linear_btcusd",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_formats::okx::perpetual_inverse::validates_okx_perpetual_inverse_btcusd",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_formats::okx::perpetual_linear::validates_okx_perpetual_linear_btcusdt",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_formats::okx::spot::validates_okx_spot_btcusdt",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_parquet_replay::parquet_replay_matches_reference_book",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_pipeline_recovery::depth_pipeline_invalidates_final_book_after_unrecovered_gap",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_pipeline_recovery::depth_pipeline_recovers_after_sequence_gap",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "depth_real_archive::processes_real_bybit_depth_archive",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "parquet_depth_real_archive::writes_real_bybit_depth_archive_to_parquet",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "parquet_discovery::discovers_parquet_files_from_multiple_tasks",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "process_executor::processes_multiple_trade_tasks_into_staging",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "process_executor_failure::failed_processing_persists_failure_report",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "process_parallel_consistency::large_parallel_consistency",
+    "status": "EXISTING_IGNORED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "process_parallel_consistency::single_and_parallel_workers_produce_identical_results",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "process_session::executes_tasks_across_multiple_jobs",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "process_session_finalization::session_commits_successful_jobs_and_preserves_failures",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "trade_all_archives::processes_all_trade_archives",
+    "status": "EXISTING_IGNORED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "trade_worker::processes_complete_trade_archives",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "trade_worker_metrics::records_trade_processing_metrics",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_normalize",
+    "name": "trade_worker_metrics::successful_trade_processing_has_no_integrity_violations",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_checkpoint::builds_real_reconstruction_checkpoints",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_checkpoint::resolves_initial_checkpoints",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_combined_real::merges_real_trades_and_depth",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_cursor_benchmark::compares_indexed_and_sequential_cursors",
+    "status": "EXISTING_IGNORED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_depth_cursor::reads_real_depth_event_index",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_depth_cursor_range::reads_depth_events_within_requested_range",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_depth_cursor_range::rejects_invalid_range",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_depth_stream::streams_real_depth_archives",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_event_validation::validates_real_depth_event_indexes",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_executor::executes_real_merge_job",
+    "status": "EXISTING_IGNORED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_full_equivalence::validates_full_parallel_merge_against_sequential",
+    "status": "EXISTING_IGNORED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_indexed_cursor::indexed_cursor_matches_sequential_cursor",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_inventory::builds_real_depth_inventory",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_inventory::reconciles_real_depth_boundaries",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_manifest_builder::builds_real_parallel_merge_manifest",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_output_validation::validates_real_parallel_merge_output",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_parallel::executes_parallel_merge_partitions",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_parallel_commit::executes_and_commits_parallel_merge",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_partition_coverage::partition_concatenation_matches_sequential_merge",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_partition_equivalence::matches_sequential_merge_across_archive_boundary",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_partition_equivalence::matches_sequential_merge_across_timestamp_discrepancy",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_partition_equivalence::matches_sequential_merge_within_archive",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_partition_executor::executes_real_merge_partition",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_partition_input::plans_real_partition_inputs",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_resolver::resolves_real_merge_inputs",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_trade_cursor::reads_real_trade_rows_with_stable_offsets",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_trade_cursor_indexed::indexed_trade_cursor_matches_sequential",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_trade_kway_real::merges_real_trade_datasets",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_trade_stream::streams_real_trade_datasets",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_trade_stream::streams_real_trade_timestamp_ranges",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_commit::commits_real_combined_merge",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_commit::commits_real_trade_merge",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_manifest_builder::builds_real_combined_manifest",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_manifest_builder::builds_real_trade_manifest",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_output_validation::rejects_incorrect_file_size",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_output_validation::rejects_incorrect_partition_event_count",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_output_validation::rejects_incorrect_stream_identity",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_output_validation::rejects_unsafe_output_path",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_output_validation::validates_real_combined_output",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_output_validation::validates_real_trade_output",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_parallel_equivalence::parallel_combined_merge_matches_sequential",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_parallel_equivalence::parallel_trade_merge_matches_sequential",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_partition_executor::executes_real_combined_partition",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_partition_executor::executes_real_trade_partition",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_partition_input::plans_combined_trade_depth_partitions",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_partition_input::plans_real_trade_partitions",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_partition_input::unified_planner_matches_depth_planner",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_production_rotation::validates_real_combined_rotation",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_reference_integrity::accepts_depth_events_without_canonical_changes",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_reference_integrity::accepts_valid_trade_references",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_reference_integrity::rejects_duplicate_trade_identity",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_reference_integrity::rejects_out_of_bounds_trade_offset",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_reference_integrity::rejects_overlapping_depth_ranges",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_reference_integrity::rejects_task_event_kind_mismatch",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_reference_integrity::rejects_unknown_task_identity",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_reference_integrity::validates_real_depth_stream",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_reference_integrity::validates_real_trade_stream",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_stream_resolver::preserves_mixed_dataset_order",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_stream_resolver::rejects_duplicate_dataset_ids",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_stream_resolver::rejects_inconsistent_instrument_metadata",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_stream_resolver::rejects_missing_processing_job",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_stream_resolver::rejects_processing_job_dataset_mismatch",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_stream_resolver::rejects_processing_job_task_mismatch",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_stream_resolver::resolves_real_depth_streams",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_stream_resolver::resolves_real_trade_streams",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_timeline::converts_real_depth_events_to_unified_records",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_merge",
+    "name": "merge_unified_writer::writes_and_reads_unified_timeline",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_alignment::advances_real_external_references",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_alignment::internal_and_external_references_share_state",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_checkpoints::builds_real_combined_reference_checkpoints",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_checkpoints::projected_checkpoints_match_full_reader",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_checkpoints::projected_reference_reader_matches_full_reader",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_checkpoints::validates_combined_worker_fixture",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_depth_adapter::combined_depth_adapter_matches_original_kernel",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_depth_adapter::combined_depth_adapter_preserves_source_columns",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_depth_adapter::rejects_out_of_bounds_combined_depth_row",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_depth_adapter::rejects_trade_event_in_depth_adapter",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_equivalence::combined_batch_kernel_matches_row_kernel",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_equivalence::combined_conversion_is_batch_boundary_independent",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_materialize::materializes_real_combined_conversion",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_parallel::combined_conversion_is_worker_count_independent",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_parallel::parallel_combined_matches_sequential",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_parallel::parallel_combined_validation_matches_sequential_across_files",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_publication::publishes_valid_combined_conversion",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_publication::rejects_corrupted_original_source_column",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_publication::rejects_existing_combined_destination",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_publication::rejects_incorrect_combined_receipt",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_publication::rejects_missing_combined_receipt",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_references::internal_references_take_precedence",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_references::rejects_missing_external_references",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_references::selected_reference_sets_are_disjoint",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_references::selects_real_internal_and_external_references",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_restoration::restored_combined_checkpoint_matches_sequential",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_validation::parallel_combined_validation_matches_sequential",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_validation::rejects_incorrect_combined_conversion_rate",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_validation::rejects_incorrect_combined_depth_price",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_validation::rejects_incorrect_combined_trade_price",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_validation::validates_real_combined_physical_output",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_worker::production_combined_worker_matches_sequential",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_combined_writer::materializes_real_combined_arrow_and_parquet",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_alignment::converts_real_depth_with_external_references",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_checkpoints::builds_real_depth_reference_checkpoints",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_equivalence::checkpointed_depth_matches_sequential",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_equivalence::concurrent_depth_workers_match_sequential",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_materialize::materializes_real_depth_to_parquet",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_parallel::converts_real_depth_with_two_workers",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_preservation::preserves_real_depth_source_prefix",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_preservation::rejects_incomplete_full_depth_conversion",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_preservation::rejects_prefix_exceeding_source_count",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_preservation::rejects_shorter_expected_prefix",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_preservation::rejects_zero_event_prefix",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_publication::publishes_complete_depth_conversion",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_publication::rejects_existing_depth_destination",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_publication::rejects_incorrect_depth_receipt",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_publication::rejects_missing_depth_receipt",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_validation::parallel_validation_matches_sequential",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_validation::parallel_validation_matches_sequential_across_files",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_validation::parallel_validation_rejects_cross_file_regression",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_validation::parallel_validation_rejects_equal_timestamp_key_regression",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_validation::parallel_validation_rejects_numerical_corruption_in_later_file",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_validation::rejects_future_reference_timestamp",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_validation::rejects_incorrect_converted_price",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_validation::rejects_invalid_conversion_status",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_validation::rejects_mismatched_depth_offsets",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_validation::rejects_missing_parquet_files",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_validation::rejects_null_converted_price",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_depth_validation::validates_real_physical_depth_output",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_execution_reader::streams_entire_physical_dataset",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_execution_reader::validates_reference_stream_identity",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_executor::executes_real_multihop_conversion",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_external_reference::advances_multiple_reference_streams",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_external_reference::constructs_external_reference_cursor",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_external_reference::evaluates_reference_staleness",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_external_reference::excludes_equal_timestamp_references",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_external_reference::filters_unselected_reference_streams",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_external_reference::preserves_pending_future_observation",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_external_reference::preserves_reference_provenance",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_external_reference::prints_external_reference_summary",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_external_reference::rejects_empty_reference_selection",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_external_reference::rejects_invalid_reference_resume_position",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_external_reference::rejects_missing_reference_stream",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_external_reference::rejects_timestamp_regression",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_external_reference::resumed_cursor_excludes_equal_timestamp_references",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_external_reference::resumed_cursor_matches_uninterrupted_execution",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_materialize::materializes_real_trade_conversion_fixture",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_materialize_multihop::materializes_real_multihop_conversion",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_output_manifest::builds_manifest_from_real_dataset",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_output_manifest::preserves_conversion_configuration",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_output_manifest::records_physical_file_inventory",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_output_manifest::rejects_incomplete_integrity",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_output_manifest::rejects_incorrect_event_count",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_output_manifest::rejects_incorrect_file_count",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_output_manifest::rejects_incorrect_row_group_count",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_output_manifest::rejects_incorrect_source_preservation_count",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_output_manifest::rejects_incorrect_status_accounting",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_output_manifest::serializes_and_deserializes_manifest",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_output_manifest::writes_manifest_without_overwriting",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_output_validation::validates_full_converted_dataset",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_parallel::two_worker_parallel_conversion_matches_sequential",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_parallel_publication::publishes_parallel_conversion",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_parallel_validation::validates_partitioned_parallel_conversion",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_partition_reader::constructs_partition_readers",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_partition_reader::partition_first_events_are_deterministic",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_partition_reader::partition_plan_matches_physical_row_groups",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_partition_reader::partition_reader_matches_planned_rows",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_partition_reader::partitioned_reader_matches_sequential_reader",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_partition_reader::preserves_global_event_ordering",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_partition_reader::prints_partition_reader_summary",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_partition_reader::reads_every_partition_exactly",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_partition_reader::rejects_zero_batch_size",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_persistent_fixture::generate_persistent_conversion_fixture",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_prepass::checkpoint_reference_keys_never_regress",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_prepass::checkpoint_references_precede_partition_boundary",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_prepass::checkpoint_snapshots_are_independent",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_prepass::checkpoint_states_are_independent_of_worker_count",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_prepass::checkpoints_match_partition_boundaries",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_prepass::first_checkpoint_is_empty",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_prepass::later_checkpoints_contain_all_reference_streams",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_prepass::prints_prepass_performance",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_prepass::produces_checkpoint_for_every_partition",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_publication::publishes_validated_conversion",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_publication::rejects_corrupted_parquet",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_publication::rejects_existing_final_dataset",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_publication::rejects_existing_staging_manifest",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_publication::rejects_incorrect_source_event_count",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_publication::rejects_missing_parquet_file",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_publication::rejects_missing_staging_directory",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_reference_reader::all_reference_instruments_appear",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_reference_reader::streams_entire_dataset_without_order_regression",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_reference_seek::rejects_seek_beyond_dataset_end",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_reference_seek::seeking_across_row_group_boundaries_matches_sequential",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_reference_seek::seeking_directly_to_row_group_boundary",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_reference_seek::seeking_to_dataset_end_returns_eof",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_reference_seek::seeking_to_nonzero_position_matches_sequential",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_reference_seek::seeking_to_zero_matches_sequential_reader",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_source_preservation::validates_full_source_preservation",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_validate_values::independently_validates_converted_values",
+    "status": "UNVERIFIED_NOT_RUN"
+  },
+  {
+    "target": "historical_slow_convert",
+    "name": "convert_worker::two_partition_conversion_matches_sequential",
+    "status": "UNVERIFIED_NOT_RUN"
+  }
+]

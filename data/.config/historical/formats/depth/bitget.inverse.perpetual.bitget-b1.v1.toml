@@ -6,7 +6,7 @@ format_code = "BITGET-B1"
 exchange = "bitget"
 instrument_type = "perpetual"
 market_category = "inverse"
-unsupported_reason = "Inverse Bitget depth quantity encoding is not established; the format inspection explicitly forbids inferring it."
+unsupported_reason = "Inverse book quantity denomination is not established, and the current database has no Bitget inverse instrument metadata; native base, quote or contract semantics cannot be chosen safely."
 
 [[rules]]
 target = "l2_snapshot"

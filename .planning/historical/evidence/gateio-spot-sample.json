@@ -1,0 +1,44 @@
+{
+  "job": "gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json",
+  "input_path": "/home/pasha/projects/bybit-history-downloader/data/raw/gateio/spot/spot/order_book_l2/BTC_USDT/BTC_USDT-2026090100.csv.gz",
+  "sample_rows": 65536,
+  "sample_characters": 3712002,
+  "side_counts": {
+    "2": 36711,
+    "1": 28825
+  },
+  "first_snapshot_timestamp": "1788220800",
+  "first_snapshot_rows": 53923,
+  "price_ranges": {
+    "2": {
+      "min": "0.01",
+      "max": "78585.6",
+      "count": 29191
+    },
+    "1": {
+      "min": "78585.7",
+      "max": "49999999998.0",
+      "count": 24732
+    }
+  },
+  "legacy_side_maps": [
+    {
+      "source": "side",
+      "values": {
+        "1": "ask",
+        "2": "bid"
+      },
+      "transform": "map"
+    },
+    {
+      "source": "side",
+      "values": {
+        "1": "ask",
+        "2": "bid"
+      },
+      "transform": "map"
+    }
+  ],
+  "first_snapshot_complete_within_sample": true,
+  "fixture": "engine/tests/historical/normalize/resources/gateio-spot-observed-snapshot.csv"
+}

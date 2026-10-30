@@ -73,21 +73,22 @@ records remain discoverable with a reason; attempting to resolve them for execut
 returns an error before opening an archive. Their rules are retained for inventory
 and are explicitly not counted as successfully compiled normalization rules.
 
-Standalone PostgreSQL export files were not present in the checkout during this
-work. The unchanged catalog seed definitions independently contain exactly the
-requested 36 raw-format and 49 normalization-rule records. Those, the 43 established
-job definitions, raw-format inspection documents and fixtures supplied the recovery
-inventory. An external export comparison remains unverified; no database access or
-Python modification was used to manufacture it.
+The finalization audit connected to the actual PostgreSQL database in read-only
+transactions and confirmed 36 raw formats and 49 mappings. All physical schemas
+match; 47 mappings match exactly. The two Gate.io Spot mappings differ deliberately:
+observed archives and legacy jobs establish `2 = bid`, `1 = ask`, correcting the
+database's `0 = bid`. See the complete [audit matrix](../../.planning/historical/evidence/audit-matrix.md)
+and [finalization report](../../.planning/historical/evidence/finalization-report.md).
+No database record was changed.
 
 ## Lightweight wire protocol and legacy compatibility
 
 The intended new wire format has `protocol_version = 2`. A task supplies
 `format_profile`, runtime archive path/member, task/stream IDs, exchange, symbol,
 instrument ID and authoritative instrument metadata. It omits `format_code`,
-`raw_schema`, `normalizations`, and `source_ordering`. Compression defaults to the
-profile's container; an optional task `source_compression` can select only a
-container explicitly permitted by that profile. Current migrated profiles each
+`raw_schema`, `normalizations`, and `source_ordering`. Compression defaults only when the physical definition permits exactly one
+container. Multiple supported containers require explicit `source_compression`;
+an explicitly selected unsupported container is rejected. Current migrated profiles each
 permit their established wrapper. Source ordering is stable normalization behavior
 and cannot be overridden. Job-level canonical ordering, integrity policy, resources,
 streams and output paths retain their contracts.
@@ -147,9 +148,14 @@ Changing financial rules, field mappings, encodings or ordering changes identity
 Processing writes the complete resolved `processing-job.json` snapshot into its
 fresh staging directory. That file contains exact schemas/rules and instrument
 metadata, and commits with the existing dataset-directory publication operation.
+Its resource and integrity settings reflect the authoritative runtime
+`ProcessingConfig`, even when legacy job fields differ. A sibling
+`processing-job.sha256` fingerprints the actual resolved snapshot bytes, including
+instrument metadata, selected archive wrappers and execution configuration.
 It lives beside `manifest.json`; canonical schemas and the existing manifest
 schema are unchanged. It is not a new persistence service or market-data log.
-Reloading a snapshot validates it against the same profile catalog; retain that
+Reloading a snapshot validates both its recorded profile identity/fingerprint and
+its executable definitions against the same profile catalog; retain that
 catalog revision with datasets. A later conflicting catalog fails instead of
 silently changing replay semantics.
 
@@ -205,13 +211,19 @@ Three opt-in groups are rooted at `engine/tests/historical/slow/{normalize,merge
 `historical_slow_normalize`, `historical_slow_merge`, `historical_slow_convert`.
 Their `required-features` is `historical-slow-tests`, which enables Historical but
 is not enabled by Historical or defaults. Existing test files stay in responsibility
-directories; explicit grouped module registration provides isolation without
-copying helpers or replacing test bodies. Shared targets remain in Shared.
-The complete map and reasons are in [test-inventory.json](test-inventory.json).
+directories; explicit grouped module registration provides isolation. Mixed files
+are split so bounded cases remain normal; test bodies and assertions are preserved.
+Shared targets remain in Shared. The target map is in
+[test-inventory.json](test-inventory.json), with per-case discovery and classification
+evidence in [.planning/historical/evidence](../../.planning/historical/evidence/).
 
 All **781 original Historical integration cases** are preserved, with the same
-ignore states, under `<old target>::<old case>` names. Thirteen new cases cover
-configuration/equivalence. See [test-preservation.json](test-preservation.json).
+ignore states, under `<old target>::<old case>` names. Nineteen new cases cover
+configuration/equivalence, and the existing independent Python-validator wrapper is
+now discoverable in the opt-in suite. Cargo discovers **801 cases: 570 normal and
+231 opt-in** (five existing ignored cases retained). All 794 cases present before
+finalization remain registered, with unchanged ignore states; 49 bounded cases
+moved from opt-in to normal. See [test-preservation.json](test-preservation.json).
 The package's declared integration target count fell from **197 to 43**, including
 unchanged Shared and Live targets. Live test files were not modified.
 

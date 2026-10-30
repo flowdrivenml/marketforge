@@ -6,7 +6,7 @@ format_code = "OKX-T1"
 exchange = "okx"
 instrument_type = "option"
 market_category = "option"
-unsupported_reason = "Options processing is deferred: multi-instrument identity and optional canonical fields are not implemented."
+unsupported_reason = "Options processing is deferred: TradeSpec does not implement catalog instrument lookup, composite instrument/trade identity or sorting of multi-instrument option-chain files."
 
 [[rules]]
 target = "trade"
