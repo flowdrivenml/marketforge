@@ -1,0 +1,27 @@
+{
+  "job_id": 940001,
+  "operation": "convert",
+  "input_merge": "/marketforge-test-fixture/input",
+  "conversion": {
+    "target_quote": "USDT",
+    "price_source": "last_trade",
+    "max_staleness_ns": 5000000000,
+    "references": [
+      {
+        "exchange": "binance",
+        "symbol": "BTCUSDT",
+        "instrument_kind": "spot",
+        "contract_kind": null
+      }
+    ],
+    "max_hops": 3
+  },
+  "resources": {
+    "workers": 24,
+    "memory_limit_mb": 61440,
+    "max_open_files": 1024
+  },
+  "output": {
+    "dataset_path": "/marketforge-test-fixture/output"
+  }
+}
