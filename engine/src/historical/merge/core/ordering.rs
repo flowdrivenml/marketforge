@@ -4,13 +4,7 @@ use crate::historical::merge::depth::stream::DepthEventRef;
 // Deterministic chronological ordering
 // -----------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct MergeKey {
-    pub timestamp_ns: i64,
-    pub stream_rank: u32,
-    pub task_rank: u64,
-    pub event_ordinal: u64,
-}
+pub use crate::shared::merge::MergeKey;
 
 impl MergeKey {
     pub fn from_depth_event(event: &DepthEventRef, stream_rank: u32) -> Self {

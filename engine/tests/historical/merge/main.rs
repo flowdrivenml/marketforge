@@ -66,3 +66,6 @@ mod merge_trade_stream;
 
 #[path = "execution/merge_unified_failure.rs"]
 mod merge_unified_failure;
+
+#[path = "core/core_regression.rs"]
+mod core_regression;

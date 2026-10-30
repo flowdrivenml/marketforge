@@ -233,5 +233,6 @@ fn exact_kernel_baseline_transcript() {
     ));
     println!("{transcript}");
     let expected = include_str!("../fixtures/core-regression.txt");
-    assert_eq!(transcript, expected);
+    // ReferenceKey is now an alias; normalize only the Rust Debug type label.
+    assert_eq!(transcript.replace("MergeKey {", "ReferenceKey {"), expected);
 }

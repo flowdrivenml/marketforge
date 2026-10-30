@@ -349,3 +349,7 @@ required-features = ["historical-slow-tests"]
 [[test]]
 name = "shared_conversion"
 path = "tests/shared/conversion/main.rs"
+
+[[test]]
+name = "shared_merge"
+path = "tests/shared/merge/main.rs"

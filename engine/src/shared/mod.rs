@@ -3,6 +3,7 @@ pub mod domain;
 pub mod error;
 pub mod formats;
 pub mod io;
+pub mod merge;
 pub mod normalization;
 pub mod persistence;
 #[cfg(feature = "monitor-tui")]

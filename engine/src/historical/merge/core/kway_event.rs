@@ -1,4 +1,4 @@
-use std::{cmp::Reverse, collections::BinaryHeap};
+use crate::shared::merge::{HeadQueue, MergeError, MergePoll};
 
 use crate::historical::merge::output::manifests::manifest::MergeSkippedInitialization;
 use crate::shared::error::{MarketForgeError, Result};
@@ -7,30 +7,11 @@ use {
     crate::historical::merge::core::event::MergeEventRef,
     crate::historical::merge::core::event::MergedEvent,
     crate::historical::merge::core::event_source::MergeEventSource,
-    crate::historical::merge::core::ordering::MergeKey,
 };
-
-// -----------------------------------------------------------------------------
-// Heap entry
-// -----------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct HeapEntry {
-    key: MergeKey,
-    stream_index: usize,
-}
-
-// -----------------------------------------------------------------------------
-// Generic K-way chronological merger
-// -----------------------------------------------------------------------------
 
 pub struct KWayEventMerger {
     streams: Vec<Box<dyn MergeEventSource>>,
-    pending: Vec<Option<MergeEventRef>>,
-    heap: BinaryHeap<Reverse<HeapEntry>>,
-
-    events_emitted: u64,
-    previous_key: Option<MergeKey>,
+    queue: HeadQueue<MergeEventRef>,
 }
 
 impl KWayEventMerger {
@@ -39,43 +20,19 @@ impl KWayEventMerger {
     // -------------------------------------------------------------------------
 
     pub fn new(mut streams: Vec<Box<dyn MergeEventSource>>) -> Result<Self> {
-        if streams.is_empty() {
-            return invalid("K-way event merger requires at least one stream");
-        }
-
-        if streams.len() > u32::MAX as usize {
-            return invalid("too many merge event streams");
-        }
-
-        let mut pending = Vec::with_capacity(streams.len());
-        let mut heap = BinaryHeap::with_capacity(streams.len());
-
+        let mut queue = HeadQueue::new(streams.len(), true).map_err(merge_error)?;
         for (index, stream) in streams.iter_mut().enumerate() {
-            let event = stream.next_event()?;
-
-            if let Some(ref event) = event {
-                let stream_rank = u32::try_from(index)
-                    .map_err(|_| invalid_error("merge stream rank overflow"))?;
-
-                let key = event.merge_key(stream_rank);
-
-                heap.push(Reverse(HeapEntry {
-                    key,
-                    stream_index: index,
-                }));
+            match stream.next_event()? {
+                Some(event) => {
+                    let stream_rank = u32::try_from(index)
+                        .map_err(|_| merge_error(MergeError::TooManySources))?;
+                    let key = event.merge_key(stream_rank);
+                    queue.push(index, key, event).map_err(merge_error)?;
+                }
+                None => queue.finish_source(index).map_err(merge_error)?,
             }
-
-            pending.push(event);
         }
-
-        Ok(Self {
-            streams,
-            pending,
-            heap,
-
-            events_emitted: 0,
-            previous_key: None,
-        })
+        Ok(Self { streams, queue })
     }
 
     // -------------------------------------------------------------------------
@@ -83,69 +40,24 @@ impl KWayEventMerger {
     // -------------------------------------------------------------------------
 
     pub fn next_event(&mut self) -> Result<Option<MergedEvent>> {
-        let Some(Reverse(entry)) = self.heap.pop() else {
-            return Ok(None);
+        let selected = match self.queue.next_head().map_err(merge_error)? {
+            MergePoll::Ready(selected) => selected,
+            MergePoll::Exhausted => return Ok(None),
+            MergePoll::Pending => return invalid("Historical merge source has no pending head"),
         };
-
-        let index = entry.stream_index;
-
-        let event = self.pending[index].take().ok_or_else(|| {
-            invalid_error(format!("missing pending event for merge stream {index}"))
-        })?;
-
-        // ---------------------------------------------------------------------
-        // Verify global ordering
-        // ---------------------------------------------------------------------
-
-        if let Some(previous) = self.previous_key {
-            if entry.key < previous {
-                return invalid(format!(
-                    "K-way event ordering regression: \
-                     previous={previous:?}, current={:?}",
-                    entry.key,
-                ));
+        let index = selected.source_index;
+        // Preserve pull-ahead and error timing: advance before returning the event.
+        match self.streams[index].next_event()? {
+            Some(event) => {
+                let stream_rank = selected.key.stream_rank;
+                let key = event.merge_key(stream_rank);
+                self.queue.push(index, key, event).map_err(merge_error)?;
             }
+            None => self.queue.finish_source(index).map_err(merge_error)?,
         }
-
-        self.previous_key = Some(entry.key);
-
-        self.events_emitted = self
-            .events_emitted
-            .checked_add(1)
-            .ok_or_else(|| invalid_error("merged event count overflow"))?;
-
-        // ---------------------------------------------------------------------
-        // Advance only the contributing stream
-        // ---------------------------------------------------------------------
-
-        let next = self.streams[index].next_event()?;
-
-        if let Some(ref next_event) = next {
-            let stream_rank =
-                u32::try_from(index).map_err(|_| invalid_error("merge stream rank overflow"))?;
-
-            let key = next_event.merge_key(stream_rank);
-
-            // Each individual source must preserve chronological ordering.
-            if key < entry.key {
-                return invalid(format!(
-                    "merge source {index} produced an ordering regression: \
-                     previous={:?}, current={key:?}",
-                    entry.key,
-                ));
-            }
-
-            self.heap.push(Reverse(HeapEntry {
-                key,
-                stream_index: index,
-            }));
-        }
-
-        self.pending[index] = next;
-
         Ok(Some(MergedEvent {
-            stream_rank: entry.key.stream_rank,
-            event,
+            stream_rank: selected.key.stream_rank,
+            event: selected.event,
         }))
     }
     pub fn skipped_initializations(&self) -> Vec<MergeSkippedInitialization> {
@@ -155,7 +67,7 @@ impl KWayEventMerger {
             .collect()
     }
     pub fn events_emitted(&self) -> u64 {
-        self.events_emitted
+        self.queue.events_emitted()
     }
 }
 
@@ -169,4 +81,17 @@ fn invalid_error(message: impl Into<String>) -> MarketForgeError {
 
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(invalid_error(message))
+}
+
+fn merge_error(error: MergeError) -> MarketForgeError {
+    let message = match error {
+        MergeError::EmptySources => "K-way event merger requires at least one stream".to_owned(),
+        MergeError::TooManySources => "too many merge event streams".to_owned(),
+        MergeError::MissingHead(index) => format!("missing pending event for merge stream {index}"),
+        MergeError::GlobalRegression { previous, current } => {
+            format!("K-way event ordering regression: previous={previous:?}, current={current:?}")
+        }
+        other => other.to_string(),
+    };
+    MarketForgeError::InvalidConfiguration(message)
 }

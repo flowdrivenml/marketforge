@@ -1,0 +1,735 @@
+{
+  "base": "54205985970eb13f1fe231be6d2d97388ae0c8f9",
+  "baseline": {
+    "historical_convert": {
+      "PASS": 119,
+      "FAIL": 81
+    },
+    "historical_merge": {
+      "PASS": 237,
+      "FAIL": 9
+    }
+  },
+  "final_historical_and_shared": {
+    "historical_convert": {
+      "PASS": 120,
+      "FAIL": 81
+    },
+    "historical_merge": {
+      "PASS": 238,
+      "FAIL": 9
+    },
+    "historical_normalize": {
+      "NOT_RUN": 124
+    },
+    "parquet_decimal": {
+      "PASS": 8
+    },
+    "shared_conversion": {
+      "PASS": 65
+    },
+    "shared_merge": {
+      "PASS": 6
+    }
+  },
+  "minimal_shared": {
+    "marketforge_engine": {
+      "NOT_RUN": 65
+    },
+    "shared_conversion": {
+      "PASS": 65
+    },
+    "shared_merge": {
+      "PASS": 6
+    }
+  },
+  "minimal_shared_merge_final": {
+    "shared_merge": {
+      "PASS": 8
+    }
+  },
+  "minimal_unit": {
+    "marketforge_engine": {
+      "NOT_RUN": 64,
+      "PASS": 1
+    },
+    "shared_conversion": {
+      "NOT_RUN": 65
+    },
+    "shared_merge": {
+      "NOT_RUN": 6
+    }
+  },
+  "slow_compile_only_discovery": {
+    "historical_slow_convert": {
+      "NOT_RUN": 131
+    },
+    "historical_slow_merge": {
+      "NOT_RUN": 64,
+      "IGNORED_EXISTING": 3
+    },
+    "historical_slow_normalize": {
+      "NOT_RUN": 31,
+      "IGNORED_EXISTING": 2
+    }
+  },
+  "original_merge_convert_cases_preserved": 446,
+  "original_case_outcome_changes": 0,
+  "existing_case_ignore_state_changes": 0,
+  "baseline_missing_fixture_failures": [
+    {
+      "target": "historical_convert",
+      "name": "convert_catalog::preserves_merge_stream_ranks",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_catalog::rejects_missing_catalog_instrument",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_catalog::rejects_missing_reference_instrument",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_catalog::rejects_processing_identity_mismatch",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_catalog::resolves_all_multihop_instruments",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_catalog::resolves_correct_currencies",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_combined_conversion::converts_real_combined_timeline",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_depth_planner::plans_real_depth_conversion",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_execution_reader::first_thousand_events_are_ordered",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_execution_reader::opens_physical_dataset",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_execution_reader::preserves_original_arrow_values",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_execution_reader::preserves_physical_trade_schema",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_execution_reader::rejects_missing_parquet_file",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_execution_reader::rejects_zero_batch_size",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_execution_reader::respects_batch_size",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_execution_reader::tracks_records_read",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_graph::finds_direct_btc_to_usdt",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_graph::finds_eth_to_usdc",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_graph::finds_eth_to_usdt_multihop",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_graph::finds_inverse_usdt_to_btc",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_graph::finds_usdc_to_usdt_multihop",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_graph::identity_conversion_has_zero_edges",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_graph::path_enumeration_is_deterministic",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_graph::paths_do_not_repeat_currencies",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_graph::preserves_reference_stream_identity",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_graph::rejects_zero_hop_limit",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_graph::respects_maximum_hops",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_graph::returns_no_path_for_unknown_currency",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_schema::contains_no_duplicate_field_names",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_schema::conversion_fields_are_appended_in_fixed_order",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_schema::converted_values_use_decimal256",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_schema::preserves_all_original_fields",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_schema::preserves_original_field_order",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_schema::preserves_original_field_types_and_nullability",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_schema::validates_conversion_metadata_fields",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_schema::validates_conversion_path_schema",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_schema::validates_reference_provenance_schema",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_trade::appends_eight_conversion_columns",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_trade::preserves_original_arrow_arrays",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_trade::preserves_source_row_count",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_trade::rejects_invalid_converted_path",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_trade::rejects_invalid_identity_conversion",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_trade::rejects_invalid_unavailable_conversion",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_trade::rejects_row_count_mismatch",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_trade::writes_conversion_paths",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_trade::writes_conversion_statuses",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_trade::writes_converted_decimal_values",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_trade::writes_failure_codes",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_trade::writes_nullable_quote_quantities",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_trade::writes_reference_provenance",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_writer::finalization_is_idempotent",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_writer::preserves_nested_reference_provenance",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_writer::rejects_incompatible_arrow_schema",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_writer::rejects_invalid_row_group_configuration",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_writer::rejects_writes_after_finalization",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_writer::tracks_written_events",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_output_writer::writes_and_reads_converted_trade_batch",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_partitions::discovers_all_physical_row_groups",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_partitions::never_creates_empty_partitions",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_partitions::partition_planning_is_deterministic",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_partitions::partition_row_counts_match_row_groups",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_partitions::partitions_are_contiguous",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_partitions::partitions_cover_every_row_group_exactly_once",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_partitions::prints_partition_distribution",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_partitions::rejects_zero_workers",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_partitions::respects_requested_worker_counts",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_partitions::row_group_offsets_are_contiguous",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_planner::btcusdc_uses_inverse_then_direct",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_planner::btcusdt_requires_no_reference_conversion",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_planner::ethbtc_uses_btcusdt_reference",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_planner::one_hop_limit_makes_btcusdc_unresolved",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_planner::planning_is_deterministic",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_planner::plans_all_multihop_streams",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_planner::preserves_source_stream_order",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_planner::rejects_invalid_target_currency",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_reference_reader::decodes_first_reference_observation",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_reference_reader::first_thousand_events_are_ordered",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_reference_reader::opens_real_physical_dataset",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_reference_reader::preserves_decimal256_price",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_reference_reader::rejects_zero_batch_size",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_convert",
+      "name": "convert_reference_selection::selects_latest_eligible_reference_observations",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_merge",
+      "name": "merge_kway::merges_real_depth_events_chronologically",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_merge",
+      "name": "merge_trade_stream::accepts_dataset_with_empty_source_task",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_merge",
+      "name": "merge_unified_failure::rejects_corrupted_source_manifest",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_merge",
+      "name": "merge_unified_failure::rejects_existing_output_without_modification",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_merge",
+      "name": "merge_unified_failure::rejects_existing_staging_directory",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_merge",
+      "name": "merge_unified_failure::rejects_insufficient_file_budget",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_merge",
+      "name": "merge_unified_failure::rejects_insufficient_memory_budget",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_merge",
+      "name": "merge_unified_failure::rejects_missing_input_dataset",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    },
+    {
+      "target": "historical_merge",
+      "name": "merge_unified_failure::rejects_missing_processing_job",
+      "baseline": "FAIL",
+      "final": "FAIL",
+      "classification": "BLOCKED: absent local job or dataset (os error 2)"
+    }
+  ],
+  "witnesses": {
+    "convert": {
+      "baseline": "PASS",
+      "extraction": "PASS",
+      "golden_sha256": "658630a686cb35d9c588798f377f23f0904d6cf49cb66ba923d6f9ce1795634e"
+    },
+    "merge": {
+      "baseline": "PASS",
+      "extraction": "PASS",
+      "golden_sha256": "35c499b96ba3acf3e3db22582e0c40df0bcaab34cc45f6f838d4685c27d33d01"
+    }
+  },
+  "compilation": {
+    "minimal": "PASS",
+    "historical": "PASS",
+    "live_library": "PASS",
+    "normal_targets": "PASS",
+    "slow_targets_no_run": "PASS",
+    "shared_without_historical": "PASS",
+    "live_including_binary": "PASS"
+  },
+  "slow_test_execution": "NOT RUN",
+  "benchmarks": "NOT RUN",
+  "throughput_equivalence": "NOT VERIFIED"
+}
