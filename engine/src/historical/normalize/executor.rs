@@ -508,5 +508,15 @@ pub(crate) fn prepare_staging_path(path: &Path) -> Result<()> {
 // -----------------------------------------------------------------------------
 
 pub(crate) fn prepare_staging(job: &ProcessingJob) -> Result<()> {
-    prepare_staging_path(&job.output.staging_path)
+    prepare_staging_path(&job.output.staging_path)?;
+    // Commit the resolved, exact configuration alongside the dataset. Includes
+    // immutable profile identity/fingerprint without changing canonical schemas.
+    let path = job.output.staging_path.join("processing-job.json");
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(|e| MarketForgeError::InvalidConfiguration(format!("{}: {e}", path.display())))?;
+    serde_json::to_writer_pretty(file, job)
+        .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))
 }
