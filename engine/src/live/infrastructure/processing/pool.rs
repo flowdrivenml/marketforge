@@ -1,499 +1,803 @@
-use super::scheduler::{ProcessingScheduler, ProcessorToken, SchedulerError};
+use super::{
+    mailbox::{AdmissionError, BufferBudget, MailboxLimits, ProcessorMailbox},
+    scheduler::{ProcessingScheduler, ProcessorToken, SchedulerError},
+};
 use crate::live::config::general::ProcessingConfig;
-use std::collections::{HashMap, HashSet};
 use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    ops::Deref,
     panic::{AssertUnwindSafe, catch_unwind},
-    sync::{Arc, Condvar, Mutex, MutexGuard},
+    sync::{
+        Arc, Condvar, Mutex, MutexGuard,
+        atomic::{AtomicU64, Ordering},
+    },
     thread::{self, JoinHandle},
+    time::Instant,
 };
 use thiserror::Error;
 
-/// One independently stateful processor.
-///
-/// Implementations must process at most `max_events` events
-/// during each call.
-///
-/// Return true when another scheduling turn is needed.
-///
-/// Implementations must not block indefinitely. Worker shutdown
-/// waits for currently executing turns to finish.
+/// Cooperative synchronous state machine. Never retain input outside tracked batches.
 pub trait Processor: Send + 'static {
     fn run_turn(&mut self, max_events: usize) -> bool;
+    /// Operational errors need not unwind. Existing processors can implement run_turn only.
+    fn try_run_turn(&mut self, max_events: usize) -> Result<bool, String> {
+        Ok(self.run_turn(max_events))
+    }
 }
-
+impl Processor for Box<dyn Processor> {
+    fn run_turn(&mut self, max_events: usize) -> bool {
+        self.as_mut().run_turn(max_events)
+    }
+    fn try_run_turn(&mut self, max_events: usize) -> Result<bool, String> {
+        self.as_mut().try_run_turn(max_events)
+    }
+}
 #[derive(Debug, Error)]
 pub enum PoolError {
     #[error("processing runtime is shut down")]
     Shutdown,
-
     #[error("invalid processing configuration: {0}")]
     InvalidConfig(&'static str),
-
     #[error("failed to start processing worker: {0}")]
     WorkerStartup(#[source] std::io::Error),
-
     #[error(transparent)]
     Scheduler(#[from] SchedulerError),
-
     #[error("processor has an unacknowledged failure: {0:?}")]
     UnacknowledgedFailure(ProcessorToken),
-
     #[error("processor is retiring: {0:?}")]
     Retiring(ProcessorToken),
 }
-
-/// A terminal failure observed by the processing runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcessorFailureKind {
     Panicked,
+    Error,
 }
-
-/// Identifies the exact processor generation that failed.
-///
-/// This is not a stream lifecycle state. The owning Live
-/// controller decides how to transition the affected stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProcessorFailure {
     pub processor: ProcessorToken,
     pub kind: ProcessorFailureKind,
 }
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PoolStats {
     pub completed_turns: u64,
     pub processor_panics: u64,
+    pub processor_errors: u64,
+    pub destructor_panics: u64,
+    pub configured_workers: usize,
+    pub started_workers: usize,
+    pub running_workers: usize,
+    pub exited_workers: usize,
+    pub active_workers: usize,
+    pub executing_processors: usize,
+    pub unexpected_worker_exits: usize,
+    pub registered: usize,
+    pub ready: usize,
+    pub retiring: usize,
+    pub retained_failures: usize,
+    pub shutdown: bool,
+    pub owner_dropped: bool,
+    pub joined: bool,
 }
-
+pub(crate) trait InputControl: Send + Sync {
+    fn close(&self);
+}
+pub(crate) struct Registration {
+    pub token: ProcessorToken,
+    input: Option<Arc<dyn InputControl>>,
+    terminal: Mutex<Option<ProcessorFailure>>,
+    detail: Mutex<Option<String>>,
+}
+impl Registration {
+    fn close(&self) {
+        if let Some(input) = &self.input {
+            input.close();
+        }
+    }
+    pub fn detail(&self) -> Option<String> {
+        self.detail
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+    pub fn failure(&self) -> Option<ProcessorFailure> {
+        *self.terminal.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+struct Entry {
+    processor: Option<Box<dyn Processor>>,
+    registration: Arc<Registration>,
+}
 struct PoolState {
     scheduler: ProcessingScheduler,
-    processors: HashMap<ProcessorToken, Option<Box<dyn Processor>>>,
-    // Terminal failures awaiting acknowledgment by the
-    // owning runtime controller.
-    //
-    // Keyed by logical processor ID, not generation.
-    // A new generation cannot replace an unacknowledged failure.
+    processors: HashMap<ProcessorToken, Entry>,
     failures: HashMap<u64, ProcessorFailure>,
     retiring: HashSet<ProcessorToken>,
+    destroying: HashSet<ProcessorToken>,
+    disposals: VecDeque<(ProcessorToken, Entry)>,
     shutdown: bool,
+    #[cfg(test)]
+    exit_requested: bool,
     stats: PoolStats,
 }
-
 struct Shared {
     state: Mutex<PoolState>,
     wake: Condvar,
+    updates: tokio::sync::watch::Sender<u64>,
     max_events_per_turn: usize,
+    budget: Arc<BufferBudget>,
 }
-
 fn lock(shared: &Shared) -> MutexGuard<'_, PoolState> {
-    shared
-        .state
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    shared.state.lock().unwrap_or_else(|e| e.into_inner())
 }
-
-/// Fixed-size CPU worker pool.
-///
-/// Owns its worker threads and joins them on shutdown.
-///
-/// The pool does not own stream lifecycle or demand state.
-pub struct ProcessingPool {
+thread_local! { static CURRENT_RUNTIME: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+static NEXT_REGISTRATION: AtomicU64 = AtomicU64::new(1);
+/// Lightweight submission capability. Dropping it never joins workers.
+#[derive(Clone)]
+pub struct ProcessingHandle {
     shared: Arc<Shared>,
-    workers: Vec<JoinHandle<()>>,
 }
-
+/// Owns startup and one supervisor which retains and joins every worker.
+/// On timeout the owner can retry shutdown; dropping it requests abnormal shutdown,
+/// and the supervisor continues to own unfinished workers until they return.
+pub struct ProcessingPool {
+    handle: ProcessingHandle,
+    supervisor: Option<JoinHandle<()>>,
+}
+impl Deref for ProcessingPool {
+    type Target = ProcessingHandle;
+    fn deref(&self) -> &Self::Target {
+        &self.handle
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShutdownOutcome {
+    pub complete: bool,
+    pub unfinished_workers: usize,
+    pub unfinished_processors: usize,
+    pub unexpected_worker_exits: usize,
+}
 impl ProcessingPool {
     pub fn new(config: ProcessingConfig) -> Result<Self, PoolError> {
-        if config.workers == 0 {
-            return Err(PoolError::InvalidConfig("workers must be positive"));
-        }
-
-        if config.ready_queue_capacity == 0 {
+        Self::start_with(config, |index, job| {
+            thread::Builder::new()
+                .name(format!("marketforge-cpu-{index}"))
+                .spawn(job)
+        })
+    }
+    fn start_with<F>(config: ProcessingConfig, mut spawn: F) -> Result<Self, PoolError>
+    where
+        F: FnMut(usize, Box<dyn FnOnce() + Send>) -> std::io::Result<JoinHandle<()>>,
+    {
+        if config.workers == 0 || config.max_events_per_turn == 0 {
             return Err(PoolError::InvalidConfig(
-                "ready_queue_capacity must be positive",
+                "workers and turn budget must be positive",
             ));
         }
-
-        if config.max_events_per_turn == 0 {
-            return Err(PoolError::InvalidConfig(
-                "max_events_per_turn must be positive",
-            ));
-        }
-
-        let scheduler = ProcessingScheduler::new(config.ready_queue_capacity)?;
-
         let shared = Arc::new(Shared {
             state: Mutex::new(PoolState {
-                scheduler,
+                scheduler: ProcessingScheduler::new(config.ready_queue_capacity)?,
                 processors: HashMap::new(),
                 failures: HashMap::new(),
-                shutdown: false,
-                stats: PoolStats::default(),
                 retiring: HashSet::new(),
+                destroying: HashSet::new(),
+                disposals: VecDeque::new(),
+                shutdown: false,
+                #[cfg(test)]
+                exit_requested: false,
+                stats: PoolStats {
+                    configured_workers: config.workers,
+                    ..Default::default()
+                },
             }),
             wake: Condvar::new(),
+            updates: tokio::sync::watch::channel(0).0,
             max_events_per_turn: config.max_events_per_turn,
+            budget: Arc::new(
+                BufferBudget::new(MailboxLimits {
+                    max_events: config.buffered_events,
+                    max_bytes: config.buffered_bytes,
+                })
+                .map_err(|_| PoolError::InvalidConfig("buffer limits must be positive"))?,
+            ),
         });
-
-        let mut workers: Vec<JoinHandle<()>> = Vec::with_capacity(config.workers);
-        let shared_runtime = Arc::clone(&shared);
-
+        let mut workers = Vec::new();
         for index in 0..config.workers {
-            let shared = Arc::clone(&shared);
-
-            let worker = match thread::Builder::new()
-                .name(format!("marketforge-cpu-{index}"))
-                .spawn(move || worker_loop(shared))
-            {
-                Ok(worker) => worker,
+            let runtime = shared.clone();
+            match spawn(
+                index,
+                Box::new(move || {
+                    CURRENT_RUNTIME.with(|current| current.set(Arc::as_ptr(&runtime) as usize));
+                    {
+                        let mut state = lock(&runtime);
+                        state.stats.running_workers += 1;
+                    }
+                    let result = catch_unwind(AssertUnwindSafe(|| worker_loop(runtime.clone())));
+                    let mut state = lock(&runtime);
+                    state.stats.running_workers -= 1;
+                    state.stats.exited_workers += 1;
+                    if result.is_err() {
+                        state.stats.unexpected_worker_exits += 1;
+                        state.shutdown = true;
+                        for entry in state.processors.values() {
+                            entry.registration.close();
+                        }
+                    }
+                    runtime.wake.notify_all();
+                    runtime
+                        .updates
+                        .send_modify(|version| *version = version.wrapping_add(1));
+                }),
+            ) {
+                Ok(worker) => {
+                    workers.push(worker);
+                    lock(&shared).stats.started_workers += 1;
+                }
                 Err(error) => {
-                    lock(&shared_runtime).shutdown = true;
-                    shared_runtime.wake.notify_all();
+                    lock(&shared).shutdown = true;
+                    shared.wake.notify_all();
                     for worker in workers {
                         let _ = worker.join();
                     }
                     return Err(PoolError::WorkerStartup(error));
                 }
-            };
-
-            workers.push(worker);
+            }
         }
-
-        Ok(Self { shared, workers })
+        // The supervisor owns the JoinHandles even if the facade is dropped.
+        // Use a transfer cell so failure to create it can still join all workers.
+        let transfer = Arc::new(Mutex::new(Some(workers)));
+        let received = transfer.clone();
+        let runtime = shared.clone();
+        let supervisor = match thread::Builder::new()
+            .name("marketforge-cpu-supervisor".into())
+            .spawn(move || {
+                CURRENT_RUNTIME.with(|current| current.set(Arc::as_ptr(&runtime) as usize));
+                let workers = received.lock().unwrap().take().unwrap();
+                for worker in workers {
+                    let _ = worker.join();
+                }
+                let mut state = lock(&runtime);
+                let mut remaining = std::mem::take(&mut state.processors);
+                for (token, entry) in state.disposals.drain(..) {
+                    remaining.insert(token, entry);
+                }
+                state.retiring.clear();
+                state.scheduler = ProcessingScheduler::new(state.scheduler.capacity())
+                    .expect("validated capacity");
+                for token in remaining.keys() {
+                    state.destroying.insert(*token);
+                }
+                drop(state);
+                // User destructors always run outside the scheduling lock.
+                for (token, entry) in remaining {
+                    let registration = entry.registration.clone();
+                    if catch_unwind(AssertUnwindSafe(|| drop(entry))).is_err() {
+                        destructor_failed(&runtime, &registration);
+                    }
+                    lock(&runtime).destroying.remove(&token);
+                    runtime.wake.notify_all();
+                }
+                lock(&runtime).stats.joined = true;
+                runtime.wake.notify_all();
+                runtime
+                    .updates
+                    .send_modify(|version| *version = version.wrapping_add(1));
+            }) {
+            Ok(supervisor) => supervisor,
+            Err(error) => {
+                lock(&shared).shutdown = true;
+                shared.wake.notify_all();
+                for worker in transfer.lock().unwrap().take().unwrap() {
+                    let _ = worker.join();
+                }
+                return Err(PoolError::WorkerStartup(error));
+            }
+        };
+        Ok(Self {
+            handle: ProcessingHandle { shared },
+            supervisor: Some(supervisor),
+        })
     }
-
-    /// Register one processor execution generation.
-    ///
-    /// Registration alone does not schedule work.
-    pub fn register<P>(&self, token: ProcessorToken, processor: P) -> Result<(), PoolError>
-    where
-        P: Processor,
-    {
+    pub fn handle(&self) -> ProcessingHandle {
+        self.handle.clone()
+    }
+    pub fn shutdown_until(&mut self, deadline: Instant) -> ShutdownOutcome {
+        self.handle.begin_shutdown();
+        let mut state = lock(&self.handle.shared);
+        let on_runtime_thread = CURRENT_RUNTIME
+            .with(|current| current.get() == Arc::as_ptr(&self.handle.shared) as usize);
+        while !state.stats.joined && !on_runtime_thread {
+            let now = Instant::now();
+            if now >= deadline {
+                break;
+            }
+            state = self
+                .handle
+                .shared
+                .wake
+                .wait_timeout(state, deadline - now)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+        let outcome = ShutdownOutcome {
+            complete: state.stats.joined,
+            unfinished_workers: if state.stats.joined {
+                0
+            } else {
+                state
+                    .stats
+                    .started_workers
+                    .saturating_sub(state.stats.exited_workers)
+            },
+            unfinished_processors: state.processors.len() + state.destroying.len(),
+            unexpected_worker_exits: state.stats.unexpected_worker_exits,
+        };
+        drop(state);
+        if outcome.complete {
+            if let Some(supervisor) = self.supervisor.take() {
+                let _ = supervisor.join();
+            }
+        }
+        outcome
+    }
+    /// Compatibility blocking shutdown. Services should use shutdown_until.
+    #[cfg(test)]
+    pub(crate) fn shutdown(&mut self) {
+        if CURRENT_RUNTIME
+            .with(|current| current.get() == Arc::as_ptr(&self.handle.shared) as usize)
+        {
+            self.handle.begin_shutdown();
+            return;
+        }
+        self.handle.begin_shutdown();
+        let mut state = lock(&self.handle.shared);
+        while !state.stats.joined {
+            state = self
+                .handle
+                .shared
+                .wake
+                .wait(state)
+                .unwrap_or_else(|e| e.into_inner());
+        }
+        drop(state);
+        if let Some(supervisor) = self.supervisor.take() {
+            let _ = supervisor.join();
+        }
+    }
+}
+impl Drop for ProcessingPool {
+    fn drop(&mut self) {
+        if self.supervisor.is_some() {
+            lock(&self.handle.shared).stats.owner_dropped = true;
+        }
+        self.handle.begin_shutdown();
+    }
+}
+impl ProcessingHandle {
+    pub fn budget(&self) -> Arc<BufferBudget> {
+        self.shared.budget.clone()
+    }
+    pub(crate) fn fresh_token(&self, id: u64) -> ProcessorToken {
+        ProcessorToken {
+            id,
+            generation: NEXT_REGISTRATION
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+                .expect("processing registration identity exhausted"),
+        }
+    }
+    #[cfg(test)]
+    pub(crate) fn register<P: Processor>(
+        &self,
+        token: ProcessorToken,
+        processor: P,
+    ) -> Result<(), PoolError> {
+        self.register_inner(token, processor, None).map(|_| ())
+    }
+    pub(crate) fn register_managed<P: Processor>(
+        &self,
+        token: ProcessorToken,
+        processor: P,
+        input: Arc<dyn InputControl>,
+    ) -> Result<Arc<Registration>, PoolError> {
+        self.register_inner(token, processor, Some(input))
+    }
+    fn register_inner<P: Processor>(
+        &self,
+        token: ProcessorToken,
+        processor: P,
+        input: Option<Arc<dyn InputControl>>,
+    ) -> Result<Arc<Registration>, PoolError> {
+        // Box before locking; rejected processor destruction occurs after guard destruction.
+        let processor: Box<dyn Processor> = Box::new(processor);
         let mut state = lock(&self.shared);
-
         if state.shutdown {
             return Err(PoolError::Shutdown);
         }
-
         if let Some(failure) = state.failures.get(&token.id) {
             return Err(PoolError::UnacknowledgedFailure(failure.processor));
         }
-
-        if state.scheduler.registered_count() + state.failures.len() >= state.scheduler.capacity() {
+        if state.scheduler.registered_count()
+            + state.failures.len()
+            + state
+                .destroying
+                .iter()
+                .filter(|token| !state.failures.contains_key(&token.id))
+                .count()
+            >= state.scheduler.capacity()
+        {
             return Err(SchedulerError::Capacity.into());
         }
+        if state.destroying.iter().any(|old| old.id == token.id) {
+            return Err(PoolError::Retiring(token));
+        }
         state.scheduler.register(token)?;
-
-        state.processors.insert(token, Some(Box::new(processor)));
-
-        Ok(())
+        let registration = Arc::new(Registration {
+            token,
+            input,
+            terminal: Mutex::new(None),
+            detail: Mutex::new(None),
+        });
+        state.processors.insert(
+            token,
+            Entry {
+                processor: Some(processor),
+                registration: registration.clone(),
+            },
+        );
+        Ok(registration)
     }
-
-    /// Notify the scheduler that a processor has work.
-    ///
-    /// Notifications are coalesced by ProcessingScheduler.
-    pub fn notify(&self, token: ProcessorToken) -> Result<(), PoolError> {
+    #[cfg(test)]
+    pub(crate) fn notify(&self, token: ProcessorToken) -> Result<(), PoolError> {
         let mut state = lock(&self.shared);
-
-        if state.retiring.contains(&token) {
-            return Err(PoolError::Retiring(token));
-        }
         if state.shutdown {
             return Err(PoolError::Shutdown);
         }
-
+        if state.retiring.contains(&token) {
+            return Err(PoolError::Retiring(token));
+        }
         state.scheduler.notify(token)?;
-
         self.shared.wake.notify_one();
-
         Ok(())
     }
-
-    /// Unregister a processor that is not executing.
-    ///
-    /// Running processors return ProcessorBusy through
-    /// the underlying scheduler.
-    pub fn unregister(&self, token: ProcessorToken) -> Result<(), PoolError> {
+    pub(crate) fn admit<E>(
+        &self,
+        registration: &Arc<Registration>,
+        mailbox: &ProcessorMailbox<E>,
+        event: E,
+        bytes: usize,
+    ) -> Result<(), AdmissionError<E, PoolError>> {
         let mut state = lock(&self.shared);
-
-        if state.shutdown {
-            return Err(PoolError::Shutdown);
+        let token = registration.token;
+        let reason = if state.shutdown {
+            Some(PoolError::Shutdown)
+        } else if state.retiring.contains(&token) {
+            Some(PoolError::Retiring(token))
+        } else if !state
+            .processors
+            .get(&token)
+            .is_some_and(|entry| Arc::ptr_eq(&entry.registration, registration))
+        {
+            Some(SchedulerError::UnknownProcessor.into())
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            mailbox.record_rejection();
+            if mailbox.status().closed {
+                return Err(AdmissionError::Mailbox(super::mailbox::MailboxPushError {
+                    reason: super::mailbox::MailboxError::Closed,
+                    event,
+                }));
+            }
+            return Err(AdmissionError::Notification { reason, event });
         }
-        if state.retiring.contains(&token) {
-            return Err(PoolError::Retiring(token));
-        }
-        state.scheduler.unregister(token)?;
-        state.processors.remove(&token);
-
+        mailbox
+            .push_managed(event, bytes)
+            .map_err(AdmissionError::Mailbox)?;
+        state
+            .scheduler
+            .notify(token)
+            .expect("registration owns activation reservation");
+        self.shared.wake.notify_one();
         Ok(())
     }
-
-    pub fn stats(&self) -> PoolStats {
-        lock(&self.shared).stats
-    }
-
-    pub fn ready_count(&self) -> usize {
-        lock(&self.shared).scheduler.ready_count()
-    }
-
-    pub fn registered_count(&self) -> usize {
-        lock(&self.shared).scheduler.registered_count()
-    }
-
-    /// Stop accepting work and join all workers.
-    ///
-    /// Queued activations are not executed after shutdown.
-    /// Already-running turns are allowed to finish.
-    pub fn shutdown(&mut self) {
-        {
-            let mut state = lock(&self.shared);
-            state.shutdown = true;
+    pub(crate) fn begin_shutdown(&self) {
+        let mut state = lock(&self.shared);
+        state.shutdown = true;
+        for entry in state.processors.values() {
+            entry.registration.close();
         }
-
         self.shared.wake.notify_all();
-
-        for worker in self.workers.drain(..) {
-            worker
-                .join()
-                .expect("processing worker unexpectedly panicked");
+        self.shared
+            .updates
+            .send_modify(|version| *version = version.wrapping_add(1));
+    }
+    pub fn stats(&self) -> PoolStats {
+        let state = lock(&self.shared);
+        PoolStats {
+            registered: state.processors.len(),
+            executing_processors: state
+                .processors
+                .values()
+                .filter(|entry| entry.processor.is_none())
+                .count(),
+            ready: state.scheduler.ready_count(),
+            retiring: state.retiring.len() + state.destroying.len(),
+            retained_failures: state.failures.len(),
+            shutdown: state.shutdown,
+            ..state.stats
         }
     }
-    /// Inspect the terminal failure of a logical processor.
-    ///
-    /// Reading does not remove the failure.
-    pub fn failure(&self, processor_id: u64) -> Option<ProcessorFailure> {
-        let state = lock(&self.shared);
-
-        state.failures.get(&processor_id).copied()
+    pub fn registered_count(&self) -> usize {
+        self.stats().registered
     }
-
-    /// Return a snapshot of unacknowledged failures.
-    ///
-    /// Results are sorted by logical processor ID for
-    /// deterministic inspection.
+    pub fn ready_count(&self) -> usize {
+        self.stats().ready
+    }
+    pub fn failure(&self, id: u64) -> Option<ProcessorFailure> {
+        lock(&self.shared).failures.get(&id).copied()
+    }
     pub fn failures(&self) -> Vec<ProcessorFailure> {
-        let state = lock(&self.shared);
-
-        let mut failures: Vec<_> = state.failures.values().copied().collect();
-
-        failures.sort_by_key(|failure| failure.processor.id);
-
-        failures
+        let mut result: Vec<_> = lock(&self.shared).failures.values().copied().collect();
+        result.sort_by_key(|f| f.processor.id);
+        result
     }
-
-    /// Acknowledge a terminal failure after the lifecycle owner
-    /// has handled it.
-    ///
-    /// The exact generation must match.
-    ///
-    /// Returns false when there is no matching failure.
     pub fn acknowledge_failure(&self, token: ProcessorToken) -> bool {
         let mut state = lock(&self.shared);
-
-        match state.failures.get(&token.id) {
-            Some(failure) if failure.processor == token => {
-                state.failures.remove(&token.id);
-                true
-            }
-
-            _ => false,
+        if state
+            .failures
+            .get(&token.id)
+            .is_some_and(|f| f.processor == token)
+        {
+            state.failures.remove(&token.id);
+            true
+        } else {
+            false
         }
     }
-    /// Retire one processor generation.
-    ///
-    /// Prevents new notifications and waits for an executing
-    /// scheduling turn to finish.
-    ///
-    /// A ready processor is removed without executing.
-    /// A running processor finishes its current turn but is
-    /// not scheduled again.
-    ///
-    /// The caller must not hold a lock needed by the processor
-    /// and must not call this from the processor's own turn.
-    pub fn retire(&self, token: ProcessorToken) -> Result<(), PoolError> {
+    /// Coalesced wakeup; authoritative state is retained in registrations/failures.
+    pub fn subscribe_changes(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.shared.updates.subscribe()
+    }
+    pub async fn changed(&self) {
+        let mut updates = self.subscribe_changes();
+        let _ = updates.changed().await;
+    }
+    #[cfg(test)]
+    pub(crate) fn request_retire(&self, token: ProcessorToken) -> Result<(), PoolError> {
+        self.request_retire_inner(token, None)
+    }
+    pub(crate) fn request_retire_registration(
+        &self,
+        registration: &Arc<Registration>,
+    ) -> Result<(), PoolError> {
+        self.request_retire_inner(registration.token, Some(registration))
+    }
+    fn request_retire_inner(
+        &self,
+        token: ProcessorToken,
+        registration: Option<&Arc<Registration>>,
+    ) -> Result<(), PoolError> {
         let mut state = lock(&self.shared);
-
-        if state.shutdown {
-            return Err(PoolError::Shutdown);
+        let entry = state
+            .processors
+            .get(&token)
+            .ok_or(SchedulerError::UnknownProcessor)?;
+        if registration.is_some_and(|registration| !Arc::ptr_eq(registration, &entry.registration))
+        {
+            return Err(SchedulerError::UnknownProcessor.into());
         }
-
-        if !state.processors.contains_key(&token) {
-            return Err(PoolError::Scheduler(SchedulerError::UnknownProcessor));
-        }
-
+        entry.registration.close();
         state.retiring.insert(token);
-
-        loop {
-            // The worker may have completed retirement while
-            // this thread was waiting.
-            if !state.processors.contains_key(&token) {
-                return Ok(());
+        let removed = match state.scheduler.unregister(token) {
+            Ok(()) => {
+                state.retiring.remove(&token);
+                state.processors.remove(&token)
             }
-
-            match state.scheduler.unregister(token) {
-                Ok(()) => {
-                    // The processor was Idle or Ready.
-                    // No worker currently owns it.
-                    state.processors.remove(&token);
-                    state.retiring.remove(&token);
-
-                    self.shared.wake.notify_all();
-
-                    return Ok(());
-                }
-
-                Err(SchedulerError::ProcessorBusy) => {
-                    // The worker owns the processor.
-                    // Condvar::wait releases the pool mutex,
-                    // allowing that worker to finish its turn.
-                    state = self
-                        .shared
-                        .wake
-                        .wait(state)
-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
-                }
-
-                Err(error) => {
-                    // Defensive cleanup for unexpected scheduler
-                    // errors. Normal states are covered above.
-                    state.retiring.remove(&token);
-                    return Err(PoolError::Scheduler(error));
-                }
-            }
+            Err(SchedulerError::ProcessorBusy) => None,
+            Err(e) => return Err(e.into()),
+        };
+        if let Some(entry) = removed {
+            state.destroying.insert(token);
+            state.disposals.push_back((token, entry));
         }
+        drop(state);
+        self.shared.wake.notify_all();
+        self.shared
+            .updates
+            .send_modify(|version| *version = version.wrapping_add(1));
+        Ok(())
+    }
+    #[cfg(test)]
+    pub(crate) fn retire(&self, token: ProcessorToken) -> Result<(), PoolError> {
+        self.request_retire(token)?;
+        let mut state = lock(&self.shared);
+        while state.processors.contains_key(&token) || state.destroying.contains(&token) {
+            state = self
+                .shared
+                .wake
+                .wait(state)
+                .unwrap_or_else(|e| e.into_inner());
+        }
+        Ok(())
+    }
+    pub(crate) fn settled_registration(&self, registration: &Arc<Registration>) -> bool {
+        let state = lock(&self.shared);
+        !state.destroying.contains(&registration.token)
+            && !state
+                .processors
+                .get(&registration.token)
+                .is_some_and(|entry| Arc::ptr_eq(&entry.registration, registration))
+    }
+    pub(crate) fn retire_registration(
+        &self,
+        registration: &Arc<Registration>,
+    ) -> Result<(), PoolError> {
+        if self.settled_registration(registration) {
+            return Ok(());
+        }
+        match self.request_retire_registration(registration) {
+            Ok(()) | Err(PoolError::Scheduler(SchedulerError::UnknownProcessor)) => {}
+            Err(error) => return Err(error),
+        }
+        let mut state = lock(&self.shared);
+        while state.destroying.contains(&registration.token)
+            || state
+                .processors
+                .get(&registration.token)
+                .is_some_and(|entry| Arc::ptr_eq(&entry.registration, registration))
+        {
+            state = self
+                .shared
+                .wake
+                .wait(state)
+                .unwrap_or_else(|e| e.into_inner());
+        }
+        Ok(())
     }
 }
-
-impl Drop for ProcessingPool {
-    fn drop(&mut self) {
-        self.shutdown();
+fn destructor_failed(shared: &Shared, registration: &Arc<Registration>) {
+    let mut state = lock(shared);
+    state.stats.destructor_panics += 1;
+    let mut terminal = registration
+        .terminal
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if terminal.is_none() {
+        let failure = ProcessorFailure {
+            processor: registration.token,
+            kind: ProcessorFailureKind::Panicked,
+        };
+        *terminal = Some(failure);
+        *registration
+            .detail
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some("processor destructor panicked".into());
+        state.failures.insert(registration.token.id, failure);
     }
+    shared
+        .updates
+        .send_modify(|version| *version = version.wrapping_add(1));
 }
-
 fn worker_loop(shared: Arc<Shared>) {
     loop {
-        // Acquire exclusive ownership of a processor.
         let (lease, mut processor) = {
             let mut state = lock(&shared);
-
             loop {
+                #[cfg(test)]
+                if state.exit_requested {
+                    state.exit_requested = false;
+                    panic!("injected unexpected worker exit");
+                }
+                if let Some((token, entry)) = state.disposals.pop_front() {
+                    state.stats.active_workers += 1;
+                    drop(state);
+                    let registration = entry.registration.clone();
+                    if catch_unwind(AssertUnwindSafe(|| drop(entry))).is_err() {
+                        destructor_failed(&shared, &registration);
+                    }
+                    state = lock(&shared);
+                    state.stats.active_workers -= 1;
+                    state.destroying.remove(&token);
+                    shared.wake.notify_all();
+                    shared
+                        .updates
+                        .send_modify(|version| *version = version.wrapping_add(1));
+                    continue;
+                }
                 if state.shutdown {
                     return;
                 }
-
                 if let Some(lease) = state.scheduler.acquire() {
-                    let token = lease.processor();
                     let processor = state
                         .processors
-                        .get_mut(&token)
-                        .expect("scheduled processor must be registered")
+                        .get_mut(&lease.processor())
+                        .unwrap()
+                        .processor
                         .take()
-                        .expect("scheduled processor must be available");
-
+                        .unwrap();
+                    state.stats.active_workers += 1;
                     break (lease, processor);
                 }
-
-                state = shared
-                    .wake
-                    .wait(state)
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                state = shared.wake.wait(state).unwrap_or_else(|e| e.into_inner());
             }
         };
-
-        // CPU computation runs WITHOUT holding the scheduler mutex.
-        //
-        // Other workers can acquire and process different
-        // processor instances concurrently.
         let result = catch_unwind(AssertUnwindSafe(|| {
-            processor.run_turn(shared.max_events_per_turn)
+            processor.try_run_turn(shared.max_events_per_turn)
         }));
-
         let token = lease.processor();
         let mut state = lock(&shared);
-
-        match result {
-            Ok(has_more_work) => {
-                let retiring = state.retiring.contains(&token);
-
-                state.processors.insert(token, Some(processor));
-
-                // A retiring processor must never be reactivated.
-                if !state.shutdown && !retiring && has_more_work {
-                    state
-                        .scheduler
-                        .notify(token)
-                        .expect("running processor must remain registered");
+        state.stats.active_workers -= 1;
+        let failure = match &result {
+            Err(_) => Some(ProcessorFailureKind::Panicked),
+            Ok(Err(_)) => Some(ProcessorFailureKind::Error),
+            _ => None,
+        };
+        let retiring = state.shutdown || state.retiring.contains(&token) || failure.is_some();
+        if !retiring && matches!(result, Ok(Ok(true))) {
+            state.scheduler.notify(token).unwrap();
+        }
+        state.scheduler.complete(lease).unwrap();
+        let removed = if retiring {
+            state.scheduler.unregister(token).unwrap();
+            state.retiring.remove(&token);
+            let entry = state.processors.remove(&token).unwrap();
+            entry.registration.close();
+            if let Some(kind) = failure {
+                let report = ProcessorFailure {
+                    processor: token,
+                    kind,
+                };
+                *entry
+                    .registration
+                    .terminal
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = Some(report);
+                let detail = match &result {
+                    Ok(Err(reason)) => reason.as_str(),
+                    Err(payload) => payload
+                        .downcast_ref::<&str>()
+                        .copied()
+                        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                        .unwrap_or("processor panicked"),
+                    _ => "processor failed",
+                };
+                *entry
+                    .registration
+                    .detail
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = Some(detail.chars().take(4096).collect());
+                state.failures.insert(token.id, report);
+                match kind {
+                    ProcessorFailureKind::Panicked => state.stats.processor_panics += 1,
+                    ProcessorFailureKind::Error => state.stats.processor_errors += 1,
                 }
-
-                state
-                    .scheduler
-                    .complete(lease)
-                    .expect("valid execution lease must complete");
-
-                state.stats.completed_turns = state.stats.completed_turns.saturating_add(1);
-
-                if retiring {
-                    // Any notification that arrived before retirement
-                    // may have created a queued activation.
-                    //
-                    // The processor has finished its current turn,
-                    // so it can now be removed safely.
-                    state
-                        .scheduler
-                        .unregister(token)
-                        .expect("retiring processor must be removable");
-
-                    state.processors.remove(&token);
-                    state.retiring.remove(&token);
-                }
-
-                // Wake other workers and any retirement callers.
-                shared.wake.notify_all();
             }
-
-            Err(_) => {
-                state.stats.processor_panics = state.stats.processor_panics.saturating_add(1);
-
-                // A failed processor must never execute another turn.
-                //
-                // Release its execution lease and remove its
-                // registration while holding the pool state lock.
-                state
-                    .scheduler
-                    .complete(lease)
-                    .expect("failed processor lease must complete");
-
-                state
-                    .scheduler
-                    .unregister(token)
-                    .expect("failed processor must be removable");
-
-                state.processors.remove(&token);
-                state.retiring.remove(&token);
-                // Wake any controller waiting for retirement.
-                shared.wake.notify_all();
-                // Publish the failure to the pool's lifecycle
-                // observation state.
-                //
-                // A new registration with the same logical ID is
-                // blocked until this exact failure is acknowledged.
-                state.failures.insert(
-                    token.id,
-                    ProcessorFailure {
-                        processor: token,
-                        kind: ProcessorFailureKind::Panicked,
-                    },
-                );
-
-                // The owning Live controller will eventually:
-                // - observe this failure;
-                // - invalidate the affected derived stream;
-                // - reconcile dependent streams;
-                // - acknowledge this terminal failure.
+            state.destroying.insert(token);
+            Some(entry)
+        } else {
+            None
+        };
+        if failure.is_none() {
+            state.stats.completed_turns += 1;
+        }
+        if !retiring {
+            state.processors.get_mut(&token).unwrap().processor = Some(processor);
+            drop(state);
+        } else {
+            drop(state);
+            let registration = removed.as_ref().unwrap().registration.clone();
+            if catch_unwind(AssertUnwindSafe(|| drop(processor))).is_err() {
+                destructor_failed(&shared, &registration);
             }
         }
+        drop(removed);
+        lock(&shared).destroying.remove(&token);
+        shared.wake.notify_all();
+        shared
+            .updates
+            .send_modify(|version| *version = version.wrapping_add(1));
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -504,6 +808,7 @@ mod tests {
             workers,
             ready_queue_capacity: 16,
             max_events_per_turn: 8,
+            ..ProcessingConfig::default()
         }
     }
 
@@ -525,6 +830,76 @@ mod tests {
 
             self.remaining > 0
         }
+    }
+
+    #[test]
+    fn unexpected_worker_exit_is_supervised() {
+        let mut owner = ProcessingPool::new(config(1)).unwrap();
+        lock(&owner.shared).exit_requested = true;
+        owner.shared.wake.notify_all();
+        let result = owner.shutdown_until(Instant::now() + Duration::from_secs(2));
+        assert!(result.complete);
+        assert_eq!(result.unexpected_worker_exits, 1);
+        assert_eq!(owner.stats().exited_workers, 1);
+    }
+    #[test]
+    fn worker_cannot_join_itself() {
+        struct SelfStop {
+            owner: Arc<Mutex<Option<ProcessingPool>>>,
+            result: mpsc::Sender<ShutdownOutcome>,
+        }
+        impl Processor for SelfStop {
+            fn run_turn(&mut self, _: usize) -> bool {
+                let outcome = self
+                    .owner
+                    .lock()
+                    .unwrap()
+                    .as_mut()
+                    .unwrap()
+                    .shutdown_until(Instant::now() + Duration::from_secs(2));
+                self.result.send(outcome).unwrap();
+                false
+            }
+        }
+        let owner = ProcessingPool::new(config(1)).unwrap();
+        let handle = owner.handle();
+        let slot = Arc::new(Mutex::new(None));
+        let (tx, rx) = mpsc::channel();
+        owner
+            .register(
+                token(1),
+                SelfStop {
+                    owner: slot.clone(),
+                    result: tx,
+                },
+            )
+            .unwrap();
+        *slot.lock().unwrap() = Some(owner);
+        handle.notify(token(1)).unwrap();
+        let outcome = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(!outcome.complete);
+        let mut owner = slot.lock().unwrap().take().unwrap();
+        assert!(
+            owner
+                .shutdown_until(Instant::now() + Duration::from_secs(2))
+                .complete
+        );
+    }
+    #[test]
+    fn partial_worker_startup_joins_started_workers() {
+        let (exited, observed) = mpsc::channel();
+        let result = ProcessingPool::start_with(config(3), |index, job| {
+            if index == 1 {
+                return Err(std::io::Error::other("injected creation failure"));
+            }
+            let exited = exited.clone();
+            thread::Builder::new().spawn(move || {
+                job();
+                exited.send(()).unwrap();
+            })
+        });
+        assert!(matches!(result, Err(PoolError::WorkerStartup(_))));
+        observed.recv_timeout(Duration::from_secs(2)).unwrap();
     }
 
     #[test]
@@ -559,7 +934,7 @@ mod tests {
     impl Processor for BlockingProcessor {
         fn run_turn(&mut self, _max_events: usize) -> bool {
             self.started.send(()).unwrap();
-            self.release.recv().unwrap();
+            self.release.recv_timeout(Duration::from_secs(3)).unwrap();
             false
         }
     }
@@ -617,7 +992,7 @@ mod tests {
 
             if run == 1 {
                 self.started.send(()).unwrap();
-                self.release.recv().unwrap();
+                self.release.recv_timeout(Duration::from_secs(3)).unwrap();
             }
 
             self.completed.send(run).unwrap();
@@ -725,8 +1100,8 @@ mod tests {
         assert_eq!(stats.processor_panics, 1);
         assert_eq!(stats.completed_turns, 1);
 
-        // The failed processor must no longer be registered.
-        assert_eq!(pool.registered_count(), 1);
+        // Shutdown retires even healthy idle registrations.
+        assert_eq!(pool.registered_count(), 0);
     }
     #[test]
     fn shutdown_waits_for_running_turn() {
@@ -782,12 +1157,13 @@ mod tests {
 
     impl Processor for MailboxProcessor {
         fn run_turn(&mut self, max_events: usize) -> bool {
-            let batch = self.mailbox.take_batch(max_events);
+            let batch = self.mailbox.take_work(max_events);
 
             if !batch.is_empty() {
-                self.sender.send(batch).unwrap();
+                self.sender.send(batch.to_vec()).unwrap();
             }
 
+            batch.complete();
             !self.mailbox.is_empty()
         }
     }
@@ -1147,7 +1523,8 @@ mod tests {
 
         // Processor 2 is Ready, but cannot execute because
         // the only worker is occupied.
-        pool.retire(token(2)).unwrap();
+        pool.request_retire(token(2)).unwrap();
+        assert!(pool.notify(token(2)).is_err());
 
         release_tx.send(()).unwrap();
 

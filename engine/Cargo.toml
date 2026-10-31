@@ -353,3 +353,8 @@ path = "tests/shared/conversion/main.rs"
 [[test]]
 name = "shared_merge"
 path = "tests/shared/merge/main.rs"
+
+[[test]]
+name = "live_processing"
+path = "tests/live/integration/processing/main.rs"
+required-features = ["live"]

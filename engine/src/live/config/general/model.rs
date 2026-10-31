@@ -37,12 +37,47 @@ pub struct ProcessingConfig {
     /// Number of dedicated CPU-processing threads.
     pub workers: usize,
 
-    /// Maximum number of runnable processor activations queued.
-    /// This does not limit per-processor market-data mailboxes.
+    /// Ready plus running activation capacity; each registration reserves one slot.
+    /// Retained failures keep their reservation until acknowledged.
     pub ready_queue_capacity: usize,
 
     /// Maximum number of events processed during one scheduling turn.
     pub max_events_per_turn: usize,
+    /// Aggregate queued, in-flight, and pending output accounting limits.
+    #[serde(
+        default = "default_processing_events",
+        skip_serializing_if = "is_default_processing_events"
+    )]
+    pub buffered_events: usize,
+    #[serde(
+        default = "default_processing_bytes",
+        skip_serializing_if = "is_default_processing_bytes"
+    )]
+    pub buffered_bytes: usize,
+}
+
+fn default_processing_events() -> usize {
+    65536
+}
+fn default_processing_bytes() -> usize {
+    64 * 1024 * 1024
+}
+fn is_default_processing_events(value: &usize) -> bool {
+    *value == default_processing_events()
+}
+fn is_default_processing_bytes(value: &usize) -> bool {
+    *value == default_processing_bytes()
+}
+impl Default for ProcessingConfig {
+    fn default() -> Self {
+        Self {
+            workers: 1,
+            ready_queue_capacity: 1024,
+            max_events_per_turn: 512,
+            buffered_events: default_processing_events(),
+            buffered_bytes: default_processing_bytes(),
+        }
+    }
 }
 
 // ============================================================

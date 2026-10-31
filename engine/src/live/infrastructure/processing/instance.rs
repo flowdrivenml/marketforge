@@ -4,7 +4,9 @@ use thiserror::Error;
 
 use super::{
     mailbox::{AdmissionError, MailboxError, MailboxLimits, ProcessorMailbox},
-    pool::{PoolError, ProcessingPool, Processor, ProcessorFailure},
+    pool::{
+        PoolError, ProcessingHandle, ProcessingPool, Processor, ProcessorFailure, Registration,
+    },
     scheduler::{ProcessorToken, SchedulerError},
 };
 
@@ -26,6 +28,7 @@ pub struct StopOutcome<E> {
     pub failure: Option<ProcessorFailure>,
     pub unprocessed: Vec<E>,
     pub unprocessed_bytes: usize,
+    pub accounting: super::mailbox::MailboxStatus,
 }
 
 /// A clonable admission handle for one processor generation.
@@ -34,7 +37,8 @@ pub struct StopOutcome<E> {
 pub struct ProcessorIngress<E> {
     token: ProcessorToken,
     mailbox: Arc<ProcessorMailbox<E>>,
-    pool: Arc<ProcessingPool>,
+    pool: ProcessingHandle,
+    registration: Arc<Registration>,
 }
 
 impl<E> Clone for ProcessorIngress<E> {
@@ -42,7 +46,8 @@ impl<E> Clone for ProcessorIngress<E> {
         Self {
             token: self.token,
             mailbox: Arc::clone(&self.mailbox),
-            pool: Arc::clone(&self.pool),
+            pool: self.pool.clone(),
+            registration: self.registration.clone(),
         }
     }
 }
@@ -56,8 +61,8 @@ impl<E> ProcessorIngress<E> {
     ///
     /// The event is returned to the caller if admission fails.
     pub fn admit(&self, event: E, bytes: usize) -> Result<(), AdmissionError<E, PoolError>> {
-        self.mailbox
-            .push_and_notify(event, bytes, || self.pool.notify(self.token))
+        self.pool
+            .admit(&self.registration, &self.mailbox, event, bytes)
     }
 }
 
@@ -70,7 +75,8 @@ impl<E> ProcessorIngress<E> {
 pub struct ProcessorInstance<E> {
     token: ProcessorToken,
     mailbox: Arc<ProcessorMailbox<E>>,
-    pool: Arc<ProcessingPool>,
+    pool: ProcessingHandle,
+    registration: Arc<Registration>,
     stopped: bool,
 }
 
@@ -80,6 +86,8 @@ impl<E: Send + 'static> ProcessorInstance<E> {
     /// The factory receives the mailbox so the processor can
     /// consume events during run_turn().
     ///
+    /// The token supplies a logical ID; its generation is a legacy hint. The
+    /// runtime allocates a fresh registration identity, returned by token().
     /// Registration does not start execution. Execution begins
     /// when an ingress handle admits the first event.
     pub fn start<P, F>(
@@ -92,16 +100,34 @@ impl<E: Send + 'static> ProcessorInstance<E> {
         P: Processor,
         F: FnOnce(Arc<ProcessorMailbox<E>>) -> P,
     {
+        Self::start_with_handle(pool.handle(), token, limits, factory)
+    }
+
+    pub fn start_with_handle<P: Processor, F: FnOnce(Arc<ProcessorMailbox<E>>) -> P>(
+        pool: ProcessingHandle,
+        token: ProcessorToken,
+        limits: MailboxLimits,
+        factory: F,
+    ) -> Result<Self, InstanceError> {
         let mailbox = Arc::new(ProcessorMailbox::new(limits)?);
-
+        mailbox.manage(pool.budget());
         let processor = factory(Arc::clone(&mailbox));
-
-        pool.register(token, processor)?;
+        Self::from_mailbox(pool, token.id, mailbox, processor)
+    }
+    pub(crate) fn from_mailbox<P: Processor>(
+        pool: ProcessingHandle,
+        id: u64,
+        mailbox: Arc<ProcessorMailbox<E>>,
+        processor: P,
+    ) -> Result<Self, InstanceError> {
+        let token = pool.fresh_token(id);
+        let registration = pool.register_managed(token, processor, mailbox.clone())?;
 
         Ok(Self {
             token,
             mailbox,
             pool,
+            registration,
             stopped: false,
         })
     }
@@ -112,10 +138,30 @@ impl<E: Send + 'static> ProcessorInstance<E> {
         ProcessorIngress {
             token: self.token,
             mailbox: Arc::clone(&self.mailbox),
-            pool: Arc::clone(&self.pool),
+            pool: self.pool.clone(),
+            registration: self.registration.clone(),
         }
     }
 
+    pub fn mailbox(&self) -> &Arc<ProcessorMailbox<E>> {
+        &self.mailbox
+    }
+    pub fn request_stop(&self) {
+        let _ = self.pool.request_retire_registration(&self.registration);
+    }
+    pub fn is_settled(&self) -> bool {
+        self.pool.settled_registration(&self.registration)
+    }
+    #[cfg(test)]
+    pub(crate) fn registration_for_test(&self) -> Arc<Registration> {
+        self.registration.clone()
+    }
+    pub fn failure_detail(&self) -> Option<String> {
+        self.registration.detail()
+    }
+    pub fn failure(&self) -> Option<ProcessorFailure> {
+        self.registration.failure()
+    }
     pub fn token(&self) -> ProcessorToken {
         self.token
     }
@@ -139,6 +185,7 @@ impl<E: Send + 'static> ProcessorInstance<E> {
                 failure: None,
                 unprocessed: Vec::new(),
                 unprocessed_bytes: 0,
+                accounting: self.mailbox.status(),
             });
         }
 
@@ -152,19 +199,15 @@ impl<E: Send + 'static> ProcessorInstance<E> {
         //
         // If the worker already removed the processor after a
         // panic, its terminal failure must still be observable.
-        let failure = match self.pool.retire(self.token) {
-            Ok(()) => self
-                .pool
-                .failure(self.token.id)
-                .filter(|failure| failure.processor == self.token),
+        let failure = match self.pool.retire_registration(&self.registration) {
+            Ok(()) => self.registration.failure(),
 
             Err(PoolError::Scheduler(SchedulerError::UnknownProcessor)) => {
                 // Unknown registration is acceptable only when
                 // the exact generation has a terminal failure.
                 Some(
-                    self.pool
-                        .failure(self.token.id)
-                        .filter(|failure| failure.processor == self.token)
+                    self.registration
+                        .failure()
                         .ok_or(PoolError::Scheduler(SchedulerError::UnknownProcessor))?,
                 )
             }
@@ -178,7 +221,7 @@ impl<E: Send + 'static> ProcessorInstance<E> {
         // Therefore the remaining queued events are stable.
         let status = self.mailbox.status();
 
-        let unprocessed = self.mailbox.take_batch(usize::MAX);
+        let unprocessed = self.mailbox.collect_remaining();
 
         debug_assert_eq!(unprocessed.len(), status.queued_events,);
 
@@ -188,6 +231,7 @@ impl<E: Send + 'static> ProcessorInstance<E> {
             failure,
             unprocessed,
             unprocessed_bytes: status.queued_bytes,
+            accounting: self.mailbox.status(),
         })
     }
 }
@@ -213,6 +257,7 @@ mod tests {
                 workers: 1,
                 ready_queue_capacity: 16,
                 max_events_per_turn: 8,
+                ..ProcessingConfig::default()
             })
             .unwrap(),
         )
@@ -236,9 +281,10 @@ mod tests {
 
     impl Processor for CountingProcessor {
         fn run_turn(&mut self, max_events: usize) -> bool {
-            let batch = self.mailbox.take_batch(max_events);
+            let batch = self.mailbox.take_work(max_events);
 
             self.processed.fetch_add(batch.len(), Ordering::SeqCst);
+            batch.complete();
 
             !self.mailbox.is_empty()
         }
@@ -290,15 +336,16 @@ mod tests {
     impl Processor for BlockingProcessor {
         fn run_turn(&mut self, _max_events: usize) -> bool {
             // Consume exactly one event.
-            let batch = self.mailbox.take_batch(1);
+            let batch = self.mailbox.take_work(1);
 
             if !batch.is_empty() {
                 self.started.send(()).unwrap();
 
                 // Simulate an executing CPU turn.
-                self.release.recv().unwrap();
+                self.release.recv_timeout(Duration::from_secs(3)).unwrap();
             }
 
+            batch.complete();
             !self.mailbox.is_empty()
         }
     }
@@ -418,5 +465,218 @@ mod tests {
         // The new generation may already have processed the
         // event or may return it as unprocessed during stop.
         assert!(outcome.unprocessed.is_empty() || outcome.unprocessed == vec![100]);
+    }
+    #[test]
+    fn dropping_ready_instance_cancels_queued_execution() {
+        struct Blocker {
+            started: mpsc::Sender<()>,
+            release: mpsc::Receiver<()>,
+        }
+
+        impl Processor for Blocker {
+            fn run_turn(&mut self, _: usize) -> bool {
+                self.started.send(()).unwrap();
+                self.release.recv_timeout(Duration::from_secs(3)).unwrap();
+                false
+            }
+        }
+
+        struct CountRuns(Arc<AtomicUsize>);
+
+        impl Processor for CountRuns {
+            fn run_turn(&mut self, _: usize) -> bool {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                false
+            }
+        }
+
+        let pool = pool(); // Existing one-worker test helper.
+
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+
+        let blocker_token = ProcessorToken {
+            id: 100,
+            generation: 1,
+        };
+
+        pool.register(
+            blocker_token,
+            Blocker {
+                started: started_tx,
+                release: release_rx,
+            },
+        )
+        .unwrap();
+
+        pool.notify(blocker_token).unwrap();
+
+        started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+
+        let runs = Arc::new(AtomicUsize::new(0));
+
+        let instance =
+            ProcessorInstance::<u64>::start(Arc::clone(&pool), token(1), limits(), |_mailbox| {
+                CountRuns(Arc::clone(&runs))
+            })
+            .unwrap();
+
+        pool.notify(instance.token()).unwrap();
+
+        assert_eq!(pool.registered_count(), 2);
+
+        // No worker is available to execute this instance.
+        // Drop must cancel its queued activation.
+        drop(instance);
+
+        assert_eq!(pool.registered_count(), 1);
+
+        release_tx.send(()).unwrap();
+
+        pool.retire(blocker_token).unwrap();
+
+        assert_eq!(runs.load(Ordering::SeqCst), 0);
+        assert_eq!(pool.registered_count(), 0);
+    }
+    #[test]
+    fn dropping_running_instance_requests_nonblocking_retirement() {
+        struct Blocker {
+            started: mpsc::Sender<()>,
+            release: mpsc::Receiver<()>,
+        }
+
+        impl Processor for Blocker {
+            fn run_turn(&mut self, _: usize) -> bool {
+                self.started.send(()).unwrap();
+                self.release.recv_timeout(Duration::from_secs(3)).unwrap();
+                false
+            }
+        }
+
+        let pool = pool();
+
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let (dropped_tx, dropped_rx) = mpsc::channel();
+
+        let instance =
+            ProcessorInstance::<u64>::start(Arc::clone(&pool), token(1), limits(), |_mailbox| {
+                Blocker {
+                    started: started_tx,
+                    release: release_rx,
+                }
+            })
+            .unwrap();
+
+        let stale_ingress = instance.ingress();
+
+        pool.notify(instance.token()).unwrap();
+
+        started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+
+        // The CPU worker is blocked inside run_turn().
+        //
+        // Dropping the instance must not wait for it.
+        let drop_thread = thread::spawn(move || {
+            drop(instance);
+            dropped_tx.send(()).unwrap();
+        });
+
+        let dropped = dropped_rx.recv_timeout(Duration::from_secs(2));
+
+        // Always release the worker, including when the
+        // nonblocking-drop assertion would fail.
+        release_tx.send(()).unwrap();
+
+        drop_thread.join().unwrap();
+
+        assert!(
+            dropped.is_ok(),
+            "dropping an instance blocked on CPU execution"
+        );
+
+        // Retirement must eventually remove the registration.
+        let deadline = Instant::now() + Duration::from_secs(2);
+
+        while pool.registered_count() != 0 {
+            assert!(
+                Instant::now() < deadline,
+                "running processor was not retired"
+            );
+
+            thread::yield_now();
+        }
+
+        // An old ingress handle cannot resume this generation.
+        assert!(matches!(
+            stale_ingress.admit(42, 8),
+            Err(AdmissionError::Mailbox(error))
+                if error.reason == MailboxError::Closed
+                && error.event == 42
+        ));
+    }
+    #[test]
+    fn dropping_stopped_instance_preserves_replacement() {
+        struct Noop;
+
+        impl Processor for Noop {
+            fn run_turn(&mut self, _: usize) -> bool {
+                false
+            }
+        }
+
+        let pool = pool();
+
+        let mut old =
+            ProcessorInstance::<u64>::start(Arc::clone(&pool), token(1), limits(), |_mailbox| Noop)
+                .unwrap();
+
+        old.stop().unwrap();
+
+        let mut replacement =
+            ProcessorInstance::<u64>::start(Arc::clone(&pool), token(2), limits(), |_mailbox| Noop)
+                .unwrap();
+
+        // Drop the old instance after its registration was
+        // removed and the new generation was registered.
+        drop(old);
+
+        assert_eq!(pool.registered_count(), 1);
+
+        replacement.stop().unwrap();
+
+        assert_eq!(pool.registered_count(), 0);
+    }
+}
+
+/// Fail-safe cleanup for an abandoned processor instance.
+///
+/// Explicit stop() remains mandatory for lifecycle-controlled
+/// shutdown because only stop() returns unprocessed events.
+///
+/// Drop must not block waiting for CPU execution.
+impl<E> Drop for ProcessorInstance<E> {
+    fn drop(&mut self) {
+        if self.stopped {
+            return;
+        }
+
+        // Prevent additional event admission.
+        //
+        // This serializes with concurrent push_and_notify()
+        // operations through the mailbox mutex.
+        self.mailbox.close();
+
+        // Request retirement without waiting for a CPU turn.
+        //
+        // A running processor finishes its current turn,
+        // after which the worker removes its registration.
+        //
+        // The pool may already be shutting down or may have
+        // removed this processor following a panic.
+        // In those cases, the pool owns final cleanup.
+        let _ = self.pool.request_retire_registration(&self.registration);
+        let abandoned = self.mailbox.collect_remaining();
+        drop(abandoned);
     }
 }

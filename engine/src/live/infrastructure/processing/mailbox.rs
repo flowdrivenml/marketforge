@@ -1,6 +1,6 @@
 use std::{
     collections::VecDeque,
-    sync::{Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use thiserror::Error;
@@ -22,11 +22,21 @@ impl MailboxLimits {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct MailboxStatus {
     pub queued_events: usize,
     pub queued_bytes: usize,
     pub closed: bool,
+    pub in_flight_events: usize,
+    pub in_flight_bytes: usize,
+    pub retained_terminal_events: usize,
+    pub retained_terminal_bytes: usize,
+    pub completed_events: u64,
+    pub indeterminate_events: u64,
+    pub indeterminate_bytes: u64,
+    pub rejected_events: u64,
+    pub abandoned_events: u64,
+    pub abandoned_bytes: u64,
 }
 
 /// Failure during coordinated mailbox admission.
@@ -55,6 +65,9 @@ pub enum MailboxError {
 
     #[error("mailbox byte accounting overflow")]
     SizeOverflow,
+
+    #[error("standalone admission is disabled on managed mailboxes")]
+    Managed,
 }
 
 /// Admission failure retains ownership of the rejected event.
@@ -72,10 +85,141 @@ struct Entry<E> {
     bytes: usize,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BufferStatus {
+    pub queued_events: usize,
+    pub queued_bytes: usize,
+    pub in_flight_events: usize,
+    pub in_flight_bytes: usize,
+    pub retained_terminal_events: usize,
+    pub retained_terminal_bytes: usize,
+    pub completed_events: u64,
+    pub completed_bytes: u64,
+    pub abandoned_events: u64,
+    pub abandoned_bytes: u64,
+    pub indeterminate_events: u64,
+    pub indeterminate_bytes: u64,
+    pub rejected_events: u64,
+}
+#[derive(Debug)]
+pub struct BufferBudget {
+    limits: MailboxLimits,
+    state: Mutex<BufferStatus>,
+}
+impl BufferBudget {
+    pub fn new(limits: MailboxLimits) -> Result<Self, MailboxError> {
+        limits.validate()?;
+        Ok(Self {
+            limits,
+            state: Mutex::new(BufferStatus::default()),
+        })
+    }
+    fn reserve(&self, bytes: usize) -> bool {
+        let mut used = lock(&self.state);
+        if used.queued_events + used.in_flight_events + used.retained_terminal_events
+            >= self.limits.max_events
+            || used
+                .queued_bytes
+                .checked_add(used.in_flight_bytes)
+                .and_then(|n| n.checked_add(used.retained_terminal_bytes))
+                .and_then(|n| n.checked_add(bytes))
+                .is_none_or(|n| n > self.limits.max_bytes)
+        {
+            return false;
+        }
+        used.queued_events += 1;
+        used.queued_bytes += bytes;
+        true
+    }
+    fn dequeue(&self, count: usize, bytes: usize) {
+        let mut used = lock(&self.state);
+        used.queued_events -= count;
+        used.queued_bytes -= bytes;
+        used.in_flight_events += count;
+        used.in_flight_bytes += bytes;
+    }
+    fn requeue(&self, count: usize, bytes: usize) {
+        let mut used = lock(&self.state);
+        used.in_flight_events -= count;
+        used.in_flight_bytes -= bytes;
+        used.queued_events += count;
+        used.queued_bytes += bytes;
+    }
+    fn finish(&self, count: usize, bytes: usize, disposition: u8, retained: bool) {
+        let mut used = lock(&self.state);
+        if retained {
+            used.retained_terminal_events -= count;
+            used.retained_terminal_bytes -= bytes;
+        } else {
+            used.in_flight_events -= count;
+            used.in_flight_bytes -= bytes;
+        }
+        match disposition {
+            1 => {
+                used.completed_events += count as u64;
+                used.completed_bytes += bytes as u64;
+            }
+            2 => {
+                used.abandoned_events += count as u64;
+                used.abandoned_bytes += bytes as u64;
+            }
+            _ => {
+                used.indeterminate_events += count as u64;
+                used.indeterminate_bytes += bytes as u64;
+            }
+        }
+    }
+    fn retain_terminal(&self, count: usize, bytes: usize) {
+        let mut used = lock(&self.state);
+        used.in_flight_events -= count;
+        used.in_flight_bytes -= bytes;
+        used.retained_terminal_events += count;
+        used.retained_terminal_bytes += bytes;
+    }
+    fn discard_queued(&self, count: usize, bytes: usize) {
+        let mut used = lock(&self.state);
+        used.queued_events -= count;
+        used.queued_bytes -= bytes;
+        used.abandoned_events += count as u64;
+        used.abandoned_bytes += bytes as u64;
+    }
+    fn reject(&self) {
+        lock(&self.state).rejected_events += 1;
+    }
+    pub fn status(&self) -> BufferStatus {
+        *lock(&self.state)
+    }
+    pub fn used(&self) -> (usize, usize) {
+        let used = self.status();
+        (
+            used.queued_events + used.in_flight_events + used.retained_terminal_events,
+            used.queued_bytes + used.in_flight_bytes + used.retained_terminal_bytes,
+        )
+    }
+}
 struct MailboxState<E> {
     events: VecDeque<Entry<E>>,
     queued_bytes: usize,
     closed: bool,
+    managed: bool,
+    in_flight_events: usize,
+    in_flight_bytes: usize,
+    retained_terminal_events: usize,
+    retained_terminal_bytes: usize,
+    completed_events: u64,
+    indeterminate_events: u64,
+    indeterminate_bytes: u64,
+    rejected_events: u64,
+    abandoned_events: u64,
+    abandoned_bytes: u64,
+    budget: Option<Arc<BufferBudget>>,
+}
+impl<E> Drop for MailboxState<E> {
+    fn drop(&mut self) {
+        if let Some(budget) = &self.budget {
+            budget.discard_queued(self.events.len(), self.queued_bytes);
+        }
+    }
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -93,7 +237,9 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// to preserve stateful processing semantics.
 pub struct ProcessorMailbox<E> {
     limits: MailboxLimits,
-    state: Mutex<MailboxState<E>>,
+    state: Arc<Mutex<MailboxState<E>>>,
+    fence: Arc<Mutex<bool>>,
+    closed_notify: tokio::sync::Notify,
 }
 
 impl<E> ProcessorMailbox<E> {
@@ -102,11 +248,25 @@ impl<E> ProcessorMailbox<E> {
 
         Ok(Self {
             limits,
-            state: Mutex::new(MailboxState {
+            fence: Arc::new(Mutex::new(false)),
+            closed_notify: tokio::sync::Notify::new(),
+            state: Arc::new(Mutex::new(MailboxState {
                 events: VecDeque::new(),
                 queued_bytes: 0,
                 closed: false,
-            }),
+                managed: false,
+                in_flight_events: 0,
+                in_flight_bytes: 0,
+                retained_terminal_events: 0,
+                retained_terminal_bytes: 0,
+                completed_events: 0,
+                indeterminate_events: 0,
+                indeterminate_bytes: 0,
+                rejected_events: 0,
+                abandoned_events: 0,
+                abandoned_bytes: 0,
+                budget: None,
+            })),
         })
     }
 
@@ -118,41 +278,75 @@ impl<E> ProcessorMailbox<E> {
     /// for the entire event, including all depth updates.
     pub fn push(&self, event: E, bytes: usize) -> Result<(), MailboxPushError<E>> {
         let mut state = lock(&self.state);
-
-        if state.closed {
+        if state.managed {
             return Err(MailboxPushError {
-                reason: MailboxError::Closed,
+                reason: MailboxError::Managed,
                 event,
             });
         }
-
-        if bytes > self.limits.max_bytes {
-            return Err(MailboxPushError {
-                reason: MailboxError::Oversized,
-                event,
-            });
+        Self::push_locked(&mut state, self.limits, event, bytes)
+    }
+    pub(crate) fn record_rejection(&self) {
+        let mut state = lock(&self.state);
+        state.rejected_events += 1;
+        if let Some(budget) = &state.budget {
+            budget.reject();
         }
-
-        let Some(next_bytes) = state.queued_bytes.checked_add(bytes) else {
-            return Err(MailboxPushError {
-                reason: MailboxError::SizeOverflow,
-                event,
-            });
+    }
+    pub(crate) fn push_managed(&self, event: E, bytes: usize) -> Result<(), MailboxPushError<E>> {
+        let fence = lock(&self.fence);
+        let mut state = lock(&self.state);
+        if *fence {
+            state.closed = true;
+        }
+        Self::push_locked(&mut state, self.limits, event, bytes)
+    }
+    fn push_locked(
+        state: &mut MailboxState<E>,
+        limits: MailboxLimits,
+        event: E,
+        bytes: usize,
+    ) -> Result<(), MailboxPushError<E>> {
+        let reason = if state.closed {
+            Some(MailboxError::Closed)
+        } else if bytes > limits.max_bytes {
+            Some(MailboxError::Oversized)
+        } else if state.events.len() + state.in_flight_events + state.retained_terminal_events
+            >= limits.max_events
+            || state
+                .queued_bytes
+                .checked_add(state.in_flight_bytes)
+                .and_then(|n| n.checked_add(state.retained_terminal_bytes))
+                .and_then(|n| n.checked_add(bytes))
+                .is_none_or(|n| n > limits.max_bytes)
+        {
+            Some(MailboxError::Capacity)
+        } else if state
+            .budget
+            .as_ref()
+            .is_some_and(|budget| !budget.reserve(bytes))
+        {
+            Some(MailboxError::Capacity)
+        } else {
+            None
         };
-
-        if state.events.len() >= self.limits.max_events || next_bytes > self.limits.max_bytes {
-            return Err(MailboxPushError {
-                reason: MailboxError::Capacity,
-                event,
-            });
+        if let Some(reason) = reason {
+            state.rejected_events += 1;
+            if let Some(budget) = &state.budget {
+                budget.reject();
+            }
+            return Err(MailboxPushError { reason, event });
         }
-
         state.events.push_back(Entry { event, bytes });
-        state.queued_bytes = next_bytes;
-
+        state.queued_bytes += bytes;
         Ok(())
     }
-
+    pub(crate) fn manage(&self, budget: Arc<BufferBudget>) {
+        let mut state = lock(&self.state);
+        assert!(state.events.is_empty());
+        state.managed = true;
+        state.budget = Some(budget);
+    }
     /// Remove up to `max_events` events in FIFO order.
     ///
     /// Events are moved out without cloning.
@@ -161,6 +355,7 @@ impl<E> ProcessorMailbox<E> {
     pub fn take_batch(&self, max_events: usize) -> Vec<E> {
         let mut state = lock(&self.state);
 
+        assert!(!state.managed, "managed processors must use take_work");
         let count = max_events.min(state.events.len());
         let mut batch = Vec::with_capacity(count);
 
@@ -181,20 +376,100 @@ impl<E> ProcessorMailbox<E> {
     ///
     /// Already accepted events remain available for draining.
     pub fn close(&self) {
+        let mut fence = lock(&self.fence);
+        *fence = true;
         let mut state = lock(&self.state);
         state.closed = true;
+        self.closed_notify.notify_waiters();
+    }
+
+    pub async fn closed(&self) {
+        let notified = self.closed_notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        if self.status().closed {
+            return;
+        }
+        notified.await;
+    }
+    pub(crate) fn publication_fence(&self) -> Arc<Mutex<bool>> {
+        self.fence.clone()
     }
 
     pub fn status(&self) -> MailboxStatus {
+        let fence = lock(&self.fence);
         let state = lock(&self.state);
 
         MailboxStatus {
             queued_events: state.events.len(),
             queued_bytes: state.queued_bytes,
-            closed: state.closed,
+            closed: state.closed || *fence,
+            in_flight_events: state.in_flight_events,
+            in_flight_bytes: state.in_flight_bytes,
+            retained_terminal_events: state.retained_terminal_events,
+            retained_terminal_bytes: state.retained_terminal_bytes,
+            completed_events: state.completed_events,
+            indeterminate_events: state.indeterminate_events,
+            indeterminate_bytes: state.indeterminate_bytes,
+            rejected_events: state.rejected_events,
+            abandoned_events: state.abandoned_events,
+            abandoned_bytes: state.abandoned_bytes,
         }
     }
 
+    pub fn take_work(&self, max_events: usize) -> WorkBatch<E> {
+        let mut state = lock(&self.state);
+        let count = max_events.min(state.events.len());
+        let mut events = Vec::with_capacity(count);
+        let mut bytes = 0;
+        for _ in 0..count {
+            let entry = state.events.pop_front().unwrap();
+            bytes += entry.bytes;
+            events.push(entry.event);
+        }
+        state.queued_bytes -= bytes;
+        state.in_flight_events += count;
+        state.in_flight_bytes += bytes;
+        if let Some(budget) = &state.budget {
+            budget.dequeue(count, bytes);
+        }
+        WorkBatch {
+            events,
+            bytes,
+            state: self.state.clone(),
+            charge: BatchCharge {
+                state: self.state.clone(),
+                count,
+                bytes,
+                settled: false,
+                disposition: 0,
+                retained: false,
+            },
+        }
+    }
+    pub(crate) fn return_work(&self, mut batch: WorkBatch<E>) {
+        assert!(Arc::ptr_eq(&self.state, &batch.state));
+        let mut state = lock(&self.state);
+        let events = std::mem::take(&mut batch.events);
+        // Only used for a single indivisible publication; preserve its charge.
+        assert_eq!(events.len(), 1);
+        state.in_flight_events -= 1;
+        state.in_flight_bytes -= batch.bytes;
+        state.queued_bytes += batch.bytes;
+        state.events.push_front(Entry {
+            event: events.into_iter().next().unwrap(),
+            bytes: batch.bytes,
+        });
+        if let Some(budget) = &state.budget {
+            budget.requeue(1, batch.bytes);
+        }
+        batch.charge.settled = true;
+    }
+    pub(crate) fn collect_remaining(&self) -> Vec<E> {
+        let mut batch = self.take_work(usize::MAX);
+        batch.charge.settle(2);
+        std::mem::take(&mut batch.events)
+    }
     pub fn is_empty(&self) -> bool {
         lock(&self.state).events.is_empty()
     }
@@ -220,7 +495,12 @@ impl<E> ProcessorMailbox<E> {
         F: FnOnce() -> Result<(), N>,
     {
         let mut state = lock(&self.state);
-
+        if state.managed {
+            return Err(AdmissionError::Mailbox(MailboxPushError {
+                reason: MailboxError::Managed,
+                event,
+            }));
+        }
         if state.closed {
             return Err(AdmissionError::Mailbox(MailboxPushError {
                 reason: MailboxError::Closed,
@@ -266,6 +546,96 @@ impl<E> ProcessorMailbox<E> {
         state.queued_bytes = next_bytes;
 
         Ok(())
+    }
+}
+
+/// Retains its count/byte reservation while owned. Dropping without complete is
+/// indeterminate, including unwinding after partial state mutation. Never replay it.
+pub struct WorkBatch<E> {
+    // Field order ensures payload destruction precedes releasing the reservation,
+    // including when a payload destructor unwinds.
+    events: Vec<E>,
+    bytes: usize,
+    state: Arc<Mutex<MailboxState<E>>>,
+    charge: BatchCharge<E>,
+}
+struct BatchCharge<E> {
+    state: Arc<Mutex<MailboxState<E>>>,
+    count: usize,
+    bytes: usize,
+    settled: bool,
+    disposition: u8,
+    retained: bool,
+}
+impl<E> std::ops::Deref for WorkBatch<E> {
+    type Target = [E];
+    fn deref(&self) -> &[E] {
+        &self.events
+    }
+}
+impl<E> BatchCharge<E> {
+    fn settle(&mut self, disposition: u8) {
+        if self.settled {
+            return;
+        }
+        let mut state = lock(&self.state);
+        if self.retained {
+            state.retained_terminal_events -= self.count;
+            state.retained_terminal_bytes -= self.bytes;
+        } else {
+            state.in_flight_events -= self.count;
+            state.in_flight_bytes -= self.bytes;
+        }
+        match disposition {
+            1 => state.completed_events += self.count as u64,
+            2 => {
+                state.abandoned_events += self.count as u64;
+                state.abandoned_bytes += self.bytes as u64;
+            }
+            _ => {
+                state.indeterminate_events += self.count as u64;
+                state.indeterminate_bytes += self.bytes as u64;
+            }
+        }
+        if let Some(budget) = &state.budget {
+            budget.finish(self.count, self.bytes, disposition, self.retained);
+        }
+        self.settled = true;
+    }
+}
+impl<E> Drop for BatchCharge<E> {
+    fn drop(&mut self) {
+        self.settle(self.disposition);
+    }
+}
+impl<E> WorkBatch<E> {
+    /// Release canceled work after its payload destructors finish.
+    pub fn abandon(mut self) {
+        self.charge.disposition = 2;
+    }
+    /// Acknowledge successful CPU processing. Router custody is independent.
+    pub fn complete(mut self) {
+        self.charge.disposition = 1;
+    }
+    pub(crate) fn canceled(mut self) -> Self {
+        {
+            let mut state = lock(&self.state);
+            state.in_flight_events -= self.charge.count;
+            state.in_flight_bytes -= self.bytes;
+            state.retained_terminal_events += self.charge.count;
+            state.retained_terminal_bytes += self.bytes;
+            if let Some(budget) = &state.budget {
+                budget.retain_terminal(self.charge.count, self.bytes);
+            }
+        }
+        self.charge.retained = true;
+        self.charge.disposition = 2;
+        self
+    }
+}
+impl<E: Send> super::pool::InputControl for ProcessorMailbox<E> {
+    fn close(&self) {
+        self.close();
     }
 }
 
@@ -331,7 +701,9 @@ mod tests {
             MailboxStatus {
                 queued_events: 1,
                 queued_bytes: 60,
+                rejected_events: 1,
                 closed: false,
+                ..Default::default()
             }
         );
 

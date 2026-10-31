@@ -6,11 +6,13 @@ pub mod pool;
 pub mod scheduler;
 
 pub use mailbox::{
-    AdmissionError, MailboxError, MailboxLimits, MailboxPushError, MailboxStatus, ProcessorMailbox,
+    AdmissionError, BufferBudget, BufferStatus, MailboxError, MailboxLimits, MailboxPushError,
+    MailboxStatus, ProcessorMailbox, WorkBatch,
 };
 
 pub use pool::{
-    PoolError, PoolStats, ProcessingPool, Processor, ProcessorFailure, ProcessorFailureKind,
+    PoolError, PoolStats, ProcessingHandle, ProcessingPool, Processor, ProcessorFailure,
+    ProcessorFailureKind, ShutdownOutcome,
 };
 
 pub use scheduler::{ExecutionLease, ProcessingScheduler, ProcessorToken, SchedulerError};
@@ -20,3 +22,6 @@ pub use instance::{InstanceError, ProcessorIngress, ProcessorInstance, StopOutco
 pub use lifecycle::{FailureReconcileError, FailureReconcileOutcome, reconcile_processor_failure};
 
 pub use controller::{ControllerError, DerivedProcessorController};
+
+#[cfg(test)]
+mod regressions;

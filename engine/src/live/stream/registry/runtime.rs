@@ -850,6 +850,7 @@ mod tests {
             workers: 1,
             ready_queue_capacity: 8,
             max_events_per_turn: 16,
+            ..ProcessingConfig::default()
         })
         .unwrap();
 
@@ -926,6 +927,7 @@ mod tests {
             workers: 1,
             ready_queue_capacity: 8,
             max_events_per_turn: 16,
+            ..ProcessingConfig::default()
         })
         .unwrap();
 
@@ -995,6 +997,7 @@ mod tests {
                 workers: 1,
                 ready_queue_capacity: 16,
                 max_events_per_turn: 8,
+                ..ProcessingConfig::default()
             })
             .unwrap(),
         );
@@ -1025,7 +1028,7 @@ mod tests {
             DerivedProcessorController::new("btc".to_string(), stream_generation, instance);
 
         // Arrange an executing processor turn.
-        pool.notify(token).unwrap();
+        pool.notify(controller.processor()).unwrap();
 
         started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
 
@@ -1084,6 +1087,7 @@ mod tests {
                 workers: 1,
                 ready_queue_capacity: 16,
                 max_events_per_turn: 8,
+                ..ProcessingConfig::default()
             })
             .unwrap(),
         );
@@ -1143,6 +1147,7 @@ mod tests {
                 workers: 1,
                 ready_queue_capacity: 16,
                 max_events_per_turn: 8,
+                ..ProcessingConfig::default()
             })
             .unwrap(),
         );
@@ -1248,6 +1253,7 @@ mod tests {
                 workers: 1,
                 ready_queue_capacity: 16,
                 max_events_per_turn: 8,
+                ..ProcessingConfig::default()
             })
             .unwrap(),
         );
@@ -1278,7 +1284,7 @@ mod tests {
 
         let mut controller = DerivedProcessorController::new("btc".into(), generation, instance);
 
-        pool.notify(token).unwrap();
+        pool.notify(controller.processor()).unwrap();
 
         started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
 
@@ -1352,6 +1358,185 @@ mod tests {
             registry.lock().unwrap().status("btc").unwrap().lifecycle,
             StreamLifecycleState::Stopped
         );
+    }
+    #[test]
+    fn derived_processor_startup_marks_stream_running() {
+        struct NoopProcessor;
+
+        impl Processor for NoopProcessor {
+            fn run_turn(&mut self, _: usize) -> bool {
+                false
+            }
+        }
+
+        let mut registry = StreamRuntimeRegistry::new(&graph());
+
+        let pool = Arc::new(
+            ProcessingPool::new(ProcessingConfig {
+                workers: 1,
+                ready_queue_capacity: 16,
+                max_events_per_turn: 8,
+                ..ProcessingConfig::default()
+            })
+            .unwrap(),
+        );
+
+        let token = ProcessorToken {
+            id: 100,
+            generation: 1,
+        };
+
+        let mut controller = DerivedProcessorController::<u64>::start(
+            &mut registry,
+            Arc::clone(&pool),
+            "btc",
+            token,
+            MailboxLimits {
+                max_events: 16,
+                max_bytes: 1024,
+            },
+            |_mailbox| NoopProcessor,
+            |_instance| Ok(()),
+        )
+        .unwrap();
+
+        assert_eq!(
+            registry.status("btc").unwrap().lifecycle,
+            StreamLifecycleState::Running
+        );
+
+        assert_eq!(controller.processor().id, token.id);
+        assert_ne!(controller.processor().generation, 0);
+
+        assert_eq!(pool.registered_count(), 1);
+
+        controller.stop(&mut registry).unwrap();
+
+        assert_eq!(pool.registered_count(), 0);
+
+        assert_eq!(
+            registry.status("btc").unwrap().lifecycle,
+            StreamLifecycleState::Stopped
+        );
+    }
+    #[test]
+    fn processor_registration_failure_marks_stream_failed() {
+        struct NoopProcessor;
+
+        impl Processor for NoopProcessor {
+            fn run_turn(&mut self, _: usize) -> bool {
+                false
+            }
+        }
+
+        let mut registry = StreamRuntimeRegistry::new(&graph());
+
+        let pool = Arc::new(
+            ProcessingPool::new(ProcessingConfig {
+                workers: 1,
+                ready_queue_capacity: 16,
+                max_events_per_turn: 8,
+                ..ProcessingConfig::default()
+            })
+            .unwrap(),
+        );
+
+        let token = ProcessorToken {
+            id: 101,
+            generation: 1,
+        };
+
+        // Occupy the registration with the same processor identity.
+        pool.register(token, NoopProcessor).unwrap();
+
+        let result = DerivedProcessorController::<u64>::start(
+            &mut registry,
+            Arc::clone(&pool),
+            "btc",
+            token,
+            MailboxLimits {
+                max_events: 16,
+                max_bytes: 1024,
+            },
+            |_mailbox| NoopProcessor,
+            |_instance| Ok(()),
+        );
+
+        assert!(result.is_err());
+
+        assert_eq!(
+            registry.status("btc").unwrap().lifecycle,
+            StreamLifecycleState::Failed
+        );
+
+        assert!(registry.publication_authority("btc").is_none());
+
+        // The failed registration must not have removed
+        // the processor that was already registered.
+        assert_eq!(pool.registered_count(), 1);
+
+        pool.retire(token).unwrap();
+    }
+    #[test]
+    fn processor_readiness_failure_cleans_up() {
+        struct NoopProcessor;
+
+        impl Processor for NoopProcessor {
+            fn run_turn(&mut self, _: usize) -> bool {
+                false
+            }
+        }
+
+        let mut registry = StreamRuntimeRegistry::new(&graph());
+
+        let pool = Arc::new(
+            ProcessingPool::new(ProcessingConfig {
+                workers: 1,
+                ready_queue_capacity: 16,
+                max_events_per_turn: 8,
+                ..ProcessingConfig::default()
+            })
+            .unwrap(),
+        );
+
+        let token = ProcessorToken {
+            id: 102,
+            generation: 1,
+        };
+
+        let result = DerivedProcessorController::<u64>::start(
+            &mut registry,
+            Arc::clone(&pool),
+            "btc",
+            token,
+            MailboxLimits {
+                max_events: 16,
+                max_bytes: 1024,
+            },
+            |_mailbox| NoopProcessor,
+            |_instance| Err("required reference stream is unavailable".into()),
+        );
+
+        assert!(result.is_err());
+
+        assert_eq!(
+            registry.status("btc").unwrap().lifecycle,
+            StreamLifecycleState::Failed
+        );
+
+        assert!(
+            registry
+                .status("btc")
+                .unwrap()
+                .last_error
+                .as_deref()
+                .unwrap()
+                .contains("required reference stream")
+        );
+
+        assert!(registry.publication_authority("btc").is_none());
+
+        assert_eq!(pool.registered_count(), 0);
     }
 }
 

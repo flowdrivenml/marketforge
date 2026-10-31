@@ -150,6 +150,7 @@ struct Consumer {
     owner: DemandOwner,
     queue: Mutex<ConsumerQueue>,
     notify: Notify,
+    terminal: Notify,
 }
 struct Binding {
     id: u64,
@@ -157,6 +158,7 @@ struct Binding {
     sequence: u64,
     // Source's own stream generation is independent of registry runtime generation.
     source_generation: Option<u64>,
+    canonical_input: String,
     book: Option<u64>,
     highest_book: Option<u64>,
 }
@@ -251,12 +253,44 @@ impl StreamRouter {
         &self,
         request: AttachProducerRequest,
     ) -> Result<ProducerHandle, RouterError> {
+        let input = request.authority.stream_id().to_owned();
+        self.shared.source(&input)?;
+        self.attach_canonical(request, input)
+    }
+    /// Explicit identity-preserving canonical transformation origin. This does not
+    /// define Merge/Convert output schemas: envelopes keep the declared Source's
+    /// identity, while routing and runtime authority belong to the derived stream.
+    /// v1 accepts exactly one Source dependency, including complete depth batches.
+    pub fn attach_derived_producer(
+        &self,
+        authority: RuntimePublicationAuthority,
+        input: &str,
+    ) -> Result<ProducerHandle, RouterError> {
+        let definition = self
+            .shared
+            .context
+            .graph
+            .get(authority.stream_id())
+            .ok_or(RouterError::UnknownStream)?;
+        match &definition.definition {
+            StreamDefinition::Derived(request)
+                if definition.desired.enabled && request.inputs.as_slice() == [input] => {}
+            _ => return Err(RouterError::UnknownStream),
+        }
+        self.shared.source(input)?;
+        self.attach_canonical(AttachProducerRequest { authority }, input.to_owned())
+    }
+    fn attach_canonical(
+        &self,
+        request: AttachProducerRequest,
+        canonical_input: String,
+    ) -> Result<ProducerHandle, RouterError> {
         let stream = request.authority.stream_id().to_owned();
         let mut state = self.shared.state.lock();
         if state.status.shutdown {
             return Err(RouterError::Shutdown);
         }
-        self.shared.source(&stream)?;
+        self.shared.routing_source(&stream)?;
         if self.shared.context.graph.get(&stream) != Some(request.authority.definition.as_ref()) {
             return Err(RouterError::Unauthorized);
         }
@@ -286,6 +320,7 @@ impl StreamRouter {
                 authority: request.authority,
                 sequence: 0,
                 source_generation: None,
+                canonical_input,
                 book: None,
                 highest_book: None,
             },
@@ -305,7 +340,7 @@ impl StreamRouter {
         if state.status.shutdown {
             return Err(RouterError::Shutdown);
         }
-        let channel = self.shared.source(&request.stream_id)?.channel;
+        let channel = self.shared.routing_source(&request.stream_id)?.channel;
         let components: Vec<&str> = match &request.owner {
             DemandOwner::Direct {
                 consumer_id,
@@ -347,6 +382,7 @@ impl StreamRouter {
                 synchronized: channel == SourceChannel::Trades,
             }),
             notify: Notify::new(),
+            terminal: Notify::new(),
         });
         state.consumers.insert(id, consumer.clone());
         Ok(SubscriptionHandle {
@@ -411,6 +447,26 @@ impl Shared {
         }
     }
 
+    fn routing_source(
+        &self,
+        stream: &str,
+    ) -> Result<&crate::live::stream::request::CreateSourceStreamRequest, RouterError> {
+        let definition = self
+            .context
+            .graph
+            .get(stream)
+            .ok_or(RouterError::UnknownStream)?;
+        if !definition.desired.enabled {
+            return Err(RouterError::UnknownStream);
+        }
+        match &definition.definition {
+            StreamDefinition::Source(_) => self.source(stream),
+            StreamDefinition::Derived(request) if request.inputs.len() == 1 => {
+                self.source(&request.inputs[0])
+            }
+            _ => Err(RouterError::UnknownStream),
+        }
+    }
     fn source(
         &self,
         stream: &str,
@@ -446,6 +502,7 @@ impl Shared {
                 state.status.cleanup_error = Some(error.to_string());
             }
             consumer.notify.notify_one();
+            consumer.terminal.notify_waiters();
         }
     }
     fn retire(&self, state: &mut State, stream: &str) {
@@ -549,7 +606,7 @@ impl ProducerHandle {
         }
         let source = self
             .shared
-            .source(&self.stream)
+            .source(&binding.canonical_input)
             .map_err(|_| PublishError::InvalidPublication)?;
         if publication.empty() {
             return Err(PublishError::InvalidPublication);
@@ -567,7 +624,7 @@ impl ProducerHandle {
             return Err(PublishError::Capacity);
         }
         let (source_generation, book, highest_book) =
-            validate(&publication, source, &self.stream, binding)?;
+            validate(&publication, source, &binding.canonical_input, binding)?;
         let sequence = binding
             .sequence
             .checked_add(1)
@@ -608,7 +665,60 @@ impl Drop for ProducerHandle {
         }
     }
 }
+/// Read-only terminal observation does not own subscription cleanup or consume data.
+#[derive(Clone)]
+pub(crate) struct SubscriptionObserver {
+    shared: Arc<Shared>,
+    consumer: Arc<Consumer>,
+}
+impl SubscriptionObserver {
+    pub(crate) fn state(&self) -> SubscriptionState {
+        let state = self.shared.state.lock();
+        if state.status.shutdown {
+            return SubscriptionState::Failed(ContinuityFailure::RouterShutdown);
+        }
+        if let Some(binding) = state.bindings.get(&self.consumer.stream) {
+            if !*binding.authority.guard() {
+                return SubscriptionState::Failed(ContinuityFailure::ProducerRevoked);
+            }
+        }
+        lock(&self.consumer.queue).state
+    }
+    pub(crate) fn ready_for_processing(&self) -> bool {
+        if self.state() != SubscriptionState::Active {
+            return false;
+        }
+        let queue = lock(&self.consumer.queue);
+        queue.state == SubscriptionState::Active
+            && !queue.queue.iter().any(|(delivery, _)| {
+                matches!(
+                    delivery,
+                    RouterDelivery::Publication {
+                        synchronized: false,
+                        ..
+                    }
+                )
+            })
+    }
+    pub(crate) async fn terminated(&self) -> SubscriptionState {
+        let terminal = self.consumer.terminal.notified();
+        tokio::pin!(terminal);
+        terminal.as_mut().enable();
+        let state = self.state();
+        if state != SubscriptionState::Active {
+            return state;
+        }
+        terminal.await;
+        self.state()
+    }
+}
 impl SubscriptionHandle {
+    pub(crate) fn observer(&self) -> SubscriptionObserver {
+        SubscriptionObserver {
+            shared: self.shared.clone(),
+            consumer: self.consumer.clone(),
+        }
+    }
     pub fn id(&self) -> u64 {
         self.consumer.id
     }

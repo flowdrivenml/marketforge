@@ -42,6 +42,11 @@ fn validate_schema_version(config: &GeneralConfig) -> Result<(), String> {
 // ============================================================
 
 fn validate_runtime(config: &GeneralConfig) -> Result<(), String> {
+    if let Some(processing) = config.runtime.processing {
+        if processing.buffered_events == 0 || processing.buffered_bytes == 0 {
+            return Err("runtime.processing buffered limits must be positive".into());
+        }
+    }
     if config.runtime.shutdown_timeout_seconds == 0 {
         return Err("runtime.shutdown_timeout_seconds must be greater than zero".into());
     }

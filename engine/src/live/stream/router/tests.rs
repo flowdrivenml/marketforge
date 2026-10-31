@@ -69,6 +69,7 @@ fn terminal_failure_delivered_exactly_once_and_clears_sync() {
             synchronized: false,
         }),
         notify: Notify::new(),
+        terminal: Notify::new(),
     };
     assert!(matches!(
         take_delivery(&consumer),

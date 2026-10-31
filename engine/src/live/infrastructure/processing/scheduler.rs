@@ -22,6 +22,23 @@ enum ProcessorState {
     RunningNotified,
 }
 
+/// Owned execution capability. Completion consumes it; safe Rust cannot replay
+/// a completed turn against a later turn of the same registration.
+///
+/// ```compile_fail
+/// use marketforge_engine::live::infrastructure::processing::{ProcessingScheduler,ProcessorToken};
+/// let mut scheduler=ProcessingScheduler::new(1).unwrap();
+/// let token=ProcessorToken{id:1,generation:1};
+/// scheduler.register(token).unwrap();scheduler.notify(token).unwrap();
+/// let old=scheduler.acquire().unwrap();scheduler.complete(old).unwrap();
+/// scheduler.notify(token).unwrap();let current=scheduler.acquire().unwrap();
+/// scheduler.complete(old).unwrap(); // old was moved, even though token matches
+/// ```
+///
+/// ```compile_fail
+/// use marketforge_engine::live::infrastructure::processing::{ExecutionLease,ProcessorToken};
+/// let forged=ExecutionLease{processor:ProcessorToken{id:1,generation:1}};
+/// ```
 #[derive(Debug, PartialEq, Eq)]
 pub struct ExecutionLease {
     scheduler: u64,

@@ -129,3 +129,33 @@ fn rejects_unknown_processing_fields() {
 
     assert!(toml::from_str::<GeneralConfig>(&invalid).is_err());
 }
+
+#[test]
+fn legacy_processing_defaults_bound_aggregate_buffers() {
+    let processing = config().runtime.processing.unwrap();
+    assert_eq!(processing.buffered_events, 65536);
+    assert_eq!(processing.buffered_bytes, 64 * 1024 * 1024);
+}
+#[test]
+fn aggregate_buffer_limits_must_be_positive() {
+    for field in ["buffered_events", "buffered_bytes"] {
+        let input = VALID_CONFIG.replace("workers = 4", &format!("workers = 4\n{field} = 0"));
+        let config: GeneralConfig = toml::from_str(&input).unwrap();
+        assert!(config.validate().is_err());
+    }
+}
+
+#[test]
+fn nondefault_aggregate_limits_serialize_and_round_trip() {
+    let mut original = config();
+    let processing = original.runtime.processing.as_mut().unwrap();
+    processing.buffered_events = 12;
+    processing.buffered_bytes = 4096;
+    let serialized = toml::to_string(&original).unwrap();
+    assert!(serialized.contains("buffered_events = 12"));
+    assert!(serialized.contains("buffered_bytes = 4096"));
+    assert_eq!(
+        toml::from_str::<GeneralConfig>(&serialized).unwrap(),
+        original
+    );
+}
