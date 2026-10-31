@@ -153,7 +153,10 @@ impl<E: Send + 'static> ProcessorInstance<E> {
         // If the worker already removed the processor after a
         // panic, its terminal failure must still be observable.
         let failure = match self.pool.retire(self.token) {
-            Ok(()) => None,
+            Ok(()) => self
+                .pool
+                .failure(self.token.id)
+                .filter(|failure| failure.processor == self.token),
 
             Err(PoolError::Scheduler(SchedulerError::UnknownProcessor)) => {
                 // Unknown registration is acceptable only when

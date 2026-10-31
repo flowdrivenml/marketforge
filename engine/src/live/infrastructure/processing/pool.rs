@@ -29,6 +29,9 @@ pub enum PoolError {
     #[error("invalid processing configuration: {0}")]
     InvalidConfig(&'static str),
 
+    #[error("failed to start processing worker: {0}")]
+    WorkerStartup(#[source] std::io::Error),
+
     #[error(transparent)]
     Scheduler(#[from] SchedulerError),
 
@@ -131,18 +134,26 @@ impl ProcessingPool {
             max_events_per_turn: config.max_events_per_turn,
         });
 
-        let mut workers = Vec::with_capacity(config.workers);
+        let mut workers: Vec<JoinHandle<()>> = Vec::with_capacity(config.workers);
+        let shared_runtime = Arc::clone(&shared);
 
         for index in 0..config.workers {
             let shared = Arc::clone(&shared);
 
-            // Thread creation failure is treated as fatal here.
-            // A fallible startup API can be added when this pool
-            // becomes part of the Live startup coordinator.
-            let worker = thread::Builder::new()
+            let worker = match thread::Builder::new()
                 .name(format!("marketforge-cpu-{index}"))
                 .spawn(move || worker_loop(shared))
-                .expect("failed to create processing worker");
+            {
+                Ok(worker) => worker,
+                Err(error) => {
+                    lock(&shared_runtime).shutdown = true;
+                    shared_runtime.wake.notify_all();
+                    for worker in workers {
+                        let _ = worker.join();
+                    }
+                    return Err(PoolError::WorkerStartup(error));
+                }
+            };
 
             workers.push(worker);
         }
@@ -167,6 +178,9 @@ impl ProcessingPool {
             return Err(PoolError::UnacknowledgedFailure(failure.processor));
         }
 
+        if state.scheduler.registered_count() + state.failures.len() >= state.scheduler.capacity() {
+            return Err(SchedulerError::Capacity.into());
+        }
         state.scheduler.register(token)?;
 
         state.processors.insert(token, Some(Box::new(processor)));
@@ -367,9 +381,10 @@ fn worker_loop(shared: Arc<Shared>) {
                 }
 
                 if let Some(lease) = state.scheduler.acquire() {
+                    let token = lease.processor();
                     let processor = state
                         .processors
-                        .get_mut(&lease.processor)
+                        .get_mut(&token)
                         .expect("scheduled processor must be registered")
                         .take()
                         .expect("scheduled processor must be available");
@@ -392,19 +407,20 @@ fn worker_loop(shared: Arc<Shared>) {
             processor.run_turn(shared.max_events_per_turn)
         }));
 
+        let token = lease.processor();
         let mut state = lock(&shared);
 
         match result {
             Ok(has_more_work) => {
-                let retiring = state.retiring.contains(&lease.processor);
+                let retiring = state.retiring.contains(&token);
 
-                state.processors.insert(lease.processor, Some(processor));
+                state.processors.insert(token, Some(processor));
 
                 // A retiring processor must never be reactivated.
                 if !state.shutdown && !retiring && has_more_work {
                     state
                         .scheduler
-                        .notify(lease.processor)
+                        .notify(token)
                         .expect("running processor must remain registered");
                 }
 
@@ -423,11 +439,11 @@ fn worker_loop(shared: Arc<Shared>) {
                     // so it can now be removed safely.
                     state
                         .scheduler
-                        .unregister(lease.processor)
+                        .unregister(token)
                         .expect("retiring processor must be removable");
 
-                    state.processors.remove(&lease.processor);
-                    state.retiring.remove(&lease.processor);
+                    state.processors.remove(&token);
+                    state.retiring.remove(&token);
                 }
 
                 // Wake other workers and any retirement callers.
@@ -448,11 +464,11 @@ fn worker_loop(shared: Arc<Shared>) {
 
                 state
                     .scheduler
-                    .unregister(lease.processor)
+                    .unregister(token)
                     .expect("failed processor must be removable");
 
-                state.processors.remove(&lease.processor);
-                state.retiring.remove(&lease.processor);
+                state.processors.remove(&token);
+                state.retiring.remove(&token);
                 // Wake any controller waiting for retirement.
                 shared.wake.notify_all();
                 // Publish the failure to the pool's lifecycle
@@ -461,9 +477,9 @@ fn worker_loop(shared: Arc<Shared>) {
                 // A new registration with the same logical ID is
                 // blocked until this exact failure is acknowledged.
                 state.failures.insert(
-                    lease.processor.id,
+                    token.id,
                     ProcessorFailure {
-                        processor: lease.processor,
+                        processor: token,
                         kind: ProcessorFailureKind::Panicked,
                     },
                 );

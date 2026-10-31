@@ -1,4 +1,7 @@
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_SCHEDULER: AtomicU64 = AtomicU64::new(1);
 
 use thiserror::Error;
 
@@ -19,9 +22,16 @@ enum ProcessorState {
     RunningNotified,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ExecutionLease {
-    pub processor: ProcessorToken,
+    scheduler: u64,
+    processor: ProcessorToken,
+}
+
+impl ExecutionLease {
+    pub fn processor(&self) -> ProcessorToken {
+        self.processor
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -54,10 +64,12 @@ pub enum SchedulerError {
 /// coalesced into one subsequent activation.
 ///
 /// Capacity bounds ready AND running activations together.
-/// Reserving capacity for running processors guarantees that
+/// Registration reserves one slot, including while idle.
+/// Reserving capacity for registered processors guarantees that
 /// a notified running processor can be requeued on completion.
 #[derive(Debug)]
 pub struct ProcessingScheduler {
+    identity: u64,
     capacity: usize,
     processors: HashMap<ProcessorToken, ProcessorState>,
     ready: VecDeque<ProcessorToken>,
@@ -71,6 +83,9 @@ impl ProcessingScheduler {
         }
 
         Ok(Self {
+            identity: NEXT_SCHEDULER
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+                .expect("scheduler identity exhausted"),
             capacity,
             processors: HashMap::new(),
             ready: VecDeque::new(),
@@ -90,6 +105,10 @@ impl ProcessingScheduler {
             .any(|existing| existing.id == token.id)
         {
             return Err(SchedulerError::AlreadyRegistered);
+        }
+
+        if self.processors.len() >= self.capacity {
+            return Err(SchedulerError::Capacity);
         }
 
         self.processors.insert(token, ProcessorState::Idle);
@@ -151,7 +170,10 @@ impl ProcessingScheduler {
 
         *state = ProcessorState::Running;
 
-        Some(ExecutionLease { processor: token })
+        Some(ExecutionLease {
+            scheduler: self.identity,
+            processor: token,
+        })
     }
 
     /// Complete one processor execution turn.
@@ -159,6 +181,9 @@ impl ProcessingScheduler {
     /// If another notification arrived during execution,
     /// the processor is appended to the back of the queue.
     pub fn complete(&mut self, lease: ExecutionLease) -> Result<(), SchedulerError> {
+        if lease.scheduler != self.identity {
+            return Err(SchedulerError::InvalidState);
+        }
         let state = self
             .processors
             .get_mut(&lease.processor)
@@ -210,6 +235,10 @@ impl ProcessingScheduler {
         Ok(())
     }
 
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
     pub fn ready_count(&self) -> usize {
         self.ready.len()
     }
@@ -229,6 +258,21 @@ mod tests {
 
     fn token(id: u64) -> ProcessorToken {
         ProcessorToken { id, generation: 1 }
+    }
+
+    #[test]
+    fn foreign_lease_cannot_complete_a_turn() {
+        let mut first = ProcessingScheduler::new(1).unwrap();
+        let mut second = ProcessingScheduler::new(1).unwrap();
+        first.register(token(1)).unwrap();
+        second.register(token(1)).unwrap();
+        first.notify(token(1)).unwrap();
+        second.notify(token(1)).unwrap();
+        let foreign = first.acquire().unwrap();
+        let own = second.acquire().unwrap();
+        assert_eq!(second.complete(foreign), Err(SchedulerError::InvalidState));
+        assert_eq!(second.active_count(), 1);
+        second.complete(own).unwrap();
     }
 
     #[test]
@@ -314,22 +358,19 @@ mod tests {
     }
 
     #[test]
-    fn capacity_rejection_preserves_idle_processor() {
+    fn registration_reserves_activation_capacity() {
         let mut scheduler = ProcessingScheduler::new(1).unwrap();
-
         scheduler.register(token(1)).unwrap();
-        scheduler.register(token(2)).unwrap();
-
+        assert_eq!(scheduler.register(token(2)), Err(SchedulerError::Capacity));
         scheduler.notify(token(1)).unwrap();
-
-        assert_eq!(scheduler.notify(token(2)), Err(SchedulerError::Capacity));
-
         let lease = scheduler.acquire().unwrap();
         scheduler.complete(lease).unwrap();
-
-        // A rejected notification does not corrupt processor state.
+        scheduler.notify(token(1)).unwrap();
+        let lease = scheduler.acquire().unwrap();
+        scheduler.complete(lease).unwrap();
+        scheduler.unregister(token(1)).unwrap();
+        scheduler.register(token(2)).unwrap();
         scheduler.notify(token(2)).unwrap();
-
         assert_eq!(scheduler.acquire().unwrap().processor, token(2));
     }
 
