@@ -182,7 +182,7 @@ impl<E: Send + 'static> ProcessorInstance<E> {
         // additional events to return.
         if self.stopped {
             return Ok(StopOutcome {
-                failure: None,
+                failure: self.registration.failure(),
                 unprocessed: Vec::new(),
                 unprocessed_bytes: 0,
                 accounting: self.mailbox.status(),

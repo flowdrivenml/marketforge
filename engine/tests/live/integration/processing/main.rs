@@ -1255,3 +1255,43 @@ async fn dependency_failure_during_factory_construction_fences_before_readiness(
     assert!(bounded(service.shutdown()).await.unwrap().complete);
     router.shutdown().await.unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn readiness_cannot_expose_ingress_after_its_registration_has_closed() {
+    let rig = Rig::new(SourceChannel::Trades, RouterConfig::default());
+    let handle = rig.handle();
+    let result = bounded(handle.start(request(|context| {
+        let input = context.input.clone();
+        Ok(PreparedProcessor {
+            processor: Box::new(Echo {
+                context,
+                count: 0,
+                threads: None,
+                ready: None,
+            }),
+            readiness: Box::pin(async move {
+                input.close();
+                Ok(())
+            }),
+        })
+    })))
+    .await;
+    assert!(result.is_err());
+    let status = rig
+        .registry
+        .lock()
+        .unwrap()
+        .status("synthetic")
+        .unwrap()
+        .clone();
+    assert_eq!(status.lifecycle, StreamLifecycleState::Failed);
+    bounded(handle.wait_terminal("synthetic", status.generation))
+        .await
+        .unwrap();
+    handle
+        .take_report("synthetic", status.generation)
+        .unwrap()
+        .discard();
+    assert_eq!(handle.status().workers.registered, 0);
+    rig.close().await;
+}

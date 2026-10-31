@@ -173,6 +173,9 @@ fn acknowledged_failure_remains_available_to_instance_cleanup() {
     assert_eq!(outcome.accounting.indeterminate_events, 1);
     assert_eq!(outcome.accounting.completed_events, 0);
     assert!(!owner.acknowledge_failure(token));
+    let repeated = instance.stop().unwrap();
+    assert_eq!(repeated.failure, outcome.failure);
+    assert!(repeated.unprocessed.is_empty());
     assert!(instance.failure().is_some());
     assert!(instance.ingress().admit(7, 8).is_err());
 }

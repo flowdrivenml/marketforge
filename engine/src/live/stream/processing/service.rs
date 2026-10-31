@@ -850,7 +850,14 @@ async fn drive(
                             if a.phase!=ProcessingPhase::Retiring {
                                 match result {
                                     Ok(())=> { if !a.observer.as_ref().is_some_and(|observer|observer.ready_for_processing()) {fence(&registry,a,&id,TerminalDisposition::Failed,Some("upstream continuity lost before readiness confirmation".into()));continue;}
-                                        let running=lock(&registry).mark_running(&id,generation);if matches!(running,Ok(true)) {
+                                        // Registry precedes the admission fence whenever both
+                                        // are needed. This commit invokes no processor code.
+                                        let mut runtime=lock(&registry);
+                                        let gate=a.input.publication_fence();
+                                        let guard=lock(&gate);
+                                        if *guard {drop(guard);drop(runtime);fence(&registry,a,&id,TerminalDisposition::Failed,Some("processor admission closed before readiness confirmation".into()));continue;}
+                                        let running=runtime.mark_running(&id,generation);
+                                        drop(guard);drop(runtime);if matches!(running,Ok(true)) {
                                         a.phase=ProcessingPhase::Ready;
                                         let instance=a.instance.as_ref().unwrap();
                                         let handle=ProcessingStreamHandle{stream_id:id.clone(),generation,processor:instance.token(),ingress:instance.ingress()};
