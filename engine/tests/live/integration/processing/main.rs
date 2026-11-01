@@ -33,6 +33,8 @@ impl Rig {
                 inputs: vec!["test".into()],
                 ordering: None,
                 max_lateness_ns: None,
+                reference_inputs: Vec::new(),
+                conversion: None,
                 target_quote_asset: Some("USDT".into()),
             }),
             desired: DesiredStreamState::default(),
@@ -74,6 +76,7 @@ impl Rig {
                 processing: Some(ProcessingConfig {
                     workers: 2,
                     ready_queue_capacity: 8,
+                    derived: Default::default(),
                     buffered_events: 128,
                     buffered_bytes: 1 << 20,
                     ..Default::default()
@@ -111,8 +114,13 @@ fn request(
     factory: impl FnOnce(ProcessorContext) -> Result<PreparedProcessor, String> + Send + 'static,
 ) -> StartProcessor {
     StartProcessor {
+        output_semantics: PublicationSemantics::CanonicalCompatibility,
         stream_id: "synthetic".into(),
-        input_stream_id: "test".into(),
+        inputs: vec![ProcessingInputSpec {
+            stream_id: "test".into(),
+            position: 0,
+            role: InputRole::Data,
+        }],
         input_limits: MailboxLimits {
             max_events: 32,
             max_bytes: 1 << 18,
@@ -227,7 +235,13 @@ async fn real_router_stateful_cpu_pipeline_preserves_identity_and_order() {
                 runtime_generation,
                 publication,
                 synchronized: true,
+                event_valid: true,
+                admission,
             } => {
+                assert_eq!(
+                    admission.semantics(),
+                    PublicationSemantics::CanonicalCompatibility
+                );
                 assert_eq!(sequence, id);
                 assert_eq!(runtime_generation, stream.generation);
                 let RouterPublication::Trades { records, .. } = publication.as_ref() else {
@@ -238,7 +252,17 @@ async fn real_router_stateful_cpu_pipeline_preserves_identity_and_order() {
                 assert_eq!(records[0].envelope.stream_id, "test");
                 assert_eq!(records[0].envelope.system_timestamp_ns, Some(id as i64));
             }
-            other => panic!("unexpected {other:?}"),
+            other => {
+                let terminal = tokio::time::timeout(
+                    WAIT,
+                    handle.wait_terminal("synthetic", stream.generation),
+                )
+                .await;
+                panic!(
+                    "unexpected {other:?}; processing terminal: {terminal:?}; status: {:?}",
+                    handle.status()
+                );
+            }
         }
     }
     assert!(
@@ -401,18 +425,7 @@ async fn canceled_stop_keeps_ownership_and_fences_before_executing_turn_finishes
             .publication_authority("synthetic")
             .is_none()
     );
-    assert!(
-        stream
-            .ingress
-            .admit(
-                ProcessingInput {
-                    stream_id: "test".into(),
-                    delivery: RouterDelivery::ContinuityLost(ContinuityFailure::ProducerRevoked)
-                },
-                128
-            )
-            .is_err()
-    );
+    assert!(stream.admission_closed());
     assert_eq!(handle.status().associations[0].input.in_flight_events, 1);
     guard.release();
     bounded(handle.wait_terminal("synthetic", stream.generation))
@@ -820,19 +833,7 @@ async fn repeated_cycles_release_registrations_subscriptions_and_bounded_reports
         if let Some(old) = prior.take() {
             assert_ne!(stream.processor, old.processor);
             assert!(bounded(handle.stop(&old)).await.is_err());
-            assert!(
-                old.ingress
-                    .admit(
-                        ProcessingInput {
-                            stream_id: "test".into(),
-                            delivery: RouterDelivery::ContinuityLost(
-                                ContinuityFailure::ProducerRevoked
-                            )
-                        },
-                        128
-                    )
-                    .is_err()
-            );
+            assert!(old.admission_closed());
         }
         bounded(handle.stop(&stream)).await.unwrap();
         bounded(handle.wait_terminal("synthetic", stream.generation))
@@ -945,7 +946,14 @@ async fn complete_depth_snapshot_and_delta_keep_boundaries_then_invalidation_fai
     let rig = Rig::new(SourceChannel::Depth, RouterConfig::default());
     let handle = rig.handle();
     let mut subscriber = rig.subscribe().await;
-    let stream = bounded(handle.start(request(echo))).await.unwrap();
+    let starting = handle.clone();
+    let start = tokio::spawn(async move { starting.start(request(echo)).await });
+    bounded(async {
+        while handle.status().associations.is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
     let levels = (1..=128)
         .map(|price| {
             (
@@ -986,16 +994,23 @@ async fn complete_depth_snapshot_and_delta_keep_boundaries_then_invalidation_fai
         },
     ];
     publish(&rig.source, RouterPublication::Depth(events.into())).await;
+    let stream = bounded(start).await.unwrap().unwrap();
     let RouterDelivery::Publication {
         sequence: 1,
         runtime_generation,
         publication,
         synchronized: true,
+        event_valid: true,
+        admission,
     } = bounded(subscriber.recv()).await.unwrap()
     else {
         panic!("expected atomic depth output")
     };
     assert_eq!(runtime_generation, stream.generation);
+    assert_eq!(
+        admission.semantics(),
+        PublicationSemantics::CanonicalCompatibility
+    );
     let RouterPublication::Depth(events) = publication.as_ref() else {
         panic!("wrong output type")
     };

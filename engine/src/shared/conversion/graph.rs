@@ -41,6 +41,13 @@ impl ConversionPath {
     }
 }
 
+/// Optional bounds for live/configuration planning; no path preference changes.
+#[derive(Debug, Clone, Copy)]
+pub struct PathSearchLimits {
+    pub max_paths: usize,
+    pub max_edges_examined: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct ConversionGraph {
     adjacency: HashMap<Currency, Vec<ConversionEdge>>,
@@ -125,6 +132,27 @@ impl ConversionGraph {
         target: &Currency,
         max_hops: usize,
     ) -> Result<Vec<ConversionPath>> {
+        self.find_paths_inner(source, target, max_hops, None)
+    }
+    pub fn find_paths_limited(
+        &self,
+        source: &Currency,
+        target: &Currency,
+        max_hops: usize,
+        limits: PathSearchLimits,
+    ) -> Result<Vec<ConversionPath>> {
+        if limits.max_paths == 0 || limits.max_edges_examined == 0 {
+            return invalid("conversion path search limits must be positive");
+        }
+        self.find_paths_inner(source, target, max_hops, Some(limits))
+    }
+    fn find_paths_inner(
+        &self,
+        source: &Currency,
+        target: &Currency,
+        max_hops: usize,
+        mut limits: Option<PathSearchLimits>,
+    ) -> Result<Vec<ConversionPath>> {
         if max_hops == 0 {
             return invalid("conversion max_hops must be positive");
         }
@@ -152,7 +180,8 @@ impl ConversionGraph {
             &mut currencies,
             &mut edges,
             &mut results,
-        );
+            &mut limits,
+        )?;
 
         Ok(results)
     }
@@ -167,16 +196,23 @@ impl ConversionGraph {
         currencies: &mut Vec<Currency>,
         edges: &mut Vec<ConversionEdge>,
         results: &mut Vec<ConversionPath>,
-    ) {
+        limits: &mut Option<PathSearchLimits>,
+    ) -> Result<()> {
         if edges.len() >= max_hops {
-            return;
+            return Ok(());
         }
 
         let Some(neighbors) = self.adjacency.get(current) else {
-            return;
+            return Ok(());
         };
 
         for edge in neighbors {
+            if let Some(limits) = limits {
+                if limits.max_edges_examined == 0 {
+                    return invalid("conversion planning search budget exhausted");
+                }
+                limits.max_edges_examined -= 1;
+            }
             if visited.contains(&edge.to) {
                 continue;
             }
@@ -186,20 +222,27 @@ impl ConversionGraph {
             edges.push(edge.clone());
 
             if &edge.to == target {
+                if limits
+                    .as_ref()
+                    .is_some_and(|limits| results.len() >= limits.max_paths)
+                {
+                    return invalid("conversion path limit exceeded");
+                }
                 results.push(ConversionPath {
                     currencies: currencies.clone(),
                     edges: edges.clone(),
                 });
             } else {
                 self.visit(
-                    &edge.to, target, max_hops, visited, currencies, edges, results,
-                );
+                    &edge.to, target, max_hops, visited, currencies, edges, results, limits,
+                )?;
             }
 
             edges.pop();
             currencies.pop();
             visited.remove(&edge.to);
         }
+        Ok(())
     }
 }
 

@@ -8,3 +8,6 @@ mod facade;
 mod source;
 pub use event::*;
 pub use facade::*;
+
+mod admission;
+pub use admission::{EventEvidence, PublicationSemantics, RouterAdmission};

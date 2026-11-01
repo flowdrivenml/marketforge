@@ -6,9 +6,9 @@ mod validation;
 // ============================================================
 
 pub use model::{
-    ControlConfig, DefaultsConfig, GeneralConfig, LogLevel, LoggingConfig, MetricsConfig,
-    ProcessingConfig, PrometheusConfig, PublicationConfig, RecordingConfig, RecoveryDefaultsConfig,
-    RuntimeConfig,
+    ControlConfig, DefaultsConfig, DerivedProcessingConfig, GeneralConfig, LogLevel, LoggingConfig,
+    MetricsConfig, ProcessingConfig, PrometheusConfig, PublicationConfig, RecordingConfig,
+    RecoveryDefaultsConfig, RuntimeConfig,
 };
 
 mod loading;

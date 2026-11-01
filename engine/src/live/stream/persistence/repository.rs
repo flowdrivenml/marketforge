@@ -174,7 +174,11 @@ impl StreamDefinitionRepository {
         request.validate().map_err(StreamDefinitionError::Invalid)?;
 
         let stream_id = request.name.clone();
-        let inputs = request.inputs.clone();
+        let inputs = request
+            .input_specs()
+            .into_iter()
+            .map(|s| s.stream_id)
+            .collect::<Vec<_>>();
 
         validate_stream_id(&stream_id)?;
 

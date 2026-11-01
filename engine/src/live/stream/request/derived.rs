@@ -15,8 +15,14 @@ pub struct CreateDerivedStreamRequest {
     /// Merge or currency conversion.
     pub operation: DerivedOperation,
 
-    /// Existing source-stream IDs.
+    /// Declared Source or eligible Derived dependency IDs.
     pub inputs: Vec<String>,
+
+    /// Required last-trade rate feeds, in stable tie-breaking order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reference_inputs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversion: Option<ConversionSettings>,
 
     /// Required for merge operations.
     ///
@@ -31,7 +37,7 @@ pub struct CreateDerivedStreamRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_lateness_ns: Option<u64>,
 
-    /// Optional for merge; required for convert.
+    /// Required for Convert; prohibited for Merge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_quote_asset: Option<String>,
 }
@@ -170,12 +176,21 @@ mod tests {
     }
 
     #[test]
-    fn accept_merge_with_conversion() {
+    fn reject_merge_with_conversion() {
         let mut request = ordered_merge();
 
         request.target_quote_asset = Some("USDT".into());
 
-        request.validate().unwrap();
+        assert!(
+            request
+                .validate()
+                .unwrap_err()
+                .contains("target_quote_asset")
+        );
+        let restored: CreateDerivedStreamRequest =
+            serde_json::from_str(&serde_json::to_string(&request).unwrap()).unwrap();
+        assert_eq!(restored, request);
+        assert!(restored.validate().is_err());
     }
 
     #[test]
@@ -554,5 +569,96 @@ mod tests {
         });
 
         assert!(serde_json::from_value::<CreateDerivedStreamRequest>(value).is_err());
+    }
+}
+
+/// Roles are checked against the persisted dependency positions at startup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InputRole {
+    Data,
+    Reference,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessingInputSpec {
+    pub stream_id: String,
+    pub position: usize,
+    pub role: InputRole,
+}
+impl CreateDerivedStreamRequest {
+    pub fn input_specs(&self) -> Vec<ProcessingInputSpec> {
+        self.inputs
+            .iter()
+            .map(|id| (id, InputRole::Data))
+            .chain(
+                self.reference_inputs
+                    .iter()
+                    .map(|id| (id, InputRole::Reference)),
+            )
+            .enumerate()
+            .map(|(position, (id, role))| ProcessingInputSpec {
+                stream_id: id.clone(),
+                position,
+                role,
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ConversionSettings {
+    pub max_staleness_ns: u64,
+    pub max_lateness_ns: u64,
+    pub max_hops: usize,
+}
+impl Default for ConversionSettings {
+    fn default() -> Self {
+        Self {
+            max_staleness_ns: 60_000_000_000,
+            max_lateness_ns: 1_000_000_000,
+            max_hops: 3,
+        }
+    }
+}
+
+#[cfg(test)]
+mod binding_tests {
+    use super::*;
+    fn conversion() -> CreateDerivedStreamRequest {
+        serde_json::from_value(serde_json::json!({"name":"valuation","operation":"convert","inputs":["merged"],"reference_inputs":["rate_a","rate_b"],"target_quote_asset":"USDT","conversion":{"max_staleness_ns":100,"max_lateness_ns":10,"max_hops":2}})).unwrap()
+    }
+    #[test]
+    fn conversion_roles_and_semantics_survive_persisted_json_roundtrip() {
+        let request = conversion();
+        request.validate().unwrap();
+        let restored: CreateDerivedStreamRequest =
+            serde_json::from_value(serde_json::to_value(&request).unwrap()).unwrap();
+        assert_eq!(restored, request);
+        let bindings = restored.input_specs();
+        assert_eq!(
+            bindings.iter().map(|b| b.position).collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
+        assert_eq!(bindings[0].role, InputRole::Data);
+        assert_eq!(bindings[1].role, InputRole::Reference);
+    }
+    #[test]
+    fn rejects_duplicate_data_reference_bindings_and_invalid_limits() {
+        let mut r = conversion();
+        r.reference_inputs.push("merged".into());
+        assert!(r.validate().unwrap_err().contains("duplicate"));
+        let mut r = conversion();
+        r.conversion.as_mut().unwrap().max_hops = 9;
+        assert!(r.validate().is_err());
+    }
+    #[test]
+    fn merge_cannot_claim_reference_roles() {
+        let mut r = conversion();
+        r.operation = DerivedOperation::Merge;
+        r.inputs.push("other".into());
+        r.ordering = Some(MergeOrdering::ArrivalOrder);
+        assert!(r.validate().is_err());
     }
 }

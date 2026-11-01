@@ -159,3 +159,30 @@ fn nondefault_aggregate_limits_serialize_and_round_trip() {
         original
     );
 }
+
+#[test]
+fn derived_runtime_limits_roundtrip_and_reject_unbounded_or_zero_values() {
+    let mut config = config();
+    let p = config.runtime.processing.as_mut().unwrap();
+    p.derived.max_inputs = 3;
+    p.derived.state_events = 20;
+    p.derived.state_bytes = 4096;
+    p.derived.stall_timeout_ms = 100;
+    p.derived.retry_delay_ms = 2;
+    config.validate().unwrap();
+    let encoded = toml::to_string(&config).unwrap();
+    let restored: GeneralConfig = toml::from_str(&encoded).unwrap();
+    assert_eq!(config, restored);
+    for field in 0..5 {
+        let mut bad = config.clone();
+        let d = &mut bad.runtime.processing.as_mut().unwrap().derived;
+        match field {
+            0 => d.max_inputs = 0,
+            1 => d.state_events = 0,
+            2 => d.state_bytes = 0,
+            3 => d.stall_timeout_ms = 0,
+            _ => d.retry_delay_ms = 0,
+        };
+        assert!(bad.validate().is_err());
+    }
+}

@@ -123,7 +123,31 @@ fresh market data from a revoked producer.
 There is no persistence/replay, consumer-processed acknowledgment, bootstrap
 snapshot service, external serialization, adapter execution, or live exchange
 certification. Producer bindings validate the currently implemented Source
-definitions. Future Derived producers need their own approved output identity
-and payload contract; this milestone implements no derived computation. All
+definitions and typed Derived publications as described below. All
 consumers already use the same generic delivery API. The durable graph and queue
 limits are fixed for a Router lifetime. No configuration control API is added.
+
+## Multi-input derived output
+
+Production Merge and Convert use graph-validated processing producer bindings and
+`RouterPublication::Derived`, preserving original native events plus bounded
+provenance and optional immutable target-currency valuations. Mixed derived depth
+subscriptions require independent original-source snapshot baselines. Explicit
+finite replay attachment/completion is distinct from live-source shutdown.
+See [Live derived processing](derived-processing.md) for the public API, ordering,
+reference alignment, resource ownership and failure contracts.
+
+Derived delivery separates local `event_valid` from overall `synchronized` state.
+A valid snapshot establishes its own original-source book while other required
+books may remain missing. A trade cannot establish those baselines. Controlled
+processing startup may consume valid events before full readiness; ordinary
+continuity-safe processing fails on subsequent synchronization loss.
+
+Every publication carries opaque `RouterAdmission` custody metadata with its
+publication semantics, binding/generation/sequence and original record evidence.
+Typed processors use `DerivedEvent::from_delivery`; the Router checks immutable
+original and immediate identities against frozen dependency epochs. Older accepted
+sequences remain valid while their generation retains authority. All required
+ancestor authorities and depth epochs are rechecked at admission and delivery.
+`CanonicalCompatibility` is explicitly identified and cannot masquerade as a
+production typed Convert result or supply typed downstream evidence.

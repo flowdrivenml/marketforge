@@ -54,6 +54,8 @@ pub struct ProcessingConfig {
         skip_serializing_if = "is_default_processing_bytes"
     )]
     pub buffered_bytes: usize,
+    #[serde(default)]
+    pub derived: DerivedProcessingConfig,
 }
 
 fn default_processing_events() -> usize {
@@ -76,6 +78,7 @@ impl Default for ProcessingConfig {
             max_events_per_turn: 512,
             buffered_events: default_processing_events(),
             buffered_bytes: default_processing_bytes(),
+            derived: DerivedProcessingConfig::default(),
         }
     }
 }
@@ -906,5 +909,47 @@ max_attempts = 10
         let config = parse_general();
 
         config.validate().unwrap();
+    }
+}
+
+/// Live adapter resource limits, independent of operation semantics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DerivedProcessingConfig {
+    pub max_inputs: usize,
+    pub state_events: usize,
+    pub state_bytes: usize,
+    pub stall_timeout_ms: u64,
+    pub retry_delay_ms: u64,
+    pub planning_steps: usize,
+}
+impl Default for DerivedProcessingConfig {
+    fn default() -> Self {
+        Self {
+            max_inputs: 128,
+            state_events: 4096,
+            state_bytes: 16 * 1024 * 1024,
+            stall_timeout_ms: 5000,
+            retry_delay_ms: 1,
+            planning_steps: 100_000,
+        }
+    }
+}
+
+impl DerivedProcessingConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.planning_steps == 0
+            || self.max_inputs == 0
+            || self.max_inputs > 4096
+            || self.state_events == 0
+            || self.state_bytes == 0
+            || self.stall_timeout_ms == 0
+            || self.stall_timeout_ms > 86_400_000
+            || self.retry_delay_ms == 0
+            || self.retry_delay_ms > 1000
+        {
+            return Err("invalid derived processing resource limits".into());
+        }
+        Ok(())
     }
 }

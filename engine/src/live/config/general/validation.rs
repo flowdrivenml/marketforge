@@ -43,6 +43,7 @@ fn validate_schema_version(config: &GeneralConfig) -> Result<(), String> {
 
 fn validate_runtime(config: &GeneralConfig) -> Result<(), String> {
     if let Some(processing) = config.runtime.processing {
+        processing.derived.validate()?;
         if processing.buffered_events == 0 || processing.buffered_bytes == 0 {
             return Err("runtime.processing buffered limits must be positive".into());
         }

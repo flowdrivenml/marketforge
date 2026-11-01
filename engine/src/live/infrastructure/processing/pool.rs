@@ -445,7 +445,7 @@ impl ProcessingHandle {
         );
         Ok(registration)
     }
-    #[cfg(test)]
+    /// Schedule a bounded deadline activation using the existing reservation.
     pub(crate) fn notify(&self, token: ProcessorToken) -> Result<(), PoolError> {
         let mut state = lock(&self.shared);
         if state.shutdown {

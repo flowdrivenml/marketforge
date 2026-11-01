@@ -203,6 +203,8 @@ mod tests {
                 inputs: vec!["binance".into(), "bybit".into()],
                 ordering: Some(MergeOrdering::ArrivalOrder),
                 max_lateness_ns: None,
+                reference_inputs: Vec::new(),
+                conversion: None,
                 target_quote_asset: None,
             }),
             desired: DesiredStreamState::default(),

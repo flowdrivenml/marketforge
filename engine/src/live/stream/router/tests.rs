@@ -67,6 +67,8 @@ fn terminal_failure_delivered_exactly_once_and_clears_sync() {
             state: SubscriptionState::Failed(ContinuityFailure::ConsumerCapacity),
             terminal_pending: true,
             synchronized: false,
+            required_books: 0,
+            derived_books: BTreeMap::new(),
         }),
         notify: Notify::new(),
         terminal: Notify::new(),

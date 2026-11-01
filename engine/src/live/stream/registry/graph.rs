@@ -158,7 +158,14 @@ impl StreamGraph {
                         .enumerate()
                         .all(|(index, position)| usize::try_from(*position).ok() == Some(index));
 
-                    if !consecutive || actual != request.inputs {
+                    if !consecutive
+                        || actual
+                            != request
+                                .input_specs()
+                                .into_iter()
+                                .map(|s| s.stream_id)
+                                .collect::<Vec<_>>()
+                    {
                         return Err(StreamGraphError::InvalidDependency(format!(
                             "dependency rows disagree with \
                                      definition for {id}"
@@ -187,6 +194,28 @@ impl StreamGraph {
         self.definitions.get(stream_id)
     }
 
+    /// Original data sources, excluding conversion reference-only dependencies.
+    pub fn data_sources(&self, stream: &str) -> Result<BTreeSet<String>, StreamGraphError> {
+        let mut result = BTreeSet::new();
+        let mut pending = vec![stream.to_owned()];
+        let mut seen = BTreeSet::new();
+        while let Some(id) = pending.pop() {
+            if !seen.insert(id.clone()) {
+                continue;
+            }
+            match &self
+                .get(&id)
+                .ok_or_else(|| StreamGraphError::UnknownStream(id.clone()))?
+                .definition
+            {
+                StreamDefinition::Source(_) => {
+                    result.insert(id);
+                }
+                StreamDefinition::Derived(r) => pending.extend(r.inputs.iter().cloned()),
+            }
+        }
+        Ok(result)
+    }
     pub fn len(&self) -> usize {
         self.definitions.len()
     }
@@ -362,6 +391,8 @@ mod tests {
             inputs: inputs.iter().map(|id| id.to_string()).collect(),
             ordering: Some(crate::live::stream::request::MergeOrdering::ArrivalOrder),
             max_lateness_ns: None,
+            reference_inputs: Vec::new(),
+            conversion: None,
             target_quote_asset: None,
         };
 

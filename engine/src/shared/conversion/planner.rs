@@ -50,6 +50,34 @@ pub fn plan_conversion(
     selected: impl Fn(&ResolvedConversionInstrument) -> bool,
     max_hops: usize,
 ) -> Result<ConversionPlan> {
+    plan_conversion_inner(target, sources, references, selected, max_hops, None)
+}
+/// The same deterministic planner with bounded path storage and search work.
+pub fn plan_conversion_limited(
+    target: Currency,
+    sources: &[ResolvedConversionInstrument],
+    references: &[ResolvedConversionInstrument],
+    selected: impl Fn(&ResolvedConversionInstrument) -> bool,
+    max_hops: usize,
+    limits: super::graph::PathSearchLimits,
+) -> Result<ConversionPlan> {
+    plan_conversion_inner(
+        target,
+        sources,
+        references,
+        selected,
+        max_hops,
+        Some(limits),
+    )
+}
+fn plan_conversion_inner(
+    target: Currency,
+    sources: &[ResolvedConversionInstrument],
+    references: &[ResolvedConversionInstrument],
+    selected: impl Fn(&ResolvedConversionInstrument) -> bool,
+    max_hops: usize,
+    limits: Option<super::graph::PathSearchLimits>,
+) -> Result<ConversionPlan> {
     let graph = ConversionGraph::new(references)?;
 
     let mut streams = Vec::with_capacity(sources.len());
@@ -74,7 +102,11 @@ pub fn plan_conversion(
         let is_identity = selected_for_conversion && source.quote_currency == target;
 
         let paths = if selected_for_conversion {
-            graph.find_paths(&source.quote_currency, &target, max_hops)?
+            if let Some(limits) = limits {
+                graph.find_paths_limited(&source.quote_currency, &target, max_hops, limits)?
+            } else {
+                graph.find_paths(&source.quote_currency, &target, max_hops)?
+            }
         } else {
             Vec::new()
         };

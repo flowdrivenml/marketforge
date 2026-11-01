@@ -173,6 +173,7 @@ pub enum StreamRuntimeError {
 pub struct StreamRuntimeRegistry {
     streams: BTreeMap<String, StreamRuntimeStatus>,
     authorities: BTreeMap<String, RuntimePublicationAuthority>,
+    changes: tokio::sync::watch::Sender<u64>,
 }
 
 impl StreamRuntimeRegistry {
@@ -215,7 +216,15 @@ impl StreamRuntimeRegistry {
         Self {
             streams,
             authorities,
+            changes: tokio::sync::watch::channel(0).0,
         }
+    }
+
+    pub(crate) fn subscribe_changes(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.changes.subscribe()
+    }
+    fn changed(&self) {
+        self.changes.send_modify(|v| *v = v.wrapping_add(1));
     }
 
     pub fn publication_authority(&self, stream_id: &str) -> Option<RuntimePublicationAuthority> {
@@ -318,6 +327,7 @@ impl StreamRuntimeRegistry {
         ) {
             old.revoke();
         }
+        self.changed();
         Ok(generation)
     }
 
@@ -411,6 +421,7 @@ impl StreamRuntimeRegistry {
         if let Some(authority) = self.authorities.get(stream_id) {
             authority.revoke();
         }
+        self.changed();
         Ok(generation)
     }
 
@@ -468,6 +479,7 @@ impl StreamRuntimeRegistry {
             authority.revoke();
         }
 
+        self.changed();
         Ok(true)
     }
 
@@ -499,6 +511,7 @@ impl StreamRuntimeRegistry {
 
         status.lifecycle = next;
 
+        self.changed();
         Ok(true)
     }
 

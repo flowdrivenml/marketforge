@@ -208,6 +208,7 @@ impl Pipeline {
                                 assert!(matches!(events[0], RouterDepthEvent::Delta { .. }));
                             }
                         }
+                        other => panic!("unexpected non-Source publication: {other:?}"),
                     }
                 }
                 other => panic!("{other:?}"),

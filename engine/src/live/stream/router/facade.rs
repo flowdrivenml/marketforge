@@ -5,7 +5,7 @@ use crate::live::stream::{
     request::SourceChannel,
 };
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     sync::{Arc, Mutex, MutexGuard},
     time::{Duration, Instant},
 };
@@ -143,6 +143,8 @@ struct ConsumerQueue {
     state: SubscriptionState,
     terminal_pending: bool,
     synchronized: bool,
+    required_books: usize,
+    derived_books: BTreeMap<String, (u64, u64)>,
 }
 struct Consumer {
     id: u64,
@@ -151,6 +153,13 @@ struct Consumer {
     queue: Mutex<ConsumerQueue>,
     notify: Notify,
     terminal: Notify,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DependencyEpoch {
+    stream_id: String,
+    binding: u64,
+    generation: crate::live::stream::registry::RuntimeGeneration,
+    book: Option<(u64, u64)>,
 }
 struct Binding {
     id: u64,
@@ -161,6 +170,12 @@ struct Binding {
     canonical_input: String,
     book: Option<u64>,
     highest_book: Option<u64>,
+    derived_books: BTreeMap<String, (u64, u64, u64)>,
+    finite_replay: bool,
+    completed: bool,
+    semantics: PublicationSemantics,
+    dependencies: Option<Vec<DependencyEpoch>>,
+    sources: BTreeSet<String>,
 }
 struct Pending {
     stream: String,
@@ -170,6 +185,7 @@ struct Pending {
     publication: Arc<RouterPublication>,
     // Subscribers joining after admission must not receive pre-subscription data.
     subscriber_cutoff: u64,
+    admission: RouterAdmission,
 }
 struct State {
     bindings: BTreeMap<String, Binding>,
@@ -186,6 +202,7 @@ struct Shared {
     #[cfg(test)]
     source_wait: Mutex<Option<std::sync::mpsc::SyncSender<&'static str>>>,
     wake: Notify,
+    receipt_owner: Arc<()>,
 }
 /// Owns one dispatch task. Dropping the facade cancels all volatile work.
 pub struct StreamRouter {
@@ -196,6 +213,7 @@ pub struct ProducerHandle {
     shared: Arc<Shared>,
     stream: String,
     binding: u64,
+    semantics: PublicationSemantics,
 }
 pub struct SubscriptionHandle {
     shared: Arc<Shared>,
@@ -241,6 +259,7 @@ impl StreamRouter {
                 status: RouterStatus::default(),
             }),
             wake: Notify::new(),
+            receipt_owner: Arc::new(()),
         });
         let worker_shared = shared.clone();
         let worker = runtime.spawn(async move { dispatch(worker_shared).await });
@@ -255,7 +274,17 @@ impl StreamRouter {
     ) -> Result<ProducerHandle, RouterError> {
         let input = request.authority.stream_id().to_owned();
         self.shared.source(&input)?;
-        self.attach_canonical(request, input)
+        self.attach_canonical(request, input, false, PublicationSemantics::Source)
+    }
+    /// A finite synthetic/replay source must opt in before claiming its authority.
+    /// Completion is ordered Router custody, never inferred from disconnect or stop.
+    pub fn attach_replay_producer(
+        &self,
+        request: AttachProducerRequest,
+    ) -> Result<ProducerHandle, RouterError> {
+        let input = request.authority.stream_id().to_owned();
+        self.shared.source(&input)?;
+        self.attach_canonical(request, input, true, PublicationSemantics::Source)
     }
     /// Explicit identity-preserving canonical transformation origin. This does not
     /// define Merge/Convert output schemas: envelopes keep the declared Source's
@@ -274,23 +303,78 @@ impl StreamRouter {
             .ok_or(RouterError::UnknownStream)?;
         match &definition.definition {
             StreamDefinition::Derived(request)
-                if definition.desired.enabled && request.inputs.as_slice() == [input] => {}
+                if definition.desired.enabled
+                    && request.inputs.as_slice() == [input]
+                    && request.reference_inputs.is_empty() => {}
             _ => return Err(RouterError::UnknownStream),
         }
         self.shared.source(input)?;
-        self.attach_canonical(AttachProducerRequest { authority }, input.to_owned())
+        self.attach_canonical(
+            AttachProducerRequest { authority },
+            input.to_owned(),
+            false,
+            PublicationSemantics::CanonicalCompatibility,
+        )
+    }
+    /// Bind exactly the graph's declared inputs, including operation roles/ranks.
+    pub fn processing_inputs(
+        &self,
+        stream: &str,
+    ) -> Result<Vec<crate::live::stream::request::ProcessingInputSpec>, RouterError> {
+        match self.shared.context.graph.get(stream) {
+            Some(def) if def.desired.enabled => match &def.definition {
+                StreamDefinition::Derived(request) => Ok(request.input_specs()),
+                _ => Err(RouterError::UnknownStream),
+            },
+            _ => Err(RouterError::UnknownStream),
+        }
+    }
+    pub fn graph(&self) -> Arc<StreamGraph> {
+        self.shared.context.graph.clone()
+    }
+    pub fn attach_processing_producer(
+        &self,
+        authority: RuntimePublicationAuthority,
+        inputs: &[crate::live::stream::request::ProcessingInputSpec],
+    ) -> Result<ProducerHandle, RouterError> {
+        if self.processing_inputs(authority.stream_id())? != inputs {
+            return Err(RouterError::Unauthorized);
+        }
+        self.attach_canonical(
+            AttachProducerRequest { authority },
+            inputs[0].stream_id.clone(),
+            false,
+            PublicationSemantics::Derived,
+        )
     }
     fn attach_canonical(
         &self,
         request: AttachProducerRequest,
         canonical_input: String,
+        finite_replay: bool,
+        semantics: PublicationSemantics,
     ) -> Result<ProducerHandle, RouterError> {
         let stream = request.authority.stream_id().to_owned();
+        let sources = self
+            .shared
+            .context
+            .graph
+            .data_sources(&stream)
+            .map_err(|_| RouterError::UnknownStream)?;
+        let inputs = if semantics == PublicationSemantics::Source {
+            vec![]
+        } else {
+            self.processing_inputs(&stream)?
+        };
         let mut state = self.shared.state.lock();
         if state.status.shutdown {
             return Err(RouterError::Shutdown);
         }
-        self.shared.routing_source(&stream)?;
+        self.shared
+            .context
+            .graph
+            .get(&stream)
+            .ok_or(RouterError::UnknownStream)?;
         if self.shared.context.graph.get(&stream) != Some(request.authority.definition.as_ref()) {
             return Err(RouterError::Unauthorized);
         }
@@ -313,6 +397,28 @@ impl StreamRouter {
             self.shared.retire(&mut state, &stream);
         }
         drop(guard);
+        let dependencies = inputs
+            .iter()
+            .map(|input| {
+                state.bindings.get(&input.stream_id).and_then(|b| {
+                    let depth = self
+                        .shared
+                        .source(&input.stream_id)
+                        .is_ok_and(|s| s.channel == SourceChannel::Depth);
+                    let book = if depth {
+                        Some((b.source_generation?, b.book?))
+                    } else {
+                        None
+                    };
+                    Some(DependencyEpoch {
+                        stream_id: input.stream_id.clone(),
+                        binding: b.id,
+                        generation: b.authority.generation(),
+                        book,
+                    })
+                })
+            })
+            .collect();
         state.bindings.insert(
             stream.clone(),
             Binding {
@@ -323,6 +429,12 @@ impl StreamRouter {
                 canonical_input,
                 book: None,
                 highest_book: None,
+                derived_books: BTreeMap::new(),
+                finite_replay,
+                completed: false,
+                semantics,
+                dependencies,
+                sources,
             },
         );
         self.shared.wake.notify_one();
@@ -330,6 +442,7 @@ impl StreamRouter {
             shared: self.shared.clone(),
             stream,
             binding: id,
+            semantics,
         })
     }
     pub async fn subscribe(
@@ -340,7 +453,33 @@ impl StreamRouter {
         if state.status.shutdown {
             return Err(RouterError::Shutdown);
         }
-        let channel = self.shared.routing_source(&request.stream_id)?.channel;
+        let definition = self
+            .shared
+            .context
+            .graph
+            .get(&request.stream_id)
+            .filter(|d| d.desired.enabled)
+            .ok_or(RouterError::UnknownStream)?;
+        let required_books = if matches!(definition.definition, StreamDefinition::Derived(_)) {
+            self.shared
+                .context
+                .graph
+                .data_sources(&request.stream_id)
+                .map_err(|_| RouterError::UnknownStream)?
+                .iter()
+                .filter(|id| {
+                    self.shared
+                        .source(id)
+                        .is_ok_and(|s| s.channel == SourceChannel::Depth)
+                })
+                .count()
+        } else {
+            0
+        };
+        let initially_synchronized = match &definition.definition {
+            StreamDefinition::Source(source) => source.channel == SourceChannel::Trades,
+            StreamDefinition::Derived(_) => required_books == 0,
+        };
         let components: Vec<&str> = match &request.owner {
             DemandOwner::Direct {
                 consumer_id,
@@ -379,7 +518,9 @@ impl StreamRouter {
                 bytes: 0,
                 state: SubscriptionState::Active,
                 terminal_pending: false,
-                synchronized: channel == SourceChannel::Trades,
+                synchronized: initially_synchronized,
+                required_books,
+                derived_books: BTreeMap::new(),
             }),
             notify: Notify::new(),
             terminal: Notify::new(),
@@ -447,26 +588,6 @@ impl Shared {
         }
     }
 
-    fn routing_source(
-        &self,
-        stream: &str,
-    ) -> Result<&crate::live::stream::request::CreateSourceStreamRequest, RouterError> {
-        let definition = self
-            .context
-            .graph
-            .get(stream)
-            .ok_or(RouterError::UnknownStream)?;
-        if !definition.desired.enabled {
-            return Err(RouterError::UnknownStream);
-        }
-        match &definition.definition {
-            StreamDefinition::Source(_) => self.source(stream),
-            StreamDefinition::Derived(request) if request.inputs.len() == 1 => {
-                self.source(&request.inputs[0])
-            }
-            _ => Err(RouterError::UnknownStream),
-        }
-    }
     fn source(
         &self,
         stream: &str,
@@ -480,6 +601,54 @@ impl Shared {
             StreamDefinition::Source(request) if definition.desired.enabled => Ok(request),
             _ => Err(RouterError::UnknownStream),
         }
+    }
+    fn dependency_authorities(
+        &self,
+        state: &State,
+        stream: &str,
+        binding: u64,
+        allow_starting: bool,
+    ) -> Result<Vec<RuntimePublicationAuthority>, PublishError> {
+        let own = state
+            .bindings
+            .get(stream)
+            .filter(|b| b.id == binding)
+            .ok_or(PublishError::Revoked)?;
+        let mut result = vec![own.authority.clone()];
+        let mut seen = BTreeSet::from([stream.to_owned()]);
+        let mut pending = match &own.dependencies {
+            Some(deps) => deps.clone(),
+            None if allow_starting => return Ok(result),
+            None => return Err(PublishError::Revoked),
+        };
+        while let Some(expected) = pending.pop() {
+            let parent = state
+                .bindings
+                .get(&expected.stream_id)
+                .filter(|b| {
+                    b.id == expected.binding
+                        && b.authority.generation() == expected.generation
+                        && expected
+                            .book
+                            .is_none_or(|book| b.source_generation.zip(b.book) == Some(book))
+                })
+                .ok_or(PublishError::Revoked)?;
+            if !seen.insert(expected.stream_id) {
+                continue;
+            }
+            if own.semantics == PublicationSemantics::Derived
+                && parent.semantics == PublicationSemantics::CanonicalCompatibility
+            {
+                return Err(PublishError::InvalidPublication);
+            }
+            result.push(parent.authority.clone());
+            match &parent.dependencies {
+                Some(deps) => pending.extend(deps.iter().cloned()),
+                None if allow_starting => {}
+                None => return Err(PublishError::Revoked),
+            }
+        }
+        Ok(result)
     }
     fn remove(&self, state: &mut State, id: u64, reason: Option<ContinuityFailure>) {
         if let Some(consumer) = state.consumers.remove(&id) {
@@ -536,6 +705,83 @@ impl Shared {
     }
 }
 impl ProducerHandle {
+    pub fn semantics(&self) -> PublicationSemantics {
+        self.semantics
+    }
+    /// Freeze once, after dependency startup. No registry lock is needed here.
+    pub(crate) fn freeze_dependencies(
+        &self,
+        expected: &[(String, crate::live::stream::registry::RuntimeGeneration)],
+    ) -> Result<(), PublishError> {
+        let mut state = self.shared.state.try_lock().ok_or(PublishError::Busy)?;
+        let own = state
+            .bindings
+            .get(&self.stream)
+            .filter(|b| b.id == self.binding)
+            .ok_or(PublishError::Revoked)?;
+        let specs = self
+            .shared
+            .context
+            .graph
+            .inputs(&self.stream)
+            .ok_or(PublishError::InvalidPublication)?;
+        if specs.len() != expected.len()
+            || !specs
+                .iter()
+                .zip(expected)
+                .all(|(id, (other, _))| id == other)
+        {
+            return Err(PublishError::InvalidPublication);
+        }
+        let candidate = expected
+            .iter()
+            .map(|(id, generation)| {
+                let parent = state
+                    .bindings
+                    .get(id)
+                    .filter(|b| b.authority.generation() == *generation)
+                    .ok_or(PublishError::Revoked)?;
+                if own.semantics == PublicationSemantics::Derived
+                    && parent.semantics == PublicationSemantics::CanonicalCompatibility
+                {
+                    return Err(PublishError::InvalidPublication);
+                }
+                let current = parent.authority.try_guard().ok_or(PublishError::Busy)?;
+                if !*current {
+                    return Err(PublishError::Revoked);
+                }
+                let depth = self
+                    .shared
+                    .source(id)
+                    .is_ok_and(|s| s.channel == SourceChannel::Depth);
+                let book = if depth {
+                    Some(
+                        parent
+                            .source_generation
+                            .zip(parent.book)
+                            .ok_or(PublishError::Busy)?,
+                    )
+                } else {
+                    None
+                };
+                Ok(DependencyEpoch {
+                    stream_id: id.clone(),
+                    binding: parent.id,
+                    generation: *generation,
+                    book,
+                })
+            })
+            .collect::<Result<Vec<_>, PublishError>>()?;
+        if own
+            .dependencies
+            .as_ref()
+            .is_some_and(|old| *old != candidate)
+        {
+            return Err(PublishError::Revoked);
+        }
+        state.bindings.get_mut(&self.stream).unwrap().dependencies = Some(candidate);
+        Ok(())
+    }
     /// Linearizes admission at the bounded ingress insertion while holding the
     /// Router state and runtime authority guards. Contention returns Busy.
     pub fn try_publish(
@@ -580,12 +826,52 @@ impl ProducerHandle {
         if state.status.shutdown {
             return Err(PublishError::Shutdown);
         }
+        if state
+            .bindings
+            .get(&self.stream)
+            .is_some_and(|b| b.dependencies.is_none())
+        {
+            let inputs = self
+                .shared
+                .context
+                .graph
+                .inputs(&self.stream)
+                .ok_or(PublishError::InvalidPublication)?;
+            let candidate = inputs
+                .iter()
+                .map(|id| {
+                    let b = state.bindings.get(id).ok_or(PublishError::Busy)?;
+                    let depth = self
+                        .shared
+                        .source(id)
+                        .is_ok_and(|s| s.channel == SourceChannel::Depth);
+                    let book = if depth {
+                        Some(b.source_generation.zip(b.book).ok_or(PublishError::Busy)?)
+                    } else {
+                        None
+                    };
+                    Ok(DependencyEpoch {
+                        stream_id: id.clone(),
+                        binding: b.id,
+                        generation: b.authority.generation(),
+                        book,
+                    })
+                })
+                .collect::<Result<Vec<_>, PublishError>>()?;
+            state.bindings.get_mut(&self.stream).unwrap().dependencies = Some(candidate);
+        }
         let binding = state
             .bindings
             .get(&self.stream)
             .filter(|b| b.id == self.binding)
             .ok_or(PublishError::Revoked)?;
+        if binding.completed {
+            return Err(PublishError::Revoked);
+        }
         let authority = binding.authority.clone();
+        let dependencies =
+            self.shared
+                .dependency_authorities(&state, &self.stream, self.binding, false)?;
         let guard = match authority.try_guard() {
             Some(guard) => guard,
             None => {
@@ -601,18 +887,224 @@ impl ProducerHandle {
             self.shared.wake.notify_one();
             return Err(PublishError::Revoked);
         }
+        let mut dependency_guards = Vec::with_capacity(dependencies.len().saturating_sub(1));
+        for dependency in dependencies.iter().skip(1) {
+            let guard = dependency.try_guard().ok_or(PublishError::Busy)?;
+            if !*guard {
+                return Err(PublishError::Revoked);
+            }
+            dependency_guards.push(guard);
+        }
         if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
             return Err(PublishError::ContentionTimeout);
         }
-        let source = self
-            .shared
-            .source(&binding.canonical_input)
-            .map_err(|_| PublishError::InvalidPublication)?;
+
         if publication.empty() {
             return Err(PublishError::InvalidPublication);
         }
+        let mut derived_books = binding.derived_books.clone();
+        let (source_generation, book, highest_book) =
+            if matches!(publication, RouterPublication::ReplayComplete) {
+                if !binding.finite_replay
+                    && !matches!(
+                        authority.definition.definition,
+                        StreamDefinition::Derived(_)
+                    )
+                {
+                    return Err(PublishError::InvalidPublication);
+                }
+                (
+                    binding.source_generation,
+                    binding.book,
+                    binding.highest_book,
+                )
+            } else if let RouterPublication::Derived(events) = &publication {
+                if binding.semantics != PublicationSemantics::Derived {
+                    return Err(PublishError::InvalidPublication);
+                }
+                let StreamDefinition::Derived(definition) = &authority.definition.definition else {
+                    return Err(PublishError::InvalidPublication);
+                };
+                let specs = definition.input_specs();
+                for event in events.iter() {
+                    if !event.evidence.matches(event, &self.shared.receipt_owner)
+                        || event.admission_ordinal == 0
+                        || !binding.sources.contains(&event.origin.stream_id)
+                    {
+                        return Err(PublishError::InvalidPublication);
+                    }
+                    let input = specs
+                        .get(event.input_position)
+                        .filter(|input| {
+                            input.role == crate::live::stream::request::InputRole::Data
+                                && input.stream_id == event.upstream.stream_id
+                        })
+                        .ok_or(PublishError::InvalidPublication)?;
+                    let frozen = binding
+                        .dependencies
+                        .as_ref()
+                        .and_then(|d| d.get(input.position))
+                        .ok_or(PublishError::Revoked)?;
+                    let upstream = event.evidence.upstream_identity();
+                    let original = event.evidence.original_identity();
+                    if frozen.stream_id != upstream.stream_id.as_ref()
+                        || frozen.binding != upstream.binding
+                        || frozen.generation != upstream.generation
+                    {
+                        return Err(PublishError::InvalidPublication);
+                    }
+                    for identity in [original, upstream] {
+                        let recorded = state
+                            .bindings
+                            .get(identity.stream_id.as_ref())
+                            .filter(|b| {
+                                b.id == identity.binding
+                                    && b.authority.generation() == identity.generation
+                            })
+                            .ok_or(PublishError::Revoked)?;
+                        if identity.sequence == 0 || identity.sequence > recorded.sequence {
+                            return Err(PublishError::InvalidPublication);
+                        }
+                    }
+                    if event.baseline_barrier
+                        != (matches!(
+                            event.native,
+                            NativeMarketEvent::Depth(RouterDepthEvent::Snapshot { .. })
+                        ) && event.native.timestamp_ns().is_none())
+                    {
+                        return Err(PublishError::InvalidPublication);
+                    }
+                    if definition.operation
+                        == crate::live::stream::request::DerivedOperation::Convert
+                    {
+                        match &event.valuation {
+                            Some(v)
+                                if Some(&v.target_quote)
+                                    == definition.target_quote_asset.as_ref()
+                                    && v.values.len()
+                                        == match &event.native {
+                                            NativeMarketEvent::Trade(_) => 1,
+                                            NativeMarketEvent::Depth(
+                                                RouterDepthEvent::Snapshot { levels, .. }
+                                                | RouterDepthEvent::Delta {
+                                                    changes: levels, ..
+                                                },
+                                            ) => levels.len(),
+                                            _ => 0,
+                                        } => {}
+                            None if event.baseline_barrier => {}
+                            _ => return Err(PublishError::InvalidPublication),
+                        }
+                    }
+                    let source = self
+                        .shared
+                        .source(&event.origin.stream_id)
+                        .map_err(|_| PublishError::InvalidPublication)?;
+                    match &event.native {
+                        NativeMarketEvent::Trade(t)
+                            if source.channel == SourceChannel::Trades
+                                && t.envelope.stream_id == event.origin.stream_id
+                                && t.envelope.instrument_id == source.instrument_id
+                                && t.envelope.symbol == source.symbol
+                                && exchange_name(t.envelope.exchange)
+                                    == source.exchange.as_str() => {}
+                        NativeMarketEvent::Depth(depth)
+                            if source.channel == SourceChannel::Depth =>
+                        {
+                            let (g, b) = depth.generations();
+                            let original_binding = state
+                                .bindings
+                                .get(&event.origin.stream_id)
+                                .ok_or(PublishError::Revoked)?;
+                            if original_binding
+                                .source_generation
+                                .zip(original_binding.book)
+                                != Some((g, b))
+                            {
+                                return Err(PublishError::Revoked);
+                            }
+                            if g == 0 || b == 0 {
+                                return Err(PublishError::InvalidPublication);
+                            }
+                            match depth {
+                                RouterDepthEvent::Snapshot { baseline, .. }
+                                    if baseline.synchronized =>
+                                {
+                                    if derived_books.get(&event.origin.stream_id).is_some_and(
+                                        |(old_g, old_b, old_seq)| {
+                                            g < *old_g
+                                                || (g == *old_g && b < *old_b)
+                                                || (g == *old_g
+                                                    && b == *old_b
+                                                    && baseline.last_sequence < *old_seq)
+                                        },
+                                    ) {
+                                        return Err(PublishError::InvalidPublication);
+                                    }
+                                    derived_books.insert(
+                                        event.origin.stream_id.clone(),
+                                        (g, b, baseline.last_sequence),
+                                    );
+                                }
+                                RouterDepthEvent::Delta { baseline, .. }
+                                    if baseline.synchronized
+                                        && derived_books
+                                            .get(&event.origin.stream_id)
+                                            .is_some_and(|(old_g, old_b, seq)| {
+                                                (*old_g, *old_b) == (g, b)
+                                                    && baseline.last_sequence > *seq
+                                            }) =>
+                                {
+                                    derived_books.insert(
+                                        event.origin.stream_id.clone(),
+                                        (g, b, baseline.last_sequence),
+                                    );
+                                }
+                                _ => return Err(PublishError::InvalidPublication),
+                            }
+                        }
+                        _ => return Err(PublishError::InvalidPublication),
+                    }
+                }
+                (
+                    binding.source_generation,
+                    binding.book,
+                    binding.highest_book,
+                )
+            } else {
+                if binding.semantics == PublicationSemantics::Derived {
+                    return Err(PublishError::InvalidPublication);
+                }
+                let source = self
+                    .shared
+                    .source(&binding.canonical_input)
+                    .map_err(|_| PublishError::InvalidPublication)?;
+                // Canonical passthrough remains restricted to one declared Source.
+                if let StreamDefinition::Derived(r) = &authority.definition.definition {
+                    if r.inputs.as_slice() != [binding.canonical_input.as_str()]
+                        || !r.reference_inputs.is_empty()
+                    {
+                        return Err(PublishError::InvalidPublication);
+                    }
+                }
+                validate(&publication, source, &binding.canonical_input, binding)?
+            };
+        let sequence = binding
+            .sequence
+            .checked_add(1)
+            .ok_or(PublishError::Exhausted)?;
+        let admission = RouterAdmission::issue(
+            self.shared.receipt_owner.clone(),
+            self.binding,
+            &self.stream,
+            authority.generation(),
+            sequence,
+            binding.semantics,
+            &publication,
+        );
         let bytes = publication
             .retained_bytes()
+            .and_then(|n| n.checked_add(admission.retained_bytes()?))
             .and_then(|n| n.checked_add(self.stream.len()))
             .ok_or(PublishError::Capacity)?;
         if !self
@@ -623,17 +1115,13 @@ impl ProducerHandle {
         {
             return Err(PublishError::Capacity);
         }
-        let (source_generation, book, highest_book) =
-            validate(&publication, source, &binding.canonical_input, binding)?;
-        let sequence = binding
-            .sequence
-            .checked_add(1)
-            .ok_or(PublishError::Exhausted)?;
         let binding = state.bindings.get_mut(&self.stream).unwrap();
         binding.sequence = sequence;
         binding.source_generation = source_generation;
         binding.book = book;
         binding.highest_book = highest_book;
+        binding.derived_books = derived_books;
+        binding.completed = matches!(publication, RouterPublication::ReplayComplete);
         let subscriber_cutoff = state.next_id;
         state.ingress.push_back(Pending {
             stream: self.stream.clone(),
@@ -642,6 +1130,7 @@ impl ProducerHandle {
             bytes,
             publication: Arc::new(publication),
             subscriber_cutoff,
+            admission,
         });
         state.ingress_bytes += bytes;
         state.status.accepted = state.status.accepted.saturating_add(1);
@@ -690,11 +1179,15 @@ impl SubscriptionObserver {
         }
         let queue = lock(&self.consumer.queue);
         queue.state == SubscriptionState::Active
+            && queue.synchronized
             && !queue.queue.iter().any(|(delivery, _)| {
                 matches!(
                     delivery,
                     RouterDelivery::Publication {
                         synchronized: false,
+                        ..
+                    } | RouterDelivery::Publication {
+                        event_valid: false,
                         ..
                     }
                 )
@@ -743,9 +1236,18 @@ impl SubscriptionHandle {
                 // Serialize extraction with producer replacement and runtime revocation.
                 let mut state = self.shared.state.lock();
                 if let Some(binding) = state.bindings.get(&self.consumer.stream) {
-                    let authority = binding.authority.clone();
-                    let guard = authority.guard();
-                    if !*guard {
+                    let id = binding.id;
+                    let dependencies =
+                        self.shared
+                            .dependency_authorities(&state, &self.consumer.stream, id, true);
+                    let guards = dependencies
+                        .as_ref()
+                        .ok()
+                        .map(|deps| deps.iter().map(|a| a.guard()).collect::<Vec<_>>());
+                    if guards
+                        .as_ref()
+                        .is_none_or(|guards| guards.iter().any(|g| !**g))
+                    {
                         self.shared.retire(&mut state, &self.consumer.stream);
                     } else if let Some(delivery) = take_delivery(&self.consumer) {
                         return delivery;
@@ -884,8 +1386,20 @@ async fn dispatch(shared: Arc<Shared>) {
                     .filter(|b| b.id == pending.binding)
                     .map(|b| b.authority.clone());
                 if let Some(authority) = authority {
-                    let guard = authority.guard();
-                    if !*guard {
+                    let dependencies = shared.dependency_authorities(
+                        &state,
+                        &pending.stream,
+                        pending.binding,
+                        false,
+                    );
+                    let guards = dependencies
+                        .as_ref()
+                        .ok()
+                        .map(|deps| deps.iter().map(|a| a.guard()).collect::<Vec<_>>());
+                    if guards
+                        .as_ref()
+                        .is_none_or(|guards| guards.iter().any(|g| !**g))
+                    {
                         shared.retire(&mut state, &pending.stream);
                     } else {
                         let consumers: Vec<_> = state
@@ -922,6 +1436,40 @@ async fn dispatch(shared: Arc<Shared>) {
                                     }
                                 }
                             }
+                            let event_valid = if let RouterPublication::Derived(events) =
+                                pending.publication.as_ref()
+                            {
+                                let mut valid = true;
+                                for event in events.iter() {
+                                    if let NativeMarketEvent::Depth(depth) = &event.native {
+                                        let generations = depth.generations();
+                                        match depth {
+                                            RouterDepthEvent::Snapshot { .. } => {
+                                                q.derived_books.insert(
+                                                    event.origin.stream_id.clone(),
+                                                    generations,
+                                                );
+                                            }
+                                            RouterDepthEvent::Delta { .. } => {
+                                                if q.derived_books.get(&event.origin.stream_id)
+                                                    != Some(&generations)
+                                                {
+                                                    q.derived_books.remove(&event.origin.stream_id);
+                                                    valid = false;
+                                                }
+                                            }
+                                            RouterDepthEvent::Invalidated { .. } => {
+                                                q.derived_books.remove(&event.origin.stream_id);
+                                                valid = false;
+                                            }
+                                        }
+                                    }
+                                }
+                                q.synchronized = q.derived_books.len() == q.required_books;
+                                valid
+                            } else {
+                                q.synchronized
+                            };
                             let synchronized = q.synchronized;
                             q.queue.push_back((
                                 RouterDelivery::Publication {
@@ -929,6 +1477,8 @@ async fn dispatch(shared: Arc<Shared>) {
                                     runtime_generation: authority.generation(),
                                     publication: pending.publication.clone(),
                                     synchronized,
+                                    event_valid,
+                                    admission: pending.admission.clone(),
                                 },
                                 pending.bytes,
                             ));

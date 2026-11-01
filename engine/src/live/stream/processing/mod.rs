@@ -6,3 +6,8 @@ mod pipeline;
 mod service;
 pub use pipeline::*;
 pub use service::*;
+
+mod operations;
+pub use operations::{DerivedStatus, RetainedProcessorInput};
+
+mod conversion;

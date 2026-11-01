@@ -128,6 +128,7 @@ async fn run_profile(profile: &str, channel: SourceChannel) {
                     other => panic!("expected snapshot: {other:?}"),
                 }
             }
+            other => panic!("unexpected non-Source publication: {other:?}"),
         }
     }
     wait_running(&mut supervisor, "pipeline").await;

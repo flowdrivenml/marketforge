@@ -101,6 +101,16 @@ pub struct BufferStatus {
     pub indeterminate_bytes: u64,
     pub rejected_events: u64,
 }
+/// Aggregate reservation for managed input/output mailboxes.
+///
+/// Under the budget state lock, queued + in-flight + terminal counts and bytes
+/// never exceed the limits (each at most usize::MAX). Only reserve adds a charge:
+/// it checks the existing total against max_events before incrementing, and
+/// checked-adds bytes before admission. All other transitions transfer an
+/// existing charge or subtract it. Therefore the unchecked component sums and
+/// transfers cannot overflow, even with usize::MAX limits. Mailbox state always
+/// precedes budget state; budget operations never acquire a mailbox lock.
+/// These charges do not bound arbitrary processor heap allocations or total RSS.
 #[derive(Debug)]
 pub struct BufferBudget {
     limits: MailboxLimits,
@@ -244,11 +254,18 @@ pub struct ProcessorMailbox<E> {
 
 impl<E> ProcessorMailbox<E> {
     pub fn new(limits: MailboxLimits) -> Result<Self, MailboxError> {
+        Self::with_fence(limits, Arc::new(Mutex::new(false)))
+    }
+
+    pub(crate) fn with_fence(
+        limits: MailboxLimits,
+        fence: Arc<Mutex<bool>>,
+    ) -> Result<Self, MailboxError> {
         limits.validate()?;
 
         Ok(Self {
             limits,
-            fence: Arc::new(Mutex::new(false)),
+            fence,
             closed_notify: tokio::sync::Notify::new(),
             state: Arc::new(Mutex::new(MailboxState {
                 events: VecDeque::new(),
@@ -295,8 +312,17 @@ impl<E> ProcessorMailbox<E> {
     }
     pub(crate) fn push_managed(&self, event: E, bytes: usize) -> Result<(), MailboxPushError<E>> {
         let fence = lock(&self.fence);
+        self.push_fenced(&fence, event, bytes)
+    }
+    /// Caller holds this mailbox's generation fence; never reacquire it.
+    pub(crate) fn push_fenced(
+        &self,
+        fence: &MutexGuard<'_, bool>,
+        event: E,
+        bytes: usize,
+    ) -> Result<(), MailboxPushError<E>> {
         let mut state = lock(&self.state);
-        if *fence {
+        if **fence {
             state.closed = true;
         }
         Self::push_locked(&mut state, self.limits, event, bytes)
@@ -377,9 +403,13 @@ impl<E> ProcessorMailbox<E> {
     /// Already accepted events remain available for draining.
     pub fn close(&self) {
         let mut fence = lock(&self.fence);
-        *fence = true;
-        let mut state = lock(&self.state);
-        state.closed = true;
+        self.close_fenced(&mut fence);
+    }
+
+    /// Caller holds this mailbox's generation fence. Accepted work is retained.
+    pub(crate) fn close_fenced(&self, fence: &mut MutexGuard<'_, bool>) {
+        **fence = true;
+        lock(&self.state).closed = true;
         self.closed_notify.notify_waiters();
     }
 
@@ -609,6 +639,9 @@ impl<E> Drop for BatchCharge<E> {
     }
 }
 impl<E> WorkBatch<E> {
+    pub(crate) fn accounted_bytes(&self) -> usize {
+        self.bytes
+    }
     /// Release canceled work after its payload destructors finish.
     pub fn abandon(mut self) {
         self.charge.disposition = 2;
@@ -653,6 +686,31 @@ mod tests {
             max_bytes: 100,
         })
         .unwrap()
+    }
+
+    #[test]
+    fn maximum_budget_bytes_survive_transfers_and_terminal_disposal() {
+        let limits = MailboxLimits {
+            max_events: usize::MAX,
+            max_bytes: usize::MAX,
+        };
+        let budget = Arc::new(BufferBudget::new(limits).unwrap());
+        let mailbox = ProcessorMailbox::new(limits).unwrap();
+        mailbox.manage(budget.clone());
+        mailbox.push_managed(1_u64, usize::MAX).unwrap();
+        assert_eq!(budget.used(), (1, usize::MAX));
+        assert_eq!(
+            mailbox.push_managed(2, 1).unwrap_err().reason,
+            MailboxError::Capacity
+        );
+        let batch = mailbox.take_work(1);
+        assert_eq!(budget.used(), (1, usize::MAX));
+        mailbox.return_work(batch);
+        let retained = mailbox.take_work(1).canceled();
+        assert_eq!(budget.used(), (1, usize::MAX));
+        assert_eq!(budget.status().retained_terminal_bytes, usize::MAX);
+        retained.abandon();
+        assert_eq!(budget.used(), (0, 0));
     }
 
     #[test]

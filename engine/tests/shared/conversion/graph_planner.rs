@@ -148,3 +148,72 @@ fn planner_preserves_selection_order_accounting_and_duplicate_rank_rejection() {
         .is_err()
     );
 }
+
+#[test]
+fn limited_search_preserves_existing_path_order_and_planner_results() {
+    use marketforge_engine::shared::conversion::{
+        graph::PathSearchLimits, planner::plan_conversion_limited,
+    };
+    let references = [
+        instrument(1, "btc-usdt", "BTC", "USDT"),
+        instrument(2, "btc-usdc", "BTC", "USDC"),
+        instrument(3, "usdc-usdt", "USDC", "USDT"),
+    ];
+    let graph = ConversionGraph::new(&references).unwrap();
+    let limits = PathSearchLimits {
+        max_paths: 32,
+        max_edges_examined: 1000,
+    };
+    assert_eq!(
+        graph
+            .find_paths(&currency("BTC"), &currency("USDT"), 3)
+            .unwrap(),
+        graph
+            .find_paths_limited(&currency("BTC"), &currency("USDT"), 3, limits)
+            .unwrap()
+    );
+    let sources = [instrument(0, "eth-btc", "ETH", "BTC")];
+    let old = plan_conversion(currency("USDT"), &sources, &references, |_| true, 3).unwrap();
+    let new = plan_conversion_limited(currency("USDT"), &sources, &references, |_| true, 3, limits)
+        .unwrap();
+    assert_eq!(old.streams[0].paths, new.streams[0].paths);
+    assert_eq!(old.convertible_streams, new.convertible_streams);
+}
+#[test]
+fn limited_search_rejects_path_explosion_and_dead_end_search_work() {
+    use marketforge_engine::shared::conversion::graph::PathSearchLimits;
+    let references = (1..=8)
+        .map(|i| instrument(i, &format!("rate-{i}"), "BTC", "USDT"))
+        .collect::<Vec<_>>();
+    let graph = ConversionGraph::new(&references).unwrap();
+    assert!(
+        graph
+            .find_paths_limited(
+                &currency("BTC"),
+                &currency("USDT"),
+                3,
+                PathSearchLimits {
+                    max_paths: 2,
+                    max_edges_examined: 1000
+                }
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("path limit")
+    );
+    assert!(
+        graph
+            .find_paths_limited(
+                &currency("BTC"),
+                &currency("EUR"),
+                3,
+                PathSearchLimits {
+                    max_paths: 32,
+                    max_edges_examined: 2
+                }
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("search budget")
+    );
+}

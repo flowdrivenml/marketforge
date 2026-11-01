@@ -183,6 +183,14 @@ pub fn validate_derived(request: &CreateDerivedStreamRequest) -> Result<(), Stri
         validate_identifier(asset, "target_quote_asset")?;
     }
 
+    if let Some(c) = request.conversion {
+        if request.operation != DerivedOperation::Convert {
+            return Err("conversion settings require Convert".into());
+        }
+        if c.max_hops == 0 || c.max_hops > 8 || c.max_lateness_ns > i64::MAX as u64 {
+            return Err("invalid conversion limits".into());
+        }
+    }
     match request.operation {
         DerivedOperation::Merge => {
             validate_merge_request(request)?;
@@ -207,7 +215,7 @@ fn validate_derived_inputs(request: &CreateDerivedStreamRequest) -> Result<(), S
 
     let mut seen = HashSet::new();
 
-    for input in &request.inputs {
+    for input in request.inputs.iter().chain(&request.reference_inputs) {
         validate_identifier(input, "inputs")?;
 
         if !seen.insert(input.as_str()) {
@@ -223,6 +231,14 @@ fn validate_derived_inputs(request: &CreateDerivedStreamRequest) -> Result<(), S
 // ============================================================
 
 fn validate_merge_request(request: &CreateDerivedStreamRequest) -> Result<(), String> {
+    if request.target_quote_asset.is_some() {
+        return Err(
+            "target_quote_asset is not allowed for Merge; declare Convert separately".into(),
+        );
+    }
+    if !request.reference_inputs.is_empty() {
+        return Err("merge cannot bind reference inputs".into());
+    }
     if request.inputs.len() < 2 {
         return Err("merge operation requires at least two inputs".into());
     }

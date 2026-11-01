@@ -127,7 +127,15 @@ async fn slow_consumer_failure_releases_demand_and_capacity() {
 
 #[tokio::test]
 async fn byte_saturation_is_independent_of_publication_count() {
-    let bytes = publication(1).retained_bytes().unwrap() + "test".len();
+    let probe = Rig::new(SourceChannel::Trades, RouterConfig::default());
+    let mut delivery = probe.subscribe("receipt-size").await;
+    probe.producer.try_publish(publication(1)).unwrap();
+    let RouterDelivery::Publication { admission, .. } = receive(&mut delivery).await else {
+        panic!("source receipt")
+    };
+    let bytes = publication(1).retained_bytes().unwrap()
+        + admission.retained_bytes().unwrap()
+        + "test".len();
     let mut config = RouterConfig::default();
     config.consumer.bytes = bytes;
     config.consumer.publications = 100;

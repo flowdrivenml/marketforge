@@ -170,6 +170,8 @@ mod tests {
                 inputs: inputs.iter().map(|s| s.to_string()).collect(),
                 ordering: Some(MergeOrdering::ArrivalOrder),
                 max_lateness_ns: None,
+                reference_inputs: Vec::new(),
+                conversion: None,
                 target_quote_asset: None,
             }),
 

@@ -358,3 +358,8 @@ path = "tests/shared/merge/main.rs"
 name = "live_processing"
 path = "tests/live/integration/processing/main.rs"
 required-features = ["live"]
+
+[[test]]
+name = "live_derived"
+path = "tests/live/integration/derived/main.rs"
+required-features = ["live"]
