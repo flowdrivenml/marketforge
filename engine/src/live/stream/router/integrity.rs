@@ -73,6 +73,7 @@ fn json_charge(value: &impl serde::Serialize) -> usize {
 }
 impl Shared {
     fn integrity_sources<'a>(&'a self, stream: &'a str) -> Result<BTreeSet<String>, ()> {
+        let graph = self.graph.read().clone();
         let mut result = BTreeSet::new();
         let mut visited = BTreeSet::new();
         let mut pending = vec![stream];
@@ -88,7 +89,7 @@ impl Shared {
                     return Err(());
                 }
                 result.insert(id.to_owned());
-            } else if let Some(inputs) = self.context.graph.inputs(id) {
+            } else if let Some(inputs) = graph.inputs(id) {
                 if inputs.len() > 4096 || pending.len().saturating_add(inputs.len()) > 8192 {
                     return Err(());
                 }
@@ -415,7 +416,7 @@ impl SubscriptionHandle {
 }
 impl StreamRouter {
     fn describe_stream(&self, id: &str) -> Option<crate::stream_protocol::StreamDescription> {
-        let d = self.shared.context.graph.get(id)?;
+        let d = self.shared.graph.read().get(id).cloned()?;
         if !d.desired.enabled {
             return None;
         }
@@ -429,10 +430,7 @@ impl StreamRouter {
                 StreamDefinition::Derived(_) => "derived_market_events",
             }
             .into(),
-            dependencies: self
-                .shared
-                .context
-                .graph
+            dependencies: self.shared.graph.read()
                 .inputs(id)
                 .unwrap_or_default()
                 .to_vec(),
@@ -472,11 +470,8 @@ impl StreamRouter {
         if id.len() > 4096 {
             return Err(());
         }
-        let Some(d) = self
-            .shared
-            .context
-            .graph
-            .get(id)
+        let Some(d) = self.shared.graph.read()
+            .get(id).cloned()
             .filter(|d| d.desired.enabled)
         else {
             return Ok(None);
@@ -493,12 +488,12 @@ impl StreamRouter {
             Ok(())
         };
         charge(id)?;
-        let dependencies = self.shared.context.graph.inputs(id).unwrap_or_default();
+        let dependencies = self.shared.graph.read().inputs(id).unwrap_or_default().to_vec();
         if dependencies.len() > 16384 {
             return Err(());
         }
         for dep in dependencies {
-            charge(dep)?;
+            charge(&dep)?;
         }
         match &d.definition {
             StreamDefinition::Source(s) => {
@@ -532,10 +527,8 @@ impl StreamRouter {
         }
         let budget = frame_limit.saturating_sub(512).min(1024 * 1024);
         let limit = usize::from(page.limit.clamp(1, 128));
-        let mut ids = self
-            .shared
-            .context
-            .graph
+        let graph = self.shared.graph.read().clone();
+        let mut ids = graph
             .stream_ids_after(page.after.as_deref())
             .peekable();
         let mut streams = Vec::new();

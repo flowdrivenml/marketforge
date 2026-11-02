@@ -1,4 +1,2 @@
-fn main() -> std::process::ExitCode {
-    eprintln!("marketforge-live-tui: scaffold only; not implemented");
-    std::process::ExitCode::FAILURE
-}
+//! Compatibility name for the standalone HTTP-backed administration UI.
+include!("marketforge-tui.rs");

@@ -11,3 +11,6 @@ pub mod transport;
 pub mod tui;
 
 pub mod application;
+
+#[cfg(unix)]
+pub mod management;

@@ -172,6 +172,7 @@ pub enum StreamRuntimeError {
 /// stream-management execution context.
 #[derive(Debug)]
 pub struct StreamRuntimeRegistry {
+    deleted_generations: BTreeMap<String, RuntimeGeneration>,
     metrics: Option<Arc<crate::live::metrics::RuntimeMetrics>>,
     streams: BTreeMap<String, StreamRuntimeStatus>,
     authorities: BTreeMap<String, RuntimePublicationAuthority>,
@@ -217,11 +218,43 @@ impl StreamRuntimeRegistry {
             })
             .collect();
         Self {
+            deleted_generations: BTreeMap::new(),
             metrics: None,
             streams,
             authorities,
             changes: tokio::sync::watch::channel(0).0,
         }
+    }
+
+    /// Called at the Router graph boundary after affected generations have settled.
+    pub(crate) fn install_graph(&mut self, graph: &StreamGraph) -> Result<(), String> {
+        for (id, authority) in &self.authorities {
+            let changed = graph.get(id).is_none_or(|d| d.definition != authority.definition.definition || (!d.desired.enabled && authority.definition.desired.enabled));
+            if changed && self.streams[id].lifecycle != StreamLifecycleState::Stopped {
+                return Err(format!("generation must settle before definition changes: {id}"));
+            }
+        }
+        let removed: Vec<_> = self.streams.keys().filter(|id|graph.get(id).is_none()).cloned().collect();
+        if self.deleted_generations.len()+removed.len()>65536 {return Err("retired identity capacity".into());}
+        for id in removed {
+            let old=self.streams.remove(&id).unwrap();
+            self.deleted_generations.insert(id.clone(),old.generation);
+            self.authorities.remove(&id);
+        }
+        let mut fresh=Self::new(graph);
+        for id in graph.stream_ids() {
+            if let Some(a)=self.authorities.get_mut(id) {
+                a.definition=Arc::new(graph.get(id).unwrap().clone());
+            } else {
+                let mut status=fresh.streams.remove(id).unwrap();
+                status.generation=self.deleted_generations.get(id).copied().unwrap_or(RuntimeGeneration(0));
+                let mut authority=fresh.authorities.remove(id).unwrap();
+                authority.generation=status.generation;
+                self.streams.insert(id.into(),status);
+                self.authorities.insert(id.into(),authority);
+            }
+        }
+        self.changed(); Ok(())
     }
 
     pub(crate) fn install_metrics(&mut self,metrics:Arc<crate::live::metrics::RuntimeMetrics>){self.metrics=Some(metrics);}
@@ -587,6 +620,13 @@ mod tests {
             vec![],
         )
         .unwrap()
+    }
+
+    #[test]
+    fn graph_replacement_retains_generation_tombstones_and_rejects_old_completions(){
+        let graph=graph();let mut registry=StreamRuntimeRegistry::new(&graph);let original=registry.begin_start("btc").unwrap();registry.mark_running("btc",original).unwrap();let old=registry.publication_authority("btc").unwrap();
+        assert!(registry.install_graph(&StreamGraph::restore(vec![],vec![]).unwrap()).is_err());
+        let stopping=registry.begin_stop("btc").unwrap();registry.mark_stopped("btc",stopping).unwrap();registry.install_graph(&StreamGraph::restore(vec![],vec![]).unwrap()).unwrap();registry.install_graph(&graph).unwrap();let next=registry.begin_start("btc").unwrap();assert!(next.get()>original.get());assert!(!registry.mark_running("btc",original).unwrap());assert!(!*old.guard());assert_eq!(registry.status("btc").unwrap().lifecycle,StreamLifecycleState::Starting);registry.mark_running("btc",next).unwrap();
     }
 
     #[test]

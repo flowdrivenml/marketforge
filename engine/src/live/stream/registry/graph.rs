@@ -58,7 +58,7 @@ impl StreamGraph {
                 .validate()
                 .map_err(|error| StreamGraphError::InvalidDefinition(id.clone(), error))?;
 
-            if id.is_empty() || id.trim() != id || definition.revision <= 0 {
+            if id.is_empty() || id.len()>4096 || id.chars().any(char::is_control) || id.trim() != id || definition.revision <= 0 {
                 return Err(StreamGraphError::InvalidDefinition(
                     id,
                     "invalid persistent identity or revision".into(),

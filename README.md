@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="images/logo.png" alt="MarketForge" width="95%">
+  <img src="docs/content/assets/branding/logo.png" alt="MarketForge" width="95%">
 
   <br><br>
 

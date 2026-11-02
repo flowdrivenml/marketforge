@@ -178,7 +178,7 @@ struct Shared {
     changed: Notify,
     abandoned: AtomicBool,
     pool: ProcessingHandle,
-    graph: Arc<StreamGraph>,
+    router: Arc<StreamRouter>,
     config_derived: crate::live::config::general::DerivedProcessingConfig,
 }
 #[derive(Clone)]
@@ -281,7 +281,7 @@ impl ProcessingService {
             changed: Notify::new(),
             abandoned: AtomicBool::new(false),
             pool: pool.handle(),
-            graph: router.graph(),
+            router: router.clone(),
             config_derived: config_processing.derived,
         });
         let (commands, receiver) = mpsc::channel(config_processing.ready_queue_capacity);
@@ -370,8 +370,10 @@ impl Drop for StartCancellation {
     }
 }
 impl ProcessingServiceHandle {
+    pub(crate) fn pool_handle(&self)->ProcessingHandle{self.shared.pool.clone()}
+
     pub async fn start_derived(&self, id: &str) -> Result<ProcessingStreamHandle, String> {
-        let graph = self.shared.graph.clone();
+        let graph = self.shared.router.graph();
         let id = id.to_owned();
         let config = self.shared.config_derived;
         let request = tokio::task::spawn_blocking(move || resolve_start(&graph, &id, config))

@@ -43,6 +43,7 @@ async fn every_zero_resource_limit_is_invalid() {
 #[test]
 fn identity_exhaustion_does_not_wrap() {
     let mut state = State {
+        blocked:BTreeSet::new(),
         integrity_revision: 0,
         integrity_history: VecDeque::new(),
         integrity_history_truncated: false,

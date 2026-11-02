@@ -1,9 +1,2 @@
-mod derived;
-mod model;
-mod validation;
-
-pub use derived::{CreateDerivedStreamRequest, DerivedOperation, MergeOrdering};
-
-pub use model::{CreateSourceStreamRequest, QuantityType, SourceChannel};
-
-pub use derived::{ConversionSettings, InputRole, ProcessingInputSpec};
+//! Existing validated request contracts, shared with management adapters.
+pub use crate::management_protocol::definitions::*;

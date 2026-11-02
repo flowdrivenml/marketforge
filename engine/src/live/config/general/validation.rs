@@ -14,6 +14,7 @@ pub fn validate(config: &GeneralConfig) -> Result<(), String> {
     validate_publication(config)?;
     config.publication.validate_streaming()?;
     validate_control(config)?;
+    config.control.management.validate()?;
     config.recording.validate()?;
     validate_metrics(config)?;
     validate_logging(config)?;
@@ -94,13 +95,10 @@ fn validate_publication(config: &GeneralConfig) -> Result<(), String> {
 // ============================================================
 
 fn validate_control(config: &GeneralConfig) -> Result<(), String> {
-    let address = parse_listen_address(&config.control.listen_address, "control.listen_address")?;
+    let address:SocketAddr=config.control.listen_address.parse().map_err(|_|"control.listen_address must be a valid IP socket address".to_string())?;
 
-    // The management API has no built-in authentication or TLS
-    // configuration in v1.
-    //
-    // Bind it to loopback and expose it remotely through a
-    // separately secured reverse proxy or private-network tunnel.
+    // Port zero requests an owned ephemeral listener. v1 remains loopback-only
+    // with credential authentication; no remote exposure policy is implemented.
     if !address.ip().is_loopback() {
         return Err("control.listen_address must use a loopback IP address \
              (127.0.0.1 or ::1)"
@@ -581,7 +579,9 @@ jitter = true
         let mut config = valid_config();
 
         config.publication.max_connections = 1;
-        config.publication.subscriber_queue_bytes = 1;
+        // The production streaming contract requires at least one 4 KiB frame.
+        config.publication.subscriber_queue_bytes = 4096;
+        config.publication.streaming.max_frame_bytes = 4096;
 
         config.validate().unwrap();
     }
@@ -627,12 +627,12 @@ jitter = true
     }
 
     #[test]
-    fn reject_control_port_zero() {
+    fn allow_owned_ephemeral_control_port() {
         let mut config = valid_config();
 
         config.control.listen_address = "127.0.0.1:0".into();
 
-        assert_invalid(&config, "nonzero TCP port");
+        config.validate().unwrap();
     }
 
     #[test]

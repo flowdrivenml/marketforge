@@ -8,3 +8,6 @@ pub mod processing;
 // Document 17 scaffolding: declarations only; implementations are not complete.
 #[cfg(feature = "live")]
 pub mod live;
+
+#[cfg(feature="management-tui")]
+pub mod management;

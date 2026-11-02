@@ -16,3 +16,6 @@ mod loading;
 pub use model::StreamingLimits;
 
 pub use model::ApplicationRuntimeConfig;
+
+mod management;
+pub use management::ManagementConfig;

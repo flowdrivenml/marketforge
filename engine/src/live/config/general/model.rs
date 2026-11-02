@@ -114,6 +114,8 @@ pub struct PublicationConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ControlConfig {
+    #[serde(default,skip_serializing_if="super::ManagementConfig::is_default")]
+    pub management:super::ManagementConfig,
     /// Address on which the mandatory management REST API listens.
     ///
     /// Example: "127.0.0.1:8080"

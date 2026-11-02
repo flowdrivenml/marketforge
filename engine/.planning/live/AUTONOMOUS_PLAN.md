@@ -1,626 +1,896 @@
-# MarketForge Live — Autonomous Source Stream Completion Plan
+# MarketForge Live — Autonomous Plan: Canonical Stream Router
 
-## Authorization
+**Project:** MarketForge Live
+**Repository:** `/home/pasha/projects/bybit-history-downloader`
+**Branch:** `codex/stream-router`
+**Milestone:** Canonical Stream Router
+**Status:** Authorized for autonomous implementation
+**Scope:** Rust Live subsystem only
 
-Codex is authorized to complete the MarketForge Live Source Stream
-subsystem, implement its integration tests, correct discovered defects,
-and produce verification evidence.
+---
 
-Work autonomously through all phases of this plan.
+## 1. Objective
 
-Follow AGENTS.md, accepted architectural decisions, and the Live
-implementation roadmap. Inspect current code before making changes.
+Implement the production-quality Canonical Stream Router for MarketForge Live.
 
-Do not implement the generic router, full MarketForge runtime,
-trading engine, Python orchestration, or unrelated subsystems.
+Source Stream is complete and has passed deterministic integration tests for all 14 supported BTC exchange profiles, including PostgreSQL persistence and restoration.
 
-Do not claim acceptance. Final acceptance belongs to the user.
+The Router is the next architectural component.
 
-## 1. Git Safety
+Its responsibility is to accept canonical market-data publications and distribute them to subscribed consumers while preserving:
 
-Before editing:
+- Stream identity and producer authority.
+- Per-stream publication ordering.
+- Subscription and demand ownership.
+- Bounded memory and backpressure.
+- Consumer isolation.
+- Generation fencing.
+- Explicit publication acknowledgment semantics.
+- Correct lifecycle and shutdown behavior.
 
-- Inspect Git status and the current branch.
-- Confirm that a pre-Codex checkpoint exists.
-- Work on the dedicated Source Stream development branch.
-- Preserve unrelated changes and untracked files.
-- Create meaningful commits after verified milestones.
-- Never force-push, rewrite protected branches, or push without permission.
+The Router must support direct in-process Rust consumers without serialization or interprocess communication.
 
-## 2. Source Stream Completion
+Future consumers will include PostgreSQL recording, Unix-domain socket publication, Derived Streams, and potentially Spectra.
 
-Inspect and complete the existing production implementations:
+Only implement the Router core and its Source Stream integration in this milestone.
 
-- SourceStreamFactory
-- SourceStreamInstance
-- SourceProcessor
-- SourceStreamRunner
-- SourceStreamExecutor
-- SourceRuntimeSupervisor
-- SourceTradeAttempt
-- SourceTradeRecoveryPolicy
-- SourceTradePageCollector
-- SourceTradePublication
-- Integrity facade and recovery integration
+---
 
-Required functionality:
+## 2. Architectural Authority
 
-- Validated source construction.
-- Standalone initialization without the full MarketForge runtime.
-- Correct WebSocket acquisition and subscription handling.
-- Native normalization and canonical output.
-- Trade and depth integrity.
-- REST depth synchronization.
-- Supported trade recovery and historical pagination.
-- Recovery ownership and epoch fencing.
-- Publication acknowledgment before integrity commit.
-- Correct readiness transitions.
-- Cancellation, reconnection, and shutdown.
-- Bounded resource usage and explicit failure behavior.
+Before implementation, read:
 
-Reuse existing components. Do not introduce competing controllers,
-registries, recovery coordinators, or state machines.
+- `.planning/live/AGENTS.md`
+- `.planning/live/objective.md`
+- `.planning/live/AUTONOMOUS_PLAN.md`
+- Existing Rust implementation and public contracts.
+- Existing integration tests.
+- Existing PostgreSQL schema.
 
-## 3. Standalone Source Initialization
+Retired architecture documents must not be restored or required.
 
-Implement a minimal, production-usable Source Stream construction API.
+Preserve existing architectural decisions unless a concrete correctness issue requires adjustment.
 
-The standalone builder must:
+The completed Source Stream implementation is an established subsystem.
 
-- Accept validated source definitions.
-- Resolve existing exchange configuration.
-- Assemble existing production dependencies.
-- Construct the runner and executor.
-- Integrate with the existing supervisor.
-- Support deterministic integration testing.
-- Work without requiring PostgreSQL.
+Do not redesign Source Stream normalization, integrity, recovery, acquisition, or persistence.
 
-Keep persistence and runtime construction as separate responsibilities.
+PostgreSQL remains mandatory infrastructure for MarketForge Live.
 
-## 4. PostgreSQL Persistence
+### Git Safety
 
-Inspect the existing live.streams schema, registry implementation,
-migrations, and accepted architecture.
+Work exclusively on:
 
-Implement missing persistence functionality only where required by
-the authorized Source Stream scope.
+`codex/stream-router`
 
-Requirements:
+Before modifying code:
 
-- Persist source definitions when accepted.
-- Persist desired state when changed.
-- Distinguish desired state from actual runtime state.
-- Restore valid definitions after restart.
-- Establish fresh acquisition and integrity authority.
-- Handle duplicate identities and concurrent registration.
-- Support controlled deletion and dependent-record cleanup.
-- Preserve transactional correctness.
+1. Inspect Git status and the current HEAD.
+2. Confirm the Source Stream checkpoint exists.
+3. Preserve all existing changes.
+4. Do not reset, rebase, force-push, or overwrite unrelated work.
 
-Never persist ephemeral task handles or treat old integrity state
-as currently synchronized.
+Use logically grouped commits.
 
-## 5. PostgreSQL Authorization
+Do not push unless explicitly authorized.
 
-Codex may read secrets/postgres.env locally for database access.
+---
 
-For this assignment, Codex is authorized to:
+## 3. Existing Infrastructure
 
-- Inspect schemas and records.
-- Query catalog instruments and specifications.
-- Create test-owned Source Stream records.
-- Update test-owned Source Stream records.
-- Delete test-owned Source Stream records.
-- Modify dependent records exclusively owned by those test streams.
-- Test persistence, restoration, transactions, and cleanup.
+Inspect and reuse the existing modules:
 
-The existing database is not disposable.
+    engine/src/live/stream/registry/
+    engine/src/live/stream/persistence/
+    engine/src/live/stream/request/
+    engine/src/live/stream/source/
 
-Restrictions:
+    engine/src/live/integrity/
+    engine/src/live/recovery/
+    engine/src/live/infrastructure/websocket/
 
-- Preserve all pre-existing application records.
-- Never use unrestricted DELETE or TRUNCATE.
-- Never perform destructive schema changes.
-- Never delete shared records belonging to other streams.
-- Inspect foreign-key relationships before cleanup.
-- Use identifiable test ownership.
-- Prefer transactional isolation where possible.
-- Never expose or commit credentials.
-- Report incomplete cleanup.
+In particular, examine:
 
-Database writes outside these permissions require separate approval.
+    stream/registry/demand.rs
+    stream/registry/graph.rs
+    stream/registry/reconcile.rs
+    stream/registry/runtime.rs
 
-## 6. Instrument Test Matrix
+    stream/source/builder.rs
+    stream/source/executor.rs
+    stream/source/runner.rs
+    stream/source/supervisor.rs
 
-Use:
+    stream/persistence/repository.rs
 
-engine/tests/live/support/data/instruments/btc_sources.json
+Reuse existing concepts for:
 
-Test all 14 BTC instrument profiles:
+- Stream identity.
+- Runtime generation.
+- Demand ownership.
+- Dependency relationships.
+- Runtime lifecycle.
+- Durable stream registration.
+- Source publication.
+- Acquisition fencing.
 
-| Exchange | Market | Instrument ID |
-|---|---|---:|
-| Bybit | Spot | 1 |
-| Bybit | Linear | 688 |
-| Bybit | Inverse | 1427 |
-| Binance | Spot | 6163 |
-| Binance | Linear | 9872 |
-| Binance | Inverse | 10792 |
-| OKX | Spot | 3336 |
-| OKX | Linear | 4063 |
-| OKX | Inverse | 4048 |
-| Bitget | Spot | 11545 |
-| Bitget | Linear | 14215 |
-| Gate.io | Spot | 15850 |
-| Gate.io | Linear | 17397 |
-| Gate.io | Inverse | 18256 |
+Do not implement parallel registries or competing identity systems.
 
-Options and dated futures are excluded.
+The Router may maintain ephemeral producer bindings and delivery subscriptions, but they must integrate with existing infrastructure.
 
-Exercise trades and depth according to actual profile capabilities.
+---
 
-Do not invent unsupported exchange functionality.
+## 4. Target Architecture
 
-Preserve exact decimal quantities and contract economics.
+    Source Stream ─────┐
+                       │
+    Source Stream ─────┤
+                       │
+                       ▼
+                STREAM ROUTER
+                       │
+           ┌───────────┼────────────┐
+           │           │            │
+           ▼           ▼            ▼
+       PostgreSQL     Unix       Derived
+        Recorder     Socket      Streams
+                     Output         │
+                                    ▼
+                                  Spectra
+                                  (Future)
 
-## 7. Integration Test Architecture
-
-Preserve the existing engine/tests/live structure.
-
-Add Source Stream integration tests under:
-
-engine/tests/live/integration/source/
+All destinations should use the same generic Router consumer interface.
 
-Inspect existing Cargo test targets before creating entrypoints.
-
-Reuse existing infrastructure:
-
-- tests/live/support/http_server.rs
-- tests/live/support/websocket_server.rs
-- Existing native exchange fixtures.
-- Existing normalization and integrity test utilities.
-- Existing REST and recovery test infrastructure.
-
-Test the actual production pipeline:
-
-Local WebSocket Server
-    -> WebSocket Manager
-    -> Source Attachment
-    -> Source Executor
-    -> Source Runner
-    -> Normalization
-    -> Integrity
-    -> Publication Sink
-
-REST recovery tests must exercise the real recovery coordinator,
-request construction, HTTP execution, normalization, reconciliation,
-and integrity completion.
-
-Mock external exchanges, not MarketForge's internal behavior.
-
-Deterministic tests must not require public exchange connectivity.
-
-## 8. Required Scenario Coverage
-
-### Normal Operation
-
-- Source creation and initialization.
-- Successful WebSocket connection.
-- Subscription acknowledgment.
-- Native trade normalization.
-- Native depth normalization.
-- Accepted publication.
-- Correct ordering.
-- Correct readiness.
-- Multiple independent sources.
-
-### Successful Recovery
-
-- Initial depth synchronization.
-- Depth recovery after a gap.
-- Single-page trade recovery.
-- Multi-page historical trade recovery.
-- Live trades arriving during REST recovery.
-- REST/WebSocket overlap.
-- Retryable HTTP failure followed by success.
-- Recovery after reconnect.
-- Successful publication followed by integrity commit.
-
-### Partial Recovery
-
-- Incomplete REST trade coverage.
-- First page succeeds, second page fails.
-- Pagination reaches configured limits.
-- Missing or duplicate trade identities.
-- REST snapshot cannot bridge buffered depth updates.
-- Empty REST response.
-- REST/WS identity conflict.
-- Recovery buffer reaches capacity.
-- Publication failure after successful reconciliation.
-- Reconnect interrupts recovery.
-
-Partial recovery must never produce false readiness or premature
-identity commits.
-
-### Failed Recovery
-
-- HTTP unavailable.
-- HTTP timeout.
-- Malformed REST payload.
-- Wrong symbol or profile.
-- Obsolete acquisition response.
-- Invalid pagination cursor.
-- Retry budget exhaustion.
-- Buffer overflow.
-- Shutdown during recovery.
-
-### Publication
-
-- Ordinary publication succeeds.
-- Ordinary publication fails.
-- Recovery publication succeeds.
-- Recovery publication fails.
-- Depth snapshot publication fails.
-- Depth invalidation failure.
-- Slow downstream consumer.
-- Publication capacity exhaustion.
-- Ambiguous downstream handoff.
-- Reconnect during publication.
+The Router must not know whether its consumer is a recorder, socket publisher, derived processor, or financial-engineering system.
 
-### Lifecycle
+The Router is responsible for transport-independent canonical event distribution.
 
-- Start and stop.
-- Repeated start/stop.
-- Unexpected disconnect.
-- Successful reconnect.
-- Stale WebSocket messages.
-- Stale REST completions.
-- Rapid reconnect cycles.
-- Cancellation during recovery.
-- Shutdown during publication.
-- Multi-source isolation.
+It must not implement:
 
-### Resource Limits
+- Exchange normalization.
+- Trade or depth integrity calculation.
+- REST recovery.
+- Financial transformations.
+- Feature engineering.
+- Trading execution.
 
-- Shared REST rate limiting.
-- WebSocket subscription rate limiting.
-- Concurrent recovery scheduling.
-- Retry and deadline enforcement.
-- Publication backpressure.
-- Bounded trade buffers.
-- Bounded depth buffers.
-- Bounded pagination.
-- Bounded pending requests.
-- Sustained throughput.
-- Resource release after shutdown.
+---
 
-### PostgreSQL
+## 5. Public Router Facade
 
-- Create source definition.
-- Retrieve persisted configuration.
-- Duplicate identity handling.
-- Update desired state.
-- Graceful restart restoration.
-- Simulated crash restoration.
-- Fresh integrity authority after restart.
-- Test-owned source deletion.
-- Transaction rollback.
-- Concurrent registration.
-- Database failure handling.
+Provide a small public Rust facade.
 
-## 9. Test Correctness Rules
+Desired conceptual API:
 
-Every scenario must contain real assertions.
+```rust
+pub struct StreamRouter;
 
-A printed PASS is not proof of correctness.
+impl StreamRouter {
+    pub fn new(
+        config: RouterConfig,
+        context: RouterContext,
+    ) -> Result<Self, RouterError>;
 
-Use deterministic local servers, controlled clocks where practical,
-and explicit failure injection.
+    pub fn attach_producer(
+        &self,
+        request: AttachProducerRequest,
+    ) -> Result<ProducerHandle, RouterError>;
 
-Avoid arbitrary sleeps.
+    pub async fn subscribe(
+        &self,
+        request: SubscribeRequest,
+    ) -> Result<SubscriptionHandle, RouterError>;
 
-Assert ordering, identities, readiness, resource bounds,
-publication outcomes, and cleanup.
+    pub fn status(&self) -> RouterStatus;
 
-A recovery failure may be a passing test when the source responds
-correctly and safely.
+    pub async fn shutdown(&self) -> Result<(), RouterError>;
+}
+```
 
-Do not weaken assertions to manufacture success.
+### Producer Handle
 
-## 10. Observable Test Output
+```rust
+pub struct ProducerHandle;
 
-Integration tests must support --nocapture.
+impl ProducerHandle {
+    pub fn try_publish(
+        &self,
+        publication: RouterPublication,
+    ) -> Result<RouterAcceptance, PublishError>;
+}
+```
 
-Print meaningful scenario milestones:
+### Subscription Handle
 
-[EXCHANGE/MARKET/CHANNEL] Source initialized
-[EXCHANGE/MARKET/CHANNEL] WebSocket connected
-[EXCHANGE/MARKET/CHANNEL] Subscription acknowledged
-[EXCHANGE/MARKET/CHANNEL] Normalization completed
-[EXCHANGE/MARKET/CHANNEL] Integrity evaluated
-[EXCHANGE/MARKET/CHANNEL] Recovery started
-[EXCHANGE/MARKET/CHANNEL] Recovery completed or rejected
-[EXCHANGE/MARKET/CHANNEL] Publication result
-[EXCHANGE/MARKET/CHANNEL] Final readiness
-[EXCHANGE/MARKET/CHANNEL] Shutdown completed
+```rust
+pub struct SubscriptionHandle;
 
-Report actual metrics where available:
+impl SubscriptionHandle {
+    pub async fn recv(&mut self) -> Option<RouterDelivery>;
 
-- Received WebSocket messages.
-- Canonical records.
-- Integrity rejections.
-- Recovery attempts and pages.
-- Publication failures.
-- Peak buffer occupancy.
-- Rate-limit observations.
-- Final readiness.
-- Test duration.
+    pub async fn close(self) -> Result<(), RouterError>;
+}
+```
 
-Avoid excessive per-message logging during stress tests.
+These signatures describe the desired API, not mandatory exact implementations.
 
-## 11. Verification
+Adapt them where necessary to preserve correctness and existing contracts.
 
-Source Stream development must use focused verification to avoid repeatedly executing unrelated, expensive MarketForge Live integration suites.
+### Facade Requirements
 
-### Verification entrypoints
+The facade must provide:
 
-The dedicated Source Stream verification entrypoint is:
+- Router construction.
+- Authorized producer attachment.
+- Consumer subscription.
+- Synchronous nonblocking publication.
+- Explicit consumer closure.
+- Router status.
+- Graceful shutdown.
 
-`scripts/verify-live-source.sh`
+Use simple request objects.
 
-The authoritative full MarketForge Live verification entrypoint remains:
+Avoid exposing internal locks, registries, channels, and task handles.
 
-`scripts/verify-live.sh`
+A downstream Rust component should need only a few imports.
 
-Codex is authorized to create or improve `scripts/verify-live-source.sh` without modifying the behavior of the existing full verification script.
+---
 
-### Dedicated Source Stream integration target
+## 6. Proposed Module Structure
 
-Create or reuse the Cargo integration-test target:
+Introduce:
 
-`live_source`
+    engine/src/live/stream/router/
+    ├── mod.rs
+    ├── facade.rs
+    ├── event.rs
+    ├── ingress.rs
+    ├── producer.rs
+    ├── subscription.rs
+    ├── dispatch.rs
+    ├── capacity.rs
+    ├── lifecycle.rs
+    └── status.rs
 
-Entrypoint:
+This is a suggested structure.
 
-`engine/tests/live/integration/source/main.rs`
+Adapt it to existing project conventions where appropriate.
 
-Register it in `engine/Cargo.toml` using the existing integration-test conventions.
+Do not introduce unnecessary abstractions or excessive module fragmentation.
 
-Preserve all existing Live test targets.
+---
 
-### Verification profiles
+## 7. Canonical Router Events
 
-The Source Stream verification script must support four profiles.
+Reuse existing canonical Rust types.
 
-**quick**
+Do not introduce alternative trade or depth schemas.
 
-- Run `cargo check` with the appropriate Live features.
-- Run focused Source Stream unit tests.
-- Use during ordinary implementation and debugging.
-- Do not execute unrelated integration suites.
+The Router must support:
 
-**integration**
+- Canonical trade publications.
+- Canonical L2 snapshots.
+- Canonical L2 deltas.
+- Depth invalidation events.
 
-- Run the dedicated `live_source` integration-test target.
-- Include readable scenario diagnostics using `--nocapture`.
-- Exercise the actual Source Stream pipeline.
-- Use after Source Stream behavior changes.
+Preserve relevant identity, provenance, sequence, and generation metadata.
 
-**extended**
+Use immutable owned publication payloads.
 
-- Run Source Stream unit tests.
-- Run Source Stream integration tests.
-- Run relevant existing integration targets:
-  - `live_websocket`
-  - `live_rest`
-  - `live_normalization`
-  - `live_integrity`
-  - `live_recovery`
-- Use after major implementation milestones.
-- Avoid repeatedly executing slow unrelated suites.
+Prefer shared ownership such as `Arc<T>` for efficient fanout when appropriate.
 
-**full**
+Do not deep-clone large depth snapshots for every subscriber unnecessarily.
 
-- Delegate to `scripts/verify-live.sh full`.
-- Run when the implementation is stable.
-- Required before declaring Source Stream Ready for Review.
-- Repeat when subsequent changes invalidate the verification evidence.
+### Atomic Publications
 
-### Individual scenario execution
+Each publication is an atomic admission unit.
 
-Codex should run individual integration scenarios when diagnosing failures rather than repeatedly executing the entire integration suite.
+A batch must be either completely accepted or completely rejected.
+
+Never acknowledge partial acceptance.
+
+Maintain ordering within each publication.
+
+---
+
+## 8. Publication Acknowledgment Contract
+
+This is a critical requirement.
+
+Source Stream currently commits integrity state after successful publication acknowledgment.
+
+The Router must preserve this guarantee.
+
+Define successful Router acceptance as:
+
+**Complete acceptance into bounded volatile Router ownership.**
+
+Successful acceptance does not imply:
+
+- PostgreSQL durability.
+- Successful external socket delivery.
+- Completion of consumer processing.
+- Delivery to every subscriber.
+
+These are separate guarantees.
+
+The Router must return an error when it cannot accept the complete publication.
+
+Source Stream must not commit unpublished trades after failed Router admission.
+
+### Synchronous Publication
+
+Existing Source Stream publication callbacks are synchronous.
+
+The Router must provide compatible nonblocking admission.
+
+Do not indefinitely block Tokio workers waiting for consumer processing.
+
+### Downstream Failure
+
+Define explicit behavior when Router admission succeeds but downstream delivery subsequently fails.
+
+Do not silently claim end-to-end lossless delivery.
+
+Consumers requiring complete continuity must receive an explicit failure or desynchronization indication when delivery cannot be guaranteed.
+
+---
+
+## 9. Producer Ownership and Generation Fencing
+
+Producer handles must be associated with validated stream identity and runtime authority.
+
+Reject:
+
+- Unknown streams.
+- Unauthorized producer bindings.
+- Detached producer handles.
+- Revoked generations.
+- Incorrect payload types.
+- Publication after Router shutdown.
+- Old-generation publication after producer replacement.
+
+Do not confuse runtime stream generations with Source Stream acquisition epochs.
+
+Preserve existing acquisition fencing.
+
+Ensure queued stale publications cannot cross a revoked generation boundary.
+
+Concurrent producer attachment and replacement must have deterministic semantics.
+
+---
+
+## 10. Consumer Subscriptions
+
+Support multiple independent subscribers for one stream.
+
+Each subscription must have:
+
+- Stable identity.
+- Explicit demand ownership.
+- Bound stream identity.
+- Bounded capacity.
+- Lifecycle state.
+- Defined continuity policy.
+- Explicit cleanup.
+
+Distinguish:
+
+**Demand Registry:** Determines whether a stream is required.
+
+**Router Subscription Registry:** Determines where publications are delivered.
+
+Reuse existing demand infrastructure.
+
+Removing one consumer must not stop a stream still required by another owner.
+
+Removing the final ephemeral owner must release its demand.
+
+Dropping a subscription must not leak ownership.
+
+Preserve always-on demand where applicable.
+
+---
+
+## 11. Event Ordering
+
+Preserve successful admission order independently for each stream.
 
 For example:
 
-```bash
-cargo test \
-    --no-default-features \
-    --features live,postgres \
-    --test live_source \
-    multi_page_trade_recovery \
-    -- --nocapture
+    Producer:  A B C D
+    Consumer:  A B C D
+
+Never:
+
+    Consumer:  A C B D
+
+Define an explicit linearization point for concurrent publication.
+
+Do not fabricate global event ordering between independent exchanges.
+
+Maintain per-stream ordering across publication batches.
+
+Consumers must not silently skip required events while remaining synchronized.
+
+---
+
+## 12. Fanout and Consumer Isolation
+
+Support one producer and multiple consumers.
+
+Example:
+
+    Source
+       │
+       ▼
+     Router
+       │
+       ├── Consumer A
+       ├── Consumer B
+       └── Consumer C
+
+Consumers should receive shared immutable canonical events directly in Rust.
+
+A slow or failed consumer must not corrupt unrelated consumers.
+
+The Router must explicitly handle a full consumer queue.
+
+Choose and document a coherent policy for partial fanout failure.
+
+Acceptable designs may include:
+
+- Atomic reservation before admission.
+- Explicit consumer invalidation after failed delivery.
+- Another bounded mechanism with equivalent guarantees.
+
+Never silently claim successful delivery to all subscribers when some have missed events.
+
+Do not execute arbitrary consumer computations on the Router dispatch path.
+
+---
+
+## 13. Resource Management
+
+Every Router-controlled queue must be bounded.
+
+Implement configurable limits for:
+
+- Ingress pending publications.
+- Ingress pending bytes.
+- Consumer queue publications.
+- Consumer queue bytes.
+- Active subscriptions.
+- Active producer bindings.
+
+Enforce actual limits.
+
+A depth snapshot may be much larger than an ordinary trade publication.
+
+Therefore, queue-length limits alone are insufficient.
+
+Account for retained event memory.
+
+Use checked arithmetic where appropriate.
+
+Avoid:
+
+- Unbounded channels.
+- Busy polling.
+- Per-event Tokio task spawning.
+- Global locks held across `.await`.
+- Unnecessary serialization.
+- Uncontrolled payload cloning.
+
+### Backpressure
+
+Required behavior:
+
+- Reject admission when ingress capacity is exhausted.
+- Explicitly handle exhausted consumer capacity.
+- Prevent unlimited memory accumulation.
+- Release capacity after consumption or cancellation.
+- Release resources after shutdown.
+- Preserve accurate operational counters.
+
+Consumer continuity failures must never be silently hidden.
+
+---
+
+## 14. Depth Synchronization
+
+Depth routing must preserve:
+
+    Snapshot
+       │
+       ▼
+    Delta
+       │
+       ▼
+    Delta
+       │
+       ▼
+    Invalidation
+       │
+       ▼
+    Recovery Snapshot
+       │
+       ▼
+    Delta
+
+The Router must preserve publication ordering and book-generation authority.
+
+### Late Subscribers
+
+A consumer subscribing after the original snapshot cannot automatically treat subsequent deltas as a synchronized book.
+
+Inspect existing Source Stream book and publication contracts.
+
+Reuse an authoritative snapshot/bootstrap mechanism if available.
+
+If no suitable mechanism exists, represent the consumer as unsynchronized until an authoritative initialization event becomes available.
+
+Do not implement a competing order book inside the Router.
+
+Do not fabricate complete snapshots from incomplete depth information.
+
+### Recovery
+
+After source invalidation:
+
+- Old book authority must not remain valid.
+- Old-generation deltas must not be accepted as current.
+- Recovery snapshots must establish new authority.
+- Consumer synchronization must be explicit.
+
+---
+
+## 15. Lifecycle and Shutdown
+
+Implement lifecycle handling for:
+
+- Router initialization.
+- Producer attachment.
+- Producer replacement.
+- Producer detachment.
+- Subscription creation.
+- Subscription closure.
+- Consumer failure.
+- Source restart.
+- Router shutdown.
+
+Shutdown must stop new admissions, revoke authority, and resolve pending work according to documented guarantees.
+
+Release subscriptions, demand ownership, and capacity accounting.
+
+Do not report clean shutdown if required cleanup has failed.
+
+Avoid deadlocks between publication, shutdown, and subscription removal.
+
+---
+
+## 16. Future In-Process Rust Consumers
+
+The Router must support direct Rust consumers without Unix sockets.
+
+This is required for future Derived Streams and potentially Spectra.
+
+Example:
+
+```rust
+let mut consumer = router.subscribe(request).await?;
+
+while let Some(delivery) = consumer.recv().await {
+    process(delivery);
+}
 ```
 
-Use the actual Cargo test targets and feature combinations defined by the repository.
+The interface must not require:
 
-### Existing integration-test failures
+- JSON conversion.
+- Socket serialization.
+- A separate executable.
+- A separate Tokio runtime.
 
-Codex is authorized to investigate and correct existing integration-test failures directly related to Source Stream or introduced by its implementation changes.
+Consumers may use their own workers or execution pools.
 
-Before modifying existing tests, identify whether the failure results from:
+The Router must remain independent of those execution decisions.
 
-- A production regression.
-- Incorrect test expectations.
-- Outdated fixtures.
-- Nondeterministic scheduling.
-- Missing external infrastructure.
-- A pre-existing unrelated failure.
+Do not implement Spectra or CPU scheduling in this milestone.
 
-Correct production defects rather than weakening tests.
+---
 
-Changes to existing test expectations must be justified by authoritative contracts or approved architecture.
+## 17. Integration Tests
 
-Do not:
+Create a dedicated Cargo test target:
 
-- Remove failing tests to obtain a passing suite.
-- Weaken assertions without evidence.
-- Introduce broad `#[ignore]` annotations.
-- Silently skip required scenarios.
-- Change unrelated subsystem behavior without authorization.
-- Claim that a test passed when it was not executed.
+`live_router`
 
-Unrelated baseline failures must be documented separately.
+Entrypoint:
 
-### Slow and stress tests
+    engine/tests/live/integration/router/main.rs
 
-Long-running stress tests should be independently selectable.
+Suggested organization:
 
-Where useful, introduce dedicated test targets such as:
+    engine/tests/live/integration/router/
+    ├── main.rs
+    ├── harness.rs
+    ├── ingress.rs
+    ├── dispatch.rs
+    ├── subscriptions.rs
+    ├── ownership.rs
+    ├── backpressure.rs
+    ├── lifecycle.rs
+    ├── integrity.rs
+    └── pipeline.rs
 
-- `live_source_stress`
-- `live_source_network`
+Use actual production Router components.
 
-Stress tests must examine concurrency, resource bounds, rate limiting, backpressure, and cleanup.
+Use deterministic synchronization mechanisms rather than arbitrary timing delays wherever possible.
 
-External network tests remain opt-in and require separate authorization.
+### Required Test Matrix
 
-Do not include real exchange connectivity in ordinary deterministic verification.
+| Category | Required scenarios |
+|---|---|
+| Admission | Valid, invalid identity, wrong type, oversized publication |
+| Atomicity | Complete acceptance or rejection, never partial |
+| Ordering | Multiple batches, concurrent submissions, per-stream ordering |
+| Fanout | One producer, multiple consumers, exact event contents |
+| Isolation | Slow and failed consumers do not corrupt others |
+| Ownership | Shared demand, final-owner removal, dropped handles |
+| Fencing | Stale producer, revoked generation, producer replacement |
+| Depth | Snapshot, deltas, invalidation, replacement snapshot |
+| Late subscription | No false synchronization |
+| Backpressure | Event and byte capacity exhaustion |
+| Lifecycle | Startup, shutdown, reconnect, repeated lifetimes |
+| Resources | No leaks after cancellation, failure, or shutdown |
+| Pipeline | Real Source Stream to Router to multiple consumers |
 
-### Execution requirements
+### Exact Fanout Test
 
-- Preserve actual command exit codes.
-- Report actual executed test counts.
-- Do not run competing Cargo builds against the same target directory.
-- Avoid unnecessary full recompilation.
-- Prefer cached dependencies when available.
-- Use deterministic local test servers.
-- Avoid arbitrary sleeps and uncontrolled timing assumptions.
-- Do not weaken tests to manufacture success.
+Start one producer and three consumers.
 
-### Verification evidence
+Publish 1,000 ordered canonical trade records.
 
-Store detailed verification logs under:
+Verify that each continuously synchronized consumer receives exactly the expected records in order.
 
-`engine/target/live-verification/`
+Then fail one consumer deliberately.
 
-The final evidence report must include:
+Verify that remaining consumers continue correctly.
 
-- Exact commands executed.
-- Exit codes.
-- Executed test counts.
-- Source Stream scenario coverage.
-- Exchange, market, and channel coverage.
-- Successful, partial, and failed recovery results.
-- Rate-limit and backpressure results.
-- Resource-bound verification.
-- PostgreSQL integration results.
-- Existing regression failures.
-- Blocked or unsupported scenarios.
-- Relevant log locations.
+Confirm failed consumer status and resource cleanup.
 
-### Final acceptance
+### Depth Continuity Test
 
-Focused verification is sufficient during iterative implementation but not for final acceptance.
+Publish:
 
-Before declaring Source Stream Ready for Review:
+    Snapshot
+    Delta 1
+    Delta 2
+    Invalidation
+    Recovery Snapshot
+    Delta 3
 
-1. Complete all required Source Stream integration scenarios.
-2. Run the relevant extended regression suite.
-3. Run `scripts/verify-live.sh full`.
-4. Produce the final verification evidence report.
+Assert exact ordering, generation transitions, and consumer synchronization state.
 
-A passing focused suite does not establish complete MarketForge Live regression coverage.
+### Backpressure Test
 
-A passing deterministic integration suite does not establish live exchange compatibility.
+Use deliberately small capacities.
 
-Only the user may mark Source Stream Accepted.
+Force consumer queue saturation.
 
-## 12. Execution Phases
+Verify bounded behavior, explicit failure semantics, and unaffected consumers where the selected policy permits isolation.
 
-Phase 1: Audit current implementation and acceptance requirements.
+Do not use timing alone as proof of resource bounds.
 
-Phase 2: Finish recovery, publication, and lifecycle correctness.
+---
 
-Phase 3: Implement standalone source initialization.
+## 18. Production Pipeline Integration
 
-Phase 4: Complete authorized persistent source management.
+The final integration tests must exercise:
 
-Phase 5: Build reusable Source Stream integration harness.
+    Local WebSocket Server
+             │
+             ▼
+    Production WebSocket Manager
+             │
+             ▼
+    Production Source Stream
+             │
+             ▼
+    Production Normalization
+             │
+             ▼
+    Production Integrity
+             │
+             ▼
+    Production Router
+             │
+             ▼
+    Multiple Rust Consumers
 
-Phase 6: Implement normal-operation scenarios.
+Do not replace Source Stream or Router internals with mocks.
 
-Phase 7: Implement successful, partial, and failed recovery scenarios.
+Use controlled local WebSocket and HTTP servers as appropriate.
 
-Phase 8: Implement publication and lifecycle failure scenarios.
+Representative profiles:
 
-Phase 9: Implement rate-limit, backpressure, and resource tests.
+- Binance Spot Trades.
+- Binance Spot Depth.
+- Bybit Spot Depth.
+- Bitget Linear Depth.
+- Gate.io Linear Trades.
 
-Phase 10: Implement PostgreSQL persistence and restoration tests.
+Test actual canonical contents, ordering, acknowledgments, ownership, and lifecycle.
 
-Phase 11: Run all applicable 14-profile scenarios.
+The Router is exchange-independent.
 
-Phase 12: Run full regression verification and produce evidence.
+Do not unnecessarily duplicate all exchange-specific Source Stream tests.
 
-Codex is authorized to execute these phases sequentially without
-requesting approval for routine implementation decisions.
+Preserve the existing 14-profile regression coverage.
 
-Stop only for genuine architectural conflicts, unsafe operations,
-missing required authorization, or material unresolved requirements.
+---
 
-## 13. Completion Criteria
+## 19. Unit Tests
 
-Source Stream is Ready for Review only when:
+Add focused unit tests covering:
 
-- Standalone initialization works.
-- Supported source profiles initialize correctly.
-- WebSocket integration works.
-- Normalization and integrity operate correctly together.
-- Supported REST recovery works.
-- Partial recovery fails safely.
-- Publication acknowledgment precedes integrity commit.
-- Stale acquisitions cannot mutate current state.
-- Rate limits and resource bounds are enforced.
-- Multiple sources operate independently.
-- Lifecycle and cleanup behavior is verified.
-- Authorized persistence requirements are satisfied.
-- Required deterministic integration tests pass.
-- Full relevant regression verification passes.
-- Actual evidence is recorded.
+- Producer validation.
+- Subscription identity.
+- Generation fencing.
+- Admission state transitions.
+- Atomic batches.
+- Ordering.
+- Capacity accounting.
+- Overflow arithmetic.
+- Consumer failure transitions.
+- Demand ownership cleanup.
+- Shutdown state.
+- Invalid configuration.
+- Resource release.
 
-Unsupported capabilities must be reported explicitly.
+Tests should establish correctness through explicit assertions.
 
-Do not mark blocked or untested scenarios as passing.
+Avoid tests that merely check that an operation returned `Ok`.
 
-## 14. Evidence and Final Report
+---
 
-Produce a Source Stream completion report containing:
+## 20. Verification
 
-- Implemented functionality.
-- Changed files.
-- Git commits.
-- Exact verification commands.
-- Exit codes and test counts.
-- Exchange/market/channel coverage matrix.
-- Successful recovery scenarios.
-- Partial and failed recovery scenarios.
-- Rate-limit results.
-- Backpressure and resource-bound results.
-- PostgreSQL tables accessed.
-- Test-owned records created and removed.
-- Remaining limitations.
-- Unsupported capabilities.
-- Unresolved architectural decisions.
+Use Live features only.
 
-Use PASS, FAIL, BLOCKED, or UNSUPPORTED for scenario outcomes.
+Router integration tests:
 
-Final status must be one of:
+```bash
+cargo test \
+  --manifest-path engine/Cargo.toml \
+  --locked --offline \
+  --no-default-features \
+  --features live \
+  --test live_router \
+  -- --nocapture 2>&1 | cpout
+```
 
-- Ready for Review
-- Partial
-- Blocked
+Run focused Router unit tests.
 
-Only the user may mark the work Accepted.
+Preserve Source Stream regression coverage:
 
-Do not begin implementing the generic router or full MarketForge
-runtime after completing this assignment.
+```bash
+scripts/verify-live-source.sh quick 2>&1 | cpout
+scripts/verify-live-source.sh integration 2>&1 | cpout
+```
 
+Run relevant:
 
+- WebSocket tests.
+- Integrity tests.
+- Recovery tests.
+- PostgreSQL registration tests where affected.
+- Existing Live integration tests.
+
+Once implementation stabilizes, execute full Live verification.
+
+Do not run multiple Cargo test processes concurrently against the same target directory.
+
+Do not repeatedly execute expensive full suites while fixing isolated issues.
+
+Never weaken or remove tests merely to obtain a passing result.
+
+Document all failures and corrective changes.
+
+---
+
+## 21. Completion Criteria
+
+The Router milestone is complete only when:
+
+- Public facade is usable.
+- Source Stream publication integration works.
+- Producer authority is validated.
+- Per-stream ordering is preserved.
+- Multi-consumer fanout works.
+- Subscription ownership is correct.
+- Backpressure is bounded.
+- Consumer continuity failures are explicit.
+- Depth invalidation and generation fencing work.
+- Producer replacement is safe.
+- Shutdown releases resources.
+- Deterministic production-pipeline integration tests pass.
+- Existing Source Stream regressions pass.
+- No unrelated architectural regressions are introduced.
+
+Passing tests alone does not establish production readiness.
+
+---
+
+## 22. Explicit Exclusions
+
+Do not implement:
+
+- Spectra.
+- Financial feature engineering.
+- Derived Stream computation.
+- PostgreSQL market-data recording.
+- Unix socket publisher.
+- Axum Control API.
+- Ratatui management interface.
+- Trading execution.
+- Historical processing.
+- A replacement canonical schema.
+- A replacement Source Stream.
+- A replacement PostgreSQL registry.
+
+Preserve future compatibility without implementing future subsystems prematurely.
+
+---
+
+## 23. Final Report
+
+After implementation, provide:
+
+### Implementation Summary
+
+- Public facade and types.
+- Internal Router architecture.
+- Existing components reused.
+- Source Stream integration.
+- Admission and acknowledgment guarantees.
+- Consumer delivery semantics.
+- Capacity and lifecycle policies.
+
+### Verification Evidence
+
+Report:
+
+- Exact test commands.
+- Test counts.
+- Passed, failed, and ignored tests.
+- Relevant regression results.
+- Known limitations.
+- Remaining architectural questions.
+
+### Git State
+
+Report:
+
+- Branch.
+- HEAD.
+- Implementation commits.
+- Working tree status.
+- Modified paths.
+
+Do not mark the milestone accepted on behalf of the user.
+
+---
+
+## 24. Execution Authorization
+
+Codex is authorized to implement the Canonical Stream Router, create relevant integration tests, run focused verification, repair discovered defects within scope, and commit completed work to the designated development branch.
+
+Proceed autonomously.
+
+Preserve the existing architecture.
+
+Prefer correctness, bounded resources, explicit ownership, and understandable code over unnecessary abstractions.
+
+**The final Router must be a reusable infrastructure component, not an implementation specialized for Source Stream, PostgreSQL, Unix sockets, Derived Streams, or Spectra.**

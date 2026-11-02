@@ -604,3 +604,37 @@ fn validate_stream_id(stream_id: &str) -> Result<(), StreamDefinitionError> {
 
     Ok(())
 }
+
+impl StreamDefinitionRepository {
+    pub(crate) async fn management_save(&self,previous:Option<PersistedStreamDefinition>,next:Option<PersistedStreamDefinition>)->Result<Option<PersistedStreamDefinition>,StreamDefinitionError>{
+        if previous.is_none(){let d=next.ok_or_else(||StreamDefinitionError::Invalid("empty change".into()))?;return match d.definition {StreamDefinition::Source(r)=>self.register_source(&d.stream_id,r,d.desired).await.map(Some),StreamDefinition::Derived(r)=>self.create_derived(r,d.desired).await.map(Some)};}
+        let old=previous.unwrap();let mut tx=self.pool.begin().await?;
+        // Existing persistence boundary and row revision, held only during DB work.
+        let row=sqlx::query("SELECT stream_id,origin_kind,recording_stream_key,definition,enabled,activation_policy,revision FROM live.stream_definitions WHERE stream_id=$1 FOR UPDATE").bind(&old.stream_id).fetch_optional(&mut *tx).await?.ok_or_else(||StreamDefinitionError::NotFound(old.stream_id.clone()))?;
+        if decode_definition(row)?!=old{return Err(StreamDefinitionError::RevisionConflict(old.stream_id));}
+        if let Some(d)=&next{
+            d.definition.validate().map_err(StreamDefinitionError::Invalid)?;
+            if d.stream_id!=old.stream_id||d.revision!=old.revision.checked_add(1).ok_or_else(||StreamDefinitionError::Invalid("revision exhausted".into()))? {return Err(StreamDefinitionError::Invalid("invalid revision transition".into()));}
+            let payload=match (&old.definition,&d.definition){(StreamDefinition::Source(a),StreamDefinition::Source(b)) if a==b=>serde_json::to_value(b)?,(StreamDefinition::Derived(_),StreamDefinition::Derived(b))=>serde_json::to_value(b)?,_=>return Err(StreamDefinitionError::Invalid("source identity edits unsupported".into()))};
+            sqlx::query("UPDATE live.stream_definitions SET definition=$2,enabled=$3,activation_policy=$4,revision=$5,updated_at=now() WHERE stream_id=$1").bind(&d.stream_id).bind(sqlx::types::Json(payload)).bind(d.desired.enabled).bind(d.desired.activation_policy.as_db()).bind(d.revision).execute(&mut *tx).await?;
+            sqlx::query("DELETE FROM live.stream_dependencies WHERE derived_stream_id=$1").bind(&d.stream_id).execute(&mut *tx).await?;
+            if let StreamDefinition::Derived(r)=&d.definition{for input in r.input_specs(){sqlx::query("INSERT INTO live.stream_dependencies(derived_stream_id,input_stream_id,input_position) VALUES($1,$2,$3)").bind(&d.stream_id).bind(&input.stream_id).bind(input.position as i32).execute(&mut *tx).await?;}}
+        }else{
+            let dependencies:i64=sqlx::query_scalar("SELECT count(*) FROM live.stream_dependencies WHERE input_stream_id=$1").bind(&old.stream_id).fetch_one(&mut *tx).await?;
+            if dependencies>0{return Err(StreamDefinitionError::HasDependents(old.stream_id));}
+            sqlx::query("DELETE FROM live.stream_definitions WHERE stream_id=$1").bind(&old.stream_id).execute(&mut *tx).await?;
+        }
+        tx.commit().await?;Ok(next)
+    }
+}
+
+impl StreamDefinitionRepository {
+    pub(crate) async fn management_templates(&self,filter:String,limit:usize)->Result<Vec<CreateSourceStreamRequest>,StreamDefinitionError>{
+        let rows=sqlx::query("SELECT i.id,i.symbol,i.market_category,i.instrument_type,i.base_asset,i.quote_asset,i.settlement_asset,e.code,s.quantity_type,s.contract_value,s.contract_value_asset FROM catalog.instruments i JOIN catalog.exchanges e ON e.id=i.exchange_id JOIN catalog.instrument_specs s ON s.instrument_id=i.id WHERE i.symbol ILIKE $1 ORDER BY i.symbol,i.id LIMIT $2").bind(format!("%{filter}%")).bind(limit.min(128) as i64).fetch_all(&self.pool).await?;
+        rows.into_iter().map(|row|{
+            let contract:Option<rust_decimal::Decimal>=row.try_get("contract_value")?;
+            let value=serde_json::json!({"instrument_id":row.try_get::<i64,_>("id")?,"exchange":row.try_get::<String,_>("code")?,"symbol":row.try_get::<String,_>("symbol")?,"market_category":row.try_get::<String,_>("market_category")?,"instrument_type":row.try_get::<String,_>("instrument_type")?,"base_asset":row.try_get::<Option<String>,_>("base_asset")?,"quote_asset":row.try_get::<Option<String>,_>("quote_asset")?,"settlement_asset":row.try_get::<Option<String>,_>("settlement_asset")?,"quantity_type":row.try_get::<String,_>("quantity_type")?,"contract_value":contract.map(|d|d.to_string()),"contract_value_asset":row.try_get::<Option<String>,_>("contract_value_asset")?,"channel":"trades"});
+            let request:CreateSourceStreamRequest=serde_json::from_value(value)?;request.validate().map_err(StreamDefinitionError::Invalid)?;Ok(request)
+        }).collect()
+    }
+}

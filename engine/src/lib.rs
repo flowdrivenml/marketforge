@@ -46,6 +46,8 @@ pub mod storage {
     }
 }
 
-#[cfg(feature = "stream-client")]
+#[cfg(any(feature = "stream-client",feature="management-client"))]
 pub mod client;
 pub mod stream_protocol;
+
+pub mod management_protocol;

@@ -55,6 +55,7 @@ pub enum DemandError {
 /// PostgreSQL definitions, or persistent dependencies.
 #[derive(Debug, Default)]
 pub struct DemandRegistry {
+    revision:u64,
     owners: BTreeMap<DemandOwner, String>,
 }
 
@@ -84,6 +85,7 @@ impl DemandRegistry {
 
         let required = resolve(graph, &proposed)?;
 
+        self.revision=self.revision.checked_add(1).ok_or(DemandError::Capacity)?;
         self.owners = proposed;
 
         Ok(required)
@@ -115,11 +117,15 @@ impl DemandRegistry {
 
         let required = resolve(graph, &proposed)?;
 
+        self.revision=self.revision.checked_add(1).ok_or(DemandError::Capacity)?;
         self.owners = proposed;
 
         Ok(required)
     }
 
+    pub(crate) fn clear(&mut self){if !self.owners.is_empty(){self.owners.clear();self.revision=self.revision.saturating_add(1);}}
+    pub fn revision(&self)->u64{self.revision}
+    pub fn owners(&self)->impl Iterator<Item=(&DemandOwner,&String)>{self.owners.iter()}
     pub fn registered_owners(&self)->usize{self.owners.len()}
     /// Resolve the complete currently required stream set.
     pub fn required_streams(&self, graph: &StreamGraph) -> Result<BTreeSet<String>, DemandError> {

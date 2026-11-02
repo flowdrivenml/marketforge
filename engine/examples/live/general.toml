@@ -1,5 +1,5 @@
 # Sanitized application example. Uses the existing exchange/format directory.
-# control.listen_address is retained for compatibility; no administrative listener starts.
+# Build with management-api to start the authenticated loopback administrative API.
 schema_version = 1
 
 [runtime]
@@ -12,6 +12,27 @@ subscriber_queue_bytes = 16777216
 
 [control]
 listen_address = "127.0.0.1:8080"
+
+[control.management]
+# JSON credential array supplied by the environment, or configure credentials_file.
+# No credentials are embedded in this example.
+credentials_env = "MARKETFORGE_MANAGEMENT_CREDENTIALS"
+command_capacity = 32
+active_operations = 16
+operation_history = 256
+plans = 128
+leases = 128
+event_history = 256
+max_clients = 128
+max_requests = 64
+sse_clients = 16
+max_body_bytes = 65536
+max_response_bytes = 4194304
+max_workers = 64
+plan_seconds = 60
+lease_max_seconds = 300
+request_timeout_ms = 10000
+overview_interval_ms = 1000
 
 [recording]
 enabled = false

@@ -6,6 +6,9 @@ edition = "2024"
 [features]
 default = []
 stream-client = ["dep:tokio"]
+management-api = ["live", "dep:axum", "dep:tokio-stream", "dep:toml_edit"]
+management-client = ["dep:reqwest", "dep:tokio", "dep:futures-util"]
+management-tui = ["management-client", "monitor-tui"]
 postgres = ["dep:sqlx"]
 historical-slow-tests = ["historical"]
 historical = [
@@ -50,6 +53,8 @@ arrow-select = [
 ]
 
 [dependencies]
+axum = { version = "0.8", features = ["json", "tokio", "http1"], optional = true }
+tokio-stream = { version = "0.1", optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["json"], optional = true }
 libc = { version = "0.2", optional = true }
@@ -61,7 +66,7 @@ parking_lot = { version = "0.12.5", optional = true }
 toml_edit = {
     version = "=0.25.17",
     default-features = false,
-    features = ["parse"],
+    features = ["parse", "display"],
     optional = true
 }
 clap = { version = "4.6.7", features = ["derive"] }
@@ -93,7 +98,7 @@ url = { version = "2.5.8", optional = true }
 reqwest = {
     version = "0.12.28",
     default-features = false,
-    features = ["json", "rustls-tls"],
+    features = ["json", "rustls-tls", "stream"],
     optional = true
 }
 tokio-tungstenite = {
@@ -407,3 +412,28 @@ required-features = ["live", "stream-client"]
 name = "live_application"
 path = "tests/live_application.rs"
 required-features = ["live", "stream-client"]
+
+[[bin]]
+name = "marketforge-tui"
+path = "src/bin/marketforge-tui.rs"
+required-features = ["management-tui"]
+
+[[test]]
+name = "management"
+path = "tests/management.rs"
+required-features = ["management-api", "management-client", "stream-client"]
+
+[[test]]
+name = "management_tui"
+path = "tests/management_tui.rs"
+required-features = ["management-tui"]
+
+[[bin]]
+name = "marketforge-live-tui"
+path = "src/bin/marketforge-live-tui.rs"
+required-features = ["management-tui"]
+
+[[test]]
+name = "management_client"
+path = "tests/management_client.rs"
+required-features = ["management-client"]

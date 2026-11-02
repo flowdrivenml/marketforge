@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::atomic::{AtomicU64, Ordering};
 use crate::live::stream::{
     persistence::StreamDefinition,
     registry::{DemandOwner, DemandRegistry, RuntimePublicationAuthority, StreamGraph},
@@ -199,6 +200,7 @@ struct Pending {
     admission: RouterAdmission,
 }
 struct State {
+    blocked: BTreeSet<String>,
     integrity_revision: u64,
     integrity_history: VecDeque<Arc<DataIntegrityEvidence>>,
     integrity_history_truncated: bool,
@@ -213,6 +215,8 @@ struct Shared {
     runtime_metrics: Arc<crate::live::metrics::RuntimeMetrics>,
     publication_metrics: Arc<crate::live::metrics::PublicationMetrics>,
     config: RouterConfig,
+    graph: parking_lot::RwLock<Arc<StreamGraph>>,
+    graph_revision: AtomicU64,
     context: RouterContext,
     state: parking_lot::Mutex<State>,
     #[cfg(test)]
@@ -269,10 +273,13 @@ impl StreamRouter {
             publication_metrics: Arc::new(crate::live::metrics::PublicationMetrics::new()),
             runtime_metrics: Arc::new(crate::live::metrics::RuntimeMetrics::new()),
             config,
+            graph: parking_lot::RwLock::new(context.graph.clone()),
+            graph_revision: AtomicU64::new(1),
             context,
             #[cfg(test)]
             source_wait: Mutex::new(None),
             state: parking_lot::Mutex::new(State {
+                blocked:BTreeSet::new(),
                 integrity_revision: 0,
                 integrity_history: VecDeque::new(),
                 integrity_history_truncated: false,
@@ -320,11 +327,8 @@ impl StreamRouter {
         authority: RuntimePublicationAuthority,
         input: &str,
     ) -> Result<ProducerHandle, RouterError> {
-        let definition = self
-            .shared
-            .context
-            .graph
-            .get(authority.stream_id())
+        let definition = self.shared.graph.read()
+            .get(authority.stream_id()).cloned()
             .ok_or(RouterError::UnknownStream)?;
         match &definition.definition {
             StreamDefinition::Derived(request)
@@ -346,7 +350,7 @@ impl StreamRouter {
         &self,
         stream: &str,
     ) -> Result<Vec<crate::live::stream::request::ProcessingInputSpec>, RouterError> {
-        match self.shared.context.graph.get(stream) {
+        match self.shared.graph.read().get(stream) {
             Some(def) if def.desired.enabled => match &def.definition {
                 StreamDefinition::Derived(request) => Ok(request.input_specs()),
                 _ => Err(RouterError::UnknownStream),
@@ -354,8 +358,40 @@ impl StreamRouter {
             _ => Err(RouterError::UnknownStream),
         }
     }
+    pub(crate) fn reserve_graph_change(&self,expected:u64,expected_demand:Option<u64>,affected:&BTreeSet<String>)->Result<GraphReservation,String>{
+        let mut state=self.shared.state.lock();
+        if expected_demand.is_some_and(|r|r!=lock(&self.shared.context.demand).revision()) || self.graph_revision()!=expected || affected.iter().any(|id|state.blocked.contains(id)){return Err("graph revision or transition conflict".into());}
+        state.blocked.extend(affected.iter().cloned());
+        Ok(GraphReservation{shared:self.shared.clone(),affected:affected.clone()})
+    }
+    pub(crate) fn change_manual_demand(&self,stream:&str,owner:DemandOwner,acquire:bool)->Result<(),String>{
+        let state=self.shared.state.lock();if state.status.shutdown || (acquire&&state.blocked.contains(stream)){return Err("graph transition or shutdown pending".into());}
+        let graph=self.shared.graph.read().clone();let mut demand=lock(&self.shared.context.demand);
+        if acquire{demand.acquire(&graph,owner,stream)}else{demand.release(&graph,&owner,stream)}.map(|_|()).map_err(|e|e.to_string())
+    }
+    pub(crate) fn transition_pending(&self,id:&str)->bool{self.shared.state.lock().blocked.contains(id)}
+    pub(crate) fn consumers_view(&self)->Vec<(String,String)>{self.shared.state.lock().consumers.values().map(|c|(c.stream.clone(),format!("{:?}",c.owner))).collect()}
+    pub fn graph_revision(&self) -> u64 { self.shared.graph_revision.load(Ordering::Acquire) }
+    pub(crate) fn retained_integrity_view(&self,id:&str)->(Vec<crate::stream_protocol::DataIntegrityEvidence>,bool){
+        let state=self.shared.state.lock();let sources=self.shared.integrity_sources(id).unwrap_or_default();
+        (state.integrity_history.iter().filter(|e|sources.contains(&e.id.source)).map(|e|(**e).clone()).collect(),state.integrity_history_truncated)
+    }
+    pub fn integrity_view(&self, id: &str) -> crate::stream_protocol::DataIntegritySnapshot {
+        self.shared.integrity_snapshot(&self.shared.state.lock(), id)
+    }
+    /// Atomic admission boundary. No asynchronous work or storage I/O under locks.
+    pub(crate) fn install_graph(&self, expected: u64, graph: Arc<StreamGraph>, registry: &Mutex<crate::live::stream::registry::StreamRuntimeRegistry>) -> Result<(), String> {
+        let _state=self.shared.state.lock();
+        if self.graph_revision()!=expected {return Err("graph revision conflict".into());}
+        lock(&self.shared.context.demand).required_streams(&graph).map_err(|e|e.to_string())?;
+        lock(registry).install_graph(&graph)?;
+        *self.shared.graph.write()=graph;
+        self.shared.graph_revision.store(expected.checked_add(1).ok_or("graph revision exhausted")?,Ordering::Release);
+        Ok(())
+    }
+
     pub fn graph(&self) -> Arc<StreamGraph> {
-        self.shared.context.graph.clone()
+        self.shared.graph.read().clone()
     }
     pub fn attach_processing_producer(
         &self,
@@ -380,10 +416,7 @@ impl StreamRouter {
         semantics: PublicationSemantics,
     ) -> Result<ProducerHandle, RouterError> {
         let stream = request.authority.stream_id().to_owned();
-        let sources = self
-            .shared
-            .context
-            .graph
+        let sources = self.shared.graph.read()
             .data_sources(&stream)
             .map_err(|_| RouterError::UnknownStream)?;
         let inputs = if semantics == PublicationSemantics::Source {
@@ -392,15 +425,14 @@ impl StreamRouter {
             self.processing_inputs(&stream)?
         };
         let mut state = self.shared.state.lock();
+        if state.blocked.contains(request.authority.stream_id()) {return Err(RouterError::Capacity);}
         if state.status.shutdown {
             return Err(RouterError::Shutdown);
         }
-        self.shared
-            .context
-            .graph
+        self.shared.graph.read()
             .get(&stream)
             .ok_or(RouterError::UnknownStream)?;
-        if self.shared.context.graph.get(&stream) != Some(request.authority.definition.as_ref()) {
+        if self.shared.graph.read().get(&stream) != Some(request.authority.definition.as_ref()) {
             return Err(RouterError::Unauthorized);
         }
         let guard = request.authority.guard();
@@ -518,20 +550,16 @@ impl StreamRouter {
         observe: bool,
     ) -> Result<SubscriptionHandle, RouterError> {
         let mut state = self.shared.state.lock();
+        if state.blocked.contains(&request.stream_id) {return Err(RouterError::Capacity);}
         if state.status.shutdown {
             return Err(RouterError::Shutdown);
         }
-        let definition = self
-            .shared
-            .context
-            .graph
-            .get(&request.stream_id)
+        let definition = self.shared.graph.read()
+            .get(&request.stream_id).cloned()
             .filter(|d| d.desired.enabled)
             .ok_or(RouterError::UnknownStream)?;
         let required_books = if matches!(definition.definition, StreamDefinition::Derived(_)) {
-            self.shared
-                .context
-                .graph
+            self.shared.graph.read()
                 .data_sources(&request.stream_id)
                 .map_err(|_| RouterError::UnknownStream)?
                 .iter()
@@ -589,7 +617,7 @@ impl StreamRouter {
         let id = next_id(&mut state)?;
         lock(&self.shared.context.demand)
             .acquire(
-                &self.shared.context.graph,
+                &self.shared.graph.read(),
                 request.owner.clone(),
                 &request.stream_id,
             )
@@ -621,7 +649,7 @@ impl StreamRouter {
         // Registration and the baseline request share this lock cut. The Source
         // actor serializes current-book handoff with authoritative mutations.
         if matches!(consumer.owner,DemandOwner::Processing{..}) {
-            if let Ok(sources)=self.shared.context.graph.data_sources(&consumer.stream){for source in sources {if let Some(binding)=state.bindings.get(&source){if binding.book.is_some(){binding.baseline_signal.notify_one();}}}}
+            if let Ok(sources)=self.shared.graph.read().data_sources(&consumer.stream){for source in sources {if let Some(binding)=state.bindings.get(&source){if binding.book.is_some(){binding.baseline_signal.notify_one();}}}}
         }
         Ok(SubscriptionHandle {
             shared: self.shared.clone(),
@@ -688,14 +716,12 @@ impl Shared {
     fn source(
         &self,
         stream: &str,
-    ) -> Result<&crate::live::stream::request::CreateSourceStreamRequest, RouterError> {
-        let definition = self
-            .context
-            .graph
-            .get(stream)
+    ) -> Result<crate::live::stream::request::CreateSourceStreamRequest, RouterError> {
+        let definition = self.graph.read()
+            .get(stream).cloned()
             .ok_or(RouterError::UnknownStream)?;
         match &definition.definition {
-            StreamDefinition::Source(request) if definition.desired.enabled => Ok(request),
+            StreamDefinition::Source(request) if definition.desired.enabled => Ok(request.clone()),
             _ => Err(RouterError::UnknownStream),
         }
     }
@@ -761,7 +787,7 @@ impl Shared {
             #[cfg(test)]
             self.note_source_wait("demand-release");
             if let Err(error) = lock(&self.context.demand).release(
-                &self.context.graph,
+                &self.graph.read(),
                 &consumer.owner,
                 &consumer.stream,
             ) {
@@ -851,11 +877,8 @@ impl ProducerHandle {
             .get(&self.stream)
             .filter(|b| b.id == self.binding)
             .ok_or(PublishError::Revoked)?;
-        let specs = self
-            .shared
-            .context
-            .graph
-            .inputs(&self.stream)
+        let specs = self.shared.graph.read()
+            .inputs(&self.stream).map(|v|v.to_vec())
             .ok_or(PublishError::InvalidPublication)?;
         if specs.len() != expected.len()
             || !specs
@@ -963,11 +986,8 @@ impl ProducerHandle {
             .get(&self.stream)
             .is_some_and(|b| b.dependencies.is_none())
         {
-            let inputs = self
-                .shared
-                .context
-                .graph
-                .inputs(&self.stream)
+            let inputs = self.shared.graph.read()
+                .inputs(&self.stream).map(|v|v.to_vec())
                 .ok_or(PublishError::InvalidPublication)?;
             let candidate = inputs
                 .iter()
@@ -1219,7 +1239,7 @@ impl ProducerHandle {
                         return Err(PublishError::InvalidPublication);
                     }
                 }
-                validate(&publication, source, &binding.canonical_input, binding)?
+                validate(&publication, &source, &binding.canonical_input, binding)?
             };
         let sequence = binding
             .sequence
@@ -1786,3 +1806,6 @@ impl ProducerHandle {
     pub(crate) fn derived_metrics(&self)->Option<Arc<crate::live::metrics::DerivedMetrics>>{self.shared.state.lock().bindings.get(&self.stream).filter(|b|b.id==self.binding).and_then(|b|b.derived_metrics.clone())}
     pub(crate) fn install_source_metrics(&self,metrics:Arc<crate::live::metrics::SourceMetrics>){metrics.attach_runtime(self.shared.runtime_metrics.clone());if let Some(b)=self.shared.state.lock().bindings.get_mut(&self.stream){if b.id==self.binding {b.source_metrics=Some(metrics);}}}
 }
+
+pub(crate) struct GraphReservation{shared:Arc<Shared>,affected:BTreeSet<String>}
+impl Drop for GraphReservation{fn drop(&mut self){let mut state=self.shared.state.lock();for id in &self.affected{state.blocked.remove(id);}}}

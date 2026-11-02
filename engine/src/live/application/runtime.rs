@@ -53,6 +53,7 @@ impl From<String> for ApplicationError {
     }
 }
 enum Command {
+    Graph { graph: Arc<StreamGraph>, expected: u64, affected: BTreeSet<String>, reply: oneshot::Sender<Result<(), ApplicationError>> },
     Shutdown(oneshot::Sender<()>),
     Demand {
         stream: String,
@@ -67,12 +68,34 @@ enum Command {
 }
 #[derive(Clone)]
 pub struct LiveApplicationHandle {
+    pub(crate) router: Arc<StreamRouter>,
+    pub(crate) registry: Arc<Mutex<StreamRuntimeRegistry>>,
+    pub(crate) demand_registry: Arc<Mutex<DemandRegistry>>,
+    pub(crate) processing: ProcessingServiceHandle,
+    processing_config: Option<crate::live::config::general::ProcessingConfig>,
+    builder:Arc<SourceRuntimeBuilder>,
+    exchanges:Arc<ExchangeConfigStore>,
+    configuration:Arc<GeneralConfig>,
     commands: mpsc::Sender<Command>,
     status: watch::Receiver<LiveStatus>,
     collector: Arc<MetricsSnapshotCollector>,
     runtime: Arc<RuntimeMetrics>,
 }
 impl LiveApplicationHandle {
+    pub(crate) fn validate_candidate(&self,graph:&StreamGraph)->Result<(),String>{
+        if graph.stream_ids().count()>self.configuration.runtime.application.max_definitions{return Err("definition capacity".into());}
+        router_limits(&self.configuration,graph).map_err(|e|e.to_string())?;
+        if let Some(p)=self.processing_config {crate::live::stream::processing::preflight(graph,p.derived)?;if graph.stream_ids().filter(|id|matches!(graph.get(id).unwrap().definition,StreamDefinition::Derived(_))).count()>p.ready_queue_capacity{return Err("processing association capacity".into());}}
+        for id in graph.stream_ids(){let d=graph.get(id).unwrap();if d.desired.enabled&&matches!(d.definition,StreamDefinition::Source(_)){let mut candidate=d.clone();if candidate.recording_stream_key==Some(-1){candidate.recording_stream_key=Some(1);}self.builder.prepare(candidate).map_err(|e|e.to_string())?.validate_subscription(&self.exchanges).map_err(|e|e.to_string())?;}}
+        Ok(())
+    }
+    pub(crate) fn shutdown_budget(&self)->Duration{Duration::from_secs(self.configuration.runtime.shutdown_timeout_seconds)}
+    pub(crate) fn processing_config(&self)->Option<crate::live::config::general::ProcessingConfig>{self.processing_config}
+    pub(crate) async fn replace_graph(&self, expected:u64, graph:Arc<StreamGraph>, affected:BTreeSet<String>)->Result<(),ApplicationError> {
+        let (reply,rx)=oneshot::channel();
+        self.commands.try_send(Command::Graph{expected,graph,affected,reply}).map_err(|_|ApplicationError("application command capacity".into()))?;
+        rx.await.map_err(|_|ApplicationError("graph operation owner closed".into()))?
+    }
     pub async fn request_shutdown(&self) -> Result<(), ApplicationError> {
         let (reply, rx) = oneshot::channel();
         self.commands
@@ -298,8 +321,13 @@ impl LiveApplication {
         if runtime_config.processing.is_none() {
             runtime_config.processing = Some(Default::default());
         }
-        let mut processing =
-            ProcessingService::new(&runtime_config, registry.clone(), router.clone())?;
+        // Initial partial-start rollback may join staged CPU threads too. Keep
+        // that work off executor threads, just like normal pool retirement.
+        let pool_registry=registry.clone();
+        let pool_router=router.clone();
+        let pool_config=runtime_config.clone();
+        let mut processing=tokio::task::spawn_blocking(move || ProcessingService::new(&pool_config,pool_registry,pool_router))
+            .await.map_err(|_|ApplicationError("processing initialization task failed".into()))??;
         let server = match crate::live::transport::unix::UnixStreamingServer::bind(
             router.clone(),
             config.publication.clone(),
@@ -323,6 +351,7 @@ impl LiveApplication {
         })
         .map_err(|e| ApplicationError(e.to_string()))?;
         let limiter_metrics = limiters.manager();
+        let managed_exchanges=exchanges.clone();
         let recovery_task = tokio::spawn(async move {
             let service = ExchangeRestService::new(&exchanges, rest_client);
             let executor = RecoveryRestExecutor::new(&service);
@@ -373,6 +402,9 @@ impl LiveApplication {
         let stop = Arc::new(Notify::new());
         let deadline = Duration::from_secs(config.runtime.shutdown_timeout_seconds);
         let router_metrics = router.runtime_metrics();
+        let managed_configuration=Arc::new(config.clone());let managed_builder=builder.clone();
+        let managed_processing_config=runtime_config.processing;
+        let managed_router=router.clone(); let managed_registry=registry.clone(); let managed_demand=demand.clone(); let managed_processing=processing.handle();
         let task = tokio::spawn(run(
             config,
             graph,
@@ -396,6 +428,7 @@ impl LiveApplication {
         ));
         Ok(Self {
             handle: LiveApplicationHandle {
+                configuration:managed_configuration,builder:managed_builder,exchanges:managed_exchanges,processing_config:managed_processing_config, router:managed_router, registry:managed_registry, demand_registry:managed_demand, processing:managed_processing,
                 commands,
                 status,
                 collector,
@@ -457,7 +490,7 @@ impl Drop for LiveApplication {
 
 async fn run(
     config: GeneralConfig,
-    graph: Arc<StreamGraph>,
+    mut graph: Arc<StreamGraph>,
     registry: Arc<Mutex<StreamRuntimeRegistry>>,
     demand: Arc<Mutex<DemandRegistry>>,
     router: Arc<StreamRouter>,
@@ -480,6 +513,9 @@ async fn run(
     let mut operations: JoinSet<(String, Result<(), String>)> = JoinSet::new();
     let mut busy = BTreeSet::new();
     let mut starting = BTreeSet::new();
+    let mut deferred_graph:Option<Command>=None;
+    let mut deferred_retry:Option<(Command,BTreeSet<String>)>=None;
+    let mut graph_change: Option<(Arc<StreamGraph>,u64,oneshot::Sender<Result<(),ApplicationError>>,BTreeSet<String>)>=None;
     let mut retry_scopes: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut fatal = None;
     let mut tick = tokio::time::interval(Duration::from_millis(
@@ -494,23 +530,45 @@ async fn run(
         tokio::time::interval(Duration::from_millis(config.metrics.snapshot_interval_ms));
     sample.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
+        let lifecycle_capacity_available=operations.len()<config.runtime.application.max_lifecycle_operations;
         tokio::select! {
             _=stop.notified()=>break,
-            command=commands.recv()=> match command {
+            command=async {if deferred_graph.as_ref().is_some_and(|c|matches!(c,Command::Graph{affected,..} if !affected.iter().any(|id|busy.contains(id)))){deferred_graph.take()}else if deferred_retry.as_ref().is_some_and(|(_,scope)|!scope.iter().any(|id|busy.contains(id)) && lifecycle_capacity_available){deferred_retry.take().map(|(command,_)|command)}else{commands.recv().await}}=> match command {
                 None=>break,
+                Some(Command::Graph{graph:new_graph,expected,affected,reply})=>{
+                    if affected.iter().any(|id|busy.contains(id)) {if deferred_graph.is_none(){deferred_graph=Some(Command::Graph{graph:new_graph,expected,affected,reply});}else{let _=reply.send(Err(ApplicationError("graph transition already queued".into())));}continue;}
+
+                    let validation:Result<(),String>=(||{
+                        if graph_change.is_some() {return Err("lifecycle transition already pending".into());}
+                        if expected!=router.graph_revision(){return Err("graph revision conflict".into());}
+                        if new_graph.stream_ids().count()>config.runtime.application.max_definitions {return Err("definition capacity".into());}
+                        for id in new_graph.stream_ids(){if new_graph.get(id).unwrap().desired.enabled && matches!(new_graph.get(id).unwrap().definition,StreamDefinition::Source(_)) {builder.prepare(new_graph.get(id).unwrap().clone()).map_err(|e|e.to_string())?;}}
+                        if let Some(p)=config.runtime.processing{crate::live::stream::processing::preflight(&new_graph,p.derived)?;}
+
+                        Ok(())
+                    })();
+                    if let Err(e)=validation {let _=reply.send(Err(ApplicationError(e)));continue;}
+                    let order=LifecyclePlanner::retirement_order(&graph,&affected).map_err(|e|e.to_string());
+                    match order {Err(e)=>{let _=reply.send(Err(ApplicationError(e)));},Ok(ids)=>{
+                        busy.extend(affected.iter().cloned());
+                        graph_change=Some((new_graph,expected,reply,affected));
+                        let sup=supervisor.clone();let h=handle.clone();let r=registry.clone();let old=graph.clone();
+                        operations.spawn(async move{let result=async {for id in ids {retire_one(&id,matches!(old.get(&id).unwrap().definition,StreamDefinition::Source(_)),&sup,&h,&r).await?;} Ok(())}.await;(String::from("__graph"),result)});
+                    }}
+                },
                 Some(Command::Shutdown(reply))=>{let _=reply.send(());break;},
-                Some(Command::Demand{stream,owner,acquire,reply})=>{let result=if acquire {let mut d=demand.lock().unwrap();if d.registered_owners()>=4096 {Err(DemandError::Capacity)}else{d.acquire(&graph,owner,&stream)}}else{demand.lock().unwrap().release(&graph,&owner,&stream)};let _=reply.send(result.map(|_|()).map_err(|e|ApplicationError(e.to_string())));},
+                Some(Command::Demand{stream,owner,acquire,reply})=>{let result=router.change_manual_demand(&stream,owner,acquire).map_err(ApplicationError);let _=reply.send(result);},
                 Some(Command::Retry{stream,reply})=>{
                     let mut affected=BTreeSet::from([stream.clone()]);let mut pending=vec![stream.clone()];
                     while let Some(id)=pending.pop(){if let Some(dependents)=graph.dependents(&id){for next in dependents {if affected.insert(next.clone()){pending.push(next.clone());}}}}
                     let required=demand.lock().unwrap().required_streams(&graph);
-                    let result=if graph.get(&stream).is_none(){Err(ApplicationError("unknown stream".into()))}else if !required.is_ok_and(|ids|ids.contains(&stream)){Err(ApplicationError("retry requires current demand".into()))}else if affected.iter().any(|id|busy.contains(id)) || operations.len()>=config.runtime.application.max_lifecycle_operations {Err(ApplicationError("lifecycle operation already pending".into()))}else{
+                    let result=if graph.get(&stream).is_none(){Err(ApplicationError("unknown stream".into()))}else if !required.is_ok_and(|ids|ids.contains(&stream)){Err(ApplicationError("retry requires current demand".into()))}else if affected.iter().any(|id|busy.contains(id)) || operations.len()>=config.runtime.application.max_lifecycle_operations {if deferred_retry.is_none(){deferred_retry=Some((Command::Retry{stream,reply},affected));continue;}Err(ApplicationError("lifecycle retry already queued".into()))}else{
                         let ids=LifecyclePlanner::retirement_order(&graph,&affected).map_err(|e|ApplicationError(e.to_string()));
                         match ids {Err(e)=>Err(e),Ok(ids)=>{busy.extend(affected.iter().cloned());retry_scopes.insert(stream.clone(),affected.into_iter().collect());let sup=supervisor.clone();let h=handle.clone();let r=registry.clone();let g=graph.clone();let root=stream.clone();operations.spawn(async move{let mut result=Ok(());for id in ids {if let Err(e)=retire_one(&id,matches!(g.get(&id).unwrap().definition,StreamDefinition::Source(_)),&sup,&h,&r).await{result=Err(e);}}(root,result)});Ok(())}}
                     };let _=reply.send(result);
                 }
             },
-            result=operations.join_next(),if !operations.is_empty()=>{if let Some(Err(error))=&result {fatal=Some(format!("lifecycle owner task failed: {error}"));break;}if let Some(Ok((id,result)))=result {busy.remove(&id);let was_starting=starting.remove(&id);if was_starting {if let Err(reason)=&result {let mut r=registry.lock().unwrap();if r.status(&id).is_some_and(|s|s.lifecycle==StreamLifecycleState::Stopped){if let Ok(g)=r.begin_start(&id){let _=r.mark_failed(&id,g,format!("start was not admitted: {reason}"));}}}}if let Some(scope)=retry_scopes.remove(&id){for member in scope{busy.remove(&member);}}if result.is_err(){status.send_modify(|s|s.lifecycle_failures+=1);}}},
+            result=operations.join_next(),if !operations.is_empty()=>{if let Some(Err(error))=&result {fatal=Some(format!("lifecycle owner task failed: {error}"));break;}if let Some(Ok((id,result)))=result {if id=="__graph" {if let Some((new_graph,expected,reply,affected))=graph_change.take(){let result=result.and_then(|_|router.install_graph(expected,new_graph.clone(),&registry));if result.is_ok(){graph=new_graph;}for id in affected{busy.remove(&id);}let _=reply.send(result.map_err(ApplicationError));}continue;}busy.remove(&id);let was_starting=starting.remove(&id);if was_starting {if let Err(reason)=&result {let mut r=registry.lock().unwrap();if r.status(&id).is_some_and(|s|s.lifecycle==StreamLifecycleState::Stopped){if let Ok(g)=r.begin_start(&id){let _=r.mark_failed(&id,g,format!("start was not admitted: {reason}"));}}}}if let Some(scope)=retry_scopes.remove(&id){for member in scope{busy.remove(&member);}}if result.is_err(){status.send_modify(|s|s.lifecycle_failures+=1);}}},
             _=sample.tick(),if config.metrics.enabled=>{let started=std::time::Instant::now();process_sampler.sample(&runtime);runtime.set_websocket(tokio::time::timeout(Duration::from_millis(50),async{(manager.slot_count().await as u64,manager.stream_count().await as u64)}).await.ok());runtime.set_router(&router.status());runtime.set_limiter(limiter_metrics.pending_count() as u64,limiter_metrics.budget_count() as u64);let result={let (sources,derived)=router.metric_handles();let processing_status=handle.status();for (id,_,metrics) in &derived {if let Some(a)=processing_status.associations.iter().find(|a|&a.stream_id==id){metrics.set_retained(a.derived.retained_events as u64,a.derived.retained_bytes as u64);let _=metrics.set_input_health(a.inputs.len() as u64,a.inputs.iter().filter(|input|input.ready).count() as u64);let _=metrics.set_input_queue_depth(a.input.queued_events as u64);}}let source_refs=sources.iter().map(|(id,g,m)|SourceMetricsRef{stream_id:id,generation:*g,metrics:m}).collect::<Vec<_>>();let derived_refs=derived.iter().map(|(id,g,m)|DerivedMetricsRef{stream_id:id,generation:*g,metrics:m}).collect::<Vec<_>>();collector.collect(&runtime,&publication,&recording,&source_refs,&derived_refs)};if result.is_ok(){sampling.success(started.elapsed());}else{sampling.failures.fetch_add(1,std::sync::atomic::Ordering::Relaxed);}},
             _=tick.tick()=>{
                 if let Ok(mut s)=supervisor.try_lock(){let _=s.reap_finished().await;s.expire_starting(Duration::from_millis(config.runtime.application.source_readiness_timeout_ms));status.send_modify(|status|status.sources=s.readiness_statuses());}
@@ -531,10 +589,10 @@ async fn run(
                     continue;
                 }
                 // Prepare all Derived consumers before activating a cold Source.
-                for id in plan.start.iter().rev().filter(|id|matches!(graph.get(id).unwrap().definition,StreamDefinition::Derived(_))) {if busy.contains(id)||operations.len()>=config.runtime.application.max_lifecycle_operations{continue;}busy.insert(id.clone());starting.insert(id.clone());let id=id.clone();let h=handle.clone();operations.spawn(async move{let result=h.start_derived(&id).await.map(|_|());(id,result)});}
+                for id in plan.start.iter().rev().filter(|id|matches!(graph.get(id).unwrap().definition,StreamDefinition::Derived(_))) {if busy.contains(id)||router.transition_pending(id)||operations.len()>=config.runtime.application.max_lifecycle_operations{continue;}busy.insert(id.clone());starting.insert(id.clone());let id=id.clone();let h=handle.clone();operations.spawn(async move{let result=h.start_derived(&id).await.map(|_|());(id,result)});}
                 let prepared=plan.target.iter().filter(|id|matches!(graph.get(id).unwrap().definition,StreamDefinition::Derived(_))).all(|id|registry.lock().unwrap().status(id).is_some_and(|s|s.lifecycle==StreamLifecycleState::Failed)||handle.status().associations.iter().any(|s|&s.stream_id==id));
                 if !prepared {continue;}
-                for id in plan.start.into_iter().filter(|id|matches!(graph.get(id).unwrap().definition,StreamDefinition::Source(_))) {if busy.iter().filter(|id|matches!(graph.get(id).unwrap().definition,StreamDefinition::Source(_))).count()>=config.runtime.application.source_start_concurrency {break;}if busy.contains(&id)||operations.len()>=config.runtime.application.max_lifecycle_operations{continue;}busy.insert(id.clone());starting.insert(id.clone());let sup=supervisor.clone();let b=builder.clone();let m=manager.clone();let rec=recovery.clone();let r=router.clone();let def=graph.get(&id).unwrap().clone();operations.spawn(async move{let result:Result<(),String>=async {let prepared=b.prepare(def).map_err(|e|e.to_string())?;let executor=prepared.attach(m,rec).await.map_err(|e|e.to_string())?;sup.lock().await.start_routed(&id,executor,&r).map_err(|e|e.to_string())?;Ok(())}.await;if let Err(reason)=&result {sup.lock().await.fail_preparation(&id,reason.clone());}(id,result)});}
+                for id in plan.start.into_iter().filter(|id|matches!(graph.get(id).unwrap().definition,StreamDefinition::Source(_))) {if busy.iter().filter(|id|matches!(graph.get(id).unwrap().definition,StreamDefinition::Source(_))).count()>=config.runtime.application.source_start_concurrency {break;}if busy.contains(&id)||router.transition_pending(&id)||operations.len()>=config.runtime.application.max_lifecycle_operations{continue;}busy.insert(id.clone());starting.insert(id.clone());let sup=supervisor.clone();let b=builder.clone();let m=manager.clone();let rec=recovery.clone();let r=router.clone();let def=graph.get(&id).unwrap().clone();operations.spawn(async move{let result:Result<(),String>=async {let prepared=b.prepare(def).map_err(|e|e.to_string())?;let executor=prepared.attach(m,rec).await.map_err(|e|e.to_string())?;sup.lock().await.start_routed(&id,executor,&r).map_err(|e|e.to_string())?;Ok(())}.await;if let Err(reason)=&result {sup.lock().await.fail_preparation(&id,reason.clone());}(id,result)});}
             }
         }
     }
@@ -544,7 +602,7 @@ async fn run(
             Command::Shutdown(reply) => {
                 let _ = reply.send(());
             }
-            Command::Demand { reply, .. } | Command::Retry { reply, .. } => {
+            Command::Demand { reply, .. } | Command::Retry { reply, .. } | Command::Graph {reply,..} => {
                 let _ = reply.send(Err(ApplicationError(
                     "application shutting down before command acceptance".into(),
                 )));
@@ -590,6 +648,7 @@ async fn run(
     }
     let _ = recovery.shutdown().await;
     let _ = recovery_task.await;
+    demand.lock().unwrap().clear();
     runtime.set_router(&router.status());
     runtime.set_websocket(Some((0, 0)));
     runtime.set_limiter(
@@ -753,7 +812,7 @@ fn router_limits(
             _ => 0,
         })
         .sum::<usize>();
-    let total = external
+    let _total = external
         .checked_add(internal)
         .filter(|n| *n <= 16384)
         .ok_or_else(|| {
@@ -762,7 +821,7 @@ fn router_limits(
             )
         })?;
     Ok(RouterConfig {
-        max_subscriptions: total.max(1),
+        max_subscriptions: 16384,
         max_producers: config.runtime.application.max_definitions,
         ..Default::default()
     })
