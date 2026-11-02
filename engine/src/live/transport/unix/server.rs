@@ -3,7 +3,7 @@ use crate::live::{config::general::PublicationConfig, stream::router::StreamRout
 use std::{
     io,
     os::unix::fs::{MetadataExt, PermissionsExt},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -15,6 +15,29 @@ use tokio::{
     task::{JoinHandle, JoinSet},
 };
 static CONNECTION: AtomicU64 = AtomicU64::new(1);
+// Check each resolved prefix: checking only the final parent lets an earlier
+// symlink redirect both bind and cleanup. Ancestors may be shared (e.g. /tmp),
+// but the immediate parent must still satisfy the ownership/mode checks below.
+fn validate_parent_path(parent: &Path) -> io::Result<()> {
+    let mut prefix = PathBuf::new();
+    for component in parent.components() {
+        match component {
+            Component::ParentDir => {
+                return Err(io::Error::other(
+                    "socket path must not contain parent traversal",
+                ));
+            }
+            Component::CurDir => continue,
+            _ => prefix.push(component.as_os_str()),
+        }
+        if !std::fs::symlink_metadata(&prefix)?.is_dir() {
+            return Err(io::Error::other(
+                "socket ancestors must be non-symlink directories",
+            ));
+        }
+    }
+    Ok(())
+}
 struct SocketGuard {
     path: PathBuf,
     dev: u64,
@@ -48,6 +71,7 @@ impl UnixStreamingServer {
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
             .ok_or_else(|| io::Error::other("socket requires parent directory"))?;
+        validate_parent_path(parent)?;
         let metadata = std::fs::symlink_metadata(parent)?;
         if !metadata.is_dir() || metadata.permissions().mode() & 0o022 != 0 {
             return Err(io::Error::other(

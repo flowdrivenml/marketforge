@@ -285,11 +285,19 @@ There is no automatic reconnect, durable delivery, replay, bootstrap, full-book
 initialization or historical access.
 
 The Unix adapter requires a private parent owned by the server user, rejects
-symlink parents and every existing socket/file, and sets socket permissions to
+symlinks anywhere in the parent path, parent traversal (`..`), and every existing socket/file, and sets socket permissions to
 0600. It deliberately does not recover stale socket paths automatically. Cleanup
 checks device/inode identity before removing the created endpoint. Unix connectors
 are platform-gated; protocol/projection semantics are separate from socket framing
 and ownership. Only Unix transport is implemented.
+
+Derived processing uses separate bounded readiness and retained-data stall
+deadlines. `[runtime.processing.derived].startup_timeout_ms` defaults to 5000
+and accepts 1 through 86,400,000 milliseconds. Existing configuration files inherit
+that default. `stall_timeout_ms` continues to bound unresolved market data; a short
+data-stall setting does not shorten processor construction or input readiness.
+The scheduler, financial algorithms, and fail-closed data continuity rules are
+unchanged.
 
 ## Reading integrity and ordering together
 

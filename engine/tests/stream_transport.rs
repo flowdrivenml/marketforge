@@ -1835,3 +1835,83 @@ async fn shutdown_during_partial_publication_and_close_racing_eof() {
     assert_eq!(rig.router.status().subscriptions, 0);
     rig.close().await;
 }
+
+#[tokio::test]
+async fn socket_lifecycle_rejects_unsafe_paths_and_preserves_replacements() {
+    use std::os::unix::fs::{MetadataExt, symlink};
+    let rig = Rig::new(vec![], RouterConfig::default());
+    let dir = private_dir();
+    let parent = dir.path().join("private");
+    std::fs::create_dir(&parent).unwrap();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let path = parent.join("data.sock");
+
+    // An indirect symlink must not bypass the parent-path check.
+    let alias = dir.path().join("alias");
+    symlink(dir.path(), &alias).unwrap();
+    assert!(
+        UnixStreamingServer::bind(rig.router.clone(), config(&alias.join("private/data.sock")))
+            .await
+            .is_err()
+    );
+    assert!(!path.exists());
+
+    // Neither stale sockets nor symlink endpoints are removed on startup.
+    let stale = std::os::unix::net::UnixListener::bind(&path).unwrap();
+    drop(stale);
+    assert!(
+        UnixStreamingServer::bind(rig.router.clone(), config(&path))
+            .await
+            .is_err()
+    );
+    assert!(path.exists());
+    std::fs::remove_file(&path).unwrap();
+    symlink(parent.join("missing"), &path).unwrap();
+    assert!(
+        UnixStreamingServer::bind(rig.router.clone(), config(&path))
+            .await
+            .is_err()
+    );
+    assert!(std::fs::symlink_metadata(&path).unwrap().is_symlink());
+    std::fs::remove_file(&path).unwrap();
+
+    std::fs::write(&path, b"keep file").unwrap();
+    assert!(
+        UnixStreamingServer::bind(rig.router.clone(), config(&path))
+            .await
+            .is_err()
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), b"keep file");
+    std::fs::remove_file(&path).unwrap();
+
+    let server = UnixStreamingServer::bind(rig.router.clone(), config(&path))
+        .await
+        .unwrap();
+    assert_eq!(std::fs::metadata(&path).unwrap().mode() & 0o777, 0o600);
+    assert!(
+        UnixStreamingServer::bind(rig.router.clone(), config(&path))
+            .await
+            .is_err()
+    );
+    let client = MarketForgeStreamClient::connect_unix(&path, ClientOptions::default())
+        .await
+        .unwrap();
+    client.ping().await.unwrap();
+    client.close().await.unwrap();
+
+    // Shutdown owns the original inode, not whatever later occupies its name.
+    let moved = parent.join("original.sock");
+    std::fs::rename(&path, &moved).unwrap();
+    std::fs::write(&path, b"replacement").unwrap();
+    server.shutdown().await.unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), b"replacement");
+    std::fs::remove_file(&path).unwrap();
+    std::fs::remove_file(&moved).unwrap();
+
+    let server = UnixStreamingServer::bind(rig.router.clone(), config(&path))
+        .await
+        .unwrap();
+    server.shutdown().await.unwrap();
+    assert!(!path.exists());
+    rig.close().await;
+}

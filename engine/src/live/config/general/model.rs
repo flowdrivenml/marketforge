@@ -923,6 +923,8 @@ pub struct DerivedProcessingConfig {
     pub max_inputs: usize,
     pub state_events: usize,
     pub state_bytes: usize,
+    /// Readiness/construction budget, independent of retained-data stalls.
+    pub startup_timeout_ms: u64,
     pub stall_timeout_ms: u64,
     pub retry_delay_ms: u64,
     pub planning_steps: usize,
@@ -933,6 +935,7 @@ impl Default for DerivedProcessingConfig {
             max_inputs: 128,
             state_events: 4096,
             state_bytes: 16 * 1024 * 1024,
+            startup_timeout_ms: 5000,
             stall_timeout_ms: 5000,
             retry_delay_ms: 1,
             planning_steps: 100_000,
@@ -947,6 +950,8 @@ impl DerivedProcessingConfig {
             || self.max_inputs > 4096
             || self.state_events == 0
             || self.state_bytes == 0
+            || self.startup_timeout_ms == 0
+            || self.startup_timeout_ms > 86_400_000
             || self.stall_timeout_ms == 0
             || self.stall_timeout_ms > 86_400_000
             || self.retry_delay_ms == 0

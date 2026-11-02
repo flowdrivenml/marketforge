@@ -710,3 +710,62 @@ fn persisted_merge_conversion_request_is_rejected_after_json_roundtrip_and_graph
         matches!(result,Err(StreamGraphError::InvalidDefinition(id,reason)) if id=="m" && reason.contains("target_quote_asset"))
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn short_data_stall_budget_does_not_expire_pending_startup() {
+    struct Idle(ProcessorContext);
+    impl Processor for Idle {
+        fn run_turn(&mut self, _: usize) -> bool {
+            self.0.input.take_work(1).complete();
+            false
+        }
+    }
+    let rig = Rig::configured(
+        vec![
+            source::definition("binance_spot", SourceChannel::Trades, "a"),
+            source::definition("binance_spot", SourceChannel::Trades, "b"),
+            derived(
+                "m",
+                DerivedOperation::Merge,
+                &["a", "b"],
+                &[],
+                Some(MergeOrdering::ArrivalOrder),
+            ),
+        ],
+        RouterConfig::default(),
+        general::DerivedProcessingConfig {
+            stall_timeout_ms: 10,
+            startup_timeout_ms: 5000,
+            ..Default::default()
+        },
+    );
+    let handle = rig.service.handle();
+    let (entered, constructed) = tokio::sync::oneshot::channel();
+    let (release, ready) = tokio::sync::oneshot::channel();
+    let spec = rig.spec("m", move |context| {
+        entered.send(()).unwrap();
+        Ok(PreparedProcessor {
+            processor: Box::new(Idle(context)),
+            readiness: Box::pin(async move { ready.await.map_err(|e| e.to_string()) }),
+        })
+    });
+    let starter = handle.clone();
+    let mut start = tokio::spawn(async move { starter.start(spec).await });
+    bounded(constructed).await.unwrap();
+    // Keep readiness explicitly gated beyond the data-stall budget. No timing
+    // assumption about construction or scheduler progress establishes readiness.
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut start)
+            .await
+            .is_err()
+    );
+    release.send(()).unwrap();
+    let stream = bounded(start).await.unwrap().unwrap();
+    bounded(handle.stop(&stream)).await.unwrap();
+    handle
+        .take_report("m", stream.generation)
+        .unwrap()
+        .discard();
+    assert_eq!(rig.router.status().subscriptions, 0);
+    rig.close().await;
+}
