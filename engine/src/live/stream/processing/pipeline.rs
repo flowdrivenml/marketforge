@@ -139,10 +139,12 @@ pub struct OutputRejection {
 /// No processor callback, await, or processor destruction runs under these locks.
 #[derive(Clone)]
 pub struct ProcessingOutput {
+    metrics: Arc<Mutex<Option<Arc<crate::live::metrics::DerivedMetrics>>>>,
     pub(crate) mailbox: Arc<ProcessorMailbox<RouterPublication>>,
     pub(crate) fence: Arc<Mutex<bool>>,
     pub(crate) wake: Arc<Notify>,
     terminal_error: Arc<Mutex<Option<&'static str>>>,
+    integrity_sink: Arc<Mutex<Option<DataDiscontinuitySink>>>,
 }
 impl ProcessingOutput {
     pub(crate) fn new(
@@ -158,8 +160,28 @@ impl ProcessingOutput {
             mailbox,
             fence,
             wake,
+            metrics: Arc::new(Mutex::new(None)),
             terminal_error: Arc::new(Mutex::new(None)),
+            integrity_sink: Arc::new(Mutex::new(None)),
         })
+    }
+    pub(crate) fn attach_metrics(&self,metrics:Option<Arc<crate::live::metrics::DerivedMetrics>>){*self.metrics.lock().unwrap_or_else(|p|p.into_inner())=metrics;}
+    pub(crate) fn metrics(&self)->Option<Arc<crate::live::metrics::DerivedMetrics>>{self.metrics.lock().unwrap_or_else(|p|p.into_inner()).clone()}
+    pub(crate) fn attach_integrity_sink(&self, sink: DataDiscontinuitySink) {
+        *self
+            .integrity_sink
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(sink);
+    }
+    pub(crate) fn record_data_discontinuity(&self, detail: &str) {
+        if let Some(sink) = self
+            .integrity_sink
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            sink.record(detail);
+        }
     }
     pub fn try_emit(&self, publication: RouterPublication) -> Result<(), OutputRejection> {
         let bytes = publication.retained_bytes();
@@ -188,6 +210,7 @@ impl ProcessingOutput {
                 kind: OutputRejectionKind::AccountingOverflow,
             });
         };
+        let events=publication.market_event_count();
         if let Err(error) = self.mailbox.push_fenced(&fence, publication, bytes) {
             self.fail_output(&mut fence, "bounded output capacity exhausted");
             return Err(OutputRejection {
@@ -196,6 +219,7 @@ impl ProcessingOutput {
                 kind: OutputRejectionKind::Capacity,
             });
         }
+        if let Some(m)=self.metrics(){m.record_output_events_admitted_total(events);}
         self.wake.notify_one();
         Ok(())
     }

@@ -46,6 +46,7 @@ pub enum ReconcileError {
 pub struct LifecyclePlanner;
 
 impl LifecyclePlanner {
+    pub fn retirement_order(graph:&StreamGraph,selected:&BTreeSet<String>)->Result<Vec<String>,ReconcileError>{let mut ids=order_dependencies_first(graph,selected)?;ids.reverse();Ok(ids)}
     pub fn plan(
         graph: &StreamGraph,
         demand: &DemandRegistry,

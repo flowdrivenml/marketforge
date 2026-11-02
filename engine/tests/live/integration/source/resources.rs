@@ -103,8 +103,12 @@ async fn source_recovery_obeys_shared_rest_budget_and_cancellation_releases_wait
             executor,
             |_| Ok(()),
             move |payload| {
-                tx.try_send(pipeline::published(payload))
-                    .map_err(|e| e.to_string())
+                let records = pipeline::published(payload);
+                if records.is_empty() {
+                    Ok(())
+                } else {
+                    tx.try_send(records).map_err(|e| e.to_string())
+                }
             },
         )
         .unwrap();

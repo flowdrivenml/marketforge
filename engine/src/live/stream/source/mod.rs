@@ -60,7 +60,7 @@ pub use recovery_mailbox::{
     SourceRecoveryEvent, SourceRecoveryMailbox, SourceRecoveryMailboxError,
 };
 
-pub use supervisor::{SourceRuntimeSupervisor, SourceSupervisorError};
+pub use supervisor::{SourceRuntimeSupervisor, SourceSupervisorError,SourceRegistryRead,SourceStopOperation,SourceReadinessStatus};
 
 pub use acquisition::{SourceAcquisitionBinder, SourceAcquisitionError, TrustedAcquisitionBinding};
 

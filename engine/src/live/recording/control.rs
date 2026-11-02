@@ -6,8 +6,11 @@ use crate::live::config::general::RecordingConfig;
 
 use super::writer::RecordingEvent;
 
+pub(crate) struct RecordingReservation(pub Arc<crate::live::metrics::RecordingMetrics>);
+impl Drop for RecordingReservation {fn drop(&mut self){self.0.pending_remove();}}
+pub(crate) struct QueuedRecordingEvent {pub event:RecordingEvent,pub reservation:RecordingReservation}
 pub(crate) enum RecordingCommand {
-    Event(RecordingEvent),
+    Event(QueuedRecordingEvent),
     Shutdown(oneshot::Sender<()>),
 }
 
@@ -52,6 +55,7 @@ impl From<sqlx::Error> for RecordingError {
 
 #[derive(Clone)]
 pub struct RecordingControl {
+    metrics: Arc<crate::live::metrics::RecordingMetrics>,
     sender: mpsc::Sender<RecordingCommand>,
     config_sender: Arc<watch::Sender<RecordingConfig>>,
 }
@@ -62,6 +66,7 @@ impl RecordingControl {
         config_sender: watch::Sender<RecordingConfig>,
     ) -> Self {
         Self {
+            metrics: Arc::new(crate::live::metrics::RecordingMetrics::new()),
             sender,
             config_sender: Arc::new(config_sender),
         }
@@ -87,7 +92,8 @@ impl RecordingControl {
             return Err(RecordingError::Disabled);
         }
 
-        permit.send(RecordingCommand::Event(event));
+        self.metrics.pending_add();
+        permit.send(RecordingCommand::Event(QueuedRecordingEvent{event,reservation:RecordingReservation(self.metrics.clone())}));
 
         Ok(())
     }
@@ -109,6 +115,7 @@ impl RecordingControl {
         Ok(())
     }
 
+    pub fn metrics(&self)->Arc<crate::live::metrics::RecordingMetrics>{self.metrics.clone()}
     pub fn config(&self) -> RecordingConfig {
         self.config_sender.borrow().clone()
     }

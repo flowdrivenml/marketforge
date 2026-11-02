@@ -15,6 +15,7 @@ pub(crate) struct LiveConversion {
     state: ReferenceState,
     generations: BTreeMap<String, crate::live::stream::registry::RuntimeGeneration>,
     settings: ConversionSettings,
+    integrity: BTreeMap<String, std::sync::Arc<crate::stream_protocol::DataIntegrityEvidence>>,
 }
 pub(crate) fn decimal(value: Decimal) -> Result<ConversionDecimal, String> {
     ConversionDecimal::from_ratio(
@@ -121,6 +122,7 @@ impl LiveConversion {
             state: ReferenceState::new(),
             generations: BTreeMap::new(),
             settings,
+            integrity: BTreeMap::new(),
         })
     }
     pub(crate) fn reference(
@@ -142,6 +144,9 @@ impl LiveConversion {
         let price = decimal(t.price)?;
         if !price.is_positive() {
             return Err("MissingReference: reference price must be positive".into());
+        }
+        if let Some(evidence) = event.evidence.integrity() {
+            self.integrity.insert(input.into(), evidence.clone());
         }
         self.generations
             .insert(input.into(), event.origin.generation);
@@ -220,6 +225,11 @@ impl LiveConversion {
                     _ => return Err("unsupported conversion control event".into()),
                 };
                 Ok::<_, String>(EventValuation {
+                    reference_integrity: evaluation
+                        .references
+                        .iter()
+                        .filter_map(|r| self.integrity.get(&r.stream_id).cloned())
+                        .collect(),
                     target_quote: self.plan.target_quote.as_str().into(),
                     reference_generations: evaluation
                         .references

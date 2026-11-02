@@ -190,6 +190,18 @@ impl StreamGraph {
     pub fn stream_ids(&self) -> impl Iterator<Item = &str> {
         self.definitions.keys().map(String::as_str)
     }
+    pub(crate) fn stream_ids_after<'a>(
+        &'a self,
+        after: Option<&'a str>,
+    ) -> impl Iterator<Item = &'a str> {
+        use std::ops::Bound;
+        self.definitions
+            .range::<str, _>((
+                after.map(Bound::Excluded).unwrap_or(Bound::Unbounded),
+                Bound::Unbounded,
+            ))
+            .map(|(id, _)| id.as_str())
+    }
     pub fn get(&self, stream_id: &str) -> Option<&PersistedStreamDefinition> {
         self.definitions.get(stream_id)
     }

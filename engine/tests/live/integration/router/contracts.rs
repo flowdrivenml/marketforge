@@ -123,6 +123,7 @@ async fn slow_consumer_failure_releases_demand_and_capacity() {
     assert_eq!(rig.context.demand.lock().unwrap().owner_count("test"), 1);
     assert_eq!(rig.router.status().consumer_bytes, 0);
     assert_eq!(rig.router.status().consumer_failures, 1);
+    assert_eq!(rig.router.runtime_metrics().internal_queue_overflows_total(), 1);
 }
 
 #[tokio::test]

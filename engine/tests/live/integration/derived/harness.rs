@@ -141,6 +141,7 @@ impl Rig {
         let registry = Arc::new(Mutex::new(registry));
         let service = ProcessingService::new(
             &RuntimeConfig {
+                application: Default::default(),
                 shutdown_timeout_seconds: 1,
                 processing: Some(ProcessingConfig {
                     workers: 2,

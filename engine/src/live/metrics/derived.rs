@@ -22,6 +22,16 @@ use super::latency::{LatencySnapshot, LatencyTracker};
 /// since the previous snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DerivedMetricsSnapshot {
+    pub trades_accepted_total: u64,
+    pub depth_events_accepted_total: u64,
+    pub depth_levels_accepted_total: u64,
+
+    pub retained_events: u64,
+    pub retained_bytes: u64,
+
+    pub events_calculated_total: u64,
+    pub output_events_admitted_total: u64,
+
     // --------------------------------------------------------
     // Input availability
     // --------------------------------------------------------
@@ -80,6 +90,16 @@ pub struct DerivedMetricsSnapshot {
 /// authoritative processing components.
 #[derive(Debug)]
 pub struct DerivedMetrics {
+    trades_accepted_total: AtomicU64,
+    depth_events_accepted_total: AtomicU64,
+    depth_levels_accepted_total: AtomicU64,
+
+    retained_events: AtomicU64,
+    retained_bytes: AtomicU64,
+
+    events_calculated_total: AtomicU64,
+    output_events_admitted_total: AtomicU64,
+
     // --------------------------------------------------------
     // Input availability
     // --------------------------------------------------------
@@ -123,7 +143,11 @@ pub struct DerivedMetrics {
 // CONSTRUCTION
 // ============================================================
 
-impl DerivedMetrics {
+impl DerivedMetrics {    pub(crate) fn record_shape(&self,trades:u64,depth:u64,levels:u64){self.trades_accepted_total.fetch_add(trades,Ordering::Relaxed);self.depth_events_accepted_total.fetch_add(depth,Ordering::Relaxed);self.depth_levels_accepted_total.fetch_add(levels,Ordering::Relaxed);}
+    pub(crate) fn set_retained(&self,events:u64,bytes:u64){self.retained_events.store(events,Ordering::Relaxed);self.retained_bytes.store(bytes,Ordering::Relaxed);}
+
+    pub(crate) fn record_events_calculated_total(&self,count:u64){self.events_calculated_total.fetch_add(count,Ordering::Relaxed);}
+    pub(crate) fn record_output_events_admitted_total(&self,count:u64){self.output_events_admitted_total.fetch_add(count,Ordering::Relaxed);}
     /// Create operational metrics for one derived stream.
     ///
     /// `inputs_total` describes the configured number
@@ -135,6 +159,13 @@ impl DerivedMetrics {
     /// measurements are applicable.
     pub fn new(inputs_total: u64, input_queue_capacity: u64, event_time_ordering: bool) -> Self {
         Self {
+            trades_accepted_total: AtomicU64::new(0),
+            depth_events_accepted_total: AtomicU64::new(0),
+            depth_levels_accepted_total: AtomicU64::new(0),
+            retained_events: AtomicU64::new(0),
+            retained_bytes: AtomicU64::new(0),
+            events_calculated_total: AtomicU64::new(0),
+            output_events_admitted_total: AtomicU64::new(0),
             inputs_total: AtomicU64::new(inputs_total),
             inputs_healthy: AtomicU64::new(0),
 
@@ -195,7 +226,8 @@ impl DerivedMetrics {
     ///
     /// A merge may produce one output event per accepted
     /// input event, but this is not universally guaranteed.
-    pub fn record_events_produced(&self, count: u64, produced_at_ns: i64) {
+    pub fn record_events_produced(&self, count: u64, produced_at_ns: i64) { self.record_output_accepted(count,Some(produced_at_ns)); }
+    pub(crate) fn record_output_accepted(&self,count:u64,produced_at_ns:Option<i64>) {
         if count == 0 {
             return;
         }
@@ -203,10 +235,8 @@ impl DerivedMetrics {
         self.events_produced_total
             .fetch_add(count, Ordering::Relaxed);
 
-        self.last_output_at_ns
-            .store(produced_at_ns, Ordering::Relaxed);
-
-        self.has_last_output.store(true, Ordering::Relaxed);
+        if let Some(at) = produced_at_ns { self.last_output_at_ns.store(at, Ordering::Relaxed); }
+        self.has_last_output.store(produced_at_ns.is_some(), Ordering::Relaxed);
     }
 
     // ========================================================
@@ -346,6 +376,16 @@ impl DerivedMetrics {
     /// snapshot across all metrics fields.
     pub fn take_snapshot(&self) -> DerivedMetricsSnapshot {
         DerivedMetricsSnapshot {
+            trades_accepted_total: self.trades_accepted_total.load(Ordering::Relaxed),
+            depth_events_accepted_total: self.depth_events_accepted_total.load(Ordering::Relaxed),
+            depth_levels_accepted_total: self.depth_levels_accepted_total.load(Ordering::Relaxed),
+
+            retained_events: self.retained_events.load(Ordering::Relaxed),
+            retained_bytes: self.retained_bytes.load(Ordering::Relaxed),
+
+            events_calculated_total: self.events_calculated_total.load(Ordering::Relaxed),
+            output_events_admitted_total: self.output_events_admitted_total.load(Ordering::Relaxed),
+
             inputs_total: self.inputs_total.load(Ordering::Relaxed),
 
             inputs_healthy: self.inputs_healthy.load(Ordering::Relaxed),
@@ -631,5 +671,14 @@ mod tests {
         let restored: DerivedMetricsSnapshot = serde_json::from_str(&serialized).unwrap();
 
         assert_eq!(original, restored);
+    }
+}
+
+#[cfg(test)]
+mod unavailable_clock_tests {
+    use super::*;
+    #[test] fn unavailable_clock_preserves_accepted_output_count() {
+        let m=DerivedMetrics::new(1,8,false);m.record_output_accepted(10,None);
+        let s=m.take_snapshot();assert_eq!(s.events_produced_total,10);assert_eq!(s.last_output_at_ns,None);
     }
 }

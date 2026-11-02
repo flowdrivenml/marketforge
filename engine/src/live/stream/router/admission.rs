@@ -1,7 +1,7 @@
 //! Router-issued custody evidence. Records retain only their original source
 //! evidence and immediate admission identity, never a recursive lineage chain.
 use super::*;
-use crate::live::{integrity::DepthAcceptedTimestamp, stream::registry::RuntimeGeneration};
+use crate::live::stream::registry::RuntimeGeneration;
 use std::{mem::size_of, sync::Arc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,113 +38,86 @@ impl AdmissionIdentity {
 }
 #[derive(Debug)]
 enum NativeIdentity {
-    Trade {
-        timestamp: i64,
-        system: Option<i64>,
-        sequence: Option<u64>,
-        trade_id: Option<Arc<str>>,
-    },
-    Depth {
-        kind: u8,
-        generation: u64,
-        book: u64,
-        sequence: Option<(u64, Option<u64>, bool)>,
-        timestamp: Option<DepthAcceptedTimestamp>,
-    },
+    Trade(crate::shared::domain::canonical::Trade),
+    Depth(RouterDepthEvent),
 }
 impl NativeIdentity {
     fn trade(t: &crate::shared::domain::canonical::Trade) -> Self {
-        Self::Trade {
-            timestamp: t.envelope.event_timestamp_ns,
-            system: t.envelope.system_timestamp_ns,
-            sequence: t.sequence,
-            trade_id: t.trade_id.as_deref().map(Arc::from),
-        }
+        Self::Trade(t.clone())
     }
     fn depth(d: &RouterDepthEvent) -> Self {
-        let (generation, book) = d.generations();
-        match d {
-            RouterDepthEvent::Invalidated { .. } => Self::Depth {
-                kind: 0,
-                generation,
-                book,
-                sequence: None,
-                timestamp: None,
-            },
-            RouterDepthEvent::Snapshot {
-                baseline,
-                timestamp,
-                ..
-            }
-            | RouterDepthEvent::Delta {
-                baseline,
-                timestamp,
-                ..
-            } => Self::Depth {
-                kind: if matches!(d, RouterDepthEvent::Snapshot { .. }) {
-                    1
-                } else {
-                    2
-                },
-                generation,
-                book,
-                sequence: Some((
-                    baseline.last_sequence,
-                    baseline.cross_sequence,
-                    baseline.synchronized,
-                )),
-                timestamp: Some(*timestamp),
-            },
-        }
+        Self::Depth(d.clone())
     }
     fn matches(&self, native: &NativeMarketEvent) -> bool {
         match (self, native) {
-            (
-                Self::Trade {
-                    timestamp,
-                    system,
-                    sequence,
-                    trade_id,
-                },
-                NativeMarketEvent::Trade(t),
-            ) => {
-                *timestamp == t.envelope.event_timestamp_ns
-                    && *system == t.envelope.system_timestamp_ns
-                    && *sequence == t.sequence
-                    && trade_id.as_deref() == t.trade_id.as_deref()
+            (Self::Trade(a), NativeMarketEvent::Trade(b)) => {
+                // Decimal equality is numeric; custody also preserves native scale/bits.
+                a == b
+                    && [
+                        Some(a.price),
+                        a.quantity_base,
+                        a.quantity_quote,
+                        a.quantity_contracts,
+                        a.trade_iv,
+                        a.mark_iv,
+                        a.index_price,
+                        a.mark_price,
+                    ]
+                    .into_iter()
+                    .zip([
+                        Some(b.price),
+                        b.quantity_base,
+                        b.quantity_quote,
+                        b.quantity_contracts,
+                        b.trade_iv,
+                        b.mark_iv,
+                        b.index_price,
+                        b.mark_price,
+                    ])
+                    .all(|(a, b)| a.map(|d| d.serialize()) == b.map(|d| d.serialize()))
             }
-            (
-                Self::Depth {
-                    kind,
-                    generation,
-                    book,
-                    sequence,
-                    timestamp,
-                },
-                NativeMarketEvent::Depth(d),
-            ) => {
-                let Self::Depth {
-                    kind: k,
-                    generation: g,
-                    book: b,
-                    sequence: s,
-                    timestamp: t,
-                } = Self::depth(d)
-                else {
-                    unreachable!()
-                };
-                (*kind, *generation, *book, *sequence, *timestamp) == (k, g, b, s, t)
-            }
+            (Self::Depth(a), NativeMarketEvent::Depth(b)) => match (a, b) {
+                (RouterDepthEvent::Invalidated { .. }, RouterDepthEvent::Invalidated { .. }) => {
+                    a.generations() == b.generations()
+                }
+                (
+                    RouterDepthEvent::Snapshot {
+                        baseline: x,
+                        timestamp: t,
+                        levels: l,
+                        ..
+                    },
+                    RouterDepthEvent::Snapshot {
+                        baseline: y,
+                        timestamp: u,
+                        levels: m,
+                        ..
+                    },
+                )
+                | (
+                    RouterDepthEvent::Delta {
+                        baseline: x,
+                        timestamp: t,
+                        changes: l,
+                        ..
+                    },
+                    RouterDepthEvent::Delta {
+                        baseline: y,
+                        timestamp: u,
+                        changes: m,
+                        ..
+                    },
+                ) => a.generations() == b.generations() && x == y && t == u && Arc::ptr_eq(l, m),
+                _ => false,
+            },
             _ => false,
         }
     }
     fn bytes(&self) -> Option<usize> {
-        size_of::<Self>().checked_add(match self {
-            Self::Trade {
-                trade_id: Some(id), ..
-            } => id.len().checked_add(32)?,
-            _ => 0,
-        })
+        match self {
+            Self::Trade(t) => RouterPublication::trades(vec![t.clone()]).retained_bytes(),
+            Self::Depth(d) => RouterPublication::Depth(vec![d.clone()].into()).retained_bytes(),
+        }
     }
 }
 #[derive(Debug)]
@@ -152,6 +125,7 @@ struct OriginalEvent {
     admission: Arc<AdmissionIdentity>,
     ordinal: u64,
     native: NativeIdentity,
+    integrity: Option<Arc<crate::stream_protocol::DataIntegrityEvidence>>,
 }
 
 /// Opaque evidence issued for one actual Router delivery record. Applications
@@ -163,6 +137,9 @@ pub struct EventEvidence {
     original: Arc<OriginalEvent>,
 }
 impl EventEvidence {
+    pub fn integrity(&self) -> Option<&Arc<crate::stream_protocol::DataIntegrityEvidence>> {
+        self.original.integrity.as_ref()
+    }
     pub(crate) fn original_identity(&self) -> &AdmissionIdentity {
         &self.original.admission
     }
@@ -183,7 +160,10 @@ impl EventEvidence {
             .checked_add(size_of::<OriginalEvent>())?
             .checked_add(self.upstream.bytes()?)?
             .checked_add(self.original.admission.bytes()?)?
-            .checked_add(self.original.native.bytes()?)
+            .checked_add(self.original.native.bytes()?)?
+            .checked_add(self.original.integrity.as_ref().map_or(0, |e| {
+                serde_json::to_vec(e.as_ref()).map_or(usize::MAX, |v| v.len())
+            }))
     }
 }
 
@@ -195,6 +175,12 @@ pub struct RouterAdmission {
     originals: Arc<[Option<Arc<OriginalEvent>>]>,
 }
 impl RouterAdmission {
+    pub fn integrity(
+        &self,
+        index: usize,
+    ) -> Option<&Arc<crate::stream_protocol::DataIntegrityEvidence>> {
+        self.originals.get(index)?.as_ref()?.integrity.as_ref()
+    }
     pub fn semantics(&self) -> PublicationSemantics {
         self.identity.semantics
     }
@@ -222,6 +208,7 @@ impl RouterAdmission {
         sequence: u64,
         semantics: PublicationSemantics,
         publication: &RouterPublication,
+        integrity: Option<Arc<crate::stream_protocol::DataIntegrityEvidence>>,
     ) -> Self {
         let records = match publication {
             RouterPublication::Trades { records, .. } => records.len(),
@@ -257,6 +244,46 @@ impl RouterAdmission {
                     admission: identity.clone(),
                     ordinal: index as u64,
                     native,
+                    integrity: if let RouterPublication::Depth(events) = publication {
+                        integrity.as_ref().map(|e| {
+                            let mut e = (**e).clone();
+                            e.id.record_ordinal = Some(index as u64);
+                            let (g, b) = events[index].generations();
+                            let same_context =
+                                e.source_generation == Some(g) && e.book_generation == Some(b);
+                            let same_baseline = match &events[index] {
+                                RouterDepthEvent::Snapshot { baseline, .. }
+                                | RouterDepthEvent::Delta { baseline, .. } => {
+                                    e.depth_sequence == Some(baseline.last_sequence)
+                                }
+                                _ => false,
+                            };
+                            if !same_context || !same_baseline {
+                                e.depth_coverage = None;
+                            }
+                            if !same_context {
+                                e.diagnostic = None;
+                            }
+                            e.source_generation = Some(g);
+                            e.book_generation = Some(b);
+                            match &events[index] {
+                                RouterDepthEvent::Snapshot { baseline, .. }
+                                | RouterDepthEvent::Delta { baseline, .. } => {
+                                    e.depth_sequence = Some(baseline.last_sequence);
+                                    e.cross_sequence = baseline.cross_sequence;
+                                    e.coverage = "internal_book_baseline".into();
+                                }
+                                _ => {
+                                    e.depth_sequence = None;
+                                    e.cross_sequence = None;
+                                    e.coverage = "book_invalidated".into();
+                                }
+                            }
+                            Arc::new(e)
+                        })
+                    } else {
+                        integrity.clone()
+                    },
                 }))
             })
             .collect();
@@ -277,6 +304,9 @@ impl RouterAdmission {
             bytes = bytes
                 .checked_add(size_of::<OriginalEvent>())?
                 .checked_add(root.native.bytes()?)?
+                .checked_add(root.integrity.as_ref().map_or(0, |e| {
+                    serde_json::to_vec(e.as_ref()).map_or(usize::MAX, |v| v.len())
+                }))?
                 .checked_add(root.admission.bytes()?)?;
         }
         Some(bytes)
@@ -296,6 +326,7 @@ impl RouterAdmission {
             sequence,
             PublicationSemantics::Source,
             publication,
+            None,
         )
     }
 }

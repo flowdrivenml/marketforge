@@ -72,6 +72,7 @@ impl Rig {
         let registry = Arc::new(Mutex::new(registry));
         let service = ProcessingService::new(
             &RuntimeConfig {
+                application: Default::default(),
                 shutdown_timeout_seconds: 1,
                 processing: Some(ProcessingConfig {
                     workers: 2,
@@ -1084,6 +1085,22 @@ async fn revoked_old_output_capability_cannot_publish_in_replacement_generation(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn explicit_derived_origin_preserves_source_identity_and_rechecks_authority() {
+    // Nonblocking admission may encounter dispatch/revocation contention. Only
+    // Busy is retryable; identity and authority assertions remain exact.
+    async fn settled(
+        producer: &ProducerHandle,
+        publication: RouterPublication,
+    ) -> Result<RouterAcceptance, PublishError> {
+        bounded(async {
+            loop {
+                match producer.try_publish(publication.clone()) {
+                    Err(PublishError::Busy) => tokio::task::yield_now().await,
+                    result => break result,
+                }
+            }
+        })
+        .await
+    }
     let rig = Rig::new(SourceChannel::Trades, RouterConfig::default());
     let generation = rig
         .registry
@@ -1115,7 +1132,7 @@ async fn explicit_derived_origin_preserves_source_identity_and_rechecks_authorit
     let mut wrong = fixture::trade(1);
     wrong.envelope.stream_id = "synthetic".into();
     assert_eq!(
-        derived.try_publish(RouterPublication::trades(vec![wrong])),
+        settled(&derived, RouterPublication::trades(vec![wrong])).await,
         Err(PublishError::InvalidPublication)
     );
     publish(&derived, fixture::publication(1)).await;
@@ -1126,9 +1143,10 @@ async fn explicit_derived_origin_preserves_source_identity_and_rechecks_authorit
         .begin_stop("synthetic")
         .unwrap();
     assert_eq!(
-        derived.try_publish(fixture::publication(2)),
+        settled(&derived, fixture::publication(2)).await,
         Err(PublishError::Revoked)
     );
+    assert_eq!(rig.router.status().accepted, 1);
     rig.registry
         .lock()
         .unwrap()

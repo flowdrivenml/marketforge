@@ -198,6 +198,14 @@ impl StreamIntegrityHandle {
     /// streams without an authoritative synchronized book.
     ///
     /// No book clone is performed.
+    /// Read a bounded complete authoritative book without mutating continuity.
+    pub(crate) fn current_book_handoff(&self)->Option<(u64,crate::live::integrity::DepthSequenceBaseline,Vec<crate::shared::domain::book::BookChange>)>{
+        let IntegrityState::Depth(ingress)=&self.state else{return None};if !ingress.is_synchronized(){return None;}let controller=ingress.controller();let baseline=controller.baseline()?;
+        let book=controller.book();let mut levels=Vec::with_capacity(book.bids().len()+book.asks().len());
+        levels.extend(book.bids().iter().map(|(price,level)|(crate::shared::domain::canonical::BookSide::Bid,*price,level.clone())));
+        levels.extend(book.asks().iter().map(|(price,level)|(crate::shared::domain::canonical::BookSide::Ask,*price,level.clone())));
+        Some((controller.book_generation(),baseline,levels))
+    }
     pub fn book(&self) -> Option<&BookStore> {
         match &self.state {
             IntegrityState::Depth(ingress) if ingress.is_synchronized() => {

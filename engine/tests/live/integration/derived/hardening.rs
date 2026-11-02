@@ -116,7 +116,7 @@ async fn derived_provenance_rejects_forged_fields_and_allows_delayed_source_sequ
         .unwrap();
     publish(&rig.producers[0], publication("a", 2, 200)).await;
     let before = rig.router.status().accepted;
-    for case in 0..9 {
+    for case in 0..15 {
         let mut event = valid.clone();
         match case {
             0 => event.upstream.stream_id = "c".into(),
@@ -127,6 +127,19 @@ async fn derived_provenance_rejects_forged_fields_and_allows_delayed_source_sequ
             5 => event.upstream.publication_sequence = 3,
             6 => event.origin.record_ordinal = 1,
             7 => event.upstream.record_ordinal = 1,
+            9..=14 => {
+                let NativeMarketEvent::Trade(t) = &mut event.native else {
+                    panic!()
+                };
+                match case {
+                    9 => t.price += rust_decimal::Decimal::ONE,
+                    10 => t.side = marketforge_engine::shared::domain::canonical::TradeSide::Sell,
+                    11 => t.quantity_base = Some(999.into()),
+                    12 => t.quantity_quote = Some(999.into()),
+                    13 => t.quantity_contracts = Some(999.into()),
+                    _ => t.price.rescale(2),
+                }
+            }
             _ => {
                 let NativeMarketEvent::Trade(t) = &mut event.native else {
                     panic!()
@@ -360,12 +373,13 @@ async fn derived_depth_provenance_rejection_does_not_commit_partial_book_or_sequ
     .await;
     let delta =
         DerivedEvent::from_delivery(&bounded(input.recv()).await.unwrap(), 1, 2, 0).unwrap();
-    for case in 0..4 {
+    for case in 0..5 {
         let mut forged = delta.clone();
         let NativeMarketEvent::Depth(RouterDepthEvent::Delta {
             stream_generation,
             book_generation,
             baseline,
+            changes,
             ..
         }) = &mut forged.native
         else {
@@ -375,7 +389,12 @@ async fn derived_depth_provenance_rejection_does_not_commit_partial_book_or_sequ
             0 => *stream_generation += 1,
             1 => *book_generation += 1,
             2 => baseline.last_sequence += 1,
-            _ => baseline.cross_sequence = Some(9),
+            3 => baseline.cross_sequence = Some(9),
+            _ => {
+                let mut altered = changes.to_vec();
+                altered[0].1 += rust_decimal::Decimal::ONE;
+                *changes = altered.into();
+            }
         };
         // A valid prefix must not establish a book when a later record is invalid.
         assert_eq!(

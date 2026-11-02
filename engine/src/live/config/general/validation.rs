@@ -10,7 +10,9 @@ pub fn validate(config: &GeneralConfig) -> Result<(), String> {
     validate_schema_version(config)?;
 
     validate_runtime(config)?;
+    config.runtime.application.validate()?;
     validate_publication(config)?;
+    config.publication.validate_streaming()?;
     validate_control(config)?;
     config.recording.validate()?;
     validate_metrics(config)?;
@@ -171,6 +173,7 @@ fn validate_prometheus(config: &GeneralConfig) -> Result<(), String> {
         return Err("metrics.prometheus.path must not contain whitespace".into());
     }
 
+    if prometheus.path.len()>256 || prometheus.max_concurrent_requests>128 || prometheus.max_response_bytes>16*1024*1024 || prometheus.max_response_bytes.checked_mul(prometheus.max_concurrent_requests).is_none_or(|n|n>64*1024*1024) || prometheus.cache_interval_ms>60000 {return Err("metrics.prometheus resource limits exceed v1 bounds".into());}
     if prometheus.max_concurrent_requests == 0 {
         return Err("metrics.prometheus.max_concurrent_requests must be greater than zero".into());
     }

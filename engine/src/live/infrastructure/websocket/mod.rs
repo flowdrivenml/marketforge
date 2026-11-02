@@ -102,3 +102,5 @@ pub use transport::session::{
 pub use transport::supervisor::{OutboundMessage, SupervisorExit, WebSocketSupervisor};
 
 pub use routing::message_router::NativeMessageRouterError;
+
+pub(crate) fn validate_stream_request(exchange:&crate::live::config::exchange::ExchangeConfig,request:&StreamRequest,formats:&crate::live::config::FormatConfigStore)->Result<(),String>{streams::resolver::StreamSourceResolver::resolve_with_formats(exchange,request,Some(formats)).map(|_|()).map_err(|e|e.to_string())}

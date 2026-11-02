@@ -92,6 +92,9 @@ pub struct GlobalThroughputSnapshot {
 /// Gap integrity is intentionally excluded.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MetricsSnapshot {
+    pub revision: u64,
+    pub collected_at_unix_ns: Option<u64>,
+    pub collection_duration_ns: u64,
     /// Elapsed monotonic time since the preceding collection.
     ///
     /// None for the initial snapshot.
@@ -152,6 +155,7 @@ struct RateBaseline {
 
 #[derive(Debug, Default)]
 struct CollectorState {
+    revision: u64,
     previous_collection_at: Option<Instant>,
 
     previous_source_total: Option<u64>,
@@ -350,7 +354,11 @@ impl MetricsSnapshotCollector {
         // Build immutable snapshot
         // ----------------------------------------------------
 
+        let revision=state.revision.checked_add(1).ok_or("metrics revision exhausted")?;
         let snapshot = Arc::new(MetricsSnapshot {
+            revision,
+            collected_at_unix_ns:std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().and_then(|d|u64::try_from(d.as_nanos()).ok()),
+            collection_duration_ns:u64::try_from(now.elapsed().as_nanos()).unwrap_or(u64::MAX),
             interval_seconds,
 
             runtime: runtime_snapshot.clone(),
@@ -373,6 +381,7 @@ impl MetricsSnapshotCollector {
         // Commit new rate baselines
         // ----------------------------------------------------
 
+        state.revision=revision;
         state.previous_collection_at = Some(now);
 
         state.previous_source_total = Some(runtime_snapshot.source_events_total);

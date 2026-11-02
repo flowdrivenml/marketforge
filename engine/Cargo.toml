@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 default = []
+stream-client = ["dep:tokio"]
 postgres = ["dep:sqlx"]
 historical-slow-tests = ["historical"]
 historical = [
@@ -25,6 +26,12 @@ parquet = [
 ]
 live = [
     "postgres",
+    "dep:hyper",
+    "dep:tracing",
+    "dep:tracing-subscriber",
+    "dep:libc",
+    "dep:hyper-util",
+    "dep:http-body-util",
     "dep:toml",
     "dep:tokio",
     "dep:rand",
@@ -43,6 +50,13 @@ arrow-select = [
 ]
 
 [dependencies]
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["json"], optional = true }
+libc = { version = "0.2", optional = true }
+hyper = { version = "1.12.0", features = ["server", "http1"], optional = true }
+hyper-util = { version = "0.1.21", features = ["tokio"], optional = true }
+http-body-util = { version = "0.1.5", optional = true }
+ciborium = "0.2.2"
 parking_lot = { version = "0.12.5", optional = true }
 toml_edit = {
     version = "=0.25.17",
@@ -363,3 +377,33 @@ required-features = ["live"]
 name = "live_derived"
 path = "tests/live/integration/derived/main.rs"
 required-features = ["live"]
+
+[[test]]
+name = "stream_protocol"
+path = "tests/stream_protocol.rs"
+required-features = ["stream-client"]
+
+[[test]]
+name = "stream_transport"
+path = "tests/stream_transport.rs"
+required-features = ["live", "stream-client"]
+
+[[example]]
+name = "stream-consumer"
+path = "examples/stream-consumer.rs"
+required-features = ["stream-client"]
+
+[[test]]
+name = "stream_client"
+path = "tests/stream_client.rs"
+required-features = ["stream-client"]
+
+[[test]]
+name = "stream_performance"
+path = "tests/stream_performance.rs"
+required-features = ["live", "stream-client"]
+
+[[test]]
+name = "live_application"
+path = "tests/live_application.rs"
+required-features = ["live", "stream-client"]

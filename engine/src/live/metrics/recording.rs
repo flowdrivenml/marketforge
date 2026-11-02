@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 /// Timestamps are expressed in nanoseconds.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecordingMetricsSnapshot {
+    pub available: bool,
     /// Number of canonical records successfully committed
     /// to PostgreSQL.
     ///
@@ -61,6 +62,7 @@ pub struct RecordingMetricsSnapshot {
 /// operations and current queue occupancy.
 #[derive(Debug)]
 pub struct RecordingMetrics {
+    available: AtomicBool,
     // --------------------------------------------------------
     // Cumulative counters
     // --------------------------------------------------------
@@ -92,6 +94,10 @@ impl Default for RecordingMetrics {
 }
 
 impl RecordingMetrics {
+    pub(crate) fn activate(&self){self.available.store(true,Ordering::Relaxed);}
+    pub(crate) fn pending_add(&self){self.pending_records.fetch_add(1,Ordering::Relaxed);}
+    pub(crate) fn pending_remove(&self){self.pending_records.fetch_sub(1,Ordering::Relaxed);}
+    pub(crate) fn confirmed(&self,count:u64){self.records_written_total.fetch_add(count,Ordering::Relaxed);if let Some(t)=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().and_then(|d|i64::try_from(d.as_nanos()).ok()){self.last_successful_write_at_ns.store(t,Ordering::Relaxed);self.has_successful_write.store(true,Ordering::Relaxed);}}
     /// Create empty recording metrics.
     ///
     /// Counters and pending-record measurements begin at zero.
@@ -99,7 +105,7 @@ impl RecordingMetrics {
     /// No successful commit timestamp is initially available.
     pub fn new() -> Self {
         Self {
-            records_written_total: AtomicU64::new(0),
+            available: AtomicBool::new(false),            records_written_total: AtomicU64::new(0),
 
             write_failures_total: AtomicU64::new(0),
 
@@ -191,6 +197,7 @@ impl RecordingMetrics {
     /// transactional snapshot under concurrent updates.
     pub fn snapshot(&self) -> RecordingMetricsSnapshot {
         RecordingMetricsSnapshot {
+            available: self.available.load(Ordering::Relaxed),
             records_written_total: self.records_written_total(),
 
             write_failures_total: self.write_failures_total(),

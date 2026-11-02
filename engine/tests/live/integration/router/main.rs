@@ -9,3 +9,5 @@ mod rest_support;
 mod source_harness;
 #[path = "../../support/websocket_server.rs"]
 mod websocket_server;
+
+mod integrity_publication;

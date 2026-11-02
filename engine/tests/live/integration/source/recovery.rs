@@ -73,7 +73,13 @@ async fn scenario(
             executor,
             |_| Ok(()),
             move |payload| {
-                if fail_publication && matches!(payload, SourceTradePublication::Recovery(_)) {
+                if fail_publication
+                    && matches!(
+                        payload,
+                        SourceTradePublication::Recovery(_)
+                            | SourceTradePublication::RecoveryObserved { .. }
+                    )
+                {
                     return Err("injected recovery publication failure".into());
                 }
                 let trades = published(payload);
@@ -359,7 +365,14 @@ async fn interrupt_pending(reconnect: bool, overflow: bool) {
             "interrupt-rest",
             executor,
             |_| Ok(()),
-            move |payload| tx.try_send(published(payload)).map_err(|e| e.to_string()),
+            move |payload| {
+                let records = published(payload);
+                if records.is_empty() {
+                    Ok(())
+                } else {
+                    tx.try_send(records).map_err(|e| e.to_string())
+                }
+            },
         )
         .unwrap();
     socket.ack().await;

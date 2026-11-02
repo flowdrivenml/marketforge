@@ -10,6 +10,8 @@ use super::graph::{StreamGraph, StreamGraphError};
 /// not duplicated here as manually maintained reference counts.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DemandOwner {
+    /// Internal processing ownership is not an independent activation root.
+    Processing { stream_id: String, generation: u64, input_position: usize },
     Unix {
         connection_id: String,
         subscription_id: String,
@@ -31,6 +33,9 @@ pub enum DemandOwner {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum DemandError {
+    #[error("bounded demand owner capacity exceeded")]
+    Capacity,
+
     #[error("demand owner is already registered")]
     AlreadyOwned,
 
@@ -68,6 +73,7 @@ impl DemandRegistry {
         owner: DemandOwner,
         stream_id: &str,
     ) -> Result<BTreeSet<String>, DemandError> {
+        if self.owners.len()>=65536 {return Err(DemandError::Capacity);}
         if self.owners.contains_key(&owner) {
             return Err(DemandError::AlreadyOwned);
         }
@@ -114,6 +120,7 @@ impl DemandRegistry {
         Ok(required)
     }
 
+    pub fn registered_owners(&self)->usize{self.owners.len()}
     /// Resolve the complete currently required stream set.
     pub fn required_streams(&self, graph: &StreamGraph) -> Result<BTreeSet<String>, DemandError> {
         resolve(graph, &self.owners)
@@ -143,7 +150,7 @@ fn resolve(
     graph: &StreamGraph,
     owners: &BTreeMap<DemandOwner, String>,
 ) -> Result<BTreeSet<String>, DemandError> {
-    let roots: HashSet<String> = owners.values().cloned().collect();
+    let roots: HashSet<String> = owners.iter().filter(|(owner, _)| !matches!(owner, DemandOwner::Processing { .. })).map(|(_, id)| id.clone()).collect();
 
     Ok(graph.required_streams(&roots)?)
 }

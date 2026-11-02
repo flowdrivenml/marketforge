@@ -25,6 +25,8 @@ pub struct GeneralConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeConfig {
+    #[serde(default, skip_serializing_if = "ApplicationRuntimeConfig::is_default")]
+    pub application: ApplicationRuntimeConfig,
     pub shutdown_timeout_seconds: u64,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -54,7 +56,7 @@ pub struct ProcessingConfig {
         skip_serializing_if = "is_default_processing_bytes"
     )]
     pub buffered_bytes: usize,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "DerivedProcessingConfig::is_default")]
     pub derived: DerivedProcessingConfig,
 }
 
@@ -101,6 +103,8 @@ pub struct PublicationConfig {
     ///
     /// A connection that cannot keep up is disconnected.
     pub subscriber_queue_bytes: usize,
+    #[serde(default, skip_serializing_if = "StreamingLimits::is_default")]
+    pub streaming: StreamingLimits,
 }
 
 // ============================================================
@@ -952,4 +956,79 @@ impl DerivedProcessingConfig {
         }
         Ok(())
     }
+}
+
+/// Limits for the live streaming session and Unix adapter (milliseconds).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct StreamingLimits {
+    pub max_subscriptions: usize,
+    pub max_frame_bytes: usize,
+    pub pending_commands: usize,
+    pub handshake_timeout_ms: u64,
+    pub read_timeout_ms: u64,
+    pub write_timeout_ms: u64,
+    pub shutdown_timeout_ms: u64,
+}
+impl Default for StreamingLimits {
+    fn default() -> Self {
+        Self {
+            max_subscriptions: 64,
+            max_frame_bytes: 1024 * 1024,
+            pending_commands: 32,
+            handshake_timeout_ms: 5000,
+            read_timeout_ms: 300000,
+            write_timeout_ms: 5000,
+            shutdown_timeout_ms: 3000,
+        }
+    }
+}
+impl PublicationConfig {
+    pub fn validate_streaming(&self) -> Result<(), String> {
+        let l = &self.streaming;
+        if self.max_connections == 0
+            || self.max_connections > 4096
+            || self.subscriber_queue_bytes < 4096
+            || self.subscriber_queue_bytes > u32::MAX as usize
+            || l.max_subscriptions == 0
+            || l.max_subscriptions > 1024
+            || l.max_frame_bytes < 4096
+            || l.max_frame_bytes > 16 * 1024 * 1024
+            || l.max_frame_bytes > self.subscriber_queue_bytes
+            || l.pending_commands == 0
+            || l.pending_commands > 1024
+            || [
+                l.handshake_timeout_ms,
+                l.read_timeout_ms,
+                l.write_timeout_ms,
+                l.shutdown_timeout_ms,
+            ]
+            .iter()
+            .any(|n| *n == 0 || *n > 3_600_000)
+        {
+            return Err("invalid publication streaming resource limits".into());
+        }
+        Ok(())
+    }
+}
+
+impl StreamingLimits {
+    fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
+impl DerivedProcessingConfig {
+    fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+/// Bounded coordination settings; existing configurations inherit explicit defaults.
+#[derive(Debug,Clone,Copy,PartialEq,Eq,Serialize,Deserialize)]
+#[serde(default,deny_unknown_fields)]
+pub struct ApplicationRuntimeConfig {pub command_capacity:usize,pub max_definitions:usize,pub max_lifecycle_operations:usize,pub source_start_concurrency:usize,pub reconcile_interval_ms:u64,pub source_readiness_timeout_ms:u64}
+impl Default for ApplicationRuntimeConfig {fn default()->Self{Self{command_capacity:64,max_definitions:256,max_lifecycle_operations:260,source_start_concurrency:4,reconcile_interval_ms:25,source_readiness_timeout_ms:30000}}}
+impl ApplicationRuntimeConfig {
+    fn is_default(&self)->bool{self==&Self::default()}
+    pub fn validate(&self)->Result<(),String>{if !(1..=1024).contains(&self.command_capacity)||!(1..=1024).contains(&self.max_definitions)||self.max_lifecycle_operations<self.max_definitions.saturating_add(self.source_start_concurrency)||self.max_lifecycle_operations>2048||!(1..=64).contains(&self.source_start_concurrency)||!(1..=60000).contains(&self.reconcile_interval_ms)||!(1..=3600000).contains(&self.source_readiness_timeout_ms){return Err("runtime.application limits invalid or insufficient to prepare a cold dependency chain".into());}Ok(())}
 }

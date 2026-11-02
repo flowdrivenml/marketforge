@@ -1,0 +1,1829 @@
+diff --git a/engine/Cargo.lock b/engine/Cargo.lock
+index f6944ce..11b0f2d 100644
+--- a/engine/Cargo.lock
++++ b/engine/Cargo.lock
+@@ -462,6 +462,33 @@ dependencies = [
+  "windows-link",
+ ]
+ 
++[[package]]
++name = "ciborium"
++version = "0.2.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "42e69ffd6f0917f5c029256a24d0161db17cea3997d185db0d35926308770f0e"
++dependencies = [
++ "ciborium-io",
++ "ciborium-ll",
++ "serde",
++]
++
++[[package]]
++name = "ciborium-io"
++version = "0.2.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "05afea1e0a06c9be33d539b876f1ce3692f4afea2cb41f740e7743225ed1c757"
++
++[[package]]
++name = "ciborium-ll"
++version = "0.2.2"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "57663b653d948a338bfb3eeba9bb2fd5fcfaecb9e199e87e1eda4d9e8b240fd9"
++dependencies = [
++ "ciborium-io",
++ "half",
++]
++
+ [[package]]
+ name = "cipher"
+ version = "0.5.2"
+@@ -1719,6 +1746,7 @@ dependencies = [
+  "arrow-buffer",
+  "arrow-schema",
+  "arrow-select",
++ "ciborium",
+  "clap",
+  "crossterm",
+  "csv",
+diff --git a/engine/Cargo.toml b/engine/Cargo.toml
+index 3f0400c..7f2b22f 100644
+--- a/engine/Cargo.toml
++++ b/engine/Cargo.toml
+@@ -5,6 +5,7 @@ edition = "2024"
+ 
+ [features]
+ default = []
++stream-client = ["dep:tokio"]
+ postgres = ["dep:sqlx"]
+ historical-slow-tests = ["historical"]
+ historical = [
+@@ -43,6 +44,7 @@ arrow-select = [
+ ]
+ 
+ [dependencies]
++ciborium = "0.2.2"
+ parking_lot = { version = "0.12.5", optional = true }
+ toml_edit = {
+     version = "=0.25.17",
+@@ -363,3 +365,23 @@ required-features = ["live"]
+ name = "live_derived"
+ path = "tests/live/integration/derived/main.rs"
+ required-features = ["live"]
++
++[[test]]
++name = "stream_protocol"
++path = "tests/stream_protocol.rs"
++required-features = ["stream-client"]
++
++[[test]]
++name = "stream_transport"
++path = "tests/stream_transport.rs"
++required-features = ["live", "stream-client"]
++
++[[example]]
++name = "stream-consumer"
++path = "examples/stream-consumer.rs"
++required-features = ["stream-client"]
++
++[[test]]
++name = "stream_client"
++path = "tests/stream_client.rs"
++required-features = ["stream-client"]
+diff --git a/engine/src/lib.rs b/engine/src/lib.rs
+index 4d37107..b8b1740 100644
+--- a/engine/src/lib.rs
++++ b/engine/src/lib.rs
+@@ -45,3 +45,7 @@ pub mod storage {
+         };
+     }
+ }
++
++#[cfg(feature = "stream-client")]
++pub mod client;
++pub mod stream_protocol;
+diff --git a/engine/src/live/config/general/mod.rs b/engine/src/live/config/general/mod.rs
+index 5858281..1b678d2 100644
+--- a/engine/src/live/config/general/mod.rs
++++ b/engine/src/live/config/general/mod.rs
+@@ -12,3 +12,5 @@ pub use model::{
+ };
+ 
+ mod loading;
++
++pub use model::StreamingLimits;
+diff --git a/engine/src/live/config/general/model.rs b/engine/src/live/config/general/model.rs
+index a17e0ac..37ce667 100644
+--- a/engine/src/live/config/general/model.rs
++++ b/engine/src/live/config/general/model.rs
+@@ -54,7 +54,7 @@ pub struct ProcessingConfig {
+         skip_serializing_if = "is_default_processing_bytes"
+     )]
+     pub buffered_bytes: usize,
+-    #[serde(default)]
++    #[serde(default, skip_serializing_if = "DerivedProcessingConfig::is_default")]
+     pub derived: DerivedProcessingConfig,
+ }
+ 
+@@ -101,6 +101,8 @@ pub struct PublicationConfig {
+     ///
+     /// A connection that cannot keep up is disconnected.
+     pub subscriber_queue_bytes: usize,
++    #[serde(default, skip_serializing_if = "StreamingLimits::is_default")]
++    pub streaming: StreamingLimits,
+ }
+ 
+ // ============================================================
+@@ -953,3 +955,68 @@ impl DerivedProcessingConfig {
+         Ok(())
+     }
+ }
++
++/// Limits for the live streaming session and Unix adapter (milliseconds).
++#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
++#[serde(default, deny_unknown_fields)]
++pub struct StreamingLimits {
++    pub max_subscriptions: usize,
++    pub max_frame_bytes: usize,
++    pub pending_commands: usize,
++    pub handshake_timeout_ms: u64,
++    pub read_timeout_ms: u64,
++    pub write_timeout_ms: u64,
++    pub shutdown_timeout_ms: u64,
++}
++impl Default for StreamingLimits {
++    fn default() -> Self {
++        Self {
++            max_subscriptions: 64,
++            max_frame_bytes: 1024 * 1024,
++            pending_commands: 32,
++            handshake_timeout_ms: 5000,
++            read_timeout_ms: 300000,
++            write_timeout_ms: 5000,
++            shutdown_timeout_ms: 3000,
++        }
++    }
++}
++impl PublicationConfig {
++    pub fn validate_streaming(&self) -> Result<(), String> {
++        let l = &self.streaming;
++        if self.max_connections == 0
++            || self.max_connections > 4096
++            || self.subscriber_queue_bytes < 4096
++            || self.subscriber_queue_bytes > u32::MAX as usize
++            || l.max_subscriptions == 0
++            || l.max_subscriptions > 1024
++            || l.max_frame_bytes < 4096
++            || l.max_frame_bytes > 16 * 1024 * 1024
++            || l.max_frame_bytes > self.subscriber_queue_bytes
++            || l.pending_commands == 0
++            || l.pending_commands > 1024
++            || [
++                l.handshake_timeout_ms,
++                l.read_timeout_ms,
++                l.write_timeout_ms,
++                l.shutdown_timeout_ms,
++            ]
++            .iter()
++            .any(|n| *n == 0 || *n > 3_600_000)
++        {
++            return Err("invalid publication streaming resource limits".into());
++        }
++        Ok(())
++    }
++}
++
++impl StreamingLimits {
++    fn is_default(&self) -> bool {
++        self == &Self::default()
++    }
++}
++impl DerivedProcessingConfig {
++    fn is_default(&self) -> bool {
++        self == &Self::default()
++    }
++}
+diff --git a/engine/src/live/config/general/validation.rs b/engine/src/live/config/general/validation.rs
+index 109ce66..677dabf 100644
+--- a/engine/src/live/config/general/validation.rs
++++ b/engine/src/live/config/general/validation.rs
+@@ -11,6 +11,7 @@ pub fn validate(config: &GeneralConfig) -> Result<(), String> {
+ 
+     validate_runtime(config)?;
+     validate_publication(config)?;
++    config.publication.validate_streaming()?;
+     validate_control(config)?;
+     config.recording.validate()?;
+     validate_metrics(config)?;
+diff --git a/engine/src/live/integrity/trades/controller.rs b/engine/src/live/integrity/trades/controller.rs
+index adadc9b..27c1817 100644
+--- a/engine/src/live/integrity/trades/controller.rs
++++ b/engine/src/live/integrity/trades/controller.rs
+@@ -48,6 +48,7 @@ pub enum TradeControllerError {
+ /// not confirmed counts of missing executions.
+ #[derive(Debug)]
+ pub struct AcceptedTradeBatch {
++    pub source_generation: u64,
+     pub trades: Vec<Trade>,
+ 
+     pub received_records: usize,
+@@ -92,6 +93,7 @@ pub enum TradeControllerOutcome {
+     /// No trades from this batch may be published as
+     /// accepted market data.
+     CoverageReviewRequired {
++        source_generation: u64,
+         observations: Vec<TradeIntegrityObservation>,
+     },
+ 
+@@ -575,6 +577,7 @@ impl LiveTradeController {
+         let history_truncated = self.identities.history_truncated();
+ 
+         Ok(AcceptedTradeBatch {
++            source_generation: self.generation,
+             trades: prepared.trades,
+             received_records: received_records,
+             duplicate_records: 0,
+@@ -860,7 +863,10 @@ impl LiveTradeController {
+             self.coverage_triggering_trades = Some(triggering_trades);
+             self.coverage_hold = Some(hold);
+ 
+-            return Ok(TradeControllerOutcome::CoverageReviewRequired { observations });
++            return Ok(TradeControllerOutcome::CoverageReviewRequired {
++                source_generation: self.generation,
++                observations,
++            });
+         }
+ 
+         let will_truncate = self.identities.history_truncated()
+@@ -870,6 +876,7 @@ impl LiveTradeController {
+                 .saturating_add(candidate_trades.len())
+                 > limits.max_ids;
+         let accepted = AcceptedTradeBatch {
++            source_generation: self.generation,
+             trades: candidate_trades,
+ 
+             received_records: records.len(),
+diff --git a/engine/src/live/mod.rs b/engine/src/live/mod.rs
+index 8337e4d..614ec70 100644
+--- a/engine/src/live/mod.rs
++++ b/engine/src/live/mod.rs
+@@ -7,4 +7,5 @@ pub mod metrics;
+ pub mod recording;
+ pub mod recovery;
+ pub mod stream;
++pub mod transport;
+ pub mod tui;
+diff --git a/engine/src/live/stream/processing/conversion.rs b/engine/src/live/stream/processing/conversion.rs
+index b25767d..6f4485f 100644
+--- a/engine/src/live/stream/processing/conversion.rs
++++ b/engine/src/live/stream/processing/conversion.rs
+@@ -15,6 +15,7 @@ pub(crate) struct LiveConversion {
+     state: ReferenceState,
+     generations: BTreeMap<String, crate::live::stream::registry::RuntimeGeneration>,
+     settings: ConversionSettings,
++    integrity: BTreeMap<String, std::sync::Arc<crate::stream_protocol::DataIntegrityEvidence>>,
+ }
+ pub(crate) fn decimal(value: Decimal) -> Result<ConversionDecimal, String> {
+     ConversionDecimal::from_ratio(
+@@ -121,6 +122,7 @@ impl LiveConversion {
+             state: ReferenceState::new(),
+             generations: BTreeMap::new(),
+             settings,
++            integrity: BTreeMap::new(),
+         })
+     }
+     pub(crate) fn reference(
+@@ -143,6 +145,9 @@ impl LiveConversion {
+         if !price.is_positive() {
+             return Err("MissingReference: reference price must be positive".into());
+         }
++        if let Some(evidence) = event.evidence.integrity() {
++            self.integrity.insert(input.into(), evidence.clone());
++        }
+         self.generations
+             .insert(input.into(), event.origin.generation);
+         self.state
+@@ -220,6 +225,11 @@ impl LiveConversion {
+                     _ => return Err("unsupported conversion control event".into()),
+                 };
+                 Ok::<_, String>(EventValuation {
++                    reference_integrity: evaluation
++                        .references
++                        .iter()
++                        .filter_map(|r| self.integrity.get(&r.stream_id).cloned())
++                        .collect(),
+                     target_quote: self.plan.target_quote.as_str().into(),
+                     reference_generations: evaluation
+                         .references
+diff --git a/engine/src/live/stream/processing/operations.rs b/engine/src/live/stream/processing/operations.rs
+index 6383939..d12ba0c 100644
+--- a/engine/src/live/stream/processing/operations.rs
++++ b/engine/src/live/stream/processing/operations.rs
+@@ -319,100 +319,103 @@ impl Processor for DerivedProcessor {
+         unreachable!("fallible production processor")
+     }
+     fn try_run_turn(&mut self, max: usize) -> Result<bool, String> {
+-        // The state mutex has no pool, registry or Router lock beneath it.
+-        // Service reads it only for status/deadlines and after worker retirement.
+-        let shared = self.context.retained.clone();
+-        let mut state = shared.lock().unwrap_or_else(|e| e.into_inner());
+-        state.status.worker_thread = std::thread::current().name().map(str::to_owned);
+-        for _ in 0..max {
+-            if self.context.input.is_empty() {
+-                break;
+-            }
+-            self.admit(&mut state)?;
+-        }
+-        for _ in 0..max {
+-            let Some((i, k)) = self.next(&state)? else {
+-                break;
+-            };
+-            // A publication can reveal another head after a prefix is consumed.
+-            // Validate the actual emission frontier as well as admission progress.
+-            if let (Some(current), Some(previous)) = (k, self.last_emitted) {
+-                if current < previous {
+-                    return Err(format!(
+-                        "event-time emission frontier regressed: {previous:?} -> {current:?}"
+-                    ));
++        let result = (|| {
++            // The state mutex has no pool, registry or Router lock beneath it.
++            // Service reads it only for status/deadlines and after worker retirement.
++            let shared = self.context.retained.clone();
++            let mut state = shared.lock().unwrap_or_else(|e| e.into_inner());
++            state.status.worker_thread = std::thread::current().name().map(str::to_owned);
++            for _ in 0..max {
++                if self.context.input.is_empty() {
++                    break;
+                 }
++                self.admit(&mut state)?;
+             }
+-            let p = &state.pending[&i];
+-            let mut e = event(&p.batch[0], p.cursor);
+-            let rank = p.batch[0].input_position;
+-            let reference = p.batch[0].role == InputRole::Reference;
+-            if let Some(conversion) = &mut self.conversion {
+-                if reference {
+-                    conversion.reference(
+-                        &p.batch[0].stream_id,
+-                        k.ok_or("missing reference timestamp")?,
+-                        &e,
+-                    )?;
+-                    state.status.last_reference_times[rank] = k.map(|k| k.timestamp_ns);
+-                } else if let Some(key) = k.or_else(|| {
+-                    e.native.timestamp_ns().map(|t| {
+-                        MergeKey::new(
+-                            t,
+-                            rank as u32,
+-                            p.batch[0].admission_ordinal,
+-                            p.cursor as u64,
+-                        )
+-                    })
+-                }) {
+-                    conversion.value(key, &mut e)?;
+-                } else if !e.baseline_barrier {
+-                    return Err("missing exchange timestamp on conversion data event".into());
++            for _ in 0..max {
++                let Some((i, k)) = self.next(&state)? else {
++                    break;
++                };
++                // A publication can reveal another head after a prefix is consumed.
++                // Validate the actual emission frontier as well as admission progress.
++                if let (Some(current), Some(previous)) = (k, self.last_emitted) {
++                    if current < previous {
++                        return Err(format!(
++                            "event-time emission frontier regressed: {previous:?} -> {current:?}"
++                        ));
++                    }
+                 }
+-                // Untimed snapshots are explicit native baseline barriers only.
+-            }
+-            if !reference {
+-                if let Some(v) = e.valuation.as_ref().filter(|_| self.conversion.is_some()) {
+-                    for r in &v.evaluation.references {
+-                        state.status.reference_ages_ns[r.key.stream_rank as usize] = Some(
+-                            u64::try_from(
+-                                i128::from(e.native.timestamp_ns().unwrap())
+-                                    - i128::from(r.key.timestamp_ns),
++                let p = &state.pending[&i];
++                let mut e = event(&p.batch[0], p.cursor);
++                let rank = p.batch[0].input_position;
++                let reference = p.batch[0].role == InputRole::Reference;
++                if let Some(conversion) = &mut self.conversion {
++                    if reference {
++                        conversion.reference(
++                            &p.batch[0].stream_id,
++                            k.ok_or("missing reference timestamp")?,
++                            &e,
++                        )?;
++                        state.status.last_reference_times[rank] = k.map(|k| k.timestamp_ns);
++                    } else if let Some(key) = k.or_else(|| {
++                        e.native.timestamp_ns().map(|t| {
++                            MergeKey::new(
++                                t,
++                                rank as u32,
++                                p.batch[0].admission_ordinal,
++                                p.cursor as u64,
+                             )
+-                            .map_err(|_| "reference age overflow")?,
+-                        );
++                        })
++                    }) {
++                        conversion.value(key, &mut e)?;
++                    } else if !e.baseline_barrier {
++                        return Err("missing exchange timestamp on conversion data event".into());
+                     }
++                    // Untimed snapshots are explicit native baseline barriers only.
+                 }
+-                self.context
+-                    .output
+-                    .try_emit(RouterPublication::Derived(vec![e].into()))
+-                    .map_err(|e| e.reason.to_owned())?;
+-            }
+-            self.last_emitted = k.or(self.last_emitted);
+-            if self.ordered {
+-                state.heads.pop();
+-            }
+-            state.pending.get_mut(&i).unwrap().cursor += 1;
+-            if state.pending[&i].cursor == count(publication(&state.pending[&i].batch[0])) {
+-                let batch = state.pending.remove(&i).unwrap().batch;
+-                if reference {
+-                    if let Some(old) = state.reference_holds[rank].replace(batch) {
+-                        old.complete();
++                if !reference {
++                    if let Some(v) = e.valuation.as_ref().filter(|_| self.conversion.is_some()) {
++                        for r in &v.evaluation.references {
++                            state.status.reference_ages_ns[r.key.stream_rank as usize] = Some(
++                                u64::try_from(
++                                    i128::from(e.native.timestamp_ns().unwrap())
++                                        - i128::from(r.key.timestamp_ns),
++                                )
++                                .map_err(|_| "reference age overflow")?,
++                            );
++                        }
+                     }
+-                } else {
+-                    batch.complete();
++                    self.context
++                        .output
++                        .try_emit(RouterPublication::Derived(vec![e].into()))
++                        .map_err(|e| e.reason.to_owned())?;
++                }
++                self.last_emitted = k.or(self.last_emitted);
++                if self.ordered {
++                    state.heads.pop();
++                }
++                state.pending.get_mut(&i).unwrap().cursor += 1;
++                if state.pending[&i].cursor == count(publication(&state.pending[&i].batch[0])) {
++                    let batch = state.pending.remove(&i).unwrap().batch;
++                    if reference {
++                        if let Some(old) = state.reference_holds[rank].replace(batch) {
++                            old.complete();
++                        }
++                    } else {
++                        batch.complete();
++                    }
++                } else if self.ordered {
++                    let p = &state.pending[&i];
++                    let head = key(&p.batch[0], p.cursor)?;
++                    state.heads.push(Reverse((head, i)));
+                 }
+-            } else if self.ordered {
+-                let p = &state.pending[&i];
+-                let head = key(&p.batch[0], p.cursor)?;
+-                state.heads.push(Reverse((head, i)));
+             }
+-        }
+-        state.refresh()?;
+-        // Startup and source continuity have their own lifecycle checks. Only
+-        // retained work with no eligible head arms a computation-progress timer.
+-        state.deadline =
+-            if self.ordered && !state.pending.is_empty() && self.next(&state)?.is_none() {
++            state.refresh()?;
++            // Startup and source continuity have their own lifecycle checks. Only
++            // retained work with no eligible head arms a computation-progress timer.
++            state.deadline = if self.ordered
++                && !state.pending.is_empty()
++                && self.next(&state)?.is_none()
++            {
+                 state
+                     .pending
+                     .values()
+@@ -421,37 +424,42 @@ impl Processor for DerivedProcessor {
+             } else {
+                 None
+             };
+-        if self.finished.iter().all(|done| *done)
+-            && state.pending.is_empty()
+-            && !self.completion_emitted
+-        {
+-            self.context
+-                .output
+-                .try_emit(RouterPublication::ReplayComplete)
+-                .map_err(|e| e.reason.to_owned())?;
+-            self.completion_emitted = true;
+-            state.deadline = None;
+-        }
+-        if state.deadline.is_some_and(|d| Instant::now() >= d) {
+-            let mut reason =
+-                "event-time frontier stalled waiting for required input progress".to_owned();
+-            if let Some(conversion) = &self.conversion {
+-                if let Some(p) = state
+-                    .pending
+-                    .values()
+-                    .find(|p| p.batch[0].role == InputRole::Data)
+-                {
+-                    if let Some(key) = key(&p.batch[0], p.cursor)? {
+-                        let mut event = event(&p.batch[0], p.cursor);
+-                        if let Err(detail) = conversion.value(key, &mut event) {
+-                            reason.push_str(&format!(": {detail}"));
++            if self.finished.iter().all(|done| *done)
++                && state.pending.is_empty()
++                && !self.completion_emitted
++            {
++                self.context
++                    .output
++                    .try_emit(RouterPublication::ReplayComplete)
++                    .map_err(|e| e.reason.to_owned())?;
++                self.completion_emitted = true;
++                state.deadline = None;
++            }
++            if state.deadline.is_some_and(|d| Instant::now() >= d) {
++                let mut reason =
++                    "event-time frontier stalled waiting for required input progress".to_owned();
++                if let Some(conversion) = &self.conversion {
++                    if let Some(p) = state
++                        .pending
++                        .values()
++                        .find(|p| p.batch[0].role == InputRole::Data)
++                    {
++                        if let Some(key) = key(&p.batch[0], p.cursor)? {
++                            let mut event = event(&p.batch[0], p.cursor);
++                            if let Err(detail) = conversion.value(key, &mut event) {
++                                reason.push_str(&format!(": {detail}"));
++                            }
+                         }
+                     }
+                 }
++                return Err(reason);
+             }
+-            return Err(reason);
++            Ok(!self.context.input.is_empty() || self.next(&state)?.is_some())
++        })();
++        if let Err(detail) = &result {
++            self.context.output.record_data_discontinuity(detail);
+         }
+-        Ok(!self.context.input.is_empty() || self.next(&state)?.is_some())
++        result
+     }
+ }
+ pub(crate) fn resolve_start(
+diff --git a/engine/src/live/stream/processing/pipeline.rs b/engine/src/live/stream/processing/pipeline.rs
+index 03fb729..49440fb 100644
+--- a/engine/src/live/stream/processing/pipeline.rs
++++ b/engine/src/live/stream/processing/pipeline.rs
+@@ -143,6 +143,7 @@ pub struct ProcessingOutput {
+     pub(crate) fence: Arc<Mutex<bool>>,
+     pub(crate) wake: Arc<Notify>,
+     terminal_error: Arc<Mutex<Option<&'static str>>>,
++    integrity_sink: Arc<Mutex<Option<DataDiscontinuitySink>>>,
+ }
+ impl ProcessingOutput {
+     pub(crate) fn new(
+@@ -159,8 +160,25 @@ impl ProcessingOutput {
+             fence,
+             wake,
+             terminal_error: Arc::new(Mutex::new(None)),
++            integrity_sink: Arc::new(Mutex::new(None)),
+         })
+     }
++    pub(crate) fn attach_integrity_sink(&self, sink: DataDiscontinuitySink) {
++        *self
++            .integrity_sink
++            .lock()
++            .unwrap_or_else(|e| e.into_inner()) = Some(sink);
++    }
++    pub(crate) fn record_data_discontinuity(&self, detail: &str) {
++        if let Some(sink) = self
++            .integrity_sink
++            .lock()
++            .unwrap_or_else(|e| e.into_inner())
++            .as_ref()
++        {
++            sink.record(detail);
++        }
++    }
+     pub fn try_emit(&self, publication: RouterPublication) -> Result<(), OutputRejection> {
+         let bytes = publication.retained_bytes();
+         self.try_emit_accounted(publication, bytes)
+diff --git a/engine/src/live/stream/processing/service.rs b/engine/src/live/stream/processing/service.rs
+index 8b6ca9b..5daa16e 100644
+--- a/engine/src/live/stream/processing/service.rs
++++ b/engine/src/live/stream/processing/service.rs
+@@ -556,6 +556,9 @@ fn fence(
+     reason: Option<String>,
+ ) {
+     let reason = reason.map(bounded_reason);
++    if let (Some(producer), Some(reason)) = (&a.producer, &reason) {
++        producer.record_data_discontinuity(reason);
++    }
+     // Registry revocation precedes input fencing and potentially slow destruction.
+     let mut runtime = lock(registry);
+     if disposition == TerminalDisposition::Stopped {
+@@ -1202,6 +1205,7 @@ async fn drive(
+                                 PublicationSemantics::CanonicalCompatibility if request.inputs.len()==1=>router.attach_derived_producer(authority,&request.inputs[0].stream_id),
+                                 _=>return Err("invalid processing publication semantics".into()),
+                             }.map_err(|e|e.to_string())?;
++                            output.attach_integrity_sink(producer.data_discontinuity_sink());
+                             Ok::<_,String>((input,output,producer))
+                         })();
+                         let (input,output,producer)=match resources {Ok(value)=>value,Err(reason)=>{let _=lock(&registry).mark_failed(&id,generation,reason.clone());let _=reply.send(Err(reason));continue;}};
+diff --git a/engine/src/live/stream/registry/graph.rs b/engine/src/live/stream/registry/graph.rs
+index 47b155a..98491b7 100644
+--- a/engine/src/live/stream/registry/graph.rs
++++ b/engine/src/live/stream/registry/graph.rs
+@@ -190,6 +190,18 @@ impl StreamGraph {
+     pub fn stream_ids(&self) -> impl Iterator<Item = &str> {
+         self.definitions.keys().map(String::as_str)
+     }
++    pub(crate) fn stream_ids_after<'a>(
++        &'a self,
++        after: Option<&'a str>,
++    ) -> impl Iterator<Item = &'a str> {
++        use std::ops::Bound;
++        self.definitions
++            .range::<str, _>((
++                after.map(Bound::Excluded).unwrap_or(Bound::Unbounded),
++                Bound::Unbounded,
++            ))
++            .map(|(id, _)| id.as_str())
++    }
+     pub fn get(&self, stream_id: &str) -> Option<&PersistedStreamDefinition> {
+         self.definitions.get(stream_id)
+     }
+diff --git a/engine/src/live/stream/router/admission.rs b/engine/src/live/stream/router/admission.rs
+index 76367f9..ea12b0a 100644
+--- a/engine/src/live/stream/router/admission.rs
++++ b/engine/src/live/stream/router/admission.rs
+@@ -1,7 +1,7 @@
+ //! Router-issued custody evidence. Records retain only their original source
+ //! evidence and immediate admission identity, never a recursive lineage chain.
+ use super::*;
+-use crate::live::{integrity::DepthAcceptedTimestamp, stream::registry::RuntimeGeneration};
++use crate::live::stream::registry::RuntimeGeneration;
+ use std::{mem::size_of, sync::Arc};
+ 
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+@@ -38,113 +38,86 @@ impl AdmissionIdentity {
+ }
+ #[derive(Debug)]
+ enum NativeIdentity {
+-    Trade {
+-        timestamp: i64,
+-        system: Option<i64>,
+-        sequence: Option<u64>,
+-        trade_id: Option<Arc<str>>,
+-    },
+-    Depth {
+-        kind: u8,
+-        generation: u64,
+-        book: u64,
+-        sequence: Option<(u64, Option<u64>, bool)>,
+-        timestamp: Option<DepthAcceptedTimestamp>,
+-    },
++    Trade(crate::shared::domain::canonical::Trade),
++    Depth(RouterDepthEvent),
+ }
+ impl NativeIdentity {
+     fn trade(t: &crate::shared::domain::canonical::Trade) -> Self {
+-        Self::Trade {
+-            timestamp: t.envelope.event_timestamp_ns,
+-            system: t.envelope.system_timestamp_ns,
+-            sequence: t.sequence,
+-            trade_id: t.trade_id.as_deref().map(Arc::from),
+-        }
++        Self::Trade(t.clone())
+     }
+     fn depth(d: &RouterDepthEvent) -> Self {
+-        let (generation, book) = d.generations();
+-        match d {
+-            RouterDepthEvent::Invalidated { .. } => Self::Depth {
+-                kind: 0,
+-                generation,
+-                book,
+-                sequence: None,
+-                timestamp: None,
+-            },
+-            RouterDepthEvent::Snapshot {
+-                baseline,
+-                timestamp,
+-                ..
+-            }
+-            | RouterDepthEvent::Delta {
+-                baseline,
+-                timestamp,
+-                ..
+-            } => Self::Depth {
+-                kind: if matches!(d, RouterDepthEvent::Snapshot { .. }) {
+-                    1
+-                } else {
+-                    2
+-                },
+-                generation,
+-                book,
+-                sequence: Some((
+-                    baseline.last_sequence,
+-                    baseline.cross_sequence,
+-                    baseline.synchronized,
+-                )),
+-                timestamp: Some(*timestamp),
+-            },
+-        }
++        Self::Depth(d.clone())
+     }
+     fn matches(&self, native: &NativeMarketEvent) -> bool {
+         match (self, native) {
+-            (
+-                Self::Trade {
+-                    timestamp,
+-                    system,
+-                    sequence,
+-                    trade_id,
+-                },
+-                NativeMarketEvent::Trade(t),
+-            ) => {
+-                *timestamp == t.envelope.event_timestamp_ns
+-                    && *system == t.envelope.system_timestamp_ns
+-                    && *sequence == t.sequence
+-                    && trade_id.as_deref() == t.trade_id.as_deref()
+-            }
+-            (
+-                Self::Depth {
+-                    kind,
+-                    generation,
+-                    book,
+-                    sequence,
+-                    timestamp,
+-                },
+-                NativeMarketEvent::Depth(d),
+-            ) => {
+-                let Self::Depth {
+-                    kind: k,
+-                    generation: g,
+-                    book: b,
+-                    sequence: s,
+-                    timestamp: t,
+-                } = Self::depth(d)
+-                else {
+-                    unreachable!()
+-                };
+-                (*kind, *generation, *book, *sequence, *timestamp) == (k, g, b, s, t)
++            (Self::Trade(a), NativeMarketEvent::Trade(b)) => {
++                // Decimal equality is numeric; custody also preserves native scale/bits.
++                a == b
++                    && [
++                        Some(a.price),
++                        a.quantity_base,
++                        a.quantity_quote,
++                        a.quantity_contracts,
++                        a.trade_iv,
++                        a.mark_iv,
++                        a.index_price,
++                        a.mark_price,
++                    ]
++                    .into_iter()
++                    .zip([
++                        Some(b.price),
++                        b.quantity_base,
++                        b.quantity_quote,
++                        b.quantity_contracts,
++                        b.trade_iv,
++                        b.mark_iv,
++                        b.index_price,
++                        b.mark_price,
++                    ])
++                    .all(|(a, b)| a.map(|d| d.serialize()) == b.map(|d| d.serialize()))
+             }
++            (Self::Depth(a), NativeMarketEvent::Depth(b)) => match (a, b) {
++                (RouterDepthEvent::Invalidated { .. }, RouterDepthEvent::Invalidated { .. }) => {
++                    a.generations() == b.generations()
++                }
++                (
++                    RouterDepthEvent::Snapshot {
++                        baseline: x,
++                        timestamp: t,
++                        levels: l,
++                        ..
++                    },
++                    RouterDepthEvent::Snapshot {
++                        baseline: y,
++                        timestamp: u,
++                        levels: m,
++                        ..
++                    },
++                )
++                | (
++                    RouterDepthEvent::Delta {
++                        baseline: x,
++                        timestamp: t,
++                        changes: l,
++                        ..
++                    },
++                    RouterDepthEvent::Delta {
++                        baseline: y,
++                        timestamp: u,
++                        changes: m,
++                        ..
++                    },
++                ) => a.generations() == b.generations() && x == y && t == u && Arc::ptr_eq(l, m),
++                _ => false,
++            },
+             _ => false,
+         }
+     }
+     fn bytes(&self) -> Option<usize> {
+-        size_of::<Self>().checked_add(match self {
+-            Self::Trade {
+-                trade_id: Some(id), ..
+-            } => id.len().checked_add(32)?,
+-            _ => 0,
+-        })
++        match self {
++            Self::Trade(t) => RouterPublication::trades(vec![t.clone()]).retained_bytes(),
++            Self::Depth(d) => RouterPublication::Depth(vec![d.clone()].into()).retained_bytes(),
++        }
+     }
+ }
+ #[derive(Debug)]
+@@ -152,6 +125,7 @@ struct OriginalEvent {
+     admission: Arc<AdmissionIdentity>,
+     ordinal: u64,
+     native: NativeIdentity,
++    integrity: Option<Arc<crate::stream_protocol::DataIntegrityEvidence>>,
+ }
+ 
+ /// Opaque evidence issued for one actual Router delivery record. Applications
+@@ -163,6 +137,9 @@ pub struct EventEvidence {
+     original: Arc<OriginalEvent>,
+ }
+ impl EventEvidence {
++    pub fn integrity(&self) -> Option<&Arc<crate::stream_protocol::DataIntegrityEvidence>> {
++        self.original.integrity.as_ref()
++    }
+     pub(crate) fn original_identity(&self) -> &AdmissionIdentity {
+         &self.original.admission
+     }
+@@ -183,7 +160,10 @@ impl EventEvidence {
+             .checked_add(size_of::<OriginalEvent>())?
+             .checked_add(self.upstream.bytes()?)?
+             .checked_add(self.original.admission.bytes()?)?
+-            .checked_add(self.original.native.bytes()?)
++            .checked_add(self.original.native.bytes()?)?
++            .checked_add(self.original.integrity.as_ref().map_or(0, |e| {
++                serde_json::to_vec(e.as_ref()).map_or(usize::MAX, |v| v.len())
++            }))
+     }
+ }
+ 
+@@ -195,6 +175,12 @@ pub struct RouterAdmission {
+     originals: Arc<[Option<Arc<OriginalEvent>>]>,
+ }
+ impl RouterAdmission {
++    pub fn integrity(
++        &self,
++        index: usize,
++    ) -> Option<&Arc<crate::stream_protocol::DataIntegrityEvidence>> {
++        self.originals.get(index)?.as_ref()?.integrity.as_ref()
++    }
+     pub fn semantics(&self) -> PublicationSemantics {
+         self.identity.semantics
+     }
+@@ -222,6 +208,7 @@ impl RouterAdmission {
+         sequence: u64,
+         semantics: PublicationSemantics,
+         publication: &RouterPublication,
++        integrity: Option<Arc<crate::stream_protocol::DataIntegrityEvidence>>,
+     ) -> Self {
+         let records = match publication {
+             RouterPublication::Trades { records, .. } => records.len(),
+@@ -257,6 +244,46 @@ impl RouterAdmission {
+                     admission: identity.clone(),
+                     ordinal: index as u64,
+                     native,
++                    integrity: if let RouterPublication::Depth(events) = publication {
++                        integrity.as_ref().map(|e| {
++                            let mut e = (**e).clone();
++                            e.id.record_ordinal = Some(index as u64);
++                            let (g, b) = events[index].generations();
++                            let same_context =
++                                e.source_generation == Some(g) && e.book_generation == Some(b);
++                            let same_baseline = match &events[index] {
++                                RouterDepthEvent::Snapshot { baseline, .. }
++                                | RouterDepthEvent::Delta { baseline, .. } => {
++                                    e.depth_sequence == Some(baseline.last_sequence)
++                                }
++                                _ => false,
++                            };
++                            if !same_context || !same_baseline {
++                                e.depth_coverage = None;
++                            }
++                            if !same_context {
++                                e.diagnostic = None;
++                            }
++                            e.source_generation = Some(g);
++                            e.book_generation = Some(b);
++                            match &events[index] {
++                                RouterDepthEvent::Snapshot { baseline, .. }
++                                | RouterDepthEvent::Delta { baseline, .. } => {
++                                    e.depth_sequence = Some(baseline.last_sequence);
++                                    e.cross_sequence = baseline.cross_sequence;
++                                    e.coverage = "internal_book_baseline".into();
++                                }
++                                _ => {
++                                    e.depth_sequence = None;
++                                    e.cross_sequence = None;
++                                    e.coverage = "book_invalidated".into();
++                                }
++                            }
++                            Arc::new(e)
++                        })
++                    } else {
++                        integrity.clone()
++                    },
+                 }))
+             })
+             .collect();
+@@ -277,6 +304,9 @@ impl RouterAdmission {
+             bytes = bytes
+                 .checked_add(size_of::<OriginalEvent>())?
+                 .checked_add(root.native.bytes()?)?
++                .checked_add(root.integrity.as_ref().map_or(0, |e| {
++                    serde_json::to_vec(e.as_ref()).map_or(usize::MAX, |v| v.len())
++                }))?
+                 .checked_add(root.admission.bytes()?)?;
+         }
+         Some(bytes)
+@@ -296,6 +326,7 @@ impl RouterAdmission {
+             sequence,
+             PublicationSemantics::Source,
+             publication,
++            None,
+         )
+     }
+ }
+diff --git a/engine/src/live/stream/router/event.rs b/engine/src/live/stream/router/event.rs
+index fdfafa2..02c49be 100644
+--- a/engine/src/live/stream/router/event.rs
++++ b/engine/src/live/stream/router/event.rs
+@@ -99,6 +99,7 @@ impl From<&DepthPublicationEvent<'_>> for RouterDepthEvent {
+ /// Source integrity metadata, copied without changing its financial semantics.
+ #[derive(Debug, Clone)]
+ pub struct RouterTradeIntegrity {
++    pub source_generation: Option<u64>,
+     pub received_records: usize,
+     pub duplicate_records: usize,
+     pub identity_history_truncated: bool,
+@@ -131,6 +132,7 @@ impl NativeMarketEvent {
+ #[derive(Debug, Clone)]
+ pub struct EventValuation {
+     pub target_quote: String,
++    pub reference_integrity: Vec<Arc<crate::stream_protocol::DataIntegrityEvidence>>,
+     pub evaluation: crate::shared::conversion::evaluation::EvaluatedConversion,
+     pub reference_generations: Vec<(String, crate::live::stream::registry::RuntimeGeneration)>,
+     pub path: Vec<String>,
+@@ -162,6 +164,9 @@ impl DerivedEvent {
+             .checked_add(self.origin.stream_id.capacity())?
+             .checked_add(self.upstream.stream_id.capacity())?;
+         if let Some(v) = &self.valuation {
++            for e in &v.reference_integrity {
++                size = size.checked_add(serde_json::to_vec(e.as_ref()).ok()?.len())?;
++            }
+             for (id, _) in &v.reference_generations {
+                 size = size
+                     .checked_add(std::mem::size_of::<(
+diff --git a/engine/src/live/stream/router/facade.rs b/engine/src/live/stream/router/facade.rs
+index 8325a87..ef41864 100644
+--- a/engine/src/live/stream/router/facade.rs
++++ b/engine/src/live/stream/router/facade.rs
+@@ -138,6 +138,9 @@ pub enum SubscriptionState {
+     Closed,
+ }
+ struct ConsumerQueue {
++    terminal_integrity: Option<DataIntegritySnapshot>,
++    integrity: Option<VecDeque<(RouterStreamMessage, usize)>>,
++    integrity_bytes: usize,
+     queue: VecDeque<(RouterDelivery, usize)>,
+     bytes: usize,
+     state: SubscriptionState,
+@@ -147,6 +150,7 @@ struct ConsumerQueue {
+     derived_books: BTreeMap<String, (u64, u64)>,
+ }
+ struct Consumer {
++    integrity_scope: Option<Arc<BTreeSet<String>>>,
+     id: u64,
+     stream: String,
+     owner: DemandOwner,
+@@ -162,6 +166,9 @@ struct DependencyEpoch {
+     book: Option<(u64, u64)>,
+ }
+ struct Binding {
++    pending_integrity: Arc<Mutex<Option<DataIntegrityEvidence>>>,
++    discontinuity: DataDiscontinuitySink,
++    integrity: Option<Arc<DataIntegrityEvidence>>,
+     id: u64,
+     authority: RuntimePublicationAuthority,
+     sequence: u64,
+@@ -188,6 +195,9 @@ struct Pending {
+     admission: RouterAdmission,
+ }
+ struct State {
++    integrity_revision: u64,
++    integrity_history: VecDeque<Arc<DataIntegrityEvidence>>,
++    integrity_history_truncated: bool,
+     bindings: BTreeMap<String, Binding>,
+     consumers: BTreeMap<u64, Arc<Consumer>>,
+     ingress: VecDeque<Pending>,
+@@ -210,6 +220,9 @@ pub struct StreamRouter {
+     worker: Mutex<Option<tokio::task::JoinHandle<()>>>,
+ }
+ pub struct ProducerHandle {
++    pending_integrity: Arc<Mutex<Option<DataIntegrityEvidence>>>,
++    runtime_generation: u64,
++    discontinuity: DataDiscontinuitySink,
+     shared: Arc<Shared>,
+     stream: String,
+     binding: u64,
+@@ -251,6 +264,9 @@ impl StreamRouter {
+             #[cfg(test)]
+             source_wait: Mutex::new(None),
+             state: parking_lot::Mutex::new(State {
++                integrity_revision: 0,
++                integrity_history: VecDeque::new(),
++                integrity_history_truncated: false,
+                 bindings: BTreeMap::new(),
+                 consumers: BTreeMap::new(),
+                 ingress: VecDeque::new(),
+@@ -419,9 +435,31 @@ impl StreamRouter {
+                 })
+             })
+             .collect();
++        if finite_replay {
++            let ids: Vec<_> = state
++                .consumers
++                .values()
++                .filter(|c| {
++                    c.integrity_scope
++                        .as_ref()
++                        .is_some_and(|scope| scope.contains(&stream))
++                })
++                .map(|c| c.id)
++                .collect();
++            for id in ids {
++                self.shared
++                    .remove(&mut state, id, Some(ContinuityFailure::ProducerRevoked));
++            }
++        }
++        let pending_integrity = Arc::new(Mutex::new(None));
++        let discontinuity = DataDiscontinuitySink::default();
++        let runtime_generation = request.authority.generation().get();
+         state.bindings.insert(
+             stream.clone(),
+             Binding {
++                pending_integrity: pending_integrity.clone(),
++                discontinuity: discontinuity.clone(),
++                integrity: None,
+                 id,
+                 authority: request.authority,
+                 sequence: 0,
+@@ -439,6 +477,9 @@ impl StreamRouter {
+         );
+         self.shared.wake.notify_one();
+         Ok(ProducerHandle {
++            pending_integrity,
++            runtime_generation,
++            discontinuity,
+             shared: self.shared.clone(),
+             stream,
+             binding: id,
+@@ -448,6 +489,19 @@ impl StreamRouter {
+     pub async fn subscribe(
+         &self,
+         request: SubscribeRequest,
++    ) -> Result<SubscriptionHandle, RouterError> {
++        self.subscribe_inner(request, false)
++    }
++    pub async fn subscribe_live(
++        &self,
++        request: SubscribeRequest,
++    ) -> Result<SubscriptionHandle, RouterError> {
++        self.subscribe_inner(request, true)
++    }
++    fn subscribe_inner(
++        &self,
++        request: SubscribeRequest,
++        observe: bool,
+     ) -> Result<SubscriptionHandle, RouterError> {
+         let mut state = self.shared.state.lock();
+         if state.status.shutdown {
+@@ -501,6 +555,22 @@ impl StreamRouter {
+         if state.consumers.len() >= self.shared.config.max_subscriptions {
+             return Err(RouterError::Capacity);
+         }
++        let integrity_scope = if observe {
++            Some(Arc::new(
++                self.shared
++                    .integrity_sources(&request.stream_id)
++                    .map_err(|_| RouterError::Capacity)?,
++            ))
++        } else {
++            None
++        };
++        if integrity_scope.as_ref().is_some_and(|scope| {
++            scope
++                .iter()
++                .any(|id| state.bindings.get(id).is_some_and(|b| b.finite_replay))
++        }) {
++            return Err(RouterError::UnknownStream);
++        }
+         let id = next_id(&mut state)?;
+         lock(&self.shared.context.demand)
+             .acquire(
+@@ -509,11 +579,17 @@ impl StreamRouter {
+                 &request.stream_id,
+             )
+             .map_err(|e| RouterError::Demand(e.to_string()))?;
++        let snapshot = observe.then(|| self.shared.integrity_snapshot(&state, &request.stream_id));
+         let consumer = Arc::new(Consumer {
++            integrity_scope,
+             id,
+             stream: request.stream_id,
+             owner: request.owner,
+             queue: Mutex::new(ConsumerQueue {
++                terminal_integrity: None,
++                integrity: snapshot
++                    .map(|s| VecDeque::from([(RouterStreamMessage::IntegritySnapshot(s), 0)])),
++                integrity_bytes: 0,
+                 queue: VecDeque::new(),
+                 bytes: 0,
+                 state: SubscriptionState::Active,
+@@ -675,6 +751,35 @@ impl Shared {
+         }
+     }
+     fn retire(&self, state: &mut State, stream: &str) {
++        // One reserved Source observation survives admission failure and revocation.
++        let pending = state
++            .bindings
++            .get(stream)
++            .and_then(|b| lock(&b.pending_integrity).take());
++        if let Some(mut evidence) = pending {
++            if let Some(revision) = state.integrity_revision.checked_add(1) {
++                state.integrity_revision = revision;
++                evidence.id.revision = Some(revision);
++            }
++            evidence.after_publication_sequence = state
++                .bindings
++                .get(stream)
++                .and_then(|b| (b.sequence > 0).then_some(b.sequence));
++            self.record_integrity(state, stream, evidence);
++        }
++        let discontinuity = state.bindings.get(stream).and_then(|b| {
++            lock(&b.discontinuity.0).clone().map(|mut d| {
++                d.after_publication_sequence = (b.sequence > 0).then_some(b.sequence);
++                d
++            })
++        });
++        let terminal_integrity = discontinuity.map(|mut d| {
++            if let Some(revision) = state.integrity_revision.checked_add(1) {
++                state.integrity_revision = revision;
++                d.revision = Some(revision);
++            }
++            self.integrity_snapshot_with_discontinuity(state, stream, Some(d))
++        });
+         state.bindings.remove(stream);
+         state.ingress.retain(|p| p.stream != stream);
+         state.ingress_bytes = state.ingress.iter().map(|p| p.bytes).sum();
+@@ -685,6 +790,12 @@ impl Shared {
+             .map(|c| c.id)
+             .collect();
+         for id in ids {
++            if let Some(consumer) = state.consumers.get(&id) {
++                let mut q = lock(&consumer.queue);
++                if q.integrity.is_some() {
++                    q.terminal_integrity = terminal_integrity.clone();
++                }
++            }
+             self.remove(state, id, Some(ContinuityFailure::ProducerRevoked));
+         }
+     }
+@@ -1093,6 +1204,99 @@ impl ProducerHandle {
+             .sequence
+             .checked_add(1)
+             .ok_or(PublishError::Exhausted)?;
++        let next_revision = state
++            .integrity_revision
++            .checked_add(1)
++            .ok_or(PublishError::Exhausted)?;
++        let integrity = if binding.semantics == PublicationSemantics::Source {
++            match &publication {
++                RouterPublication::Trades {
++                    integrity,
++                    recovered,
++                    ..
++                } => {
++                    let mut e = trade_evidence(
++                        &self.stream,
++                        authority.generation().get(),
++                        Some(next_revision),
++                        Some(sequence),
++                        integrity.as_ref(),
++                        *recovered,
++                    );
++                    if *recovered {
++                        e.received_records = None;
++                        e.duplicate_records = None;
++                        e.recovery_from = binding
++                            .integrity
++                            .as_ref()
++                            .filter(|p| {
++                                p.coverage == "coverage_review_required"
++                                    && e.source_generation.is_some()
++                                    && p.source_generation == e.source_generation
++                            })
++                            .map(|p| p.id.clone());
++                    }
++                    Some(Arc::new(e))
++                }
++                RouterPublication::Depth(events) => {
++                    let mut e = binding
++                        .integrity
++                        .as_ref()
++                        .map(|e| (**e).clone())
++                        .unwrap_or_else(|| {
++                            DataIntegrityEvidence::unavailable(
++                                self.stream.clone(),
++                                Some(authority.generation().get()),
++                            )
++                        });
++                    let fresh_context = events.last().is_some_and(|d| {
++                        let (g, b) = d.generations();
++                        e.publication_sequence.is_none()
++                            && e.source_generation == Some(g)
++                            && e.book_generation == Some(b)
++                    });
++                    let fresh_coverage = fresh_context
++                        && events.last().is_some_and(|d| match d {
++                            RouterDepthEvent::Snapshot { baseline, .. }
++                            | RouterDepthEvent::Delta { baseline, .. } => {
++                                e.depth_sequence == Some(baseline.last_sequence)
++                            }
++                            _ => false,
++                        });
++                    if !fresh_coverage {
++                        e.depth_coverage = None;
++                    }
++                    if !fresh_context {
++                        e.diagnostic = None;
++                    }
++                    e.id.revision = Some(next_revision);
++                    e.publication_sequence = Some(sequence);
++                    e.after_publication_sequence = None;
++                    if let Some(d) = events.last() {
++                        let (g, b) = d.generations();
++                        e.source_generation = Some(g);
++                        e.book_generation = Some(b);
++                        match d {
++                            RouterDepthEvent::Snapshot { baseline, .. }
++                            | RouterDepthEvent::Delta { baseline, .. } => {
++                                e.depth_sequence = Some(baseline.last_sequence);
++                                e.cross_sequence = baseline.cross_sequence;
++                                e.coverage = "internal_book_baseline".into();
++                            }
++                            _ => {
++                                e.depth_sequence = None;
++                                e.cross_sequence = None;
++                                e.coverage = "book_invalidated".into();
++                            }
++                        }
++                    }
++                    Some(Arc::new(e))
++                }
++                _ => None,
++            }
++        } else {
++            None
++        };
+         let admission = RouterAdmission::issue(
+             self.shared.receipt_owner.clone(),
+             self.binding,
+@@ -1101,6 +1305,7 @@ impl ProducerHandle {
+             sequence,
+             binding.semantics,
+             &publication,
++            integrity.clone(),
+         );
+         let bytes = publication
+             .retained_bytes()
+@@ -1115,6 +1320,11 @@ impl ProducerHandle {
+         {
+             return Err(PublishError::Capacity);
+         }
++        if let Some(e) = integrity {
++            state.integrity_revision = next_revision;
++            self.shared
++                .record_integrity(&mut state, &self.stream, (*e).clone());
++        }
+         let binding = state.bindings.get_mut(&self.stream).unwrap();
+         binding.sequence = sequence;
+         binding.source_generation = source_generation;
+@@ -1134,6 +1344,7 @@ impl ProducerHandle {
+         });
+         state.ingress_bytes += bytes;
+         state.status.accepted = state.status.accepted.saturating_add(1);
++        lock(&self.pending_integrity).take();
+         self.shared.wake.notify_one();
+         Ok(RouterAcceptance {
+             sequence,
+@@ -1532,3 +1743,5 @@ mod contention_tests {
+         "/tests/live/integration/router/contention.rs"
+     ));
+ }
++
++include!("integrity.rs");
+diff --git a/engine/src/live/stream/router/source.rs b/engine/src/live/stream/router/source.rs
+index e55de89..399f911 100644
+--- a/engine/src/live/stream/router/source.rs
++++ b/engine/src/live/stream/router/source.rs
+@@ -5,17 +5,34 @@ use crate::live::{
+     stream::source::SourceTradePublication,
+ };
+ impl ProducerHandle {
+-    /// Adapter for Source's synchronous acknowledgment callback. Non-market
+-    /// integrity outcomes and empty accepted batches create no publication.
++    /// Accepted market batches use acknowledged ingress. First coverage-review
++    /// observations and empty accepted metadata use the integrity-only path.
+     pub fn publish_source_trades(&self, payload: SourceTradePublication<'_>) -> Result<(), String> {
+         let (records, recovered, integrity) = match payload {
+             SourceTradePublication::Recovery(records) => (records, true, None),
++            SourceTradePublication::RecoveryObserved {
++                records,
++                source_generation,
++            } => (
++                records,
++                true,
++                Some(RouterTradeIntegrity {
++                    source_generation: Some(source_generation),
++                    received_records: records.len(),
++                    duplicate_records: 0,
++                    identity_history_truncated: false,
++                    coverage_history_unverified: true,
++                    observations: vec![].into(),
++                    baseline: Default::default(),
++                }),
++            ),
+             SourceTradePublication::Integrity(IntegrityOutcome::Trades(
+                 BoundTradeIngressOutcome::Processed(TradeControllerOutcome::Accepted(batch)),
+             )) => (
+                 batch.trades.as_slice(),
+                 false,
+                 Some(RouterTradeIntegrity {
++                    source_generation: Some(batch.source_generation),
+                     received_records: batch.received_records,
+                     duplicate_records: batch.duplicate_records,
+                     identity_history_truncated: batch.identity_history_truncated,
+@@ -24,10 +41,41 @@ impl ProducerHandle {
+                     baseline: batch.baseline,
+                 }),
+             ),
++            SourceTradePublication::Integrity(IntegrityOutcome::Trades(
++                BoundTradeIngressOutcome::Processed(
++                    TradeControllerOutcome::CoverageReviewRequired {
++                        observations,
++                        source_generation,
++                    },
++                ),
++            )) => {
++                return self
++                    .publish_trade_integrity(
++                        &RouterTradeIntegrity {
++                            source_generation: Some(*source_generation),
++                            received_records: 0,
++                            duplicate_records: 0,
++                            identity_history_truncated: false,
++                            coverage_history_unverified: true,
++                            observations: observations.as_slice().into(),
++                            baseline: Default::default(),
++                        },
++                        true,
++                    )
++                    .map_err(|e| e.to_string());
++            }
+             _ => return Ok(()),
+         };
+         if records.is_empty() {
+-            return Ok(());
++            return integrity.as_ref().map_or(Ok(()), |m| {
++                self.publish_trade_integrity(m, false)
++                    .map_err(|e| e.to_string())
++            });
++        }
++        if !recovered {
++            if let Some(metadata) = &integrity {
++                self.retain_rejected_trade_evidence(metadata);
++            }
+         }
+         self.publish_for_source(RouterPublication::Trades {
+             records: records.into(),
+diff --git a/engine/src/live/stream/router/tests.rs b/engine/src/live/stream/router/tests.rs
+index 329cae6..941e4cb 100644
+--- a/engine/src/live/stream/router/tests.rs
++++ b/engine/src/live/stream/router/tests.rs
+@@ -43,6 +43,9 @@ async fn every_zero_resource_limit_is_invalid() {
+ #[test]
+ fn identity_exhaustion_does_not_wrap() {
+     let mut state = State {
++        integrity_revision: 0,
++        integrity_history: VecDeque::new(),
++        integrity_history_truncated: false,
+         bindings: BTreeMap::new(),
+         consumers: BTreeMap::new(),
+         ingress: VecDeque::new(),
+@@ -56,12 +59,16 @@ fn identity_exhaustion_does_not_wrap() {
+ #[test]
+ fn terminal_failure_delivered_exactly_once_and_clears_sync() {
+     let consumer = Consumer {
++        integrity_scope: None,
+         id: 1,
+         stream: "x".into(),
+         owner: DemandOwner::Manual {
+             session_id: "x".into(),
+         },
+         queue: Mutex::new(ConsumerQueue {
++            terminal_integrity: None,
++            integrity: None,
++            integrity_bytes: 0,
+             queue: VecDeque::new(),
+             bytes: 0,
+             state: SubscriptionState::Failed(ContinuityFailure::ConsumerCapacity),
+diff --git a/engine/src/live/stream/source/executor.rs b/engine/src/live/stream/source/executor.rs
+index 012fc82..5ebb156 100644
+--- a/engine/src/live/stream/source/executor.rs
++++ b/engine/src/live/stream/source/executor.rs
+@@ -130,6 +130,12 @@ pub struct SourceStreamExecutor {
+ }
+ 
+ impl SourceStreamExecutor {
++    pub(crate) fn observe_depth(
++        &mut self,
++        producer: std::sync::Arc<crate::live::stream::router::ProducerHandle>,
++    ) {
++        self.runner.observe_depth(producer);
++    }
+     pub fn stream_id(&self) -> &str {
+         self.runner.stream_id()
+     }
+@@ -1434,7 +1440,12 @@ impl SourceStreamExecutor {
+             completed.context.epoch,
+             &completed.context.review,
+             prepared,
+-            |trades| publish(SourceTradePublication::Recovery(trades)),
++            |trades| {
++                publish(SourceTradePublication::RecoveryObserved {
++                    records: trades,
++                    source_generation: completed.context.epoch.stream_generation,
++                })
++            },
+         )?;
+         self.clear_trade_recovery_session();
+         Ok(())
+diff --git a/engine/src/live/stream/source/processor.rs b/engine/src/live/stream/source/processor.rs
+index c982fd8..5dfd477 100644
+--- a/engine/src/live/stream/source/processor.rs
++++ b/engine/src/live/stream/source/processor.rs
+@@ -77,6 +77,7 @@ pub enum SourceProcessingEpoch {
+ /// - the canonical event router;
+ /// - StreamRuntimeRegistry lifecycle authority.
+ pub struct SourceProcessor {
++    depth_observer: Option<std::sync::Arc<crate::live::stream::router::ProducerHandle>>,
+     integrity: StreamIntegrityHandle,
+     publication: Option<IntegrityPublicationAdapter>,
+ }
+@@ -93,11 +94,18 @@ impl SourceProcessor {
+         };
+ 
+         Ok(Self {
++            depth_observer: None,
+             integrity,
+             publication,
+         })
+     }
+ 
++    pub(crate) fn observe_depth(
++        &mut self,
++        producer: std::sync::Arc<crate::live::stream::router::ProducerHandle>,
++    ) {
++        self.depth_observer = Some(producer);
++    }
+     pub fn integrity(&self) -> &StreamIntegrityHandle {
+         &self.integrity
+     }
+@@ -313,6 +321,13 @@ impl SourceProcessor {
+         outcome: &IntegrityOutcome,
+         publish: &mut impl FnMut(&[DepthPublicationEvent<'_>]) -> Result<(), String>,
+     ) -> Result<(), SourceProcessorError> {
++        if let Some(observer) = &self.depth_observer {
++            if let IntegrityOutcome::Depth(outcome) = outcome {
++                observer
++                    .publish_depth_integrity(outcome, self.integrity.status())
++                    .map_err(|e| SourceProcessorError::Handoff(e.to_string()))?;
++            }
++        }
+         let publication = self
+             .publication
+             .as_mut()
+@@ -633,7 +648,13 @@ impl SourceProcessor {
+         outcome: &IntegrityOutcome,
+         publish: &mut impl FnMut(&IntegrityOutcome) -> Result<(), String>,
+     ) -> Result<(), SourceProcessorError> {
+-        if outcome.decision() != IntegrityDecision::Accepted {
++        let coverage_observation = matches!(
++            outcome,
++            IntegrityOutcome::Trades(crate::live::integrity::BoundTradeIngressOutcome::Processed(
++                crate::live::integrity::TradeControllerOutcome::CoverageReviewRequired { .. }
++            ))
++        );
++        if outcome.decision() != IntegrityDecision::Accepted && !coverage_observation {
+             return Ok(());
+         }
+ 
+diff --git a/engine/src/live/stream/source/runner.rs b/engine/src/live/stream/source/runner.rs
+index 13707e1..43d2580 100644
+--- a/engine/src/live/stream/source/runner.rs
++++ b/engine/src/live/stream/source/runner.rs
+@@ -8,7 +8,7 @@ use crate::live::infrastructure::normalization::{
+     NormalizationSource, NormalizedDepth, NormalizedMessage, NormalizedTrades,
+ };
+ use crate::live::integrity::IntegrityTradeRecoveryCommitError;
+-use crate::live::integrity::{DepthPublicationEvent, IntegrityDecision, IntegrityLifecycleEvent};
++use crate::live::integrity::{DepthPublicationEvent, IntegrityLifecycleEvent};
+ use crate::live::integrity::{DepthSourceEpoch, DepthSyncToken, RestDepthRequestContext};
+ use crate::live::integrity::{IntegrityTradeRecoveryError, TradeRecoveryPreflight};
+ use serde_json::Value;
+@@ -134,6 +134,12 @@ impl SourceStreamRunner {
+         self.state
+     }
+ 
++    pub(crate) fn observe_depth(
++        &mut self,
++        producer: std::sync::Arc<crate::live::stream::router::ProducerHandle>,
++    ) {
++        self.processor.observe_depth(producer);
++    }
+     pub fn processor(&self) -> &SourceProcessor {
+         &self.processor
+     }
+@@ -306,7 +312,7 @@ impl SourceStreamRunner {
+             accounted_bytes,
+             publish_depth,
+             |outcome| {
+-                let accepted = outcome.decision() == IntegrityDecision::Accepted;
++                let accepted = matches!(outcome, crate::live::integrity::IntegrityOutcome::Trades(crate::live::integrity::BoundTradeIngressOutcome::Processed(crate::live::integrity::TradeControllerOutcome::Accepted(batch))) if !batch.trades.is_empty());
+ 
+                 publish_trades(SourceTradePublication::Integrity(outcome))?;
+ 
+diff --git a/engine/src/live/stream/source/supervisor.rs b/engine/src/live/stream/source/supervisor.rs
+index faa3a56..81ed69a 100644
+--- a/engine/src/live/stream/source/supervisor.rs
++++ b/engine/src/live/stream/source/supervisor.rs
+@@ -123,7 +123,7 @@ impl SourceRuntimeSupervisor {
+     pub fn start_routed(
+         &mut self,
+         stream_id: &str,
+-        executor: SourceStreamExecutor,
++        mut executor: SourceStreamExecutor,
+         router: &crate::live::stream::router::StreamRouter,
+     ) -> Result<RuntimeGeneration, SourceSupervisorError> {
+         if executor.stream_id() != stream_id {
+@@ -147,6 +147,7 @@ impl SourceRuntimeSupervisor {
+                 return Err(error.into());
+             }
+         };
++        executor.observe_depth(producer.clone());
+         let depth = producer.clone();
+         self.spawn_registered(
+             stream_id,
+diff --git a/engine/src/live/stream/source/trade_publication.rs b/engine/src/live/stream/source/trade_publication.rs
+index 22b6210..4b3daeb 100644
+--- a/engine/src/live/stream/source/trade_publication.rs
++++ b/engine/src/live/stream/source/trade_publication.rs
+@@ -14,4 +14,10 @@ pub enum SourceTradePublication<'a> {
+ 
+     /// Reconciled trades awaiting acknowledged publication.
+     Recovery(&'a [Trade]),
++    /// Routed recovery carries its authoritative acquisition generation. The
++    /// callback still precedes commit and does not prove complete history.
++    RecoveryObserved {
++        records: &'a [Trade],
++        source_generation: u64,
++    },
+ }
+diff --git a/engine/tests/live/integration/derived/hardening.rs b/engine/tests/live/integration/derived/hardening.rs
+index a7a3ca5..b926743 100644
+--- a/engine/tests/live/integration/derived/hardening.rs
++++ b/engine/tests/live/integration/derived/hardening.rs
+@@ -116,7 +116,7 @@ async fn derived_provenance_rejects_forged_fields_and_allows_delayed_source_sequ
+         .unwrap();
+     publish(&rig.producers[0], publication("a", 2, 200)).await;
+     let before = rig.router.status().accepted;
+-    for case in 0..9 {
++    for case in 0..15 {
+         let mut event = valid.clone();
+         match case {
+             0 => event.upstream.stream_id = "c".into(),
+@@ -127,6 +127,19 @@ async fn derived_provenance_rejects_forged_fields_and_allows_delayed_source_sequ
+             5 => event.upstream.publication_sequence = 3,
+             6 => event.origin.record_ordinal = 1,
+             7 => event.upstream.record_ordinal = 1,
++            9..=14 => {
++                let NativeMarketEvent::Trade(t) = &mut event.native else {
++                    panic!()
++                };
++                match case {
++                    9 => t.price += rust_decimal::Decimal::ONE,
++                    10 => t.side = marketforge_engine::shared::domain::canonical::TradeSide::Sell,
++                    11 => t.quantity_base = Some(999.into()),
++                    12 => t.quantity_quote = Some(999.into()),
++                    13 => t.quantity_contracts = Some(999.into()),
++                    _ => t.price.rescale(2),
++                }
++            }
+             _ => {
+                 let NativeMarketEvent::Trade(t) = &mut event.native else {
+                     panic!()
+@@ -360,12 +373,13 @@ async fn derived_depth_provenance_rejection_does_not_commit_partial_book_or_sequ
+     .await;
+     let delta =
+         DerivedEvent::from_delivery(&bounded(input.recv()).await.unwrap(), 1, 2, 0).unwrap();
+-    for case in 0..4 {
++    for case in 0..5 {
+         let mut forged = delta.clone();
+         let NativeMarketEvent::Depth(RouterDepthEvent::Delta {
+             stream_generation,
+             book_generation,
+             baseline,
++            changes,
+             ..
+         }) = &mut forged.native
+         else {
+@@ -375,7 +389,12 @@ async fn derived_depth_provenance_rejection_does_not_commit_partial_book_or_sequ
+             0 => *stream_generation += 1,
+             1 => *book_generation += 1,
+             2 => baseline.last_sequence += 1,
+-            _ => baseline.cross_sequence = Some(9),
++            3 => baseline.cross_sequence = Some(9),
++            _ => {
++                let mut altered = changes.to_vec();
++                altered[0].1 += rust_decimal::Decimal::ONE;
++                *changes = altered.into();
++            }
+         };
+         // A valid prefix must not establish a book when a later record is invalid.
+         assert_eq!(
+diff --git a/engine/tests/live/integration/processing/main.rs b/engine/tests/live/integration/processing/main.rs
+index 8ceb7f9..5b0ca41 100644
+--- a/engine/tests/live/integration/processing/main.rs
++++ b/engine/tests/live/integration/processing/main.rs
+@@ -1084,6 +1084,22 @@ async fn revoked_old_output_capability_cannot_publish_in_replacement_generation(
+ 
+ #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+ async fn explicit_derived_origin_preserves_source_identity_and_rechecks_authority() {
++    // Nonblocking admission may encounter dispatch/revocation contention. Only
++    // Busy is retryable; identity and authority assertions remain exact.
++    async fn settled(
++        producer: &ProducerHandle,
++        publication: RouterPublication,
++    ) -> Result<RouterAcceptance, PublishError> {
++        bounded(async {
++            loop {
++                match producer.try_publish(publication.clone()) {
++                    Err(PublishError::Busy) => tokio::task::yield_now().await,
++                    result => break result,
++                }
++            }
++        })
++        .await
++    }
+     let rig = Rig::new(SourceChannel::Trades, RouterConfig::default());
+     let generation = rig
+         .registry
+@@ -1115,7 +1131,7 @@ async fn explicit_derived_origin_preserves_source_identity_and_rechecks_authorit
+     let mut wrong = fixture::trade(1);
+     wrong.envelope.stream_id = "synthetic".into();
+     assert_eq!(
+-        derived.try_publish(RouterPublication::trades(vec![wrong])),
++        settled(&derived, RouterPublication::trades(vec![wrong])).await,
+         Err(PublishError::InvalidPublication)
+     );
+     publish(&derived, fixture::publication(1)).await;
+@@ -1126,9 +1142,10 @@ async fn explicit_derived_origin_preserves_source_identity_and_rechecks_authorit
+         .begin_stop("synthetic")
+         .unwrap();
+     assert_eq!(
+-        derived.try_publish(fixture::publication(2)),
++        settled(&derived, fixture::publication(2)).await,
+         Err(PublishError::Revoked)
+     );
++    assert_eq!(rig.router.status().accepted, 1);
+     rig.registry
+         .lock()
+         .unwrap()
+diff --git a/engine/tests/live/integration/router/main.rs b/engine/tests/live/integration/router/main.rs
+index 05863cd..c1689ee 100644
+--- a/engine/tests/live/integration/router/main.rs
++++ b/engine/tests/live/integration/router/main.rs
+@@ -9,3 +9,5 @@ mod rest_support;
+ mod source_harness;
+ #[path = "../../support/websocket_server.rs"]
+ mod websocket_server;
++
++mod integrity_publication;
+diff --git a/engine/tests/live/integration/source/pipeline.rs b/engine/tests/live/integration/source/pipeline.rs
+index 13fdc6a..cb18bd9 100644
+--- a/engine/tests/live/integration/source/pipeline.rs
++++ b/engine/tests/live/integration/source/pipeline.rs
+@@ -17,11 +17,23 @@ pub fn native(profile: &str) -> Value {
+ }
+ pub fn published(payload: SourceTradePublication<'_>) -> Vec<Trade> {
+     match payload {
+-        SourceTradePublication::Recovery(trades) => trades.to_vec(),
++        SourceTradePublication::Recovery(trades)
++        | SourceTradePublication::RecoveryObserved {
++            records: trades, ..
++        } => trades.to_vec(),
+         SourceTradePublication::Integrity(IntegrityOutcome::Trades(
+             BoundTradeIngressOutcome::Processed(TradeControllerOutcome::Accepted(batch)),
+         )) => batch.trades.clone(),
+-        _ => panic!("only accepted market data may be published"),
++        SourceTradePublication::Integrity(IntegrityOutcome::Trades(
++            BoundTradeIngressOutcome::Processed(TradeControllerOutcome::CoverageReviewRequired {
++                observations,
++                ..
++            }),
++        )) => {
++            assert!(!observations.is_empty());
++            Vec::new()
++        }
++        _ => panic!("unexpected publication outcome"),
+     }
+ }
+ 
+diff --git a/engine/tests/live/integration/source/recovery.rs b/engine/tests/live/integration/source/recovery.rs
+index d67e9bf..6bdc55a 100644
+--- a/engine/tests/live/integration/source/recovery.rs
++++ b/engine/tests/live/integration/source/recovery.rs
+@@ -73,7 +73,13 @@ async fn scenario(
+             executor,
+             |_| Ok(()),
+             move |payload| {
+-                if fail_publication && matches!(payload, SourceTradePublication::Recovery(_)) {
++                if fail_publication
++                    && matches!(
++                        payload,
++                        SourceTradePublication::Recovery(_)
++                            | SourceTradePublication::RecoveryObserved { .. }
++                    )
++                {
+                     return Err("injected recovery publication failure".into());
+                 }
+                 let trades = published(payload);
+@@ -359,7 +365,14 @@ async fn interrupt_pending(reconnect: bool, overflow: bool) {
+             "interrupt-rest",
+             executor,
+             |_| Ok(()),
+-            move |payload| tx.try_send(published(payload)).map_err(|e| e.to_string()),
++            move |payload| {
++                let records = published(payload);
++                if records.is_empty() {
++                    Ok(())
++                } else {
++                    tx.try_send(records).map_err(|e| e.to_string())
++                }
++            },
+         )
+         .unwrap();
+     socket.ack().await;
+diff --git a/engine/tests/live/integration/source/resources.rs b/engine/tests/live/integration/source/resources.rs
+index add8ef3..f0498fb 100644
+--- a/engine/tests/live/integration/source/resources.rs
++++ b/engine/tests/live/integration/source/resources.rs
+@@ -103,8 +103,12 @@ async fn source_recovery_obeys_shared_rest_budget_and_cancellation_releases_wait
+             executor,
+             |_| Ok(()),
+             move |payload| {
+-                tx.try_send(pipeline::published(payload))
+-                    .map_err(|e| e.to_string())
++                let records = pipeline::published(payload);
++                if records.is_empty() {
++                    Ok(())
++                } else {
++                    tx.try_send(records).map_err(|e| e.to_string())
++                }
+             },
+         )
+         .unwrap();

@@ -53,3 +53,7 @@ pub use snapshot::{
     DerivedMetricsRef, DerivedStreamMetricsSnapshot, GlobalThroughputSnapshot, MetricsSnapshot,
     MetricsSnapshotCollector, SourceMetricsRef, SourceStreamMetricsSnapshot, ThroughputSnapshot,
 };
+
+pub mod prometheus;
+
+pub(crate) mod process;

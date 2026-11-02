@@ -45,3 +45,7 @@ pub mod storage {
         };
     }
 }
+
+#[cfg(feature = "stream-client")]
+pub mod client;
+pub mod stream_protocol;

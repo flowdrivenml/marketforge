@@ -7,4 +7,7 @@ pub mod metrics;
 pub mod recording;
 pub mod recovery;
 pub mod stream;
+pub mod transport;
 pub mod tui;
+
+pub mod application;

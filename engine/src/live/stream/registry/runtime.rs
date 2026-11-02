@@ -117,6 +117,7 @@ pub struct StreamRuntimeStatus {
     pub lifecycle: StreamLifecycleState,
     pub generation: RuntimeGeneration,
     pub last_error: Option<String>,
+    pub error_truncated: bool,
 }
 
 impl StreamRuntimeStatus {
@@ -171,6 +172,7 @@ pub enum StreamRuntimeError {
 /// stream-management execution context.
 #[derive(Debug)]
 pub struct StreamRuntimeRegistry {
+    metrics: Option<Arc<crate::live::metrics::RuntimeMetrics>>,
     streams: BTreeMap<String, StreamRuntimeStatus>,
     authorities: BTreeMap<String, RuntimePublicationAuthority>,
     changes: tokio::sync::watch::Sender<u64>,
@@ -192,6 +194,7 @@ impl StreamRuntimeRegistry {
                         lifecycle: StreamLifecycleState::Stopped,
                         generation: RuntimeGeneration(0),
                         last_error: None,
+                        error_truncated: false,
                     },
                 )
             })
@@ -214,12 +217,14 @@ impl StreamRuntimeRegistry {
             })
             .collect();
         Self {
+            metrics: None,
             streams,
             authorities,
             changes: tokio::sync::watch::channel(0).0,
         }
     }
 
+    pub(crate) fn install_metrics(&mut self,metrics:Arc<crate::live::metrics::RuntimeMetrics>){self.metrics=Some(metrics);}
     pub(crate) fn subscribe_changes(&self) -> tokio::sync::watch::Receiver<u64> {
         self.changes.subscribe()
     }
@@ -312,6 +317,7 @@ impl StreamRuntimeRegistry {
         status.generation = RuntimeGeneration(next);
         status.lifecycle = StreamLifecycleState::Starting;
         status.last_error = None;
+        status.error_truncated=false;
 
         let generation = status.generation;
         if let Some(old) = self.authorities.insert(
@@ -327,6 +333,7 @@ impl StreamRuntimeRegistry {
         ) {
             old.revoke();
         }
+        if let Some(metrics)=&self.metrics {metrics.record_lifecycle_starts_total();}
         self.changed();
         Ok(generation)
     }
@@ -421,6 +428,7 @@ impl StreamRuntimeRegistry {
         if let Some(authority) = self.authorities.get(stream_id) {
             authority.revoke();
         }
+        if let Some(metrics)=&self.metrics {metrics.record_lifecycle_stops_total();}
         self.changed();
         Ok(generation)
     }
@@ -453,7 +461,9 @@ impl StreamRuntimeRegistry {
         generation: RuntimeGeneration,
         error: impl Into<String>,
     ) -> Result<bool, StreamRuntimeError> {
-        let error = error.into();
+        let mut error = error.into();
+        let error_truncated=error.len()>4096;
+        if error_truncated{error.truncate(error.floor_char_boundary(4096));}
 
         if error.trim().is_empty() {
             return Err(StreamRuntimeError::InvalidFailure);
@@ -473,12 +483,15 @@ impl StreamRuntimeRegistry {
             });
         }
 
+        let newly_failed=status.lifecycle!=StreamLifecycleState::Failed;
         status.lifecycle = StreamLifecycleState::Failed;
         status.last_error = Some(error);
+        status.error_truncated=error_truncated;
         if let Some(authority) = self.authorities.get(stream_id) {
             authority.revoke();
         }
 
+        if newly_failed {if let Some(metrics)=&self.metrics {metrics.record_lifecycle_failures_total();}}
         self.changed();
         Ok(true)
     }

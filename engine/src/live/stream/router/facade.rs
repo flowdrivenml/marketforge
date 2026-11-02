@@ -138,6 +138,10 @@ pub enum SubscriptionState {
     Closed,
 }
 struct ConsumerQueue {
+    integrity_streak: u8,
+    terminal_integrity: Option<DataIntegritySnapshot>,
+    integrity: Option<VecDeque<(RouterStreamMessage, usize)>>,
+    integrity_bytes: usize,
     queue: VecDeque<(RouterDelivery, usize)>,
     bytes: usize,
     state: SubscriptionState,
@@ -147,6 +151,7 @@ struct ConsumerQueue {
     derived_books: BTreeMap<String, (u64, u64)>,
 }
 struct Consumer {
+    integrity_scope: Option<Arc<BTreeSet<String>>>,
     id: u64,
     stream: String,
     owner: DemandOwner,
@@ -162,6 +167,12 @@ struct DependencyEpoch {
     book: Option<(u64, u64)>,
 }
 struct Binding {
+    baseline_signal: Arc<Notify>,
+    source_metrics: Option<Arc<crate::live::metrics::SourceMetrics>>,
+    derived_metrics: Option<Arc<crate::live::metrics::DerivedMetrics>>,
+    pending_integrity: Arc<Mutex<Option<DataIntegrityEvidence>>>,
+    discontinuity: DataDiscontinuitySink,
+    integrity: Option<Arc<DataIntegrityEvidence>>,
     id: u64,
     authority: RuntimePublicationAuthority,
     sequence: u64,
@@ -188,6 +199,9 @@ struct Pending {
     admission: RouterAdmission,
 }
 struct State {
+    integrity_revision: u64,
+    integrity_history: VecDeque<Arc<DataIntegrityEvidence>>,
+    integrity_history_truncated: bool,
     bindings: BTreeMap<String, Binding>,
     consumers: BTreeMap<u64, Arc<Consumer>>,
     ingress: VecDeque<Pending>,
@@ -196,6 +210,8 @@ struct State {
     status: RouterStatus,
 }
 struct Shared {
+    runtime_metrics: Arc<crate::live::metrics::RuntimeMetrics>,
+    publication_metrics: Arc<crate::live::metrics::PublicationMetrics>,
     config: RouterConfig,
     context: RouterContext,
     state: parking_lot::Mutex<State>,
@@ -210,6 +226,10 @@ pub struct StreamRouter {
     worker: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 pub struct ProducerHandle {
+    baseline_signal: Arc<Notify>,
+    pending_integrity: Arc<Mutex<Option<DataIntegrityEvidence>>>,
+    runtime_generation: u64,
+    discontinuity: DataDiscontinuitySink,
     shared: Arc<Shared>,
     stream: String,
     binding: u64,
@@ -246,11 +266,16 @@ impl StreamRouter {
         }
         let runtime = tokio::runtime::Handle::try_current().map_err(|_| RouterError::NoRuntime)?;
         let shared = Arc::new(Shared {
+            publication_metrics: Arc::new(crate::live::metrics::PublicationMetrics::new()),
+            runtime_metrics: Arc::new(crate::live::metrics::RuntimeMetrics::new()),
             config,
             context,
             #[cfg(test)]
             source_wait: Mutex::new(None),
             state: parking_lot::Mutex::new(State {
+                integrity_revision: 0,
+                integrity_history: VecDeque::new(),
+                integrity_history_truncated: false,
                 bindings: BTreeMap::new(),
                 consumers: BTreeMap::new(),
                 ingress: VecDeque::new(),
@@ -419,9 +444,35 @@ impl StreamRouter {
                 })
             })
             .collect();
+        if finite_replay {
+            let ids: Vec<_> = state
+                .consumers
+                .values()
+                .filter(|c| {
+                    c.integrity_scope
+                        .as_ref()
+                        .is_some_and(|scope| scope.contains(&stream))
+                })
+                .map(|c| c.id)
+                .collect();
+            for id in ids {
+                self.shared
+                    .remove(&mut state, id, Some(ContinuityFailure::ProducerRevoked));
+            }
+        }
+        let baseline_signal=Arc::new(Notify::new());
+        let pending_integrity = Arc::new(Mutex::new(None));
+        let discontinuity = DataDiscontinuitySink::default();
+        let runtime_generation = request.authority.generation().get();
         state.bindings.insert(
             stream.clone(),
             Binding {
+                baseline_signal: baseline_signal.clone(),
+                source_metrics: (semantics == PublicationSemantics::Source).then(|| Arc::new(crate::live::metrics::SourceMetrics::new())),
+                derived_metrics: (semantics == PublicationSemantics::Derived).then(|| Arc::new(crate::live::metrics::DerivedMetrics::new(inputs.len() as u64,0,matches!(&request.authority.definition.definition,StreamDefinition::Derived(r) if r.ordering==Some(crate::live::stream::request::MergeOrdering::EventTime)||!r.reference_inputs.is_empty())))),
+                pending_integrity: pending_integrity.clone(),
+                discontinuity: discontinuity.clone(),
+                integrity: None,
                 id,
                 authority: request.authority,
                 sequence: 0,
@@ -439,6 +490,10 @@ impl StreamRouter {
         );
         self.shared.wake.notify_one();
         Ok(ProducerHandle {
+            baseline_signal,
+            pending_integrity,
+            runtime_generation,
+            discontinuity,
             shared: self.shared.clone(),
             stream,
             binding: id,
@@ -448,6 +503,19 @@ impl StreamRouter {
     pub async fn subscribe(
         &self,
         request: SubscribeRequest,
+    ) -> Result<SubscriptionHandle, RouterError> {
+        self.subscribe_inner(request, false)
+    }
+    pub async fn subscribe_live(
+        &self,
+        request: SubscribeRequest,
+    ) -> Result<SubscriptionHandle, RouterError> {
+        self.subscribe_inner(request, true)
+    }
+    fn subscribe_inner(
+        &self,
+        request: SubscribeRequest,
+        observe: bool,
     ) -> Result<SubscriptionHandle, RouterError> {
         let mut state = self.shared.state.lock();
         if state.status.shutdown {
@@ -481,6 +549,7 @@ impl StreamRouter {
             StreamDefinition::Derived(_) => required_books == 0,
         };
         let components: Vec<&str> = match &request.owner {
+            DemandOwner::Processing { stream_id, .. } => vec![stream_id],
             DemandOwner::Direct {
                 consumer_id,
                 subscription_id,
@@ -501,6 +570,22 @@ impl StreamRouter {
         if state.consumers.len() >= self.shared.config.max_subscriptions {
             return Err(RouterError::Capacity);
         }
+        let integrity_scope = if observe {
+            Some(Arc::new(
+                self.shared
+                    .integrity_sources(&request.stream_id)
+                    .map_err(|_| RouterError::Capacity)?,
+            ))
+        } else {
+            None
+        };
+        if integrity_scope.as_ref().is_some_and(|scope| {
+            scope
+                .iter()
+                .any(|id| state.bindings.get(id).is_some_and(|b| b.finite_replay))
+        }) {
+            return Err(RouterError::UnknownStream);
+        }
         let id = next_id(&mut state)?;
         lock(&self.shared.context.demand)
             .acquire(
@@ -509,11 +594,18 @@ impl StreamRouter {
                 &request.stream_id,
             )
             .map_err(|e| RouterError::Demand(e.to_string()))?;
+        let snapshot = observe.then(|| self.shared.integrity_snapshot(&state, &request.stream_id));
         let consumer = Arc::new(Consumer {
+            integrity_scope,
             id,
             stream: request.stream_id,
             owner: request.owner,
             queue: Mutex::new(ConsumerQueue {
+                integrity_streak: 0,
+                terminal_integrity: None,
+                integrity: snapshot
+                    .map(|s| VecDeque::from([(RouterStreamMessage::IntegritySnapshot(s), 0)])),
+                integrity_bytes: 0,
                 queue: VecDeque::new(),
                 bytes: 0,
                 state: SubscriptionState::Active,
@@ -526,6 +618,11 @@ impl StreamRouter {
             terminal: Notify::new(),
         });
         state.consumers.insert(id, consumer.clone());
+        // Registration and the baseline request share this lock cut. The Source
+        // actor serializes current-book handoff with authoritative mutations.
+        if matches!(consumer.owner,DemandOwner::Processing{..}) {
+            if let Ok(sources)=self.shared.context.graph.data_sources(&consumer.stream){for source in sources {if let Some(binding)=state.bindings.get(&source){if binding.book.is_some(){binding.baseline_signal.notify_one();}}}}
+        }
         Ok(SubscriptionHandle {
             shared: self.shared.clone(),
             consumer,
@@ -675,6 +772,35 @@ impl Shared {
         }
     }
     fn retire(&self, state: &mut State, stream: &str) {
+        // One reserved Source observation survives admission failure and revocation.
+        let pending = state
+            .bindings
+            .get(stream)
+            .and_then(|b| lock(&b.pending_integrity).take());
+        if let Some(mut evidence) = pending {
+            if let Some(revision) = state.integrity_revision.checked_add(1) {
+                state.integrity_revision = revision;
+                evidence.id.revision = Some(revision);
+            }
+            evidence.after_publication_sequence = state
+                .bindings
+                .get(stream)
+                .and_then(|b| (b.sequence > 0).then_some(b.sequence));
+            self.record_integrity(state, stream, evidence);
+        }
+        let discontinuity = state.bindings.get(stream).and_then(|b| {
+            lock(&b.discontinuity.0).clone().map(|mut d| {
+                d.after_publication_sequence = (b.sequence > 0).then_some(b.sequence);
+                d
+            })
+        });
+        let terminal_integrity = discontinuity.map(|mut d| {
+            if let Some(revision) = state.integrity_revision.checked_add(1) {
+                state.integrity_revision = revision;
+                d.revision = Some(revision);
+            }
+            self.integrity_snapshot_with_discontinuity(state, stream, Some(d))
+        });
         state.bindings.remove(stream);
         state.ingress.retain(|p| p.stream != stream);
         state.ingress_bytes = state.ingress.iter().map(|p| p.bytes).sum();
@@ -685,6 +811,12 @@ impl Shared {
             .map(|c| c.id)
             .collect();
         for id in ids {
+            if let Some(consumer) = state.consumers.get(&id) {
+                let mut q = lock(&consumer.queue);
+                if q.integrity.is_some() {
+                    q.terminal_integrity = terminal_integrity.clone();
+                }
+            }
             self.remove(state, id, Some(ContinuityFailure::ProducerRevoked));
         }
     }
@@ -1093,6 +1225,99 @@ impl ProducerHandle {
             .sequence
             .checked_add(1)
             .ok_or(PublishError::Exhausted)?;
+        let next_revision = state
+            .integrity_revision
+            .checked_add(1)
+            .ok_or(PublishError::Exhausted)?;
+        let integrity = if binding.semantics == PublicationSemantics::Source {
+            match &publication {
+                RouterPublication::Trades {
+                    integrity,
+                    recovered,
+                    ..
+                } => {
+                    let mut e = trade_evidence(
+                        &self.stream,
+                        authority.generation().get(),
+                        Some(next_revision),
+                        Some(sequence),
+                        integrity.as_ref(),
+                        *recovered,
+                    );
+                    if *recovered {
+                        e.received_records = None;
+                        e.duplicate_records = None;
+                        e.recovery_from = binding
+                            .integrity
+                            .as_ref()
+                            .filter(|p| {
+                                p.coverage == "coverage_review_required"
+                                    && e.source_generation.is_some()
+                                    && p.source_generation == e.source_generation
+                            })
+                            .map(|p| p.id.clone());
+                    }
+                    Some(Arc::new(e))
+                }
+                RouterPublication::Depth(events) => {
+                    let mut e = binding
+                        .integrity
+                        .as_ref()
+                        .map(|e| (**e).clone())
+                        .unwrap_or_else(|| {
+                            DataIntegrityEvidence::unavailable(
+                                self.stream.clone(),
+                                Some(authority.generation().get()),
+                            )
+                        });
+                    let fresh_context = events.last().is_some_and(|d| {
+                        let (g, b) = d.generations();
+                        e.publication_sequence.is_none()
+                            && e.source_generation == Some(g)
+                            && e.book_generation == Some(b)
+                    });
+                    let fresh_coverage = fresh_context
+                        && events.last().is_some_and(|d| match d {
+                            RouterDepthEvent::Snapshot { baseline, .. }
+                            | RouterDepthEvent::Delta { baseline, .. } => {
+                                e.depth_sequence == Some(baseline.last_sequence)
+                            }
+                            _ => false,
+                        });
+                    if !fresh_coverage {
+                        e.depth_coverage = None;
+                    }
+                    if !fresh_context {
+                        e.diagnostic = None;
+                    }
+                    e.id.revision = Some(next_revision);
+                    e.publication_sequence = Some(sequence);
+                    e.after_publication_sequence = None;
+                    if let Some(d) = events.last() {
+                        let (g, b) = d.generations();
+                        e.source_generation = Some(g);
+                        e.book_generation = Some(b);
+                        match d {
+                            RouterDepthEvent::Snapshot { baseline, .. }
+                            | RouterDepthEvent::Delta { baseline, .. } => {
+                                e.depth_sequence = Some(baseline.last_sequence);
+                                e.cross_sequence = baseline.cross_sequence;
+                                e.coverage = "internal_book_baseline".into();
+                            }
+                            _ => {
+                                e.depth_sequence = None;
+                                e.cross_sequence = None;
+                                e.coverage = "book_invalidated".into();
+                            }
+                        }
+                    }
+                    Some(Arc::new(e))
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
         let admission = RouterAdmission::issue(
             self.shared.receipt_owner.clone(),
             self.binding,
@@ -1101,6 +1326,7 @@ impl ProducerHandle {
             sequence,
             binding.semantics,
             &publication,
+            integrity.clone(),
         );
         let bytes = publication
             .retained_bytes()
@@ -1113,7 +1339,13 @@ impl ProducerHandle {
             .ingress
             .admits(state.ingress.len(), state.ingress_bytes, bytes)
         {
+            self.shared.runtime_metrics.record_internal_queue_overflow();
             return Err(PublishError::Capacity);
+        }
+        if let Some(e) = integrity {
+            state.integrity_revision = next_revision;
+            self.shared
+                .record_integrity(&mut state, &self.stream, (*e).clone());
         }
         let binding = state.bindings.get_mut(&self.stream).unwrap();
         binding.sequence = sequence;
@@ -1122,6 +1354,11 @@ impl ProducerHandle {
         binding.highest_book = highest_book;
         binding.derived_books = derived_books;
         binding.completed = matches!(publication, RouterPublication::ReplayComplete);
+        let shape=publication.market_shape();
+        let events=publication.market_event_count();
+        let timestamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().and_then(|d|i64::try_from(d.as_nanos()).ok());
+        if let Some(m)=&binding.source_metrics {m.record_shape(shape.0,shape.1,shape.2);m.record_output_accepted(events,timestamp);self.shared.runtime_metrics.record_source_events(events);}
+        if let Some(m)=&binding.derived_metrics {m.record_shape(shape.0,shape.1,shape.2);m.record_output_accepted(events,timestamp);self.shared.runtime_metrics.record_derived_events(events);}
         let subscriber_cutoff = state.next_id;
         state.ingress.push_back(Pending {
             stream: self.stream.clone(),
@@ -1134,6 +1371,7 @@ impl ProducerHandle {
         });
         state.ingress_bytes += bytes;
         state.status.accepted = state.status.accepted.saturating_add(1);
+        lock(&self.pending_integrity).take();
         self.shared.wake.notify_one();
         Ok(RouterAcceptance {
             sequence,
@@ -1418,6 +1656,7 @@ async fn dispatch(shared: Arc<Shared>) {
                                 .admits(q.queue.len(), q.bytes, pending.bytes)
                             {
                                 drop(q);
+                                shared.runtime_metrics.record_internal_queue_overflow();
                                 shared.remove(
                                     &mut state,
                                     consumer.id,
@@ -1531,4 +1770,19 @@ mod contention_tests {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/live/integration/router/contention.rs"
     ));
+}
+
+include!("integrity.rs");
+
+impl StreamRouter {
+    pub fn publication_metrics(&self)->Arc<crate::live::metrics::PublicationMetrics>{self.shared.publication_metrics.clone()}
+    pub fn runtime_metrics(&self)->Arc<crate::live::metrics::RuntimeMetrics>{self.shared.runtime_metrics.clone()}
+    pub fn metric_handles(&self)->(Vec<(String,u64,Arc<crate::live::metrics::SourceMetrics>)>,Vec<(String,u64,Arc<crate::live::metrics::DerivedMetrics>)>){let state=self.shared.state.lock();let mut sources=Vec::new();let mut derived=Vec::new();for(id,b)in &state.bindings{let generation=b.authority.generation().get();if let Some(metrics)=&b.source_metrics{sources.push((id.clone(),generation,metrics.clone()));}if let Some(metrics)=&b.derived_metrics{derived.push((id.clone(),generation,metrics.clone()));}}(sources,derived)}
+    pub fn source_metric_handles(&self)->Vec<(String,u64,Arc<crate::live::metrics::SourceMetrics>)>{let state=self.shared.state.lock();state.bindings.iter().filter_map(|(id,b)|b.source_metrics.as_ref().map(|m|(id.clone(),b.authority.generation().get(),m.clone()))).collect()}
+    pub fn derived_metric_handles(&self)->Vec<(String,u64,Arc<crate::live::metrics::DerivedMetrics>)>{let state=self.shared.state.lock();state.bindings.iter().filter_map(|(id,b)|b.derived_metrics.as_ref().map(|m|(id.clone(),b.authority.generation().get(),m.clone()))).collect()}
+}
+impl ProducerHandle {
+    pub(crate) fn baseline_signal(&self)->Arc<Notify>{self.baseline_signal.clone()}
+    pub(crate) fn derived_metrics(&self)->Option<Arc<crate::live::metrics::DerivedMetrics>>{self.shared.state.lock().bindings.get(&self.stream).filter(|b|b.id==self.binding).and_then(|b|b.derived_metrics.clone())}
+    pub(crate) fn install_source_metrics(&self,metrics:Arc<crate::live::metrics::SourceMetrics>){metrics.attach_runtime(self.shared.runtime_metrics.clone());if let Some(b)=self.shared.state.lock().bindings.get_mut(&self.stream){if b.id==self.binding {b.source_metrics=Some(metrics);}}}
 }

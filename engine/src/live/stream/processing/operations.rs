@@ -174,6 +174,7 @@ impl DerivedProcessor {
             return Ok(());
         }
         let input = &batch[0];
+        if let Some(m)=self.context.output.metrics(){m.record_events_received(publication(input).market_event_count());}
         let rank = input.input_position;
         if rank >= self.observed.len() {
             return Err("invalid input position".into());
@@ -319,100 +320,103 @@ impl Processor for DerivedProcessor {
         unreachable!("fallible production processor")
     }
     fn try_run_turn(&mut self, max: usize) -> Result<bool, String> {
-        // The state mutex has no pool, registry or Router lock beneath it.
-        // Service reads it only for status/deadlines and after worker retirement.
-        let shared = self.context.retained.clone();
-        let mut state = shared.lock().unwrap_or_else(|e| e.into_inner());
-        state.status.worker_thread = std::thread::current().name().map(str::to_owned);
-        for _ in 0..max {
-            if self.context.input.is_empty() {
-                break;
-            }
-            self.admit(&mut state)?;
-        }
-        for _ in 0..max {
-            let Some((i, k)) = self.next(&state)? else {
-                break;
-            };
-            // A publication can reveal another head after a prefix is consumed.
-            // Validate the actual emission frontier as well as admission progress.
-            if let (Some(current), Some(previous)) = (k, self.last_emitted) {
-                if current < previous {
-                    return Err(format!(
-                        "event-time emission frontier regressed: {previous:?} -> {current:?}"
-                    ));
+        let started=Instant::now();
+        let result = (|| {
+            // The state mutex has no pool, registry or Router lock beneath it.
+            // Service reads it only for status/deadlines and after worker retirement.
+            let shared = self.context.retained.clone();
+            let mut state = shared.lock().unwrap_or_else(|e| e.into_inner());
+            state.status.worker_thread = std::thread::current().name().map(str::to_owned);
+            for _ in 0..max {
+                if self.context.input.is_empty() {
+                    break;
                 }
+                self.admit(&mut state)?;
             }
-            let p = &state.pending[&i];
-            let mut e = event(&p.batch[0], p.cursor);
-            let rank = p.batch[0].input_position;
-            let reference = p.batch[0].role == InputRole::Reference;
-            if let Some(conversion) = &mut self.conversion {
-                if reference {
-                    conversion.reference(
-                        &p.batch[0].stream_id,
-                        k.ok_or("missing reference timestamp")?,
-                        &e,
-                    )?;
-                    state.status.last_reference_times[rank] = k.map(|k| k.timestamp_ns);
-                } else if let Some(key) = k.or_else(|| {
-                    e.native.timestamp_ns().map(|t| {
-                        MergeKey::new(
-                            t,
-                            rank as u32,
-                            p.batch[0].admission_ordinal,
-                            p.cursor as u64,
-                        )
-                    })
-                }) {
-                    conversion.value(key, &mut e)?;
-                } else if !e.baseline_barrier {
-                    return Err("missing exchange timestamp on conversion data event".into());
-                }
-                // Untimed snapshots are explicit native baseline barriers only.
-            }
-            if !reference {
-                if let Some(v) = e.valuation.as_ref().filter(|_| self.conversion.is_some()) {
-                    for r in &v.evaluation.references {
-                        state.status.reference_ages_ns[r.key.stream_rank as usize] = Some(
-                            u64::try_from(
-                                i128::from(e.native.timestamp_ns().unwrap())
-                                    - i128::from(r.key.timestamp_ns),
-                            )
-                            .map_err(|_| "reference age overflow")?,
-                        );
+            for _ in 0..max {
+                let Some((i, k)) = self.next(&state)? else {
+                    break;
+                };
+                // A publication can reveal another head after a prefix is consumed.
+                // Validate the actual emission frontier as well as admission progress.
+                if let (Some(current), Some(previous)) = (k, self.last_emitted) {
+                    if current < previous {
+                        return Err(format!(
+                            "event-time emission frontier regressed: {previous:?} -> {current:?}"
+                        ));
                     }
                 }
-                self.context
-                    .output
-                    .try_emit(RouterPublication::Derived(vec![e].into()))
-                    .map_err(|e| e.reason.to_owned())?;
-            }
-            self.last_emitted = k.or(self.last_emitted);
-            if self.ordered {
-                state.heads.pop();
-            }
-            state.pending.get_mut(&i).unwrap().cursor += 1;
-            if state.pending[&i].cursor == count(publication(&state.pending[&i].batch[0])) {
-                let batch = state.pending.remove(&i).unwrap().batch;
-                if reference {
-                    if let Some(old) = state.reference_holds[rank].replace(batch) {
-                        old.complete();
-                    }
-                } else {
-                    batch.complete();
-                }
-            } else if self.ordered {
                 let p = &state.pending[&i];
-                let head = key(&p.batch[0], p.cursor)?;
-                state.heads.push(Reverse((head, i)));
+                let mut e = event(&p.batch[0], p.cursor);
+                let rank = p.batch[0].input_position;
+                let reference = p.batch[0].role == InputRole::Reference;
+                if let Some(conversion) = &mut self.conversion {
+                    if reference {
+                        conversion.reference(
+                            &p.batch[0].stream_id,
+                            k.ok_or("missing reference timestamp")?,
+                            &e,
+                        )?;
+                        state.status.last_reference_times[rank] = k.map(|k| k.timestamp_ns);
+                    } else if let Some(key) = k.or_else(|| {
+                        e.native.timestamp_ns().map(|t| {
+                            MergeKey::new(
+                                t,
+                                rank as u32,
+                                p.batch[0].admission_ordinal,
+                                p.cursor as u64,
+                            )
+                        })
+                    }) {
+                        conversion.value(key, &mut e).map_err(|reason|{if let Some(m)=self.context.output.metrics(){m.record_conversion_failure();}reason})?;
+                    } else if !e.baseline_barrier {
+                        return Err("missing exchange timestamp on conversion data event".into());
+                    }
+                    // Untimed snapshots are explicit native baseline barriers only.
+                }
+                if !reference {
+                    if let Some(v) = e.valuation.as_ref().filter(|_| self.conversion.is_some()) {
+                        for r in &v.evaluation.references {
+                            state.status.reference_ages_ns[r.key.stream_rank as usize] = Some(
+                                u64::try_from(
+                                    i128::from(e.native.timestamp_ns().unwrap())
+                                        - i128::from(r.key.timestamp_ns),
+                                )
+                                .map_err(|_| "reference age overflow")?,
+                            );
+                        }
+                    }
+                    let publication=RouterPublication::Derived(vec![e].into());
+                    if let Some(m)=self.context.output.metrics(){m.record_events_calculated_total(publication.market_event_count());}
+                    self.context.output.try_emit(publication).map_err(|e|e.reason.to_owned())?;
+                }
+                self.last_emitted = k.or(self.last_emitted);
+                if self.ordered {
+                    state.heads.pop();
+                }
+                state.pending.get_mut(&i).unwrap().cursor += 1;
+                if state.pending[&i].cursor == count(publication(&state.pending[&i].batch[0])) {
+                    let batch = state.pending.remove(&i).unwrap().batch;
+                    if reference {
+                        if let Some(old) = state.reference_holds[rank].replace(batch) {
+                            old.complete();
+                        }
+                    } else {
+                        batch.complete();
+                    }
+                } else if self.ordered {
+                    let p = &state.pending[&i];
+                    let head = key(&p.batch[0], p.cursor)?;
+                    state.heads.push(Reverse((head, i)));
+                }
             }
-        }
-        state.refresh()?;
-        // Startup and source continuity have their own lifecycle checks. Only
-        // retained work with no eligible head arms a computation-progress timer.
-        state.deadline =
-            if self.ordered && !state.pending.is_empty() && self.next(&state)?.is_none() {
+            state.refresh()?;
+            // Startup and source continuity have their own lifecycle checks. Only
+            // retained work with no eligible head arms a computation-progress timer.
+            state.deadline = if self.ordered
+                && !state.pending.is_empty()
+                && self.next(&state)?.is_none()
+            {
                 state
                     .pending
                     .values()
@@ -421,37 +425,43 @@ impl Processor for DerivedProcessor {
             } else {
                 None
             };
-        if self.finished.iter().all(|done| *done)
-            && state.pending.is_empty()
-            && !self.completion_emitted
-        {
-            self.context
-                .output
-                .try_emit(RouterPublication::ReplayComplete)
-                .map_err(|e| e.reason.to_owned())?;
-            self.completion_emitted = true;
-            state.deadline = None;
-        }
-        if state.deadline.is_some_and(|d| Instant::now() >= d) {
-            let mut reason =
-                "event-time frontier stalled waiting for required input progress".to_owned();
-            if let Some(conversion) = &self.conversion {
-                if let Some(p) = state
-                    .pending
-                    .values()
-                    .find(|p| p.batch[0].role == InputRole::Data)
-                {
-                    if let Some(key) = key(&p.batch[0], p.cursor)? {
-                        let mut event = event(&p.batch[0], p.cursor);
-                        if let Err(detail) = conversion.value(key, &mut event) {
-                            reason.push_str(&format!(": {detail}"));
+            if self.finished.iter().all(|done| *done)
+                && state.pending.is_empty()
+                && !self.completion_emitted
+            {
+                self.context
+                    .output
+                    .try_emit(RouterPublication::ReplayComplete)
+                    .map_err(|e| e.reason.to_owned())?;
+                self.completion_emitted = true;
+                state.deadline = None;
+            }
+            if state.deadline.is_some_and(|d| Instant::now() >= d) {
+                let mut reason =
+                    "event-time frontier stalled waiting for required input progress".to_owned();
+                if let Some(conversion) = &self.conversion {
+                    if let Some(p) = state
+                        .pending
+                        .values()
+                        .find(|p| p.batch[0].role == InputRole::Data)
+                    {
+                        if let Some(key) = key(&p.batch[0], p.cursor)? {
+                            let mut event = event(&p.batch[0], p.cursor);
+                            if let Err(detail) = conversion.value(key, &mut event) {
+                                reason.push_str(&format!(": {detail}"));
+                            }
                         }
                     }
                 }
+                return Err(reason);
             }
-            return Err(reason);
+            Ok(!self.context.input.is_empty() || self.next(&state)?.is_some())
+        })();
+        if let Some(m)=self.context.output.metrics(){m.record_processing_latency(started.elapsed());if result.as_ref().is_err_and(|detail|detail.contains("event-time emission frontier regressed")){m.record_late_event();}}
+        if let Err(detail) = &result {
+            self.context.output.record_data_discontinuity(detail);
         }
-        Ok(!self.context.input.is_empty() || self.next(&state)?.is_some())
+        result
     }
 }
 pub(crate) fn resolve_start(

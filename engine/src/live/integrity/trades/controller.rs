@@ -48,6 +48,7 @@ pub enum TradeControllerError {
 /// not confirmed counts of missing executions.
 #[derive(Debug)]
 pub struct AcceptedTradeBatch {
+    pub source_generation: u64,
     pub trades: Vec<Trade>,
 
     pub received_records: usize,
@@ -92,6 +93,7 @@ pub enum TradeControllerOutcome {
     /// No trades from this batch may be published as
     /// accepted market data.
     CoverageReviewRequired {
+        source_generation: u64,
         observations: Vec<TradeIntegrityObservation>,
     },
 
@@ -575,6 +577,7 @@ impl LiveTradeController {
         let history_truncated = self.identities.history_truncated();
 
         Ok(AcceptedTradeBatch {
+            source_generation: self.generation,
             trades: prepared.trades,
             received_records: received_records,
             duplicate_records: 0,
@@ -860,7 +863,10 @@ impl LiveTradeController {
             self.coverage_triggering_trades = Some(triggering_trades);
             self.coverage_hold = Some(hold);
 
-            return Ok(TradeControllerOutcome::CoverageReviewRequired { observations });
+            return Ok(TradeControllerOutcome::CoverageReviewRequired {
+                source_generation: self.generation,
+                observations,
+            });
         }
 
         let will_truncate = self.identities.history_truncated()
@@ -870,6 +876,7 @@ impl LiveTradeController {
                 .saturating_add(candidate_trades.len())
                 > limits.max_ids;
         let accepted = AcceptedTradeBatch {
+            source_generation: self.generation,
             trades: candidate_trades,
 
             received_records: records.len(),

@@ -8,7 +8,7 @@ use crate::live::infrastructure::normalization::{
     NormalizationSource, NormalizedDepth, NormalizedMessage, NormalizedTrades,
 };
 use crate::live::integrity::IntegrityTradeRecoveryCommitError;
-use crate::live::integrity::{DepthPublicationEvent, IntegrityDecision, IntegrityLifecycleEvent};
+use crate::live::integrity::{DepthPublicationEvent, IntegrityLifecycleEvent};
 use crate::live::integrity::{DepthSourceEpoch, DepthSyncToken, RestDepthRequestContext};
 use crate::live::integrity::{IntegrityTradeRecoveryError, TradeRecoveryPreflight};
 use serde_json::Value;
@@ -134,6 +134,12 @@ impl SourceStreamRunner {
         self.state
     }
 
+    pub(crate) fn observe_depth(
+        &mut self,
+        producer: std::sync::Arc<crate::live::stream::router::ProducerHandle>,
+    ) {
+        self.processor.observe_depth(producer);
+    }
     pub fn processor(&self) -> &SourceProcessor {
         &self.processor
     }
@@ -306,7 +312,7 @@ impl SourceStreamRunner {
             accounted_bytes,
             publish_depth,
             |outcome| {
-                let accepted = outcome.decision() == IntegrityDecision::Accepted;
+                let accepted = matches!(outcome, crate::live::integrity::IntegrityOutcome::Trades(crate::live::integrity::BoundTradeIngressOutcome::Processed(crate::live::integrity::TradeControllerOutcome::Accepted(batch))) if !batch.trades.is_empty());
 
                 publish_trades(SourceTradePublication::Integrity(outcome))?;
 

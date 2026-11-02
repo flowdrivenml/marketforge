@@ -488,6 +488,9 @@ impl ProcessingServiceHandle {
     }
     /// Taking a terminal report frees its association slot. Retained batches remain
     /// accounted until the recipient explicitly discards/processes or drops them.
+    /// Transfer bounded terminal ownership to the application for explicit disposal.
+    /// The observed-state lock is released before reports or buffers are dropped.
+    pub fn take_reports(&self,limit:usize)->Vec<ProcessingReport>{let mut observed=lock(&self.shared.observed);let ids=observed.reports.keys().take(limit.min(1024)).cloned().collect::<Vec<_>>();let mut reports=Vec::with_capacity(ids.len());let mut views=Vec::with_capacity(ids.len());for id in ids {if let Some(report)=observed.reports.remove(&id){reports.push(report);}if let Some(view)=observed.views.remove(&id){views.push(view);}}drop(observed);drop(views);self.shared.wake.notify_one();reports}
     pub fn take_report(&self, id: &str, generation: RuntimeGeneration) -> Option<ProcessingReport> {
         let mut observed = lock(&self.shared.observed);
         if !observed
@@ -556,6 +559,9 @@ fn fence(
     reason: Option<String>,
 ) {
     let reason = reason.map(bounded_reason);
+    if let (Some(producer), Some(reason)) = (&a.producer, &reason) {
+        producer.record_data_discontinuity(reason);
+    }
     // Registry revocation precedes input fencing and potentially slow destruction.
     let mut runtime = lock(registry);
     if disposition == TerminalDisposition::Stopped {
@@ -1202,13 +1208,16 @@ async fn drive(
                                 PublicationSemantics::CanonicalCompatibility if request.inputs.len()==1=>router.attach_derived_producer(authority,&request.inputs[0].stream_id),
                                 _=>return Err("invalid processing publication semantics".into()),
                             }.map_err(|e|e.to_string())?;
+                            output.attach_integrity_sink(producer.data_discontinuity_sink());
+                            if let Some(metrics)=producer.derived_metrics(){let _=metrics.set_input_queue_capacity(request.input_limits.max_events as u64);let _=metrics.set_input_health(request.inputs.len() as u64,0);}
+                            output.attach_metrics(producer.derived_metrics());
                             Ok::<_,String>((input,output,producer))
                         })();
                         let (input,output,producer)=match resources {Ok(value)=>value,Err(reason)=>{let _=lock(&registry).mark_failed(&id,generation,reason.clone());let _=reply.send(Err(reason));continue;}};
                         let attached=async {
                             let mut bindings=Vec::new();
                             for spec in request.inputs {
-                                let subscription=router.subscribe(SubscribeRequest{stream_id:spec.stream_id.clone(),owner:DemandOwner::Direct{consumer_id:"processing-runtime".into(),subscription_id:format!("{id}:{}:{}",generation.get(),spec.position)}}).await.map_err(|e|e.to_string())?;
+                                let subscription=router.subscribe(SubscribeRequest{stream_id:spec.stream_id.clone(),owner:DemandOwner::Processing{stream_id:id.clone(),generation:generation.get(),input_position:spec.position}}).await.map_err(|e|e.to_string())?;
                                 let observer=subscription.observer();
                                 let upstream=lock(&registry).status(&spec.stream_id).filter(|s|s.lifecycle.occupies_runtime()).map(|s|s.generation);
                                 bindings.push(InputBinding{spec,generation:upstream,subscription:Arc::new(tokio::sync::Mutex::new(subscription)),observer,last_delivery_at:None});
@@ -1354,6 +1363,7 @@ mod retry_tests {
         let registry = Arc::new(Mutex::new(runtime));
         let mut service = ProcessingService::new(
             &RuntimeConfig {
+                application: Default::default(),
                 shutdown_timeout_seconds: 1,
                 processing: Some(ProcessingConfig::default()),
             },

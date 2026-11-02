@@ -47,6 +47,24 @@ impl StreamDefinitionRepository {
         Self { pool }
     }
 
+    /// Read definitions and edges at one repeatable-read cut; no writes/migrations.
+    pub async fn snapshot(&self) -> Result<(Vec<PersistedStreamDefinition>, Vec<StreamDependency>), StreamDefinitionError> {
+        self.snapshot_bounded(1024).await
+    }
+    pub async fn snapshot_bounded(&self,limit:usize)->Result<(Vec<PersistedStreamDefinition>,Vec<StreamDependency>),StreamDefinitionError>{
+        if !(1..=1024).contains(&limit){return Err(StreamDefinitionError::Invalid("definition snapshot limit invalid".into()));}
+        let mut tx=self.pool.begin().await?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY").execute(&mut *tx).await?;
+        let rows=sqlx::query("SELECT stream_id, origin_kind, recording_stream_key, definition, enabled, activation_policy, revision FROM live.stream_definitions ORDER BY stream_id LIMIT $1").bind((limit+1) as i64).fetch_all(&mut *tx).await?;
+        if rows.len()>limit{return Err(StreamDefinitionError::Invalid("definition snapshot exceeds configured limit".into()));}
+        let definitions=rows.into_iter().map(decode_definition).collect::<Result<Vec<_>,_>>()?;
+        let rows=sqlx::query("SELECT derived_stream_id, input_stream_id, input_position FROM live.stream_dependencies ORDER BY derived_stream_id,input_position LIMIT $1").bind((limit*limit+1) as i64).fetch_all(&mut *tx).await?;
+        if rows.len()>limit*limit{return Err(StreamDefinitionError::Invalid("dependency snapshot exceeds configured bound".into()));}
+        let dependencies=rows.into_iter().map(|row| Ok(StreamDependency{derived_stream_id:row.try_get("derived_stream_id")?,input_stream_id:row.try_get("input_stream_id")?,input_position:row.try_get("input_position")?})).collect::<Result<Vec<_>,sqlx::Error>>()?;
+        tx.commit().await?;
+        Ok((definitions,dependencies))
+    }
+
     /// Atomically accept a source registration and its durable desired definition.
     /// A duplicate or failed definition cannot leave an orphan registration.
     pub async fn register_source(

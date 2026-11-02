@@ -43,6 +43,9 @@ async fn every_zero_resource_limit_is_invalid() {
 #[test]
 fn identity_exhaustion_does_not_wrap() {
     let mut state = State {
+        integrity_revision: 0,
+        integrity_history: VecDeque::new(),
+        integrity_history_truncated: false,
         bindings: BTreeMap::new(),
         consumers: BTreeMap::new(),
         ingress: VecDeque::new(),
@@ -56,12 +59,17 @@ fn identity_exhaustion_does_not_wrap() {
 #[test]
 fn terminal_failure_delivered_exactly_once_and_clears_sync() {
     let consumer = Consumer {
+        integrity_scope: None,
         id: 1,
         stream: "x".into(),
         owner: DemandOwner::Manual {
             session_id: "x".into(),
         },
         queue: Mutex::new(ConsumerQueue {
+            integrity_streak: 0,
+            terminal_integrity: None,
+            integrity: None,
+            integrity_bytes: 0,
             queue: VecDeque::new(),
             bytes: 0,
             state: SubscriptionState::Failed(ContinuityFailure::ConsumerCapacity),

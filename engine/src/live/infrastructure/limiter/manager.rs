@@ -212,6 +212,7 @@ enum Admission {
 // ============================================================
 
 impl RateLimitManager {
+    pub fn shares_state_with(&self,other:&Self)->bool{Arc::ptr_eq(&self.inner,&other.inner)}
     /// Initialize all registered budgets with zero
     /// locally observed usage.
     pub fn new(

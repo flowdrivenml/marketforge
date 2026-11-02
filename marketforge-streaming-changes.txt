@@ -1,0 +1,73 @@
+ engine/Cargo.lock                                  |  28 +++
+ engine/Cargo.toml                                  |  22 ++
+ engine/src/lib.rs                                  |   4 +
+ engine/src/live/config/general/mod.rs              |   2 +
+ engine/src/live/config/general/model.rs            |  69 ++++++-
+ engine/src/live/config/general/validation.rs       |   1 +
+ engine/src/live/integrity/trades/controller.rs     |   9 +-
+ engine/src/live/mod.rs                             |   1 +
+ engine/src/live/stream/processing/conversion.rs    |  10 +
+ engine/src/live/stream/processing/operations.rs    | 230 +++++++++++----------
+ engine/src/live/stream/processing/pipeline.rs      |  18 ++
+ engine/src/live/stream/processing/service.rs       |   4 +
+ engine/src/live/stream/registry/graph.rs           |  12 ++
+ engine/src/live/stream/router/admission.rs         | 223 +++++++++++---------
+ engine/src/live/stream/router/event.rs             |   5 +
+ engine/src/live/stream/router/facade.rs            | 213 +++++++++++++++++++
+ engine/src/live/stream/router/source.rs            |  54 ++++-
+ engine/src/live/stream/router/tests.rs             |   7 +
+ engine/src/live/stream/source/executor.rs          |  13 +-
+ engine/src/live/stream/source/processor.rs         |  23 ++-
+ engine/src/live/stream/source/runner.rs            |  10 +-
+ engine/src/live/stream/source/supervisor.rs        |   3 +-
+ engine/src/live/stream/source/trade_publication.rs |   6 +
+ engine/tests/live/integration/derived/hardening.rs |  25 ++-
+ engine/tests/live/integration/processing/main.rs   |  21 +-
+ engine/tests/live/integration/router/main.rs       |   2 +
+ engine/tests/live/integration/source/pipeline.rs   |  16 +-
+ engine/tests/live/integration/source/recovery.rs   |  17 +-
+ engine/tests/live/integration/source/resources.rs  |   8 +-
+ 29 files changed, 828 insertions(+), 228 deletions(-)
+ M engine/Cargo.lock
+ M engine/Cargo.toml
+ M engine/src/lib.rs
+ M engine/src/live/config/general/mod.rs
+ M engine/src/live/config/general/model.rs
+ M engine/src/live/config/general/validation.rs
+ M engine/src/live/integrity/trades/controller.rs
+ M engine/src/live/mod.rs
+ M engine/src/live/stream/processing/conversion.rs
+ M engine/src/live/stream/processing/operations.rs
+ M engine/src/live/stream/processing/pipeline.rs
+ M engine/src/live/stream/processing/service.rs
+ M engine/src/live/stream/registry/graph.rs
+ M engine/src/live/stream/router/admission.rs
+ M engine/src/live/stream/router/event.rs
+ M engine/src/live/stream/router/facade.rs
+ M engine/src/live/stream/router/source.rs
+ M engine/src/live/stream/router/tests.rs
+ M engine/src/live/stream/source/executor.rs
+ M engine/src/live/stream/source/processor.rs
+ M engine/src/live/stream/source/runner.rs
+ M engine/src/live/stream/source/supervisor.rs
+ M engine/src/live/stream/source/trade_publication.rs
+ M engine/tests/live/integration/derived/hardening.rs
+ M engine/tests/live/integration/processing/main.rs
+ M engine/tests/live/integration/router/main.rs
+ M engine/tests/live/integration/source/pipeline.rs
+ M engine/tests/live/integration/source/recovery.rs
+ M engine/tests/live/integration/source/resources.rs
+?? engine/docs/streaming-v1-verification.md
+?? engine/docs/streaming-v1.md
+?? engine/examples/
+?? engine/src/client/
+?? engine/src/live/stream/router/integrity.rs
+?? engine/src/live/transport/
+?? engine/src/stream_protocol/
+?? engine/tests/live/integration/router/integrity_publication.rs
+?? engine/tests/stream_client.rs
+?? engine/tests/stream_protocol.rs
+?? engine/tests/stream_transport.rs
+?? marketforge-streaming-audit.patch
+?? marketforge-streaming-changes.txt
+974187dbeacffd771b4f2f93741e3ec903efb0c1

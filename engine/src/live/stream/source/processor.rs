@@ -77,6 +77,7 @@ pub enum SourceProcessingEpoch {
 /// - the canonical event router;
 /// - StreamRuntimeRegistry lifecycle authority.
 pub struct SourceProcessor {
+    depth_observer: Option<std::sync::Arc<crate::live::stream::router::ProducerHandle>>,
     integrity: StreamIntegrityHandle,
     publication: Option<IntegrityPublicationAdapter>,
 }
@@ -93,11 +94,25 @@ impl SourceProcessor {
         };
 
         Ok(Self {
+            depth_observer: None,
             integrity,
             publication,
         })
     }
 
+    pub(crate) fn observe_depth(
+        &mut self,
+        producer: std::sync::Arc<crate::live::stream::router::ProducerHandle>,
+    ) {
+        self.depth_observer = Some(producer);
+    }
+    pub(crate) fn baseline_signal(&self)->Option<std::sync::Arc<tokio::sync::Notify>>{self.depth_observer.as_ref().map(|p|p.baseline_signal())}
+    pub(crate) fn publish_current_baseline(&self,publish:&mut impl FnMut(&[DepthPublicationEvent<'_>])->Result<(),String>)->Result<(),String>{
+        let Some(publication)=self.publication.as_ref() else{return Ok(())};if publication.phase()!=crate::live::integrity::DepthPublicationPhase::Ready{return Err("depth handoff unavailable during pending/reset publication".into());}
+        let Some((book_generation,baseline,levels))=self.integrity.current_book_handoff() else{return Err("no synchronized authoritative depth book for handoff".into())};
+        if publication.state().published_book_generation!=Some(book_generation){return Err("depth book not acknowledged for handoff".into());}
+        publish(&[DepthPublicationEvent::Snapshot{stream_generation:self.integrity.stream_generation(),book_generation,baseline,levels:&levels,timestamp:crate::live::integrity::DepthAcceptedTimestamp{latest_source:None,composition:crate::live::integrity::DepthTimestampComposition::CurrentBookHandoff}}])
+    }
     pub fn integrity(&self) -> &StreamIntegrityHandle {
         &self.integrity
     }
@@ -313,6 +328,13 @@ impl SourceProcessor {
         outcome: &IntegrityOutcome,
         publish: &mut impl FnMut(&[DepthPublicationEvent<'_>]) -> Result<(), String>,
     ) -> Result<(), SourceProcessorError> {
+        if let Some(observer) = &self.depth_observer {
+            if let IntegrityOutcome::Depth(outcome) = outcome {
+                observer
+                    .publish_depth_integrity(outcome, self.integrity.status())
+                    .map_err(|e| SourceProcessorError::Handoff(e.to_string()))?;
+            }
+        }
         let publication = self
             .publication
             .as_mut()
@@ -633,7 +655,13 @@ impl SourceProcessor {
         outcome: &IntegrityOutcome,
         publish: &mut impl FnMut(&IntegrityOutcome) -> Result<(), String>,
     ) -> Result<(), SourceProcessorError> {
-        if outcome.decision() != IntegrityDecision::Accepted {
+        let coverage_observation = matches!(
+            outcome,
+            IntegrityOutcome::Trades(crate::live::integrity::BoundTradeIngressOutcome::Processed(
+                crate::live::integrity::TradeControllerOutcome::CoverageReviewRequired { .. }
+            ))
+        );
+        if outcome.decision() != IntegrityDecision::Accepted && !coverage_observation {
             return Ok(());
         }
 

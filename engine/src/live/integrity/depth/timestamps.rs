@@ -6,6 +6,8 @@ use crate::live::infrastructure::normalization::{DepthTimestampProvenance, Norma
 /// orders or price levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DepthTimestampComposition {
+    /// Current authoritative book handed to a newly attached internal consumer.
+    CurrentBookHandoff,
     /// One native message produced the accepted update.
     SingleMessage,
 

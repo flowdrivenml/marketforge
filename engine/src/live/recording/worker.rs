@@ -13,6 +13,10 @@ use super::{
     writer::{PostgresBatchWriter, RecordingEvent},
 };
 
+pub trait RecordingBatchWriter:Send+Sync+'static {
+    fn write_batch<'a>(&'a self,events:&'a[RecordingEvent])->std::pin::Pin<Box<dyn std::future::Future<Output=Result<super::BatchWriteResult,RecordingError>>+Send+'a>>;
+}
+impl RecordingBatchWriter for PostgresBatchWriter {fn write_batch<'a>(&'a self,events:&'a[RecordingEvent])->std::pin::Pin<Box<dyn std::future::Future<Output=Result<super::BatchWriteResult,RecordingError>>+Send+'a>>{Box::pin(async move{PostgresBatchWriter::write_batch(self,events).await.map_err(Into::into)})}}
 pub struct PostgresRecorder;
 
 impl PostgresRecorder {
@@ -21,6 +25,10 @@ impl PostgresRecorder {
         config: RecordingConfig,
         queue_capacity: usize,
     ) -> Result<(RecordingControl, JoinHandle<Result<(), RecordingError>>), RecordingError> {
+        Self::start_with_writer(std::sync::Arc::new(PostgresBatchWriter::new(pool)),config,queue_capacity)
+    }
+    /// Controlled writer seam preserves commit versus queue-admission semantics.
+    pub fn start_with_writer(writer:std::sync::Arc<dyn RecordingBatchWriter>,config:RecordingConfig,queue_capacity:usize)->Result<(RecordingControl,JoinHandle<Result<(),RecordingError>>),RecordingError>{
         config
             .validate()
             .map_err(RecordingError::InvalidConfiguration)?;
@@ -34,20 +42,21 @@ impl PostgresRecorder {
 
         let control = RecordingControl::new(sender, config_sender);
 
-        let worker = tokio::spawn(async move {
-            run_worker(PostgresBatchWriter::new(pool), receiver, config_receiver).await
-        });
+        let metrics=control.metrics();metrics.activate();
+        let worker = tokio::spawn(async move {run_worker(writer, receiver, config_receiver,metrics).await});
 
         Ok((control, worker))
     }
 }
 
 async fn run_worker(
-    writer: PostgresBatchWriter,
+    writer: std::sync::Arc<dyn RecordingBatchWriter>,
     mut receiver: mpsc::Receiver<RecordingCommand>,
     mut config_receiver: watch::Receiver<RecordingConfig>,
+    metrics: std::sync::Arc<crate::live::metrics::RecordingMetrics>,
 ) -> Result<(), RecordingError> {
     let mut pending: Vec<RecordingEvent> = Vec::new();
+    let mut reservations=Vec::new();
     let mut batch_started_at: Option<Instant> = None;
     let mut config_channel_open = true;
 
@@ -65,7 +74,7 @@ async fn run_worker(
                 || Instant::now() >= deadline
                 || !config.enabled
             {
-                flush(&writer, &mut pending).await?;
+                flush(writer.as_ref(), &mut pending,&mut reservations,&metrics).await?;
                 batch_started_at = None;
                 continue;
             }
@@ -101,7 +110,8 @@ async fn run_worker(
                             batch_started_at = Some(Instant::now());
                         }
 
-                        pending.push(event);
+                        reservations.push(event.reservation);
+                        pending.push(event.event);
                     }
 
                     Some(RecordingCommand::Shutdown(ack)) => {
@@ -113,7 +123,7 @@ async fn run_worker(
                     }
 
                     None => {
-                        flush(&writer, &mut pending).await?;
+                        flush(writer.as_ref(), &mut pending,&mut reservations,&metrics).await?;
                         return Ok(());
                     }
                 }
@@ -123,14 +133,18 @@ async fn run_worker(
 }
 
 async fn flush(
-    writer: &PostgresBatchWriter,
+    writer: &dyn RecordingBatchWriter,
     pending: &mut Vec<RecordingEvent>,
+    reservations:&mut Vec<super::control::RecordingReservation>,
+    metrics:&crate::live::metrics::RecordingMetrics,
 ) -> Result<(), RecordingError> {
     if pending.is_empty() {
         return Ok(());
     }
 
-    writer.write_batch(pending).await?;
+    let result=writer.write_batch(pending).await;
+    match result {Ok(result) if result.records_written==pending.len()=>metrics.confirmed(result.records_written as u64),Ok(_)=>{metrics.record_write_failure();return Err(RecordingError::InvalidConfiguration("writer did not confirm complete atomic batch".into()));},Err(error)=>{metrics.record_write_failure();return Err(error);}}
+    reservations.clear();
 
     pending.clear();
 

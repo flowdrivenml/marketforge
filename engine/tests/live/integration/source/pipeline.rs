@@ -17,11 +17,23 @@ pub fn native(profile: &str) -> Value {
 }
 pub fn published(payload: SourceTradePublication<'_>) -> Vec<Trade> {
     match payload {
-        SourceTradePublication::Recovery(trades) => trades.to_vec(),
+        SourceTradePublication::Recovery(trades)
+        | SourceTradePublication::RecoveryObserved {
+            records: trades, ..
+        } => trades.to_vec(),
         SourceTradePublication::Integrity(IntegrityOutcome::Trades(
             BoundTradeIngressOutcome::Processed(TradeControllerOutcome::Accepted(batch)),
         )) => batch.trades.clone(),
-        _ => panic!("only accepted market data may be published"),
+        SourceTradePublication::Integrity(IntegrityOutcome::Trades(
+            BoundTradeIngressOutcome::Processed(TradeControllerOutcome::CoverageReviewRequired {
+                observations,
+                ..
+            }),
+        )) => {
+            assert!(!observations.is_empty());
+            Vec::new()
+        }
+        _ => panic!("unexpected publication outcome"),
     }
 }
 

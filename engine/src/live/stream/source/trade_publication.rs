@@ -14,4 +14,10 @@ pub enum SourceTradePublication<'a> {
 
     /// Reconciled trades awaiting acknowledged publication.
     Recovery(&'a [Trade]),
+    /// Routed recovery carries its authoritative acquisition generation. The
+    /// callback still precedes commit and does not prove complete history.
+    RecoveryObserved {
+        records: &'a [Trade],
+        source_generation: u64,
+    },
 }

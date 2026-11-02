@@ -284,6 +284,7 @@ impl SourceRuntimeBuilder {
 }
 
 impl PreparedSourceStream {
+    pub fn validate_subscription(&self,exchanges:&ExchangeConfigStore)->Result<(),SourceInitializationError>{let profile=self.request.profile();let exchange=exchanges.get(profile).ok_or_else(||SourceInitializationError("missing exchange profile".into()))?;crate::live::infrastructure::websocket::validate_stream_request(exchange,&self.request,&self.formats).map_err(SourceInitializationError)}
     /// Supply a catalog-resolved native subscription value when canonical market
     /// classification alone is ambiguous (for example Bitget linear products).
     pub fn with_subscription_parameter(
@@ -333,6 +334,7 @@ impl PreparedSourceStream {
             )
             .map_err(|e| fail(e.to_string()))?,
         );
+        let handle=handle.with_metrics(self.runner.instance().metrics_handle());
         // Validate everything fallible before attaching; an error must not leak an attachment.
         let attachment = SourceAttachment::attach_with_formats(
             manager,
