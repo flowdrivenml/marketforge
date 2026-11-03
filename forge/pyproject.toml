@@ -1,32 +1,127 @@
 [build-system]
-requires = ["hatchling>=1.26"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
+
 
 [project]
 name = "marketforge"
 version = "0.1.0"
-description = "Acquire, normalize, validate, and merge free historical tick-level market microstructure data."
-readme = "README.md"
+description = "Historical market-data acquisition and Rust engine orchestration."
 requires-python = ">=3.12"
 license = "MIT"
 
 dependencies = [
-    "requests",
     "beautifulsoup4",
+    "httpx",
+    "psycopg[binary,pool]>=3,<4",
+    "pydantic>=2,<3",
+    "PyYAML>=6,<7",
     "rich",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest",
-]
 
 [project.scripts]
-marketforge = "marketforge.cli:main"
+marketforge = "forge.cli.main:main"
 
+
+[dependency-groups]
+dev = [
+    "pyright",
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+    "types-PyYAML",
+]
+
+
+# The project configuration lives inside the Python package.
+# Editable installs therefore need the repository root on the import path.
+[tool.hatch.build]
+dev-mode-dirs = [".."]
+
+
+# Explicitly select application packages.
+# Tests, helper scripts, and project configuration are not wheel contents.
 [tool.hatch.build.targets.wheel]
-packages = ["src/marketforge"]
+only-include = [
+    "__init__.py",
+    "startup",
+    "shared",
+    "markets",
+    "historical",
+    "datasets",
+    "orchestration",
+    "features",
+    "lab",
+    "cli",
+    "tui",
+]
+
+
+# Install the selected contents under the forge import package.
+[tool.hatch.build.targets.wheel.sources]
+"" = "forge"
+
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["build", "dist"]
+
+
+[tool.ruff.lint]
+select = [
+    "E4",
+    "E7",
+    "E9",
+    "F",
+    "I",
+    "UP",
+    "B",
+    "ASYNC",
+]
+
+
+[tool.ruff.lint.isort]
+known-first-party = ["forge"]
+
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+
+[tool.pyright]
+include = ["."]
+exclude = ["build", "dist"]
+
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+reportUnnecessaryTypeIgnoreComment = "error"
+
+# Paths are relative to this pyproject.toml.
+extraPaths = [".."]
+venvPath = ".."
+venv = ".venv"
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+
+addopts = [
+    "-ra",
+    "--strict-config",
+    "--strict-markers",
+    "--import-mode=importlib",
+]
+
+asyncio_mode = "strict"
+
+markers = [
+    "integration: component integration tests",
+    "database: requires the explicitly configured testing database",
+    "network: explicitly enabled external-network tests",
+    "engine: requires real Rust engine executables",
+    "terminal: requires terminal or PTY interaction",
+]
