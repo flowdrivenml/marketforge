@@ -119,8 +119,8 @@ sqlx = { version = "0.9.0", default-features = false, features = [
 tempfile = "3.27.0"
 
 [[bin]]
-name = "marketforge-process"
-path = "src/bin/marketforge-process.rs"
+name = "marketforge-normalize"
+path = "src/bin/marketforge-normalize.rs"
 required-features = ["historical"]
 
 [[bin]]
@@ -129,8 +129,8 @@ path = "src/bin/marketforge-live.rs"
 required-features = ["live"]
 
 [[bin]]
-name = "marketforge-process-benchmark"
-path = "src/bin/marketforge-process-benchmark.rs"
+name = "marketforge-normalize-benchmark"
+path = "src/bin/marketforge-normalize-benchmark.rs"
 required-features = ["historical"]
 
 [[bin]]
@@ -152,11 +152,6 @@ required-features = ["historical"]
 name = "marketforge-convert-benchmark"
 path = "src/bin/marketforge-convert-benchmark.rs"
 required-features = ["historical"]
-
-[[bin]]
-name = "marketforge-process-tui-demo"
-path = "src/bin/marketforge-process-tui-demo.rs"
-required-features = ["monitor-tui"]
 
 # Organized integration tests
 

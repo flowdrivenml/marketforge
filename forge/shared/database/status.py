@@ -42,13 +42,9 @@ def inspect_testing_database() -> DatabaseStatus:
             connect_timeout=10,
         ) as connection:
             with connection.transaction():
-                connection.execute(
-                    "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
-                )
+                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
 
-                database_row = connection.execute(
-                    "SELECT current_database()"
-                ).fetchone()
+                database_row = connection.execute("SELECT current_database()").fetchone()
 
                 if database_row != ("marketforge_test",):
                     raise MigrationError(
@@ -86,13 +82,9 @@ def inspect_testing_database() -> DatabaseStatus:
                 database_id, purpose = identity_row
 
                 if not isinstance(database_id, str) or purpose != "testing":
-                    raise MigrationError(
-                        "Database identity does not identify a testing database."
-                    )
+                    raise MigrationError("Database identity does not identify a testing database.")
 
-                with connection.cursor(
-                    row_factory=class_row(AppliedMigration)
-                ) as cursor:
+                with connection.cursor(row_factory=class_row(AppliedMigration)) as cursor:
                     cursor.execute("""
                         SELECT version, name, checksum
                         FROM forge_meta.schema_migrations
@@ -113,6 +105,4 @@ def inspect_testing_database() -> DatabaseStatus:
                 )
 
     except psycopg.Error as exc:
-        raise MigrationError(
-            "PostgreSQL could not inspect the migration state."
-        ) from exc
+        raise MigrationError("PostgreSQL could not inspect the migration state.") from exc

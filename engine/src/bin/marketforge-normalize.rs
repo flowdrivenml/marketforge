@@ -19,7 +19,7 @@ use marketforge_engine::tui::processing::{
 };
 
 #[derive(Debug, Parser)]
-#[command(name = "marketforge-process")]
+#[command(name = "marketforge-normalize")]
 #[command(group(
     ArgGroup::new("input")
         .required(true)
@@ -53,10 +53,37 @@ struct Args {
 }
 
 // -----------------------------------------------------------------------------
+// Path resolution
+// -----------------------------------------------------------------------------
+
+fn resolve_path(root: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root.join(path)
+    }
+}
+
+fn resolve_job_paths(job: &mut ProcessingJob, root: &Path) {
+    for task in &mut job.tasks {
+        task.input_path = resolve_path(root, &task.input_path);
+    }
+
+    job.output.dataset_path = resolve_path(root, &job.output.dataset_path);
+
+    job.output.staging_path = resolve_path(root, &job.output.staging_path);
+
+    job.resources.scratch_path = resolve_path(root, &job.resources.scratch_path);
+}
+
+// -----------------------------------------------------------------------------
 // Load processing jobs
 // -----------------------------------------------------------------------------
 
-fn load_jobs(directory: &Path) -> Result<Vec<ProcessingJob>, Box<dyn std::error::Error>> {
+fn load_jobs(
+    directory: &Path,
+    root: &Path,
+) -> Result<Vec<ProcessingJob>, Box<dyn std::error::Error>> {
     let mut paths = fs::read_dir(directory)?
         .map(|entry| entry.map(|entry| entry.path()))
         .collect::<Result<Vec<_>, _>>()?;
@@ -73,7 +100,9 @@ fn load_jobs(directory: &Path) -> Result<Vec<ProcessingJob>, Box<dyn std::error:
     let mut jobs = Vec::with_capacity(paths.len());
 
     for path in paths {
-        jobs.push(load_processing_job(&path)?);
+        let mut job = load_processing_job(&path)?;
+        resolve_job_paths(&mut job, root);
+        jobs.push(job);
     }
 
     if jobs.is_empty() {
@@ -114,17 +143,32 @@ fn redirect_outputs(
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let config = load_processing_config(&args.config, &args.project_root)?;
+    let project_root = args.project_root.canonicalize().map_err(|error| {
+        format!(
+            "invalid project root {}: {error}",
+            args.project_root.display()
+        )
+    })?;
+
+    let config_path = resolve_path(&project_root, &args.config);
+
+    let config = load_processing_config(&config_path, &project_root)?;
 
     // -------------------------------------------------------------
     // Single-job execution
     // -------------------------------------------------------------
 
     if let Some(path) = &args.job {
-        let mut job = load_processing_job(path)?;
+        let job_path = resolve_path(&project_root, path);
+
+        let mut job = load_processing_job(&job_path)?;
+
+        resolve_job_paths(&mut job, &project_root);
 
         if let Some(output_root) = &args.output_root {
-            redirect_outputs(std::slice::from_mut(&mut job), output_root)?;
+            let output_root = resolve_path(&project_root, output_root);
+
+            redirect_outputs(std::slice::from_mut(&mut job), &output_root)?;
         }
 
         #[cfg(feature = "monitor-tui")]
@@ -148,10 +192,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let directory = args.jobs_dir.as_ref().expect("jobs-dir required");
 
-    let mut jobs = load_jobs(directory)?;
+    let directory = resolve_path(&project_root, directory);
+
+    let mut jobs = load_jobs(&directory, &project_root)?;
 
     if let Some(output_root) = &args.output_root {
-        redirect_outputs(&mut jobs, output_root)?;
+        let output_root = resolve_path(&project_root, output_root);
+
+        redirect_outputs(&mut jobs, &output_root)?;
     }
 
     #[cfg(feature = "monitor-tui")]

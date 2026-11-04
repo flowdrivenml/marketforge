@@ -33,14 +33,29 @@ class AcquisitionInterval(SettingsModel, frozen=True):
         return self
 
 
+class ArchiveSourceOptions(SettingsModel, frozen=True):
+    """Gate.io depth archive selection."""
+
+    feed: Literal["incremental", "snapshot"] = "incremental"
+
+
 class ArchiveRequest(SettingsModel, frozen=True):
     """One archive collection requested from a source."""
 
     exchange: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
     instrument_type: Literal["spot", "perpetual", "future", "option"]
-    market_category: Literal["spot", "linear", "inverse"]
+    market_category: Literal["spot", "linear", "inverse", "option"]
     data_type: Literal["trades", "order_book_l2"]
     scope: ArchiveScope
+    source_options: ArchiveSourceOptions | None = None
+
+    @model_validator(mode="after")
+    def validate_source_options(self) -> Self:
+        if self.source_options is not None and (
+            self.exchange != "gateio" or self.data_type != "order_book_l2"
+        ):
+            raise ValueError("source_options is supported only for Gate.io order_book_l2 requests")
+        return self
 
 
 class AcquisitionConfig(SettingsModel, frozen=True):

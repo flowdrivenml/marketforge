@@ -35,7 +35,6 @@ def create_console(
         no_color = False
     elif selected.color == "never":
         color_system = None
-        force_terminal = False
         no_color = True
 
     return Console(

@@ -2,15 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import math
+from datetime import UTC
 from pathlib import Path
 
 from forge.historical.archives.config import load_acquisition
+from forge.historical.archives.operation import run_acquisition
 from forge.historical.archives.templates import write_acquisition_template
 from forge.shared.config.library import list_config_names
 from forge.shared.config.models import PresentationSettings
+from forge.shared.database.testing import TestingDatabaseError, testing_dsn
+from forge.shared.errors import MarketForgeError
+from forge.shared.ownership import WorkspaceOwnership
+from forge.shared.terminal.acquisition import AcquisitionDisplay
 from forge.shared.terminal.console import create_console
 from forge.shared.terminal.editor import edit_file
+from forge.startup.context import ApplicationContext
 
 
 def validate_acquisition(
@@ -119,3 +128,68 @@ def list_acquisition_configs(
 
     for name in names:
         console.print(name, style="mf.identifier")
+
+
+def execute_acquisition(
+    context: ApplicationContext,
+    path: Path,
+    *,
+    download: bool,
+    testing: bool,
+    refresh: bool = False,
+    requests_per_second: float | None = None,
+    silent: bool = False,
+    as_json: bool = False,
+) -> int:
+    """Run mapping/acquisition under the existing historical operation owner."""
+    if not testing:
+        raise TestingDatabaseError("Acquisition currently requires --testing.")
+    if requests_per_second is not None and (
+        not math.isfinite(requests_per_second) or requests_per_second <= 0
+    ):
+        raise MarketForgeError("--requests-per-second must be finite and positive.")
+    configuration = load_acquisition(path)
+    dsn = testing_dsn(context.paths.root)
+    interval = configuration.interval.model_copy(
+        update={
+            "start": configuration.interval.start.astimezone(UTC),
+            "end": configuration.interval.end.astimezone(UTC),
+        }
+    )
+    display = AcquisitionDisplay(
+        context.error_console,
+        download=download,
+        name=path.stem,
+        interval=interval,
+        silent=silent or as_json or context.settings.presentation.mode == "silent",
+    )
+    try:
+        with WorkspaceOwnership(context.paths), display:
+            result = asyncio.run(
+                run_acquisition(
+                    context,
+                    configuration,
+                    dsn=dsn,
+                    download=download,
+                    refresh=refresh,
+                    requests_per_second=requests_per_second,
+                    silent=silent or as_json or context.settings.presentation.mode == "silent",
+                    source_file=path,
+                    observer=display.update,
+                )
+            )
+    except KeyboardInterrupt:
+        if not as_json:
+            display.summary(
+                context.console,
+                status="cancelled",
+                report=display.snapshot.report
+                if display.snapshot is not None and display.snapshot.report
+                else str(context.paths.runs_dir),
+            )
+        raise
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        display.summary(context.console, status=result["status"], report=result["report"])
+    return 1 if result["status"] == "failed" else 0

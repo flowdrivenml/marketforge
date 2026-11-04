@@ -354,3 +354,57 @@ async def test_retry_backoff_releases_slot(monkeypatch: pytest.MonkeyPatch) -> N
         release.set()
         assert (await asyncio.wait_for(first, 1)).is_success
     assert limiter.admissions == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("retry_safe,expected", [(False, 1), (True, 3)])
+async def test_post_retries_only_when_declared_safe(
+    delays: list[float], retry_safe: bool, expected: int
+) -> None:
+    limiter = CountingLimiter()
+    async with open_http_client(
+        limiter=limiter,
+        retry_policy=RetryPolicy(max_attempts=3),
+        transport=httpx.MockTransport(lambda _: httpx.Response(503)),
+    ) as client:
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.post(
+                "https://exchange.test/discovery", json={"search": "BTC"}, retry_safe=retry_safe
+            )
+    assert limiter.admissions == expected
+    assert delays == ([0.5, 1.0] if retry_safe else [])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["head", "post", "stream"])
+async def test_new_methods_publish_shared_cooldown(
+    monkeypatch: pytest.MonkeyPatch, method: str
+) -> None:
+    clock = 0.0
+    slept: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/first":
+            return httpx.Response(429, headers={"Retry-After": "5"})
+        return httpx.Response(200)
+
+    async def sleep(delay: float) -> None:
+        nonlocal clock
+        slept.append(delay)
+        clock += delay
+
+    monkeypatch.setattr(client_module, "monotonic", lambda: clock)
+    monkeypatch.setattr(client_module, "sleep", sleep)
+    async with open_http_client(
+        limiter=CountingLimiter(), transport=httpx.MockTransport(handler)
+    ) as client:
+        with pytest.raises(httpx.HTTPStatusError):
+            if method == "head":
+                await client.head("https://exchange.test/first")
+            elif method == "post":
+                await client.post("https://exchange.test/first", json={})
+            else:
+                async with client.stream("https://exchange.test/first"):
+                    pytest.fail("A throttled stream must not yield.")
+        assert (await client.get("https://exchange.test/second")).is_success
+    assert slept == [5.0]

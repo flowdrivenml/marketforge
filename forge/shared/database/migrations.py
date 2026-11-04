@@ -15,7 +15,6 @@ from psycopg.rows import class_row
 
 from forge.shared.errors import MarketForgeError
 
-dsn = os.environ["MARKETFORGE_DATABASE_URL_TEST"]
 _TEST_DATABASE_ENV: Final[str] = "MARKETFORGE_DATABASE_URL_TEST"
 _TEST_DATABASE_NAME: Final[str] = "marketforge_test"
 _MIGRATION_LOCK: Final[int] = 0x4D464F5247450001

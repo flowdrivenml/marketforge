@@ -28,26 +28,6 @@ identifier = "BTCUSDT"
 """
 
 
-@pytest.fixture
-def workspace(tmp_path: Path) -> Path:
-    root = tmp_path / "workspace"
-    (root / "forge").mkdir(parents=True)
-    (root / "engine").mkdir()
-    (root / "forge" / "pyproject.toml").write_text(
-        '[project]\nname = "marketforge"\n',
-        encoding="utf-8",
-    )
-    return root
-
-
-@pytest.fixture
-def request_file(workspace: Path) -> Path:
-    source = workspace / "data" / ".config" / "acquisition" / "request.toml"
-    source.parent.mkdir(parents=True)
-    source.write_text(_VALID_DOCUMENT, encoding="utf-8")
-    return source
-
-
 def _run(workspace: Path, *arguments: str) -> int:
     return main(["--project-root", str(workspace), *arguments])
 

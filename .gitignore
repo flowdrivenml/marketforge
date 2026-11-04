@@ -108,3 +108,6 @@ handoff.md
 
 # Persistent application ownership files
 .marketforge.lock
+
+# Sanitized HTTP fixtures are source-controlled, unlike generated JSON artifacts.
+!forge/tests/unit/historical/archives/fixtures/bitget_*.json

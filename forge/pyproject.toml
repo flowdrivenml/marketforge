@@ -51,6 +51,7 @@ only-include = [
     "historical",
     "datasets",
     "orchestration",
+    "storage",
     "features",
     "lab",
     "cli",

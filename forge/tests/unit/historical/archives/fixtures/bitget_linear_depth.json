@@ -1,0 +1,20 @@
+{
+  "code": "200",
+  "data": [
+    {
+      "dateTime": 1793462400000,
+      "dateTimeStr": "2026-11-01",
+      "displayName": "BTCUSDT",
+      "fileName": "BTCUSDT-BTCUSDT_3_20261101.zip",
+      "fileUrl": "https://archive.test/BTCUSDT-BTCUSDT_3_20261101.zip"
+    },
+    {
+      "dateTime": 1793548800000,
+      "dateTimeStr": "2026-11-02",
+      "displayName": "BTCUSDT",
+      "fileName": "BTCUSDT-BTCUSDT_3_20261102.zip",
+      "fileUrl": "https://archive.test/BTCUSDT-BTCUSDT_3_20261102.zip"
+    }
+  ],
+  "params": []
+}

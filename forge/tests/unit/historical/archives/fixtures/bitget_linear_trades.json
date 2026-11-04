@@ -1,0 +1,55 @@
+{
+  "code": "200",
+  "data": [
+    {
+      "dateTime": 1793462400000,
+      "dateTimeStr": "2026-11-01",
+      "displayName": "BTCUSDT",
+      "fileName": "BTCUSDT-BTCUSDT_20261101_001.zip",
+      "fileUrl": "https://archive.test/BTCUSDT-BTCUSDT_20261101_001.zip"
+    },
+    {
+      "dateTime": 1793462400000,
+      "dateTimeStr": "2026-11-01",
+      "displayName": "BTCUSDT",
+      "fileName": "BTCUSDT-BTCUSDT_20261101_002.zip",
+      "fileUrl": "https://archive.test/BTCUSDT-BTCUSDT_20261101_002.zip"
+    },
+    {
+      "dateTime": 1793548800000,
+      "dateTimeStr": "2026-11-02",
+      "displayName": "BTCUSDT",
+      "fileName": "BTCUSDT-BTCUSDT_20261102_001.zip",
+      "fileUrl": "https://archive.test/BTCUSDT-BTCUSDT_20261102_001.zip"
+    },
+    {
+      "dateTime": 1793548800000,
+      "dateTimeStr": "2026-11-02",
+      "displayName": "BTCUSDT",
+      "fileName": "BTCUSDT-BTCUSDT_20261102_002.zip",
+      "fileUrl": "https://archive.test/BTCUSDT-BTCUSDT_20261102_002.zip"
+    },
+    {
+      "dateTime": 1793548800000,
+      "dateTimeStr": "2026-11-02",
+      "displayName": "BTCUSDT",
+      "fileName": "BTCUSDT-BTCUSDT_20261102_003.zip",
+      "fileUrl": "https://archive.test/BTCUSDT-BTCUSDT_20261102_003.zip"
+    },
+    {
+      "dateTime": 1793548800000,
+      "dateTimeStr": "2026-11-02",
+      "displayName": "BTCUSDT",
+      "fileName": "BTCUSDT-BTCUSDT_20261102_004.zip",
+      "fileUrl": "https://archive.test/BTCUSDT-BTCUSDT_20261102_004.zip"
+    },
+    {
+      "dateTime": 1793548800000,
+      "dateTimeStr": "2026-11-02",
+      "displayName": "BTCUSDT",
+      "fileName": "BTCUSDT-BTCUSDT_20261102_005.zip",
+      "fileUrl": "https://archive.test/BTCUSDT-BTCUSDT_20261102_005.zip"
+    }
+  ],
+  "params": []
+}

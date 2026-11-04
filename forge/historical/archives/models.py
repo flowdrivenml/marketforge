@@ -10,13 +10,25 @@ from forge.historical.archives.config import AcquisitionInterval, ArchiveRequest
 
 
 def archive_scope_document(request: ArchiveRequest) -> dict[str, str]:
-    """Describe the market scope independently of dates and download URLs."""
-    return {
+    """Describe archive scope independently of dates and download URLs."""
+    document = {
         "instrument_type": request.instrument_type,
         "market_category": request.market_category,
         "scope_kind": request.scope.kind,
         "scope_identifier": request.scope.identifier,
     }
+
+    # Preserve existing incremental identities. Snapshots get a distinct scope,
+    # used by both remote archive registration and discovery caching.
+    if (
+        request.exchange == "gateio"
+        and request.data_type == "order_book_l2"
+        and request.source_options is not None
+        and request.source_options.feed == "snapshot"
+    ):
+        document["source_feed"] = "snapshot"
+
+    return document
 
 
 def archive_scope_key(request: ArchiveRequest) -> str:
