@@ -105,3 +105,6 @@ handoff.md
 
 # Local secrets
 /.secrets/
+
+# Persistent application ownership files
+.marketforge.lock

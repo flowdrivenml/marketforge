@@ -3,12 +3,44 @@
 from __future__ import annotations
 
 import argparse
+import json
+import sys
 from collections.abc import Sequence
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
+
+from pydantic import ValidationError
+
+from forge.cli.commands.acquisition import (
+    edit_acquisition,
+    list_acquisition_configs,
+    new_acquisition,
+    validate_acquisition,
+)
+from forge.cli.commands.config import show_config
+from forge.cli.commands.database import migrate_database, show_database_status
+from forge.shared.config.library import resolve_config_file
+from forge.shared.errors import MarketForgeError
+from forge.shared.ownership import WorkspaceOwnership
+from forge.shared.terminal.console import create_console
+from forge.startup.context import build_context
+
+
+class _Arguments(argparse.Namespace):
+    """Typed namespace populated by the argument parser."""
+
+    project_root: Path | None = None
+    config_file: Path | None = None
+    as_json: bool = False
+    command: str | None = None
+    config_command: str | None = None
+    acquisition_command: str | None = None
+    configuration_name: str | None = None
+    database_command: str | None = None
+    testing: bool = False
 
 
 def _application_version() -> str:
-    """Return the installed application version."""
     try:
         return version("marketforge")
     except PackageNotFoundError:
@@ -19,9 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the root command parser."""
     parser = argparse.ArgumentParser(
         prog="marketforge",
-        description=(
-            "Historical market-data acquisition and Rust engine orchestration."
-        ),
+        description=("Historical market-data acquisition and Rust engine orchestration."),
         allow_abbrev=False,
     )
 
@@ -30,16 +60,219 @@ def build_parser() -> argparse.ArgumentParser:
         action="version",
         version=f"%(prog)s {_application_version()}",
     )
+    parser.add_argument(
+        "--project-root",
+        type=Path,
+        help="MarketForge repository root.",
+    )
+    parser.add_argument(
+        "--config",
+        dest="config_file",
+        type=Path,
+        help="Explicit application TOML configuration.",
+    )
+    parser.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        help="Emit command results and runtime errors as plain JSON.",
+    )
 
+    commands = parser.add_subparsers(dest="command")
+
+    config_parser = commands.add_parser(
+        "config",
+        help="Inspect application configuration.",
+        allow_abbrev=False,
+    )
+    config_commands = config_parser.add_subparsers(
+        dest="config_command",
+        required=True,
+    )
+    config_commands.add_parser(
+        "show",
+        help="Show effective application settings.",
+        allow_abbrev=False,
+    )
+
+    acquisition_parser = commands.add_parser(
+        "acquisition",
+        help="Manage historical acquisition configurations.",
+        allow_abbrev=False,
+    )
+    acquisition_commands = acquisition_parser.add_subparsers(
+        dest="acquisition_command",
+        required=True,
+    )
+    acquisition_commands.add_parser(
+        "list",
+        help="List saved acquisition configurations.",
+        allow_abbrev=False,
+    )
+
+    for action, description in (
+        ("new", "Create an editable acquisition configuration."),
+        ("edit", "Edit and validate a saved acquisition configuration."),
+        ("validate", "Validate a saved acquisition configuration."),
+    ):
+        action_parser = acquisition_commands.add_parser(
+            action,
+            help=description,
+            allow_abbrev=False,
+        )
+        action_parser.add_argument(
+            "configuration_name",
+            help="Saved configuration name, optionally ending in .toml.",
+        )
+    database_parser = commands.add_parser(
+        "database",
+        help="Manage the application database.",
+        allow_abbrev=False,
+    )
+    database_commands = database_parser.add_subparsers(
+        dest="database_command",
+        required=True,
+    )
+    migrate_parser = database_commands.add_parser(
+        "migrate",
+        help="Apply pending database migrations.",
+        allow_abbrev=False,
+    )
+    migrate_parser.add_argument(
+        "--testing",
+        action="store_true",
+        required=True,
+        help="Explicitly select the testing database.",
+    )
+    status_parser = database_commands.add_parser(
+        "status",
+        help="Inspect database identity and migration history.",
+        allow_abbrev=False,
+    )
+    status_parser.add_argument(
+        "--testing",
+        action="store_true",
+        required=True,
+        help="Explicitly select the testing database.",
+    )
     return parser
+
+
+def _validation_message(error: ValidationError) -> str:
+    """Format field diagnostics without including submitted input values."""
+    messages: list[str] = []
+
+    for detail in error.errors(
+        include_input=False,
+        include_context=False,
+        include_url=False,
+    ):
+        location = ".".join(str(part) for part in detail["loc"])
+        messages.append(f"{location or 'configuration'}: {detail['msg']}")
+
+    return "Invalid configuration:\n" + "\n".join(messages)
+
+
+def _emit_error(message: str, *, as_json: bool) -> None:
+    if as_json:
+        print(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "error": {"message": message},
+                },
+            ),
+            file=sys.stderr,
+        )
+        return
+
+    create_console(stderr=True).print(
+        message,
+        style="mf.failure",
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command-line interface."""
     parser = build_parser()
-    parser.parse_args(argv)
-    parser.print_help()
-    return 0
+    arguments = _Arguments()
+    parser.parse_args(argv, namespace=arguments)
+
+    if arguments.command is None:
+        parser.print_help()
+        return 0
+
+    try:
+        context = build_context(
+            project_root=arguments.project_root,
+            config_file=arguments.config_file,
+        )
+
+        if arguments.command == "acquisition":
+            directory = context.paths.acquisition_config_dir
+
+            if arguments.acquisition_command == "list":
+                list_acquisition_configs(
+                    directory,
+                    as_json=arguments.as_json,
+                )
+                return 0
+
+            if arguments.configuration_name is None:
+                parser.error("An acquisition configuration name is required.")
+
+            source = resolve_config_file(
+                directory,
+                arguments.configuration_name,
+            )
+
+            if arguments.acquisition_command == "new":
+                new_acquisition(source, as_json=arguments.as_json)
+            elif arguments.acquisition_command == "validate":
+                validate_acquisition(source, as_json=arguments.as_json)
+            elif arguments.acquisition_command == "edit":
+                if arguments.as_json:
+                    parser.error("Interactive editing does not support --json.")
+
+                edit_acquisition(
+                    source,
+                    presentation=context.settings.presentation,
+                )
+            else:
+                parser.error("Unsupported acquisition command.")
+
+            return 0
+
+        if arguments.command == "config" and arguments.config_command == "show":
+            show_config(context, as_json=arguments.as_json)
+            return 0
+        if arguments.command == "database" and arguments.database_command == "migrate":
+            with WorkspaceOwnership(context.paths):
+                migrate_database(
+                    testing=arguments.testing,
+                    presentation=context.settings.presentation,
+                    as_json=arguments.as_json,
+                )
+            return 0
+
+        if arguments.command == "database" and arguments.database_command == "status":
+            show_database_status(
+                testing=arguments.testing,
+                presentation=context.settings.presentation,
+                as_json=arguments.as_json,
+            )
+            return 0
+
+        parser.error("Unsupported command.")
+    except ValidationError as exc:
+        _emit_error(
+            _validation_message(exc),
+            as_json=arguments.as_json,
+        )
+        return 2
+    except (MarketForgeError, OSError, UnicodeError) as exc:
+        _emit_error(str(exc), as_json=arguments.as_json)
+        return 2
 
 
 if __name__ == "__main__":
