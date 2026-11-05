@@ -182,7 +182,10 @@ async def test_bitget_category_and_perpetual_identity_are_explicit() -> None:
         }
         item = provider.instrument("linear", row)
         assert item is not None and item.reference == "bitget.linear.BTCUSDT"
-        assert provider.instrument("linear", {**row, "type": "delivery"}) is None
+        future = provider.instrument("linear", {**row, "type": "delivery"})
+        assert (
+            future is not None and future.instrument_type == "future" and future.expiry_ns is None
+        )
         with pytest.raises(MarketDataError, match="contract semantics"):
             provider.instrument("linear", {**row, "type": "unknown"})
         with pytest.raises(MarketDataError, match="market category"):

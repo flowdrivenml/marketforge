@@ -22,6 +22,7 @@ from forge.cli.commands.acquisition import (
 from forge.cli.commands.config import show_config
 from forge.cli.commands.database import migrate_database, show_database_status
 from forge.cli.commands.imports import configure as configure_imports
+from forge.cli.commands.initialization import configure as configure_initialization
 from forge.cli.commands.maintenance import (
     configure_backup,
     configure_doctor,
@@ -30,6 +31,7 @@ from forge.cli.commands.maintenance import (
     configure_storage,
 )
 from forge.cli.commands.markets import configure as configure_markets
+from forge.cli.commands.normalization import configure as configure_normalization
 from forge.shared.config.library import resolve_config_file
 from forge.shared.errors import MarketForgeError
 from forge.shared.ownership import WorkspaceOwnership
@@ -94,6 +96,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     commands = parser.add_subparsers(dest="command")
+
+    configure_initialization(
+        commands.add_parser(
+            "init", help="Initialize testing storage, catalogue and standard rankings."
+        )
+    )
+
+    configure_normalization(
+        commands.add_parser(
+            "normalize", help="Prepare historical normalization JSON without execution."
+        )
+    )
 
     configure_markets(
         commands.add_parser("markets", help="Instrument catalogue and current statistics.")

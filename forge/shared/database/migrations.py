@@ -121,13 +121,16 @@ def validate_history(
 
 def migrate_testing_database(
     directory: Path | None = None,
+    *,
+    dsn: str | None = None,
 ) -> MigrationResult:
     """Apply the pending core batch atomically to marketforge_test only.
 
     Migration SQL must not contain transaction-control statements.
     No production-connection fallback or database creation is performed.
     """
-    dsn = os.environ.get(_TEST_DATABASE_ENV)
+    if dsn is None:
+        dsn = os.environ.get(_TEST_DATABASE_ENV)
 
     if dsn is None or not dsn.strip():
         raise MigrationError(f"Set {_TEST_DATABASE_ENV} explicitly.")
@@ -215,4 +218,8 @@ def migrate_testing_database(
             already_applied=tuple(migration.version for migration in applied),
         )
     except psycopg.Error as exc:
-        raise MigrationError("PostgreSQL could not complete the migration transaction.") from exc
+        raise MigrationError(
+            "PostgreSQL could not complete the migration transaction. Verify that the configured "
+            "marketforge_test database exists, is reachable, and permits Python migrations; "
+            "no database was created."
+        ) from exc

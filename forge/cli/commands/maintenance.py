@@ -59,20 +59,9 @@ def configure_plan(parser: argparse.ArgumentParser) -> None:
 
 
 def configure_storage(parser: argparse.ArgumentParser) -> None:
-    actions = parser.add_subparsers(dest="maintenance_action", required=True)
-    for action in ("list", "show", "verify", "reconcile"):
-        child = actions.add_parser(action)
-        child.set_defaults(service_handler=run)
-        child.add_argument("--testing", action="store_true", required=True)
-        if action == "show":
-            child.add_argument(
-                "archive_reference", help="Local registry identity, e.g. local:123 or 123."
-            )
-        else:
-            child.add_argument("--archive", dest="archive_reference")
-        child.add_argument("--limit", type=int, default=100)
-        child.add_argument("--status")
-        child.add_argument("--origin", choices=("remote", "external"))
+    from forge.cli.commands.storage import configure
+
+    configure(parser)
 
 
 def configure_runs(parser: argparse.ArgumentParser) -> None:

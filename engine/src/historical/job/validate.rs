@@ -58,37 +58,14 @@ fn validate_processing_job_inner(
     //
     // The production executor uses the authoritative global configuration:
     //
-    // data/.jobs/processing.json
+    // data/.config/historical/normalize.toml
     //
     // This validation remains for compatibility with existing callers.
     // -------------------------------------------------------------------------
 
     if validate_legacy_resources {
-        let resources = &job.resources;
-
-        if resources.workers == 0 {
-            return invalid("worker count must be greater than zero");
-        }
-
-        if resources.memory_budget_bytes == 0 {
-            return invalid("memory budget must be greater than zero");
-        }
-
-        if resources.scratch_budget_bytes == 0 {
-            return invalid("scratch budget must be greater than zero");
-        }
-
-        if resources.parquet.row_group_target_bytes == 0 {
-            return invalid("Parquet row-group target must be greater than zero");
-        }
-
-        if resources.parquet.file_target_bytes == 0 {
-            return invalid("Parquet file target must be greater than zero");
-        }
-
-        if resources.parquet.row_group_target_bytes > resources.parquet.file_target_bytes {
-            return invalid("Parquet row-group target cannot exceed file target");
-        }
+        super::validate_resources(&job.resources)?;
+        super::validate_integrity_policy(&job.integrity_policy)?;
     }
 
     // -------------------------------------------------------------------------

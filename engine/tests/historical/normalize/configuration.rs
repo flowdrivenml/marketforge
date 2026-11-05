@@ -8,7 +8,7 @@ pub(super) fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 pub(super) fn formats() -> FormatCatalog {
-    FormatCatalog::load(root().join("data/.config/historical/formats")).unwrap()
+    FormatCatalog::load(root().join("data/.config/historical")).unwrap()
 }
 pub(super) struct Temp(pub(super) PathBuf);
 impl Temp {
@@ -179,23 +179,13 @@ fn conflicts_unknown_fields_and_fingerprints_fail_closed() {
 #[test]
 fn errors_identify_file_and_invalid_configuration() {
     let t = Temp::new();
-    let source = root().join("data/.config/historical/formats/trades");
-    let file = fs::read_dir(source)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .find(|p| {
-            p.file_name()
-                .unwrap()
-                .to_string_lossy()
-                .starts_with("physical-")
-        })
-        .unwrap();
-    let bad = t.0.join("bad.toml");
+    let (_, file) = one_profile_fixture(&t);
+    let bad = file.with_file_name("bad.toml");
+    let text = fs::read_to_string(&file).unwrap();
+    fs::remove_file(file).unwrap();
     fs::write(
         &bad,
-        fs::read_to_string(file)
-            .unwrap()
-            .replace("schema_version = 1", "schema_version = 99"),
+        text.replace("schema_version = 1", "schema_version = 99"),
     )
     .unwrap();
     let e = FormatCatalog::load(&t.0).unwrap_err().to_string();
@@ -206,15 +196,14 @@ fn errors_identify_file_and_invalid_configuration() {
 fn one_profile_fixture(temp: &Temp) -> (PathBuf, PathBuf) {
     let catalog = formats();
     let profile = catalog.get("bybit.spot.spot.bybit-t1.v1").unwrap();
-    let profile_path = temp.0.join("profile.toml");
+    let profile_path = temp.0.join("profiles/trades/profile.toml");
+    fs::create_dir_all(profile_path.parent().unwrap()).unwrap();
     fs::copy(&profile.path, &profile_path).unwrap();
     let physical_path = root()
-        .join("data/.config/historical/formats/trades")
-        .join(format!(
-            "physical-{}.toml",
-            profile.definition.physical.trim_start_matches("trades-")
-        ));
-    let target = temp.0.join("physical.toml");
+        .join("data/.config/historical/raw_schemas/trades")
+        .join(format!("{}.toml", profile.physical.id));
+    let target = temp.0.join("raw_schemas/trades/physical.toml");
+    fs::create_dir_all(target.parent().unwrap()).unwrap();
     fs::copy(physical_path, &target).unwrap();
     (profile_path, target)
 }
@@ -222,8 +211,13 @@ fn one_profile_fixture(temp: &Temp) -> (PathBuf, PathBuf) {
 fn duplicate_profile_and_physical_definitions_are_rejected() {
     for which in ["profile.toml", "physical.toml"] {
         let t = Temp::new();
-        one_profile_fixture(&t);
-        fs::copy(t.0.join(which), t.0.join("duplicate.toml")).unwrap();
+        let (profile, raw) = one_profile_fixture(&t);
+        let original = if which == "profile.toml" {
+            profile
+        } else {
+            raw
+        };
+        fs::copy(&original, original.with_file_name("duplicate.toml")).unwrap();
         let e = FormatCatalog::load(&t.0).unwrap_err().to_string();
         assert!(e.contains("duplicate") || e.contains("ambiguous"), "{e}");
     }

@@ -4,7 +4,7 @@ use super::progress::ProgressReporter;
 use super::progress::ProgressTaskId;
 use super::{
     ProcessingErrorCode, ProcessingResult,
-    config::{ProcessingConfig, validate_resources},
+    config::{ProcessingConfig, validate_processing_config},
     manifest::{DATASET_MANIFEST_FILENAME, DatasetManifest},
     metrics::{IntegrityEvaluation, ProcessingMetricsReport, evaluate_integrity_policy},
 };
@@ -46,7 +46,7 @@ pub fn execute_processing_job_with_progress(
     reporter: &ProgressReporter,
 ) -> Result<ProcessingResult> {
     validate_processing_job_structure(job)?;
-    validate_resources(&config.resources)?;
+    validate_processing_config(config)?;
 
     let result = match job.operation {
         ProcessingOperation::Process => execute_process(job, config, reporter),

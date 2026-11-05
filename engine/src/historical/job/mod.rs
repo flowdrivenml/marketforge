@@ -60,3 +60,6 @@ pub use integrity::{
 
 mod format_adapter;
 pub use format_adapter::identity_policy;
+
+mod runtime_validation;
+pub use runtime_validation::{validate_integrity_policy, validate_resources};

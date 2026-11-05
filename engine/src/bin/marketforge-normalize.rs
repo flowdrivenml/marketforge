@@ -6,8 +6,10 @@ use std::{
 use clap::{ArgGroup, Parser};
 
 use {
+    marketforge_engine::historical::config::{FormatCatalog, load_normalization_job},
     marketforge_engine::historical::job::ProcessingJob,
-    marketforge_engine::historical::job::load_processing_job,
+    marketforge_engine::historical::normalize::ProcessingConfig,
+    marketforge_engine::historical::normalize::config::{project_root, resolve_path},
     marketforge_engine::historical::normalize::execute_processing_job,
     marketforge_engine::historical::normalize::load_processing_config,
     marketforge_engine::historical::normalize::session::execute_processing_session,
@@ -35,7 +37,7 @@ struct Args {
     jobs_dir: Option<PathBuf>,
 
     /// Global processing configuration.
-    #[arg(long, default_value = "data/.jobs/processing.json")]
+    #[arg(long, default_value = "data/.config/historical/normalize.toml")]
     config: PathBuf,
 
     /// Project root used to resolve processing configuration.
@@ -56,26 +58,6 @@ struct Args {
 // Path resolution
 // -----------------------------------------------------------------------------
 
-fn resolve_path(root: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        root.join(path)
-    }
-}
-
-fn resolve_job_paths(job: &mut ProcessingJob, root: &Path) {
-    for task in &mut job.tasks {
-        task.input_path = resolve_path(root, &task.input_path);
-    }
-
-    job.output.dataset_path = resolve_path(root, &job.output.dataset_path);
-
-    job.output.staging_path = resolve_path(root, &job.output.staging_path);
-
-    job.resources.scratch_path = resolve_path(root, &job.resources.scratch_path);
-}
-
 // -----------------------------------------------------------------------------
 // Load processing jobs
 // -----------------------------------------------------------------------------
@@ -83,6 +65,8 @@ fn resolve_job_paths(job: &mut ProcessingJob, root: &Path) {
 fn load_jobs(
     directory: &Path,
     root: &Path,
+    catalog: &FormatCatalog,
+    config: &ProcessingConfig,
 ) -> Result<Vec<ProcessingJob>, Box<dyn std::error::Error>> {
     let mut paths = fs::read_dir(directory)?
         .map(|entry| entry.map(|entry| entry.path()))
@@ -100,9 +84,7 @@ fn load_jobs(
     let mut jobs = Vec::with_capacity(paths.len());
 
     for path in paths {
-        let mut job = load_processing_job(&path)?;
-        resolve_job_paths(&mut job, root);
-        jobs.push(job);
+        jobs.push(load_normalization_job(&path, catalog, config, root)?);
     }
 
     if jobs.is_empty() {
@@ -143,16 +125,12 @@ fn redirect_outputs(
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let project_root = args.project_root.canonicalize().map_err(|error| {
-        format!(
-            "invalid project root {}: {error}",
-            args.project_root.display()
-        )
-    })?;
+    let project_root = project_root(&args.project_root)?;
 
     let config_path = resolve_path(&project_root, &args.config);
 
     let config = load_processing_config(&config_path, &project_root)?;
+    let catalog = FormatCatalog::load(project_root.join("data/.config/historical"))?;
 
     // -------------------------------------------------------------
     // Single-job execution
@@ -161,9 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(path) = &args.job {
         let job_path = resolve_path(&project_root, path);
 
-        let mut job = load_processing_job(&job_path)?;
-
-        resolve_job_paths(&mut job, &project_root);
+        let mut job = load_normalization_job(&job_path, &catalog, &config, &project_root)?;
 
         if let Some(output_root) = &args.output_root {
             let output_root = resolve_path(&project_root, output_root);
@@ -194,7 +170,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let directory = resolve_path(&project_root, directory);
 
-    let mut jobs = load_jobs(&directory, &project_root)?;
+    let mut jobs = load_jobs(&directory, &project_root, &catalog, &config)?;
 
     if let Some(output_root) = &args.output_root {
         let output_root = resolve_path(&project_root, output_root);
@@ -216,4 +192,63 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", serde_json::to_string(&result.jobs)?);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod runtime_cli_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    const EXAMPLE: &str = include_str!("../../../docs/historical/normalize-job-v3.example.json");
+    const RUNTIME: &str = include_str!("../../../data/.config/historical/normalize.toml");
+
+    #[test]
+    fn cli_defaults_and_job_directory_loading_are_configuration_only() {
+        let args = Args::try_parse_from(["marketforge-normalize", "--job", "job.json"]).unwrap();
+        assert_eq!(
+            args.config,
+            PathBuf::from("data/.config/historical/normalize.toml")
+        );
+        assert!(
+            Args::try_parse_from([
+                "marketforge-normalize",
+                "--job",
+                "one",
+                "--jobs-dir",
+                "many"
+            ])
+            .is_err()
+        );
+        let root = TempDir::new().unwrap();
+        let directory = root.path().join("jobs");
+        fs::create_dir(&directory).unwrap();
+        fs::write(root.path().join("runtime.toml"), RUNTIME).unwrap();
+        let config = load_processing_config("runtime.toml", root.path()).unwrap();
+        let catalog = FormatCatalog::load(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/historical"),
+        )
+        .unwrap();
+        assert!(load_jobs(&directory, root.path(), &catalog, &config).is_err());
+        fs::write(directory.join("b.json"), EXAMPLE).unwrap();
+        let mut other: serde_json::Value = serde_json::from_str(EXAMPLE).unwrap();
+        other["job_id"] = 1000.into();
+        fs::write(
+            directory.join("a.json"),
+            serde_json::to_vec(&other).unwrap(),
+        )
+        .unwrap();
+        fs::write(directory.join("ignored.txt"), "not JSON").unwrap();
+        let jobs = load_jobs(&directory, root.path(), &catalog, &config).unwrap();
+        assert_eq!(jobs.len(), 2);
+        assert_eq!(jobs[0].job_id.0, 1000);
+        for job in jobs {
+            assert_eq!(job.resources, config.resources);
+            assert_eq!(job.integrity_policy, config.integrity_policy);
+            assert_eq!(
+                job.tasks[0].input_path,
+                root.path().join("data/raw/BTCUSDT.csv.gz")
+            );
+            assert!(!job.output.staging_path.exists());
+        }
+    }
 }

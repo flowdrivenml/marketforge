@@ -1,0 +1,42 @@
+{
+  "protocol_version": 3,
+  "job_id": 1001,
+  "dataset_id": 501,
+  "operation": "normalize",
+  "tasks": [
+    {
+      "task_id": 1,
+      "stream_id": "bybit.spot.spot.BTCUSDT.trades",
+      "input_path": "data/raw/BTCUSDT.csv.gz",
+      "format_profile": "bybit.spot.spot.bybit-t1.v1",
+      "profile_fingerprint": null,
+      "exchange": "bybit",
+      "instrument_id": 101,
+      "symbol": "BTCUSDT",
+      "instrument": {
+        "instrument_kind": "spot",
+        "contract_kind": null,
+        "tick_size": "0.01",
+        "contract_value": null,
+        "contract_value_asset": null
+      },
+      "archive_member": null,
+      "source_compression": "gzip"
+    }
+  ],
+  "streams": [
+    {
+      "stream_id": "bybit.spot.spot.BTCUSDT.trades",
+      "stream_rank": 0
+    }
+  ],
+  "ordering": {
+    "primary": "event_timestamp_ns",
+    "tie_break": "stream_rank"
+  },
+  "output": {
+    "content_type": "trades",
+    "staging_path": "data/normalized/.501.staging.1001",
+    "dataset_path": "data/normalized/501"
+  }
+}

@@ -13,6 +13,17 @@ from forge.shared.http.rate_limit import RequestRateLimiter
 from forge.shared.http.retry import RETRYABLE_STATUSES, RetryPolicy, parse_retry_after
 
 
+class ResponseSizeLimitError(httpx.RequestError):
+    """Decoded body exceeded its explicit bounded response allowance."""
+
+    def __init__(self, limit: int, request: httpx.Request) -> None:
+        self.limit = limit
+        super().__init__(
+            f"Decoded HTTP response exceeds the permitted size limit ({limit:,} bytes).",
+            request=request,
+        )
+
+
 class HttpClient:
     """HTTP operations using a shared connection pool and upstream rate budget.
 
@@ -160,9 +171,7 @@ class HttpClient:
         content = bytearray()
         async for chunk in response.aiter_bytes(chunk_size=65536):
             if len(content) + len(chunk) > limit:
-                raise httpx.RequestError(
-                    "HTTP metadata response exceeds the permitted size.", request=response.request
-                )
+                raise ResponseSizeLimitError(limit, response.request)
             content.extend(chunk)
         headers = dict(response.headers)
         headers.pop("content-encoding", None)

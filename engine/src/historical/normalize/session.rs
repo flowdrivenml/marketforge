@@ -8,7 +8,7 @@ use super::{
     },
 };
 use super::{
-    config::{ProcessingConfig, validate_resources},
+    config::{ProcessingConfig, validate_processing_config},
     resources::{ResourceBudget, estimate_task_resources},
     scheduler::execute_parallel_budgeted,
     task::{TaskExecution, execute_task, execute_task_with_progress},
@@ -67,7 +67,7 @@ fn execute_processing_session_inner(
     config: &ProcessingConfig,
     reporter: &ProgressReporter,
 ) -> Result<ProcessingSessionResult> {
-    validate_resources(&config.resources)?;
+    validate_processing_config(config)?;
     validate_session(jobs)?;
 
     // -------------------------------------------------------------
@@ -248,6 +248,7 @@ pub fn execute_session_tasks_with_progress(
     config: &ProcessingConfig,
     reporter: &ProgressReporter,
 ) -> Result<ProcessingSessionTasks> {
+    validate_processing_config(config)?;
     validate_session(jobs)?;
 
     let mut scheduled = Vec::new();

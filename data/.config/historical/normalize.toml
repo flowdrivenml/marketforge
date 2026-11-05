@@ -1,0 +1,64 @@
+# Normalization runtime configuration schema. Keep this at 1 for the current loader.
+schema_version = 1
+
+# Planned runtime setting. Uncomment after the Rust loader supports [ordering].
+# Do not change these values. The engine supports only this ordering pair.
+# [ordering]
+# primary = "event_timestamp_ns"
+# tie_break = "stream_rank"
+
+[resources]
+workers = 1                       # Worker count. Must be greater than zero.
+memory_budget_bytes = 1073741824    # Memory budget in bytes. Positive. 1 GiB.
+scratch_path = "data/.work/normalize" # Temporary work directory. Must be nonempty.
+scratch_budget_bytes = 1073741824   # Scratch space budget in bytes. Positive. 1 GiB.
+
+[resources.parquet]
+# Both targets must be positive. The row group target cannot exceed the file target.
+row_group_target_bytes = 67108864   # 64 MiB
+file_target_bytes = 268435456       # 256 MiB
+
+[integrity_policy]
+enabled = true # Enable integrity policy evaluation.
+
+# Each rule below supports the same settings:
+#   action = "fail" or "degrade"
+#     A violated threshold yields a failed or degraded integrity outcome.
+#   max_count = 0
+#     Optional count threshold. Zero means the first occurrence exceeds it.
+#   max_rate = 0.01
+#     Optional overall rate threshold. Express rates as fractions, e.g. 0.01 for 1%.
+#   minimum_samples = 1000
+#     Optional sample floor for the overall rate check.
+#   windows.hourly = { max_rate = 0.01, minimum_samples = 1000 }
+#   windows.daily  = { max_rate = 0.01, minimum_samples = 1000 }
+#     Optional rate thresholds evaluated per hour or per day.
+# A "degrade" rule requires at least one count, rate, or window threshold.
+
+[integrity_policy.parse_failure]
+action = "fail"
+max_count = 0
+
+[integrity_policy.invalid_record]
+action = "fail"
+max_count = 0
+
+[integrity_policy.sequence_gap]
+action = "fail"
+max_count = 0
+
+[integrity_policy.timestamp_regression]
+action = "fail"
+max_count = 0
+
+[integrity_policy.missing_snapshot]
+action = "fail"
+max_count = 0
+
+[integrity_policy.invalid_book]
+action = "fail"
+max_count = 0
+
+[integrity_policy.transformation_failure]
+action = "fail"
+max_count = 0

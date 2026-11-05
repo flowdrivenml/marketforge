@@ -111,10 +111,18 @@ pub struct FormatCatalog {
     profiles: BTreeMap<String, CompiledProfile>,
 }
 impl FormatCatalog {
+    /// Load a historical configuration root containing raw_schemas/ and profiles/.
+    /// Only those two trees are scanned; drafts and runtime/job configuration are ignored.
     pub fn load(root: impl AsRef<Path>) -> Result<Self> {
         let root = root.as_ref();
+        if !root.is_absolute() {
+            return Err(invalid("historical configuration root must be absolute"));
+        }
+        let raw_root = root.join("raw_schemas");
+        let profile_root = root.join("profiles");
         let mut paths = vec![];
-        collect(root, &mut paths)?;
+        collect(&raw_root, &mut paths)?;
+        collect(&profile_root, &mut paths)?;
         paths.sort();
         let mut physical = BTreeMap::new();
         let mut profiles = vec![];
@@ -124,17 +132,46 @@ impl FormatCatalog {
                 toml::from_str(&text).map_err(|e| invalid(e.to_string()))
             })()
             .map_err(|e| invalid(format!("{}: {e}", path.display())))?;
+            let is_raw = path.starts_with(&raw_root);
+            let data_type =
+                document_data_type(&path, if is_raw { &raw_root } else { &profile_root })?;
             match parsed {
                 Document::Physical(p) => {
+                    if !is_raw {
+                        return Err(context(
+                            &path,
+                            &p.id,
+                            invalid("raw schema must be under raw_schemas/"),
+                        ));
+                    }
                     validate_physical(&p).map_err(|e| context(&path, &p.id, e))?;
-                    if physical.insert(p.id.clone(), Arc::new(p)).is_some() {
+                    if p.id.split('.').nth(1) != Some(data_type) {
+                        return Err(context(
+                            &path,
+                            &p.id,
+                            invalid("raw schema data type disagrees with directory"),
+                        ));
+                    }
+                    if physical
+                        .insert(p.id.clone(), (Arc::new(p), data_type))
+                        .is_some()
+                    {
                         return Err(invalid(format!(
                             "{}: duplicate physical definition",
                             path.display()
                         )));
                     }
                 }
-                Document::Profile(p) => profiles.push((path, p)),
+                Document::Profile(p) => {
+                    if is_raw {
+                        return Err(context(
+                            &path,
+                            &p.id,
+                            invalid("profile must be under profiles/"),
+                        ));
+                    }
+                    profiles.push((path, p, data_type));
+                }
             }
         }
         if profiles.is_empty() {
@@ -145,10 +182,16 @@ impl FormatCatalog {
         }
         let mut result = BTreeMap::new();
         let mut identities = BTreeSet::new();
-        for (path, p) in profiles {
+        for (path, p, data_type) in profiles {
             let build = (|| -> Result<CompiledProfile> {
                 if p.schema_version != 1 {
                     return Err(invalid("unsupported profile schema_version"));
+                }
+                if result.contains_key(&p.id) {
+                    return Err(invalid("duplicate profile ID"));
+                }
+                if !identity_token(&p.format_code.to_lowercase()) {
+                    return Err(invalid("invalid format_code"));
                 }
                 let expected = format!(
                     "{}.{}.{}.{}.v1",
@@ -183,10 +226,14 @@ impl FormatCatalog {
                 if !identities.insert(key) {
                     return Err(invalid("ambiguous profile resolution"));
                 }
-                let raw = physical
+                let (raw, raw_data_type) = physical
                     .get(&p.physical)
-                    .ok_or_else(|| invalid(format!("missing physical format {}", p.physical)))?
-                    .clone();
+                    .ok_or_else(|| invalid(format!("missing physical format {}", p.physical)))?;
+                if *raw_data_type != data_type {
+                    return Err(invalid("profile and raw schema data types disagree"));
+                }
+                let raw = Arc::clone(raw);
+                validate_semantics(&p, &raw)?;
                 if p.rules.is_empty() {
                     return Err(invalid("profile has no normalization rules"));
                 }
@@ -196,9 +243,12 @@ impl FormatCatalog {
                     if !kinds.insert(name(&rule.target)?) {
                         return Err(invalid("duplicate normalization target"));
                     }
-                    if p.unsupported_reason.is_some() {
-                        continue;
+                    if (rule.target == RuleTarget::Trade) != (data_type == "trades") {
+                        return Err(invalid(
+                            "normalization target disagrees with profile directory",
+                        ));
                     }
+                    validate_sources(&rule.rules, &raw.raw_schema)?;
                     let target_schema = if rule.target == RuleTarget::Trade {
                         TargetSchema::Trade
                     } else {
@@ -209,6 +259,11 @@ impl FormatCatalog {
                         && target_schema == TargetSchema::Depth
                     {
                         return Err(invalid("depth normalization target/boundary mismatch"));
+                    }
+                    // Unsupported definitions remain inventory-only: structural references
+                    // are checked, but unimplemented rules are never compiled or enabled.
+                    if p.unsupported_reason.is_some() {
+                        continue;
                     }
                     let n = NormalizationConfig {
                         timestamp_encoding: rule
@@ -228,7 +283,6 @@ impl FormatCatalog {
                             DepthSpec::from_normalization(&n)?;
                         }
                     }
-                    validate_sources(&n.rules, &raw.raw_schema)?;
                     normalizations.push(n);
                 }
                 if kinds.contains("trade") && kinds.len() != 1 {
@@ -293,7 +347,8 @@ impl FormatCatalog {
         Ok(None)
     }
     pub fn check_task(&self, task: &WorkTask, p: &CompiledProfile) -> Result<()> {
-        if task.exchange != p.definition.exchange
+        if task.format_code.0 != p.definition.format_code
+            || task.exchange != p.definition.exchange
             || task.instrument.instrument_kind != p.definition.instrument_type
             || MarketCategory::of(task) != p.definition.market_category
         {
@@ -349,21 +404,78 @@ pub fn default_catalog() -> Result<&'static FormatCatalog> {
     static CATALOG: OnceLock<std::result::Result<FormatCatalog, String>> = OnceLock::new();
     CATALOG
         .get_or_init(|| {
-            let root = std::env::var_os("MARKETFORGE_HISTORICAL_FORMATS")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| {
-                    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                        .join("../data/.config/historical/formats")
-                });
+            let root = catalog_root(
+                std::env::var_os("MARKETFORGE_HISTORICAL_CONFIG").map(PathBuf::from),
+                std::env::var_os("MARKETFORGE_HISTORICAL_FORMATS").map(PathBuf::from),
+            )
+            .map_err(|e| e.to_string())?;
             FormatCatalog::load(root).map_err(|e| e.to_string())
         })
         .as_ref()
         .map_err(|e| invalid(e.clone()))
 }
+/// Resolve defaults without consulting the working directory. Legacy /formats
+/// overrides select their parent after the directory migration; no old tree is scanned.
+fn catalog_root(explicit: Option<PathBuf>, legacy: Option<PathBuf>) -> Result<PathBuf> {
+    let migrate_legacy = |path: PathBuf| {
+        if path.file_name().is_some_and(|name| name == "formats") {
+            path.parent().unwrap().to_path_buf()
+        } else {
+            path
+        }
+    };
+    let legacy = legacy.map(migrate_legacy);
+    if let (Some(a), Some(b)) = (&explicit, &legacy)
+        && a != b
+    {
+        return Err(invalid(
+            "conflicting MARKETFORGE_HISTORICAL_CONFIG and MARKETFORGE_HISTORICAL_FORMATS roots",
+        ));
+    }
+    let root = explicit.or(legacy).unwrap_or_else(|| {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/historical")
+    });
+    if !root.is_absolute() {
+        return Err(invalid("historical configuration root must be absolute"));
+    }
+    Ok(root)
+}
+
+fn document_data_type(path: &Path, root: &Path) -> Result<&'static str> {
+    match path
+        .strip_prefix(root)
+        .ok()
+        .and_then(|p| p.components().next())
+    {
+        Some(component) if component.as_os_str() == "trades" => Ok("trades"),
+        Some(component) if component.as_os_str() == "depth" => Ok("depth"),
+        _ => Err(invalid(format!(
+            "{}: expected trades/ or depth/ category",
+            path.display()
+        ))),
+    }
+}
+
+fn identity_token(value: &str) -> bool {
+    !value.is_empty()
+        && value.as_bytes()[0].is_ascii_lowercase()
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
 fn collect(root: &Path, paths: &mut Vec<PathBuf>) -> Result<()> {
     for entry in fs::read_dir(root).map_err(|e| invalid(format!("{}: {e}", root.display())))? {
-        let path = entry.map_err(|e| invalid(e.to_string()))?.path();
-        if path.is_dir() {
+        let entry = entry.map_err(|e| invalid(e.to_string()))?;
+        let path = entry.path();
+        let kind = entry.file_type().map_err(|e| invalid(e.to_string()))?;
+        if kind.is_symlink() {
+            return Err(invalid(format!(
+                "{}: catalog symlinks are not supported",
+                path.display()
+            )));
+        }
+        if kind.is_dir() {
             collect(&path, paths)?;
         } else if path.extension().is_some_and(|e| e == "toml") {
             paths.push(path);
@@ -376,6 +488,24 @@ fn validate_physical(p: &PhysicalFormat) -> Result<()> {
         return Err(invalid(
             "invalid physical format version/identity/containers",
         ));
+    }
+    let parts: Vec<_> = p.id.split('.').collect();
+    let revision = parts.last().and_then(|v| v.strip_prefix('v'));
+    if !(4..=5).contains(&parts.len())
+        || !parts[..parts.len() - 1].iter().all(|p| identity_token(p))
+        || !matches!(parts.get(1), Some(&"trades" | &"depth"))
+        || revision
+            .is_none_or(|v| v.starts_with('0') || v.parse::<u32>().ok().is_none_or(|v| v == 0))
+    {
+        return Err(invalid(
+            "raw schema ID must be exchange.trades|depth.format-code[.variant].vN",
+        ));
+    }
+    let mut containers = BTreeSet::new();
+    for container in &p.supported_containers {
+        if !containers.insert(name(container)?) {
+            return Err(invalid("duplicate supported source container"));
+        }
     }
     let fields = p
         .raw_schema
@@ -440,6 +570,83 @@ fn validate_physical(p: &PhysicalFormat) -> Result<()> {
     }
     Ok(())
 }
+/// Check only contradictions established by declared configuration metadata.
+/// Missing upstream facts are not inferred from market names or illustrative notes.
+fn validate_semantics(p: &Profile, raw: &PhysicalFormat) -> Result<()> {
+    let exchange = name(&p.exchange)?;
+    let prefix = if exchange == "gateio" {
+        "GATE".to_owned()
+    } else {
+        exchange.to_uppercase()
+    };
+    let suffix = p
+        .format_code
+        .strip_prefix(&format!("{prefix}-"))
+        .ok_or_else(|| invalid("format_code exchange prefix mismatch"))?;
+    let expected_kind = if raw.id.split('.').nth(1) == Some("trades") {
+        'T'
+    } else {
+        'B'
+    };
+    if !suffix.starts_with(expected_kind)
+        || suffix.len() < 2
+        || !suffix[1..].bytes().all(|b| b.is_ascii_digit())
+        || suffix[1..].starts_with('0')
+    {
+        return Err(invalid("invalid exchange/data-type format_code"));
+    }
+    let parts: Vec<_> = raw.id.split('.').collect();
+    if parts[0] != exchange || parts[2] != p.format_code.to_lowercase() {
+        return Err(invalid(
+            "profile exchange/format_code disagrees with raw identity",
+        ));
+    }
+    let schema = &raw.raw_schema;
+    if schema["sorting_required"].as_bool() == Some(true)
+        && matches!(p.source_ordering, Some(SourceOrdering::SourceOrdered))
+    {
+        return Err(invalid(
+            "source_ordered contradicts required archive sorting",
+        ));
+    }
+    for rule in &p.rules {
+        if rule.quantity_encoding == Some(QuantityEncoding::Contracts)
+            && p.market_category == MarketCategory::Spot
+        {
+            return Err(invalid("spot profile cannot encode quantity as contracts"));
+        }
+        if schema["order_book"]["event_model"].as_str() == Some("standalone_snapshot")
+            && rule.target == RuleTarget::L2Update
+        {
+            return Err(invalid(
+                "standalone snapshot source cannot supply update rules",
+            ));
+        }
+        if let Some(source) = rule.rules["event_timestamp"]["source"].as_str() {
+            let field = schema["fields"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|f| f["name"].as_str() == Some(source));
+            if let (Some(field), Some(encoding)) = (field, rule.timestamp_encoding) {
+                if let Some(unit) = field["unit"].as_str()
+                    && unit != name(&encoding)?
+                {
+                    return Err(invalid("timestamp encoding contradicts source field unit"));
+                }
+                if let Some(representation) = field["representation"].as_str()
+                    && representation != "unix_epoch"
+                {
+                    return Err(invalid(
+                        "epoch timestamp encoding contradicts source representation",
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn fingerprint(value: &impl Serialize) -> Result<String> {
     let bytes = serde_json::to_vec(value).map_err(|e| invalid(e.to_string()))?;
     Ok(Sha256::digest(bytes)
@@ -500,3 +707,6 @@ fn validate_sources(rules: &Value, schema: &Value) -> Result<()> {
     }
     walk(rules, &names)
 }
+
+#[cfg(test)]
+mod tests;

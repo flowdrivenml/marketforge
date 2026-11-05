@@ -1,5 +1,11 @@
 # Historical format profiles and bounded verification
 
+> Historical report. The current directory layout, raw identities, root selection,
+> compatibility impacts and verification limits are documented in
+> [the normalization catalog guide](../../historical/normalization-catalog.md).
+> References below to `formats/`, removed fixtures and prior execution evidence
+> describe the earlier snapshot; they are not new verification claims.
+
 Historical archive formats live exclusively in `data/.config/historical/formats/`.
 The Historical-only Cargo feature enables TOML; it does not enable Live or require
 Live initialization. No Historical loader reads Live configuration.

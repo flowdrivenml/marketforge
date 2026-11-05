@@ -107,3 +107,30 @@ class ProjectPaths:
     @property
     def acquisition_config_dir(self) -> Path:
         return self.config_dir / "acquisition"
+
+    @property
+    def normalization_config_dir(self) -> Path:
+        return self.config_dir / "historical" / "normalization_jobs"
+
+    @property
+    def normalization_recipe_dir(self) -> Path:
+        return self.config_dir / "historical" / "normalization"
+
+    @property
+    def normalization_jobs_dir(self) -> Path:
+        return self.data_root / ".jobs" / "normalize"
+
+    def ensure_application_directories(self) -> None:
+        """Create missing Python application directories without replacing files."""
+        for directory in (
+            self.config_dir,
+            self.acquisition_config_dir,
+            self.pipeline_config_dir,
+            self.raw_dir,
+            self.datasets_dir,
+            self.runs_dir,
+            self.normalization_config_dir,
+            self.normalization_recipe_dir,
+            self.normalization_jobs_dir,
+        ):
+            directory.mkdir(parents=True, exist_ok=True)

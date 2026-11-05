@@ -52,6 +52,14 @@ class Instrument(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     exchange: Exchange
     market: Market
+    instrument_type: Literal["spot", "perpetual", "future"] = "perpetual"
+    qualified_reference: bool = False
+    launch_time_ns: int | None = Field(default=None, ge=1)
+    expiry_ns: int | None = Field(default=None, ge=1)
+    source_status: str | None = None
+    min_qty: Decimal | None = None
+    max_qty: Decimal | None = None
+    min_notional: Decimal | None = None
     symbol: str = Field(min_length=1)
     base: str = Field(min_length=1)
     quote: str = Field(min_length=1)
@@ -66,21 +74,36 @@ class Instrument(BaseModel):
 
     @property
     def reference(self) -> str:
-        return f"{self.exchange}.{self.market}.{self.symbol}"
+        kind = f"{self.instrument_type}." if self.qualified_reference else ""
+        return f"{self.exchange}.{self.market}.{kind}{self.symbol}"
 
-    @property
-    def instrument_type(self) -> str:
-        return "spot" if self.market == "spot" else "perpetual"
+    @model_validator(mode="before")
+    @classmethod
+    def default_kind(cls, value: object) -> object:
+        if isinstance(value, dict):
+            data = cast(dict[str, object], value).copy()
+            data.setdefault(
+                "instrument_type", "spot" if data.get("market") == "spot" else "perpetual"
+            )
+            return data
+        return value
 
     @model_validator(mode="after")
     def finite_specs(self) -> "Instrument":
-        for v in (self.contract_value, self.tick_size, self.qty_step):
+        for v in (
+            self.contract_value,
+            self.tick_size,
+            self.qty_step,
+            self.min_qty,
+            self.max_qty,
+            self.min_notional,
+        ):
             if v is not None and (not v.is_finite() or v <= 0):
                 raise ValueError("Specifications must be finite and positive.")
-        if self.quantity_type == "contracts" and (
-            self.contract_value is None or self.contract_unit is None
-        ):
-            raise ValueError("Contract quantity requires value and unit.")
+        if (self.instrument_type == "spot") != (self.market == "spot"):
+            raise ValueError("Instrument type and market category are incompatible.")
+        if self.instrument_type != "future" and self.expiry_ns is not None:
+            raise ValueError("Only dated futures have expiry metadata.")
         return self
 
 
@@ -103,6 +126,7 @@ class Observation(BaseModel):
     open_interest_unit: str | None = None
     funding_rate: Decimal | None = None
     raw: dict[str, object]
+    interpretation: dict[str, object] = Field(default_factory=lambda: dict[str, object]())
     mapping_version: str = "current-metrics-v1"
 
     @model_validator(mode="after")

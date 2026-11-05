@@ -1,0 +1,196 @@
+"""Dense priority ordering and collision checks are independent of engine execution."""
+
+from pathlib import Path
+
+import pytest
+
+from forge.historical.normalization.batch import allocate, dense_ranks
+from forge.historical.normalization.mapping import container_member
+from forge.shared.errors import MarketForgeError
+from forge.shared.paths import ProjectPaths
+
+
+@pytest.mark.parametrize("positions", [{1: 3, 2: 5, 3: 10, 4: 100}, {1: 5, 2: 5}, {}])
+def test_dense_ranking_sparse_ties_and_missing(positions: dict[int, int]) -> None:
+    streams = {"z": 5, "d": 4, "c": 3, "b": 2, "a": 1}
+    rows = dense_ranks(streams, positions)
+    assert [row["stream_id"] for row in rows] == ["a", "b", "c", "d", "z"]
+    assert [row["stream_rank"] for row in rows] == [1, 2, 3, 4, 5]
+    assert dense_ranks({"only": 5}, positions) == [{"stream_id": "only", "stream_rank": 1}]
+    assert dense_ranks({"b": 1, "a": 1}, {1: 9}) == [
+        {"stream_id": "a", "stream_rank": 1},
+        {"stream_id": "b", "stream_rank": 2},
+    ]
+
+
+def test_id_collisions_and_unused_output(tmp_path: Path) -> None:
+    paths = ProjectPaths(root=tmp_path, data_root=tmp_path / "data")
+    first = allocate("seed", set(), paths)
+    assert allocate("seed", set(), paths) == first
+    used = {first}
+    second = allocate("seed", used, paths)
+    assert second != first
+    target = paths.data_root / "test/normalized" / str(first)
+    target.mkdir(parents=True)
+    assert allocate("seed", set(), paths) == second
+    target.rmdir()
+    target.symlink_to(tmp_path / "missing")
+    assert allocate("seed", set(), paths) == second
+
+
+def test_container_and_member_ambiguity(tmp_path: Path) -> None:
+    import zipfile
+
+    paths = ProjectPaths(root=tmp_path, data_root=tmp_path / "data")
+    paths.raw_dir.mkdir(parents=True)
+    historical = paths.config_dir / "historical"
+    (historical / "profiles").mkdir(parents=True)
+    (historical / "raw_schemas").mkdir()
+    (historical / "profiles/p.toml").write_text('id="p"\nphysical="s"')
+    (historical / "raw_schemas/s.toml").write_text('id="s"\nsupported_containers=["zip"]')
+    archive = paths.raw_dir / "unrelated-name.bin"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("native.member", "data")
+    row: dict[str, object] = {"relative_path": archive.name}
+    assert container_member(paths, row, "p") == ("zip", "native.member")
+    with zipfile.ZipFile(archive, "a") as z:
+        z.writestr("another.member", "data")
+    with pytest.raises(MarketForgeError, match="Ambiguous archive member"):
+        container_member(paths, row, "p")
+
+
+def test_dense_ranking_uses_positions_before_names() -> None:
+    assert dense_ranks({"a": 1, "b": 2, "z": 3}, {1: 100, 3: 3}) == [
+        {"stream_id": "z", "stream_rank": 1},
+        {"stream_id": "a", "stream_rank": 2},
+        {"stream_id": "b", "stream_rank": 3},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_no_published_snapshot_is_optional() -> None:
+    from typing import cast
+    from unittest.mock import AsyncMock
+
+    from psycopg import AsyncConnection
+    from psycopg.rows import TupleRow
+
+    from forge.historical.normalization.batch import ranking_positions
+
+    c = AsyncMock()
+    c.execute.return_value.fetchone.return_value = None
+    snapshot, positions = await ranking_positions(cast(AsyncConnection[TupleRow], c))
+    assert snapshot is None and positions == {}
+    assert c.execute.await_count == 1
+
+
+def test_ambiguous_profile_is_blocked(tmp_path: Path) -> None:
+    from forge.historical.normalization.mapping import profile_for
+
+    paths = ProjectPaths(root=tmp_path, data_root=tmp_path / "data")
+    profiles = paths.config_dir / "historical/profiles"
+    profiles.mkdir(parents=True)
+    for identity in ("one", "two"):
+        (profiles / f"{identity}.toml").write_text(f'''id="{identity}"
+exchange="bybit"
+market_category="spot"
+instrument_type="spot"
+[[rules]]
+target="trade"
+''')
+    row: dict[str, object] = {
+        "exchange": "bybit",
+        "market_category": "spot",
+        "instrument_type": "spot",
+    }
+    with pytest.raises(MarketForgeError, match="Expected one compatible profile"):
+        profile_for(paths, row, "trades")
+
+
+def test_prepared_run_jobs_are_visible_to_storage_dependencies(tmp_path: Path) -> None:
+    import json
+
+    from forge.storage.dependencies import prepared_references
+
+    paths = ProjectPaths(root=tmp_path, data_root=tmp_path / "data")
+    jobs = paths.runs_dir / "example/jobs/normalize"
+    jobs.mkdir(parents=True)
+    file = paths.raw_dir / "managed.gz"
+    (jobs / "1.json").write_text(json.dumps({"tasks": [{"input_path": str(file)}]}))
+    refs = prepared_references(paths)
+    assert str(file) in refs.paths
+    assert "Prepared job" in refs.paths[str(file)][0]
+
+
+@pytest.mark.asyncio
+async def test_dry_run_and_publication_share_read_only_planner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+    import tomllib
+    from collections.abc import AsyncGenerator
+    from contextlib import asynccontextmanager
+    from datetime import UTC, datetime
+    from typing import cast
+    from unittest.mock import patch
+
+    from psycopg import AsyncConnection
+    from psycopg.rows import TupleRow
+
+    from forge.historical.archives.config import AcquisitionConfig
+    from forge.historical.archives.templates import ACQUISITION_TEMPLATE
+    from forge.historical.normalization.batch import BatchPlan, prepare_batch
+
+    paths = ProjectPaths(root=tmp_path, data_root=tmp_path / "data")
+    recipe = AcquisitionConfig.model_validate(tomllib.loads(ACQUISITION_TEMPLATE))
+    run = paths.runs_dir / "fixture"
+    plan = BatchPlan(
+        {"status": "prepared", "date": datetime(2026, 1, 1, tzinfo=UTC)},
+        {
+            7: {
+                "output": {
+                    "staging_path": str(tmp_path / "staging"),
+                    "dataset_path": str(tmp_path / "dataset"),
+                }
+            }
+        },
+        run,
+    )
+    plan.report["jobs"] = list(plan.jobs.values())
+    queries: list[str] = []
+
+    class Connection:
+        @asynccontextmanager
+        async def transaction(self) -> AsyncGenerator[None]:
+            yield
+
+        async def execute(self, query: str) -> None:
+            assert query == "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
+            queries.append(query)
+
+    @asynccontextmanager
+    async def connect(dsn: str) -> AsyncGenerator[AsyncConnection[TupleRow]]:
+        assert dsn == "fixture"
+        yield cast(AsyncConnection[TupleRow], cast(object, Connection()))
+
+    def dsn(root: Path) -> str:
+        return "fixture"
+
+    async def planner(
+        c: AsyncConnection[TupleRow], paths: ProjectPaths, configuration: AcquisitionConfig
+    ) -> BatchPlan:
+        assert configuration == recipe
+        return plan
+
+    monkeypatch.setattr("forge.historical.normalization.batch.testing_connection", connect)
+    monkeypatch.setattr("forge.historical.normalization.batch.testing_dsn", dsn)
+    monkeypatch.setattr("forge.historical.normalization.batch.plan_batch", planner)
+    with patch("subprocess.run", side_effect=AssertionError("Engine must never launch")):
+        dry = await prepare_batch(paths, recipe, dry_run=True)
+        assert dry["dry_run"] is True and not paths.runs_dir.exists()
+        actual = await prepare_batch(paths, recipe)
+    assert {**dry, "dry_run": False} == actual
+    assert len(queries) == 2
+    assert [p.name for p in run.iterdir()] == ["normalize-batch.json"]
+    assert json.loads((run / "normalize-batch.json").read_text()) == actual

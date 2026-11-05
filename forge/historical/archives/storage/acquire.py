@@ -145,6 +145,12 @@ async def reuse_registered(
             )
 
 
+def download_filename(filename: str) -> str:
+    """Canonical downloader destination name (also used to prove partial ownership)."""
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", filename)[-160:]
+    return "archive" if name in {"", ".", ".."} else name
+
+
 async def acquire(
     connection: AsyncConnection[TupleRow],
     http: HttpClient,
@@ -194,9 +200,7 @@ async def acquire(
         or location.password
     ):
         raise ArchiveFileError("Archive URL must be public HTTPS without user credentials.")
-    filename = re.sub(r"[^A-Za-z0-9_.-]", "_", remote.filename)[-160:]
-    if filename in {"", ".", ".."}:
-        filename = "archive"
+    filename = download_filename(remote.filename)
     relative = f"{remote.id}/{uuid4().hex}/{filename}"
     destination = contained(root, relative)
     partial = destination.with_name(destination.name + ".part")

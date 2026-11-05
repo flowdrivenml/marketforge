@@ -111,3 +111,24 @@ handoff.md
 
 # Sanitized HTTP fixtures are source-controlled, unlike generated JSON artifacts.
 !forge/tests/unit/historical/archives/fixtures/bitget_*.json
+
+# Source-controlled normalization catalog only; acquired/generated data stays ignored.
+!/data/
+/data/*
+!/data/.config/
+/data/.config/*
+!/data/.config/historical/
+/data/.config/historical/*
+!/data/.config/historical/raw_schemas/
+!/data/.config/historical/profiles/
+/data/.config/historical/raw_schemas/**
+/data/.config/historical/profiles/**
+!/data/.config/historical/raw_schemas/**/
+!/data/.config/historical/profiles/**/
+!/data/.config/historical/raw_schemas/**/*.toml
+!/data/.config/historical/profiles/**/*.toml
+
+# Historical normalization runtime settings and orchestration contract examples.
+!/data/.config/historical/normalize.toml
+!/docs/historical/normalize-job-v3.example.json
+!/docs/historical/normalize-job-v3.schema.json

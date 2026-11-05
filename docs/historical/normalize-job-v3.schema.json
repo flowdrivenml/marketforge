@@ -1,0 +1,216 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "protocol_version": {
+      "const": 3
+    },
+    "job_id": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18446744073709551615
+    },
+    "dataset_id": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18446744073709551615
+    },
+    "operation": {
+      "const": "normalize"
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 18446744073709551615
+          },
+          "stream_id": {
+            "type": "string"
+          },
+          "input_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "format_profile": {
+            "type": "string"
+          },
+          "profile_fingerprint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exchange": {
+            "enum": [
+              "bybit",
+              "binance",
+              "okx",
+              "bitget",
+              "gateio"
+            ]
+          },
+          "instrument_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807
+          },
+          "symbol": {
+            "type": "string",
+            "minLength": 1
+          },
+          "instrument": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "instrument_kind": {
+                "enum": [
+                  "spot",
+                  "perpetual",
+                  "future",
+                  "option"
+                ]
+              },
+              "contract_kind": {
+                "enum": [
+                  "linear",
+                  "inverse",
+                  null
+                ]
+              },
+              "tick_size": {
+                "type": [
+                  "string",
+                  "number"
+                ]
+              },
+              "contract_value": {
+                "type": [
+                  "string",
+                  "number",
+                  "null"
+                ]
+              },
+              "contract_value_asset": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "instrument_kind",
+              "tick_size"
+            ]
+          },
+          "archive_member": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_compression": {
+            "enum": [
+              "plain",
+              "gzip",
+              "zip",
+              "tar_gzip",
+              null
+            ]
+          }
+        },
+        "required": [
+          "task_id",
+          "stream_id",
+          "input_path",
+          "format_profile",
+          "exchange",
+          "instrument_id",
+          "symbol",
+          "instrument"
+        ]
+      }
+    },
+    "streams": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "stream_id": {
+            "type": "string"
+          },
+          "stream_rank": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4294967295
+          }
+        },
+        "required": [
+          "stream_id",
+          "stream_rank"
+        ]
+      }
+    },
+    "ordering": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "primary": {
+          "const": "event_timestamp_ns"
+        },
+        "tie_break": {
+          "const": "stream_rank"
+        }
+      },
+      "required": [
+        "primary",
+        "tie_break"
+      ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "content_type": {
+          "enum": [
+            "trades",
+            "depth"
+          ]
+        },
+        "staging_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dataset_path": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "content_type",
+        "staging_path",
+        "dataset_path"
+      ]
+    }
+  },
+  "required": [
+    "protocol_version",
+    "job_id",
+    "dataset_id",
+    "operation",
+    "tasks",
+    "streams",
+    "ordering",
+    "output"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MarketForge normalization job v3",
+  "description": "Structural wire contract; Rust additionally enforces catalog, fingerprints, instrument, stream, and output constraints."
+}
