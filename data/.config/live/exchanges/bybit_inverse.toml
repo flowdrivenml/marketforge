@@ -234,11 +234,7 @@ limit_parameter = "limit"
 method = "GET"
 path = "/v5/market/orderbook"
 
-parameters = [
-    "category",
-    "symbol",
-    "limit",
-]
+parameters = ["category", "symbol", "limit"]
 
 category = "inverse"
 
@@ -275,11 +271,7 @@ limit_parameter = "limit"
 method = "GET"
 path = "/v5/market/recent-trade"
 
-parameters = [
-    "category",
-    "symbol",
-    "limit",
-]
+parameters = ["category", "symbol", "limit"]
 
 category = "inverse"
 

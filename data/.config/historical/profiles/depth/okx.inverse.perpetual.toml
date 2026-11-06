@@ -1,0 +1,82 @@
+schema_version = 2
+kind = "profile"
+id = "okx.perpetual.inverse.depth"
+format_code = "OKX-B1"
+exchange = "okx"
+instrument_type = "perpetual"
+market_category = "inverse"
+
+[source]
+container = "tar_gzip"
+format = "jsonl"
+record_format = "events"
+ordering = "chronological"
+granularity = "daily"
+archive_day_boundary = "UTC"
+maximum_depth_per_side = 5000
+
+# Field keys are literal source column names or JSON paths.
+[fields.instId]
+type = "string"
+
+[fields.action]
+type = "string"
+values = ["snapshot", "update"]
+
+[fields.ts]
+type = "string/integer"
+precision = "millisecond"
+encoding = "unix_milliseconds"
+
+[fields.asks]
+type = "array"
+level_format = ["price", "quantity", "order_count"]
+
+[fields.bids]
+type = "array"
+level_format = ["price", "quantity", "order_count"]
+
+[normalization]
+quantity_encoding = "contracts"
+
+[normalization.asks]
+field = "asks"
+
+[normalization.bids]
+field = "bids"
+
+[normalization.instrument]
+lookup = "catalog"
+field = "instId"
+
+[normalization.event_timestamp]
+field = "ts"
+
+[[normalization.rules]]
+target = "l2_snapshot"
+
+[normalization.rules.snapshot]
+type = "single_event"
+
+[normalization.rules.event_filter]
+equals = "snapshot"
+field = "action"
+
+[[normalization.rules]]
+target = "l2_update"
+
+[normalization.rules.event_filter]
+equals = "update"
+field = "action"
+
+[normalization.rules.update_semantics]
+type = "absolute_level"
+zero_quantity = "delete"
+nonzero_quantity = "set"
+
+[normalization.book]
+update_id = false
+sequence_id = false
+update_frequency = "approximately_1_second"
+snapshot_frequency = "approximately_15_minutes"
+snapshot_resets_book = true

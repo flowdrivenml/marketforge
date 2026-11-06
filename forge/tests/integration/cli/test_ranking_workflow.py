@@ -25,6 +25,22 @@ ROOT = Path(__file__).resolve().parents[4]
 SNAPSHOT = UUID("00000000-0000-0000-0000-000000000001")
 
 
+@pytest.fixture(autouse=True)
+def ranking_ownership(monkeypatch: pytest.MonkeyPatch) -> None:
+    @asynccontextmanager
+    async def lock(c: AsyncConnection[TupleRow], *, shared: bool = False) -> AsyncGenerator[None]:
+        yield
+
+    @asynccontextmanager
+    async def connect(dsn: str) -> AsyncGenerator[AsyncConnection[TupleRow]]:
+        yield cast(AsyncConnection[TupleRow], object())
+
+    monkeypatch.setattr(rankings, "testing_connection", connect)
+    monkeypatch.setattr(initialization, "testing_connection", connect)
+    monkeypatch.setattr(initialization, "ranking_lock", lock)
+    monkeypatch.setattr(rankings, "ranking_lock", lock)
+
+
 @pytest.fixture
 def presets(workspace: Path) -> Path:
     directory = workspace / "data/.config/markets/rankings"

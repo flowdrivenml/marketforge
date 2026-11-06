@@ -214,17 +214,11 @@ format = "depth/gateio_spot"
 #
 # Current API docs list 20ms and 100ms variants.
 
-subscription_payload = [
-    "{symbol}",
-    "{interval}",
-]
+subscription_payload = ["{symbol}", "{interval}"]
 
 default_interval = "100ms"
 
-supported_intervals = [
-    "20ms",
-    "100ms",
-]
+supported_intervals = ["20ms", "100ms"]
 
 # Incremental updates carry U/u sequence ranges.
 # Some messages may also be authoritative snapshots.
@@ -287,16 +281,9 @@ channel = "spot.order_book"
 # This channel publishes limited-level snapshots.
 # It is distinct from the diff-depth channel.
 
-subscription_payload = [
-    "{symbol}",
-    "{depth}",
-    "{interval}",
-]
+subscription_payload = ["{symbol}", "{depth}", "{interval}"]
 
-supported_intervals = [
-    "100ms",
-    "1000ms",
-]
+supported_intervals = ["100ms", "1000ms"]
 
 synchronization_strategy = "snapshot_only"
 
@@ -328,12 +315,7 @@ method = "GET"
 
 path = "/spot/order_book"
 
-parameters = [
-    "currency_pair",
-    "interval",
-    "limit",
-    "with_id",
-]
+parameters = ["currency_pair", "interval", "limit", "with_id"]
 
 currency_pair = "{symbol}"
 
@@ -374,13 +356,13 @@ method = "GET"
 path = "/spot/trades"
 
 parameters = [
-    "currency_pair",
-    "limit",
-    "from",
-    "to",
-    "last_id",
-    "reverse",
-    "page",
+  "currency_pair",
+  "limit",
+  "from",
+  "to",
+  "last_id",
+  "reverse",
+  "page",
 ]
 
 currency_pair = "{symbol}"

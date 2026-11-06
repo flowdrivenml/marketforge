@@ -1,0 +1,58 @@
+schema_version = 2
+kind = "profile"
+id = "bitget.perpetual.linear.trades"
+format_code = "BITGET-T1"
+exchange = "bitget"
+instrument_type = "perpetual"
+market_category = "linear"
+
+[source]
+container = "zip"
+format = "csv"
+record_format = "rows"
+header = true
+ordering = "chronological"
+granularity = "daily"
+daily_packaging = "numbered_zip_chunks"
+archive_day_boundary = "UTC+8"
+
+# Field keys are literal source column names or JSON paths.
+[fields.trade_id]
+type = "integer/string"
+
+[fields.timestamp]
+type = "integer"
+observed_effective_precision = "second"
+encoding = "unix_milliseconds"
+
+[fields.price]
+type = "decimal"
+
+[fields.side]
+type = "string"
+
+[fields."volume(quote)"]
+type = "decimal"
+
+[fields."size(base)"]
+type = "decimal"
+
+[normalization]
+target = "trade"
+quantity_encoding = "base"
+
+[normalization.event_timestamp]
+field = "timestamp"
+
+[normalization.trade_id]
+field = "trade_id"
+
+[normalization.quantity]
+field = "size(base)"
+
+[normalization.price]
+field = "price"
+
+[normalization.side]
+transform = "casefold"
+field = "side"

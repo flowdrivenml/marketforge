@@ -48,10 +48,7 @@ api_generation = "uta_v3"
 
 resolver = "marketforge_instrument_catalog"
 
-supported_native_categories = [
-    "USDT-FUTURES",
-    "USDC-FUTURES",
-]
+supported_native_categories = ["USDT-FUTURES", "USDC-FUTURES"]
 
 [market_mapping.native_types.USDT-FUTURES]
 websocket_inst_type = "usdt-futures"
@@ -322,11 +319,7 @@ limit_parameter = "limit"
 method = "GET"
 path = "/api/v3/market/orderbook"
 
-parameters = [
-    "category",
-    "symbol",
-    "limit",
-]
+parameters = ["category", "symbol", "limit"]
 
 # Category is selected per instrument:
 # USDT-FUTURES or USDC-FUTURES.
@@ -374,11 +367,7 @@ limit_parameter = "limit"
 method = "GET"
 path = "/api/v3/market/fills"
 
-parameters = [
-    "category",
-    "symbol",
-    "limit",
-]
+parameters = ["category", "symbol", "limit"]
 
 category = "{native_rest_category}"
 

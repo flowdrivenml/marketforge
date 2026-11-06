@@ -218,9 +218,7 @@ enabled = true
 
 channel = "futures.trades"
 
-subscription_payload = [
-    "{symbol}",
-]
+subscription_payload = ["{symbol}"]
 
 format = "trades/gateio_inverse"
 
@@ -265,25 +263,14 @@ format = "depth/gateio_inverse"
 #
 # ["BTC_USD", "100ms", "100"]
 
-subscription_payload = [
-    "{symbol}",
-    "{interval}",
-    "{depth}",
-]
+subscription_payload = ["{symbol}", "{interval}", "{depth}"]
 
 default_interval = "100ms"
 default_depth = 100
 
-supported_intervals = [
-    "20ms",
-    "100ms",
-]
+supported_intervals = ["20ms", "100ms"]
 
-supported_depths = [
-    20,
-    50,
-    100,
-]
+supported_depths = [20, 50, 100]
 
 # ============================================================
 # DEPTH SUBSCRIPTION CONSTRAINTS
@@ -391,12 +378,7 @@ path = "/futures/{settlement}/order_book"
 
 settlement = "btc"
 
-parameters = [
-    "contract",
-    "interval",
-    "limit",
-    "with_id",
-]
+parameters = ["contract", "interval", "limit", "with_id"]
 
 contract = "{symbol}"
 
@@ -451,13 +433,7 @@ path = "/futures/{settlement}/trades"
 
 settlement = "btc"
 
-parameters = [
-    "contract",
-    "limit",
-    "last_id",
-    "from",
-    "to",
-]
+parameters = ["contract", "limit", "last_id", "from", "to"]
 
 contract = "{symbol}"
 

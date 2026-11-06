@@ -263,10 +263,7 @@ limit_parameter = "sz"
 method = "GET"
 path = "/api/v5/market/books"
 
-parameters = [
-    "instId",
-    "sz",
-]
+parameters = ["instId", "sz"]
 
 default_limit = 400
 maximum_limit = 400
@@ -299,10 +296,7 @@ limit_parameter = "limit"
 method = "GET"
 path = "/api/v5/market/trades"
 
-parameters = [
-    "instId",
-    "limit",
-]
+parameters = ["instId", "limit"]
 
 default_limit = 100
 maximum_limit = 500
@@ -333,13 +327,7 @@ limit_parameter = "limit"
 method = "GET"
 path = "/api/v5/market/history-trades"
 
-parameters = [
-    "instId",
-    "type",
-    "after",
-    "before",
-    "limit",
-]
+parameters = ["instId", "type", "after", "before", "limit"]
 
 default_limit = 100
 maximum_limit = 100

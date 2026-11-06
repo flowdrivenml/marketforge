@@ -316,11 +316,7 @@ limit_parameter = "limit"
 method = "GET"
 path = "/api/v3/market/orderbook"
 
-parameters = [
-    "category",
-    "symbol",
-    "limit",
-]
+parameters = ["category", "symbol", "limit"]
 
 category = "COIN-FUTURES"
 
@@ -365,11 +361,7 @@ limit_parameter = "limit"
 method = "GET"
 path = "/api/v3/market/fills"
 
-parameters = [
-    "category",
-    "symbol",
-    "limit",
-]
+parameters = ["category", "symbol", "limit"]
 
 category = "COIN-FUTURES"
 

@@ -63,6 +63,7 @@ def test_prepare_json_result(
     workspace: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from forge.historical.normalization.config import PreparationRequest
+    from forge.shared.config.models import HttpSettings
     from forge.shared.paths import ProjectPaths
 
     config = workspace / "data/.config/historical/normalization_jobs/example.toml"
@@ -77,7 +78,9 @@ instrument_id = 3
 format_profile = "explicit-profile"
 """)
 
-    async def prepare(paths: ProjectPaths, request: PreparationRequest) -> dict[str, object]:
+    async def prepare(
+        paths: ProjectPaths, request: PreparationRequest, *, http: HttpSettings | None = None
+    ) -> dict[str, object]:
         assert paths.root == workspace
         assert request.job_id == 7
         return {"schema_version": 1, "status": "prepared", "engine_ready": False}
@@ -110,6 +113,7 @@ def test_seed_edit_validate_and_prepare_shortcut(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     from forge.historical.archives.config import AcquisitionConfig
+    from forge.shared.config.models import HttpSettings
     from forge.shared.paths import ProjectPaths
 
     calls: list[Path] = []
@@ -131,7 +135,11 @@ def test_seed_edit_validate_and_prepare_shortcut(
         return path
 
     async def batch(
-        paths: ProjectPaths, recipe: AcquisitionConfig, *, dry_run: bool = False
+        paths: ProjectPaths,
+        recipe: AcquisitionConfig,
+        *,
+        dry_run: bool = False,
+        http: HttpSettings | None = None,
     ) -> dict[str, object]:
         assert recipe.requests[0].scope.identifier == "ETH_USDT"
         assert recipe.requests[0].scope.kind == "family"
@@ -177,3 +185,54 @@ def test_validate_after_editor_and_editor_failure(
     capsys.readouterr()
     assert main([*args, "new", "failed"]) == 2
     assert "Editor exited unsuccessfully" in capsys.readouterr().err
+
+
+def test_ranking_creation_failure_is_structured_and_publishes_nothing(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from forge.historical.archives.config import AcquisitionConfig
+    from forge.historical.archives.templates import ACQUISITION_TEMPLATE
+    from forge.historical.normalization.ranking import RankingPreparationError
+    from forge.shared.config.models import HttpSettings
+    from forge.shared.paths import ProjectPaths
+
+    paths = ProjectPaths.resolve(root=workspace)
+    paths.normalization_recipe_dir.mkdir(parents=True)
+    paths.normalization_recipe_dir.joinpath("failure.toml").write_text(ACQUISITION_TEMPLATE)
+
+    async def prepare(
+        paths: ProjectPaths,
+        recipe: AcquisitionConfig,
+        *,
+        dry_run: bool = False,
+        http: HttpSettings | None = None,
+    ) -> dict[str, object]:
+        raise RankingPreparationError(
+            {
+                "decision": "failed",
+                "policy": "turnover",
+                "error": "Controlled upstream collection failure",
+            }
+        )
+
+    monkeypatch.setattr("forge.cli.commands.normalization.prepare_batch", prepare)
+    assert (
+        main(
+            [
+                "--project-root",
+                str(workspace),
+                "--json",
+                "normalize",
+                "prepare",
+                "failure",
+                "--testing",
+            ]
+        )
+        == 1
+    )
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "failed" and result["ranking_resolution"]["decision"] == "failed"
+    assert "Controlled upstream collection failure" in result["error"]
+    assert not paths.runs_dir.exists()

@@ -1,0 +1,110 @@
+schema_version = 2
+kind = "profile"
+id = "gateio.spot.spot.depth"
+format_code = "GATE-B1"
+exchange = "gateio"
+instrument_type = "spot"
+market_category = "spot"
+
+[source]
+container = "gzip"
+format = "csv"
+record_format = "book_rows"
+header = false
+ordering = "chronological"
+granularity = "hourly"
+
+# Field keys are literal source column names or JSON paths.
+[fields.timestamp]
+type = "decimal"
+position = 1
+update_precision = "100ms"
+snapshot_precision = "second"
+encoding = "unix_seconds"
+
+[fields.side]
+type = "integer"
+position = 2
+
+[fields.action]
+type = "string"
+values = ["set", "make", "take"]
+position = 3
+
+[fields.price]
+type = "decimal"
+position = 4
+
+[fields.amount]
+type = "decimal"
+position = 5
+
+[fields.begin_id]
+type = "integer"
+position = 6
+
+[fields.merged_count]
+type = "integer"
+position = 7
+
+[normalization]
+quantity_encoding = "base"
+
+[normalization.side]
+transform = "map"
+field = "side"
+
+[normalization.side.values]
+1 = "ask"
+2 = "bid"
+
+[normalization.price]
+field = "price"
+
+[normalization.quantity]
+field = "amount"
+
+[normalization.sequence_count]
+field = "merged_count"
+
+[normalization.sequence_start]
+field = "begin_id"
+
+[normalization.event_timestamp]
+field = "timestamp"
+
+[[normalization.rules]]
+target = "l2_snapshot"
+
+[normalization.rules.snapshot]
+type = "group_rows"
+group_by = "timestamp"
+
+[normalization.rules.event_filter]
+equals = "set"
+field = "action"
+
+[[normalization.rules]]
+target = "l2_update"
+
+[normalization.rules.event_filter]
+in = ["make", "take"]
+field = "action"
+
+[normalization.rules.update_semantics]
+emit = "resulting_absolute_level"
+type = "relative_level"
+add_action = "make"
+zero_result = "delete"
+action_source = "action"
+nonzero_result = "set"
+subtract_action = "take"
+
+[normalization.book.sequence]
+continuity_rule = "next.begin_id = current.begin_id + current.merged_count"
+
+[normalization.book.sequence.begin_id]
+field = "begin_id"
+
+[normalization.book.sequence.merged_count]
+field = "merged_count"

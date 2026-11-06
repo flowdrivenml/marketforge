@@ -492,19 +492,25 @@ async def list_snapshots(c: AsyncConnection[TupleRow], limit: int = 50) -> list[
         return list(await cur.fetchall())
 
 
-async def latest_snapshot(c: AsyncConnection[TupleRow], name: str) -> UUID:
+async def find_latest_snapshot(c: AsyncConnection[TupleRow], name: str) -> UUID | None:
+    """Exact policy lookup; partial and old publications remain usable priorities."""
     cur = await c.execute(
         "SELECT id FROM ranking.snapshots WHERE policy_name=%s AND status='published' "
         "ORDER BY created_at DESC,id DESC LIMIT 1",
         (name,),
     )
     row = await cur.fetchone()
-    if row is None:
+    return row[0] if row is not None else None
+
+
+async def latest_snapshot(c: AsyncConnection[TupleRow], name: str) -> UUID:
+    snapshot = await find_latest_snapshot(c, name)
+    if snapshot is None:
         raise MarketDataError(
             f"No published snapshot for {name}. Create one with: "
             f"marketforge markets rank update {name} --testing"
         )
-    return row[0]
+    return snapshot
 
 
 async def show(

@@ -251,10 +251,10 @@ type = "tiered"
 parameter = "limit"
 
 tiers = [
-    { max = 100, weight = 5 },
-    { max = 500, weight = 25 },
-    { max = 1000, weight = 50 },
-    { max = 5000, weight = 250 },
+  { max = 100, weight = 5 },
+  { max = 500, weight = 25 },
+  { max = 1000, weight = 50 },
+  { max = 5000, weight = 250 },
 ]
 
 [rest.weight_policies.recent_trades]

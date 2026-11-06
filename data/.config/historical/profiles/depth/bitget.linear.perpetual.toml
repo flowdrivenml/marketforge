@@ -1,0 +1,62 @@
+schema_version = 2
+kind = "profile"
+id = "bitget.perpetual.linear.depth"
+format_code = "BITGET-B1"
+exchange = "bitget"
+instrument_type = "perpetual"
+market_category = "linear"
+
+[source]
+container = "zip"
+format = "xlsx"
+record_format = "snapshot_rows"
+header = true
+ordering = "not_chronological"
+granularity = "daily"
+workbook_sheets = 1
+archive_day_boundary = "UTC+8"
+
+# Field keys are literal source column names or JSON paths.
+[fields.timestamp]
+type = "integer"
+encoding = "unix_seconds"
+
+[fields.asks]
+type = "string"
+ordering = "price_ascending"
+level_format = ["price", "quantity"]
+decode = "json"
+
+[fields.bids]
+type = "string"
+ordering = "price_descending"
+level_format = ["price", "quantity"]
+decode = "json"
+
+[normalization]
+target = "l2_snapshot"
+quantity_encoding = "base"
+
+[normalization.event_timestamp]
+field = "timestamp"
+
+[normalization.input_ordering]
+order = "ascending"
+sort_by = "timestamp"
+
+[normalization.snapshot]
+type = "single_row"
+
+[normalization.bids]
+field = "bids"
+
+[normalization.asks]
+field = "asks"
+
+[normalization.book]
+update_id = false
+sequence_id = false
+
+[normalization.book.snapshot_depth]
+asks = 500
+bids = 500

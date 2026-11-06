@@ -4,10 +4,11 @@ import argparse
 import asyncio
 from dataclasses import asdict
 
+from forge.markets.ranking.coordination import ranking_lock
 from forge.markets.ranking.workflow import reason, refresh_and_publish
 from forge.markets.service import collect
 from forge.shared.database.migrations import migrate_testing_database
-from forge.shared.database.testing import testing_dsn
+from forge.shared.database.testing import testing_connection, testing_dsn
 from forge.shared.ownership import WorkspaceOwnership
 from forge.shared.terminal.markets import MarketCollectionDisplay, render_workflow_result
 from forge.startup.context import ApplicationContext
@@ -43,12 +44,14 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
             }
         # Track scope completion independently for each collection phase.
         display.reported.clear()
-        value = await refresh_and_publish(
-            dsn,
-            context.settings.http,
-            context.paths.config_dir / "markets/rankings",
-            progress=display.update,
-        )
+        async with testing_connection(dsn) as ranking_owner:
+            async with ranking_lock(ranking_owner):
+                value = await refresh_and_publish(
+                    dsn,
+                    context.settings.http,
+                    context.paths.config_dir / "markets/rankings",
+                    progress=display.update,
+                )
         if sync.get("status") != "complete":
             value["status"] = "partial"
         return value

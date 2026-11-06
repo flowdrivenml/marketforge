@@ -217,12 +217,7 @@ source = "trade_id"
 
 preserve_native_id = true
 
-deduplication_key = [
-    "exchange",
-    "market",
-    "instrument",
-    "trade_id",
-]
+deduplication_key = ["exchange", "market", "instrument", "trade_id"]
 
 # Execution IDs are retained as opaque native identities.
 # Do not assume exact numeric consecutiveness.

@@ -21,6 +21,15 @@ from forge.shared.ownership import WorkspaceOwnership
 from forge.shared.paths import ProjectPaths
 
 
+@pytest.fixture(autouse=True)
+def ranking_ownership(monkeypatch: pytest.MonkeyPatch) -> None:
+    @asynccontextmanager
+    async def lock(c: AsyncConnection[TupleRow], *, shared: bool = False) -> AsyncGenerator[None]:
+        yield
+
+    monkeypatch.setattr(rankings, "ranking_lock", lock)
+
+
 def selected_dsn(root: Path) -> str:
     return "controlled-fixture"
 

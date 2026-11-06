@@ -1,0 +1,59 @@
+schema_version = 2
+kind = "profile"
+id = "bybit.spot.spot.trades"
+format_code = "BYBIT-T1"
+exchange = "bybit"
+instrument_type = "spot"
+market_category = "spot"
+
+[source]
+container = "gzip"
+format = "csv"
+record_format = "rows"
+header = true
+ordering = "chronological"
+granularity = "daily"
+
+# Field keys are literal source column names or JSON paths.
+[fields.id]
+type = "integer"
+
+[fields.timestamp]
+type = "integer"
+encoding = "unix_milliseconds"
+
+[fields.price]
+type = "decimal"
+
+[fields.volume]
+type = "decimal"
+
+[fields.side]
+type = "string"
+
+[fields.rpi]
+type = "integer/bool"
+
+[normalization]
+target = "trade"
+quantity_encoding = "base"
+
+[normalization.event_timestamp]
+field = "timestamp"
+
+[normalization.trade_id]
+field = "id"
+
+[normalization.quantity]
+field = "volume"
+
+[normalization.optional.is_rpi]
+transform = "bool"
+field = "rpi"
+
+[normalization.price]
+field = "price"
+
+[normalization.side]
+transform = "casefold"
+field = "side"

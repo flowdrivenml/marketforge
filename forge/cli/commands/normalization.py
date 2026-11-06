@@ -6,6 +6,7 @@ import json
 
 from forge.historical.archives.config import AcquisitionConfig
 from forge.historical.normalization.batch import prepare_batch
+from forge.historical.normalization.ranking import RankingPreparationError
 from forge.historical.normalization.recipes import create_recipe, load_configuration, recipe_path
 from forge.historical.normalization.service import prepare
 from forge.shared.ownership import WorkspaceOwnership
@@ -60,18 +61,37 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
             "status": "template_created" if action == "new" else "valid",
             "path": str(source),
             "input_count": count,
-            "message": "Recipe structure valid; prepare resolves local archives, profiles and metadata.",
+            "message": "Recipe structure valid; prepare resolves archives and instrument identity. Engine resolves archive contents.",
         }
     else:
-        with WorkspaceOwnership(context.paths):
-            if isinstance(request, AcquisitionConfig):
-                result = asyncio.run(
-                    prepare_batch(context.paths, request, dry_run=arguments.dry_run)
-                )
-            elif arguments.dry_run:
-                result = asyncio.run(prepare(context.paths, request, dry_run=True))
-            else:
-                result = asyncio.run(prepare(context.paths, request))
+        try:
+            with WorkspaceOwnership(context.paths):
+                if isinstance(request, AcquisitionConfig):
+                    result = asyncio.run(
+                        prepare_batch(
+                            context.paths,
+                            request,
+                            dry_run=arguments.dry_run,
+                            http=context.settings.http,
+                        )
+                    )
+                elif arguments.dry_run:
+                    result = asyncio.run(
+                        prepare(context.paths, request, dry_run=True, http=context.settings.http)
+                    )
+                else:
+                    result = asyncio.run(
+                        prepare(context.paths, request, http=context.settings.http)
+                    )
+        except RankingPreparationError as exc:
+            result = {
+                "schema_version": 1,
+                "status": "failed",
+                "ranking_resolution": exc.details,
+                "error": str(exc),
+            }
+    if "batch_path" in result:
+        result["recipe"] = arguments.configuration_name
     if arguments.as_json:
         print(json.dumps(result))
     elif "batch_path" in result:
@@ -81,4 +101,4 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
             if key != "schema_version":
                 context.console.print(f"{key}: ", style="mf.identifier", end="")
                 context.console.print(str(value), markup=False)
-    return 1 if result["status"] == "partial" else 0
+    return 1 if result["status"] in {"partial", "failed"} else 0

@@ -10,16 +10,10 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 
-dependencies = [
-    "requests",
-    "beautifulsoup4",
-    "rich",
-]
+dependencies = ["requests", "beautifulsoup4", "rich"]
 
 [project.optional-dependencies]
-dev = [
-    "pytest",
-]
+dev = ["pytest"]
 
 [project.scripts]
 marketforge = "marketforge.cli:main"

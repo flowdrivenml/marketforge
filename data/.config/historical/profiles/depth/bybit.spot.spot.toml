@@ -1,0 +1,98 @@
+schema_version = 2
+kind = "profile"
+id = "bybit.spot.spot.depth"
+format_code = "BYBIT-B1"
+exchange = "bybit"
+instrument_type = "spot"
+market_category = "spot"
+
+[source]
+container = "zip"
+format = "jsonl"
+record_format = "events"
+ordering = "chronological"
+granularity = "daily"
+maximum_depth_per_side = 200
+
+# Field keys are literal source column names or JSON paths.
+[fields.topic]
+type = "string"
+
+[fields.ts]
+type = "integer"
+encoding = "unix_milliseconds"
+
+[fields.type]
+type = "string"
+values = ["snapshot", "delta"]
+
+[fields."data.s"]
+type = "string"
+
+[fields."data.b"]
+type = "array"
+level_format = ["price", "quantity"]
+
+[fields."data.a"]
+type = "array"
+level_format = ["price", "quantity"]
+
+[fields."data.u"]
+type = "integer"
+
+[fields."data.seq"]
+type = "integer"
+
+[fields.cts]
+type = "integer"
+encoding = "unix_milliseconds"
+
+[normalization]
+quantity_encoding = "base"
+
+[normalization.asks]
+field = "data.a"
+
+[normalization.bids]
+field = "data.b"
+
+[normalization.instrument]
+lookup = "catalog"
+field = "data.s"
+
+[normalization.sequence_start]
+field = "data.u"
+
+[normalization.event_timestamp]
+field = "cts"
+
+[normalization.system_timestamp]
+field = "ts"
+
+[[normalization.rules]]
+target = "l2_snapshot"
+
+[normalization.rules.snapshot]
+type = "single_event"
+
+[normalization.rules.event_filter]
+equals = "snapshot"
+field = "type"
+
+[[normalization.rules]]
+target = "l2_update"
+
+[normalization.rules.event_filter]
+equals = "delta"
+field = "type"
+
+[normalization.rules.update_semantics]
+type = "absolute_level"
+zero_quantity = "delete"
+nonzero_quantity = "set"
+
+[normalization.book.update_id]
+field = "data.u"
+
+[normalization.book.cross_sequence]
+field = "data.seq"

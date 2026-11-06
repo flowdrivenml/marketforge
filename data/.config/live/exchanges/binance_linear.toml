@@ -229,13 +229,13 @@ type = "discrete"
 parameter = "limit"
 
 tiers = [
-    { limit = 5, weight = 2 },
-    { limit = 10, weight = 2 },
-    { limit = 20, weight = 2 },
-    { limit = 50, weight = 2 },
-    { limit = 100, weight = 5 },
-    { limit = 500, weight = 10 },
-    { limit = 1000, weight = 20 },
+  { limit = 5, weight = 2 },
+  { limit = 10, weight = 2 },
+  { limit = 20, weight = 2 },
+  { limit = 50, weight = 2 },
+  { limit = 100, weight = 5 },
+  { limit = 500, weight = 10 },
+  { limit = 1000, weight = 20 },
 ]
 
 [rest.weight_policies.recent_trades]

@@ -21,7 +21,7 @@ schema_version = 1
 [exchange]
 id = "binance"
 market = "inverse"
-profile = "binance_inverse" 
+profile = "binance_inverse"
 
 # ============================================================
 # WEBSOCKET
@@ -221,13 +221,7 @@ limit_parameter = "limit"
 method = "GET"
 path = "/dapi/v1/aggTrades"
 
-parameters = [
-    "symbol",
-    "fromId",
-    "startTime",
-    "endTime",
-    "limit",
-]
+parameters = ["symbol", "fromId", "startTime", "endTime", "limit"]
 
 default_limit = 500
 maximum_limit = 1000
@@ -278,13 +272,13 @@ type = "discrete"
 parameter = "limit"
 
 tiers = [
-    { limit = 5, weight = 2 },
-    { limit = 10, weight = 2 },
-    { limit = 20, weight = 2 },
-    { limit = 50, weight = 2 },
-    { limit = 100, weight = 5 },
-    { limit = 500, weight = 10 },
-    { limit = 1000, weight = 20 },
+  { limit = 5, weight = 2 },
+  { limit = 10, weight = 2 },
+  { limit = 20, weight = 2 },
+  { limit = 50, weight = 2 },
+  { limit = 100, weight = 5 },
+  { limit = 500, weight = 10 },
+  { limit = 1000, weight = 20 },
 ]
 
 # ------------------------------------------------------------

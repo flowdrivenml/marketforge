@@ -6,14 +6,19 @@ from typing import Literal, Self
 
 from pydantic import Field, model_validator
 
+from forge.historical.archives.config import AcquisitionConfig
 from forge.shared.config.models import SettingsModel
+
+
+class NormalizationRecipe(AcquisitionConfig, frozen=True):
+    ranking_policy: str = Field(default="turnover", pattern=r"^[a-zA-Z0-9_-]+$")
 
 
 class InputSelection(SettingsModel, frozen=True):
     task_id: int = Field(gt=0, le=2**64 - 1)
     archive_id: int = Field(gt=0, le=2**63 - 1)
     instrument_id: int = Field(gt=0, le=2**63 - 1)
-    format_profile: str = Field(min_length=1, pattern=r"\S")
+    format_profile: str | None = Field(default=None, min_length=1, pattern=r"\S")
     archive_member: str | None = Field(default=None, min_length=1)
     source_compression: Literal["plain", "gzip", "zip", "tar_gzip"] | None = None
     stream_rank: int | None = Field(default=None, ge=0, le=2**32 - 1)
@@ -25,6 +30,7 @@ class OutputSelection(SettingsModel, frozen=True):
 
 
 class PreparationRequest(SettingsModel, frozen=True):
+    ranking_policy: str = Field(default="turnover", pattern=r"^[a-zA-Z0-9_-]+$")
     version: Literal[1] = 1
     job_id: int = Field(gt=0, le=2**64 - 1)
     dataset_id: int = Field(gt=0, le=2**64 - 1)
@@ -59,11 +65,9 @@ task_id = 1
 # REQUIRED: registered complete LOCAL archive ID and catalog instrument ID.
 # archive_id = YOUR_LOCAL_ARCHIVE_ID
 # instrument_id = YOUR_INSTRUMENT_ID
-# REQUIRED: exact ID from data/.config/historical/profiles/.
-# format_profile = "YOUR_PROFILE_ID"
-# archive_member = "EXACT_MEMBER_NAME" # required for ZIP/tar_gzip
-# source_compression = "gzip" # required if the profile permits multiple containers
-# stream_rank = 0 # required for each stream when there are multiple streams
+# Legacy format_profile, archive_member, source_compression and stream_rank fields
+# remain readable, but new preparation delegates archive interpretation to the engine
+# and resolves dense ranks from the selected turnover snapshot.
 
 # Optional output overrides (relative to project root or absolute).
 # Defaults: data/test/normalized/{dataset_id} and sibling staging directory.

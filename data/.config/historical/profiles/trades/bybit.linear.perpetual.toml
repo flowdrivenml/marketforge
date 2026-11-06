@@ -1,0 +1,75 @@
+schema_version = 2
+kind = "profile"
+id = "bybit.perpetual.linear.trades"
+format_code = "BYBIT-T2"
+exchange = "bybit"
+instrument_type = "perpetual"
+market_category = "linear"
+
+[source]
+container = "gzip"
+format = "csv"
+record_format = "rows"
+header = true
+ordering = "chronological"
+granularity = "daily"
+
+# Field keys are literal source column names or JSON paths.
+[fields.timestamp]
+type = "decimal"
+precision = "up_to_4_fractional_digits"
+encoding = "unix_seconds"
+
+[fields.symbol]
+type = "string"
+
+[fields.side]
+type = "string"
+
+[fields.size]
+type = "decimal"
+
+[fields.price]
+type = "decimal"
+
+[fields.tickDirection]
+type = "string"
+
+[fields.trdMatchID]
+type = "uuid/string"
+
+[fields.grossValue]
+type = "decimal"
+
+[fields.homeNotional]
+type = "decimal"
+
+[fields.foreignNotional]
+type = "decimal"
+
+[fields.RPI]
+type = "integer/bool"
+
+[normalization]
+target = "trade"
+quantity_encoding = "base"
+
+[normalization.event_timestamp]
+field = "timestamp"
+
+[normalization.trade_id]
+field = "trdMatchID"
+
+[normalization.quantity]
+field = "size"
+
+[normalization.optional.is_rpi]
+transform = "bool"
+field = "RPI"
+
+[normalization.price]
+field = "price"
+
+[normalization.side]
+transform = "casefold"
+field = "side"

@@ -217,12 +217,7 @@ source = "trade_id"
 
 preserve_native_id = true
 
-deduplication_key = [
-    "exchange",
-    "market",
-    "instrument",
-    "trade_id",
-]
+deduplication_key = ["exchange", "market", "instrument", "trade_id"]
 
 # Native trade IDs must not be interpreted as
 # consecutive numeric identifiers.

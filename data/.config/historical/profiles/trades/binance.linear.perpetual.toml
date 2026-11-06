@@ -1,0 +1,59 @@
+schema_version = 2
+kind = "profile"
+id = "binance.perpetual.linear.trades"
+format_code = "BINANCE-T2"
+exchange = "binance"
+instrument_type = "perpetual"
+market_category = "linear"
+
+[source]
+container = "zip"
+format = "csv"
+record_format = "rows"
+header = true
+ordering = "chronological"
+granularity = "daily"
+
+# Field keys are literal source column names or JSON paths.
+[fields.id]
+type = "integer"
+
+[fields.price]
+type = "decimal"
+
+[fields.qty]
+type = "decimal"
+
+[fields.quote_qty]
+type = "decimal"
+
+[fields.time]
+type = "integer"
+encoding = "unix_milliseconds"
+
+[fields.is_buyer_maker]
+type = "boolean"
+
+[normalization]
+target = "trade"
+quantity_encoding = "base"
+
+[normalization.event_timestamp]
+field = "time"
+
+[normalization.trade_id]
+field = "id"
+
+[normalization.quantity]
+field = "qty"
+
+[normalization.price]
+field = "price"
+
+[normalization.side]
+transform = "map"
+field = "is_buyer_maker"
+
+[normalization.side.values]
+true = "sell"
+false = "buy"

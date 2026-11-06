@@ -55,10 +55,7 @@ topic_value = "books"
 
 instrument_type_field = "arg.instType"
 
-supported_instrument_types = [
-    "usdt-futures",
-    "usdc-futures",
-]
+supported_instrument_types = ["usdt-futures", "usdc-futures"]
 
 instrument_field = "arg.symbol"
 

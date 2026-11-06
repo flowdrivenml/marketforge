@@ -1,5 +1,17 @@
 # Historical normalization runtime and Protocol v3
 
+Forge preparation writes a separate **Forge batch schema v3** with
+`stream_rank` inside tasks and no job-level `streams` or `protocol_version`.
+Neither this batch nor its embedded jobs are Rust v3 wire documents. Preparation
+also publishes `prepare-report.json` with diagnostics and explicit incompatibility
+reasons; it never executes the engine. See the
+[preparation guide](../../forge/historical/normalization/README.md).
+The schema and example below describe the unchanged Rust contract and existing
+legacy job artifacts, which require job-level `streams` and `ordering`. New manual
+and recipe preparations both use Forge schema 3 with explicit instrument identity
+or unresolved scopes, and omit profile, compression and archive-member fields.
+See the [Forge batch example](normalize-batch-v3.example.json).
+
 ## Configuration ownership
 
 ```text

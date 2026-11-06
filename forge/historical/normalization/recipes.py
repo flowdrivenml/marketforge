@@ -5,7 +5,7 @@ from pathlib import Path
 
 from forge.historical.archives.config import AcquisitionConfig, load_acquisition
 from forge.historical.archives.templates import ACQUISITION_TEMPLATE
-from forge.historical.normalization.config import PreparationRequest
+from forge.historical.normalization.config import NormalizationRecipe, PreparationRequest
 from forge.shared.config.library import resolve_config_file
 from forge.shared.paths import ProjectPaths
 
@@ -21,7 +21,7 @@ def load_configuration(source: Path) -> AcquisitionConfig | PreparationRequest:
         document = tomllib.load(stream)
     if "inputs" in document or "job_id" in document:
         return PreparationRequest.model_validate(document)
-    return AcquisitionConfig.model_validate(document)
+    return NormalizationRecipe.model_validate(document)
 
 
 def create_recipe(paths: ProjectPaths, name: str, acquisition: str | None) -> Path:

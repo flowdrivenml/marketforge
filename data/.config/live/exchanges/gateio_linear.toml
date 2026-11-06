@@ -45,10 +45,7 @@ resolver = "marketforge_instrument_catalog"
 # Each instrument must independently satisfy MarketForge's
 # linear-contract classification.
 
-supported_settlements = [
-    "usdt",
-    "usd1",
-]
+supported_settlements = ["usdt", "usd1"]
 
 [market_mapping.native_types.usdt]
 settlement = "usdt"
@@ -204,9 +201,7 @@ enabled = true
 route = "usdt"
 channel = "futures.trades"
 
-subscription_payload = [
-    "{symbol}",
-]
+subscription_payload = ["{symbol}"]
 
 format = "trades/gateio_linear"
 
@@ -245,25 +240,14 @@ format = "depth/gateio_linear"
 #
 # [contract, frequency, level]
 
-subscription_payload = [
-    "{symbol}",
-    "{interval}",
-    "{depth}",
-]
+subscription_payload = ["{symbol}", "{interval}", "{depth}"]
 
 default_interval = "100ms"
 default_depth = 100
 
-supported_intervals = [
-    "20ms",
-    "100ms",
-]
+supported_intervals = ["20ms", "100ms"]
 
-supported_depths = [
-    20,
-    50,
-    100,
-]
+supported_depths = [20, 50, 100]
 
 # 20ms is supported only for 20 levels.
 
@@ -343,12 +327,7 @@ method = "GET"
 
 path = "/futures/{settlement}/order_book"
 
-parameters = [
-    "contract",
-    "interval",
-    "limit",
-    "with_id",
-]
+parameters = ["contract", "interval", "limit", "with_id"]
 
 contract = "{symbol}"
 settlement = "{native_settlement}"
@@ -394,14 +373,7 @@ method = "GET"
 
 path = "/futures/{settlement}/trades"
 
-parameters = [
-    "contract",
-    "limit",
-    "offset",
-    "last_id",
-    "from",
-    "to",
-]
+parameters = ["contract", "limit", "offset", "last_id", "from", "to"]
 
 contract = "{symbol}"
 settlement = "{native_settlement}"

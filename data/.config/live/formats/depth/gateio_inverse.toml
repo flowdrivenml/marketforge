@@ -492,11 +492,7 @@ strategy = "exchange_reported"
 
 source = "snapshot_depth"
 
-supported_depths = [
-    20,
-    50,
-    100,
-]
+supported_depths = [20, 50, 100]
 
 track_snapshot_source = true
 track_snapshot_depth = true

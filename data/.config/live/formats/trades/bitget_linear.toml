@@ -55,10 +55,7 @@ topic_value = "publicTrade"
 
 instrument_type_field = "arg.instType"
 
-supported_instrument_types = [
-    "usdt-futures",
-    "usdc-futures",
-]
+supported_instrument_types = ["usdt-futures", "usdc-futures"]
 
 instrument_field = "arg.symbol"
 
@@ -257,12 +254,7 @@ source = "trade_id"
 
 preserve_native_id = true
 
-deduplication_key = [
-    "exchange",
-    "market",
-    "instrument",
-    "trade_id",
-]
+deduplication_key = ["exchange", "market", "instrument", "trade_id"]
 
 # Native execution IDs must be preserved exactly.
 #

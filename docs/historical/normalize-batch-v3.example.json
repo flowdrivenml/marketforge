@@ -1,0 +1,66 @@
+{
+  "schema_version": 3,
+  "kind": "normalization_batch",
+  "status": "partial",
+  "run_id": "normalize-example",
+  "run_directory": "/project/data/runs/normalize-example",
+  "batch_path": "/project/data/runs/normalize-example/normalize-batch.json",
+  "ranking_snapshot": null,
+  "ranking_policy": "turnover",
+  "requested_interval": {
+    "start": "2026-10-27T00:00:00Z",
+    "end": "2026-10-30T00:00:00Z"
+  },
+  "jobs": [
+    {
+      "operation": "normalize",
+      "job_id": 1001,
+      "dataset_id": 501,
+      "tasks": [
+        {
+          "task_id": 1,
+          "input_path": "/project/data/raw/6919/8c7305fbb71844618aa5e7623b28ff91/BTCUSD_PERP-trades-2026-10-27.zip",
+          "exchange": "binance",
+          "instrument_type": "perpetual",
+          "market_category": "inverse",
+          "base_asset": "BTC",
+          "quote_asset": "USD",
+          "symbol": "BTCUSD_PERP",
+          "instrument": {
+            "tick_size": "0.1",
+            "contract_value": "100",
+            "contract_value_asset": "USD"
+          },
+          "stream_id": "binance.inverse.perpetual.BTCUSD_PERP.trades",
+          "stream_rank": 1
+        },
+        {
+          "task_id": 2,
+          "input_path": "/project/data/raw/13449/0720d27d7a514dbfbd37ac970d9b2c81/BTC-USD_UM-futureschain-trades-2026-10-27.zip",
+          "exchange": "okx",
+          "instrument_type": "future",
+          "market_category": "linear",
+          "scope": {
+            "kind": "family",
+            "identifier": "BTC-USD_UM"
+          },
+          "symbol": null,
+          "instrument": null,
+          "base_asset": "BTC",
+          "quote_asset": "USD",
+          "stream_id": "okx.linear.future.family:BTC-USD_UM.trades",
+          "stream_rank": 2
+        }
+      ],
+      "ordering": {
+        "primary": "event_timestamp_ns",
+        "tie_break": "stream_rank"
+      },
+      "output": {
+        "content_type": "trades",
+        "staging_path": "/project/data/test/normalized/.501.staging.1001",
+        "dataset_path": "/project/data/test/normalized/501"
+      }
+    }
+  ]
+}

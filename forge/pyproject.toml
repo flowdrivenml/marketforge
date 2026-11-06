@@ -11,12 +11,12 @@ requires-python = ">=3.12"
 license = "MIT"
 
 dependencies = [
-    "beautifulsoup4",
-    "httpx",
-    "psycopg[binary,pool]>=3,<4",
-    "pydantic>=2,<3",
-    "PyYAML>=6,<7",
-    "rich",
+  "beautifulsoup4",
+  "httpx",
+  "psycopg[binary,pool]>=3,<4",
+  "pydantic>=2,<3",
+  "PyYAML>=6,<7",
+  "rich",
 ]
 
 
@@ -26,13 +26,7 @@ mf = "forge.cli.main:main"
 
 
 [dependency-groups]
-dev = [
-    "pyright",
-    "pytest",
-    "pytest-asyncio",
-    "ruff",
-    "types-PyYAML",
-]
+dev = ["pyright", "pytest", "pytest-asyncio", "ruff", "types-PyYAML"]
 
 
 # The project configuration lives inside the Python package.
@@ -45,18 +39,18 @@ dev-mode-dirs = [".."]
 # Tests, helper scripts, and project configuration are not wheel contents.
 [tool.hatch.build.targets.wheel]
 only-include = [
-    "__init__.py",
-    "startup",
-    "shared",
-    "markets",
-    "historical",
-    "datasets",
-    "orchestration",
-    "storage",
-    "features",
-    "lab",
-    "cli",
-    "tui",
+  "__init__.py",
+  "startup",
+  "shared",
+  "markets",
+  "historical",
+  "datasets",
+  "orchestration",
+  "storage",
+  "features",
+  "lab",
+  "cli",
+  "tui",
 ]
 
 
@@ -72,16 +66,7 @@ extend-exclude = ["build", "dist"]
 
 
 [tool.ruff.lint]
-select = [
-    "E4",
-    "E7",
-    "E9",
-    "F",
-    "I",
-    "UP",
-    "B",
-    "ASYNC",
-]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "ASYNC"]
 
 
 [tool.ruff.lint.isort]
@@ -113,18 +98,18 @@ testpaths = ["tests"]
 asyncio_default_fixture_loop_scope = "function"
 
 addopts = [
-    "-ra",
-    "--strict-config",
-    "--strict-markers",
-    "--import-mode=importlib",
+  "-ra",
+  "--strict-config",
+  "--strict-markers",
+  "--import-mode=importlib",
 ]
 
 asyncio_mode = "strict"
 
 markers = [
-    "integration: component integration tests",
-    "database: requires the explicitly configured testing database",
-    "network: explicitly enabled external-network tests",
-    "engine: requires real Rust engine executables",
-    "terminal: requires terminal or PTY interaction",
+  "integration: component integration tests",
+  "database: requires the explicitly configured testing database",
+  "network: explicitly enabled external-network tests",
+  "engine: requires real Rust engine executables",
+  "terminal: requires terminal or PTY interaction",
 ]

@@ -5,8 +5,6 @@ from pathlib import Path
 import pytest
 
 from forge.historical.normalization.batch import allocate, dense_ranks
-from forge.historical.normalization.mapping import container_member
-from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
 
@@ -38,27 +36,6 @@ def test_id_collisions_and_unused_output(tmp_path: Path) -> None:
     assert allocate("seed", set(), paths) == second
 
 
-def test_container_and_member_ambiguity(tmp_path: Path) -> None:
-    import zipfile
-
-    paths = ProjectPaths(root=tmp_path, data_root=tmp_path / "data")
-    paths.raw_dir.mkdir(parents=True)
-    historical = paths.config_dir / "historical"
-    (historical / "profiles").mkdir(parents=True)
-    (historical / "raw_schemas").mkdir()
-    (historical / "profiles/p.toml").write_text('id="p"\nphysical="s"')
-    (historical / "raw_schemas/s.toml").write_text('id="s"\nsupported_containers=["zip"]')
-    archive = paths.raw_dir / "unrelated-name.bin"
-    with zipfile.ZipFile(archive, "w") as z:
-        z.writestr("native.member", "data")
-    row: dict[str, object] = {"relative_path": archive.name}
-    assert container_member(paths, row, "p") == ("zip", "native.member")
-    with zipfile.ZipFile(archive, "a") as z:
-        z.writestr("another.member", "data")
-    with pytest.raises(MarketForgeError, match="Ambiguous archive member"):
-        container_member(paths, row, "p")
-
-
 def test_dense_ranking_uses_positions_before_names() -> None:
     assert dense_ranks({"a": 1, "b": 2, "z": 3}, {1: 100, 3: 3}) == [
         {"stream_id": "z", "stream_rank": 1},
@@ -82,29 +59,6 @@ async def test_no_published_snapshot_is_optional() -> None:
     snapshot, positions = await ranking_positions(cast(AsyncConnection[TupleRow], c))
     assert snapshot is None and positions == {}
     assert c.execute.await_count == 1
-
-
-def test_ambiguous_profile_is_blocked(tmp_path: Path) -> None:
-    from forge.historical.normalization.mapping import profile_for
-
-    paths = ProjectPaths(root=tmp_path, data_root=tmp_path / "data")
-    profiles = paths.config_dir / "historical/profiles"
-    profiles.mkdir(parents=True)
-    for identity in ("one", "two"):
-        (profiles / f"{identity}.toml").write_text(f'''id="{identity}"
-exchange="bybit"
-market_category="spot"
-instrument_type="spot"
-[[rules]]
-target="trade"
-''')
-    row: dict[str, object] = {
-        "exchange": "bybit",
-        "market_category": "spot",
-        "instrument_type": "spot",
-    }
-    with pytest.raises(MarketForgeError, match="Expected one compatible profile"):
-        profile_for(paths, row, "trades")
 
 
 def test_prepared_run_jobs_are_visible_to_storage_dependencies(tmp_path: Path) -> None:
@@ -147,6 +101,7 @@ async def test_dry_run_and_publication_share_read_only_planner(
     run = paths.runs_dir / "fixture"
     plan = BatchPlan(
         {"status": "prepared", "date": datetime(2026, 1, 1, tzinfo=UTC)},
+        {"schema_version": 3, "kind": "normalization_batch"},
         {
             7: {
                 "output": {
@@ -157,7 +112,7 @@ async def test_dry_run_and_publication_share_read_only_planner(
         },
         run,
     )
-    plan.report["jobs"] = list(plan.jobs.values())
+    plan.batch["jobs"] = list(plan.jobs.values())
     queries: list[str] = []
 
     class Connection:
@@ -178,11 +133,34 @@ async def test_dry_run_and_publication_share_read_only_planner(
         return "fixture"
 
     async def planner(
-        c: AsyncConnection[TupleRow], paths: ProjectPaths, configuration: AcquisitionConfig
+        c: AsyncConnection[TupleRow],
+        paths: ProjectPaths,
+        configuration: AcquisitionConfig,
+        ranking: object = None,
     ) -> BatchPlan:
         assert configuration == recipe
         return plan
 
+    from forge.historical.normalization.ranking import RankingSelection
+    from forge.shared.config.models import HttpSettings
+
+    @asynccontextmanager
+    async def lock(c: AsyncConnection[TupleRow], *, shared: bool = False) -> AsyncGenerator[None]:
+        yield
+
+    async def ensure(
+        c: AsyncConnection[TupleRow],
+        dsn: str,
+        directory: Path,
+        policy: str,
+        settings: HttpSettings,
+        *,
+        dry_run: bool,
+    ) -> RankingSelection:
+        return RankingSelection(None, {"decision": "would_create", "policy": policy})
+
+    monkeypatch.setattr("forge.historical.normalization.batch.ranking_lock", lock)
+    monkeypatch.setattr("forge.historical.normalization.batch.ensure_ranking", ensure)
     monkeypatch.setattr("forge.historical.normalization.batch.testing_connection", connect)
     monkeypatch.setattr("forge.historical.normalization.batch.testing_dsn", dsn)
     monkeypatch.setattr("forge.historical.normalization.batch.plan_batch", planner)
@@ -192,5 +170,6 @@ async def test_dry_run_and_publication_share_read_only_planner(
         actual = await prepare_batch(paths, recipe)
     assert {**dry, "dry_run": False} == actual
     assert len(queries) == 2
-    assert [p.name for p in run.iterdir()] == ["normalize-batch.json"]
-    assert json.loads((run / "normalize-batch.json").read_text()) == actual
+    assert sorted(p.name for p in run.iterdir()) == ["normalize-batch.json", "prepare-report.json"]
+    assert json.loads((run / "normalize-batch.json").read_text()) == plan.batch
+    assert json.loads((run / "prepare-report.json").read_text()) == actual

@@ -132,3 +132,4 @@ handoff.md
 !/data/.config/historical/normalize.toml
 !/docs/historical/normalize-job-v3.example.json
 !/docs/historical/normalize-job-v3.schema.json
+!/docs/historical/normalize-batch-v3.example.json

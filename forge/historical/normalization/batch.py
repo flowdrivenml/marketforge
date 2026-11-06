@@ -3,10 +3,9 @@
 import hashlib
 import json
 import os
-import tarfile
 import tempfile
-import zipfile
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, LiteralString, cast
 
@@ -14,11 +13,15 @@ from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
 
 from forge.historical.archives.config import AcquisitionConfig
-from forge.historical.normalization.config import InputSelection, PreparationRequest
-from forge.historical.normalization.contract import job_document
-from forge.historical.normalization.mapping import selection_for
-from forge.historical.normalization.resolution import require, resolve_input
-from forge.historical.normalization.service import output_paths, write_job
+from forge.historical.normalization.config import NormalizationRecipe, PreparationRequest
+from forge.historical.normalization.contract import preparation_document
+from forge.historical.normalization.mapping import ResolvedArchive, resolve_archive
+from forge.historical.normalization.ranking import RankingSelection, ensure_ranking, positions_for
+from forge.historical.normalization.resolution import require
+from forge.historical.normalization.service import default_output_paths, output_paths, write_job
+from forge.markets.ranking.coordination import ranking_lock
+from forge.markets.ranking.service import find_latest_snapshot
+from forge.shared.config.models import HttpSettings
 from forge.shared.database.testing import testing_connection, testing_dsn
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
@@ -27,27 +30,19 @@ from forge.storage.models import StorageFilters, interval
 from forge.storage.registry import parameters, scan
 
 
-def dense_ranks(streams: dict[str, int], positions: dict[int, int]) -> list[dict[str, object]]:
+def dense_ranks(
+    streams: Mapping[str, int | None], positions: dict[int, int]
+) -> list[dict[str, object]]:
     """Stored sparse positions are ordering evidence, never generated rank values."""
     ordered = sorted(
-        streams, key=lambda s: (streams[s] not in positions, positions.get(streams[s], 0), s)
+        streams, key=lambda s: (streams[s] not in positions, positions.get(streams[s] or -1, 0), s)
     )
     return [{"stream_id": stream, "stream_rank": rank} for rank, stream in enumerate(ordered, 1)]
 
 
 async def ranking_positions(c: AsyncConnection[TupleRow]) -> tuple[str | None, dict[int, int]]:
-    cursor = await c.execute(
-        "SELECT id FROM ranking.snapshots WHERE policy_name='turnover' AND status='published' "
-        "AND COALESCE(policy_json->>'metric','turnover')='turnover' ORDER BY created_at DESC,id DESC LIMIT 1"
-    )
-    row = await cursor.fetchone()
-    if row is None:
-        return None, {}
-    cursor = await c.execute(
-        "SELECT instrument_id,position FROM ranking.entries WHERE snapshot_id=%s AND position IS NOT NULL",
-        (row[0],),
-    )
-    return str(row[0]), {int(i): int(p) for i, p in await cursor.fetchall()}
+    snapshot = await find_latest_snapshot(c, "turnover")
+    return str(snapshot) if snapshot is not None else None, await positions_for(c, snapshot)
 
 
 async def used_ids(c: AsyncConnection[TupleRow], paths: ProjectPaths) -> set[int]:
@@ -113,29 +108,30 @@ def allocate(seed: str, used: set[int], paths: ProjectPaths) -> int:
 
 
 @dataclass
-class PlannedGroup:
-    content: Literal["trades", "depth"]
-    feed: str | None
-    instrument_id: int
-    inputs: dict[tuple[str, str | None], tuple[InputSelection, dict[str, object]]] = field(
-        default_factory=lambda: {}
-    )
-
-
-@dataclass
 class BatchPlan:
     report: dict[str, object]
+    batch: dict[str, object]
     jobs: dict[int, dict[str, object]]
     run: Path
 
 
 async def plan_batch(
-    c: AsyncConnection[TupleRow], paths: ProjectPaths, recipe: AcquisitionConfig
+    c: AsyncConnection[TupleRow],
+    paths: ProjectPaths,
+    recipe: AcquisitionConfig,
+    ranking: RankingSelection | None = None,
 ) -> BatchPlan:
-    snapshot, positions = await ranking_positions(c)
+    snapshot, positions = (
+        (
+            str(ranking.snapshot) if ranking.snapshot is not None else None,
+            await positions_for(c, ranking.snapshot),
+        )
+        if ranking is not None
+        else await ranking_positions(c)
+    )
     used = await used_ids(c, paths)
     seed = recipe.model_dump_json()
-    groups: dict[tuple[int, str, str | None], PlannedGroup] = {}
+    groups: dict[str, dict[tuple[str, str], ResolvedArchive]] = {}
     requests: list[dict[str, object]] = []
     blocked = False
     for index, request in enumerate(recipe.requests, 1):
@@ -172,28 +168,28 @@ async def plan_batch(
             content: Literal["trades", "depth"] = (
                 "trades" if request.data_type == "trades" else "depth"
             )
-            group: PlannedGroup | None = None
             try:
-                selection = await selection_for(c, paths, row, content)
-                key = (
-                    selection.instrument_id,
-                    content,
-                    str(row["feed"]) if row["feed"] is not None else None,
-                )
-                group = groups.setdefault(key, PlannedGroup(content, key[2], key[0]))
+                resolved = await resolve_archive(c, paths, row, content)
+                task = resolved.task
+                stream = str(task["stream_id"])
                 bounds, _ = interval(row["start_at"], row["end_at"])
                 assert bounds is not None
-                task, stream = await resolve_input(c, paths, selection, content)
-                if content == "depth" and group.feed is not None:
-                    task["stream_id"] = f"{stream}.{group.feed}"
-                source_identity = f"{row['origin']}:{row.get('remote_archive_id') or row.get('external_archive_id') or row['id']}"
-                group.inputs.setdefault(
-                    (source_identity, selection.archive_member), (selection, task)
+                source_identity = f"{row['origin']}:{row['id']}"
+                group = groups.setdefault(content, {})
+                previous = group.setdefault((source_identity, stream), resolved)
+                require(
+                    previous.task == task,
+                    f"Conflicting metadata for source {source_identity} in stream {stream}.",
                 )
                 selected.append(
                     {
-                        "local_id": selection.archive_id,
-                        "archive_member": selection.archive_member,
+                        "local_id": row["id"],
+                        "remote_archive_id": row.get("remote_archive_id"),
+                        "external_archive_id": row.get("external_archive_id"),
+                        "instrument_id": resolved.instrument_id,
+                        "stream_id": stream,
+                        "metadata_warnings": resolved.warnings,
+                        "identity_resolution": resolved.identity_resolution,
                         "start": str(row["start_at"]),
                         "end_exclusive": str(row["end_at"]),
                         "extends_requested_interval": bounds[0] < recipe.interval.start
@@ -204,9 +200,6 @@ async def plan_batch(
                 MarketForgeError,
                 OSError,
                 ValueError,
-                EOFError,
-                tarfile.TarError,
-                zipfile.BadZipFile,
             ) as exc:
                 blocked = True
                 message = str(exc)
@@ -229,35 +222,70 @@ async def plan_batch(
                 "blockers": diagnostics,
             }
         )
+    return build_plan(
+        paths,
+        seed,
+        recipe.interval.model_dump(mode="json"),
+        groups,
+        requests,
+        blocked,
+        snapshot,
+        positions,
+        used,
+        ranking=ranking,
+    )
+
+
+def build_plan(
+    paths: ProjectPaths,
+    seed: str,
+    requested_interval: object,
+    groups: dict[str, dict[tuple[str, str], ResolvedArchive]],
+    requests: list[dict[str, object]],
+    blocked: bool,
+    snapshot: str | None,
+    positions: dict[int, int],
+    used: set[int],
+    manual: PreparationRequest | None = None,
+    ranking: RankingSelection | None = None,
+) -> BatchPlan:
     jobs: dict[int, dict[str, object]] = {}
     summaries: list[dict[str, object]] = []
+    matched_stream_count = 0
+    unmatched_stream_count = 0
     for content in ("trades", "depth"):
-        resolved = [
-            (key, selection, task)
-            for group in groups.values()
-            if group.content == content
-            for key, (selection, task) in group.inputs.items()
-        ]
-        if not resolved:
+        resolved_inputs = groups.get(content, {})
+        if not resolved_inputs:
             continue
-        resolved.sort(key=lambda item: (str(item[2]["stream_id"]), item[0][0], item[0][1] or ""))
-        job_id = allocate(f"{seed}:{content}:job", used, paths)
-        dataset_id = allocate(f"{seed}:{content}:dataset", used, paths)
-        selections = [
-            selection.model_copy(update={"task_id": i})
-            for i, (_, selection, _) in enumerate(resolved, 1)
-        ]
-        tasks = [{**task, "task_id": i} for i, (_, _, task) in enumerate(resolved, 1)]
-        request = PreparationRequest(
-            job_id=job_id,
-            dataset_id=dataset_id,
-            content_type=content,
-            inputs=selections,
+        ordered_inputs = sorted(resolved_inputs.items(), key=lambda item: (item[0][1], item[0][0]))
+        job_id = manual.job_id if manual else allocate(f"{seed}:{content}:job", used, paths)
+        dataset_id = (
+            manual.dataset_id if manual else allocate(f"{seed}:{content}:dataset", used, paths)
         )
-        staging, dataset = output_paths(paths, request)
-        streams = {str(task["stream_id"]): int(str(task["instrument_id"])) for task in tasks}
+        tasks = [
+            {**resolved.task, "task_id": i} for i, (_, resolved) in enumerate(ordered_inputs, 1)
+        ]
+        staging, dataset = (
+            output_paths(paths, manual)
+            if manual
+            else default_output_paths(paths, job_id, dataset_id)
+        )
+        streams = {
+            str(resolved.task["stream_id"]): resolved.instrument_id
+            for resolved in resolved_inputs.values()
+        }
+        matched_stream_count += sum(identity in positions for identity in streams.values())
+        unmatched_stream_count += sum(identity not in positions for identity in streams.values())
         ranks = dense_ranks(streams, positions)
-        jobs[job_id] = job_document(request, tasks, ranks, staging, dataset)
+        rank_by_stream = {str(item["stream_id"]): int(str(item["stream_rank"])) for item in ranks}
+        tasks.sort(
+            key=lambda task: (rank_by_stream[str(task["stream_id"])], int(str(task["task_id"])))
+        )
+        for task_id, task in enumerate(tasks, 1):
+            task["task_id"] = task_id
+            task["stream_rank"] = rank_by_stream[str(task["stream_id"])]
+        document = preparation_document(job_id, dataset_id, content, tasks, staging, dataset)
+        jobs[job_id] = document
         summaries.append(
             {
                 "job_id": job_id,
@@ -279,41 +307,187 @@ async def plan_batch(
         run = paths.runs_dir / f"{run_id}-{suffix}"
     run_id = run.name
     executable = paths.bin_dir / "marketforge-normalize"
-    report: dict[str, object] = {
-        "schema_version": 1,
+    batch: dict[str, object] = {
+        "schema_version": 3,
         "kind": "normalization_batch",
         "status": "partial" if blocked else "prepared",
         "run_id": run_id,
         "run_directory": str(run),
         "batch_path": str(run / "normalize-batch.json"),
         "ranking_snapshot": snapshot,
-        "ranking_policy": "turnover",
-        "requested_interval": recipe.interval.model_dump(mode="json"),
+        "ranking_policy": ranking.details["policy"] if ranking else "turnover",
+        "requested_interval": requested_interval,
         "jobs": list(jobs.values()),
+    }
+    report: dict[str, object] = {
+        **{
+            key: value
+            for key, value in batch.items()
+            if key not in {"jobs", "schema_version", "kind"}
+        },
+        "schema_version": 1,
+        "kind": "normalization_prepare_report",
+        "report_path": str(run / "prepare-report.json"),
         "job_summaries": summaries,
         "prepared_job_count": len(jobs),
+        "prepared_task_count": sum(int(str(item["task_count"])) for item in summaries),
+        "prepared_stream_count": sum(int(str(item["stream_count"])) for item in summaries),
         "requests": requests,
+        "ranking_resolution": {
+            "snapshot": snapshot,
+            "policy": "turnover",
+            "fallback": snapshot is None,
+            "reason": "No published turnover snapshot; deterministic stream identity ordering."
+            if snapshot is None
+            else "Published turnover positions; identity ordering for ties and unranked streams.",
+        },
+        "archive_content_resolution": "Delegated to engine: format profiles, compression, members and content-to-instrument mappings are not validated by Forge.",
+        "family_rank_semantics": "Ranks identify requested source streams; engine expansion must define concrete stream ranks.",
         "identifiers": "Collision-checked, unreserved testing identifiers; no database registration.",
-        "engine_ready": executable.is_file() and os.access(executable, os.X_OK),
+        "engine_binary_available": executable.is_file() and os.access(executable, os.X_OK),
+        "engine_ready": False,
+        "engine_compatibility": {
+            "direct_execution_supported": False,
+            "current_rust_protocol_version": 3,
+            "reasons": [
+                "Rust accepts a single protocol-v3 job, not a Forge batch.",
+                "Rust v3 requires job-level streams and rejects task-level stream_rank.",
+                "Rust v3 requires format_profile, instrument_id and the older instrument shape; Forge v3 supplies explicit identity or unresolved scopes.",
+            ],
+        },
         "execution": "Not executed. Forge wrapper is not a Rust --job document; dispatch is deferred.",
     }
-    return BatchPlan(report, jobs, run)
+    if ranking is not None:
+        report["ranking_resolution"] = {
+            **ranking.details,
+            "matched_stream_count": matched_stream_count,
+            "unmatched_stream_count": unmatched_stream_count,
+        }
+        if ranking.snapshot is None:
+            report["status"] = batch["status"] = "partial"
+            report["ranking_pending"] = True
+    return BatchPlan(report, batch, jobs, run)
+
+
+async def plan_manual_batch(
+    c: AsyncConnection[TupleRow],
+    paths: ProjectPaths,
+    request: PreparationRequest,
+    ranking: RankingSelection | None = None,
+) -> BatchPlan:
+    """Read legacy selections, but publish only the current Forge representation."""
+    snapshot, positions = (
+        (
+            str(ranking.snapshot) if ranking.snapshot is not None else None,
+            await positions_for(c, ranking.snapshot),
+        )
+        if ranking is not None
+        else await ranking_positions(c)
+    )
+    used = await used_ids(c, paths)
+    require(
+        request.job_id not in used and request.dataset_id not in used,
+        "Job or dataset ID already exists in registered or prepared artifacts.",
+    )
+    groups: dict[str, dict[tuple[str, str], ResolvedArchive]] = {request.content_type: {}}
+    outcomes: list[dict[str, object]] = []
+    blocked = False
+    for index, selection in enumerate(request.inputs, 1):
+        diagnostics: list[dict[str, object]] = []
+        selected: list[dict[str, object]] = []
+        try:
+            rows = await scan(
+                c, parameters(paths.raw_dir, StorageFilters(), selection.archive_id), 0
+            )
+            require(
+                len(rows) == 1,
+                f"Local archive {selection.archive_id} is not registered in this raw root.",
+            )
+            row = rows[0]
+            resolved = await resolve_archive(c, paths, row, request.content_type)
+            require(
+                resolved.instrument_id == selection.instrument_id,
+                "Selected instrument differs from archive identity.",
+            )
+            stream = str(resolved.task["stream_id"])
+            source = f"{row['origin']}:{row['id']}"
+            previous = groups[request.content_type].setdefault((source, stream), resolved)
+            require(previous.task == resolved.task, f"Conflicting metadata for source {source}.")
+            selected.append(
+                {
+                    "local_id": selection.archive_id,
+                    "instrument_id": resolved.instrument_id,
+                    "stream_id": stream,
+                    "metadata_warnings": resolved.warnings,
+                    "identity_resolution": resolved.identity_resolution,
+                }
+            )
+        except (MarketForgeError, OSError, ValueError) as exc:
+            blocked = True
+            diagnostics.append({"local_id": selection.archive_id, "reason": str(exc)})
+        outcomes.append(
+            {
+                "request_index": index,
+                "selected_archives": selected,
+                "blockers": diagnostics,
+                "legacy_selection": selection.model_dump(mode="json"),
+            }
+        )
+    return build_plan(
+        paths,
+        request.model_dump_json(),
+        None,
+        groups,
+        outcomes,
+        blocked,
+        snapshot,
+        positions,
+        used,
+        request,
+        ranking,
+    )
 
 
 async def prepare_batch(
-    paths: ProjectPaths, recipe: AcquisitionConfig, *, dry_run: bool = False
+    paths: ProjectPaths,
+    recipe: AcquisitionConfig | PreparationRequest,
+    *,
+    dry_run: bool = False,
+    http: HttpSettings | None = None,
 ) -> dict[str, object]:
-    async with testing_connection(testing_dsn(paths.root)) as c:
-        async with c.transaction():
-            await c.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-            plan = await plan_batch(c, paths, recipe)
-    # JSON-safe UTC interval diagnostics are shared by dry-run and publication.
-    report = cast(dict[str, object], json.loads(json.dumps(plan.report, default=str)))
-    report["dry_run"] = dry_run
-    if dry_run:
-        return report
-    publish_batch(paths, plan, report)
-    return report
+    policy = (
+        recipe.ranking_policy
+        if isinstance(recipe, (NormalizationRecipe, PreparationRequest))
+        else "turnover"
+    )
+    dsn = testing_dsn(paths.root)
+    async with testing_connection(dsn) as c:
+        async with ranking_lock(c, shared=dry_run):
+            ranking = await ensure_ranking(
+                c,
+                dsn,
+                paths.config_dir / "markets/rankings",
+                policy,
+                http or HttpSettings(),
+                dry_run=dry_run,
+            )
+            async with c.transaction():
+                await c.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                plan = (
+                    await plan_batch(c, paths, recipe, ranking)
+                    if isinstance(recipe, AcquisitionConfig)
+                    else await plan_manual_batch(c, paths, recipe, ranking)
+                )
+            report = cast(dict[str, object], json.loads(json.dumps(plan.report, default=str)))
+            report["dry_run"] = dry_run
+            if not dry_run:
+                try:
+                    publish_batch(paths, plan, report)
+                except OSError as exc:
+                    raise MarketForgeError(
+                        f"Could not publish normalization batch/report at {plan.run}: {exc}"
+                    ) from exc
+            return report
 
 
 def publish_batch(paths: ProjectPaths, plan: BatchPlan, report: dict[str, object]) -> None:
@@ -330,7 +504,8 @@ def publish_batch(paths: ProjectPaths, plan: BatchPlan, report: dict[str, object
                     not target.exists() and not target.is_symlink(),
                     f"Output already exists: {target}",
                 )
-        write_job(directory / "normalize-batch.json", report)
+        write_job(directory / "normalize-batch.json", plan.batch)
+        write_job(directory / "prepare-report.json", report)
         require(
             not plan.run.exists() and not plan.run.is_symlink(), f"Batch already exists: {plan.run}"
         )

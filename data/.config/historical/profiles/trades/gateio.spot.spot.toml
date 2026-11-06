@@ -1,0 +1,63 @@
+schema_version = 2
+kind = "profile"
+id = "gateio.spot.spot.trades"
+format_code = "GATE-T1"
+exchange = "gateio"
+instrument_type = "spot"
+market_category = "spot"
+
+[source]
+container = "gzip"
+format = "csv"
+record_format = "rows"
+header = false
+ordering = "chronological"
+granularity = "monthly"
+
+# Field keys are literal source column names or JSON paths.
+[fields.timestamp]
+type = "decimal"
+position = 1
+precision = "microsecond"
+fractional_digits = 6
+encoding = "unix_seconds"
+
+[fields.dealid]
+type = "integer"
+position = 2
+
+[fields.price]
+type = "decimal"
+position = 3
+
+[fields.amount]
+type = "decimal"
+position = 4
+
+[fields.side]
+type = "integer"
+position = 5
+
+[normalization]
+target = "trade"
+quantity_encoding = "base"
+
+[normalization.event_timestamp]
+field = "timestamp"
+
+[normalization.trade_id]
+field = "dealid"
+
+[normalization.quantity]
+field = "amount"
+
+[normalization.price]
+field = "price"
+
+[normalization.side]
+transform = "map"
+field = "side"
+
+[normalization.side.values]
+1 = "sell"
+2 = "buy"

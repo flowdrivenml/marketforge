@@ -402,3 +402,47 @@ older entries require current-catalogue fields. New publication metadata and
 existing retained observation evidence are immutable; current-catalogue fallback
 fields can change as the catalogue changes. Existing published rows are not
 rewritten or backfilled by the migration.
+
+
+## Snapshot maintenance deletion
+
+```sh
+mf markets rank delete turnover --testing          # preview every published turnover snapshot
+mf markets rank delete volume --testing            # preview every published volume snapshot
+mf markets rank delete SNAPSHOT_UUID --testing     # preview exactly one UUID, including drafts
+mf markets rank delete --all --testing             # preview every snapshot, including drafts
+mf markets rank delete turnover --testing --apply
+mf markets rank delete volume --testing --apply
+mf markets rank delete SNAPSHOT_UUID --testing --apply
+mf markets rank delete --all --testing --apply
+```
+
+Exactly one policy/UUID/`--all` selector is required; `--testing` is mandatory.
+Preview never deletes. Apply re-resolves and validates its selected set inside the
+deletion transaction; a preview does not lock a later target set and no preview
+file needs to be copied. UUIDs are explicit in both human and global `--json`
+output, with policy, creation time, included/excluded counts, eligibility and
+blocking dependencies. Already-absent UUIDs and zero-match policies are explicit.
+
+Migration 0012 adds a UUID-scoped maintenance deletion function. It cleans entries,
+conversion inputs, conversion evidence and then the snapshot, restoring its
+transaction-local maintenance scope even on error. It never permits ordinary
+published INSERT/UPDATE mutations, disables no triggers, and changes no old
+migration. Direct ordinary deletion/update guards remain effective. Catalogue
+instruments, retained observations, acquisition data/raw files, datasets and policy
+TOMLs are preserved.
+
+Managed job/batch references and dataset metadata/publication references block
+deletion of the specific referenced UUID. Diagnostic preparation reports alone
+are not execution dependencies. Mixed selections delete only eligible snapshots
+transactionally, report exact deleted and blocked UUIDs, and return nonzero while
+some selected snapshots remain blocked. A published status alone is not a blocker.
+Existing workspace ownership and database advisory coordination protect inspection,
+updates/builds, normalization preparation and deletion. New snapshots published
+after a preview may be selected by a later policy/`--all` apply.
+
+Markets name inspection and normalization now share one lookup: exact
+`policy_name`, published status, `created_at DESC, id DESC`. Neither partial-universe
+nor age filters apply to reuse. Turnover's policy metric is `turnover_24h`; it must
+not be incorrectly filtered to `turnover`. Observation freshness is checked when
+building a snapshot, not when reusing its ordering.

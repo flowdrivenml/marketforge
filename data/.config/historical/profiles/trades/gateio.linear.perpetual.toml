@@ -1,0 +1,58 @@
+schema_version = 2
+kind = "profile"
+id = "gateio.perpetual.linear.trades"
+format_code = "GATE-T2"
+exchange = "gateio"
+instrument_type = "perpetual"
+market_category = "linear"
+
+[source]
+container = "gzip"
+format = "csv"
+record_format = "rows"
+header = false
+ordering = "chronological"
+granularity = "monthly"
+
+# Field keys are literal source column names or JSON paths.
+[fields.timestamp]
+type = "decimal"
+position = 1
+precision = "microsecond"
+fractional_digits = 6
+encoding = "unix_seconds"
+
+[fields.trade_id]
+type = "integer"
+position = 2
+
+[fields.price]
+type = "decimal"
+position = 3
+
+[fields.size]
+type = "signed_integer"
+position = 4
+
+[normalization]
+target = "trade"
+quantity_encoding = "contracts"
+
+[normalization.event_timestamp]
+field = "timestamp"
+
+[normalization.trade_id]
+field = "trade_id"
+
+[normalization.quantity]
+transform = "abs"
+field = "size"
+
+[normalization.price]
+field = "price"
+
+[normalization.side]
+negative = "sell"
+positive = "buy"
+transform = "sign_to_side"
+field = "size"

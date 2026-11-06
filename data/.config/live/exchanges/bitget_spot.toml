@@ -308,11 +308,7 @@ method = "GET"
 
 path = "/api/v3/market/orderbook"
 
-parameters = [
-    "category",
-    "symbol",
-    "limit",
-]
+parameters = ["category", "symbol", "limit"]
 
 category = "SPOT"
 
@@ -360,11 +356,7 @@ method = "GET"
 
 path = "/api/v3/market/fills"
 
-parameters = [
-    "category",
-    "symbol",
-    "limit",
-]
+parameters = ["category", "symbol", "limit"]
 
 category = "SPOT"
 

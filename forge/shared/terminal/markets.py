@@ -914,3 +914,23 @@ def render_volume_snapshot(
             console.print(
                 json.dumps(selected["volume_evidence"], default=str, indent=2), markup=False
             )
+
+
+def render_ranking_deletion(console: Console, value: dict[str, object]) -> None:
+    console.print(f"Markets · Ranking deletion · {value['action']}", style="mf.heading")
+    console.print(
+        f"Matched: {value['matched_count']} · Eligible: {value['eligible_count']} · Deleted: {value['deleted_count']} · Blocked: {value['blocked_count']}"
+    )
+    for item in array(value["snapshots"]):
+        row = obj(item)
+        console.print(f"{row['policy_name']} · {row['id']}", style="mf.identifier", markup=False)
+        output = table("Created", "Included / excluded", "Eligibility / result")
+        output.add_row(
+            str(row["created_at"]),
+            f"{row['included_count']} / {row['excluded_count']}",
+            str(row["result"]),
+        )
+        console.print(output)
+        for blocker in array(row["blockers"]):
+            console.print(f"Blocked: {blocker}", style="mf.warning", markup=False)
+    console.print(str(value["message"]), style="mf.secondary")

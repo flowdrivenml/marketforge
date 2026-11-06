@@ -1,0 +1,64 @@
+schema_version = 2
+kind = "profile"
+id = "okx.spot.spot.trades"
+format_code = "OKX-T1"
+exchange = "okx"
+instrument_type = "spot"
+market_category = "spot"
+
+[source]
+container = "zip"
+format = "csv"
+record_format = "rows"
+header = true
+ordering = "chronological"
+granularity = "daily"
+archive_day_boundary = "UTC+8"
+
+# Field keys are literal source column names or JSON paths.
+[fields.instrument_name]
+type = "string"
+
+[fields.trade_id]
+type = "integer/string"
+
+[fields.side]
+type = "string"
+
+[fields.price]
+type = "decimal"
+
+[fields.size]
+type = "decimal"
+
+[fields.created_time]
+type = "integer"
+encoding = "unix_milliseconds"
+
+[fields.source]
+type = "integer"
+
+[normalization]
+target = "trade"
+quantity_encoding = "base"
+
+[normalization.event_timestamp]
+field = "created_time"
+
+[normalization.trade_id]
+field = "trade_id"
+
+[normalization.quantity]
+field = "size"
+
+[normalization.optional.is_rpi]
+value = 1
+transform = "equals"
+field = "source"
+
+[normalization.price]
+field = "price"
+
+[normalization.side]
+transform = "casefold"
+field = "side"
