@@ -16,7 +16,7 @@ See the [Forge batch example](normalize-batch-v3.example.json).
 
 ```text
 data/.config/historical/
-├── normalize.toml
+├── general.toml
 ├── profiles/
 │   ├── trades/
 │   └── depth/
@@ -25,7 +25,7 @@ data/.config/historical/
     └── depth/
 ```
 
-`normalize.toml` controls execution: workers, memory and scratch budgets, scratch
+`general.toml` controls execution: workers, memory and scratch budgets, scratch
 path, Parquet targets, and integrity policies. Profiles define market-data
 interpretation and source ordering. Raw schemas describe physical archive/record
 structure. Protocol v3 job JSON selects inputs, instrument metadata, profiles,
@@ -63,7 +63,7 @@ mathematics and behavior when integrity is disabled are unchanged.
 ```sh
 .bin/marketforge-normalize \
   --project-root /path/to/marketforge \
-  --config data/.config/historical/normalize.toml \
+  --config data/.config/historical/general.toml \
   --job data/.jobs/normalize/1001.json
 ```
 
@@ -166,7 +166,7 @@ operation contracts are unchanged.
 Protocol v1 inline jobs and v2 profile jobs keep their existing JSON shape and
 `operation: "process"`. Their resource and integrity fields remain required and
 are validated before being replaced with global settings. They cannot override
-`normalize.toml`. Existing profile compatibility, unsupported-profile rejection,
+`general.toml`. Existing profile compatibility, unsupported-profile rejection,
 and v1/v2 provenance/fingerprint checks remain active. Original job documents are
 not rewritten.
 
@@ -233,7 +233,7 @@ resources/policies for v3.
 
 ### Implementation and checks
 
-Created `data/.config/historical/normalize.toml`, the v3 schema/example, runtime
+Created `data/.config/historical/general.toml`, the v3 schema/example, runtime
 configuration tests, protocol tests, and `job/runtime_validation.rs`. Updated
 `marketforge-normalize.rs`, historical `config/{job,mod}.rs`,
 `job/{mod,resources,validate}.rs`, `normalize/{config,executor,mod,session}.rs`,

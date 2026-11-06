@@ -37,7 +37,7 @@ struct Args {
     jobs_dir: Option<PathBuf>,
 
     /// Global processing configuration.
-    #[arg(long, default_value = "data/.config/historical/normalize.toml")]
+    #[arg(long, default_value = "data/.config/historical/general.toml")]
     config: PathBuf,
 
     /// Project root used to resolve processing configuration.
@@ -200,14 +200,14 @@ mod runtime_cli_tests {
     use tempfile::TempDir;
 
     const EXAMPLE: &str = include_str!("../../../docs/historical/normalize-job-v3.example.json");
-    const RUNTIME: &str = include_str!("../../../data/.config/historical/normalize.toml");
+    const RUNTIME: &str = include_str!("../../../data/.config/historical/general.toml");
 
     #[test]
     fn cli_defaults_and_job_directory_loading_are_configuration_only() {
         let args = Args::try_parse_from(["marketforge-normalize", "--job", "job.json"]).unwrap();
         assert_eq!(
             args.config,
-            PathBuf::from("data/.config/historical/normalize.toml")
+            PathBuf::from("data/.config/historical/general.toml")
         );
         assert!(
             Args::try_parse_from([

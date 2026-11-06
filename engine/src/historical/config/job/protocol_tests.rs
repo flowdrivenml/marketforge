@@ -5,7 +5,7 @@ use std::{fs, path::PathBuf};
 use tempfile::TempDir;
 
 const EXAMPLE: &str = include_str!("../../../../../docs/historical/normalize-job-v3.example.json");
-const RUNTIME: &str = include_str!("../../../../../data/.config/historical/normalize.toml");
+const RUNTIME: &str = include_str!("../../../../../data/.config/historical/general.toml");
 
 struct Fixture {
     root: TempDir,
@@ -34,10 +34,10 @@ impl Fixture {
             &source.join("raw_schemas"),
             &catalog_root.join("raw_schemas"),
         );
-        fs::write(catalog_root.join("normalize.toml"), RUNTIME).unwrap();
+        fs::write(catalog_root.join("general.toml"), RUNTIME).unwrap();
         let catalog = FormatCatalog::load(catalog_root).unwrap();
         let runtime =
-            load_processing_config("data/.config/historical/normalize.toml", root.path()).unwrap();
+            load_processing_config("data/.config/historical/general.toml", root.path()).unwrap();
         Self {
             root,
             catalog,

@@ -58,7 +58,7 @@ fn validate_processing_job_inner(
     //
     // The production executor uses the authoritative global configuration:
     //
-    // data/.config/historical/normalize.toml
+    // data/.config/historical/general.toml
     //
     // This validation remains for compatibility with existing callers.
     // -------------------------------------------------------------------------

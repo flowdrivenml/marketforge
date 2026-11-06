@@ -1,0 +1,32 @@
+schema_version = 1
+[resources]
+workers = 1
+memory_budget_bytes = 1073741824
+scratch_path = "data/.work/normalize"
+scratch_budget_bytes = 1073741824
+[resources.parquet]
+row_group_target_bytes = 67108864
+file_target_bytes = 268435456
+[integrity_policy]
+enabled = true
+[integrity_policy.parse_failure]
+action = "fail"
+max_count = 0
+[integrity_policy.invalid_record]
+action = "fail"
+max_count = 0
+[integrity_policy.sequence_gap]
+action = "fail"
+max_count = 0
+[integrity_policy.timestamp_regression]
+action = "fail"
+max_count = 0
+[integrity_policy.missing_snapshot]
+action = "fail"
+max_count = 0
+[integrity_policy.invalid_book]
+action = "fail"
+max_count = 0
+[integrity_policy.transformation_failure]
+action = "fail"
+max_count = 0

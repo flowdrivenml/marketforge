@@ -1,7 +1,7 @@
 use {
     crate::historical::job::MergeParquetConfig, crate::historical::job::MergeResources,
-    crate::historical::normalize::resources::ResourceRequirements,
     crate::shared::error::MarketForgeError, crate::shared::error::Result,
+    crate::shared::historical::budget::ResourceRequirements,
 };
 
 use crate::historical::merge::materialize::planning::window::MaterializationBatchLimits;

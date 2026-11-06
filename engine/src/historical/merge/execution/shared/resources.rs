@@ -1,8 +1,7 @@
 use crate::historical::merge::partition::shared::partition_input::PartitionInputPlan;
 use {
-    crate::historical::job::MergeParquetConfig,
-    crate::historical::normalize::resources::ResourceRequirements,
-    crate::shared::error::MarketForgeError, crate::shared::error::Result,
+    crate::historical::job::MergeParquetConfig, crate::shared::error::MarketForgeError,
+    crate::shared::error::Result, crate::shared::historical::budget::ResourceRequirements,
 };
 // -----------------------------------------------------------------------------
 // Constants

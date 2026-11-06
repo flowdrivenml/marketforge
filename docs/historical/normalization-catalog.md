@@ -105,7 +105,7 @@ Future Python work must update physical-template discovery from
 profile discovery to `historical/profiles/{trades,depth}`, and emit new catalog
 fingerprints. In particular the external-import draft helper's old template path
 needs that separate change. No `forge/` code was touched in this task.
-Runtime ownership has since moved to `normalize.toml`, with Protocol v3 job
+Runtime ownership has since moved to `general.toml`, with Protocol v3 job
 requests. See [runtime configuration and orchestration contract](normalization-runtime.md).
 Profile semantics and fingerprints remain independent of runtime settings.
 

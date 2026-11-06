@@ -2,7 +2,7 @@
 use super::*;
 use tempfile::TempDir;
 
-const TOML: &str = include_str!("../../../../../data/.config/historical/normalize.toml");
+const TOML: &str = include_str!("fixtures/runtime.toml");
 
 fn load(text: &str) -> Result<ProcessingConfig> {
     let temp = TempDir::new().unwrap();
@@ -151,4 +151,101 @@ fn required_sections_nested_unknown_fields_and_scratch_files_fail() {
             .to_string()
             .contains("resources.scratch_path")
     );
+}
+
+#[test]
+fn authoritative_config_preserves_effective_settings() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let text = fs::read_to_string(root.join("data/.config/historical/general.toml")).unwrap();
+    let document: RuntimeDocument = toml::from_str(&text).unwrap();
+    let config = load_processing_config("data/.config/historical/general.toml", root).unwrap();
+    let mut expected = document.resources;
+    expected.scratch_path = root.join(expected.scratch_path);
+    assert_eq!(config.resources, expected);
+    assert_eq!(config.integrity_policy, document.integrity_policy);
+}
+
+#[test]
+fn optional_policy_thresholds_and_existing_enforcement_are_preserved() {
+    use crate::historical::normalize::metrics::{
+        IntegrityCategory, IntegrityScope, IntegrityStatus, ScopedIntegrityMetrics,
+        enforce_immediate_integrity,
+    };
+    let text = TOML.replace("max_count = 0", "max_count = 1000\nmax_rate = 0.1\nminimum_samples = 100\nwindows.hourly = { max_rate = 0.2, minimum_samples = 10 }\nwindows.daily = { max_rate = 0.3, minimum_samples = 20 }");
+    let mut config = load(&text).unwrap();
+    assert_eq!(
+        config
+            .integrity_policy
+            .parse_failure
+            .windows
+            .hourly
+            .as_ref()
+            .unwrap()
+            .minimum_samples,
+        10
+    );
+    assert_eq!(
+        config
+            .integrity_policy
+            .parse_failure
+            .windows
+            .daily
+            .as_ref()
+            .unwrap()
+            .max_rate,
+        0.3
+    );
+    let scope = IntegrityScope {
+        task_id: 1,
+        stream_id: "test".into(),
+        source_file: "synthetic".into(),
+    };
+    let mut metrics = ScopedIntegrityMetrics::default();
+    metrics
+        .record(&scope, IntegrityCategory::ParseFailure, true, None)
+        .unwrap();
+    assert_eq!(
+        enforce_immediate_integrity(
+            &config.integrity_policy,
+            &metrics,
+            IntegrityCategory::ParseFailure
+        )
+        .unwrap()
+        .status,
+        IntegrityStatus::Failed
+    );
+    config.integrity_policy.parse_failure.action = super::super::IntegrityAction::Degrade;
+    assert_eq!(
+        enforce_immediate_integrity(
+            &config.integrity_policy,
+            &metrics,
+            IntegrityCategory::ParseFailure
+        )
+        .unwrap()
+        .status,
+        IntegrityStatus::Degraded
+    );
+}
+
+#[test]
+fn malformed_and_out_of_range_values_are_rejected() {
+    assert!(load("[invalid").is_err());
+    for (old, new) in [
+        ("file_target_bytes = 268435456", "file_target_bytes = 0"),
+        ("workers = 1", "workers = 18446744073709551616"),
+        (
+            "memory_budget_bytes = 1073741824",
+            "memory_budget_bytes = -1",
+        ),
+        (
+            "scratch_budget_bytes = 1073741824",
+            "scratch_budget_bytes = -1",
+        ),
+        (
+            "max_count = 0",
+            "windows.hourly = { max_rate = -0.1, minimum_samples = 1 }",
+        ),
+    ] {
+        assert!(load(&TOML.replace(old, new)).is_err(), "{new}");
+    }
 }

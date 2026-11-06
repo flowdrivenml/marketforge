@@ -2,6 +2,7 @@ pub mod conversion;
 pub mod domain;
 pub mod error;
 pub mod formats;
+pub mod historical;
 pub mod io;
 pub mod merge;
 pub mod normalization;

@@ -6,9 +6,10 @@ use std::{
     path::{Path, PathBuf},
 };
 use {
-    crate::historical::job::MergeJob, crate::historical::normalize::resources::ResourceBudget,
+    crate::historical::job::MergeJob,
     crate::historical::normalize::scheduler::execute_parallel_budgeted,
     crate::shared::error::MarketForgeError, crate::shared::error::Result,
+    crate::shared::historical::budget::ResourceBudget,
 };
 use {
     crate::historical::merge::materialize::planning::partition::MaterializationPartitionInput,
