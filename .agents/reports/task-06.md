@@ -1,6 +1,6 @@
 # Task 06 — Exchange-profile test migration
 
-Status: completed. Commit: recorded in the next progress update.
+Status: completed. Commit: `53ecffc`.
 
 Implementation: one file per exchange, 33 individually named synthetic production-profile execution cases, exact identity-set coverage checks, structured maintained-workload selection and persistent isolated outputs. No canonical schema changes. Removed normalization slow wrapper; merge/convert wrappers remain. Generic tests remain grouped by responsibility. The shared support target owns accounting/source-ordering cases without duplicate module registration.
 

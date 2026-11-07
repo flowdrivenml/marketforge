@@ -245,6 +245,18 @@ pub fn synthetic(id: &str, units: Units) -> TestResult<()> {
             return Err(format!("{id}: {r:?}"));
         }
         let m = assertions::committed(&run, &b.jobs[0], &r)?;
+        let catalog = marketforge_engine::historical::config::FormatCatalog::load(
+            root().join("data/.config/historical"),
+        )
+        .map_err(|e| e.to_string())?;
+        let reloaded = marketforge_engine::historical::config::load_document_with_catalog(
+            job.output.dataset_path.join("processing-job.json"),
+            &catalog,
+        )
+        .map_err(|e| e.to_string())?;
+        if reloaded.tasks != job.tasks {
+            return Err(format!("{id}: resolved provenance reload changed tasks"));
+        }
         let expected_rows = if trade {
             1
         } else if *exchange == "gateio" && *kind != "spot" {

@@ -187,28 +187,26 @@ pub(crate) fn persist_processing_failure(
         context.integrity_evaluation,
     );
 
-    let failure_path = failure
-        .write_to(&job.output.staging_path)
-        .map_err(|report_error| {
-            MarketForgeError::InvalidConfiguration(format!(
-                "processing failed: {error_message}; \
-                 additionally failed to persist failure report: {report_error}"
-            ))
-        })?;
-
+    let mut result =
+        ProcessingResult::failed(job.job_id, job.dataset_id, error_code, error_message);
+    match failure.write_to(&job.output.staging_path) {
+        Ok(path) if path.is_file() => {
+            result.failure_report_path = Some(path.to_string_lossy().into_owned());
+        }
+        Ok(_) => {}
+        Err(error) => {
+            if let Some(failure) = &mut result.failure {
+                failure.message.push_str(&format!(
+                    "; additionally failed to persist failure report: {error}"
+                ));
+            }
+        }
+    }
     eprintln!(
-        "Processing failed: job={}, task={:?}, report={}",
-        job.job_id.0,
-        context.failed_task_id,
-        failure_path.display(),
+        "Processing failed: job={}, task={:?}, report={:?}",
+        job.job_id.0, context.failed_task_id, result.failure_report_path
     );
-
-    Ok(ProcessingResult::failed(
-        job.job_id,
-        job.dataset_id,
-        error_code,
-        error_message,
-    ))
+    Ok(result)
 }
 
 // -----------------------------------------------------------------------------
@@ -551,4 +549,42 @@ pub(crate) fn prepare_staging(job: &ProcessingJob, config: &ProcessingConfig) ->
     )
     .map_err(|e| MarketForgeError::InvalidConfiguration(format!("provenance checksum: {e}")))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod failure_path_tests {
+    use super::*;
+    #[test]
+    fn unavailable_failure_report_preserves_definitive_failure() {
+        use crate::{
+            historical::config::{FormatCatalog, load_normalization_job},
+            shared::historical::load_processing_config,
+        };
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let config = load_processing_config("data/.config/historical/general.toml", &root).unwrap();
+        let catalog = FormatCatalog::load(root.join("data/.config/historical")).unwrap();
+        let mut job = load_normalization_job(
+            root.join("docs/historical/normalize-job-v3.example.json"),
+            &catalog,
+            &config,
+            &root,
+        )
+        .unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        job.output.staging_path = temp.path().join("not-created");
+        let result = persist_processing_failure(
+            &job,
+            ExecutionContext::default(),
+            MarketForgeError::InvalidConfiguration("original output failure".into()),
+        )
+        .unwrap();
+        assert_eq!(result.status, ProcessingStatus::Failed);
+        assert!(result.manifest_path.is_none() && result.failure_report_path.is_none());
+        let failure = result.failure.unwrap();
+        assert!(failure.message.contains("original output failure"));
+        assert!(failure.message.contains("failed to persist failure report"));
+    }
 }

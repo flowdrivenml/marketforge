@@ -6,13 +6,19 @@ use std::{
 use clap::{ArgGroup, Parser};
 
 use {
-    marketforge_engine::historical::config::{FormatCatalog, load_normalization_job},
+    marketforge_engine::historical::config::{
+        FormatCatalog, load_normalization_job, read_prepared_batch,
+    },
     marketforge_engine::historical::job::ProcessingJob,
     marketforge_engine::historical::normalize::ProcessingConfig,
     marketforge_engine::historical::normalize::config::{project_root, resolve_path},
     marketforge_engine::historical::normalize::execute_processing_job,
     marketforge_engine::historical::normalize::load_processing_config,
-    marketforge_engine::historical::normalize::session::execute_processing_session,
+    marketforge_engine::historical::normalize::session::execute_processing_session_reporting,
+    marketforge_engine::historical::normalize::{
+        ProcessingResult, ProcessingStatus,
+        response::{NormalizationError, NormalizationResponse},
+    },
 };
 
 #[cfg(feature = "monitor-tui")]
@@ -25,9 +31,12 @@ use marketforge_engine::tui::processing::{
 #[command(group(
     ArgGroup::new("input")
         .required(true)
-        .args(["job", "jobs_dir"])
+        .args(["batch", "job", "jobs_dir"])
 ))]
 struct Args {
+    /// Execute a schema-version-3 prepared normalization batch.
+    #[arg(long)]
+    batch: Option<PathBuf>,
     /// Execute one processing job.
     #[arg(long, conflicts_with = "jobs_dir")]
     job: Option<PathBuf>,
@@ -122,76 +131,101 @@ fn redirect_outputs(
 // CLI
 // -----------------------------------------------------------------------------
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
-
-    let project_root = project_root(&args.project_root)?;
-
-    let config_path = resolve_path(&project_root, &args.config);
-
-    let config = load_processing_config(&config_path, &project_root)?;
-    let catalog = FormatCatalog::load(project_root.join("data/.config/historical"))?;
-
-    // -------------------------------------------------------------
-    // Single-job execution
-    // -------------------------------------------------------------
-
-    if let Some(path) = &args.job {
-        let job_path = resolve_path(&project_root, path);
-
-        let mut job = load_normalization_job(&job_path, &catalog, &config, &project_root)?;
-
-        if let Some(output_root) = &args.output_root {
-            let output_root = resolve_path(&project_root, output_root);
-
-            redirect_outputs(std::slice::from_mut(&mut job), &output_root)?;
-        }
-
-        #[cfg(feature = "monitor-tui")]
-        let result = if args.tui {
-            execute_processing_with_tui(job, config)?
+fn execute(
+    args: &Args,
+    run_id: &mut Option<String>,
+    total: &mut usize,
+    results: &mut Vec<ProcessingResult>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let root = project_root(&args.project_root)?;
+    // Identify batch/run before configuration failure, without opening sources.
+    let batch = args
+        .batch
+        .as_ref()
+        .map(|p| read_prepared_batch(p, &root))
+        .transpose()?;
+    if let Some(batch) = &batch {
+        *run_id = Some(batch.run_id.clone());
+        *total = batch.jobs.len();
+    }
+    let config = load_processing_config(resolve_path(&root, &args.config), &root)?;
+    let catalog = FormatCatalog::load(root.join("data/.config/historical"))?;
+    let mut jobs = if let Some(batch) = batch {
+        batch
+            .jobs
+            .iter()
+            .map(|job| batch.resolve_job(job, &catalog, &config, &root))
+            .collect::<marketforge_engine::shared::error::Result<Vec<_>>>()?
+    } else if let Some(path) = &args.job {
+        vec![load_normalization_job(
+            resolve_path(&root, path),
+            &catalog,
+            &config,
+            &root,
+        )?]
+    } else {
+        load_jobs(
+            &resolve_path(&root, args.jobs_dir.as_ref().expect("validated input mode")),
+            &root,
+            &catalog,
+            &config,
+        )?
+    };
+    *total = jobs.len();
+    if let Some(path) = &args.output_root {
+        redirect_outputs(&mut jobs, &resolve_path(&root, path))?;
+    }
+    #[cfg(feature = "monitor-tui")]
+    if args.tui {
+        // Interactive rendering owns stdout; the final JSON document is emitted
+        // after the terminal is restored. Machine mode never enters the TUI.
+        if jobs.len() == 1 {
+            results.push(execute_processing_with_tui(jobs.remove(0), config)?);
         } else {
-            execute_processing_job(&job, &config)?
-        };
-
-        #[cfg(not(feature = "monitor-tui"))]
-        let result = execute_processing_job(&job, &config)?;
-
-        println!("{}", serde_json::to_string(&result)?);
-
+            results.extend(execute_processing_session_with_tui(jobs, config)?.jobs);
+        }
         return Ok(());
     }
-
-    // -------------------------------------------------------------
-    // Multi-job session
-    // -------------------------------------------------------------
-
-    let directory = args.jobs_dir.as_ref().expect("jobs-dir required");
-
-    let directory = resolve_path(&project_root, directory);
-
-    let mut jobs = load_jobs(&directory, &project_root, &catalog, &config)?;
-
-    if let Some(output_root) = &args.output_root {
-        let output_root = resolve_path(&project_root, output_root);
-
-        redirect_outputs(&mut jobs, &output_root)?;
-    }
-
-    #[cfg(feature = "monitor-tui")]
-    let result = if args.tui {
-        execute_processing_session_with_tui(jobs, config)?
+    if jobs.len() == 1 {
+        results.push(execute_processing_job(&jobs[0], &config)?);
     } else {
-        execute_processing_session(&jobs, &config)?
-    };
-
-    #[cfg(not(feature = "monitor-tui"))]
-    let result = execute_processing_session(&jobs, &config)?;
-
-    // Preserve machine-readable JSON output.
-    println!("{}", serde_json::to_string(&result.jobs)?);
-
+        execute_processing_session_reporting(&jobs, &config, &mut |r| results.push(r.clone()))?;
+    }
     Ok(())
+}
+fn main() -> std::process::ExitCode {
+    let args = Args::parse();
+    let mut run_id = None;
+    let mut total = 0;
+    let mut jobs = vec![];
+    let error = execute(&args, &mut run_id, &mut total, &mut jobs)
+        .err()
+        .map(|e| {
+            eprintln!("Normalization failed: {e}");
+            NormalizationError {
+                code: "execution_error".into(),
+                message: e.to_string(),
+            }
+        });
+    let response = NormalizationResponse::new(run_id, total, jobs, error);
+    let success = response.status == ProcessingStatus::Complete;
+    match serde_json::to_string(&response) {
+        Ok(json) => {
+            use std::io::Write;
+            if writeln!(std::io::stdout().lock(), "{json}").is_err() {
+                return std::process::ExitCode::FAILURE;
+            }
+        }
+        Err(e) => {
+            eprintln!("cannot serialize normalization response: {e}");
+            return std::process::ExitCode::FAILURE;
+        }
+    }
+    if success {
+        std::process::ExitCode::SUCCESS
+    } else {
+        std::process::ExitCode::FAILURE
+    }
 }
 
 #[cfg(test)]

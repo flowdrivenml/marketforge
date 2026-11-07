@@ -37,6 +37,8 @@ pub struct ProcessingResult {
     pub status: ProcessingStatus,
 
     pub manifest_path: Option<String>,
+    #[serde(default)]
+    pub failure_report_path: Option<String>,
 
     pub events_written: u64,
     pub files_written: u64,
@@ -58,6 +60,7 @@ impl ProcessingResult {
             status: ProcessingStatus::Complete,
 
             manifest_path: None,
+            failure_report_path: None,
 
             events_written: 0,
             files_written: 0,
@@ -84,6 +87,7 @@ impl ProcessingResult {
             status: ProcessingStatus::Failed,
 
             manifest_path: None,
+            failure_report_path: None,
 
             events_written: 0,
             files_written: 0,

@@ -108,3 +108,5 @@ mod configuration;
 mod equivalence;
 #[path = "trades/trade_worker_metrics_bounded.rs"]
 mod trade_worker_metrics_bounded;
+
+mod cli_contract;

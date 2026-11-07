@@ -11,6 +11,7 @@ use super::{
 };
 
 pub fn inspect_parquet_files(dataset_root: &Path) -> Result<Vec<DatasetFile>> {
+    validate_artifact_tree(dataset_root)?;
     let mut paths = Vec::<PathBuf>::new();
 
     collect_canonical_parts(&dataset_root.join("trades"), &mut paths)?;
@@ -39,6 +40,7 @@ pub fn inspect_parquet_files(dataset_root: &Path) -> Result<Vec<DatasetFile>> {
 }
 
 pub fn inspect_auxiliary_files(dataset_root: &Path) -> Result<Vec<AuxiliaryFile>> {
+    validate_artifact_tree(dataset_root)?;
     let mut files = Vec::new();
 
     let tasks_dir = dataset_root.join("tasks");
@@ -142,4 +144,30 @@ fn sorted_task_directories(tasks_dir: &Path) -> Result<Vec<PathBuf>> {
     directories.retain(|path| path.is_dir());
 
     Ok(directories)
+}
+
+// Reject symlinks before discovery: lexical relative paths alone do not prove
+// that an artifact remains inside the assigned dataset.
+fn validate_artifact_tree(path: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(path).map_err(|e| {
+        MarketForgeError::InvalidConfiguration(format!("inspect artifact {}: {e}", path.display()))
+    })?;
+    if metadata.file_type().is_symlink() || (!metadata.is_dir() && !metadata.is_file()) {
+        return Err(MarketForgeError::InvalidConfiguration(format!(
+            "artifact must be a regular file/directory, never a symlink: {}",
+            path.display()
+        )));
+    }
+    if metadata.is_dir() {
+        for entry in
+            fs::read_dir(path).map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?
+        {
+            validate_artifact_tree(
+                &entry
+                    .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?
+                    .path(),
+            )?;
+        }
+    }
+    Ok(())
 }

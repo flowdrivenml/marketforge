@@ -104,6 +104,42 @@ pub struct CompiledProfile {
 pub struct FormatCatalog {
     profiles: BTreeMap<String, CompiledProfile>,
 }
+impl CompiledProfile {
+    /// Resolve an explicitly selected source feed identically for prepared
+    /// tasks and persisted resolved-job verification.
+    pub(crate) fn for_feed(&self, feed: Option<super::batch::Feed>) -> Result<Self> {
+        let mut result = self.clone();
+        let Some(feed) = feed else {
+            return Ok(result);
+        };
+        if self.definition.exchange != Exchange::GateIo || !self.definition.id.ends_with(".depth") {
+            return Err(invalid("source_options.feed requires Gate.io depth"));
+        }
+        let token = serde_json::to_value(feed).map_err(|e| invalid(e.to_string()))?;
+        if let Some(variant) =
+            self.physical.raw_schema["marketforge_feeds"].get(token.as_str().unwrap())
+        {
+            result.physical = Arc::new(
+                serde_json::from_value(variant["physical"].clone())
+                    .map_err(|e| invalid(e.to_string()))?,
+            );
+            result.definition.source_ordering = Some(
+                serde_json::from_value(variant["ordering"].clone())
+                    .map_err(|e| invalid(e.to_string()))?,
+            );
+            result.normalizations = serde_json::from_value(variant["normalizations"].clone())
+                .map_err(|e| invalid(e.to_string()))?;
+        } else if feed == super::batch::Feed::Snapshot {
+            result
+                .normalizations
+                .retain(|n| n.rules.get("snapshot").is_some());
+        }
+        if result.normalizations.is_empty() {
+            return Err(invalid("profile does not support requested source feed"));
+        }
+        Ok(result)
+    }
+}
 impl FormatCatalog {
     /// Load only self-contained profiles/; runtime, drafts and legacy raw trees are ignored.
     pub fn load(root: impl AsRef<Path>) -> Result<Self> {

@@ -47,7 +47,7 @@ pub fn execute_processing_session_with_progress(
     reporter: &ProgressReporter,
 ) -> Result<ProcessingSessionResult> {
     // Execute the existing processing session.
-    let result = execute_processing_session_inner(jobs, config, reporter);
+    let result = execute_processing_session_inner(jobs, config, reporter, &mut |_| {});
 
     // Determine whether every job completed successfully.
     let success = result.as_ref().is_ok_and(|session| {
@@ -66,6 +66,7 @@ fn execute_processing_session_inner(
     jobs: &[ProcessingJob],
     config: &ProcessingConfig,
     reporter: &ProgressReporter,
+    on_result: &mut dyn FnMut(&ProcessingResult),
 ) -> Result<ProcessingSessionResult> {
     validate_processing_config(config)?;
     validate_session(jobs)?;
@@ -195,6 +196,7 @@ fn execute_processing_session_inner(
             }
         };
 
+        on_result(&result);
         results.push(result);
     }
 
@@ -445,4 +447,13 @@ fn validate_session(jobs: &[ProcessingJob]) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Preserve definitive earlier job results if a later session operation errors.
+pub fn execute_processing_session_reporting(
+    jobs: &[ProcessingJob],
+    config: &ProcessingConfig,
+    on_result: &mut dyn FnMut(&ProcessingResult),
+) -> Result<ProcessingSessionResult> {
+    execute_processing_session_inner(jobs, config, &ProgressReporter::disabled(), on_result)
 }

@@ -443,32 +443,16 @@ impl PreparedBatch {
                     source_compression: profile.physical.supported_containers[0],
                     archive_member: member,
                 };
-                if let Some(options) = &t.source_options {
-                    if t.exchange != Exchange::GateIo || data_type != "depth" {
-                        return Err(invalid("source_options.feed requires Gate.io depth"));
-                    }
-                    let feed = token(&options.feed)?;
-                    if let Some(variant) = task.raw_schema["marketforge_feeds"].get(&feed).cloned()
-                    {
-                        let physical: super::PhysicalFormat =
-                            serde_json::from_value(variant["physical"].clone())
-                                .map_err(|e| invalid(e.to_string()))?;
-                        task.source_compression = physical.supported_containers[0];
-                        task.raw_schema = physical.raw_schema;
-                        task.source_ordering = serde_json::from_value(variant["ordering"].clone())
-                            .map_err(|e| invalid(e.to_string()))?;
-                        task.normalizations =
-                            serde_json::from_value(variant["normalizations"].clone())
-                                .map_err(|e| invalid(e.to_string()))?;
-                    } else if options.feed == Feed::Snapshot {
-                        task.normalizations
-                            .retain(|n| n.rules.get("snapshot").is_some());
-                    }
-                    if task.normalizations.is_empty() {
-                        return Err(invalid("profile does not support requested source feed"));
-                    }
-                }
-                catalog.check_task(&task, profile)?;
+                let effective_profile =
+                    profile.for_feed(t.source_options.as_ref().map(|o| o.feed))?;
+                task.source_compression = effective_profile.physical.supported_containers[0];
+                task.raw_schema = effective_profile.physical.raw_schema.clone();
+                task.source_ordering = effective_profile
+                    .definition
+                    .source_ordering
+                    .ok_or_else(|| invalid("missing source ordering"))?;
+                task.normalizations = effective_profile.normalizations.clone();
+                catalog.check_task(&task, &effective_profile)?;
                 task.raw_schema["marketforge_profile"] =
                     json!({"id":id,"sha256":profile.fingerprint});
                 task.raw_schema["marketforge_source"] = json!({"task_id":t.task_id,"stream_id":t.stream_id,"stream_rank":t.stream_rank,"scope":t.scope,"source_options":t.source_options,"family_symbols":if t.scope.is_some(){Some(&family_symbols)}else{None},"instrument_namespace":self.instrument_namespace,"instrument":i,"instrument_catalog_sha256":fingerprint(&self.instruments)?});

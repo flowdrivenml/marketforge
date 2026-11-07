@@ -22,6 +22,38 @@ impl DatasetManifest {
     ) -> Result<Self> {
         let files = inspect_parquet_files(dataset_root)?;
         let auxiliary_files = inspect_auxiliary_files(dataset_root)?;
+        if job.output.content_type == crate::historical::job::ContentType::Depth {
+            use crate::shared::persistence::parquet::read_depth_segments;
+            for task in &job.tasks {
+                let prefix = format!("tasks/task-{:06}/depth/", task.task_id.0);
+                for name in ["events.parquet", "segments.json", "boundary.json"] {
+                    if !auxiliary_files
+                        .iter()
+                        .any(|file| file.path == format!("{prefix}{name}"))
+                    {
+                        return Err(MarketForgeError::InvalidConfiguration(format!(
+                            "missing required depth artifact {prefix}{name}"
+                        )));
+                    }
+                }
+                let directory = dataset_root.join(&prefix);
+                let segments = read_depth_segments(&directory)?;
+                let rows = files
+                    .iter()
+                    .filter(|f| f.path.starts_with(&prefix))
+                    .try_fold(0u64, |sum, f| {
+                        sum.checked_add(f.rows).ok_or_else(|| {
+                            MarketForgeError::InvalidConfiguration("depth row overflow".into())
+                        })
+                    })?;
+                if segments.total_levels != rows {
+                    return Err(MarketForgeError::InvalidConfiguration(format!(
+                        "depth reconstruction row mismatch for task {}",
+                        task.task_id.0
+                    )));
+                }
+            }
+        }
 
         let events_written = files.iter().try_fold(0u64, |total, file| {
             total.checked_add(file.rows).ok_or_else(|| {

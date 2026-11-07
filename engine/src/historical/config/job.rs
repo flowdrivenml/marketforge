@@ -172,6 +172,18 @@ fn load_document_inner(
                         .as_object_mut()
                         .and_then(|object| object.remove("marketforge_source"));
                     if let Some(profile) = catalog.for_task(task)? {
+                        let feed = source_provenance
+                            .as_ref()
+                            .and_then(|s| s.get("source_options"))
+                            .filter(|v| !v.is_null())
+                            .map(|v| {
+                                serde_json::from_value::<super::batch::SourceOptions>(v.clone())
+                                    .map(|v| v.feed)
+                                    .map_err(|e| invalid(e.to_string()))
+                            })
+                            .transpose()?;
+                        let effective_profile = profile.for_feed(feed)?;
+                        let profile = &effective_profile;
                         check_provenance(
                             provenance.as_ref(),
                             &profile.definition.id,
