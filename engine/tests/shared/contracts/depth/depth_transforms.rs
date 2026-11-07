@@ -98,6 +98,8 @@ fn extracts_bybit_price_levels() {
     });
 
     let spec = LevelArraySpec {
+        price_field: None,
+        quantity_field: None,
         source: "data.b".to_owned(),
         price_index: 0,
         quantity_index: 1,
@@ -130,6 +132,8 @@ fn extracts_okx_levels_with_order_counts() {
     });
 
     let spec = LevelArraySpec {
+        price_field: None,
+        quantity_field: None,
         source: "bids".to_owned(),
         price_index: 0,
         quantity_index: 1,
@@ -195,6 +199,8 @@ fn rejects_negative_level_quantity() {
     });
 
     let spec = LevelArraySpec {
+        price_field: None,
+        quantity_field: None,
         source: "bids".to_owned(),
         price_index: 0,
         quantity_index: 1,
@@ -212,6 +218,8 @@ fn rejects_zero_price() {
     });
 
     let spec = LevelArraySpec {
+        price_field: None,
+        quantity_field: None,
         source: "bids".to_owned(),
         price_index: 0,
         quantity_index: 1,

@@ -30,10 +30,6 @@ impl Fixture {
         }
         let catalog_root = root.path().join("data/.config/historical");
         copy(&source.join("profiles"), &catalog_root.join("profiles"));
-        copy(
-            &source.join("raw_schemas"),
-            &catalog_root.join("raw_schemas"),
-        );
         fs::write(catalog_root.join("general.toml"), RUNTIME).unwrap();
         let catalog = FormatCatalog::load(catalog_root).unwrap();
         let runtime =
@@ -82,7 +78,7 @@ fn v3_example_deserializes_resolves_and_uses_global_runtime() {
             .path()
             .join("data/normalized/.501.staging.1001")
     );
-    let profile = fixture.catalog.get("bybit.spot.spot.bybit-t1.v1").unwrap();
+    let profile = fixture.catalog.get("bybit.spot.spot.trades").unwrap();
     assert_eq!(job.tasks[0].normalizations, profile.normalizations);
     assert_eq!(
         job.tasks[0].raw_schema["marketforge_profile"]["sha256"],
@@ -163,7 +159,7 @@ fn v3_checks_fingerprints_profiles_instruments_and_streams() {
     let mut pinned = example();
     pinned["tasks"][0]["profile_fingerprint"] = fixture
         .catalog
-        .get("bybit.spot.spot.bybit-t1.v1")
+        .get("bybit.spot.spot.trades")
         .unwrap()
         .fingerprint
         .clone()
@@ -183,7 +179,7 @@ fn v3_checks_fingerprints_profiles_instruments_and_streams() {
         (
             "/tasks/0/format_profile",
             Value::from("bybit.option.option.bybit-t3.v1"),
-            "unsupported profile",
+            "unknown Historical profile",
         ),
         (
             "/tasks/0/instrument/tick_size",

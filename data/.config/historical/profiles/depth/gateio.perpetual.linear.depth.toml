@@ -103,3 +103,31 @@ field = "begin_id"
 
 [normalization.book.sequence.merged_count]
 field = "merged_count"
+
+# Verified gzip input is JSONL with object levels {p,s}, not incremental CSV.
+[feeds.snapshot.source]
+container = "gzip"
+format = "jsonl"
+record_format = "events"
+ordering = "chronological"
+granularity = "hourly"
+[feeds.snapshot.fields.update]
+type = "decimal"
+encoding = "unix_seconds"
+[feeds.snapshot.fields.asks]
+type = "array"
+level_fields = { price = "p", quantity = "s" }
+[feeds.snapshot.fields.bids]
+type = "array"
+level_fields = { price = "p", quantity = "s" }
+[feeds.snapshot.normalization]
+target = "l2_snapshot"
+quantity_encoding = "contracts"
+[feeds.snapshot.normalization.event_timestamp]
+field = "update"
+[feeds.snapshot.normalization.asks]
+field = "asks"
+[feeds.snapshot.normalization.bids]
+field = "bids"
+[feeds.snapshot.normalization.snapshot]
+type = "single_event"

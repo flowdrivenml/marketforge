@@ -11,3 +11,6 @@ pub use job::{
     NORMALIZATION_PROTOCOL_VERSION, NormalizationJobV3, NormalizationOperation,
     load_normalization_job,
 };
+
+mod batch;
+pub use batch::*;

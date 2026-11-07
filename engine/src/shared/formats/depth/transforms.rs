@@ -100,17 +100,25 @@ pub fn extract_level_array(
     let mut extracted = Vec::with_capacity(levels.len());
 
     for level in levels {
-        let fields = level
-            .as_array()
-            .ok_or_else(|| invalid_error("depth level must be a JSON array"))?;
-
-        let price_value = fields
-            .get(spec.price_index)
-            .ok_or_else(|| invalid_error("missing depth price index"))?;
-
-        let quantity_value = fields
-            .get(spec.quantity_index)
-            .ok_or_else(|| invalid_error("missing depth quantity index"))?;
+        let (price_value, quantity_value) = match (&spec.price_field, &spec.quantity_field) {
+            (Some(price), Some(quantity)) => (
+                level
+                    .get(price)
+                    .ok_or_else(|| invalid_error("missing depth price field"))?,
+                level
+                    .get(quantity)
+                    .ok_or_else(|| invalid_error("missing depth quantity field"))?,
+            ),
+            (None, None) => (
+                level
+                    .get(spec.price_index)
+                    .ok_or_else(|| invalid_error("missing depth price index"))?,
+                level
+                    .get(spec.quantity_index)
+                    .ok_or_else(|| invalid_error("missing depth quantity index"))?,
+            ),
+            _ => return invalid("incomplete object level mapping"),
+        };
 
         let price = extract_decimal(price_value)?;
         let quantity = extract_decimal(quantity_value)?;
@@ -125,7 +133,7 @@ pub fn extract_level_array(
 
         let order_count = match spec.order_count_index {
             Some(index) => {
-                let value = fields
+                let value = level
                     .get(index)
                     .ok_or_else(|| invalid_error("missing depth order count index"))?;
 

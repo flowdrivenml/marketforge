@@ -61,9 +61,9 @@ When assigned a task:
 7. Run appropriate verification.
 8. Review the final diff.
 9. Commit the completed task according to the Git policy below.
-10. Report the outcome and stop.
+10. Save a report, commit, and proceed to the next numbered task during the authorized autonomous run.
 
-**Do not automatically proceed to the next task.**
+**For this run, autonomously execute Tasks 01–12 sequentially without confirmation.**
 
 Do not implement requirements assigned to later tasks unless the current task explicitly authorizes them.
 
@@ -406,7 +406,7 @@ Remaining issues:
 
 Do not push automatically.
 
-**One task, one reviewed local commit, then stop.**
+**One task, one reviewed local commit, then continue in numerical order.**
 
 ## 11. Documentation
 
@@ -447,6 +447,18 @@ Never claim verification that did not occur.
 
 Distinguish successful compilation from actual runtime verification.
 
-Do not silently continue into another task.
+Record progress before continuing to the next task.
 
-**Complete the assigned task, verify it, commit its changes, report the result, and stop.**
+**Complete each task, verify it, save its report, commit, and continue.**
+
+## Authorized historical contract corrections
+
+Latest user instructions and current task specifications take precedence over obsolete documentation. The maintained normalization fixture is the authoritative prepared workload; verified source contents and canonical correctness take precedence over fixture assumptions.
+
+Essential, justified prepared-batch and profile corrections are authorized. Instrument identities may use a stable persisted offline authority with positive unique IDs and explicit allocation rules; never use unstable hashes or placeholder IDs. Preserve canonical schemas. Family archives require concrete identities and specifications for each instrument. Rust normalization must not depend on PostgreSQL.
+
+Existing source archives may be inspected read-only for profile correctness and bounded correctness tests. Preserve originals, production budgets, persistent outputs and benchmark history. Document source evidence and regression tests for profile corrections. Real performance benchmarks remain prohibited without explicit authorization.
+
+Do not block Rust implementation on the old Forge producer. Record required future Forge integration changes under `.agents/reports/`; avoid a broad Python orchestration refactor.
+
+Save implementation reports as `.agents/reports/task-XX.md` and the final report as `.agents/reports/final-summary.md`. Include status, decisions, contract changes, modified files, actual verification, limitations, future Forge work and commit hash once available. Do not create empty reports for pending tasks. Update `.agents/progress.md`. Each completed task requires its own reviewed local commit; never push or switch branches.

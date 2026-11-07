@@ -2,7 +2,7 @@ use super::{
     FormatCatalog,
     catalog::{default_catalog, fingerprint, invalid},
 };
-use crate::historical::normalize::config::{
+use crate::shared::historical::{
     ProcessingConfig, project_root, resolve_path, validate_integrity_policy,
     validate_processing_config, validate_resources,
 };
@@ -339,12 +339,12 @@ fn v3_streams<'de, D: serde::Deserializer<'de>>(
 ) -> std::result::Result<Vec<StreamConfig>, D::Error> {
     strict_v3_field(d, "streams")
 }
-fn v3_ordering<'de, D: serde::Deserializer<'de>>(
+pub(super) fn v3_ordering<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> std::result::Result<OrderingConfig, D::Error> {
     strict_v3_field(d, "ordering")
 }
-fn v3_output<'de, D: serde::Deserializer<'de>>(
+pub(super) fn v3_output<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> std::result::Result<OutputConfig, D::Error> {
     strict_v3_field(d, "output")

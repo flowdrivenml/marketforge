@@ -92,12 +92,6 @@ pub struct Rule {
     pub quantity_encoding: Option<QuantityEncoding>,
     pub rules: Value,
 }
-#[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum Document {
-    Physical(PhysicalFormat),
-    Profile(Profile),
-}
 #[derive(Debug, Clone)]
 pub struct CompiledProfile {
     pub definition: Profile,
@@ -111,68 +105,26 @@ pub struct FormatCatalog {
     profiles: BTreeMap<String, CompiledProfile>,
 }
 impl FormatCatalog {
-    /// Load a historical configuration root containing raw_schemas/ and profiles/.
-    /// Only those two trees are scanned; drafts and runtime/job configuration are ignored.
+    /// Load only self-contained profiles/; runtime, drafts and legacy raw trees are ignored.
     pub fn load(root: impl AsRef<Path>) -> Result<Self> {
         let root = root.as_ref();
         if !root.is_absolute() {
             return Err(invalid("historical configuration root must be absolute"));
         }
-        let raw_root = root.join("raw_schemas");
         let profile_root = root.join("profiles");
         let mut paths = vec![];
-        collect(&raw_root, &mut paths)?;
         collect(&profile_root, &mut paths)?;
         paths.sort();
         let mut physical = BTreeMap::new();
         let mut profiles = vec![];
         for path in paths {
-            let parsed = (|| -> Result<Document> {
-                let text = fs::read_to_string(&path).map_err(|e| invalid(e.to_string()))?;
-                toml::from_str(&text).map_err(|e| invalid(e.to_string()))
-            })()
-            .map_err(|e| invalid(format!("{}: {e}", path.display())))?;
-            let is_raw = path.starts_with(&raw_root);
-            let data_type =
-                document_data_type(&path, if is_raw { &raw_root } else { &profile_root })?;
-            match parsed {
-                Document::Physical(p) => {
-                    if !is_raw {
-                        return Err(context(
-                            &path,
-                            &p.id,
-                            invalid("raw schema must be under raw_schemas/"),
-                        ));
-                    }
-                    validate_physical(&p).map_err(|e| context(&path, &p.id, e))?;
-                    if p.id.split('.').nth(1) != Some(data_type) {
-                        return Err(context(
-                            &path,
-                            &p.id,
-                            invalid("raw schema data type disagrees with directory"),
-                        ));
-                    }
-                    if physical
-                        .insert(p.id.clone(), (Arc::new(p), data_type))
-                        .is_some()
-                    {
-                        return Err(invalid(format!(
-                            "{}: duplicate physical definition",
-                            path.display()
-                        )));
-                    }
-                }
-                Document::Profile(p) => {
-                    if is_raw {
-                        return Err(context(
-                            &path,
-                            &p.id,
-                            invalid("profile must be under profiles/"),
-                        ));
-                    }
-                    profiles.push((path, p, data_type));
-                }
-            }
+            let data_type = document_data_type(&path, &profile_root)?;
+            let text = fs::read_to_string(&path)
+                .map_err(|e| context(&path, "unknown", invalid(e.to_string())))?;
+            let (profile, raw) = unified::compile(&text, &path, data_type)
+                .map_err(|e| context(&path, "unknown", e))?;
+            physical.insert(raw.id.clone(), (Arc::new(raw), data_type));
+            profiles.push((path, profile, data_type));
         }
         if profiles.is_empty() {
             return Err(invalid(format!(
@@ -194,11 +146,11 @@ impl FormatCatalog {
                     return Err(invalid("invalid format_code"));
                 }
                 let expected = format!(
-                    "{}.{}.{}.{}.v1",
+                    "{}.{}.{}.{}",
                     name(&p.exchange)?,
-                    name(&p.market_category)?,
                     name(&p.instrument_type)?,
-                    p.format_code.to_lowercase()
+                    name(&p.market_category)?,
+                    data_type
                 );
                 if p.id != expected {
                     return Err(invalid(format!("profile identity must be {expected}")));
@@ -489,18 +441,6 @@ fn validate_physical(p: &PhysicalFormat) -> Result<()> {
             "invalid physical format version/identity/containers",
         ));
     }
-    let parts: Vec<_> = p.id.split('.').collect();
-    let revision = parts.last().and_then(|v| v.strip_prefix('v'));
-    if !(4..=5).contains(&parts.len())
-        || !parts[..parts.len() - 1].iter().all(|p| identity_token(p))
-        || !matches!(parts.get(1), Some(&"trades" | &"depth"))
-        || revision
-            .is_none_or(|v| v.starts_with('0') || v.parse::<u32>().ok().is_none_or(|v| v == 0))
-    {
-        return Err(invalid(
-            "raw schema ID must be exchange.trades|depth.format-code[.variant].vN",
-        ));
-    }
     let mut containers = BTreeSet::new();
     for container in &p.supported_containers {
         if !containers.insert(name(container)?) {
@@ -583,11 +523,7 @@ fn validate_semantics(p: &Profile, raw: &PhysicalFormat) -> Result<()> {
         .format_code
         .strip_prefix(&format!("{prefix}-"))
         .ok_or_else(|| invalid("format_code exchange prefix mismatch"))?;
-    let expected_kind = if raw.id.split('.').nth(1) == Some("trades") {
-        'T'
-    } else {
-        'B'
-    };
+    let expected_kind = if p.id.ends_with(".trades") { 'T' } else { 'B' };
     if !suffix.starts_with(expected_kind)
         || suffix.len() < 2
         || !suffix[1..].bytes().all(|b| b.is_ascii_digit())
@@ -595,8 +531,7 @@ fn validate_semantics(p: &Profile, raw: &PhysicalFormat) -> Result<()> {
     {
         return Err(invalid("invalid exchange/data-type format_code"));
     }
-    let parts: Vec<_> = raw.id.split('.').collect();
-    if parts[0] != exchange || parts[2] != p.format_code.to_lowercase() {
+    if raw.id != p.id {
         return Err(invalid(
             "profile exchange/format_code disagrees with raw identity",
         ));
@@ -710,3 +645,4 @@ fn validate_sources(rules: &Value, schema: &Value) -> Result<()> {
 
 #[cfg(test)]
 mod tests;
+mod unified;

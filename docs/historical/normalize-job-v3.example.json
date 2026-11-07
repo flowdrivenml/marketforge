@@ -8,7 +8,7 @@
       "task_id": 1,
       "stream_id": "bybit.spot.spot.BTCUSDT.trades",
       "input_path": "data/raw/BTCUSDT.csv.gz",
-      "format_profile": "bybit.spot.spot.bybit-t1.v1",
+      "format_profile": "bybit.spot.spot.trades",
       "profile_fingerprint": null,
       "exchange": "bybit",
       "instrument_id": 101,

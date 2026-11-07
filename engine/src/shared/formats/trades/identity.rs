@@ -9,6 +9,7 @@ pub struct InstrumentMatcher {
     expected_symbol: String,
     expected_family: Option<String>,
     metrics: IdentityMetrics,
+    allowed_symbols: Option<std::collections::BTreeSet<String>>,
 }
 
 impl InstrumentMatcher {
@@ -53,7 +54,16 @@ impl InstrumentMatcher {
             expected_symbol,
             expected_family,
             metrics: IdentityMetrics::default(),
+            allowed_symbols: None,
         })
+    }
+
+    pub fn with_authoritative_symbols(
+        mut self,
+        symbols: std::collections::BTreeSet<String>,
+    ) -> Self {
+        self.allowed_symbols = Some(symbols);
+        self
     }
 
     pub fn check(&mut self, record: &ByteRecord) -> Result<IdentityDecision> {
@@ -89,6 +99,15 @@ impl InstrumentMatcher {
             ));
         }
 
+        if self
+            .allowed_symbols
+            .as_ref()
+            .is_some_and(|symbols| !symbols.contains(symbol))
+        {
+            return Err(MarketForgeError::InvalidConfiguration(format!(
+                "source instrument {symbol} is missing from the offline family authority"
+            )));
+        }
         if symbol == self.expected_symbol {
             self.metrics.records_matched += 1;
 

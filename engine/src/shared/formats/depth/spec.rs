@@ -33,7 +33,13 @@ pub struct FieldSpec {
 #[serde(deny_unknown_fields)]
 pub struct LevelArraySpec {
     pub source: String,
+    #[serde(default)]
     pub price_index: usize,
+    #[serde(default)]
+    pub price_field: Option<String>,
+    #[serde(default)]
+    pub quantity_field: Option<String>,
+    #[serde(default)]
     pub quantity_index: usize,
 
     #[serde(default)]
@@ -429,7 +435,13 @@ fn validate_rules(r: &DepthRules) -> Result<()> {
         if a.decode.as_deref().is_some_and(|v| v != "json") {
             return invalid("unsupported level-array decode");
         }
-        if a.price_index == a.quantity_index {
+        if a.price_field.is_some() != a.quantity_field.is_some()
+            || a.price_field.as_ref().is_some_and(|s| s.is_empty())
+            || a.quantity_field.as_ref().is_some_and(|s| s.is_empty())
+        {
+            return invalid("object levels require nonempty price_field and quantity_field");
+        }
+        if a.price_field.is_none() && a.price_index == a.quantity_index {
             return invalid("depth price and quantity indices must differ");
         }
     }

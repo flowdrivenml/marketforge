@@ -12,6 +12,21 @@ impl crate::shared::formats::trades::InstrumentMatcher {
     ) -> crate::shared::error::Result<Self> {
         let policy = identity_policy(task);
 
-        Self::new(headers, task.symbol.clone(), policy)
+        let matcher = Self::new(headers, task.symbol.clone(), policy)?;
+        if let Some(symbols) = task.raw_schema["marketforge_source"]["family_symbols"].as_array() {
+            let symbols = symbols
+                .iter()
+                .map(|v| {
+                    v.as_str().map(str::to_owned).ok_or_else(|| {
+                        crate::shared::error::MarketForgeError::InvalidConfiguration(
+                            "invalid family symbol mapping".into(),
+                        )
+                    })
+                })
+                .collect::<crate::shared::error::Result<_>>()?;
+            Ok(matcher.with_authoritative_symbols(symbols))
+        } else {
+            Ok(matcher)
+        }
     }
 }
