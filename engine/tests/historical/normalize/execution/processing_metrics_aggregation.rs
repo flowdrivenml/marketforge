@@ -60,6 +60,7 @@ fn task_report(
     }
 
     TaskMetricsReport {
+        accepted_depth_events: None,
         task_id,
         stream_id: stream_id.to_owned(),
 

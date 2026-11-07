@@ -55,12 +55,7 @@ pub fn reconcile_depth_boundaries(
     let mut links = Vec::new();
 
     for (dataset_id, mut tasks) in datasets {
-        tasks.sort_by_key(|task| {
-            (
-                task.boundary.first_timestamp_ns.unwrap_or(i64::MAX),
-                task.task_id,
-            )
-        });
+        tasks.sort_by_key(|task| task.boundary.first_timestamp_ns.unwrap_or(i64::MAX));
 
         for pair in tasks.windows(2) {
             let previous = pair[0];

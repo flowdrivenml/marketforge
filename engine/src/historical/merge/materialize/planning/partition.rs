@@ -171,13 +171,16 @@ impl MaterializationPartitionWorker {
         end_ns: i64,
     ) -> Result<()> {
         for task in tasks {
-            let mut files = Vec::with_capacity(task.canonical_files.len());
-
-            for path in &task.canonical_files {
-                let index = CanonicalRowGroupIndex::open(path)?;
-
-                files.push((path.to_path_buf(), 0, index.total_rows()));
-            }
+            let files = if let Some(slices) = &task.canonical_slices {
+                slices.clone()
+            } else {
+                let mut files = Vec::new();
+                for path in &task.canonical_files {
+                    let index = CanonicalRowGroupIndex::open(path)?;
+                    files.push((path.to_path_buf(), 0, index.total_rows()));
+                }
+                files
+            };
 
             self.register_canonical_task(
                 CanonicalTaskKey {
@@ -188,13 +191,8 @@ impl MaterializationPartitionWorker {
                 files,
             )?;
 
-            self.depth_metadata.register_task_range(
-                task.dataset_id,
-                task.task_id,
-                &task.events_path,
-                start_ns,
-                end_ns,
-            )?;
+            self.depth_metadata
+                .register_inventory_range(task, start_ns, end_ns)?;
         }
 
         Ok(())

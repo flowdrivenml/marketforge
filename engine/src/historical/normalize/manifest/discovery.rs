@@ -29,6 +29,7 @@ pub fn inspect_parquet_files(dataset_root: &Path) -> Result<Vec<DatasetFile>> {
     if streams_dir.is_dir() {
         for stream in sorted_task_directories(&streams_dir)? {
             collect_canonical_parts(&stream.join("trades"), &mut paths)?;
+            collect_canonical_parts(&stream.join("depth"), &mut paths)?;
         }
     }
 
@@ -52,11 +53,13 @@ pub fn inspect_auxiliary_files(dataset_root: &Path) -> Result<Vec<AuxiliaryFile>
 
     let tasks_dir = dataset_root.join("tasks");
 
-    if !tasks_dir.is_dir() {
-        return Ok(files);
+    let mut directories = Vec::new();
+    for root in [&tasks_dir, &dataset_root.join("streams")] {
+        if root.is_dir() {
+            directories.extend(sorted_task_directories(root)?);
+        }
     }
-
-    for task_dir in sorted_task_directories(&tasks_dir)? {
+    for task_dir in directories {
         let depth_dir = task_dir.join("depth");
 
         if !depth_dir.is_dir() {

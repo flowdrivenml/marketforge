@@ -61,6 +61,11 @@ fn fixture(multi: bool) -> (TestRun, PreparedBatch) {
     if multi {
         b.jobs[1].tasks[0].input_path = run.path.join("unavailable-depth.zip");
     }
+    for job in &mut b.jobs {
+        for task in &mut job.tasks {
+            task.source_time_bounds = None;
+        }
+    }
     let config = run.runtime(Default::default()).unwrap();
     let mut value: toml::Value = toml::from_str(include_str!(
         "../../../../data/.config/historical/general.toml"

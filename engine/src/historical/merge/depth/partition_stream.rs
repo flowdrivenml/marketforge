@@ -59,12 +59,7 @@ impl PartitionDepthStream {
         }
 
         // Preserve deterministic source-task ordering.
-        tasks.sort_by_key(|task| {
-            (
-                task.boundary.first_timestamp_ns.unwrap_or(i64::MAX),
-                task.task_id,
-            )
-        });
+        tasks.sort_by_key(|task| task.boundary.first_timestamp_ns.unwrap_or(i64::MAX));
 
         let mut seen = HashSet::new();
 
@@ -162,10 +157,9 @@ impl PartitionDepthStream {
             if self.current_cursor.is_none() {
                 let task = &self.tasks[self.current_task];
 
-                let cursor = DepthEventCursor::open_indexed_range(
-                    &task.events_path,
-                    self.partition.start_ns,
-                    self.partition.end_ns,
+                let cursor = DepthEventCursor::for_task(
+                    task,
+                    Some((self.partition.start_ns, self.partition.end_ns)),
                 )?;
 
                 self.current_cursor = Some(cursor);

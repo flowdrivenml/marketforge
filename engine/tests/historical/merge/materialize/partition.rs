@@ -211,6 +211,8 @@ fn create_depth_fixture(directory: &Path) -> (DepthTaskInventory, Vec<UnifiedTim
     .unwrap();
 
     let inventory = DepthTaskInventory {
+        canonical_slices: None,
+        source_range: None,
         dataset_id: 89,
         task_id: 0,
         canonical_files: vec![canonical_path],
@@ -511,6 +513,7 @@ fn materializes_trade_partition_end_to_end() {
         dataset_id: 88,
         task_id: 0,
         files: vec![marketforge_engine::historical::merge::TradeFileInventory {
+            file_start_row: 0,
             path: canonical_path,
             part_index: 0,
             row_offset: 0,
@@ -729,6 +732,7 @@ fn materializes_combined_partition_end_to_end() {
         dataset_id: 88,
         task_id: 0,
         files: vec![marketforge_engine::historical::merge::TradeFileInventory {
+            file_start_row: 0,
             path: trade_path,
             part_index: 0,
             row_offset: 0,
@@ -896,6 +900,7 @@ fn materializes_multiple_partitions_in_parallel() {
         dataset_id: 88,
         task_id: 0,
         files: vec![marketforge_engine::historical::merge::TradeFileInventory {
+            file_start_row: 0,
             path: canonical_path,
             part_index: 0,
             row_offset: 0,

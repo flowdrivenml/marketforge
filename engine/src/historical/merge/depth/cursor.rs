@@ -20,6 +20,7 @@ pub struct DepthEventCursor {
     reader: ParquetRecordBatchReader,
     batch: Option<RecordBatch>,
     row: usize,
+    canonical_base: u64,
 
     range: Option<(i64, i64)>,
 }
@@ -49,6 +50,7 @@ impl DepthEventCursor {
             reader,
             batch: None,
             row: 0,
+            canonical_base: 0,
             range: None,
         })
     }
@@ -172,15 +174,72 @@ impl DepthEventCursor {
             reader,
             batch: None,
             row: 0,
+            canonical_base: 0,
             range: Some((start_ns, end_ns)),
         })
+    }
+
+    /// Open one source's half-open event-index range, rebasing canonical rows.
+    pub fn open_source(
+        path: &Path,
+        start_event: u64,
+        end_event: u64,
+        canonical_base: u64,
+        range: Option<(i64, i64)>,
+    ) -> Result<Self> {
+        let file = File::open(path).map_err(|e| invalid_error(e.to_string()))?;
+        let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+            .map_err(|e| invalid_error(e.to_string()))?;
+        if builder.schema().as_ref() != depth_event_schema().as_ref() {
+            return invalid("invalid depth event schema");
+        }
+        let total = u64::try_from(builder.metadata().file_metadata().num_rows())
+            .map_err(|e| invalid_error(e.to_string()))?;
+        if start_event > end_event || end_event > total {
+            return invalid("invalid depth source event range");
+        }
+        let selection = RowSelection::from_consecutive_ranges(
+            std::iter::once(
+                usize::try_from(start_event).map_err(|e| invalid_error(e.to_string()))?
+                    ..usize::try_from(end_event).map_err(|e| invalid_error(e.to_string()))?,
+            ),
+            usize::try_from(total).map_err(|e| invalid_error(e.to_string()))?,
+        );
+        let reader = builder
+            .with_row_selection(selection)
+            .with_batch_size(8192)
+            .build()
+            .map_err(|e| invalid_error(e.to_string()))?;
+        Ok(Self {
+            reader,
+            batch: None,
+            row: 0,
+            canonical_base,
+            range,
+        })
+    }
+    pub fn for_task(
+        task: &super::inventory::DepthTaskInventory,
+        range: Option<(i64, i64)>,
+    ) -> Result<Self> {
+        if let Some((start, end, base)) = task.source_range {
+            Self::open_source(&task.events_path, start, end, base, range)
+        } else if let Some((start, end)) = range {
+            Self::open_indexed_range(&task.events_path, start, end)
+        } else {
+            Self::open(&task.events_path)
+        }
     }
 
     pub fn next_event(&mut self) -> Result<Option<IndexedDepthEvent>> {
         loop {
             if let Some(batch) = &self.batch {
                 if self.row < batch.num_rows() {
-                    let event = decode_event(batch, self.row)?;
+                    let mut event = decode_event(batch, self.row)?;
+                    event.canonical_row_offset = event
+                        .canonical_row_offset
+                        .checked_sub(self.canonical_base)
+                        .ok_or_else(|| invalid_error("depth source offset underflow"))?;
 
                     self.row += 1;
 

@@ -27,3 +27,5 @@ pub use result::{ProcessingErrorCode, ProcessingFailure, ProcessingResult, Proce
 pub use sequence_policy::resolve_sequence_policy;
 
 pub mod streams;
+
+mod streams_depth;

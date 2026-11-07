@@ -24,7 +24,7 @@ pub struct DepthEventValidation {
 }
 
 pub fn validate_depth_events(task: &DepthTaskInventory) -> Result<DepthEventValidation> {
-    let mut cursor = DepthEventCursor::open(&task.events_path)?;
+    let mut cursor = DepthEventCursor::for_task(task, None)?;
 
     let mut report = DepthEventValidation {
         dataset_id: task.dataset_id,

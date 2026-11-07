@@ -908,7 +908,14 @@ fn accept_outcome<S: DepthSink>(
     // Commit complete source event
     // ---------------------------------------------------------
 
+    let accepted = metrics
+        .accepted_depth_events
+        .checked_add(1)
+        .ok_or_else(|| {
+            MarketForgeError::InvalidConfiguration("accepted depth events overflow".into())
+        })?;
     sink.write_outcome(outcome)?;
+    metrics.accepted_depth_events = accepted;
     ordering.accept(timestamp);
 
     boundary_tracker.record_accepted(&source_metadata, event_boundary, initial_state);

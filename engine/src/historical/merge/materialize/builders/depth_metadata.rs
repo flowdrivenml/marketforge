@@ -176,6 +176,25 @@ impl DepthMetadataResolver {
         Ok(())
     }
 
+    pub fn register_inventory_range(
+        &mut self,
+        task: &crate::historical::merge::DepthTaskInventory,
+        start_ns: i64,
+        end_ns: i64,
+    ) -> Result<()> {
+        let key = (task.dataset_id, task.task_id);
+        if self.tasks.contains_key(&key) {
+            return invalid("duplicate depth metadata task");
+        }
+        let cursor = DepthMetadataCursor {
+            cursor: DepthEventCursor::for_task(task, Some((start_ns, end_ns)))?,
+            last_requested_ordinal: None,
+            pending: None,
+        };
+        self.tasks.insert(key, cursor);
+        Ok(())
+    }
+
     /// Resolve metadata for one retained logical depth event.
     pub fn resolve(&mut self, reference: &UnifiedTimelineRecord) -> Result<ResolvedDepthMetadata> {
         if reference.event_kind != 1 {

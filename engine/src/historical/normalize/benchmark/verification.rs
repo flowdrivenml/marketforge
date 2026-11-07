@@ -115,42 +115,47 @@ pub fn verify(trial: &TrialPlan, execution: &ChildExecution) -> Result<OutputObs
                 .map_err(|e| e.to_string())?;
         verify_manifest(job, &manifest)?;
         if job.output.content_type == crate::historical::job::ContentType::Depth {
-            for task in &job.tasks {
-                let key = format!("{}.{}", job.job_id.0, task.task_id.0);
-                let prefix = format!("tasks/task-{:06}/depth/", task.task_id.0);
-                let rows = manifest
-                    .files
-                    .iter()
-                    .filter(|f| f.path.starts_with(&prefix))
-                    .try_fold(0u64, |n, f| {
-                        n.checked_add(f.rows).ok_or("depth row overflow")
-                    })?;
-                let directory = job.output.dataset_path.join(prefix);
-                let digest = validate_event_index(&directory, rows, &key)?;
-                out.depth_events_sha256.insert(key.clone(), digest);
-                let boundary: crate::historical::normalize::boundary::DepthBoundaryManifest =
-                    serde_json::from_slice(
-                        &fs::read(directory.join("boundary.json")).map_err(|e| e.to_string())?,
-                    )
-                    .map_err(|e| e.to_string())?;
-                if boundary.version != 1
-                    || boundary.exchange != task.exchange
-                    || boundary.instrument_id != task.instrument_id
-                    || boundary.symbol != task.symbol
-                    || boundary.stream_id != task.stream_id.0
-                {
-                    return Err("depth boundary identity mismatch".into());
+            if !manifest.streams.is_empty() {
+                verify_stream_depth(job, &manifest, &mut out)?;
+            } else {
+                for task in &job.tasks {
+                    let key = format!("{}.{}", job.job_id.0, task.task_id.0);
+                    let prefix = format!("tasks/task-{:06}/depth/", task.task_id.0);
+                    let rows = manifest
+                        .files
+                        .iter()
+                        .filter(|f| f.path.starts_with(&prefix))
+                        .try_fold(0u64, |n, f| {
+                            n.checked_add(f.rows).ok_or("depth row overflow")
+                        })?;
+                    let directory = job.output.dataset_path.join(prefix);
+                    let digest = validate_event_index(&directory, rows, &key)?;
+                    out.depth_events_sha256.insert(key.clone(), digest);
+                    let boundary: crate::historical::normalize::boundary::DepthBoundaryManifest =
+                        serde_json::from_slice(
+                            &fs::read(directory.join("boundary.json"))
+                                .map_err(|e| e.to_string())?,
+                        )
+                        .map_err(|e| e.to_string())?;
+                    if boundary.version != 1
+                        || boundary.exchange != task.exchange
+                        || boundary.instrument_id != task.instrument_id
+                        || boundary.symbol != task.symbol
+                        || boundary.stream_id != task.stream_id.0
+                    {
+                        return Err("depth boundary identity mismatch".into());
+                    }
+                    let mut hasher = Sha256::new();
+                    for name in ["segments.json", "boundary.json"] {
+                        let value: serde_json::Value = serde_json::from_slice(
+                            &fs::read(directory.join(name)).map_err(|e| e.to_string())?,
+                        )
+                        .map_err(|e| e.to_string())?;
+                        hasher.update(serde_json::to_vec(&value).map_err(|e| e.to_string())?);
+                    }
+                    out.reconstruction_sha256
+                        .insert(key, super::provenance::hex(hasher.finalize()));
                 }
-                let mut hasher = Sha256::new();
-                for name in ["segments.json", "boundary.json"] {
-                    let value: serde_json::Value = serde_json::from_slice(
-                        &fs::read(directory.join(name)).map_err(|e| e.to_string())?,
-                    )
-                    .map_err(|e| e.to_string())?;
-                    hasher.update(serde_json::to_vec(&value).map_err(|e| e.to_string())?);
-                }
-                out.reconstruction_sha256
-                    .insert(key, super::provenance::hex(hasher.finalize()));
             }
         }
         if result.events_written != manifest.events_written
@@ -306,7 +311,9 @@ pub fn verify_manifest(job: &ProcessingJob, m: &DatasetManifest) -> Result<()> {
         return Err("resolved job provenance mismatch".into());
     }
     for task in &job.tasks {
-        if job.output.content_type == crate::historical::job::ContentType::Depth {
+        if job.output.content_type == crate::historical::job::ContentType::Depth
+            && m.streams.is_empty()
+        {
             let prefix = format!("tasks/task-{:06}/depth/", task.task_id.0);
             for name in ["events.parquet", "segments.json", "boundary.json"] {
                 if !auxiliary
@@ -329,6 +336,78 @@ pub fn verify_manifest(job: &ProcessingJob, m: &DatasetManifest) -> Result<()> {
                 return Err("reconstruction row totals mismatch".into());
             }
         }
+    }
+    if job.output.content_type == crate::historical::job::ContentType::Depth {
+        for stream in &m.streams {
+            super::super::streams_depth::validate(
+                &job.output.dataset_path.join(&stream.directory),
+                stream,
+                stream.sources.last().map_or(0, |s| s.end_row),
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+fn verify_stream_depth(
+    job: &ProcessingJob,
+    manifest: &DatasetManifest,
+    out: &mut OutputObservation,
+) -> Result<()> {
+    use crate::{
+        historical::merge::{DepthEventCursor, ResolvedMergeInput, build_depth_inventory},
+        shared::persistence::parquet::{DepthEventBatchBuilder, read_depth_stream_boundaries},
+    };
+    let input = ResolvedMergeInput {
+        dataset_id: job.dataset_id.0,
+        dataset_path: job.output.dataset_path.clone(),
+        manifest: manifest.clone(),
+        canonical_files: vec![],
+        auxiliary_files: vec![],
+    };
+    let inventory = build_depth_inventory(&[input]).map_err(|e| e.to_string())?;
+    for task in inventory {
+        let key = format!("{}.{}", job.job_id.0, task.task_id);
+        let mut cursor = DepthEventCursor::for_task(&task, None).map_err(|e| e.to_string())?;
+        let mut builder = DepthEventBatchBuilder::with_capacity(8192);
+        let mut digests = BTreeMap::new();
+        while let Some(event) = cursor.next_event().map_err(|e| e.to_string())? {
+            builder.push(event);
+            if builder.len() >= 8192 {
+                digest_rows(
+                    &builder.finish().map_err(|e| e.to_string())?.unwrap(),
+                    &mut digests,
+                    Some(&key),
+                )?;
+            }
+        }
+        if let Some(batch) = builder.finish().map_err(|e| e.to_string())? {
+            digest_rows(&batch, &mut digests, Some(&key))?;
+        }
+        out.depth_events_sha256.insert(
+            key.clone(),
+            super::provenance::hex(digests.remove(&key).unwrap_or_default().finalize()),
+        );
+        let boundaries = read_depth_stream_boundaries(task.boundary_path.parent().unwrap())
+            .map_err(|e| e.to_string())?;
+        let boundary = &boundaries
+            .sources
+            .iter()
+            .find(|s| s.task_id == task.task_id)
+            .ok_or("missing source boundary")?
+            .boundary;
+        let mut hasher = Sha256::new();
+        hasher.update(
+            serde_json::to_vec(&serde_json::to_value(&task.segments).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?,
+        );
+        hasher.update(
+            serde_json::to_vec(&serde_json::to_value(boundary).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?,
+        );
+        out.reconstruction_sha256
+            .insert(key, super::provenance::hex(hasher.finalize()));
     }
     Ok(())
 }

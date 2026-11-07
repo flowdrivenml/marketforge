@@ -143,3 +143,51 @@ pub fn read_depth_segments(directory: &Path) -> Result<DepthSegmentManifest> {
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(MarketForgeError::InvalidConfiguration(message.into()))
 }
+
+/// Source ranges use half-open stream-global canonical rows and event-index rows.
+/// Event-index row position is the zero-based stream-global output event ordinal;
+/// `event_ordinal` inside that row remains the original source-local ordinal.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DepthSourceBoundary {
+    pub task_id: u64,
+    pub start_row: u64,
+    pub end_row: u64,
+    pub start_event: u64,
+    pub end_event: u64,
+    pub boundary: crate::shared::domain::book::boundary::DepthBoundaryManifest,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DepthStreamBoundaries {
+    pub version: u32,
+    pub continuity: String,
+    pub sources: Vec<DepthSourceBoundary>,
+}
+pub fn read_depth_stream_boundaries(directory: &Path) -> Result<DepthStreamBoundaries> {
+    let value: DepthStreamBoundaries = serde_json::from_slice(
+        &fs::read(directory.join("boundary.json"))
+            .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?,
+    )
+    .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
+    if value.version != 2 || value.continuity != "independent_sources" {
+        return invalid("unsupported stream boundary contract");
+    }
+    let mut rows = 0;
+    let mut events = 0;
+    let mut ids = std::collections::HashSet::new();
+    for source in &value.sources {
+        if source.start_row != rows
+            || source.start_event != events
+            || source.end_row < rows
+            || source.end_event < events
+            || !ids.insert(source.task_id)
+            || source.boundary.version != 1
+        {
+            return invalid("invalid depth source boundary ranges/identity");
+        }
+        rows = source.end_row;
+        events = source.end_event;
+    }
+    Ok(value)
+}

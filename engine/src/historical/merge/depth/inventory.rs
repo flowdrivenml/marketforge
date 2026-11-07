@@ -21,6 +21,10 @@ pub struct DepthTaskInventory {
     pub task_id: u64,
 
     pub canonical_files: Vec<PathBuf>,
+    /// Physical slices (path, file-local start, row count) for shared files.
+    pub canonical_slices: Option<Vec<(PathBuf, u64, u64)>>,
+    /// Event-index [start,end), stream-global canonical row base.
+    pub source_range: Option<(u64, u64, u64)>,
 
     pub events_path: PathBuf,
     pub segments_path: PathBuf,
@@ -42,6 +46,10 @@ pub fn build_depth_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<DepthT
     let mut inventory = Vec::new();
 
     for input in inputs {
+        if !input.manifest.streams.is_empty() {
+            inventory.extend(build_stream_inventory(input)?);
+            continue;
+        }
         let mut tasks: BTreeMap<u64, TaskFiles> = BTreeMap::new();
 
         // ---------------------------------------------------------------------
@@ -231,6 +239,8 @@ pub fn build_depth_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<DepthT
                     .map(|(_, path, _)| path)
                     .collect(),
 
+                canonical_slices: None,
+                source_range: None,
                 events_path,
                 segments_path,
                 boundary_path,
@@ -319,4 +329,92 @@ fn required(
 
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(MarketForgeError::InvalidConfiguration(message.into()))
+}
+
+fn build_stream_inventory(input: &ResolvedMergeInput) -> Result<Vec<DepthTaskInventory>> {
+    use crate::shared::persistence::parquet::{DepthSegmentManifest, read_depth_stream_boundaries};
+    let mut tasks = Vec::new();
+    let mut seen = HashSet::new();
+    let mut total = 0u64;
+    for stream in &input.manifest.streams {
+        let directory = input.dataset_path.join(&stream.directory);
+        let boundaries = read_depth_stream_boundaries(&directory)?;
+        let global = read_depth_segments(&directory)?;
+        let mut parts = input
+            .manifest
+            .files
+            .iter()
+            .filter(|f| f.path.starts_with(&format!("{}/", stream.directory)))
+            .collect::<Vec<_>>();
+        parts.sort_by(|a, b| a.path.cmp(&b.path));
+        for source in boundaries.sources {
+            if !seen.insert(source.task_id)
+                || !stream.sources.iter().any(|s| {
+                    s.task_id == source.task_id
+                        && s.start_row == source.start_row
+                        && s.end_row == source.end_row
+                })
+            {
+                return invalid("invalid depth source ownership");
+            }
+            let mut offset = 0u64;
+            let mut slices = Vec::new();
+            for part in &parts {
+                let end = offset.checked_add(part.rows).ok_or_else(|| {
+                    MarketForgeError::InvalidConfiguration("depth row overflow".into())
+                })?;
+                let start = offset.max(source.start_row);
+                let stop = end.min(source.end_row);
+                if start < stop {
+                    slices.push((
+                        input.dataset_path.join(&part.path),
+                        start - offset,
+                        stop - start,
+                    ));
+                }
+                offset = end;
+            }
+            if source.end_row > offset || offset != global.total_levels {
+                return invalid("depth source exceeds physical rows");
+            }
+            let rows = source.end_row - source.start_row;
+            total = total.checked_add(rows).ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration("depth total overflow".into())
+            })?;
+            let mut segments = global
+                .segments
+                .iter()
+                .filter(|s| {
+                    s.initial_event_offset >= source.start_row
+                        && s.initial_event_offset < source.end_row
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            for (index, segment) in segments.iter_mut().enumerate() {
+                segment.segment_id = index as u64;
+                segment.initial_event_offset -= source.start_row;
+            }
+            let task = DepthTaskInventory {
+                dataset_id: input.dataset_id,
+                task_id: source.task_id,
+                canonical_files: slices.iter().map(|(p, _, _)| p.clone()).collect(),
+                canonical_slices: Some(slices),
+                source_range: Some((source.start_event, source.end_event, source.start_row)),
+                events_path: directory.join("events.parquet"),
+                segments_path: directory.join("segments.json"),
+                boundary_path: directory.join("boundary.json"),
+                canonical_rows: rows,
+                segments: DepthSegmentManifest::new(rows, segments)?,
+                boundary: MergeBoundarySummary::from(&source.boundary),
+            };
+            super::event_validation::validate_depth_events(&task)?;
+            tasks.push(task);
+        }
+    }
+    if total != input.manifest.events_written
+        || seen != input.manifest.source_tasks.iter().copied().collect()
+    {
+        return invalid("depth source inventory mismatch");
+    }
+    Ok(tasks)
 }

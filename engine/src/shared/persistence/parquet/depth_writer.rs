@@ -7,6 +7,7 @@ use parquet::{
 };
 use std::{
     fs::{self, File},
+    io::{BufWriter, Write},
     path::{Path, PathBuf},
 };
 
@@ -58,6 +59,10 @@ pub struct ParquetDepthWriter {
     events_written: u64,
     last_event_ordinal: Option<u64>,
     boundary_manifest: Option<DepthBoundaryManifest>,
+    source_writer: Option<BufWriter<File>>,
+    active_source: Option<(u64, u64, u64)>,
+    source_count: u64,
+    source_needs_initialization: bool,
 }
 
 impl ParquetDepthWriter {
@@ -106,7 +111,44 @@ impl ParquetDepthWriter {
             finished: false,
             failed: false,
             boundary_manifest: None,
+            source_writer: None,
+            active_source: None,
+            source_count: 0,
+            source_needs_initialization: false,
         })
+    }
+
+    /// Enable consolidated source boundaries before accepting outcomes.
+    pub fn enable_sources(&mut self) -> Result<()> {
+        self.ensure_writable()?;
+        if self.source_writer.is_some() || self.events_written != 0 {
+            return Err(MarketForgeError::InvalidConfiguration(
+                "source mode must be enabled once before writing".into(),
+            ));
+        }
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(self.output_dir.join("boundary.json"))
+            .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
+        let mut writer = BufWriter::new(file);
+        writer
+            .write_all(b"{\"version\":2,\"continuity\":\"independent_sources\",\"sources\":[")
+            .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
+        self.source_writer = Some(writer);
+        Ok(())
+    }
+    pub fn begin_source(&mut self, task_id: u64) -> Result<()> {
+        self.ensure_writable()?;
+        if self.source_writer.is_none() || self.active_source.is_some() {
+            return Err(MarketForgeError::InvalidConfiguration(
+                "previous depth source boundary missing or source mode disabled".into(),
+            ));
+        }
+        self.active_source = Some((task_id, self.metrics.levels_written, self.events_written));
+        self.last_event_ordinal = None;
+        self.source_needs_initialization = true;
+        Ok(())
     }
 
     pub fn metrics(&self) -> &ParquetDepthWriterMetrics {
@@ -276,6 +318,11 @@ impl ParquetDepthWriter {
                 ))
             })?;
 
+        self.event_writer
+            .as_mut()
+            .unwrap()
+            .flush()
+            .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
         Ok(())
     }
 
@@ -312,6 +359,12 @@ impl ParquetDepthWriter {
             MarketForgeError::InvalidConfiguration(format!(
                 "failed to write depth Parquet batch: {error}"
             ))
+        })?;
+
+        // Flush at the configured batch boundary rather than retaining Arrow's
+        // default million-row group in addition to the accounted batch.
+        writer.flush().map_err(|e| {
+            MarketForgeError::InvalidConfiguration(format!("depth row-group flush: {e}"))
         })?;
 
         self.current_file_bytes = self
@@ -374,6 +427,18 @@ impl ParquetDepthWriter {
 
     fn accept_outcome(&mut self, outcome: DepthProcessingOutcome) -> Result<()> {
         let count = outcome.events.len();
+        if self.source_writer.is_some() && self.active_source.is_none() {
+            return Err(MarketForgeError::InvalidConfiguration(
+                "depth outcome outside source".into(),
+            ));
+        }
+        if self.source_needs_initialization
+            && outcome.boundary != DepthEventBoundary::Initialization
+        {
+            return Err(MarketForgeError::InvalidConfiguration(
+                "new source requires independent initialization".into(),
+            ));
+        }
 
         if outcome.boundary == DepthEventBoundary::Initialization && count == 0 {
             return Err(MarketForgeError::InvalidConfiguration(
@@ -417,6 +482,17 @@ impl ParquetDepthWriter {
             DepthEventBoundary::Changes => {
                 next_segments.record_changes(count)?;
             }
+        }
+
+        let metadata_bytes = (next_segments.segments().len() as u64)
+            .checked_mul(std::mem::size_of::<BookSegment>() as u64)
+            .ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration("segment metadata size overflow".into())
+            })?;
+        if metadata_bytes > self.resources.row_group_target_bytes.max(1024 * 1024) {
+            return Err(MarketForgeError::InvalidConfiguration(
+                "depth reconstruction segment metadata exceeds bounded writer allowance".into(),
+            ));
         }
 
         let count_u64 = u64::try_from(count).map_err(|_| {
@@ -502,6 +578,7 @@ impl ParquetDepthWriter {
         self.batch.extend(outcome.events);
         self.event_batch.push(indexed_event);
 
+        self.source_needs_initialization = false;
         self.events_written = next_events_written;
         self.last_event_ordinal = Some(event_ordinal);
 
@@ -575,31 +652,42 @@ impl ParquetDepthWriter {
 
         write_depth_segments(&self.output_dir, &manifest)?;
 
-        let boundary = self.boundary_manifest.as_ref().ok_or_else(|| {
-            MarketForgeError::InvalidConfiguration("depth boundary metadata missing".to_owned())
-        })?;
+        if let Some(writer) = &mut self.source_writer {
+            if self.active_source.is_some() {
+                return Err(MarketForgeError::InvalidConfiguration(
+                    "unfinished depth source boundary".into(),
+                ));
+            }
+            writer
+                .write_all(b"]}")
+                .and_then(|()| writer.flush())
+                .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
+        } else {
+            let boundary = self.boundary_manifest.as_ref().ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration("depth boundary metadata missing".to_owned())
+            })?;
 
-        let path = self.output_dir.join("boundary.json");
+            let path = self.output_dir.join("boundary.json");
 
-        if path.exists() {
-            return Err(MarketForgeError::InvalidConfiguration(format!(
-                "depth boundary metadata already exists: {}",
-                path.display()
-            )));
+            if path.exists() {
+                return Err(MarketForgeError::InvalidConfiguration(format!(
+                    "depth boundary metadata already exists: {}",
+                    path.display()
+                )));
+            }
+
+            let file = File::create(&path).map_err(|error| {
+                MarketForgeError::InvalidConfiguration(format!(
+                    "failed to create depth boundary metadata: {error}"
+                ))
+            })?;
+
+            serde_json::to_writer_pretty(file, boundary).map_err(|error| {
+                MarketForgeError::InvalidConfiguration(format!(
+                    "failed to serialize depth boundary metadata: {error}"
+                ))
+            })?;
         }
-
-        let file = File::create(&path).map_err(|error| {
-            MarketForgeError::InvalidConfiguration(format!(
-                "failed to create depth boundary metadata: {error}"
-            ))
-        })?;
-
-        serde_json::to_writer_pretty(file, boundary).map_err(|error| {
-            MarketForgeError::InvalidConfiguration(format!(
-                "failed to serialize depth boundary metadata: {error}"
-            ))
-        })?;
-
         self.finished = true;
 
         Ok(())
@@ -636,6 +724,36 @@ impl ParquetDepthWriter {
     }
     pub fn write_boundary(&mut self, boundary: DepthBoundaryManifest) -> Result<()> {
         self.ensure_writable()?;
+
+        if let Some(writer) = &mut self.source_writer {
+            let (task_id, start_row, start_event) = self.active_source.take().ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration(
+                    "depth boundary without active source".into(),
+                )
+            })?;
+            let source = super::DepthSourceBoundary {
+                task_id,
+                start_row,
+                end_row: self.metrics.levels_written,
+                start_event,
+                end_event: self.events_written,
+                boundary,
+            };
+            if self.source_count > 0 {
+                writer
+                    .write_all(b",")
+                    .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
+            }
+            serde_json::to_writer(&mut *writer, &source)
+                .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
+            writer
+                .flush()
+                .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
+            self.source_count = self.source_count.checked_add(1).ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration("source count overflow".into())
+            })?;
+            return Ok(());
+        }
 
         if self.boundary_manifest.is_some() {
             return self.fail(MarketForgeError::InvalidConfiguration(

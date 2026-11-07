@@ -68,13 +68,8 @@ impl DepthStream {
         }
 
         // Sort tasks chronologically using their recorded first timestamps.
-        // Task IDs provide deterministic tie-breaking.
-        tasks.sort_by_key(|task| {
-            (
-                task.boundary.first_timestamp_ns.unwrap_or(i64::MAX),
-                task.task_id,
-            )
-        });
+        // Stable ties preserve explicit source order from the inventory.
+        tasks.sort_by_key(|task| task.boundary.first_timestamp_ns.unwrap_or(i64::MAX));
 
         // Reject duplicate task IDs.
         for pair in tasks.windows(2) {
@@ -172,9 +167,8 @@ impl DepthStream {
 
             if self.current_cursor.is_none() {
                 let task_id = self.tasks[self.current_task].task_id;
-                let events_path = self.tasks[self.current_task].events_path.clone();
 
-                let mut cursor = DepthEventCursor::open(&events_path)?;
+                let mut cursor = DepthEventCursor::for_task(&self.tasks[self.current_task], None)?;
 
                 // The first event of a task must be an initialization.
                 let first = cursor.next_event()?.ok_or_else(|| {

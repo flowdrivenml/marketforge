@@ -5,7 +5,7 @@ use super::{
     parquet::ParquetTradeWriter,
     progress::{ProgressReporter, ProgressTaskId, WorkerProgress},
     resources::{ResourceRequirements, estimate_task_resources},
-    task::{TaskExecution, execute_task_with_progress},
+    task::TaskExecution,
     worker::TradeSink,
 };
 use crate::{
@@ -52,7 +52,7 @@ fn fingerprint(value: &impl Serialize) -> Result<String> {
             .collect(),
     )
 }
-fn bounds(task: &WorkTask) -> Result<Option<(i64, i64, Option<u64>)>> {
+pub(super) fn bounds(task: &WorkTask) -> Result<Option<(i64, i64, Option<u64>)>> {
     let v = &task.raw_schema["marketforge_source"]["source_time_bounds"];
     if v.is_null() {
         return Ok(None);
@@ -84,10 +84,7 @@ pub(crate) fn plan(job: &ProcessingJob) -> Result<Vec<StreamUnit<'_>>> {
             task.raw_schema["marketforge_profile"],
             task.raw_schema["marketforge_source"]["source_options"]
         ]);
-        let mut key = fingerprint(&identity)?;
-        if task.normalizations[0].target_schema == TargetSchema::Depth {
-            key = format!("task-{}", task.task_id.0);
-        }
+        let key = fingerprint(&identity)?;
         groups.entry(key).or_default().push((index, task));
     }
     groups.into_iter().map(|(key,mut tasks)| {
@@ -116,6 +113,14 @@ pub(crate) fn estimate(
         max.scratch_bytes = max.scratch_bytes.max(r.scratch_bytes);
         max.open_files = max.open_files.max(r.open_files);
     }
+    max.memory_bytes = max
+        .memory_bytes
+        .checked_add(
+            (unit.tasks.len() as u64)
+                .checked_mul(512)
+                .ok_or_else(|| invalid("stream metadata estimate overflow"))?,
+        )
+        .ok_or_else(|| invalid("stream memory estimate overflow"))?;
     Ok(max)
 }
 struct TradeOutput<'a> {
@@ -162,22 +167,7 @@ pub(crate) fn execute(
 ) -> Result<Vec<(usize, TaskExecution)>> {
     let first = unit.tasks[0].1;
     if first.normalizations[0].target_schema == TargetSchema::Depth {
-        return Ok(unit
-            .tasks
-            .iter()
-            .map(|(index, task)| {
-                (
-                    *index,
-                    execute_task_with_progress(
-                        task,
-                        config,
-                        &unit.job.output.staging_path,
-                        reporter,
-                        ProgressTaskId::new(unit.job.job_id.0, task.task_id.0),
-                    ),
-                )
-            })
-            .collect());
+        return super::streams_depth::execute(unit, config, reporter);
     }
     let directory = format!("streams/{}/trades", unit.key);
     let path = unit.job.output.staging_path.join(&directory);
@@ -260,12 +250,14 @@ pub(crate) fn execute(
                 directory,
                 sources,
             };
-            write_output(&path, &output)?;
+            if let Err(error) = write_output(&path, &output) {
+                executions.last_mut().unwrap().1.error = Some(error);
+            }
         }
     }
     Ok(executions)
 }
-fn write_output(path: &Path, output: &StreamOutput) -> Result<()> {
+pub(super) fn write_output(path: &Path, output: &StreamOutput) -> Result<()> {
     let file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -280,15 +272,17 @@ pub(crate) fn read_outputs(root: &Path) -> Result<Vec<StreamOutput>> {
         return Ok(outputs);
     }
     for entry in std::fs::read_dir(streams).map_err(|e| invalid(e.to_string()))? {
-        let path = entry
-            .map_err(|e| invalid(e.to_string()))?
-            .path()
-            .join("trades/sources.json");
-        if path.is_file() {
-            outputs.push(
-                serde_json::from_slice(&std::fs::read(path).map_err(|e| invalid(e.to_string()))?)
+        let directory = entry.map_err(|e| invalid(e.to_string()))?.path();
+        for kind in ["trades", "depth"] {
+            let path = directory.join(kind).join("sources.json");
+            if path.is_file() {
+                outputs.push(
+                    serde_json::from_slice(
+                        &std::fs::read(path).map_err(|e| invalid(e.to_string()))?,
+                    )
                     .map_err(|e| invalid(e.to_string()))?,
-            );
+                );
+            }
         }
     }
     outputs.sort_by(|a, b| a.directory.cmp(&b.directory));

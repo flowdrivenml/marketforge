@@ -1,6 +1,6 @@
 # Task 10 — Stream-oriented trade persistence
 
-Status: completed; local commit recorded in Git history (subject `task-10: implement stream-oriented trade persistence`).
+Status: completed. Local commit: `292b3f7`.
 
 Implementation: one resource-admitted stream execution unit owns a trade writer through finalization. Both job and global-session entry points use the same unit scheduler. Independent groups run concurrently, sources within a group run sequentially. The reservation is the maximum source estimate, including writer memory, held for the entire unit. These remain admission estimates, not RSS limits.
 

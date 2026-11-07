@@ -18,3 +18,5 @@ pub use depth_events::{DepthEventBatchBuilder, IndexedDepthEvent};
 pub use depth_writer::{ParquetDepthWriter, ParquetDepthWriterMetrics};
 pub use segments::{DepthSegmentManifest, read_depth_segments, write_depth_segments};
 pub use trade_writer::{ParquetTradeWriter, ParquetWriterMetrics};
+
+pub use segments::{DepthSourceBoundary, DepthStreamBoundaries, read_depth_stream_boundaries};

@@ -15,3 +15,5 @@ pub mod migration;
 pub mod profile_cases;
 
 mod streams;
+
+mod stream_depth;

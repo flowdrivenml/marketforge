@@ -13,6 +13,7 @@ use crate::{
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TaskMetrics {
+    pub accepted_depth_events: u64,
     pub counters: ProcessingCounters,
     pub integrity: IntegrityMetrics,
     pub scoped_integrity: ScopedIntegrityMetrics,
@@ -37,6 +38,13 @@ impl TaskMetrics {
 impl TaskMetrics {
     pub fn into_report(self, task: &WorkTask) -> TaskMetricsReport {
         TaskMetricsReport {
+            accepted_depth_events: if task.normalizations[0].target_schema
+                == crate::shared::normalization::TargetSchema::Depth
+            {
+                Some(self.accepted_depth_events)
+            } else {
+                None
+            },
             task_id: task.task_id.0,
             stream_id: task.stream_id.0.clone(),
 
@@ -56,6 +64,8 @@ impl TaskMetrics {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskMetricsReport {
+    #[serde(default)]
+    pub accepted_depth_events: Option<u64>,
     pub task_id: u64,
     pub stream_id: String,
 
