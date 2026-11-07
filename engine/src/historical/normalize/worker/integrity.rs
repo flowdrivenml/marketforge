@@ -82,3 +82,20 @@ pub(super) fn record_trace(
     }
     Ok(())
 }
+
+pub(super) fn csv_source_error(
+    task: &crate::historical::job::WorkTask,
+    error: csv::Error,
+) -> MarketForgeError {
+    let message = error.to_string();
+    match error.into_kind() {
+        csv::ErrorKind::Io(source) => MarketForgeError::SourceRead {
+            path: task.input_path.clone(),
+            source,
+        },
+        _ => MarketForgeError::RecordIntegrity {
+            category: IntegrityCategory::ParseFailure,
+            message,
+        },
+    }
+}

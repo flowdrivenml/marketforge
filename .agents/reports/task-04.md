@@ -1,6 +1,6 @@
 # Task 04 — Integrity Observation Accounting
 
-Status: completed. Commit hash: recorded by the next progress update / task-04 Git history.
+Status: completed. Commit: `89f0518`.
 
 ## Confirmed findings and changes
 

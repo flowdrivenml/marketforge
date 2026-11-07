@@ -40,7 +40,7 @@ impl DepthSink for Depth {
         Ok(())
     }
 }
-fn subset(depth: bool, gate: bool) -> PreparedBatch {
+pub(super) fn subset(depth: bool, gate: bool) -> PreparedBatch {
     let b = workload().unwrap();
     let s = Selection {
         exchange: if gate {
@@ -68,7 +68,7 @@ fn subset(depth: bool, gate: bool) -> PreparedBatch {
     };
     select(&b, "synthetic integrity", &s, 1).unwrap()
 }
-fn input(run: &TestRun, b: &mut PreparedBatch, bytes: &[u8], zip: bool) {
+pub(super) fn input(run: &TestRun, b: &mut PreparedBatch, bytes: &[u8], zip: bool) {
     let path = run.path.join("synthetic.archive");
     let f = fs::File::create(&path).unwrap();
     if zip {
@@ -84,7 +84,7 @@ fn input(run: &TestRun, b: &mut PreparedBatch, bytes: &[u8], zip: bool) {
     }
     b.jobs[0].tasks[0].input_path = path;
 }
-fn allow(rule: &mut IntegrityRule) {
+pub(super) fn allow(rule: &mut IntegrityRule) {
     rule.action = IntegrityAction::Degrade;
     rule.max_count = Some(1000);
 }
@@ -287,7 +287,8 @@ fn depth_counts_source_messages_not_levels_and_keeps_no_change_events() {
     assert_eq!(s.global.sequence_gap.eligible, 1);
     assert_eq!(s.global.missing_snapshot.eligible, 1);
     assert_eq!(s.global.invalid_book.eligible, 0);
-    assert_eq!(s.global.timestamp_regression.eligible, 0);
+    assert_eq!(s.global.timestamp_regression.eligible, 1);
+    assert_eq!(s.global.timestamp_regression.violations, 0);
     assert_eq!(sink.0, 3);
     assert_eq!(m.counters.records_processed, 2);
     assert_eq!(s.hourly.len(), 2);

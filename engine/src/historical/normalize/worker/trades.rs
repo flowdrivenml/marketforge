@@ -6,7 +6,7 @@ use crate::{
         IdentityDecision, InstrumentMatcher, TradeContext, TradeProcessor, resolve_trade_headers,
     },
     shared::io::decode::CsvDecoder,
-    shared::io::source::with_source_reader,
+    shared::io::source::with_validated_source_reader as with_source_reader,
 };
 use {
     crate::historical::job::IntegrityPolicy, crate::historical::job::WorkTask,
@@ -72,11 +72,11 @@ pub fn process_trade_task<S: TradeSink>(
             let mut decoder = CsvDecoder::with_headers(reader, has_headers);
 
             let actual_headers = if has_headers {
-                Some(decoder.headers().map_err(|error| {
-                    MarketForgeError::InvalidConfiguration(format!(
-                        "failed to read CSV headers: {error}",
-                    ))
-                })?)
+                Some(
+                    decoder
+                        .headers()
+                        .map_err(|error| super::integrity::csv_source_error(task, error))?,
+                )
             } else {
                 None
             };
@@ -87,15 +87,14 @@ pub fn process_trade_task<S: TradeSink>(
                 TradeProcessor::new(&headers, normalization, task.instrument.clone(), context)?;
 
             let mut matcher = InstrumentMatcher::from_task(&headers, task)?;
+            super::ordering::supported(task)?;
+            let mut previous_timestamp = None;
 
             let mut metrics = TradeWorkerMetrics::default();
 
             for record in decoder.records() {
-                let record = record.map_err(|error| {
-                    MarketForgeError::InvalidCanonical(format!(
-                        "failed to decode CSV record: {error}",
-                    ))
-                })?;
+                let record =
+                    record.map_err(|error| super::integrity::csv_source_error(task, error))?;
 
                 match matcher.check(&record)? {
                     IdentityDecision::Skip => continue,
@@ -103,6 +102,16 @@ pub fn process_trade_task<S: TradeSink>(
                 }
 
                 let trade = processor.process_record(&record)?;
+                let timestamp = trade.envelope.event_timestamp_ns;
+                if super::ordering::regresses(previous_timestamp, timestamp) {
+                    return Err(MarketForgeError::RecordIntegrity {
+                        category: IntegrityCategory::TimestampRegression,
+                        message: format!(
+                            "stream {} timestamp regressed at record {}",
+                            task.stream_id.0, metrics.records_read
+                        ),
+                    });
+                }
 
                 metrics.trades_normalized += 1;
 
@@ -121,6 +130,7 @@ pub fn process_trade_task<S: TradeSink>(
                 );
 
                 sink.write_trade(trade)?;
+                previous_timestamp = Some(timestamp);
 
                 metrics.trades_written += 1;
             }
@@ -218,11 +228,11 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
             let mut decoder = CsvDecoder::with_headers(reader, has_headers);
 
             let actual_headers = if has_headers {
-                Some(decoder.headers().map_err(|error| {
-                    MarketForgeError::InvalidConfiguration(format!(
-                        "failed to read CSV headers: {error}",
-                    ))
-                })?)
+                Some(
+                    decoder
+                        .headers()
+                        .map_err(|error| super::integrity::csv_source_error(task, error))?,
+                )
             } else {
                 None
             };
@@ -233,6 +243,8 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
                 TradeProcessor::new(&headers, normalization, task.instrument.clone(), context)?;
 
             let mut matcher = InstrumentMatcher::from_task(&headers, task)?;
+            let mut ordering =
+                super::ordering::TimestampOrder::new(task, &scope, policy, previous_job_integrity)?;
 
             for (index, record) in decoder.records().enumerate() {
                 if let Some(reporter) = progress.as_deref_mut() {
@@ -257,9 +269,7 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
                     Err(error) => {
                         // Source I/O and decompression failures are always fatal.
                         if error.is_io_error() {
-                            return Err(MarketForgeError::InvalidCanonical(format!(
-                                "source CSV I/O failure: {error}"
-                            )));
+                            return Err(super::integrity::csv_source_error(task, error));
                         }
 
                         increment(&mut metrics.counters.records_read, "records_read")?;
@@ -362,6 +372,11 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
                     Err(error) => return Err(error),
                 };
 
+                let timestamp = trade.envelope.event_timestamp_ns;
+                if let Err(error) = ordering.check(metrics, source_record, timestamp) {
+                    increment(&mut metrics.counters.records_rejected, "records_rejected")?;
+                    return Err(error);
+                }
                 increment(&mut metrics.counters.events_normalized, "events_normalized")?;
 
                 increment(&mut metrics.counters.records_processed, "records_processed")?;
@@ -375,6 +390,7 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
                 // ---------------------------------------------------------
 
                 sink.write_trade(trade)?;
+                ordering.accept(timestamp);
 
                 increment(&mut metrics.counters.events_written, "events_written")?;
             }

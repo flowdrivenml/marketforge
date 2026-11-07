@@ -37,12 +37,11 @@ pub fn estimate_task_resources(
     task: &WorkTask,
     parquet: &ParquetResourceConfig,
 ) -> Result<ResourceRequirements> {
-    let metadata = fs::metadata(&task.input_path).map_err(|error| {
-        MarketForgeError::InvalidConfiguration(format!(
-            "cannot inspect source archive {}: {error}",
-            task.input_path.display(),
-        ))
-    })?;
+    let metadata =
+        fs::metadata(&task.input_path).map_err(|source| MarketForgeError::SourceOpen {
+            path: task.input_path.clone(),
+            source,
+        })?;
 
     let source_bytes = metadata.len();
 

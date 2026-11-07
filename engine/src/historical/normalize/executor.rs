@@ -163,12 +163,25 @@ pub(crate) fn persist_processing_failure(
     context: ExecutionContext,
     error: MarketForgeError,
 ) -> Result<ProcessingResult> {
+    let error_code = match &error {
+        MarketForgeError::SourceOpen { source, .. }
+            if source.kind() == std::io::ErrorKind::NotFound =>
+        {
+            ProcessingErrorCode::MissingSource
+        }
+        MarketForgeError::ArchiveMemberNotFound { .. } => ProcessingErrorCode::MissingSource,
+        MarketForgeError::SourceRead { .. }
+        | MarketForgeError::SourceOpen { .. }
+        | MarketForgeError::ArchiveOpen { .. }
+        | MarketForgeError::AmbiguousArchiveMembers { .. } => ProcessingErrorCode::CorruptSource,
+        _ => ProcessingErrorCode::ProcessingFailure,
+    };
     let error_message = error.to_string();
 
     let failure = ProcessingFailureReport::new(
         job,
         context.failed_task_id,
-        ProcessingErrorCode::ProcessingFailure,
+        error_code,
         &error_message,
         context.report,
         context.integrity_evaluation,
@@ -193,7 +206,7 @@ pub(crate) fn persist_processing_failure(
     Ok(ProcessingResult::failed(
         job.job_id,
         job.dataset_id,
-        ProcessingErrorCode::ProcessingFailure,
+        error_code,
         error_message,
     ))
 }

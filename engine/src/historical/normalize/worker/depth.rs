@@ -19,7 +19,8 @@ use {
     crate::shared::domain::book::SequencePolicy, crate::shared::error::MarketForgeError,
     crate::shared::error::Result, crate::shared::formats::depth::DepthContext,
     crate::shared::formats::depth::DepthProcessor, crate::shared::io::source::JsonlDecoder,
-    crate::shared::io::source::with_source_reader, crate::shared::normalization::TargetSchema,
+    crate::shared::io::source::with_validated_source_reader as with_source_reader,
+    crate::shared::normalization::TargetSchema,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,6 +118,8 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
     // Source reader
     // -------------------------------------------------------------------------
 
+    let mut ordering =
+        super::ordering::TimestampOrder::new(task, &scope, policy, previous_job_integrity)?;
     let result = with_source_reader(
         &task.input_path,
         task.source_compression,
@@ -194,6 +197,7 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
                         policy,
                         previous_job_integrity,
                         &scope,
+                        &mut ordering,
                         progress.as_deref_mut(),
                     )?;
                 }
@@ -223,8 +227,18 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
                             // -------------------------------------------------
                             // JSON parsing failure
                             // -------------------------------------------------
-                            Err(error) => {
-                                source_record += 1;
+                            Err(crate::shared::io::source::JsonlError::Source(source)) => {
+                                return Err(MarketForgeError::SourceRead {
+                                    path: task.input_path.clone(),
+                                    source,
+                                });
+                            }
+                            Err(crate::shared::io::source::JsonlError::Record(error)) => {
+                                source_record = source_record.checked_add(1).ok_or_else(|| {
+                                    MarketForgeError::InvalidConfiguration(
+                                        "source record ordinal overflow".into(),
+                                    )
+                                })?;
 
                                 increment(&mut metrics.counters.records_read, "records_read")?;
 
@@ -266,7 +280,11 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
                         // Source record accounting
                         // -----------------------------------------------------
 
-                        source_record += 1;
+                        source_record = source_record.checked_add(1).ok_or_else(|| {
+                            MarketForgeError::InvalidConfiguration(
+                                "source record ordinal overflow".into(),
+                            )
+                        })?;
 
                         increment(&mut metrics.counters.records_read, "records_read")?;
 
@@ -341,10 +359,11 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
                             outcome,
                             source_record,
                             1,
-                            &processor,
+                            &mut processor,
                             sink,
                             metrics,
                             &mut boundary_tracker,
+                            &mut ordering,
                         )?;
                     }
                 }
@@ -359,6 +378,7 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
                         policy,
                         previous_job_integrity,
                         &scope,
+                        &mut ordering,
                         progress.as_deref_mut(),
                     )?;
                 }
@@ -419,6 +439,7 @@ fn process_csv_depth<R: Read, S: DepthSink>(
     policy: &IntegrityPolicy,
     previous_job_integrity: &ScopedIntegrityMetrics,
     scope: &IntegrityScope,
+    ordering: &mut super::ordering::TimestampOrder<'_>,
     mut progress: Option<&mut WorkerProgress>,
 ) -> Result<()> {
     let mut decoder = CsvDecoder::with_headers(reader, false);
@@ -446,6 +467,9 @@ fn process_csv_depth<R: Read, S: DepthSink>(
         let record = match row {
             Ok(row) => adapter.adapt(&row),
 
+            Err(error) if error.is_io_error() => {
+                return Err(super::integrity::csv_source_error(task, error));
+            }
             Err(error) => Err(MarketForgeError::RecordIntegrity {
                 category: IntegrityCategory::ParseFailure,
                 message: error.to_string(),
@@ -642,6 +666,7 @@ fn process_csv_depth<R: Read, S: DepthSink>(
                 sink,
                 metrics,
                 boundary_tracker,
+                ordering,
             )?;
 
             snapshot_rows = 0;
@@ -703,6 +728,7 @@ fn process_csv_depth<R: Read, S: DepthSink>(
             sink,
             metrics,
             boundary_tracker,
+            ordering,
         )?;
     }
 
@@ -745,6 +771,7 @@ fn process_csv_depth<R: Read, S: DepthSink>(
                     sink,
                     metrics,
                     boundary_tracker,
+                    ordering,
                 )?;
             }
 
@@ -783,10 +810,11 @@ fn accept_outcome<S: DepthSink>(
     mut outcome: crate::shared::formats::depth::DepthProcessingOutcome,
     source_ordinal: u64,
     source_rows: u64,
-    processor: &DepthProcessor,
+    processor: &mut DepthProcessor,
     sink: &mut S,
     metrics: &mut TaskMetrics,
     boundary_tracker: &mut DepthBoundaryTracker,
+    ordering: &mut super::ordering::TimestampOrder<'_>,
 ) -> Result<()> {
     if source_rows == 0 {
         return Err(MarketForgeError::InvalidConfiguration(
@@ -795,6 +823,13 @@ fn accept_outcome<S: DepthSink>(
     }
 
     outcome.source.source_event_ordinal = Some(source_ordinal);
+    let timestamp = outcome.source.event_timestamp_ns;
+    if let Err(error) = ordering.check(metrics, source_ordinal, timestamp) {
+        processor.invalidate_synchronization();
+        boundary_tracker.invalidate();
+        reject_snapshot_rows(metrics, source_rows)?;
+        return Err(error);
+    }
 
     // ---------------------------------------------------------
     // Validate canonical outcome
@@ -874,6 +909,7 @@ fn accept_outcome<S: DepthSink>(
     // ---------------------------------------------------------
 
     sink.write_outcome(outcome)?;
+    ordering.accept(timestamp);
 
     boundary_tracker.record_accepted(&source_metadata, event_boundary, initial_state);
 
@@ -989,6 +1025,7 @@ fn process_xlsx_depth<R: Read, S: DepthSink>(
     policy: &IntegrityPolicy,
     previous_job_integrity: &ScopedIntegrityMetrics,
     scope: &IntegrityScope,
+    ordering: &mut super::ordering::TimestampOrder<'_>,
     mut progress: Option<&mut WorkerProgress>,
 ) -> Result<()> {
     use std::io::Cursor;
@@ -1036,6 +1073,13 @@ fn process_xlsx_depth<R: Read, S: DepthSink>(
                 )?;
             }
             Ok(())
+        })
+        .map_err(|error| match error {
+            MarketForgeError::RecordIntegrity { .. } => MarketForgeError::ArchiveOpen {
+                path: task.input_path.clone(),
+                message: format!("unrecoverable XLSX workbook/row error: {error}"),
+            },
+            error => error,
         })?;
 
     // XLSX source ordinals refer to original worksheet positions.
@@ -1120,6 +1164,7 @@ fn process_xlsx_depth<R: Read, S: DepthSink>(
             sink,
             metrics,
             boundary_tracker,
+            ordering,
         )?;
     }
 

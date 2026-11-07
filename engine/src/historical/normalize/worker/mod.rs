@@ -10,3 +10,5 @@ pub use trades::{
     TradeWorkerMetrics, process_trade_task, process_trade_task_with_metrics,
     process_trade_task_with_metrics_and_progress,
 };
+
+mod ordering;

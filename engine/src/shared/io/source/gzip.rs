@@ -4,11 +4,11 @@ use std::{
     path::Path,
 };
 
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 
 use crate::shared::error::{MarketForgeError, Result};
 
-pub fn open_gzip(path: impl AsRef<Path>) -> Result<GzDecoder<BufReader<File>>> {
+pub fn open_gzip(path: impl AsRef<Path>) -> Result<MultiGzDecoder<BufReader<File>>> {
     let path = path.as_ref();
 
     let file = File::open(path).map_err(|source| MarketForgeError::SourceOpen {
@@ -16,7 +16,7 @@ pub fn open_gzip(path: impl AsRef<Path>) -> Result<GzDecoder<BufReader<File>>> {
         source,
     })?;
 
-    Ok(GzDecoder::new(BufReader::new(file)))
+    Ok(MultiGzDecoder::new(BufReader::new(file)))
 }
 
 pub fn with_gzip_reader<T, F>(path: impl AsRef<Path>, callback: F) -> Result<T>

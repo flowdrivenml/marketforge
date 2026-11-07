@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use tar::Archive;
 
 use crate::shared::error::{MarketForgeError, Result};
@@ -20,7 +20,7 @@ pub fn open_tar_gzip_buffered(
         source,
     })?;
 
-    let decoder = GzDecoder::new(BufReader::new(file));
+    let decoder = MultiGzDecoder::new(BufReader::new(file));
 
     let mut archive = Archive::new(decoder);
 
@@ -109,6 +109,27 @@ pub fn with_tar_gzip_reader<T, F>(
 where
     F: FnOnce(&mut dyn Read) -> Result<T>,
 {
+    with_tar_gzip_reader_mode(path, requested_member, callback, false)
+}
+pub(super) fn with_tar_gzip_reader_validated<T, F>(
+    path: impl AsRef<Path>,
+    requested_member: Option<&str>,
+    callback: F,
+) -> Result<T>
+where
+    F: FnOnce(&mut dyn Read) -> Result<T>,
+{
+    with_tar_gzip_reader_mode(path, requested_member, callback, true)
+}
+fn with_tar_gzip_reader_mode<T, F>(
+    path: impl AsRef<Path>,
+    requested_member: Option<&str>,
+    callback: F,
+    validate: bool,
+) -> Result<T>
+where
+    F: FnOnce(&mut dyn Read) -> Result<T>,
+{
     let path = path.as_ref();
 
     let selected_member = resolve_tar_gzip_member(path, requested_member)?;
@@ -118,18 +139,18 @@ where
         source,
     })?;
 
-    let decoder = GzDecoder::new(BufReader::new(file));
+    let decoder = MultiGzDecoder::new(BufReader::new(file));
 
     let mut archive = Archive::new(decoder);
 
-    let entries = archive
+    let mut entries = archive
         .entries()
         .map_err(|error| MarketForgeError::ArchiveOpen {
             path: path.to_path_buf(),
             message: error.to_string(),
         })?;
 
-    for entry in entries {
+    while let Some(entry) = entries.next() {
         let mut entry = entry.map_err(|error| MarketForgeError::ArchiveOpen {
             path: path.to_path_buf(),
             message: error.to_string(),
@@ -147,7 +168,25 @@ where
             })?;
 
         if member_path.as_ref() == Path::new(&selected_member) {
-            return callback(&mut entry);
+            let result = callback(&mut entry)?;
+            if validate {
+                std::io::copy(&mut entry, &mut std::io::sink()).map_err(|source| {
+                    MarketForgeError::SourceRead {
+                        path: path.to_path_buf(),
+                        source,
+                    }
+                })?;
+                drop(entry);
+                drop(entries);
+                let mut decoder = archive.into_inner();
+                std::io::copy(&mut decoder, &mut std::io::sink()).map_err(|source| {
+                    MarketForgeError::SourceRead {
+                        path: path.to_path_buf(),
+                        source,
+                    }
+                })?;
+            }
+            return Ok(result);
         }
     }
 
@@ -163,7 +202,7 @@ fn resolve_tar_gzip_member(path: &Path, requested_member: Option<&str>) -> Resul
         source,
     })?;
 
-    let decoder = GzDecoder::new(BufReader::new(file));
+    let decoder = MultiGzDecoder::new(BufReader::new(file));
 
     let mut archive = Archive::new(decoder);
 

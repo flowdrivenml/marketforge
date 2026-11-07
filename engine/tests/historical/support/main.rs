@@ -250,3 +250,6 @@ fn missing_source_is_an_actionable_failure_with_retained_metadata() {
 
 #[path = "../normalize/integrity_accounting.rs"]
 mod integrity_accounting;
+
+#[path = "../normalize/source_ordering.rs"]
+mod source_ordering;
