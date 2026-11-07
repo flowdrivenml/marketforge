@@ -1,3 +1,4 @@
+pub mod benchmark;
 pub mod boundary;
 pub mod config;
 pub use super::convert;

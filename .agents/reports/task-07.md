@@ -1,6 +1,6 @@
 # Task 07 — CLI results, manifests and Forge boundary
 
-Status: completed. Commit: recorded in the next progress update.
+Status: completed. Commit: `f7cc14e`.
 
 Implementation: --batch directly consumes the existing schema-3 production parser/resolver. --job and --jobs-dir remain, with exactly-one-mode Clap validation and the shared executor/session paths. All modes apply root-relative paths/runtime and optional collision-protected output-root redirection. Batch run_id is preserved; legacy modes return null. No source path rewriting. Directory order is deterministic. Explicit --tui remains interactive stdout rendering; normal machine mode emits one JSON document with stderr diagnostics.
 

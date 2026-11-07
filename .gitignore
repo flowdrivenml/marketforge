@@ -137,3 +137,6 @@ handoff.md
 # Maintained workload and persistent normalization test outputs.
 !engine/tests/historical/fixtures/normalize.json
 /data/tests/historical/normalize/
+
+# Persistent historical benchmark metadata and generated datasets.
+/data/benchmarks/

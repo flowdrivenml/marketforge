@@ -1,13 +1,13 @@
 use std::{fs, path::Path};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     shared::error::{MarketForgeError, Result},
     shared::historical::{IntegrityPolicy, ResourceConfig},
 };
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProcessingConfig {
     pub resources: ResourceConfig,

@@ -23,6 +23,7 @@ historical = [
     "dep:quick-xml",
     "dep:arrow-select",
     "dep:rustix",
+    "dep:libc",
 ]
 parquet = [
     "dep:arrow-array",
@@ -434,4 +435,9 @@ required-features = ["management-client"]
 [[test]]
 name = "historical_normalize_support"
 path = "tests/historical/support/main.rs"
+required-features = ["historical"]
+
+[[test]]
+name = "historical_normalize_benchmark"
+path = "tests/historical/benchmark/main.rs"
 required-features = ["historical"]
