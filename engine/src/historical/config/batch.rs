@@ -90,6 +90,27 @@ pub struct PreparedTask {
     pub stream_rank: u32,
     pub scope: Option<FamilyScope>,
     pub source_options: Option<SourceOptions>,
+    pub source_time_bounds: Option<SourceTimeBounds>,
+}
+/// Inclusive declared event-time bounds, verified against accepted output.
+/// Numbered partitions may share a calendar window; partition order must be
+/// explicit and actual append boundaries are still checked during execution.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceTimeBounds {
+    pub start_timestamp_ns: i64,
+    pub end_timestamp_ns: i64,
+    pub partition: Option<u32>,
+}
+impl SourceTimeBounds {
+    pub fn validate(&self) -> Result<()> {
+        if self.start_timestamp_ns > self.end_timestamp_ns || self.partition == Some(0) {
+            return Err(invalid(
+                "invalid inclusive source_time_bounds or zero partition",
+            ));
+        }
+        Ok(())
+    }
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -264,6 +285,9 @@ impl PreparedBatch {
             let mut streams = BTreeMap::new();
             let mut ranks = BTreeMap::new();
             for t in &j.tasks {
+                if let Some(bounds) = &t.source_time_bounds {
+                    bounds.validate()?;
+                }
                 if t.task_id.0 == 0
                     || !tasks.insert(t.task_id.0)
                     || t.input_path.as_os_str().is_empty()
@@ -455,7 +479,7 @@ impl PreparedBatch {
                 catalog.check_task(&task, &effective_profile)?;
                 task.raw_schema["marketforge_profile"] =
                     json!({"id":id,"sha256":profile.fingerprint});
-                task.raw_schema["marketforge_source"] = json!({"task_id":t.task_id,"stream_id":t.stream_id,"stream_rank":t.stream_rank,"scope":t.scope,"source_options":t.source_options,"family_symbols":if t.scope.is_some(){Some(&family_symbols)}else{None},"instrument_namespace":self.instrument_namespace,"instrument":i,"instrument_catalog_sha256":fingerprint(&self.instruments)?});
+                task.raw_schema["marketforge_source"] = json!({"task_id":t.task_id,"stream_id":t.stream_id,"stream_rank":t.stream_rank,"scope":t.scope,"source_options":t.source_options,"source_time_bounds":t.source_time_bounds,"family_symbols":if t.scope.is_some(){Some(&family_symbols)}else{None},"instrument_namespace":self.instrument_namespace,"instrument":i,"instrument_catalog_sha256":fingerprint(&self.instruments)?});
                 tasks.push(task);
             }
         }

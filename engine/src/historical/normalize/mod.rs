@@ -25,3 +25,5 @@ pub use config::{
 pub use executor::{execute_processing_job, execute_processing_job_with_progress};
 pub use result::{ProcessingErrorCode, ProcessingFailure, ProcessingResult, ProcessingStatus};
 pub use sequence_policy::resolve_sequence_policy;
+
+pub mod streams;

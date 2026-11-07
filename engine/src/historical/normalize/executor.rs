@@ -1,18 +1,13 @@
 use super::ProcessingStatus;
 use super::failure::ProcessingFailureReport;
 use super::progress::ProgressReporter;
-use super::progress::ProgressTaskId;
 use super::{
     ProcessingErrorCode, ProcessingResult,
     config::{ProcessingConfig, validate_processing_config},
     manifest::{DATASET_MANIFEST_FILENAME, DatasetManifest},
     metrics::{IntegrityEvaluation, ProcessingMetricsReport, evaluate_integrity_policy},
 };
-use super::{
-    resources::{ResourceBudget, estimate_task_resources},
-    scheduler::execute_parallel_budgeted,
-    task::{TaskExecution, execute_task_with_progress},
-};
+use super::{resources::estimate_task_resources, task::TaskExecution};
 use crate::{
     historical::job::{
         ContentType, ProcessingJob, ProcessingOperation, validate_processing_job_structure,
@@ -223,8 +218,6 @@ fn process_tasks(
     context: &mut ExecutionContext,
     reporter: &ProgressReporter,
 ) -> Result<ProcessingResult> {
-    let staging = &job.output.staging_path;
-
     // Validate source accessibility before resource estimation.
     // Preserve the responsible task ID if preparation fails.
     for task in &job.tasks {
@@ -234,47 +227,12 @@ fn process_tasks(
         }
     }
 
-    let budget = ResourceBudget::new(
-        config.resources.memory_budget_bytes,
-        config.resources.scratch_budget_bytes,
+    let session = super::session::execute_session_tasks_with_progress(
+        std::slice::from_ref(job),
+        config,
+        reporter,
     )?;
-
-    let executions = execute_parallel_budgeted(
-        job.tasks.iter().collect::<Vec<_>>(),
-        config.resources.workers,
-        &budget,
-        |task| estimate_task_resources(task, &config.resources.parquet),
-        |task| {
-            let task_id = task.task_id.0;
-            let progress_id = ProgressTaskId::new(job.job_id.0, task_id);
-
-            reporter.task_started(
-                progress_id,
-                format!("{:?}", task.exchange),
-                task.symbol.clone(),
-                format!("{:?}", job.output.content_type),
-                task.input_path
-                    .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| task.input_path.display().to_string()),
-            );
-
-            let execution =
-                execute_task_with_progress(task, config, staging, reporter, progress_id);
-
-            if let Some(error) = &execution.error {
-                reporter.task_failed(progress_id, error.to_string());
-            } else {
-                reporter.task_completed(progress_id, &execution.metrics.counters);
-            }
-
-            Ok(execution)
-        },
-    )?;
-
-    let executions = executions
-        .into_iter()
-        .collect::<Result<Vec<TaskExecution>>>()?;
+    let executions = session.jobs.into_iter().next().unwrap().executions;
 
     reporter.finalizing();
 
@@ -386,7 +344,7 @@ pub(crate) fn finalize_processing_job(
     // -------------------------------------------------------------------------
 
     for file in &manifest.files {
-        if !file.path.starts_with("tasks/") {
+        if !file.path.starts_with("tasks/") && !file.path.starts_with("streams/") {
             return Err(MarketForgeError::InvalidConfiguration(format!(
                 "unexpected Parquet output path in parallel dataset: {}",
                 file.path,

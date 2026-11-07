@@ -25,7 +25,14 @@ pub fn resolve_unified_merge_streams(
 ) -> Result<Vec<UnifiedMergeStream>> {
     let jobs_directory = project_root.join("data/.jobs/process");
 
-    let job_paths = discover_processing_jobs(&jobs_directory)?;
+    let job_paths = if inputs
+        .iter()
+        .any(|i| !i.dataset_path.join("processing-job.json").is_file())
+    {
+        discover_processing_jobs(&jobs_directory)?
+    } else {
+        HashMap::new()
+    };
 
     let mut streams = Vec::with_capacity(inputs.len());
     let mut seen_datasets = HashSet::new();
@@ -38,14 +45,31 @@ pub fn resolve_unified_merge_streams(
             ));
         }
 
-        let job_path = job_paths.get(&input.dataset_id).ok_or_else(|| {
-            invalid_error(format!(
-                "dataset {}: processing job not found",
-                input.dataset_id
-            ))
-        })?;
-
-        let job = load_processing_job(job_path)?;
+        let snapshot = input.dataset_path.join("processing-job.json");
+        let job = if snapshot.is_file() {
+            // Committed interpretation is authoritative, independent of current profiles.
+            let bytes = fs::read(&snapshot).map_err(|e| invalid_error(e.to_string()))?;
+            use sha2::{Digest, Sha256};
+            let hash: String = Sha256::digest(&bytes)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            let checksum = fs::read_to_string(input.dataset_path.join("processing-job.sha256"))
+                .map_err(|e| invalid_error(e.to_string()))?;
+            if checksum.split_whitespace().next() != Some(hash.as_str()) {
+                return invalid("resolved job checksum mismatch");
+            }
+            serde_json::from_slice(&bytes)
+                .map_err(|e| invalid_error(format!("resolved job: {e}")))?
+        } else {
+            let job_path = job_paths.get(&input.dataset_id).ok_or_else(|| {
+                invalid_error(format!(
+                    "dataset {}: processing job not found",
+                    input.dataset_id
+                ))
+            })?;
+            load_processing_job(job_path)?
+        };
 
         if job.dataset_id.0 != input.dataset_id {
             return invalid(format!(

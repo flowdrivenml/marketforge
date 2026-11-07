@@ -90,7 +90,9 @@ pub fn resolve_merge_inputs(
         // Manifest identity
         // ---------------------------------------------------------------------
 
-        if manifest.protocol_version != DATASET_MANIFEST_VERSION {
+        if !matches!(manifest.protocol_version, 2)
+            && manifest.protocol_version != DATASET_MANIFEST_VERSION
+        {
             return invalid(format!(
                 "dataset {dataset_id}: unsupported manifest version {}",
                 manifest.protocol_version

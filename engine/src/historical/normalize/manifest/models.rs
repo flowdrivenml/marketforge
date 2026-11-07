@@ -7,7 +7,7 @@ use {
     crate::historical::normalize::metrics::ProcessingMetricsReport,
 };
 
-pub const DATASET_MANIFEST_VERSION: u32 = 2;
+pub const DATASET_MANIFEST_VERSION: u32 = 3;
 pub const DATASET_MANIFEST_FILENAME: &str = "manifest.json";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,6 +54,8 @@ pub struct DatasetManifest {
     pub end_timestamp_ns: Option<i64>,
 
     pub source_tasks: Vec<u64>,
+    #[serde(default)]
+    pub streams: Vec<crate::historical::normalize::streams::StreamOutput>,
     pub files: Vec<DatasetFile>,
 
     #[serde(default)]

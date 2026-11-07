@@ -74,6 +74,7 @@ pub struct MaterializationPartitionResult {
 // -----------------------------------------------------------------------------
 
 pub struct MaterializationPartitionWorker {
+    registered_files: HashSet<PathBuf>,
     planner: CanonicalReadPlanner,
     decoder: GroupedCanonicalDecoder,
     depth_metadata: DepthMetadataResolver,
@@ -96,6 +97,7 @@ impl MaterializationPartitionWorker {
         let decoder = GroupedCanonicalDecoder::new(reader, input.limits.max_open_cursors);
 
         let mut worker = Self {
+            registered_files: HashSet::new(),
             planner: CanonicalReadPlanner::new(),
             decoder,
             depth_metadata: DepthMetadataResolver::new(),
@@ -142,7 +144,7 @@ impl MaterializationPartitionWorker {
             let files = task
                 .files
                 .iter()
-                .map(|file| (file.path.clone(), file.rows))
+                .map(|file| (file.path.clone(), file.file_start_row, file.rows))
                 .collect::<Vec<_>>();
 
             self.register_canonical_task(
@@ -174,7 +176,7 @@ impl MaterializationPartitionWorker {
             for path in &task.canonical_files {
                 let index = CanonicalRowGroupIndex::open(path)?;
 
-                files.push((path.to_path_buf(), index.total_rows()));
+                files.push((path.to_path_buf(), 0, index.total_rows()));
             }
 
             self.register_canonical_task(
@@ -205,18 +207,21 @@ impl MaterializationPartitionWorker {
     fn register_canonical_task(
         &mut self,
         key: CanonicalTaskKey,
-        files: Vec<(PathBuf, u64)>,
+        files: Vec<(PathBuf, u64, u64)>,
     ) -> Result<()> {
         let mut registered = HashSet::new();
 
-        for (path, expected_rows) in &files {
+        for (path, start, expected_rows) in &files {
             if !registered.insert(path.clone()) {
                 return invalid(format!("duplicate canonical file: {}", path.display()));
             }
 
             let index = CanonicalRowGroupIndex::open(path)?;
 
-            if index.total_rows() != *expected_rows {
+            if start
+                .checked_add(*expected_rows)
+                .is_none_or(|end| end > index.total_rows())
+            {
                 return invalid(format!(
                     "canonical file row-count mismatch: \
                      file={}, expected={}, actual={}",
@@ -226,11 +231,13 @@ impl MaterializationPartitionWorker {
                 ));
             }
 
-            self.planner.register_row_groups(index.clone())?;
-            self.decoder.register_row_groups(index)?;
+            if self.registered_files.insert(path.clone()) {
+                self.planner.register_row_groups(index.clone())?;
+                self.decoder.register_row_groups(index)?;
+            }
         }
 
-        let task_index = CanonicalRowIndex::new(files)?;
+        let task_index = CanonicalRowIndex::from_slices(files)?;
 
         self.planner.register_task(key, task_index)?;
 

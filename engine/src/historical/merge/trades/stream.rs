@@ -75,7 +75,7 @@ impl TradeStream {
         }
 
         // Preserve deterministic task ordering.
-        tasks.sort_by_key(|task| (task.start_timestamp_ns, task.task_id));
+        tasks.sort_by_key(|task| task.start_timestamp_ns);
 
         for pair in tasks.windows(2) {
             if pair[0].task_id == pair[1].task_id {
@@ -189,9 +189,14 @@ impl TradeStream {
             // Resolve task-global canonical row offset
             // -------------------------------------------------------------
 
+            if trade.file_row_index < file.file_start_row
+                || trade.file_row_index - file.file_start_row >= file.rows
+            {
+                continue;
+            }
             let canonical_row_offset = file
                 .row_offset
-                .checked_add(trade.file_row_index)
+                .checked_add(trade.file_row_index - file.file_start_row)
                 .ok_or_else(|| invalid_error("trade canonical row offset overflow"))?;
 
             if canonical_row_offset >= task.canonical_rows {

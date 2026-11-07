@@ -22,6 +22,8 @@ pub struct TradeFileInventory {
 
     // Task-local canonical row range.
     pub row_offset: u64,
+    /// First physical row belonging to this source contribution.
+    pub file_start_row: u64,
     pub rows: u64,
 
     pub start_timestamp_ns: i64,
@@ -59,6 +61,80 @@ pub fn build_trade_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<TradeT
                 "dataset {} is not a trade dataset",
                 input.dataset_id
             ));
+        }
+
+        if !input.manifest.streams.is_empty() {
+            for stream in &input.manifest.streams {
+                let mut parts = input
+                    .manifest
+                    .files
+                    .iter()
+                    .filter(|f| f.path.starts_with(&format!("{}/", stream.directory)))
+                    .collect::<Vec<_>>();
+                parts.sort_by(|a, b| a.path.cmp(&b.path));
+                for source in &stream.sources {
+                    let mut offset = 0u64;
+                    let mut files = Vec::new();
+                    for (part_index, part) in parts.iter().enumerate() {
+                        let end = offset
+                            .checked_add(part.rows)
+                            .ok_or_else(|| invalid_error("stream row overflow"))?;
+                        let start = offset.max(source.start_row);
+                        let stop = end.min(source.end_row);
+                        if start < stop {
+                            files.push(TradeFileInventory {
+                                path: input.dataset_path.join(&part.path),
+                                part_index: part_index as u64,
+                                row_offset: start - source.start_row,
+                                file_start_row: start - offset,
+                                rows: stop - start,
+                                start_timestamp_ns: part
+                                    .start_timestamp_ns
+                                    .ok_or_else(|| invalid_error("missing timestamp"))?,
+                                end_timestamp_ns: part
+                                    .end_timestamp_ns
+                                    .ok_or_else(|| invalid_error("missing timestamp"))?,
+                            });
+                        }
+                        offset = end;
+                    }
+                    if source.start_row > source.end_row
+                        || source.end_row > offset
+                        || !input.manifest.source_tasks.contains(&source.task_id)
+                    {
+                        return invalid("invalid stream source span");
+                    }
+                    let rows = source.end_row - source.start_row;
+                    dataset_rows = dataset_rows
+                        .checked_add(rows)
+                        .ok_or_else(|| invalid_error("dataset row overflow"))?;
+                    if rows > 0 {
+                        let metrics = input
+                            .manifest
+                            .processing_metrics
+                            .tasks
+                            .iter()
+                            .find(|t| t.task_id == source.task_id)
+                            .ok_or_else(|| invalid_error("missing source metrics"))?;
+                        inventory.push(TradeTaskInventory {
+                            dataset_id: input.dataset_id,
+                            task_id: source.task_id,
+                            canonical_rows: rows,
+                            start_timestamp_ns: metrics
+                                .start_timestamp_ns
+                                .ok_or_else(|| invalid_error("missing task timestamp"))?,
+                            end_timestamp_ns: metrics
+                                .end_timestamp_ns
+                                .ok_or_else(|| invalid_error("missing task timestamp"))?,
+                            files,
+                        });
+                    }
+                }
+            }
+            if dataset_rows != input.manifest.events_written {
+                return invalid("stream inventory row mismatch");
+            }
+            continue;
         }
 
         let mut tasks: BTreeMap<u64, Vec<(u64, PathBuf, u64, i64, i64)>> = BTreeMap::new();
@@ -162,6 +238,7 @@ pub fn build_trade_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<TradeT
                     part_index,
 
                     row_offset,
+                    file_start_row: 0,
                     rows,
 
                     start_timestamp_ns: start,
@@ -205,7 +282,7 @@ pub fn build_trade_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<TradeT
         }
     }
 
-    inventory.sort_by_key(|task| (task.dataset_id, task.task_id));
+    inventory.sort_by_key(|task| (task.dataset_id, task.start_timestamp_ns));
 
     Ok(inventory)
 }

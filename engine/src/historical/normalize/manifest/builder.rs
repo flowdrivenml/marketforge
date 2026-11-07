@@ -21,6 +21,62 @@ impl DatasetManifest {
         integrity_evaluation: IntegrityEvaluation,
     ) -> Result<Self> {
         let files = inspect_parquet_files(dataset_root)?;
+        let streams = crate::historical::normalize::streams::read_outputs(dataset_root)?;
+        let mut seen = std::collections::HashSet::new();
+        for stream in &streams {
+            let mut offset = 0u64;
+            for source in &stream.sources {
+                let task = job
+                    .tasks
+                    .iter()
+                    .find(|t| t.task_id.0 == source.task_id)
+                    .ok_or_else(|| {
+                        MarketForgeError::InvalidConfiguration("unknown stream source task".into())
+                    })?;
+                let metrics = processing_metrics
+                    .tasks
+                    .iter()
+                    .find(|t| t.task_id == source.task_id)
+                    .ok_or_else(|| {
+                        MarketForgeError::InvalidConfiguration(
+                            "missing stream source metrics".into(),
+                        )
+                    })?;
+                if !seen.insert(source.task_id)
+                    || task.stream_id.0 != stream.stream_id
+                    || source.start_row != offset
+                    || source.end_row.checked_sub(source.start_row)
+                        != Some(metrics.counters.events_written)
+                {
+                    return Err(MarketForgeError::InvalidConfiguration(
+                        "invalid stream source contribution".into(),
+                    ));
+                }
+                offset = source.end_row;
+            }
+            let rows = files
+                .iter()
+                .filter(|f| f.path.starts_with(&format!("{}/", stream.directory)))
+                .try_fold(0u64, |n, f| {
+                    n.checked_add(f.rows).ok_or_else(|| {
+                        MarketForgeError::InvalidConfiguration("stream row overflow".into())
+                    })
+                })?;
+            if rows != offset {
+                return Err(MarketForgeError::InvalidConfiguration(
+                    "persisted stream/source row mismatch".into(),
+                ));
+            }
+        }
+        if dataset_root.join("streams").exists()
+            && job.output.content_type == crate::historical::job::ContentType::Trades
+            && seen.len() != job.tasks.len()
+        {
+            return Err(MarketForgeError::InvalidConfiguration(
+                "missing trade source contributions".into(),
+            ));
+        }
+
         let auxiliary_files = inspect_auxiliary_files(dataset_root)?;
         if job.output.content_type == crate::historical::job::ContentType::Depth {
             use crate::shared::persistence::parquet::read_depth_segments;
@@ -100,6 +156,7 @@ impl DatasetManifest {
             source_tasks: job.tasks.iter().map(|task| task.task_id.0).collect(),
 
             files,
+            streams,
             auxiliary_files,
 
             integrity_status: integrity_evaluation.status,

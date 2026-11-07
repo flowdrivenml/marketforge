@@ -106,6 +106,7 @@ pub fn template(label: impl AsRef<Path>) -> Result<ProcessingJob> {
             stream_rank: 1,
             scope: None,
             source_options: None,
+            source_time_bounds:None,
         })
         .collect();
     resolve(b)

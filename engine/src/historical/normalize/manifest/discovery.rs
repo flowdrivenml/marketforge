@@ -25,6 +25,13 @@ pub fn inspect_parquet_files(dataset_root: &Path) -> Result<Vec<DatasetFile>> {
         }
     }
 
+    let streams_dir = dataset_root.join("streams");
+    if streams_dir.is_dir() {
+        for stream in sorted_task_directories(&streams_dir)? {
+            collect_canonical_parts(&stream.join("trades"), &mut paths)?;
+        }
+    }
+
     paths.sort();
 
     if paths.is_empty() {

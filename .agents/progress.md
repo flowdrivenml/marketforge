@@ -16,7 +16,7 @@ Baseline: historical cargo check passed; whole-repository fmt check fails in unr
 | 07 | CLI Results, Manifests, and Forge Integration | completed | Batch CLI, versioned responses/nonzero failures, report paths and provenance/manifest validation;158 normalization +34 support +198 library +1 failure unit passed. | `f7cc14e` | No new blocker; prior real-data coverage limitations remain. |
 | 08 | Benchmark Infrastructure | completed | Explicit batch planning, isolated runner, metadata/measurements/verification/retention;15 mock/dry-run tests,201 lib and158 normalization tests passed. | `2de662b` | Real performance execution prohibited; macOS runtime unverified. |
 | 09 | Benchmark Statistics and Comparisons | completed | Persisted statistics/scaling/comparability and JSON/Markdown CLI;36 synthetic infrastructure tests,203 lib and158 normalization tests passed. | pending | No real performance observations; source evidence caveats explicit. |
-| 10 | Stream-Oriented Trade Output | pending | | | |
+| 10 | Stream-Oriented Trade Output | completed | Stream-owned writers, declared/observed ordering, manifest3 source spans, span-aware consumers and focused tests. See task-10 report and Git history. | pending local hash | Conservative exact-profile grouping; no generalized overlap reconciliation. |
 | 11 | Stream-Oriented Depth Output | pending | | | |
 | 12 | Final Integration Verification | pending | | | |
 

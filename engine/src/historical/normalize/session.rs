@@ -11,7 +11,7 @@ use super::{
     config::{ProcessingConfig, validate_processing_config},
     resources::{ResourceBudget, estimate_task_resources},
     scheduler::execute_parallel_budgeted,
-    task::{TaskExecution, execute_task, execute_task_with_progress},
+    task::TaskExecution,
 };
 use crate::{historical::job::ContentType, shared::normalization::TargetSchema};
 use crate::{
@@ -110,6 +110,15 @@ fn execute_processing_session_inner(
                 });
 
                 break;
+            }
+        }
+
+        if failure.is_none() {
+            if let Err(error) = super::streams::plan(job) {
+                failure = Some(JobPreflightFailure {
+                    task_id: job.tasks[0].task_id.0,
+                    error,
+                });
             }
         }
 
@@ -254,69 +263,44 @@ pub fn execute_session_tasks_with_progress(
     validate_session(jobs)?;
 
     let mut scheduled = Vec::new();
-
     for (job_index, job) in jobs.iter().enumerate() {
-        for (task_index, task) in job.tasks.iter().enumerate() {
-            scheduled.push(ScheduledTask {
-                job_index,
-                task_index,
-                task,
-                staging_path: &job.output.staging_path,
-            });
+        for unit in super::streams::plan(job)? {
+            scheduled.push((job_index, unit));
         }
     }
-
-    let total_tasks = scheduled.len();
-
+    let total_tasks = jobs.iter().map(|job| job.tasks.len()).sum();
     let budget = ResourceBudget::new(
         config.resources.memory_budget_bytes,
         config.resources.scratch_budget_bytes,
     )?;
-
     let executions = execute_parallel_budgeted(
         scheduled,
         config.resources.workers,
         &budget,
-        |scheduled| estimate_task_resources(scheduled.task, &config.resources.parquet),
-        |scheduled| {
-            let task = scheduled.task;
-
-            let job_id = jobs[scheduled.job_index].job_id.0;
-
-            let progress_id = ProgressTaskId::new(job_id, task.task_id.0);
-
-            if reporter.is_enabled() {
-                reporter.task_started(
-                    progress_id,
-                    format!("{:?}", task.exchange),
-                    task.symbol.clone(),
-                    format!("{:?}", jobs[scheduled.job_index].output.content_type),
-                    task.input_path
-                        .file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| task.input_path.display().to_string()),
-                );
-            }
-
-            let execution = if reporter.is_enabled() {
-                execute_task_with_progress(
-                    task,
-                    config,
-                    scheduled.staging_path,
-                    reporter,
-                    progress_id,
-                )
-            } else {
-                execute_task(task, config, scheduled.staging_path)
+        |(_, unit)| super::streams::estimate(unit, config),
+        |(job_index, unit)| {
+            let results = match super::streams::execute(&unit, config, reporter) {
+                Ok(results) => results,
+                Err(error) => unit
+                    .tasks
+                    .iter()
+                    .map(|(index, task)| {
+                        (
+                            *index,
+                            TaskExecution {
+                                task_id: task.task_id.0,
+                                output_paths: vec![],
+                                metrics: Default::default(),
+                                error: Some(MarketForgeError::InvalidConfiguration(format!(
+                                    "stream {}: {error}",
+                                    task.stream_id.0
+                                ))),
+                            },
+                        )
+                    })
+                    .collect(),
             };
-
-            if let Some(error) = &execution.error {
-                reporter.task_failed(progress_id, error.to_string());
-            } else {
-                reporter.task_completed(progress_id, &execution.metrics.counters);
-            }
-
-            Ok((scheduled.job_index, scheduled.task_index, execution))
+            Ok((job_index, results))
         },
     )?;
 
@@ -328,9 +312,8 @@ pub fn execute_session_tasks_with_progress(
         (0..jobs.len()).map(|_| Vec::new()).collect();
 
     for execution in executions {
-        let (job_index, task_index, result) = execution?;
-
-        grouped[job_index].push((task_index, result));
+        let (job_index, results) = execution?;
+        grouped[job_index].extend(results);
     }
 
     let jobs = grouped

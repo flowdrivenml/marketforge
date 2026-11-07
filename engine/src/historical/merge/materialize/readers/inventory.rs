@@ -6,6 +6,7 @@ use crate::shared::error::{MarketForgeError, Result};
 pub struct CanonicalFileRange {
     pub path: PathBuf,
     pub row_start: u64,
+    pub physical_offset: u64,
     pub row_end: u64,
 }
 
@@ -27,10 +28,14 @@ impl CanonicalRowIndex {
     ///
     /// Each input contains a file path and its canonical row count.
     pub fn new(files: Vec<(PathBuf, u64)>) -> Result<Self> {
+        Self::from_slices(files.into_iter().map(|(p, n)| (p, 0, n)).collect())
+    }
+    /// Register source spans in shared physical files (path, physical start, rows).
+    pub fn from_slices(files: Vec<(PathBuf, u64, u64)>) -> Result<Self> {
         let mut indexed = Vec::with_capacity(files.len());
         let mut offset = 0_u64;
 
-        for (path, rows) in files {
+        for (path, physical_offset, rows) in files {
             if rows == 0 {
                 return invalid(format!("canonical file has zero rows: {}", path.display()));
             }
@@ -42,6 +47,7 @@ impl CanonicalRowIndex {
             indexed.push(CanonicalFileRange {
                 path,
                 row_start: offset,
+                physical_offset,
                 row_end: end,
             });
 
@@ -104,7 +110,7 @@ impl CanonicalRowIndex {
 
             slices.push(CanonicalFileSlice {
                 path: file.path.clone(),
-                local_offset: overlap_start - file.row_start,
+                local_offset: file.physical_offset + overlap_start - file.row_start,
                 row_count: count,
             });
 

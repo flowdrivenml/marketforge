@@ -83,6 +83,7 @@ pub(super) fn input(run: &TestRun, b: &mut PreparedBatch, bytes: &[u8], zip: boo
         z.finish().unwrap();
     }
     b.jobs[0].tasks[0].input_path = path;
+    b.jobs[0].tasks[0].source_time_bounds = None;
 }
 pub(super) fn allow(rule: &mut IntegrityRule) {
     rule.action = IntegrityAction::Degrade;

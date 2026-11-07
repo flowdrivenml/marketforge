@@ -57,6 +57,7 @@ fn fixture(multi: bool) -> (TestRun, PreparedBatch) {
         .unwrap();
     gzip.finish().unwrap();
     b.jobs[0].tasks[0].input_path = input;
+    b.jobs[0].tasks[0].source_time_bounds = None;
     if multi {
         b.jobs[1].tasks[0].input_path = run.path.join("unavailable-depth.zip");
     }

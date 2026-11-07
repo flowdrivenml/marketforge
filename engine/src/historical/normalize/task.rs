@@ -506,7 +506,7 @@ pub fn execute_task(task: &WorkTask, config: &ProcessingConfig, staging: &Path) 
     }
 }
 
-fn worker_integrity_policy(policy: &IntegrityPolicy) -> IntegrityPolicy {
+pub(crate) fn worker_integrity_policy(policy: &IntegrityPolicy) -> IntegrityPolicy {
     let mut worker_policy = policy.clone();
 
     for rule in [
