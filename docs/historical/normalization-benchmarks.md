@@ -101,3 +101,85 @@ Linux compilation and synthetic infrastructure tests passed. macOS probes are
 implemented behind platform conditions but have not been runtime-tested here.
 Actual throughput, memory, I/O, scaling, real fragmentation and measurement
 overhead remain unmeasured. No performance improvement is claimed.
+
+## Statistical summaries and comparisons
+
+These commands analyze persisted metadata and never execute normalization:
+
+```sh
+marketforge-normalize-benchmark summarize --run /path/to/exported-run
+marketforge-normalize-benchmark compare --baseline /path/to/baseline \
+  --candidate /path/to/candidate
+```
+
+`summary.json` (schema 1) is the authoritative aggregate; `summary.md` renders the
+same values. Regeneration changes only those derived files. Comparisons use
+exclusive directories under `data/benchmarks/historical/normalize/comparisons/`,
+with `comparison.json`/`comparison.md` (independent schema 1). `--output-root`
+selects an exact new comparison directory. Source workload files and generated
+datasets need not remain available; analysis uses persisted provenance/results.
+
+Groups preserve workload, scheduler, workers, budgets, Parquet targets, full
+integrity policy and measurement source/definition. Assigned scratch paths are
+normalized for grouping; exact original paths remain in trial records. Warmups
+are excluded from statistics and accounted separately. Missing, running,
+interrupted and failed states remain distinct. Failed required warmups or
+repetitions prevent a group appearing complete. Interrupted runs retain valid
+completed observations. Identical duplicate finalized records are counted once;
+conflicting duplicates and corrupt/truncated JSON fail with artifact/trial
+context. Atomic per-trial results can recover a missing JSONL append. Corrupt
+JSONL is never silently discarded.
+
+Statistics use finite nonnegative observations, arithmetic mean, ordinary median,
+Welford sample standard deviation (`n-1`), nearest-rank P95 (`ceil(.95*n)`) and CV
+(`SD/abs(mean)`). SD/CV are null with fewer than two samples; CV is null for zero
+mean. Missing metrics remain unavailable, not zero. Positive execution duration
+is required. IDs retain integer representation; statistical measurements use
+floating-point values with no input rounding. File-size metrics are computed
+per trial, then summarized across trials; full per-file observations remain
+available. The median of trial file-size medians is not a pooled file median.
+
+Session rates use complete-workload counts divided by execution wall time.
+Pooled rates separately use summed work divided by summed time. Individual job
+rates are never averaged into session throughput. Optional additive content-type
+and stream work-volume counters preserve source and canonical rows separately;
+older reports expose missing detail. Mixed trade/depth rates describe that
+selected workload, not universal normalization efficiency.
+
+Scaling defaults to a valid one-worker baseline. `summarize --baseline-workers N`
+selects another explicitly recorded baseline. Speedup is baseline median time /
+candidate median time; relative efficiency divides speedup by the worker-count
+ratio. Missing/failed/incomplete baselines produce null ratios with reasons.
+
+Comparisons classify `comparable`, `comparable_with_caveats`, or `incomparable`.
+Software revision changes are intentional by default. Use
+`compare --intentional workers,memory-budget,parquet` (comma-separated) to declare
+other variables; supported values also include scratch-budget, scheduler,
+hardware, build, integrity-policy, profiles and cache. These flags do not waive
+source-corpus or canonical correctness checks. Unmatched groups are identified;
+only compatible groups are paired. Hardware changes require an explicit
+cross-machine variable; dirty state, ordinary caches, optional missing metrics
+and weaker source identity produce caveats.
+
+Verified source hashes allow path relocation. When common full hashes are
+unavailable, matching basename/size/mtime provides explicitly weaker evidence;
+missing essential identity or confirmed hash mismatches invalidate comparisons.
+Canonical record/depth metadata fingerprints support equivalent physical layouts.
+Structural row counts alone never establish semantic equivalence; such reports
+are diagnostic and do not claim an accepted optimization.
+
+For eligible metrics, differences are candidate minus baseline; percent changes
+use baseline as denominator. Duration speedup is baseline/candidate; other ratios
+are candidate/baseline. Zero baselines yield null percent/ratio. CPU percentages
+can exceed100. Memory/I/O/bytes/file counts are objective-dependent trade-offs.
+Execution/source/canonical rate interpretations show sample count and variability.
+Changes within observed CV or single-sample cases have no established conclusion;
+this heuristic is not a significance test. No significance or causal claims are
+made, and production settings are never tuned automatically.
+
+Synthetic report fixtures are explicitly labeled as test data. Real performance
+benchmarks were not executed during implementation.
+
+Depth proof lookup normalizes allocated job/dataset identities to their source
+units before comparing hashes; changing an allocation alone does not establish a
+semantic mismatch. Missing required depth proof remains an evidence limitation.

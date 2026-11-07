@@ -2,6 +2,51 @@ use clap::Parser;
 use marketforge_engine::historical::normalize::benchmark::{model::Args, plan, runner};
 fn execute() -> Result<(), String> {
     let args = Args::parse();
+    if let Some(command) = &args.command {
+        use marketforge_engine::historical::normalize::benchmark::{
+            model::AnalysisCommand, reports,
+        };
+        match command {
+            AnalysisCommand::Summarize {
+                run,
+                baseline_workers,
+            } => {
+                let summary = reports::summarize_path(run, *baseline_workers)?;
+                eprintln!("Summary: {} ({})", summary.run_id, summary.status);
+            }
+            AnalysisCommand::Compare {
+                baseline,
+                candidate,
+                intentional,
+                output_root,
+                project_root,
+            } => {
+                let root = marketforge_engine::shared::historical::project_root(project_root)
+                    .map_err(|e| e.to_string())?;
+                let output = output_root.as_ref().map(|p| {
+                    plan::absolute_from(
+                        p,
+                        &std::env::current_dir().unwrap_or_else(|_| root.clone()),
+                    )
+                });
+                let directory = reports::compare_paths(
+                    baseline,
+                    candidate,
+                    intentional,
+                    &root,
+                    output.as_deref(),
+                )?;
+                let report:marketforge_engine::historical::normalize::benchmark::comparison::Comparison=serde_json::from_slice(&std::fs::read(directory.join("comparison.json")).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
+                eprintln!(
+                    "Comparison: {} ({:?})",
+                    directory.display(),
+                    report.comparability
+                );
+            }
+        }
+        return Ok(());
+    }
+
     if let Some(request) = args.execute_trial {
         return match runner::child(&request)? {
             true => Ok(()),

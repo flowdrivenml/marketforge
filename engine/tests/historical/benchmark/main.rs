@@ -512,3 +512,5 @@ fn verification_failure_is_not_a_successful_measurement() {
     assert!(result.dataset_retained);
     assert!(result.error.unwrap().contains("manifest mismatch"));
 }
+
+mod analysis_tests;

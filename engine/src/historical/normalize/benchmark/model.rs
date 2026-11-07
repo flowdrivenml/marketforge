@@ -18,8 +18,15 @@ pub enum Retention {
     Full,
 }
 #[derive(Debug, Parser)]
-#[command(name = "marketforge-normalize-benchmark", version)]
+#[command(
+    name = "marketforge-normalize-benchmark",
+    version,
+    subcommand_negates_reqs = true,
+    args_conflicts_with_subcommands = true
+)]
 pub struct Args {
+    #[command(subcommand)]
+    pub command: Option<AnalysisCommand>,
     #[arg(long, required_unless_present = "execute_trial")]
     pub input: Option<PathBuf>,
     #[arg(long, value_delimiter = ',', default_value = "1")]
@@ -124,10 +131,19 @@ pub struct FileObservation {
     pub start_timestamp_ns: Option<i64>,
     pub end_timestamp_ns: Option<i64>,
 }
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WorkVolume {
+    pub source_records_read: u64,
+    pub canonical_rows: u64,
+}
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OutputObservation {
     pub source_records_read: u64,
     pub canonical_rows: u64,
+    #[serde(default)]
+    pub work_by_content_type: std::collections::BTreeMap<String, WorkVolume>,
+    #[serde(default)]
+    pub work_by_stream: std::collections::BTreeMap<String, WorkVolume>,
     pub parquet_bytes: u64,
     pub parquet_file_count: u64,
     pub parquet_row_group_count: u64,
@@ -198,4 +214,26 @@ impl RunMetadata {
             Ok(())
         }
     }
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub enum AnalysisCommand {
+    Summarize {
+        #[arg(long)]
+        run: PathBuf,
+        #[arg(long, default_value_t = 1)]
+        baseline_workers: usize,
+    },
+    Compare {
+        #[arg(long)]
+        baseline: PathBuf,
+        #[arg(long)]
+        candidate: PathBuf,
+        #[arg(long, value_delimiter = ',', value_enum)]
+        intentional: Vec<super::comparison::Variable>,
+        #[arg(long)]
+        output_root: Option<PathBuf>,
+        #[arg(long, default_value = ".")]
+        project_root: PathBuf,
+    },
 }

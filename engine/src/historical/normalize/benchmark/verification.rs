@@ -160,6 +160,25 @@ pub fn verify(trial: &TrialPlan, execution: &ChildExecution) -> Result<OutputObs
         {
             return Err("result/manifest counts or timestamps mismatch".into());
         }
+        let content = serde_json::to_value(job.output.content_type)
+            .map_err(|e| e.to_string())?
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let volume = out.work_by_content_type.entry(content).or_default();
+        checked_add(
+            &mut volume.source_records_read,
+            manifest.processing_metrics.counters.records_read,
+        )?;
+        checked_add(&mut volume.canonical_rows, manifest.events_written)?;
+        for task in &manifest.processing_metrics.tasks {
+            let volume = out
+                .work_by_stream
+                .entry(task.stream_id.clone())
+                .or_default();
+            checked_add(&mut volume.source_records_read, task.counters.records_read)?;
+            checked_add(&mut volume.canonical_rows, task.counters.events_written)?;
+        }
         checked_add(
             &mut out.source_records_read,
             manifest.processing_metrics.counters.records_read,

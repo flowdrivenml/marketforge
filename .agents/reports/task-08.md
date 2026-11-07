@@ -1,6 +1,6 @@
 # Task 08 — Historical normalization benchmark infrastructure
 
-Status: completed. Commit: recorded in the next progress update.
+Status: completed. Commit: `2de662b`.
 
 Architecture: retained executable marketforge-normalize-benchmark; replaced obsolete private job discovery and hardcoded exclusions with required --input schema3 production resolution. CLI supports workers, repetitions, warmups, per-job/global schedulers, metadata/full retention, dry-run, project-root/config/output-root and bounded resource overrides. Relative input uses invocation directory; sources use production root rules. Zero warmups valid; invalid/duplicate/zero workers, zero repetitions, invalid overrides/collisions rejected. Dry-run writes no files and never decodes archives or executes normalization. Trial order alternates worker direction across rounds; complete selected workload defines each trial.
 

@@ -14,8 +14,8 @@ Baseline: historical cargo check passed; whole-repository fmt check fails in unr
 | 05 | Source-Error Handling and Timestamp Ordering | completed | Typed fatal source errors, compression completion, concrete-stream task-local timestamps and policy-safe depth behavior. | `45ff971` | Cross-archive ordering remains later tasks; unsupported stateful sorting rejected. |
 | 06 | Exchange-Profile Test Migration | completed | 150 source-only +34 support +8 shared tests passed; bounded Binance oracle passed; full185 inventory compiled/listed. | `53ecffc` | September real oracles lack prepared interval; family metadata unresolved. |
 | 07 | CLI Results, Manifests, and Forge Integration | completed | Batch CLI, versioned responses/nonzero failures, report paths and provenance/manifest validation;158 normalization +34 support +198 library +1 failure unit passed. | `f7cc14e` | No new blocker; prior real-data coverage limitations remain. |
-| 08 | Benchmark Infrastructure | completed | Explicit batch planning, isolated runner, metadata/measurements/verification/retention;15 mock/dry-run tests,201 lib and158 normalization tests passed. | pending | Real performance execution prohibited; macOS runtime unverified. |
-| 09 | Benchmark Statistics and Comparisons | pending | | | |
+| 08 | Benchmark Infrastructure | completed | Explicit batch planning, isolated runner, metadata/measurements/verification/retention;15 mock/dry-run tests,201 lib and158 normalization tests passed. | `2de662b` | Real performance execution prohibited; macOS runtime unverified. |
+| 09 | Benchmark Statistics and Comparisons | completed | Persisted statistics/scaling/comparability and JSON/Markdown CLI;36 synthetic infrastructure tests,203 lib and158 normalization tests passed. | pending | No real performance observations; source evidence caveats explicit. |
 | 10 | Stream-Oriented Trade Output | pending | | | |
 | 11 | Stream-Oriented Depth Output | pending | | | |
 | 12 | Final Integration Verification | pending | | | |
