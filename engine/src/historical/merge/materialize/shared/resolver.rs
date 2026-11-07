@@ -78,6 +78,22 @@ impl CanonicalReferenceResolver {
         key: CanonicalTaskKey,
         files: Vec<(PathBuf, u64)>,
     ) -> Result<()> {
+        self.register_index(key, CanonicalRowIndex::new(files)?, true)
+    }
+    /// Register source-local contributions in shared physical canonical files.
+    pub fn register_source_task(
+        &mut self,
+        key: CanonicalTaskKey,
+        slices: Vec<(PathBuf, u64, u64)>,
+    ) -> Result<()> {
+        self.register_index(key, CanonicalRowIndex::from_slices(slices)?, false)
+    }
+    fn register_index(
+        &mut self,
+        key: CanonicalTaskKey,
+        index: CanonicalRowIndex,
+        whole_files: bool,
+    ) -> Result<()> {
         if key.event_kind > 1 {
             return invalid(format!(
                 "unsupported canonical event kind: {}",
@@ -88,8 +104,6 @@ impl CanonicalReferenceResolver {
         if self.tasks.contains_key(&key) {
             return invalid(format!("duplicate canonical task registration: {:?}", key));
         }
-
-        let index = CanonicalRowIndex::new(files)?;
 
         // Validate the complete canonical schema and physical row counts
         // before accepting the task.
@@ -126,7 +140,12 @@ impl CanonicalReferenceResolver {
 
             let indexed_rows = file.row_end - file.row_start;
 
-            if physical_rows != indexed_rows {
+            if (whole_files && physical_rows != indexed_rows)
+                || file
+                    .physical_offset
+                    .checked_add(indexed_rows)
+                    .is_none_or(|end| end > physical_rows)
+            {
                 return invalid(format!(
                     "canonical row-count mismatch: file={}, indexed={}, physical={}",
                     file.path.display(),

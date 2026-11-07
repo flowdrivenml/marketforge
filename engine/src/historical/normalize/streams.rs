@@ -87,21 +87,41 @@ pub(crate) fn plan(job: &ProcessingJob) -> Result<Vec<StreamUnit<'_>>> {
         let key = fingerprint(&identity)?;
         groups.entry(key).or_default().push((index, task));
     }
-    groups.into_iter().map(|(key,mut tasks)| {
-        if tasks.len()>1 {
-            let mut ordered=Vec::new();
-            for item in tasks {let range=bounds(item.1)?.ok_or_else(||invalid(format!("stream {} task {} requires source_time_bounds for shared output",item.1.stream_id.0,item.1.task_id.0)))?;ordered.push((range,item));}
-            ordered.sort_by_key(|(range,_)|*range);
-            for pair in ordered.windows(2) {
-                let (a,b)=(pair[0].0,pair[1].0);
-                let partitioned=a.0==b.0 && a.1==b.1 && a.2.is_some() && b.2.is_some() && a.2<b.2;
-                if !partitioned && (a.1>b.0 || a.0==b.0) {return Err(invalid(format!("stream {} has ambiguous/overlapping declared source ranges; provide distinct ordered partitions or reconcile upstream",pair[0].1.1.stream_id.0)));}
+    let mut units = Vec::with_capacity(groups.len());
+    for (key, mut tasks) in groups {
+        if tasks.len() > 1 {
+            let mut ordered = Vec::with_capacity(tasks.len());
+            for item in tasks {
+                let range = bounds(item.1)?.ok_or_else(|| {
+                    invalid(format!(
+                        "stream {} task {} requires source_time_bounds for shared output",
+                        item.1.stream_id.0, item.1.task_id.0
+                    ))
+                })?;
+                ordered.push((range, item));
             }
-            tasks=ordered.into_iter().map(|(_,item)|item).collect();
+            ordered.sort_by_key(|(range, _)| *range);
+            for pair in ordered.windows(2) {
+                let (earlier, later) = (pair[0].0, pair[1].0);
+                let partitioned = earlier.0 == later.0
+                    && earlier.1 == later.1
+                    && earlier.2.is_some()
+                    && later.2.is_some()
+                    && earlier.2 < later.2;
+                if !partitioned && (earlier.1 > later.0 || earlier.0 == later.0) {
+                    return Err(invalid(format!(
+                        "stream {} has ambiguous/overlapping declared source ranges; provide distinct ordered partitions or reconcile upstream",
+                        pair[0].1.1.stream_id.0
+                    )));
+                }
+            }
+            tasks = ordered.into_iter().map(|(_, item)| item).collect();
         }
-        Ok(StreamUnit{job,tasks,key})
-    }).collect()
+        units.push(StreamUnit { job, tasks, key });
+    }
+    Ok(units)
 }
+
 pub(crate) fn estimate(
     unit: &StreamUnit<'_>,
     config: &ProcessingConfig,
@@ -127,15 +147,16 @@ struct TradeOutput<'a> {
     writer: &'a mut ParquetTradeWriter,
     rows: u64,
     previous: Option<i64>,
+    preceding_source_end: Option<i64>,
     declared: Option<(i64, i64, Option<u64>)>,
 }
 impl TradeSink for TradeOutput<'_> {
     fn write_trade(&mut self, trade: Trade) -> Result<()> {
         let timestamp = trade.envelope.event_timestamp_ns;
-        if self.previous.is_some_and(|p| timestamp < p) {
+        if self.preceding_source_end.is_some_and(|p| timestamp < p) {
             return Err(invalid(format!(
                 "cross-source stream append regression: previous={:?}, current={timestamp}; reconciliation required",
-                self.previous
+                self.preceding_source_end
             )));
         }
         if self
@@ -153,7 +174,7 @@ impl TradeSink for TradeOutput<'_> {
             .ok_or_else(|| invalid("stream row overflow"))?;
         self.writer.write_trade(trade)?;
         self.rows = next;
-        self.previous = Some(timestamp);
+        self.previous = Some(self.previous.map_or(timestamp, |p| p.max(timestamp)));
         Ok(())
     }
     fn finish(&mut self) -> Result<()> {
@@ -176,6 +197,7 @@ pub(crate) fn execute(
         writer: &mut writer,
         rows: 0,
         previous: None,
+        preceding_source_end: None,
         declared: None,
     };
     let mut executions = Vec::new();
@@ -189,6 +211,7 @@ pub(crate) fn execute(
             "Trades".into(),
             task.input_path.display().to_string(),
         );
+        sink.preceding_source_end = sink.previous;
         sink.declared = bounds(task)?;
         let start = sink.rows;
         let mut metrics = TaskMetrics::default();
@@ -287,4 +310,64 @@ pub(crate) fn read_outputs(root: &Path) -> Result<Vec<StreamOutput>> {
     }
     outputs.sort_by(|a, b| a.directory.cmp(&b.directory));
     Ok(outputs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::historical::{
+        config::{FormatCatalog, load_normalization_job},
+        job::{ContractKind, InstrumentKind, TaskId},
+    };
+    fn job() -> ProcessingJob {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let config =
+            super::super::load_processing_config("data/.config/historical/general.toml", &root)
+                .unwrap();
+        let catalog = FormatCatalog::load(root.join("data/.config/historical")).unwrap();
+        let mut job = load_normalization_job(
+            root.join("docs/historical/normalize-job-v3.example.json"),
+            &catalog,
+            &config,
+            &root,
+        )
+        .unwrap();
+        job.tasks[0].raw_schema["marketforge_source"] =
+            serde_json::json!({"source_time_bounds":{"start_timestamp_ns":0,"end_timestamp_ns":9}});
+        let mut next = job.tasks[0].clone();
+        next.task_id = TaskId(2);
+        next.input_path = "another-path".into();
+        next.raw_schema["marketforge_source"]["source_time_bounds"] =
+            serde_json::json!({"start_timestamp_ns":10,"end_timestamp_ns":19});
+        job.tasks.push(next);
+        job
+    }
+    #[test]
+    fn grouping_ignores_task_paths_but_separates_concrete_semantics() {
+        let base = job();
+        assert_eq!(plan(&base).unwrap().len(), 1);
+        for dimension in 0..7 {
+            let mut job = base.clone();
+            let task = &mut job.tasks[1];
+            match dimension {
+                0 => task.exchange = crate::shared::domain::canonical::Exchange::Okx,
+                1 => task.instrument_id += 1,
+                2 => task.symbol = "ETHUSDT".into(),
+                3 => {
+                    task.instrument.instrument_kind = InstrumentKind::Perpetual;
+                    task.instrument.contract_kind = Some(ContractKind::Linear);
+                }
+                4 => task.instrument.tick_size += rust_decimal::Decimal::ONE,
+                5 => task.raw_schema["marketforge_profile"]["sha256"] = "different-profile".into(),
+                _ => {
+                    task.raw_schema["marketforge_source"]["source_options"] =
+                        serde_json::json!({"feed":"snapshot"})
+                }
+            }
+            assert_eq!(plan(&job).unwrap().len(), 2, "dimension {dimension}");
+        }
+    }
 }

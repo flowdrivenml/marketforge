@@ -114,7 +114,16 @@ fn execute_processing_session_inner(
         }
 
         if failure.is_none() {
-            if let Err(error) = super::streams::plan(job) {
+            let admission = super::streams::plan(job).and_then(|units| {
+                for unit in units {
+                    let required=super::streams::estimate(&unit,config)?;
+                    if required.memory_bytes>config.resources.memory_budget_bytes || required.scratch_bytes>config.resources.scratch_budget_bytes {
+                        return Err(MarketForgeError::InvalidConfiguration(format!("stream {} requires memory={} scratch={}, exceeding job admission budget",unit.tasks[0].1.stream_id.0,required.memory_bytes,required.scratch_bytes)));
+                    }
+                }
+                Ok(())
+            });
+            if let Err(error) = admission {
                 failure = Some(JobPreflightFailure {
                     task_id: job.tasks[0].task_id.0,
                     error,

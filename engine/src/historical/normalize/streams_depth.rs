@@ -17,15 +17,16 @@ fn invalid(s: impl Into<String>) -> MarketForgeError {
 struct Output<'a> {
     writer: &'a mut ParquetDepthWriter,
     previous: Option<i64>,
+    preceding_source_end: Option<i64>,
     bounds: Option<(i64, i64, Option<u64>)>,
 }
 impl DepthSink for Output<'_> {
     fn write_outcome(&mut self, outcome: DepthProcessingOutcome) -> Result<()> {
         let timestamp = outcome.source.event_timestamp_ns;
-        if self.previous.is_some_and(|p| timestamp < p) {
+        if self.preceding_source_end.is_some_and(|p| timestamp < p) {
             return Err(invalid(format!(
                 "depth stream append regression: previous={:?}, current={timestamp}; stateful events cannot be reordered",
-                self.previous
+                self.preceding_source_end
             )));
         }
         if self
@@ -38,7 +39,7 @@ impl DepthSink for Output<'_> {
             )));
         }
         self.writer.write_outcome(outcome)?;
-        self.previous = Some(timestamp);
+        self.previous = Some(self.previous.map_or(timestamp, |p| p.max(timestamp)));
         Ok(())
     }
     fn write_boundary(&mut self, boundary: DepthBoundaryManifest) -> Result<()> {
@@ -60,6 +61,7 @@ pub(crate) fn execute(
     let mut sink = Output {
         writer: &mut writer,
         previous: None,
+        preceding_source_end: None,
         bounds: None,
     };
     let mut executions = Vec::new();
@@ -75,6 +77,7 @@ pub(crate) fn execute(
         );
         let mut metrics = TaskMetrics::default();
         let mut progress = WorkerProgress::new(reporter, id);
+        sink.preceding_source_end = sink.previous;
         let start = sink.writer.metrics().levels_written;
         let events = sink.writer.events_indexed();
         let result = (|| {

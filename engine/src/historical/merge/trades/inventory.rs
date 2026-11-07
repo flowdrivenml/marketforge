@@ -55,6 +55,7 @@ pub fn build_trade_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<TradeT
     let mut inventory = Vec::new();
 
     for input in inputs {
+        input.manifest.validate_streams()?;
         let mut dataset_rows = 0_u64;
         if input.manifest.content_type != ContentType::Trades {
             return invalid(format!(

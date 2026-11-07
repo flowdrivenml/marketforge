@@ -36,27 +36,31 @@ path is populated only if persistence succeeded. Report persistence failure is
 included in the failure message. Early initialization failures can have no job
 results/reports. Earlier definitive session results survive later fatal errors.
 
-Manifest version 2 and failure-report version 1 are preserved. Canonical Parquet
-inventories report relative paths, finalized footer row counts, actual file
-sizes and timestamp statistics. Artifact discovery rejects symlinks. Depth
-requires events.parquet, segments.json and boundary.json per task; reconstruction
-row totals must match canonical rows. Existing staging/rename/collision checks
-remain. Atomic rename is not a claim of stronger crash durability.
+New production output uses manifest version 3; merge readers retain version 2
+compatibility. Failure reports remain version 1. Canonical Parquet inventories
+report relative paths, finalized footer row counts, actual file sizes and
+timestamp statistics. Discovery rejects symlinks. Depth requires one event
+index, segment inventory and boundary2 source inventory per stream. Persisted
+event/row spans and reconstruction initializations are validated before commit.
+See [stream output](normalize-stream-output.md) for source ranges and versions.
+Existing staging/rename/collision checks remain; atomic rename is not a stronger
+crash-durability claim.
 
 `processing-job.json` records effective runtime/policy, profiles/fingerprints,
 concrete instruments and original source/stream/rank provenance.
 `processing-job.sha256` hashes its exact bytes, not archives or Parquet contents.
-This snapshot plus manifest source-task inventory and processing task metrics
-supplies stream/source relationships; no duplicate stream registry is added.
+The manifest stream inventory supplies half-open task row spans; the snapshot
+retains exact source and profile identities. Depth boundary2 adds event ranges.
 Resolved feed variants use the same resolver when reloading provenance.
 
 Parquet targets retain existing behavior: row-group triggers estimate buffered
 records; trade file rotation observes bytes written after row-group flush;
 depth file rotation accumulates Arrow batch memory size. These are targets,
 not persisted-size limits. Inventory size_bytes is always actual filesystem
-size. No target, compression or rotation algorithm changes are made here.
+size. Source completion does not close shared writers. Depth flushes row groups at
+configured batch boundaries and bounds event-index and segment buffering.
 
 Forge must parse the envelope, inspect process status and every job status,
 register only committed manifests, and retain failure diagnostics. PostgreSQL
 registration remains exclusively Python's responsibility. Rust does not require
-Python or PostgreSQL. Benchmark/storage consolidation work is separate.
+Python or PostgreSQL. Actual benchmark execution remains separately authorized.

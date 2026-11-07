@@ -10,3 +10,5 @@ pub use models::{
     AuxiliaryFile, AuxiliaryFileKind, DATASET_MANIFEST_FILENAME, DATASET_MANIFEST_VERSION,
     DatasetFile, DatasetManifest,
 };
+
+mod validation;

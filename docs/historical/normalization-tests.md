@@ -16,9 +16,9 @@ cargo test --manifest-path engine/Cargo.toml --features historical-real-tests --
 
 Each samples the source beginning through the production archive reader, then creates a complete small compressed wrapper. The depth sample retains its initialization snapshot and next event. No complete archive normalization is implied. Missing prerequisites fail with the intended path; no archive is substituted.
 
-All runs retain `test.json`, selected batch, isolated scratch/staging and datasets under `data/tests/historical/normalize/<test>/<exclusive-run>/`. Metadata records running/passed/failed states, timestamps, original source selection, effective configuration, profile provenance and results. An interrupted process may leave `running`. No Drop cleanup deletes artifacts. Concurrent and repeated tests create distinct directories. Ordinary correctness defaults use one worker and 1 GiB memory/scratch, with small Parquet targets; specialized tests can override resources explicitly.
+Prepared-batch runs retain `test.json`, selected batch, isolated scratch/staging and datasets under `data/tests/historical/normalize/<test>/<exclusive-run>/`. Metadata records running/passed/failed states, timestamps, original source selection, effective configuration, profile provenance and results. An interrupted process may leave `running`. No Drop cleanup deletes artifacts. Concurrent and repeated tests create distinct directories. Ordinary correctness defaults use one worker and 1 GiB memory/scratch, with small Parquet targets; specialized tests can override resources explicitly.
 
-Existing exchange tests and private-job dependencies remain scheduled for Task 06 migration. The full workload is never selected by default. Real OKX family execution requires explicit authoritative member metadata.
+Exchange cases now use production profile resolution and explicit synthetic sources; retained archive-specific prerequisites remain explicit. The full workload is never selected by default. Real OKX family execution requires explicit authoritative member metadata.
 
 Task 06 profile selection uses `historical_normalize`. Source-only tests require
 `--features historical`; select an exchange with `exchanges::bybit` or a named
@@ -45,3 +45,13 @@ interpretation of their supplied source records, not coverage of every real
 archive. The catalog coverage report separately records fixture availability,
 missing family metadata and feed gaps. Synthetic instrument identities belong
 to an explicit test namespace and are never treated as real family metadata.
+
+Stream tests are registered once in `historical_normalize_support` as `streams`
+and `stream_depth`. Direct execution cases use a persistent outcome guard that
+records success/failure without deleting artifacts. They check shared files,
+source spans, local/global depth identities, zero-change events, recovery,
+intermediate replay states, worker determinism, failures, bounded admission,
+legacy readers and merge/conversion metadata. Integrity policy regression tests
+cover production writer execution, including task-local Degrade behavior.
+
+The final verification report is [normalize-integration-verification.md](normalize-integration-verification.md).

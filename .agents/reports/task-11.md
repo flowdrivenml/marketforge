@@ -1,6 +1,6 @@
 # Task 11 — Stream-oriented depth persistence
 
-Status: completed; local commit recorded in Git history (subject `task-11: implement stream-oriented depth persistence`). Task10 commit: `292b3f7`.
+Status: completed. Local commit: `ba51a16`. Task10 commit: `292b3f7`.
 
 Implementation: depth uses Task10's stream grouping, ordering, scheduler, filesystem identity and reservation ownership. One ParquetDepthWriter persists compatible sources; each worker invocation constructs an independent decoder, processor, sequence state and boundary tracker. No order-book state transfers across archives. Task completion does not flush/rotate canonical parts. Accepted timestamps, including zero-change events, are checked against declarations and append order.
 

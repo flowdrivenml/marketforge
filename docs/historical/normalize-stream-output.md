@@ -4,7 +4,7 @@ Production jobs and sessions schedule independent stream units concurrently and 
 
 Compatible sources have identical resolved logical stream, exchange, instrument identity/specification, normalization rules, ordering policy, profile fingerprint and feed options. Exact-profile compatibility is conservative. Each job/dataset owns separate units. Family expansion keeps concrete instruments independent; current family routing can reread archives. Missing concrete specifications are rejected.
 
-Multiple sources require declared inclusive `source_time_bounds` in prepared v3 tasks. Distinct periods or explicit positive partitions of an identical window establish order. Touching inclusive periods are permitted. Accepted event times must satisfy declarations and actual append order. Unsupported overlap fails; normalization neither merges nor deduplicates archives.
+Multiple sources require declared inclusive `source_time_bounds` in prepared v3 tasks. Distinct periods or explicit positive partitions of an identical window establish order. Touching inclusive periods are permitted. Accepted event times must satisfy declarations and cross-source append order. Task-local timestamp regressions retain the configured Fail/Degrade behavior; degraded output is not advertised as globally monotonic. Unsupported overlap fails; normalization neither merges nor deduplicates archives.
 
 ```
 dataset/
@@ -32,6 +32,11 @@ Depth `boundary.json` version2 contains `continuity: independent_sources` and or
 
 `segments.json` retains version1 and its established meaning: offsets address the owning writer's canonical row space. Initialization and recovery segments are globally rebased automatically by the stream writer. Source ranges identify their owner; IDs are stream-global consecutive integers. Metadata limits reject excessive segment accumulation rather than allowing unbounded growth. Task reports add optional `accepted_depth_events`; older reports deserialize with null. Existing canonical row counters retain their meanings.
 
-Merge readers accept manifest2 task output and manifest3 stream output. New depth inventories project source-local views of shared canonical files, events and segments. Materialization uses physical row slices and source-scoped event cursors. Low-level `DepthEventCursor::open` exposes the whole index; consolidated consumers should use `for_task`/`open_source`. Unified merge still supports one logical instrument stream per input dataset and rejects multi-instrument inputs explicitly. Conversion consumes merge output; its algorithms are unchanged.
+Merge readers accept manifest2 task output and manifest3 stream output. New depth inventories project source-local views of shared canonical files, events and segments. Materialization uses physical row slices and source-scoped event cursors. Low-level `DepthEventCursor::open` exposes the whole index; consolidated consumers should use `for_task`/`open_source`. Unified merge still supports one logical instrument stream per input dataset and rejects multi-instrument inputs explicitly. Conversion consumes merge output and resolves instrument interpretation from checksum-validated committed jobs referenced by the merge manifest, retaining legacy private-job fallback. Its algorithms are unchanged.
 
 Failed source, writer or metadata operations prevent dataset commit. Finalization checks source contributions, persisted footer rows, event-index coverage, local ordinal monotonicity, initialization segments, source boundaries and accepted-event metrics. Existing committed destinations are refused and commit remains same-filesystem rename. No stronger crash-durability guarantee is claimed.
+
+When source timestamps tie, explicit partition/inventory order is preserved by
+trade/depth streams and checkpoint selection. Task IDs do not establish temporal
+precedence. `CanonicalReferenceResolver::register_source_task` accepts physical
+source slices; legacy `register_task` retains complete-file validation.

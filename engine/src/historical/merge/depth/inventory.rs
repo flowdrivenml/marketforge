@@ -46,6 +46,7 @@ pub fn build_depth_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<DepthT
     let mut inventory = Vec::new();
 
     for input in inputs {
+        input.manifest.validate_streams()?;
         if !input.manifest.streams.is_empty() {
             inventory.extend(build_stream_inventory(input)?);
             continue;

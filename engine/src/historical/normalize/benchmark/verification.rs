@@ -259,6 +259,7 @@ pub fn verify(trial: &TrialPlan, execution: &ChildExecution) -> Result<OutputObs
     Ok(out)
 }
 pub fn verify_manifest(job: &ProcessingJob, m: &DatasetManifest) -> Result<()> {
+    m.validate_streams().map_err(|e| e.to_string())?;
     if m.protocol_version != crate::historical::normalize::manifest::DATASET_MANIFEST_VERSION
         || m.job_id != job.job_id.0
         || m.dataset_id != job.dataset_id.0

@@ -63,3 +63,6 @@ pub use format_adapter::identity_policy;
 
 mod runtime_validation;
 pub use runtime_validation::{validate_integrity_policy, validate_resources};
+
+mod provenance;
+pub use provenance::load_committed_processing_job;

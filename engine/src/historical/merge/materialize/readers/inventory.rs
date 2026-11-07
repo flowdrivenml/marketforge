@@ -36,6 +36,9 @@ impl CanonicalRowIndex {
         let mut offset = 0_u64;
 
         for (path, physical_offset, rows) in files {
+            physical_offset
+                .checked_add(rows)
+                .ok_or_else(|| invalid_error("physical canonical slice overflow"))?;
             if rows == 0 {
                 return invalid(format!("canonical file has zero rows: {}", path.display()));
             }

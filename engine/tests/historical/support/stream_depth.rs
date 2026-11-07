@@ -1,4 +1,5 @@
-use super::{migration::template, runtime::TestRun};
+use crate::case_run::CaseRun as TestRun;
+use crate::support::migration::template;
 use marketforge_engine::{
     historical::{
         job::*,
@@ -399,4 +400,178 @@ fn downstream_materialization_registers_shared_files_and_source_metadata() {
         let result = metadata.resolve(&reference).unwrap();
         assert_eq!(result.sequence_start, Some(10));
     }
+}
+#[test]
+fn production_depth_execution_preserves_degraded_sequence_order() {
+    let run = TestRun::new("execution/degraded_depth_order").unwrap();
+    let (mut job, mut config) = fixture(&run);
+    job.tasks.truncate(1);
+    let task = &mut job.tasks[0];
+    task.raw_schema["marketforge_source"]["source_time_bounds"] =
+        json!({"start_timestamp_ns":0,"end_timestamp_ns":2_000_000_000i64});
+    let bytes = std::fs::read_to_string(&task.input_path)
+        .unwrap()
+        .replace("1201", "1199");
+    std::fs::write(&task.input_path, bytes).unwrap();
+    config.integrity_policy.timestamp_regression.action = IntegrityAction::Degrade;
+    config.integrity_policy.timestamp_regression.max_count = Some(10);
+    config.integrity_policy.timestamp_regression.max_rate = None;
+    let r = execute_processing_job(&job, &config).unwrap();
+    assert_eq!(r.status, ProcessingStatus::Complete, "{:?}", r.failure);
+    let m = manifest(&job);
+    assert_eq!(
+        m.processing_metrics.integrity.counters.timestamp_regression,
+        1
+    );
+    let tasks = inventory(&job, m);
+    let v = merge::validate_depth_events(&tasks[0]).unwrap();
+    assert_eq!(v.timestamp_regressions, 1);
+    assert_eq!(v.events, 4);
+}
+#[test]
+fn correctness_verifier_accepts_shared_depth_without_benchmark_execution() {
+    use benchmark::{
+        model::{ChildExecution, Scheduler, TrialPlan},
+        verification,
+    };
+    use response::NormalizationResponse;
+    let mut evidence = Vec::new();
+    for rotate in [false, true] {
+        let run = TestRun::new("depth/verification").unwrap();
+        let (mut job, mut config) = fixture(&run);
+        if rotate {
+            config.resources.parquet.row_group_target_bytes = 1;
+            config.resources.parquet.file_target_bytes = 1;
+        }
+        job.resources = config.resources.clone();
+        job.integrity_policy = config.integrity_policy.clone();
+        let result = execute_processing_job(&job, &config).unwrap();
+        assert_eq!(result.status, ProcessingStatus::Complete);
+        // No runner, clock, process measurement or throughput calculation is used.
+        let trial = TrialPlan {
+            trial_id: "correctness-only".into(),
+            scheduler: Scheduler::PerJob,
+            workers: config.resources.workers,
+            repetition: 0,
+            warmup: false,
+            order: 0,
+            directory: run.path.clone(),
+            config,
+            jobs: vec![job],
+        };
+        let execution = ChildExecution {
+            schema_version: 1,
+            measurement_source: "correctness-test-no-measurements".into(),
+            response: NormalizationResponse::new(None, 1, vec![result], None),
+            execution_wall_seconds: 0.,
+            per_job_wall_seconds: vec![None],
+            process: Default::default(),
+        };
+        let output = verification::verify(&trial, &execution).unwrap();
+        assert_eq!(output.canonical_rows, 12);
+        assert_eq!(output.depth_events_sha256.len(), 3);
+        evidence.push(output);
+    }
+    assert_eq!(
+        evidence[0].semantic_stream_sha256,
+        evidence[1].semantic_stream_sha256
+    );
+    assert_eq!(
+        evidence[0].depth_events_sha256,
+        evidence[1].depth_events_sha256
+    );
+    assert_eq!(
+        evidence[0].reconstruction_sha256,
+        evidence[1].reconstruction_sha256
+    );
+    assert_ne!(
+        evidence[0].parquet_file_count,
+        evidence[1].parquet_file_count
+    );
+}
+#[test]
+fn legacy_manifest2_depth_and_boundary1_remain_readable() {
+    let run = TestRun::new("depth/legacy_reader").unwrap();
+    let (job, config) = fixture(&run);
+    let root = run.path.join("legacy");
+    let mut metrics = metrics::ProcessingMetricsReport::default();
+    for task in &job.tasks {
+        let execution = task::execute_task(task, &config, &root);
+        assert!(execution.error.is_none());
+        metrics
+            .add_task(execution.metrics.into_report(task))
+            .unwrap();
+    }
+    let mut manifest =
+        DatasetManifest::from_processing_job(&job, &root, metrics, Default::default()).unwrap();
+    manifest.protocol_version = 2;
+    for report in &mut manifest.processing_metrics.tasks {
+        report.accepted_depth_events = None;
+    }
+    manifest.write_to(&root).unwrap();
+    let merge_job = MergeJob {
+        job_id: 42,
+        operation: MergeOperation::Merge,
+        inputs: vec![job.dataset_id.0],
+        input_paths: std::collections::HashMap::from([(job.dataset_id.0, root.clone())]),
+        time_range: MergeTimeRange {
+            start_ns: 0,
+            end_ns: 2_000_000_000,
+        },
+        resources: MergeResources {
+            workers: 1,
+            memory_limit_mb: 512,
+            max_open_files: 32,
+        },
+        partitioning: MergePartitioning {
+            partitions_per_worker: 1,
+        },
+        parquet: MergeParquetConfig {
+            row_group_target_mb: 1,
+            file_target_mb: 2,
+            compression_level: 3,
+        },
+        output: MergeOutput {
+            dataset_path: run.path.join("merge"),
+        },
+    };
+    let inputs = merge::resolve_merge_inputs(&merge_job, &run.path).unwrap();
+    let tasks = merge::build_depth_inventory(&inputs).unwrap();
+    assert_eq!(tasks.len(), 3);
+    for task in tasks {
+        assert!(task.source_range.is_none());
+        let v = merge::validate_depth_events(&task).unwrap();
+        assert_eq!((v.events, v.zero_row_events, v.canonical_rows), (4, 1, 4));
+    }
+}
+#[test]
+fn equal_time_depth_checkpoints_follow_partitions_instead_of_task_ids() {
+    let run = TestRun::new("depth/equal_checkpoints").unwrap();
+    let (mut job, config) = fixture(&run);
+    for (index, task) in job.tasks.iter_mut().enumerate() {
+        let message = json!({"type":"snapshot","ts":1000,"cts":1000,"data":{"s":"BTCUSDT","u":10,"b":[["99",(index+2).to_string()]],"a":[["101","5"]]}});
+        std::fs::write(&task.input_path, format!("{message}\n")).unwrap();
+        task.raw_schema["marketforge_source"]["source_time_bounds"] = json!({"start_timestamp_ns":1_000_000_000i64,"end_timestamp_ns":1_000_000_000i64,"partition":index+1});
+    }
+    assert_eq!(
+        execute_processing_job(&job, &config).unwrap().status,
+        ProcessingStatus::Complete
+    );
+    let tasks = inventory(&job, manifest(&job));
+    let checkpoints = merge::build_merge_checkpoints(&tasks).unwrap();
+    assert_eq!(
+        checkpoints.iter().map(|c| c.task_id).collect::<Vec<_>>(),
+        vec![3, 2, 1]
+    );
+    let selected =
+        merge::select_merge_checkpoints(&checkpoints, &[job.dataset_id.0], 1_000_000_000).unwrap();
+    assert_eq!(selected[0].task_id, 1);
+    let initial = merge::resolve_initial_checkpoints(
+        &checkpoints,
+        &[job.dataset_id.0],
+        1_000_000_000,
+        2_000_000_000,
+    )
+    .unwrap();
+    assert_eq!(initial[0].checkpoint.task_id, 1);
 }

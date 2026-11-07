@@ -32,19 +32,36 @@ fn resolve_manifest_instruments(
     manifest: &PhysicalMergeManifest,
     catalog: &InstrumentCatalog,
     processing_jobs: &HashMap<u64, PathBuf>,
+    project_root: &Path,
 ) -> Result<Vec<ResolvedConversionInstrument>> {
     let mut instruments = Vec::with_capacity(manifest.streams.len());
 
     for stream in &manifest.streams {
-        let job_path = processing_jobs.get(&stream.dataset_id).ok_or_else(|| {
-            invalid_error(format!(
-                "processing job not found for dataset {}",
-                stream.dataset_id
-            ))
-        })?;
-
-        let processing_job = load_processing_job(job_path)?;
-
+        let dataset = manifest
+            .input_datasets
+            .iter()
+            .find(|d| d.dataset_id == stream.dataset_id)
+            .ok_or_else(|| invalid_error("missing conversion input provenance"))?;
+        let path = PathBuf::from(&dataset.dataset_path);
+        let path = if path.is_absolute() {
+            path
+        } else {
+            project_root.join(path)
+        };
+        let processing_job = if path.join("processing-job.json").is_file() {
+            crate::historical::job::load_committed_processing_job(&path)?
+        } else {
+            let job_path = processing_jobs.get(&stream.dataset_id).ok_or_else(|| {
+                invalid_error(format!(
+                    "processing job not found for dataset {}",
+                    stream.dataset_id
+                ))
+            })?;
+            load_processing_job(job_path)?
+        };
+        if processing_job.dataset_id.0 != stream.dataset_id {
+            return invalid("conversion dataset provenance identity mismatch");
+        }
         let task = processing_job.tasks.first().ok_or_else(|| {
             invalid_error(format!(
                 "dataset {} contains no processing tasks",
@@ -104,7 +121,7 @@ pub fn resolve_conversion_catalog(
     // Resolve conversion sources
     // -------------------------------------------------------------------------
 
-    let sources = resolve_manifest_instruments(manifest, catalog, &processing_jobs)?;
+    let sources = resolve_manifest_instruments(manifest, catalog, &processing_jobs, project_root)?;
 
     // -------------------------------------------------------------------------
     // Resolve reference manifest
@@ -143,7 +160,7 @@ pub fn resolve_conversion_catalog(
     // -------------------------------------------------------------------------
 
     let available_references =
-        resolve_manifest_instruments(&reference_manifest, catalog, &processing_jobs)?;
+        resolve_manifest_instruments(&reference_manifest, catalog, &processing_jobs, project_root)?;
 
     let combined = manifest.mode == UnifiedMergeMode::Combined;
 
@@ -233,6 +250,9 @@ pub fn resolve_conversion_catalog(
 fn discover_processing_jobs(directory: &Path) -> Result<HashMap<u64, PathBuf>> {
     let mut jobs = HashMap::new();
 
+    if !directory.exists() {
+        return Ok(jobs);
+    }
     for entry in fs::read_dir(directory).map_err(|error| {
         invalid_error(format!(
             "failed to read processing jobs {}: {error}",

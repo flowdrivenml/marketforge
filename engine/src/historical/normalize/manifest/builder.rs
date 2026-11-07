@@ -181,7 +181,7 @@ impl DatasetManifest {
             )));
         }
 
-        Ok(Self {
+        let manifest = Self {
             protocol_version: DATASET_MANIFEST_VERSION,
 
             job_id: job.job_id.0,
@@ -204,6 +204,8 @@ impl DatasetManifest {
             integrity_status: integrity_evaluation.status,
             integrity_evaluation,
             processing_metrics,
-        })
+        };
+        manifest.validate_streams()?;
+        Ok(manifest)
     }
 }

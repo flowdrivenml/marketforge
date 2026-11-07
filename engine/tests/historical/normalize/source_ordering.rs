@@ -416,6 +416,25 @@ fn independent_family_streams_do_not_share_timestamp_watermarks() {
                 .all(|e| e.envelope.instrument_id == t.instrument_id)
         );
     }
+    let result = normalize::execute_processing_job(&resolved.jobs[0], &c).unwrap();
+    assert_eq!(
+        result.status,
+        normalize::ProcessingStatus::Complete,
+        "{:?}",
+        result.failure
+    );
+    let manifest: normalize::manifest::DatasetManifest = serde_json::from_slice(
+        &fs::read(resolved.jobs[0].output.dataset_path.join("manifest.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(manifest.streams.len(), 2);
+    assert_eq!(manifest.events_written, 4);
+    assert!(
+        manifest
+            .streams
+            .iter()
+            .all(|stream| stream.sources.len() == 1)
+    );
     run.finish(&Ok(())).unwrap();
 }
 #[test]

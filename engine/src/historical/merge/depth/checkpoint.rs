@@ -57,14 +57,7 @@ pub fn build_merge_checkpoints(inventory: &[DepthTaskInventory]) -> Result<Vec<M
         }
     }
 
-    checkpoints.sort_by_key(|checkpoint| {
-        (
-            checkpoint.dataset_id,
-            checkpoint.timestamp_ns,
-            checkpoint.task_id,
-            checkpoint.segment_id,
-        )
-    });
+    checkpoints.sort_by_key(|checkpoint| (checkpoint.dataset_id, checkpoint.timestamp_ns));
 
     let mut seen = HashSet::new();
 
@@ -110,12 +103,8 @@ pub fn select_merge_checkpoints(
             std::collections::hash_map::Entry::Occupied(mut occupied) => {
                 let previous = occupied.get();
 
-                if (
-                    checkpoint.timestamp_ns,
-                    checkpoint.task_id,
-                    checkpoint.segment_id,
-                ) > (previous.timestamp_ns, previous.task_id, previous.segment_id)
-                {
+                // Equal-time checkpoints retain authoritative inventory order.
+                if checkpoint.timestamp_ns >= previous.timestamp_ns {
                     occupied.insert(checkpoint.clone());
                 }
             }
@@ -165,13 +154,7 @@ pub fn resolve_initial_checkpoints(
         let prior = dataset_checkpoints
             .clone()
             .filter(|checkpoint| checkpoint.timestamp_ns <= start_ns)
-            .max_by_key(|checkpoint| {
-                (
-                    checkpoint.timestamp_ns,
-                    checkpoint.task_id,
-                    checkpoint.segment_id,
-                )
-            });
+            .max_by_key(|checkpoint| checkpoint.timestamp_ns);
 
         if let Some(checkpoint) = prior {
             resolved.push(InitialMergeCheckpoint {
@@ -186,13 +169,7 @@ pub fn resolve_initial_checkpoints(
             .filter(|checkpoint| {
                 checkpoint.timestamp_ns > start_ns && checkpoint.timestamp_ns < end_ns
             })
-            .min_by_key(|checkpoint| {
-                (
-                    checkpoint.timestamp_ns,
-                    checkpoint.task_id,
-                    checkpoint.segment_id,
-                )
-            });
+            .min_by_key(|checkpoint| checkpoint.timestamp_ns);
 
         let checkpoint = inside.ok_or_else(|| {
             MarketForgeError::InvalidConfiguration(format!(

@@ -13,7 +13,3 @@ pub fn root() -> std::path::PathBuf {
 pub mod depth_assertions;
 pub mod migration;
 pub mod profile_cases;
-
-mod streams;
-
-mod stream_depth;
