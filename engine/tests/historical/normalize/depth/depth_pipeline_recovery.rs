@@ -7,12 +7,12 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use crate::support::migration::configuration as load_processing_config;
 use arrow_array::{Array, UInt64Array};
-use marketforge_engine::historical::normalize::config::load_processing_config;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use serde_json::json;
 use {
-    marketforge_engine::historical::job::load_processing_job,
+    crate::support::migration::template as load_processing_job,
     marketforge_engine::historical::normalize::boundary::BoundaryContinuity,
     marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest,
     marketforge_engine::historical::normalize::metrics::ScopedIntegrityMetrics,
@@ -23,36 +23,11 @@ use {
     marketforge_engine::shared::persistence::parquet::ParquetDepthWriter,
 };
 
-static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
-
 // -----------------------------------------------------------------------------
 // Temporary directory
 // -----------------------------------------------------------------------------
 
-struct TestDirectory {
-    path: PathBuf,
-}
-
-impl TestDirectory {
-    fn new() -> Self {
-        let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
-
-        let path = std::env::temp_dir().join(format!(
-            "marketforge-depth-recovery-{}-{id}",
-            std::process::id()
-        ));
-
-        fs::create_dir_all(&path).unwrap();
-
-        Self { path }
-    }
-}
-
-impl Drop for TestDirectory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
+type TestDirectory = crate::support::migration::PersistentDirectory;
 
 fn project_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -142,14 +117,15 @@ fn depth_pipeline_recovers_after_sequence_gap() {
     let root = project_root();
 
     let job = load_processing_job(
-        root.join("data/.jobs/process/bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json"),
+        root.join("retained-cases/bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json"),
     )
     .expect("load Bybit depth job");
 
     let mut task = job.tasks[0].clone();
 
-    let mut config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
-        .expect("load processing configuration");
+    let mut config =
+        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+            .expect("load processing configuration");
 
     // Allow integrity violations to be recorded without aborting.
     config.integrity_policy.enabled = false;
@@ -292,14 +268,15 @@ fn depth_pipeline_invalidates_final_book_after_unrecovered_gap() {
     let root = project_root();
 
     let job = load_processing_job(
-        root.join("data/.jobs/process/bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json"),
+        root.join("retained-cases/bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json"),
     )
     .expect("load Bybit depth job");
 
     let mut task = job.tasks[0].clone();
 
-    let mut config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
-        .expect("load processing configuration");
+    let mut config =
+        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+            .expect("load processing configuration");
 
     // Record integrity violations without aborting processing.
     config.integrity_policy.enabled = false;

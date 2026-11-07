@@ -7,10 +7,10 @@ use std::{
 };
 
 use {
-    marketforge_engine::historical::job::load_processing_job,
+    crate::support::migration::archive_case as load_processing_job,
+    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::normalize::ProcessingStatus,
     marketforge_engine::historical::normalize::failure::PROCESSING_FAILURE_FILENAME,
-    marketforge_engine::historical::normalize::load_processing_config,
     marketforge_engine::historical::normalize::session::execute_processing_session,
 };
 
@@ -34,7 +34,7 @@ fn session_commits_successful_jobs_and_preserves_failures() {
 
     let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
 
-    let directory = std::env::temp_dir().join(format!(
+    let directory = crate::support::migration::persistent_path(format!(
         "marketforge-session-finalization-{}-{id}",
         std::process::id(),
     ));
@@ -44,7 +44,7 @@ fn session_commits_successful_jobs_and_preserves_failures() {
     let mut jobs = Vec::new();
 
     for (index, filename) in JOB_FILES.iter().enumerate() {
-        let mut job = load_processing_job(root.join("data/.jobs/process").join(filename)).unwrap();
+        let mut job = load_processing_job(root.join("retained-cases").join(filename)).unwrap();
 
         job.output.staging_path = directory.join(format!("job-{index}/staging"));
 
@@ -57,7 +57,7 @@ fn session_commits_successful_jobs_and_preserves_failures() {
     jobs[1].tasks[1].input_path = directory.join("missing-source.zip");
 
     let mut config =
-        load_processing_config(root.join("data/.jobs/processing.json"), &root).unwrap();
+        load_processing_config(root.join("data/.config/historical/general.toml"), &root).unwrap();
 
     config.resources.workers = 4;
 
@@ -110,6 +110,4 @@ fn session_commits_successful_jobs_and_preserves_failures() {
     println!("Job 1      : {:?}", result.jobs[1].status);
 
     println!("RESULT     : PASS");
-
-    fs::remove_dir_all(directory).unwrap();
 }

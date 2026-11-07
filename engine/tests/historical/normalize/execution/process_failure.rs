@@ -7,7 +7,7 @@ use std::{
 };
 
 use {
-    marketforge_engine::historical::job::load_processing_job,
+    crate::support::migration::template as load_processing_job,
     marketforge_engine::historical::normalize::ProcessingErrorCode,
     marketforge_engine::historical::normalize::failure::PROCESSING_FAILURE_FILENAME,
     marketforge_engine::historical::normalize::failure::PROCESSING_FAILURE_VERSION,
@@ -17,21 +17,10 @@ use {
     marketforge_engine::historical::normalize::metrics::ProcessingMetricsReport,
 };
 
-static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
-
 const JOB_FILE: &str = "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json";
 
-fn test_directory() -> PathBuf {
-    let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
-
-    let directory = std::env::temp_dir().join(format!(
-        "marketforge-failure-test-{}-{id}",
-        std::process::id(),
-    ));
-
-    fs::create_dir_all(&directory).expect("create test directory");
-
-    directory
+fn test_directory() -> crate::support::migration::PersistentDirectory {
+    crate::support::migration::PersistentDirectory::new()
 }
 
 fn load_job() -> marketforge_engine::historical::job::ProcessingJob {
@@ -39,8 +28,7 @@ fn load_job() -> marketforge_engine::historical::job::ProcessingJob {
         .parent()
         .expect("project root");
 
-    load_processing_job(root.join("data/.jobs/process").join(JOB_FILE))
-        .expect("load processing job")
+    load_processing_job(root.join("retained-cases").join(JOB_FILE)).expect("load processing job")
 }
 
 #[test]
@@ -103,8 +91,6 @@ fn serializes_failure_report() {
         report.processing_metrics.counters.records_read
     );
     println!("Report       : {}", path.display());
-
-    fs::remove_dir_all(directory).expect("remove test directory");
 }
 
 #[test]
@@ -125,8 +111,6 @@ fn rejects_duplicate_failure_report() {
     report.write_to(&directory).unwrap();
 
     assert!(report.write_to(&directory).is_err());
-
-    fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
@@ -147,6 +131,4 @@ fn rejects_missing_staging_directory() {
     );
 
     assert!(report.write_to(&missing).is_err());
-
-    fs::remove_dir_all(directory).unwrap();
 }

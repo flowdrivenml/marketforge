@@ -7,8 +7,8 @@ use std::{
 };
 
 use {
-    marketforge_engine::historical::job::load_processing_job,
-    marketforge_engine::historical::normalize::load_processing_config,
+    crate::support::migration::archive_case as load_processing_job,
+    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::normalize::manifest::inspect_parquet_files,
     marketforge_engine::historical::normalize::task::execute_trade_task,
 };
@@ -27,7 +27,7 @@ fn project_root() -> PathBuf {
 fn test_directory() -> PathBuf {
     let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
 
-    let directory = std::env::temp_dir().join(format!(
+    let directory = crate::support::migration::persistent_path(format!(
         "marketforge-discovery-test-{}-{id}",
         std::process::id(),
     ));
@@ -41,10 +41,10 @@ fn test_directory() -> PathBuf {
 fn discovers_parquet_files_from_multiple_tasks() {
     let root = project_root();
 
-    let job = load_processing_job(root.join("data/.jobs/process").join(JOB_FILE))
+    let job = load_processing_job(root.join("retained-cases").join(JOB_FILE))
         .expect("load processing job");
 
-    let config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
+    let config = load_processing_config(root.join("data/.config/historical/general.toml"), &root)
         .expect("load processing configuration");
 
     let directory = test_directory();
@@ -108,6 +108,4 @@ fn discovers_parquet_files_from_multiple_tasks() {
     }
 
     println!("RESULT          : PASS");
-
-    fs::remove_dir_all(directory).expect("remove test directory");
 }

@@ -14,10 +14,7 @@ fn project_root() -> PathBuf {
 }
 
 fn load_config() -> marketforge_engine::historical::normalize::ProcessingConfig {
-    let root = project_root();
-
-    load_processing_config(root.join("data/.jobs/processing.json"), &root)
-        .expect("load global processing configuration")
+    crate::support::migration::threshold_fixture()
 }
 
 #[test]

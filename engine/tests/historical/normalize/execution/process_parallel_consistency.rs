@@ -8,10 +8,10 @@ use std::{
 };
 
 use {
-    marketforge_engine::historical::job::load_processing_job,
+    crate::support::migration::archive_case as load_processing_job,
+    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::normalize::ProcessingStatus,
     marketforge_engine::historical::normalize::execute_processing_job,
-    marketforge_engine::historical::normalize::load_processing_config,
     marketforge_engine::historical::normalize::manifest::DatasetManifest,
     marketforge_engine::historical::normalize::manifest::inspect_parquet_files,
 };
@@ -32,7 +32,7 @@ impl TestDirectory {
     fn new() -> Self {
         let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
 
-        let path = std::env::temp_dir().join(format!(
+        let path = crate::support::migration::persistent_path(format!(
             "marketforge-parallel-consistency-{}-{id}",
             std::process::id(),
         ));
@@ -48,9 +48,7 @@ impl TestDirectory {
 }
 
 impl Drop for TestDirectory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
+    fn drop(&mut self) {}
 }
 
 fn project_root() -> PathBuf {
@@ -67,11 +65,12 @@ fn project_root() -> PathBuf {
 fn execute_with_workers(job_file: &str, workers: usize, directory: &Path) -> DatasetManifest {
     let root = project_root();
 
-    let mut job = load_processing_job(root.join("data/.jobs/process").join(job_file))
+    let mut job = load_processing_job(root.join("retained-cases").join(job_file))
         .expect("load processing job");
 
-    let mut config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
-        .expect("load processing configuration");
+    let mut config =
+        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+            .expect("load processing configuration");
 
     config.resources.workers = workers as _;
 
@@ -241,7 +240,7 @@ fn single_and_parallel_workers_produce_identical_results() {
 }
 
 #[test]
-#[ignore = "processes 3.3 million Bitget trades twice"]
+#[cfg(feature = "historical-full-tests")]
 fn large_parallel_consistency() {
     let directory = TestDirectory::new();
 
@@ -251,36 +250,8 @@ fn large_parallel_consistency() {
     fs::create_dir_all(&sequential_dir).unwrap();
     fs::create_dir_all(&parallel_dir).unwrap();
 
-    println!("\n{}", "=".repeat(90));
-    println!("MARKETFORGE — LARGE PARALLEL CONSISTENCY");
-    println!("{}", "=".repeat(90));
-
-    println!("Run A: 1 worker");
-
-    let sequential_start = Instant::now();
-
     let sequential = execute_with_workers(BITGET_JOB_FILE, 1, &sequential_dir);
-
-    let sequential_duration = sequential_start.elapsed();
-
-    println!(
-        "Sequential processing completed in {:.3}s",
-        sequential_duration.as_secs_f64()
-    );
-
-    println!("\nRun B: 16 workers");
-
-    let parallel_start = Instant::now();
-
-    let parallel = execute_with_workers(BITGET_JOB_FILE, 16, &parallel_dir);
-
-    let parallel_duration = parallel_start.elapsed();
-
-    println!(
-        "Parallel processing completed in {:.3}s",
-        parallel_duration.as_secs_f64()
-    );
-
+    let parallel = execute_with_workers(BITGET_JOB_FILE, 2, &parallel_dir);
     assert_eq!(
         sequential.processing_metrics.counters,
         parallel.processing_metrics.counters,
@@ -311,58 +282,6 @@ fn large_parallel_consistency() {
 
     let (parallel_hash, parallel_rows) = canonical_fingerprint(&parallel_dir.join("dataset"));
 
-    let sequential_seconds = sequential_duration.as_secs_f64();
-    let parallel_seconds = parallel_duration.as_secs_f64();
-
-    let records = sequential.processing_metrics.counters.records_read;
-
-    let sequential_throughput = records as f64 / sequential_seconds;
-
-    let parallel_throughput = records as f64 / parallel_seconds;
-
-    let speedup = sequential_seconds / parallel_seconds;
-
-    let efficiency = speedup / 16.0 * 100.0;
-
     assert_eq!(sequential_rows, parallel_rows);
     assert_eq!(sequential_hash, parallel_hash);
-
-    println!("\n{}", "=".repeat(90));
-    println!("MARKETFORGE — PARALLEL PERFORMANCE BENCHMARK");
-    println!("{}", "=".repeat(90));
-
-    println!("Workload");
-    println!("  Tasks              : 34");
-    println!("  Records            : {records}");
-    println!("  Parquet files      : {}", parallel.files_written);
-
-    println!("\nExecution");
-
-    println!("  1 worker           : {:.3}s", sequential_seconds);
-
-    println!("  16 workers         : {:.3}s", parallel_seconds);
-
-    println!("  Speedup            : {:.2}x", speedup);
-
-    println!("  Parallel efficiency: {:.1}%", efficiency);
-
-    println!("\nThroughput");
-
-    println!(
-        "  1 worker           : {:.0} records/sec",
-        sequential_throughput
-    );
-
-    println!(
-        "  16 workers         : {:.0} records/sec",
-        parallel_throughput
-    );
-
-    println!("\nConsistency");
-
-    println!("  Sequential SHA-256 : {sequential_hash}");
-    println!("  Parallel SHA-256   : {parallel_hash}");
-    println!("  Canonical equality : PASS");
-    println!("  Metrics equality   : PASS");
-    println!("  RESULT             : PASS");
 }

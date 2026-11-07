@@ -12,11 +12,7 @@ use marketforge_engine::historical::normalize::{
 use std::path::Path;
 
 fn policy() -> marketforge_engine::historical::job::IntegrityPolicy {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-
-    load_processing_config(root.join("data/.jobs/processing.json"), root)
-        .unwrap()
-        .integrity_policy
+    crate::support::migration::threshold_fixture().integrity_policy
 }
 
 fn scope() -> IntegrityScope {
@@ -36,11 +32,11 @@ fn record(
     let scope = scope();
 
     for _ in 0..valid {
-        metrics.record(&scope, category, false, None).unwrap();
+        metrics.record(&scope, category, false, Some(0)).unwrap();
     }
 
     for _ in 0..invalid {
-        metrics.record(&scope, category, true, None).unwrap();
+        metrics.record(&scope, category, true, Some(0)).unwrap();
     }
 }
 

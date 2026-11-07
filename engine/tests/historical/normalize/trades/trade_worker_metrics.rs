@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use marketforge_engine::historical::normalize::load_processing_config;
+use crate::support::migration::configuration as load_processing_config;
 use marketforge_engine::historical::normalize::metrics::ScopedIntegrityMetrics;
 use {
     marketforge_engine::historical::job::ProcessingJob,
@@ -23,7 +23,7 @@ struct CountingSink {
 fn load_policy() -> marketforge_engine::historical::job::IntegrityPolicy {
     let root = project_root();
 
-    load_processing_config(root.join("data/.jobs/processing.json"), &root)
+    load_processing_config(root.join("data/.config/historical/general.toml"), &root)
         .expect("load processing configuration")
         .integrity_policy
 }
@@ -47,9 +47,9 @@ fn project_root() -> PathBuf {
 }
 
 fn load_job() -> ProcessingJob {
-    let path = project_root().join("data/.jobs/process").join(JOB_FILE);
+    let path = project_root().join("retained-cases").join(JOB_FILE);
 
-    marketforge_engine::historical::job::load_processing_job(path).expect("load processing job")
+    crate::support::migration::archive_case(path).expect("load processing job")
 }
 
 fn print_metrics(metrics: &TaskMetrics) {

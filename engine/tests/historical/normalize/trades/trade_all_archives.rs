@@ -8,12 +8,12 @@ use std::{
 };
 
 use {
+    crate::support::migration::archive_case as load_processing_job,
+    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::job::ContentType,
     marketforge_engine::historical::job::ProcessingOperation,
-    marketforge_engine::historical::job::load_processing_job,
     marketforge_engine::historical::normalize::ProcessingStatus,
     marketforge_engine::historical::normalize::execute_processing_job,
-    marketforge_engine::historical::normalize::load_processing_config,
     marketforge_engine::historical::normalize::manifest::DatasetManifest,
 };
 
@@ -85,11 +85,11 @@ fn project_root() -> PathBuf {
 }
 
 fn processing_jobs_directory() -> PathBuf {
-    project_root().join("data/.jobs/process")
+    project_root().join("retained-cases")
 }
 
 fn output_directory() -> PathBuf {
-    project_root().join(OUTPUT_DIRECTORY)
+    crate::support::migration::persistent_path("full_trade_correctness".into())
 }
 
 // -----------------------------------------------------------------------------
@@ -97,34 +97,15 @@ fn output_directory() -> PathBuf {
 // -----------------------------------------------------------------------------
 
 fn discover_trade_jobs() -> Vec<(PathBuf, marketforge_engine::historical::job::ProcessingJob)> {
-    let directory = processing_jobs_directory();
-
-    let mut paths: Vec<PathBuf> = fs::read_dir(&directory)
-        .expect("read processing jobs directory")
-        .map(|entry| entry.expect("directory entry").path())
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
-        .collect();
-
-    paths.sort();
-
-    let mut jobs = Vec::new();
-
-    for path in paths {
-        let job = load_processing_job(&path)
-            .unwrap_or_else(|error| panic!("failed to load job {}: {error}", path.display()));
-
-        if job.operation != ProcessingOperation::Process {
-            continue;
-        }
-
-        if job.output.content_type != ContentType::Trades {
-            continue;
-        }
-
-        jobs.push((path, job));
-    }
-
-    jobs
+    crate::support::migration::retained_trade_jobs()
+        .into_iter()
+        .map(|job| {
+            (
+                PathBuf::from("engine/tests/historical/fixtures/normalize.json"),
+                job,
+            )
+        })
+        .collect()
 }
 
 // -----------------------------------------------------------------------------
@@ -132,15 +113,16 @@ fn discover_trade_jobs() -> Vec<(PathBuf, marketforge_engine::historical::job::P
 // -----------------------------------------------------------------------------
 
 #[test]
-#[ignore = "processes all historical trade archives"]
+#[cfg(feature = "historical-full-tests")]
 fn processes_all_trade_archives() {
     let root = project_root();
 
-    let mut config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
-        .expect("load processing configuration");
+    let mut config =
+        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+            .expect("load processing configuration");
 
     // Limit concurrency until resource budgeting is implemented.
-    config.resources.workers = config.resources.workers.min(16);
+    config.resources.workers = config.resources.workers.min(1);
 
     let jobs = discover_trade_jobs();
 

@@ -1,10 +1,11 @@
+#[path = "../../../historical/support/mod.rs"]
+mod support;
 use std::path::{Path, PathBuf};
 
 use marketforge_engine::shared::formats::depth::{
     DepthEventBoundary, DepthProcessingOutcome, DepthSourceOperation,
 };
 use marketforge_engine::{
-    historical::job::load_processing_job,
     shared::domain::book::SequencePolicy,
     shared::domain::canonical::Exchange,
     shared::formats::depth::{DepthContext, DepthProcessor},
@@ -22,8 +23,8 @@ fn project_root() -> PathBuf {
 fn processor() -> DepthProcessor {
     let root = project_root();
 
-    let job = load_processing_job(
-        root.join("data/.jobs/process/bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json"),
+    let job = support::migration::template(
+        root.join("retained-cases/bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json"),
     )
     .unwrap();
 
@@ -38,7 +39,7 @@ fn processor() -> DepthProcessor {
             symbol: task.symbol.clone(),
             stream_id: task.stream_id.0.clone(),
         },
-        SequencePolicy::Consecutive,
+        marketforge_engine::historical::normalize::resolve_sequence_policy(task).unwrap(),
     )
     .unwrap()
 }

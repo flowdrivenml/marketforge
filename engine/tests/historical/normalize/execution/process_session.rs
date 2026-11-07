@@ -7,8 +7,8 @@ use std::{
 };
 
 use {
-    marketforge_engine::historical::job::load_processing_job,
-    marketforge_engine::historical::normalize::load_processing_config,
+    crate::support::migration::archive_case as load_processing_job,
+    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::normalize::session::execute_session_tasks,
 };
 
@@ -33,7 +33,7 @@ fn project_root() -> PathBuf {
 fn test_directory() -> PathBuf {
     let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
 
-    let directory = std::env::temp_dir().join(format!(
+    let directory = crate::support::migration::persistent_path(format!(
         "marketforge-session-test-{}-{id}",
         std::process::id(),
     ));
@@ -59,7 +59,7 @@ fn executes_tasks_across_multiple_jobs() {
     let mut jobs = Vec::new();
 
     for (index, filename) in JOB_FILES.iter().enumerate() {
-        let mut job = load_processing_job(root.join("data/.jobs/process").join(filename))
+        let mut job = load_processing_job(root.join("retained-cases").join(filename))
             .expect("load processing job");
 
         // Each job must have isolated staging and dataset paths.
@@ -76,8 +76,9 @@ fn executes_tasks_across_multiple_jobs() {
     // Load global processing configuration
     // -------------------------------------------------------------------------
 
-    let mut config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
-        .expect("load processing configuration");
+    let mut config =
+        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+            .expect("load processing configuration");
 
     // Four workers shared globally across both jobs.
     config.resources.workers = 4;
@@ -241,6 +242,4 @@ fn executes_tasks_across_multiple_jobs() {
     // -------------------------------------------------------------------------
     // Cleanup
     // -------------------------------------------------------------------------
-
-    fs::remove_dir_all(directory).expect("remove test directory");
 }

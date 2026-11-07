@@ -3,8 +3,8 @@
 use std::path::{Path, PathBuf};
 
 use {
-    marketforge_engine::historical::job::load_processing_job,
-    marketforge_engine::historical::normalize::load_processing_config,
+    crate::support::migration::configuration as load_processing_config,
+    crate::support::migration::template as load_processing_job,
     marketforge_engine::historical::normalize::session::execute_session_tasks,
 };
 
@@ -20,14 +20,13 @@ fn project_root() -> PathBuf {
 fn load_job() -> marketforge_engine::historical::job::ProcessingJob {
     let root = project_root();
 
-    load_processing_job(root.join("data/.jobs/process").join(JOB_FILE))
-        .expect("load processing job")
+    load_processing_job(root.join("retained-cases").join(JOB_FILE)).expect("load processing job")
 }
 
 fn load_config() -> marketforge_engine::historical::normalize::ProcessingConfig {
     let root = project_root();
 
-    load_processing_config(root.join("data/.jobs/processing.json"), &root)
+    load_processing_config(root.join("data/.config/historical/general.toml"), &root)
         .expect("load processing configuration")
 }
 

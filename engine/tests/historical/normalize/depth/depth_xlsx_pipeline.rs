@@ -14,10 +14,10 @@ use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 use zip::{ZipWriter, write::SimpleFileOptions};
 use {
-    marketforge_engine::historical::job::load_processing_job,
+    crate::support::migration::configuration as load_processing_config,
+    crate::support::migration::template as load_processing_job,
     marketforge_engine::historical::normalize::boundary::BoundaryContinuity,
     marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest,
-    marketforge_engine::historical::normalize::config::load_processing_config,
     marketforge_engine::historical::normalize::metrics::ScopedIntegrityMetrics,
     marketforge_engine::historical::normalize::metrics::TaskMetrics,
     marketforge_engine::historical::normalize::worker::process_depth_task_with_metrics,
@@ -26,36 +26,11 @@ use {
     marketforge_engine::shared::persistence::parquet::ParquetDepthWriter,
 };
 
-static NEXT_ID: AtomicU64 = AtomicU64::new(0);
-
 // -----------------------------------------------------------------------------
 // Temporary directory
 // -----------------------------------------------------------------------------
 
-struct TestDirectory {
-    path: PathBuf,
-}
-
-impl TestDirectory {
-    fn new() -> Self {
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-
-        let path = std::env::temp_dir().join(format!(
-            "marketforge-xlsx-pipeline-{}-{id}",
-            std::process::id()
-        ));
-
-        fs::create_dir_all(&path).unwrap();
-
-        Self { path }
-    }
-}
-
-impl Drop for TestDirectory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
+type TestDirectory = crate::support::migration::PersistentDirectory;
 
 fn project_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -398,14 +373,15 @@ fn processes_bitget_xlsx_pipeline() {
     // -------------------------------------------------------------------------
 
     let job = load_processing_job(
-        root.join("data/.jobs/process/bitget-spot-spot-BTCUSDT-l2-20260901-20260904-d110.json"),
+        root.join("retained-cases/bitget-spot-spot-BTCUSDT-l2-20260901-20260904-d110.json"),
     )
     .expect("load Bitget processing job");
 
     let mut task = job.tasks[0].clone();
 
-    let mut config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
-        .expect("load processing configuration");
+    let mut config =
+        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+            .expect("load processing configuration");
 
     config.integrity_policy.enabled = false;
 

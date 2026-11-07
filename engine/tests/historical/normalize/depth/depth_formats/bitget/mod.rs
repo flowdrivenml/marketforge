@@ -1,2 +1,0 @@
-mod linear;
-mod spot;

@@ -8,11 +8,11 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 use {
+    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::job::IntegrityAction,
     marketforge_engine::historical::job::IntegrityPolicy,
     marketforge_engine::historical::job::ProcessingJob,
     marketforge_engine::historical::job::WorkTask,
-    marketforge_engine::historical::normalize::load_processing_config,
     marketforge_engine::historical::normalize::metrics::IntegrityStatus,
     marketforge_engine::historical::normalize::metrics::TaskMetrics,
     marketforge_engine::historical::normalize::metrics::evaluate_integrity_policy,
@@ -23,40 +23,13 @@ use {
     marketforge_engine::shared::io::container::SourceContainer,
 };
 
-static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
-
 const JOB_FILE: &str = "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json";
 
 // -----------------------------------------------------------------------------
 // Test environment
 // -----------------------------------------------------------------------------
 
-struct TestDirectory(PathBuf);
-
-impl TestDirectory {
-    fn new() -> Self {
-        let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
-
-        let path = std::env::temp_dir().join(format!(
-            "marketforge-integrity-test-{}-{id}",
-            std::process::id()
-        ));
-
-        fs::create_dir_all(&path).expect("create test directory");
-
-        Self(path)
-    }
-
-    fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for TestDirectory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+type TestDirectory = crate::support::migration::PersistentTuple;
 
 #[derive(Default)]
 struct CountingSink {
@@ -82,16 +55,14 @@ fn project_root() -> PathBuf {
 }
 
 fn load_job() -> ProcessingJob {
-    marketforge_engine::historical::job::load_processing_job(
-        project_root().join("data/.jobs/process").join(JOB_FILE),
-    )
-    .expect("load processing job")
+    crate::support::migration::template(project_root().join("retained-cases").join(JOB_FILE))
+        .expect("load processing job")
 }
 
 fn load_policy() -> IntegrityPolicy {
     let root = project_root();
 
-    load_processing_config(root.join("data/.jobs/processing.json"), &root)
+    load_processing_config(root.join("data/.config/historical/general.toml"), &root)
         .expect("load processing configuration")
         .integrity_policy
 }

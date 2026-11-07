@@ -34,11 +34,14 @@ pub struct TestRun {
 impl TestRun {
     pub fn new(name: &str) -> TestResult<Self> {
         if name.is_empty()
-            || !name
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+            || name.split('/').any(|component| {
+                component.is_empty()
+                    || !component
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+            })
         {
-            return Err("test name must be a safe nonempty component".into());
+            return Err("test name must contain safe nonempty relative components".into());
         }
         let base = root().join("data/tests/historical/normalize").join(name);
         let mut ancestor = PathBuf::new();

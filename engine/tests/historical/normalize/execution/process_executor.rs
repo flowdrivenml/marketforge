@@ -10,10 +10,10 @@ use marketforge_engine::historical::normalize::manifest::DatasetManifest;
 use marketforge_engine::historical::normalize::manifest::inspect_parquet_files;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use {
-    marketforge_engine::historical::job::load_processing_job,
+    crate::support::migration::archive_case as load_processing_job,
+    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::normalize::ProcessingStatus,
     marketforge_engine::historical::normalize::execute_processing_job,
-    marketforge_engine::historical::normalize::load_processing_config,
 };
 static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -31,17 +31,17 @@ fn project_root() -> PathBuf {
 }
 
 fn job_path() -> PathBuf {
-    project_root().join("data/.jobs/process").join(JOB_FILE)
+    project_root().join("retained-cases").join(JOB_FILE)
 }
 
 fn config_path() -> PathBuf {
-    project_root().join("data/.jobs/processing.json")
+    project_root().join("data/.config/historical/general.toml")
 }
 
 fn test_directory() -> PathBuf {
     let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
 
-    let directory = std::env::temp_dir().join(format!(
+    let directory = crate::support::migration::persistent_path(format!(
         "marketforge-executor-test-{}-{id}",
         std::process::id()
     ));
@@ -341,6 +341,4 @@ fn processes_multiple_trade_tasks_into_staging() {
     // -----------------------------------------------------------------
     // Cleanup
     // -----------------------------------------------------------------
-
-    fs::remove_dir_all(directory).expect("remove test directory");
 }

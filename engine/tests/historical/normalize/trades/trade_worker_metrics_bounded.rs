@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use marketforge_engine::historical::normalize::load_processing_config;
+use crate::support::migration::configuration as load_processing_config;
 use marketforge_engine::historical::normalize::metrics::ScopedIntegrityMetrics;
 use {
     marketforge_engine::historical::job::ProcessingJob,
@@ -17,7 +17,7 @@ const JOB_FILE: &str = "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260
 fn load_policy() -> marketforge_engine::historical::job::IntegrityPolicy {
     let root = project_root();
 
-    load_processing_config(root.join("data/.jobs/processing.json"), &root)
+    load_processing_config(root.join("data/.config/historical/general.toml"), &root)
         .expect("load processing configuration")
         .integrity_policy
 }
@@ -30,9 +30,22 @@ fn project_root() -> PathBuf {
 }
 
 fn load_job() -> ProcessingJob {
-    let path = project_root().join("data/.jobs/process").join(JOB_FILE);
-
-    marketforge_engine::historical::job::load_processing_job(path).expect("load processing job")
+    let mut job = crate::support::migration::template(
+        "bybit-spot-spot-BTCUSDT-trade-20260901-20260904-d1.json",
+    )
+    .unwrap();
+    let dir = crate::support::migration::persistent_path("trades_sink_failure".into());
+    let path = dir.join("input.csv");
+    let mut text = String::from("id,timestamp,price,volume,side,rpi\n");
+    for id in 1..=10 {
+        text.push_str(&format!("{id},1250,200,3,buy,0\n"));
+    }
+    std::fs::write(&path, text).unwrap();
+    job.tasks.truncate(1);
+    job.tasks[0].input_path = path;
+    job.tasks[0].source_compression =
+        marketforge_engine::shared::io::container::SourceContainer::Plain;
+    job
 }
 
 #[test]

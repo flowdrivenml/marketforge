@@ -7,7 +7,7 @@ use std::{
 };
 
 use {
-    marketforge_engine::historical::job::load_processing_job,
+    crate::support::migration::template as load_processing_job,
     marketforge_engine::historical::normalize::manifest::DATASET_MANIFEST_FILENAME,
     marketforge_engine::historical::normalize::manifest::DATASET_MANIFEST_VERSION,
     marketforge_engine::historical::normalize::manifest::DatasetManifest,
@@ -22,8 +22,6 @@ use {
     marketforge_engine::shared::persistence::parquet::ParquetTradeWriter,
 };
 
-static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
-
 const JOB_FILE: &str = "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json";
 
 fn project_root() -> PathBuf {
@@ -34,20 +32,11 @@ fn project_root() -> PathBuf {
 }
 
 fn job_path() -> PathBuf {
-    project_root().join("data/.jobs/process").join(JOB_FILE)
+    project_root().join("retained-cases").join(JOB_FILE)
 }
 
-fn test_directory() -> PathBuf {
-    let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
-
-    let directory = std::env::temp_dir().join(format!(
-        "marketforge-manifest-test-{}-{id}",
-        std::process::id()
-    ));
-
-    fs::create_dir_all(&directory).unwrap();
-
-    directory
+fn test_directory() -> crate::support::migration::PersistentDirectory {
+    crate::support::migration::PersistentDirectory::new()
 }
 
 fn sample_trade(index: i64) -> Trade {
@@ -179,8 +168,6 @@ fn creates_valid_dataset_manifest() {
 
     println!("Manifest         : {}", manifest_path.display());
     println!("RESULT           : PASS");
-
-    fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
@@ -212,8 +199,6 @@ fn rejects_duplicate_manifest() {
     manifest.write_to(&directory).unwrap();
 
     assert!(manifest.write_to(&directory).is_err());
-
-    fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
@@ -230,8 +215,6 @@ fn rejects_missing_parquet_directory() {
     );
 
     assert!(result.is_err());
-
-    fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
@@ -259,8 +242,6 @@ fn rejects_failed_integrity_evaluation() {
         DatasetManifest::from_processing_job(&job, &directory, sample_metrics(1), evaluation);
 
     assert!(result.is_err());
-
-    fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
@@ -290,6 +271,4 @@ fn rejects_metrics_parquet_row_mismatch() {
     );
 
     assert!(result.is_err());
-
-    fs::remove_dir_all(directory).unwrap();
 }

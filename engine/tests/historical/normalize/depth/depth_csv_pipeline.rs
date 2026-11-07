@@ -1,6 +1,6 @@
 #![cfg(feature = "historical")]
 #[allow(dead_code)]
-#[path = "depth_formats/common.rs"]
+#[path = "../../support/depth_assertions.rs"]
 mod depth_format_common;
 
 use std::{
@@ -12,9 +12,9 @@ use std::{
 
 use marketforge_engine::historical::normalize::boundary::{BoundaryBookState, fingerprint_book};
 use {
-    marketforge_engine::historical::job::load_processing_job,
+    crate::support::migration::configuration as load_processing_config,
+    crate::support::migration::template as load_processing_job,
     marketforge_engine::historical::normalize::boundary::BoundaryContinuity,
-    marketforge_engine::historical::normalize::config::load_processing_config,
     marketforge_engine::historical::normalize::metrics::ScopedIntegrityMetrics,
     marketforge_engine::historical::normalize::metrics::TaskMetrics,
     marketforge_engine::historical::normalize::worker::process_depth_task_with_metrics,
@@ -23,34 +23,11 @@ use {
     marketforge_engine::shared::persistence::parquet::ParquetDepthWriter,
 };
 
-static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
-
 // -----------------------------------------------------------------------------
 // Temporary directory
 // -----------------------------------------------------------------------------
 
-struct TestDirectory {
-    path: PathBuf,
-}
-
-impl TestDirectory {
-    fn new() -> Self {
-        let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
-
-        let path =
-            std::env::temp_dir().join(format!("marketforge-depth-csv-{}-{id}", std::process::id()));
-
-        fs::create_dir_all(&path).unwrap();
-
-        Self { path }
-    }
-}
-
-impl Drop for TestDirectory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
+type TestDirectory = crate::support::migration::PersistentDirectory;
 
 fn project_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -68,15 +45,16 @@ fn processes_gateio_spot_csv_pipeline() {
     let root = project_root();
 
     let job = load_processing_job(
-        root.join("data/.jobs/process/")
+        root.join("retained-cases/")
             .join("gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
     )
     .expect("load Gate.io spot job");
 
     let mut task = job.tasks[0].clone();
 
-    let mut config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
-        .expect("load processing configuration");
+    let mut config =
+        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+            .expect("load processing configuration");
 
     config.integrity_policy.enabled = false;
 
@@ -232,14 +210,15 @@ fn recovers_after_malformed_gateio_snapshot() {
     let root = project_root();
 
     let job = load_processing_job(
-        root.join("data/.jobs/process/gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
+        root.join("retained-cases/gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
     )
     .expect("load Gate.io spot job");
 
     let mut task = job.tasks[0].clone();
 
-    let mut config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
-        .expect("load processing configuration");
+    let mut config =
+        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+            .expect("load processing configuration");
 
     config.integrity_policy.enabled = false;
 
@@ -330,14 +309,15 @@ fn recovers_after_gateio_sequence_gap() {
     let root = project_root();
 
     let job = load_processing_job(
-        root.join("data/.jobs/process/gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
+        root.join("retained-cases/gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
     )
     .expect("load Gate.io spot job");
 
     let mut task = job.tasks[0].clone();
 
-    let mut config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
-        .expect("load processing configuration");
+    let mut config =
+        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+            .expect("load processing configuration");
 
     config.integrity_policy.enabled = false;
 
@@ -446,14 +426,15 @@ fn flushes_gateio_snapshot_at_eof() {
     let root = project_root();
 
     let job = load_processing_job(
-        root.join("data/.jobs/process/gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
+        root.join("retained-cases/gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
     )
     .expect("load Gate.io spot job");
 
     let mut task = job.tasks[0].clone();
 
-    let mut config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
-        .expect("load processing configuration");
+    let mut config =
+        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+            .expect("load processing configuration");
 
     config.integrity_policy.enabled = false;
 
@@ -512,14 +493,15 @@ fn rejects_incomplete_initial_snapshot_at_eof() {
     let root = project_root();
 
     let job = load_processing_job(
-        root.join("data/.jobs/process/gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
+        root.join("retained-cases/gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
     )
     .expect("load Gate.io spot job");
 
     let mut task = job.tasks[0].clone();
 
-    let mut config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
-        .expect("load processing configuration");
+    let mut config =
+        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+            .expect("load processing configuration");
 
     config.integrity_policy.enabled = false;
 
@@ -579,14 +561,15 @@ fn rejects_incomplete_replacement_snapshot_at_eof() {
     let root = project_root();
 
     let job = load_processing_job(
-        root.join("data/.jobs/process/gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
+        root.join("retained-cases/gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
     )
     .expect("load Gate.io spot job");
 
     let mut task = job.tasks[0].clone();
 
-    let mut config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
-        .expect("load processing configuration");
+    let mut config =
+        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+            .expect("load processing configuration");
 
     config.integrity_policy.enabled = false;
 

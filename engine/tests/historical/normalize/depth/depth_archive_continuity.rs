@@ -7,11 +7,11 @@ use std::{
 };
 
 use {
-    marketforge_engine::historical::job::load_processing_job,
+    crate::support::migration::archive_case as load_processing_job,
+    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::normalize::boundary::BoundaryContinuity,
     marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest,
     marketforge_engine::historical::normalize::boundary::fingerprint_book,
-    marketforge_engine::historical::normalize::config::load_processing_config,
     marketforge_engine::historical::normalize::metrics::ScopedIntegrityMetrics,
     marketforge_engine::historical::normalize::metrics::TaskMetrics,
     marketforge_engine::historical::normalize::worker::process_depth_task_with_metrics,
@@ -33,7 +33,7 @@ impl TestDirectory {
     fn new() -> Self {
         let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
 
-        let path = std::env::temp_dir().join(format!(
+        let path = crate::support::migration::persistent_path(format!(
             "marketforge-depth-continuity-{}-{id}",
             std::process::id()
         ));
@@ -45,9 +45,7 @@ impl TestDirectory {
 }
 
 impl Drop for TestDirectory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
+    fn drop(&mut self) {}
 }
 
 fn project_root() -> PathBuf {
@@ -165,7 +163,7 @@ fn verify_archive_boundary(previous: &DepthBoundaryManifest, next: &DepthBoundar
 fn validate_gateio_hourly_continuity(job_filename: &str) {
     let root = project_root();
 
-    let job = load_processing_job(root.join("data/.jobs/process").join(job_filename))
+    let job = load_processing_job(root.join("retained-cases").join(job_filename))
         .expect("load Gate.io processing job");
 
     assert!(
@@ -173,7 +171,7 @@ fn validate_gateio_hourly_continuity(job_filename: &str) {
         "expected at least three hourly archives"
     );
 
-    let config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
+    let config = load_processing_config(root.join("data/.config/historical/general.toml"), &root)
         .expect("load processing configuration");
 
     let directory = TestDirectory::new();

@@ -7,12 +7,12 @@ use std::{
 };
 
 use {
-    marketforge_engine::historical::job::load_processing_job,
+    crate::support::migration::archive_case as load_processing_job,
+    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::normalize::ProcessingStatus,
     marketforge_engine::historical::normalize::execute_processing_job,
     marketforge_engine::historical::normalize::failure::PROCESSING_FAILURE_FILENAME,
     marketforge_engine::historical::normalize::failure::ProcessingFailureReport,
-    marketforge_engine::historical::normalize::load_processing_config,
 };
 
 static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
@@ -33,7 +33,7 @@ fn project_root() -> PathBuf {
 fn test_directory() -> PathBuf {
     let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
 
-    let directory = std::env::temp_dir().join(format!(
+    let directory = crate::support::migration::persistent_path(format!(
         "marketforge-executor-failure-{}-{id}",
         std::process::id(),
     ));
@@ -55,11 +55,12 @@ fn failed_processing_persists_failure_report() {
     // Load existing processing job
     // -------------------------------------------------------------------------
 
-    let mut job = load_processing_job(root.join("data/.jobs/process").join(JOB_FILE))
+    let mut job = load_processing_job(root.join("retained-cases").join(JOB_FILE))
         .expect("load processing job");
 
-    let mut config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
-        .expect("load processing configuration");
+    let mut config =
+        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+            .expect("load processing configuration");
 
     assert!(
         job.tasks.len() >= 2,

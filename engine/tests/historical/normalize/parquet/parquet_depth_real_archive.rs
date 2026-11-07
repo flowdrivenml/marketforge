@@ -11,8 +11,8 @@ use marketforge_engine::historical::normalize::boundary::{
     BoundaryContinuity, DepthBoundaryManifest, fingerprint_book,
 };
 use {
-    marketforge_engine::historical::job::load_processing_job,
-    marketforge_engine::historical::normalize::load_processing_config,
+    crate::support::migration::archive_case as load_processing_job,
+    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::normalize::metrics::ScopedIntegrityMetrics,
     marketforge_engine::historical::normalize::metrics::TaskMetrics,
     marketforge_engine::historical::normalize::worker::process_depth_task_with_metrics,
@@ -43,7 +43,7 @@ impl TestDirectory {
     fn new() -> Self {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
 
-        let path = std::env::temp_dir().join(format!(
+        let path = crate::support::migration::persistent_path(format!(
             "marketforge-depth-real-parquet-{}-{id}",
             std::process::id()
         ));
@@ -55,9 +55,7 @@ impl TestDirectory {
 }
 
 impl Drop for TestDirectory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
+    fn drop(&mut self) {}
 }
 
 fn project_root() -> PathBuf {
@@ -841,7 +839,7 @@ fn writes_real_bybit_depth_archive_to_parquet() {
     let root = project_root();
 
     let job = load_processing_job(
-        root.join("data/.jobs/process/bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json"),
+        root.join("retained-cases/bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json"),
     )
     .expect("load Bybit depth job");
 
@@ -853,7 +851,7 @@ fn writes_real_bybit_depth_archive_to_parquet() {
         task.input_path.display()
     );
 
-    let config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
+    let config = load_processing_config(root.join("data/.config/historical/general.toml"), &root)
         .expect("load processing config");
 
     let directory = TestDirectory::new();

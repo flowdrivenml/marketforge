@@ -12,6 +12,7 @@ management-tui = ["management-client", "monitor-tui"]
 postgres = ["dep:sqlx"]
 historical-slow-tests = ["historical"]
 historical-real-tests = ["historical"]
+historical-full-tests = ["historical-real-tests"]
 historical = [
     "dep:toml",
     "parquet",
@@ -356,10 +357,6 @@ name = "historical_slow_merge"
 path = "tests/historical/slow/merge/main.rs"
 required-features = ["historical-slow-tests"]
 
-[[test]]
-name = "historical_slow_normalize"
-path = "tests/historical/slow/normalize/main.rs"
-required-features = ["historical-slow-tests"]
 
 [[test]]
 name = "shared_conversion"

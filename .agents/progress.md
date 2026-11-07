@@ -11,8 +11,8 @@ Baseline: historical cargo check passed; whole-repository fmt check fails in unr
 | 02 | Production V3 Batch Loading and Unified Profiles | completed | Stable persisted batch instrument authority; unified profiles; strict production batch loader and family expansion. | `7cc9b7d` | Real OKX family metadata unavailable; explicitly diagnosed, independent concrete coverage continues. |
 | 03 | Shared Normalization Test Infrastructure | completed | Production subset selection, conservative overrides, persistent isolated runs and metadata; two bounded real representatives passed. | `f25a907` | Legacy suite migration remains Task 06. |
 | 04 | Integrity Observation Accounting | completed | Stage traces, partial success, depth source-event units, trustworthy error timestamps, explicit unattributed/window-policy handling. | `89f0518` | Legacy private-job depth_processor tests await Task 06 migration. |
-| 05 | Source-Error Handling and Timestamp Ordering | completed | Typed fatal source errors, compression completion, concrete-stream task-local timestamps and policy-safe depth behavior. | pending | Cross-archive ordering remains later tasks; unsupported stateful sorting rejected. |
-| 06 | Exchange-Profile Test Migration | pending | | | |
+| 05 | Source-Error Handling and Timestamp Ordering | completed | Typed fatal source errors, compression completion, concrete-stream task-local timestamps and policy-safe depth behavior. | `45ff971` | Cross-archive ordering remains later tasks; unsupported stateful sorting rejected. |
+| 06 | Exchange-Profile Test Migration | completed | 150 source-only +34 support +8 shared tests passed; bounded Binance oracle passed; full185 inventory compiled/listed. | pending | September real oracles lack prepared interval; family metadata unresolved. |
 | 07 | CLI Results, Manifests, and Forge Integration | pending | | | |
 | 08 | Benchmark Infrastructure | pending | | | |
 | 09 | Benchmark Statistics and Comparisons | pending | | | |

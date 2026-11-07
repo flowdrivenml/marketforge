@@ -6,10 +6,10 @@ use std::{
 };
 use std::{path::Path, time::Instant};
 use {
-    marketforge_engine::historical::job::load_processing_job,
+    crate::support::migration::archive_case as load_processing_job,
+    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest,
     marketforge_engine::historical::normalize::boundary::fingerprint_book,
-    marketforge_engine::historical::normalize::load_processing_config,
     marketforge_engine::historical::normalize::metrics::ScopedIntegrityMetrics,
     marketforge_engine::historical::normalize::metrics::TaskMetrics,
     marketforge_engine::historical::normalize::worker::process_depth_task_with_metrics,
@@ -53,30 +53,7 @@ pub struct ExpectedDepthEvent {
     pub base_tolerance: Option<&'static str>,
 }
 
-pub struct TestDirectory {
-    pub path: PathBuf,
-}
-
-impl TestDirectory {
-    pub fn new() -> Self {
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-
-        let path = std::env::temp_dir().join(format!(
-            "marketforge-depth-format-{}-{id}",
-            std::process::id()
-        ));
-
-        fs::create_dir_all(&path).unwrap();
-
-        Self { path }
-    }
-}
-
-impl Drop for TestDirectory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
+pub type TestDirectory = crate::support::migration::PersistentDirectory;
 
 pub fn project_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -183,10 +160,13 @@ pub fn run_depth_format_test_with_events(
 ) -> DepthFormatResult {
     let root = project_root();
 
-    let job = load_processing_job(root.join("data/.jobs/process").join(job_filename))
+    let job = load_processing_job(root.join("retained-cases").join(job_filename))
         .expect("load depth processing job");
 
     let task = &job.tasks[0];
+    let resolved_sequence_policy =
+        marketforge_engine::historical::normalize::resolve_sequence_policy(task).unwrap();
+    assert_eq!(sequence_policy, resolved_sequence_policy);
 
     assert!(
         task.input_path.is_file(),
@@ -194,7 +174,7 @@ pub fn run_depth_format_test_with_events(
         task.input_path.display()
     );
 
-    let config = load_processing_config(root.join("data/.jobs/processing.json"), &root)
+    let config = load_processing_config(root.join("data/.config/historical/general.toml"), &root)
         .expect("load processing configuration");
 
     let directory = TestDirectory::new();
@@ -210,7 +190,7 @@ pub fn run_depth_format_test_with_events(
         &mut metrics,
         &config.integrity_policy,
         &ScopedIntegrityMetrics::default(),
-        sequence_policy,
+        resolved_sequence_policy,
     )
     .expect("process depth archive");
 

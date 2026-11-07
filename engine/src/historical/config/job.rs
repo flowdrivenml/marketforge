@@ -167,6 +167,10 @@ fn load_document_inner(
                         .raw_schema
                         .as_object_mut()
                         .and_then(|object| object.remove("marketforge_profile"));
+                    let source_provenance = task
+                        .raw_schema
+                        .as_object_mut()
+                        .and_then(|object| object.remove("marketforge_source"));
                     if let Some(profile) = catalog.for_task(task)? {
                         check_provenance(
                             provenance.as_ref(),
@@ -194,6 +198,9 @@ fn load_document_inner(
                             )));
                         }
                         task.raw_schema = profile.physical.raw_schema.clone();
+                        if let Some(source) = source_provenance {
+                            task.raw_schema["marketforge_source"] = source;
+                        }
                         task.normalizations = profile.normalizations.clone();
                         tag(task, &profile.definition.id, &profile.fingerprint)?;
                     } else {

@@ -7,8 +7,8 @@ use std::{
 };
 
 use {
+    crate::support::migration::archive_case as load_processing_job,
     marketforge_engine::historical::job::WorkTask,
-    marketforge_engine::historical::job::load_processing_job,
     marketforge_engine::historical::job::validate_processing_job,
     marketforge_engine::historical::normalize::worker::TradeSink,
     marketforge_engine::historical::normalize::worker::process_trade_task,
@@ -55,7 +55,7 @@ impl TradeSink for CountingTradeSink {
 // -----------------------------------------------------------------------------
 
 fn process_jobs_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/.jobs/process")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../retained-cases")
 }
 
 fn configuration_key(task: &WorkTask) -> String {
@@ -77,59 +77,17 @@ fn configuration_key(task: &WorkTask) -> String {
 }
 
 fn discover_trade_tasks() -> BTreeMap<String, WorkTask> {
-    let directory = process_jobs_dir();
-
-    assert!(
-        directory.is_dir(),
-        "processing job directory does not exist: {}",
-        directory.display()
-    );
-
-    let mut paths: Vec<PathBuf> = fs::read_dir(&directory)
-        .expect("read processing jobs")
-        .map(|entry| entry.expect("read directory entry").path())
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
-        .collect();
-
-    paths.sort();
-
     let mut tasks = BTreeMap::new();
-
-    for path in paths {
-        let job = load_processing_job(&path).unwrap_or_else(|error| {
-            panic!("failed to load processing job {}: {error}", path.display())
-        });
-
-        validate_processing_job(&job)
-            .unwrap_or_else(|error| panic!("invalid processing job {}: {error}", path.display()));
-
+    for job in crate::support::migration::retained_trade_jobs() {
         for task in job.tasks {
-            if !task
-                .normalizations
-                .iter()
-                .any(|normalization| normalization.target_schema == TargetSchema::Trade)
-            {
-                continue;
-            }
-
             let key = configuration_key(&task);
-
-            // Prefer an existing archive when multiple processing jobs
-            // contain the same trade configuration.
-            match tasks.entry(key) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(task);
-                }
-
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    if !entry.get().input_path.is_file() && task.input_path.is_file() {
-                        entry.insert(task);
-                    }
-                }
-            }
+            assert!(
+                tasks.insert(key, task).is_none(),
+                "ambiguous retained profile selection"
+            );
         }
     }
-
+    assert!(!tasks.is_empty(), "no retained trade cases");
     tasks
 }
 
