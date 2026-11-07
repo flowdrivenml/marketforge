@@ -1,6 +1,6 @@
 # Task 02 — Production V3 Batch Loading and Unified Profiles
 
-Status: completed implementation; real OKX family metadata coverage remains unavailable. Commit: recorded in the next progress update / Git history (`task-02`).
+Status: completed implementation; real OKX family metadata coverage remains unavailable. Commit: `7cc9b7d`.
 
 ## Decision and former blocker
 

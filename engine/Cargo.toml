@@ -11,6 +11,7 @@ management-client = ["dep:reqwest", "dep:tokio", "dep:futures-util"]
 management-tui = ["management-client", "monitor-tui"]
 postgres = ["dep:sqlx"]
 historical-slow-tests = ["historical"]
+historical-real-tests = ["historical"]
 historical = [
     "dep:toml",
     "parquet",
@@ -432,3 +433,8 @@ required-features = ["management-tui"]
 name = "management_client"
 path = "tests/management_client.rs"
 required-features = ["management-client"]
+
+[[test]]
+name = "historical_normalize_support"
+path = "tests/historical/support/main.rs"
+required-features = ["historical"]

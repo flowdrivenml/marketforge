@@ -133,3 +133,7 @@ handoff.md
 !/docs/historical/normalize-job-v3.example.json
 !/docs/historical/normalize-job-v3.schema.json
 !/docs/historical/normalize-batch-v3.example.json
+
+# Maintained workload and persistent normalization test outputs.
+!engine/tests/historical/fixtures/normalize.json
+/data/tests/historical/normalize/

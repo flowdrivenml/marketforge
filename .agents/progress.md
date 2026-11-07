@@ -8,8 +8,8 @@ Baseline: historical cargo check passed; whole-repository fmt check fails in unr
 | Task | Description | Status | Summary / verification | Commit | Blockers |
 |---|---|---|---|---|---|
 | 01 | Shared Historical Runtime Configuration | completed | Shared configuration, validation, paths and existing resource accounting; compatibility re-exports. 7 configuration tests pass; historical and no-default-features checks pass; Clippy passes with existing warnings; changed-file rustfmt passes. | `3c65b3d` | Existing catalog/CLI tests require removed raw_schemas tree (Task 02); legacy integration fixtures remain for Tasks 03/06. |
-| 02 | Production V3 Batch Loading and Unified Profiles | completed | Stable persisted batch instrument authority; unified profiles; strict production batch loader and family expansion. | pending | Real OKX family metadata unavailable; explicitly diagnosed, independent concrete coverage continues. |
-| 03 | Shared Normalization Test Infrastructure | pending | | | |
+| 02 | Production V3 Batch Loading and Unified Profiles | completed | Stable persisted batch instrument authority; unified profiles; strict production batch loader and family expansion. | `7cc9b7d` | Real OKX family metadata unavailable; explicitly diagnosed, independent concrete coverage continues. |
+| 03 | Shared Normalization Test Infrastructure | completed | Production subset selection, conservative overrides, persistent isolated runs and metadata; two bounded real representatives passed. | pending | Legacy suite migration remains Task 06. |
 | 04 | Integrity Observation Accounting | pending | | | |
 | 05 | Source-Error Handling and Timestamp Ordering | pending | | | |
 | 06 | Exchange-Profile Test Migration | pending | | | |
@@ -35,3 +35,5 @@ Resume prerequisite: specify an authoritative offline mapping from full instrume
 Updated authorization resolves the earlier architectural blocker: schema-3 now carries a persisted offline instrument authority. Original blocker above is historical context. Correctness limitations for real family metadata remain explicit rather than blocking independent work.
 
 Task 02 verification: 28 config tests, 1 CLI test, 14 depth-transform tests and 6 XLSX decoder tests passed; historical check and Clippy passed (warnings). Changed-file formatting passed; repository fmt still fails on unrelated live files. Legacy depth_spec selected test fails on absent private job files and remains assigned to Task 06.
+
+Task 03: 8 harness tests passed (6 source-only, 2 bounded real prefixes); check passed; changed-file fmt passed. Generated artifacts retained and ignored. Broad legacy migration deferred to Task 06.
