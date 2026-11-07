@@ -63,3 +63,22 @@ pub fn enforce_integrity(
 
     Ok(())
 }
+
+/// Merge completed checks exactly once; error helpers record the failing category.
+pub(super) fn record_trace(
+    metrics: &mut TaskMetrics,
+    scope: &IntegrityScope,
+    trace: &crate::shared::validation::IntegrityObservationTrace,
+    error: Option<&MarketForgeError>,
+) -> Result<()> {
+    let failed = match error {
+        Some(MarketForgeError::RecordIntegrity { category, .. }) => Some(*category),
+        _ => None,
+    };
+    for category in trace.successful(failed) {
+        metrics
+            .scoped_integrity
+            .record(scope, category, false, trace.event_timestamp_ns)?;
+    }
+    Ok(())
+}

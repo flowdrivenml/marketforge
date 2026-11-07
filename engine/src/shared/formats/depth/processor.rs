@@ -7,13 +7,13 @@ use super::outcome::{
 use super::transforms::ExtractedLevel;
 use super::{
     json::{matches_event_filter, required_json_field},
-    snapshot::apply_snapshot,
+    snapshot::apply_snapshot_observed,
     spec::{DepthOperation, DepthSpec},
     transforms::{extract_level_array, extract_optional_sequence, extract_timestamp_ns},
-    update::apply_absolute_update,
+    update::apply_absolute_update_observed,
 };
 use super::{
-    relative::{RelativeAction, apply_relative_update},
+    relative::{RelativeAction, apply_relative_update_observed},
     scalar::extract_scalar_level,
 };
 use crate::shared::domain::book::{SequencePolicy, SequenceTracker};
@@ -43,6 +43,8 @@ pub struct DepthProcessor {
 
     book: BookStore,
     sequence: SequenceTracker,
+    sequence_policy: SequencePolicy,
+    observations: crate::shared::validation::IntegrityObservationTrace,
 }
 
 impl DepthProcessor {
@@ -68,9 +70,30 @@ impl DepthProcessor {
 
             book: BookStore::new(),
             sequence: SequenceTracker::new(sequence_policy),
+            sequence_policy,
+            observations: Default::default(),
         })
     }
 
+    pub fn reset_observations(&mut self) {
+        self.observations = Default::default();
+    }
+    pub fn observations(&self) -> &crate::shared::validation::IntegrityObservationTrace {
+        &self.observations
+    }
+    /// Failure diagnostics reuse configured extraction, never adjacent event time.
+    pub fn event_timestamp(&self, record: &Value) -> Option<i64> {
+        self.specs
+            .iter()
+            .filter(|s| {
+                s.event_filter
+                    .as_ref()
+                    .is_none_or(|f| matches_event_filter(record, f).unwrap_or(false))
+            })
+            .find_map(|s| {
+                extract_timestamp_ns(record, &s.event_timestamp.source, s.timestamp_encoding).ok()
+            })
+    }
     pub fn book(&self) -> &BookStore {
         &self.book
     }
@@ -83,6 +106,7 @@ impl DepthProcessor {
         &mut self,
         record: &Value,
     ) -> Result<DepthProcessingOutcome> {
+        self.observations = Default::default();
         // Resolve exactly one matching normalization rule.
         let mut matched = None;
 
@@ -126,6 +150,7 @@ impl DepthProcessor {
             &spec.event_timestamp.source,
             spec.timestamp_encoding,
         )?;
+        self.observations.event_timestamp_ns = Some(event_timestamp_ns);
         // -------------------------------------------------------------------------
         // Extract source sequence
         // -------------------------------------------------------------------------
@@ -155,6 +180,7 @@ impl DepthProcessor {
 
         let bids = extract_level_array(record, bids_spec)?;
         let asks = extract_level_array(record, asks_spec)?;
+        self.observations.passed(IntegrityCategory::InvalidRecord);
 
         if matches!(spec.operation, DepthOperation::Snapshot(_)) {
             return self.apply_snapshot_event(
@@ -177,6 +203,9 @@ impl DepthProcessor {
             DepthOperation::AbsoluteUpdate => {
                 // Reject missing snapshots and sequence discontinuities
                 // before modifying BookStore.
+                if self.sequence.is_synchronized() {
+                    self.observations.passed(IntegrityCategory::MissingSnapshot);
+                }
                 if let Err(error) = self.sequence.validate_update(source_sequence) {
                     self.sequence.invalidate();
                     self.book.clear();
@@ -184,12 +213,16 @@ impl DepthProcessor {
                     return Err(error);
                 }
 
-                let changes = apply_absolute_update(
+                if self.sequence_policy != SequencePolicy::Unsequenced {
+                    self.observations.passed(IntegrityCategory::SequenceGap);
+                }
+                let changes = apply_absolute_update_observed(
                     &mut self.book,
                     bids,
                     asks,
                     spec.quantity_encoding,
                     &self.instrument,
+                    &mut self.observations,
                 )?;
 
                 // Commit only after successful atomic book modification.
@@ -276,12 +309,14 @@ impl DepthProcessor {
         let mut next_sequence = self.sequence.clone();
         next_sequence.initialize(source_sequence)?;
 
-        let changes = apply_snapshot(
+        self.observations.event_timestamp_ns = Some(event_timestamp_ns);
+        let changes = apply_snapshot_observed(
             &mut self.book,
             bids,
             asks,
             quantity_encoding,
             &self.instrument,
+            &mut self.observations,
         )?;
 
         self.sequence = next_sequence;
@@ -322,6 +357,7 @@ impl DepthProcessor {
         &mut self,
         snapshot: AssembledSnapshot,
     ) -> Result<DepthProcessingOutcome> {
+        self.observations = Default::default();
         let quantity_encoding = self
             .specs
             .iter()
@@ -347,6 +383,7 @@ impl DepthProcessor {
         &mut self,
         record: &Value,
     ) -> Result<DepthProcessingOutcome> {
+        self.observations = Default::default();
         // ---------------------------------------------------------
         // Resolve matching relative-update specification
         // ---------------------------------------------------------
@@ -396,6 +433,7 @@ impl DepthProcessor {
             spec.timestamp_encoding,
         )?;
 
+        self.observations.event_timestamp_ns = Some(event_timestamp_ns);
         let source_sequence = extract_optional_sequence(
             record,
             spec.sequence_start
@@ -430,6 +468,10 @@ impl DepthProcessor {
         // Validate sequence before modifying the book
         // ---------------------------------------------------------
 
+        self.observations.passed(IntegrityCategory::InvalidRecord);
+        if self.sequence.is_synchronized() {
+            self.observations.passed(IntegrityCategory::MissingSnapshot);
+        }
         if let Err(error) = self
             .sequence
             .validate_update_range(source_sequence, source_count)
@@ -442,13 +484,17 @@ impl DepthProcessor {
         // Apply relative update
         // ---------------------------------------------------------
 
-        let changes = apply_relative_update(
+        if self.sequence_policy != SequencePolicy::Unsequenced {
+            self.observations.passed(IntegrityCategory::SequenceGap);
+        }
+        let changes = apply_relative_update_observed(
             &mut self.book,
             side,
             level,
             action,
             quantity_encoding,
             &self.instrument,
+            &mut self.observations,
         )?;
 
         self.sequence

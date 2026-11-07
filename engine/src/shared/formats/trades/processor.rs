@@ -86,19 +86,36 @@ impl TradeProcessor {
         })
     }
 
+    pub fn event_timestamp(&self, record: &ByteRecord) -> Result<i64> {
+        parse_timestamp_ns(
+            required(record, self.resolved.timestamp, "timestamp")?,
+            self.normalization.timestamp_encoding,
+        )
+        .map_err(timestamp_error)
+    }
     pub fn process_record(&self, record: &ByteRecord) -> Result<Trade> {
+        self.process_record_observed(record, &mut Default::default())
+    }
+    pub fn process_record_observed(
+        &self,
+        record: &ByteRecord,
+        trace: &mut crate::shared::validation::IntegrityObservationTrace,
+    ) -> Result<Trade> {
         let timestamp_raw = required(record, self.resolved.timestamp, "timestamp")?;
         let price_raw = required(record, self.resolved.price, "price")?;
         let quantity_raw = required(record, self.resolved.quantity, "quantity")?;
         let side_raw = required(record, self.resolved.side, "side")?;
 
         let event_timestamp_ns =
-            parse_timestamp_ns(timestamp_raw, self.normalization.timestamp_encoding)?;
+            parse_timestamp_ns(timestamp_raw, self.normalization.timestamp_encoding)
+                .map_err(timestamp_error)?;
 
+        trace.event_timestamp_ns = Some(event_timestamp_ns);
         let price = parse_decimal(price_raw, "price")?;
 
         let raw_quantity = transform_quantity(quantity_raw, &self.spec.quantity)?;
 
+        trace.passed(IntegrityCategory::InvalidRecord);
         let quantity = normalize_quantity(
             raw_quantity,
             price,
@@ -106,6 +123,7 @@ impl TradeProcessor {
             &self.instrument,
         )?;
 
+        trace.passed(IntegrityCategory::TransformationFailure);
         let side = transform_side(side_raw, &self.spec.side)?;
 
         let trade_id = optional_string(record, self.resolved.trade_id)?;
@@ -247,4 +265,14 @@ fn optional_u64(record: &ByteRecord, field: Option<ResolvedField>) -> Result<Opt
             category: IntegrityCategory::InvalidRecord,
             message: format!("invalid trade sequence: {value}: {error}"),
         })
+}
+
+fn timestamp_error(error: MarketForgeError) -> MarketForgeError {
+    match error {
+        MarketForgeError::InvalidCanonical(message) => MarketForgeError::RecordIntegrity {
+            category: IntegrityCategory::InvalidRecord,
+            message,
+        },
+        error => error,
+    }
 }

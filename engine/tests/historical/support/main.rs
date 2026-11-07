@@ -247,3 +247,6 @@ fn missing_source_is_an_actionable_failure_with_retained_metadata() {
     run.finish(&result).unwrap();
     assert!(run.path.join("selected-batch.json").exists());
 }
+
+#[path = "../normalize/integrity_accounting.rs"]
+mod integrity_accounting;

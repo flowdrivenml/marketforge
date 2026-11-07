@@ -9,17 +9,26 @@ use crate::{
 
 use super::transforms::ExtractedLevel;
 
-pub fn apply_snapshot(
+pub(super) fn apply_snapshot_observed(
     book: &mut BookStore,
     bids: Vec<ExtractedLevel>,
     asks: Vec<ExtractedLevel>,
     encoding: QuantityEncoding,
     instrument: &InstrumentSpec,
+    trace: &mut crate::shared::validation::IntegrityObservationTrace,
 ) -> Result<Vec<BookChange>> {
+    let has_levels = !bids.is_empty() || !asks.is_empty();
     let bids = normalize_levels(bids, encoding, instrument)?;
     let asks = normalize_levels(asks, encoding, instrument)?;
 
-    book.apply_snapshot(bids, asks)
+    if has_levels {
+        trace.passed(crate::shared::validation::IntegrityCategory::TransformationFailure);
+    }
+    let result = book.apply_snapshot(bids, asks);
+    if result.is_ok() {
+        trace.passed(crate::shared::validation::IntegrityCategory::InvalidRecord);
+    }
+    result
 }
 
 pub(super) fn normalize_levels(

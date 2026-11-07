@@ -20,6 +20,12 @@ pub struct XlsxDepthDecoder;
 
 impl XlsxDepthDecoder {
     pub fn decode<R: Read + Seek>(reader: R) -> Result<Vec<XlsxDepthRecord>> {
+        Self::decode_observed(reader, |_, _, _| Ok(()))
+    }
+    pub fn decode_observed<R: Read + Seek>(
+        reader: R,
+        mut observe: impl FnMut(u64, Option<i64>, Option<&MarketForgeError>) -> Result<()>,
+    ) -> Result<Vec<XlsxDepthRecord>> {
         let mut workbook = ZipArchive::new(reader)
             .map_err(|error| invalid_error(format!("cannot open XLSX workbook: {error}")))?;
 
@@ -50,29 +56,35 @@ impl XlsxDepthDecoder {
                 .map_err(|_| invalid_error("XLSX source ordinal overflow"))?
                 + 1;
 
-            if row.len() != 3 {
-                return invalid(format!(
-                    "XLSX row {source_ordinal}: expected 3 columns, received {}",
-                    row.len()
-                ));
-            }
+            let mut timestamp_ns = None;
+            let result = (|| -> Result<XlsxDepthRecord> {
+                if row.len() != 3 {
+                    return invalid(format!(
+                        "XLSX row {source_ordinal}: expected 3 columns, received {}",
+                        row.len()
+                    ));
+                }
 
-            let timestamp = row[0].parse::<i64>().map_err(|_| {
-                invalid_error(format!("XLSX row {source_ordinal}: invalid timestamp"))
-            })?;
+                let timestamp = row[0].parse::<i64>().map_err(|_| {
+                    invalid_error(format!("XLSX row {source_ordinal}: invalid timestamp"))
+                })?;
 
-            let asks = parse_levels(&row[1], source_ordinal, "asks")?;
-            let bids = parse_levels(&row[2], source_ordinal, "bids")?;
+                timestamp_ns = timestamp.checked_mul(1_000_000_000);
+                let asks = parse_levels(&row[1], source_ordinal, "asks")?;
+                let bids = parse_levels(&row[2], source_ordinal, "bids")?;
 
-            records.push(XlsxDepthRecord {
-                source_ordinal,
-                timestamp,
-                record: json!({
-                    "timestamp": timestamp.to_string(),
-                    "asks": asks,
-                    "bids": bids,
-                }),
-            });
+                Ok(XlsxDepthRecord {
+                    source_ordinal,
+                    timestamp,
+                    record: json!({
+                        "timestamp": timestamp.to_string(),
+                        "asks": asks,
+                        "bids": bids,
+                    }),
+                })
+            })();
+            observe(source_ordinal, timestamp_ns, result.as_ref().err())?;
+            records.push(result?);
         }
 
         records.sort_by_key(|record| (record.timestamp, record.source_ordinal));

@@ -190,6 +190,9 @@ pub struct IntegrityWindowEntry {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScopedIntegrityMetrics {
     pub global: CategoryStatistics,
+    /// Eligible observations and violations lacking trustworthy event time.
+    #[serde(default)]
+    pub unattributed: CategoryStatistics,
 
     #[serde(with = "file_map_serde")]
     pub files: BTreeMap<IntegrityScope, CategoryStatistics>,
@@ -218,6 +221,10 @@ impl ScopedIntegrityMetrics {
         let mut file = self.files.get(scope).cloned().unwrap_or_default();
         file.record(category, violated)?;
 
+        let mut unattributed = self.unattributed.clone();
+        if event_timestamp_ns.is_none() {
+            unattributed.record(category, violated)?;
+        }
         let mut hourly_update = None;
         let mut daily_update = None;
 
@@ -240,6 +247,7 @@ impl ScopedIntegrityMetrics {
         }
 
         self.global = global;
+        self.unattributed = unattributed;
         self.files.insert(scope.clone(), file);
 
         if let Some((key, value)) = hourly_update {
@@ -256,6 +264,7 @@ impl ScopedIntegrityMetrics {
         let mut merged = self.clone();
 
         merged.global.merge(&other.global)?;
+        merged.unattributed.merge(&other.unattributed)?;
 
         for (scope, stats) in &other.files {
             merged

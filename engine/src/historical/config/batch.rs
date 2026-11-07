@@ -460,10 +460,9 @@ impl PreparedBatch {
                         task.normalizations =
                             serde_json::from_value(variant["normalizations"].clone())
                                 .map_err(|e| invalid(e.to_string()))?;
-                    } else {
-                        task.normalizations.retain(|n| {
-                            n.rules.get("snapshot").is_some() == (options.feed == Feed::Snapshot)
-                        });
+                    } else if options.feed == Feed::Snapshot {
+                        task.normalizations
+                            .retain(|n| n.rules.get("snapshot").is_some());
                     }
                     if task.normalizations.is_empty() {
                         return Err(invalid("profile does not support requested source feed"));

@@ -274,7 +274,20 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
                         // Normalize and reconstruct depth
                         // -----------------------------------------------------
 
-                        let outcome = match processor.process_record_with_boundary(&record) {
+                        let result = processor.process_record_with_boundary(&record);
+                        let event_timestamp_ns = processor
+                            .observations()
+                            .event_timestamp_ns
+                            .or_else(|| processor.event_timestamp(&record));
+                        observe_depth(
+                            metrics,
+                            &scope,
+                            &processor,
+                            result.as_ref().err(),
+                            true,
+                            event_timestamp_ns,
+                        )?;
+                        let outcome = match result {
                             Ok(outcome) => outcome,
 
                             // ---------------------------------------------
@@ -287,7 +300,7 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
                                     metrics,
                                     category,
                                     source_record,
-                                    None,
+                                    event_timestamp_ns,
                                     message.clone(),
                                 )?;
 
@@ -414,6 +427,7 @@ fn process_csv_depth<R: Read, S: DepthSink>(
 
     let mut source_ordinal = 0u64;
     let mut snapshot_rows = 0u64;
+    let mut snapshot_timestamp = None;
 
     for row in decoder.records() {
         if let Some(reporter) = progress.as_deref_mut() {
@@ -451,6 +465,7 @@ fn process_csv_depth<R: Read, S: DepthSink>(
 
                 assembler = DepthSnapshotAssembler::new();
                 snapshot_rows = 0;
+                snapshot_timestamp = None;
 
                 record_integrity_error(
                     task.task_id.0,
@@ -483,15 +498,83 @@ fn process_csv_depth<R: Read, S: DepthSink>(
         // Classify source row
         // -------------------------------------------------------------
 
-        let is_snapshot = processor.is_scalar_snapshot_row(&record)?;
+        let is_snapshot = match processor.is_scalar_snapshot_row(&record) {
+            Ok(value) => value,
+            Err(error) => {
+                let timestamp = processor.event_timestamp(&record);
+                metrics.scoped_integrity.record(
+                    scope,
+                    IntegrityCategory::ParseFailure,
+                    false,
+                    timestamp,
+                )?;
+                if let MarketForgeError::RecordIntegrity { category, message } = &error {
+                    record_integrity_error(
+                        task.task_id.0,
+                        scope,
+                        metrics,
+                        *category,
+                        source_ordinal,
+                        timestamp,
+                        message.clone(),
+                    )?;
+                    increment(
+                        &mut metrics.counters.records_rejected_unmatched,
+                        "records_rejected_unmatched",
+                    )?;
+                }
+                return Err(error);
+            }
+        };
 
         if is_snapshot {
-            let (timestamp_ns, sequence, side, level) =
-                processor.extract_scalar_snapshot_row(&record)?;
+            let result = processor.extract_scalar_snapshot_row(&record);
+            let timestamp = result
+                .as_ref()
+                .ok()
+                .map(|v| v.0)
+                .or_else(|| processor.event_timestamp(&record));
+            metrics.scoped_integrity.record(
+                scope,
+                IntegrityCategory::ParseFailure,
+                false,
+                timestamp,
+            )?;
+            let (timestamp_ns, sequence, side, level) = match result {
+                Ok(row) => {
+                    metrics.scoped_integrity.record(
+                        scope,
+                        IntegrityCategory::InvalidRecord,
+                        false,
+                        timestamp,
+                    )?;
+                    row
+                }
+                Err(MarketForgeError::RecordIntegrity { category, message }) => {
+                    record_integrity_error(
+                        task.task_id.0,
+                        scope,
+                        metrics,
+                        category,
+                        source_ordinal,
+                        timestamp,
+                        message.clone(),
+                    )?;
+                    increment(
+                        &mut metrics.counters.records_rejected_unmatched,
+                        "records_rejected_unmatched",
+                    )?;
+                    return Err(MarketForgeError::RecordIntegrity { category, message });
+                }
+                Err(error) => return Err(error),
+            };
 
             assembler.push(timestamp_ns, sequence, side, level)?;
 
-            snapshot_rows += 1;
+            snapshot_timestamp = Some(timestamp_ns);
+            snapshot_rows = snapshot_rows.checked_add(1).ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration("snapshot row counter overflow".into())
+            })?;
 
             continue;
         }
@@ -500,14 +583,56 @@ fn process_csv_depth<R: Read, S: DepthSink>(
         // Flush pending snapshot before relative updates
         // -------------------------------------------------------------
 
+        // Decoding this physical update succeeded even if pending assembly fails.
+        metrics.scoped_integrity.record(
+            scope,
+            IntegrityCategory::ParseFailure,
+            false,
+            processor.event_timestamp(&record),
+        )?;
         if assembler.has_pending() {
-            let snapshot = assembler.finish()?.ok_or_else(|| {
+            let finished = assembler.finish();
+            if let Err(MarketForgeError::RecordIntegrity { category, message }) = &finished {
+                record_snapshot_failure(
+                    task,
+                    scope,
+                    metrics,
+                    *category,
+                    source_ordinal - 1,
+                    snapshot_rows,
+                    snapshot_timestamp,
+                    message.clone(),
+                )?;
+            }
+            let snapshot = finished?.ok_or_else(|| {
                 MarketForgeError::InvalidConfiguration(
                     "pending snapshot unexpectedly missing".to_owned(),
                 )
             })?;
 
-            let outcome = processor.process_assembled_snapshot(snapshot)?;
+            let timestamp = Some(snapshot.timestamp_ns);
+            let result = processor.process_assembled_snapshot(snapshot);
+            observe_depth(
+                metrics,
+                scope,
+                processor,
+                result.as_ref().err(),
+                false,
+                timestamp,
+            )?;
+            if let Err(MarketForgeError::RecordIntegrity { category, message }) = &result {
+                record_snapshot_failure(
+                    task,
+                    scope,
+                    metrics,
+                    *category,
+                    source_ordinal - 1,
+                    snapshot_rows,
+                    timestamp,
+                    message.clone(),
+                )?;
+            }
+            let outcome = result?;
 
             accept_outcome(
                 outcome,
@@ -520,13 +645,27 @@ fn process_csv_depth<R: Read, S: DepthSink>(
             )?;
 
             snapshot_rows = 0;
+            snapshot_timestamp = None;
         }
 
         // -------------------------------------------------------------
         // Apply relative update
         // -------------------------------------------------------------
 
-        let outcome = match processor.process_scalar_relative_update(&record) {
+        let result = processor.process_scalar_relative_update(&record);
+        let event_timestamp_ns = processor
+            .observations()
+            .event_timestamp_ns
+            .or_else(|| processor.event_timestamp(&record));
+        observe_depth(
+            metrics,
+            scope,
+            processor,
+            result.as_ref().err(),
+            false,
+            event_timestamp_ns,
+        )?;
+        let outcome = match result {
             Ok(outcome) => outcome,
 
             Err(MarketForgeError::RecordIntegrity { category, message }) => {
@@ -539,7 +678,7 @@ fn process_csv_depth<R: Read, S: DepthSink>(
                     metrics,
                     category,
                     source_ordinal,
-                    None,
+                    event_timestamp_ns,
                     message.clone(),
                 )?;
 
@@ -572,6 +711,8 @@ fn process_csv_depth<R: Read, S: DepthSink>(
     // -------------------------------------------------------------
 
     if assembler.has_pending() {
+        processor.reset_observations();
+        let mut event_timestamp_ns = snapshot_timestamp;
         let result = assembler
             .finish()
             .and_then(|snapshot| {
@@ -581,7 +722,18 @@ fn process_csv_depth<R: Read, S: DepthSink>(
                     )
                 })
             })
-            .and_then(|snapshot| processor.process_assembled_snapshot(snapshot));
+            .and_then(|snapshot| {
+                event_timestamp_ns = Some(snapshot.timestamp_ns);
+                processor.process_assembled_snapshot(snapshot)
+            });
+        observe_depth(
+            metrics,
+            scope,
+            processor,
+            result.as_ref().err(),
+            false,
+            event_timestamp_ns,
+        )?;
 
         match result {
             Ok(outcome) => {
@@ -608,14 +760,14 @@ fn process_csv_depth<R: Read, S: DepthSink>(
                         category,
                         task_id: task.task_id.0,
                         source_record: Some(source_ordinal),
-                        event_timestamp_ns: None,
+                        event_timestamp_ns,
                         message: message.clone(),
                     },
                 )?;
 
                 metrics
                     .scoped_integrity
-                    .record(scope, category, true, None)?;
+                    .record(scope, category, true, event_timestamp_ns)?;
 
                 enforce_integrity(policy, metrics, previous_job_integrity, category, &message)?;
             }
@@ -858,7 +1010,33 @@ fn process_xlsx_depth<R: Read, S: DepthSink>(
     // Decode and chronologically sort snapshots
     // -------------------------------------------------------------------------
 
-    let records = XlsxDepthDecoder::decode(Cursor::new(bytes))?;
+    let records =
+        XlsxDepthDecoder::decode_observed(Cursor::new(bytes), |ordinal, timestamp, error| {
+            increment(&mut metrics.counters.records_read, "records_read")?;
+            if let Some(error) = error {
+                record_integrity_error(
+                    task.task_id.0,
+                    scope,
+                    metrics,
+                    IntegrityCategory::ParseFailure,
+                    ordinal,
+                    timestamp,
+                    error.to_string(),
+                )?;
+                increment(
+                    &mut metrics.counters.records_rejected_unmatched,
+                    "records_rejected_unmatched",
+                )?;
+            } else {
+                metrics.scoped_integrity.record(
+                    scope,
+                    IntegrityCategory::ParseFailure,
+                    false,
+                    timestamp,
+                )?;
+            }
+            Ok(())
+        })?;
 
     // XLSX source ordinals refer to original worksheet positions.
     // Records are already sorted by (timestamp, source_ordinal).
@@ -871,7 +1049,6 @@ fn process_xlsx_depth<R: Read, S: DepthSink>(
         if let Some(reporter) = progress.as_deref_mut() {
             reporter.maybe_update(&metrics.counters);
         }
-        increment(&mut metrics.counters.records_read, "records_read")?;
 
         let event_ordinal = u64::try_from(index)
             .map_err(|_| {
@@ -884,7 +1061,20 @@ fn process_xlsx_depth<R: Read, S: DepthSink>(
 
         let source_ordinal = source_record.source_ordinal;
 
-        let outcome = match processor.process_record_with_boundary(&source_record.record) {
+        let result = processor.process_record_with_boundary(&source_record.record);
+        let event_timestamp_ns = processor
+            .observations()
+            .event_timestamp_ns
+            .or_else(|| processor.event_timestamp(&source_record.record));
+        observe_depth(
+            metrics,
+            scope,
+            &processor,
+            result.as_ref().err(),
+            false,
+            event_timestamp_ns,
+        )?;
+        let outcome = match result {
             Ok(outcome) => outcome,
 
             Err(MarketForgeError::RecordIntegrity { category, message }) => {
@@ -901,7 +1091,7 @@ fn process_xlsx_depth<R: Read, S: DepthSink>(
                     metrics,
                     category,
                     source_ordinal,
-                    None,
+                    event_timestamp_ns,
                     message.clone(),
                 )?;
 
@@ -934,4 +1124,44 @@ fn process_xlsx_depth<R: Read, S: DepthSink>(
     }
 
     Ok(())
+}
+
+fn observe_depth(
+    metrics: &mut TaskMetrics,
+    scope: &IntegrityScope,
+    processor: &DepthProcessor,
+    error: Option<&MarketForgeError>,
+    parsed: bool,
+    timestamp: Option<i64>,
+) -> Result<()> {
+    let mut trace = processor.observations().clone();
+    if parsed {
+        trace.passed(IntegrityCategory::ParseFailure);
+    }
+    trace.event_timestamp_ns = timestamp;
+    super::integrity::record_trace(metrics, scope, &trace, error)
+}
+fn record_snapshot_failure(
+    task: &WorkTask,
+    scope: &IntegrityScope,
+    metrics: &mut TaskMetrics,
+    category: IntegrityCategory,
+    source_ordinal: u64,
+    rows: u64,
+    timestamp: Option<i64>,
+    message: String,
+) -> Result<()> {
+    reject_snapshot_rows(metrics, rows)?;
+    metrics
+        .integrity
+        .record(crate::historical::normalize::metrics::IntegrityDiagnostic {
+            category,
+            task_id: task.task_id.0,
+            source_record: Some(source_ordinal),
+            event_timestamp_ns: timestamp,
+            message,
+        })?;
+    metrics
+        .scoped_integrity
+        .record(scope, category, true, timestamp)
 }

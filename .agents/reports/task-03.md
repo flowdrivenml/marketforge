@@ -1,6 +1,6 @@
 # Task 03 — Shared Normalization Test Infrastructure
 
-Status: completed. Commit: see task-03 Git commit; hash added by next task update.
+Status: completed. Commit: `f25a907`.
 
 Implementation: `engine/tests/historical/support/{fixtures,runtime,assertions}.rs` loads the sole maintained batch through production parsing, selects structured exact identities/feeds/filenames with explicit expected cardinality, serializes isolated subsets, and resolves through the production loader. No test-specific normalization rules or policies. Conservative in-memory resource defaults and explicit overrides preserve general.toml. Every dataset/staging/scratch path is redirected centrally.
 

@@ -34,6 +34,7 @@ pub enum IntegrityStatus {
 #[serde(rename_all = "snake_case")]
 pub enum IntegrityThreshold {
     FailAction,
+    UnattributedWindow,
     MaximumCount,
     GlobalRate,
     FileRate,
@@ -206,6 +207,21 @@ pub fn evaluate_integrity_policy(
 
         let global = metrics.global.get(category);
 
+        let unattributed = metrics.unattributed.get(category);
+        if unattributed.eligible > 0
+            && (rule.windows.hourly.is_some() || rule.windows.daily.is_some())
+        {
+            record_failure(
+                &mut evaluation,
+                category,
+                IntegrityThreshold::UnattributedWindow,
+                None,
+                None,
+                unattributed,
+                "cannot verify event-time window policy: observations lack trustworthy timestamps"
+                    .into(),
+            )?;
+        }
         if global.violations == 0 {
             continue;
         }

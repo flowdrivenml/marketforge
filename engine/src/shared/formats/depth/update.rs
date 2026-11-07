@@ -11,13 +11,15 @@ use crate::{
 
 use super::transforms::ExtractedLevel;
 
-pub fn apply_absolute_update(
+pub(super) fn apply_absolute_update_observed(
     book: &mut BookStore,
     bids: Vec<ExtractedLevel>,
     asks: Vec<ExtractedLevel>,
     encoding: QuantityEncoding,
     instrument: &InstrumentSpec,
+    trace: &mut crate::shared::validation::IntegrityObservationTrace,
 ) -> Result<Vec<BookChange>> {
+    let has_levels = !bids.is_empty() || !asks.is_empty();
     let mut updates = Vec::with_capacity(bids.len() + asks.len());
 
     for level in bids {
@@ -38,7 +40,14 @@ pub fn apply_absolute_update(
         )?);
     }
 
-    book.apply_batch(updates)
+    if has_levels {
+        trace.passed(crate::shared::validation::IntegrityCategory::TransformationFailure);
+    }
+    let result = book.apply_batch(updates);
+    if result.is_ok() {
+        trace.passed(crate::shared::validation::IntegrityCategory::InvalidRecord);
+    }
+    result
 }
 
 fn normalize_update(

@@ -270,6 +270,7 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
                             metrics,
                             IntegrityCategory::ParseFailure,
                             source_record,
+                            None,
                             error.to_string(),
                         )?;
 
@@ -292,12 +293,27 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
 
                 increment(&mut metrics.counters.records_read, "records_read")?;
 
+                let mut trace = crate::shared::validation::IntegrityObservationTrace::default();
+                trace.passed(IntegrityCategory::ParseFailure);
+
                 // ---------------------------------------------------------
                 // Instrument identity
                 // ---------------------------------------------------------
 
-                match matcher.check(&record)? {
+                let identity = matcher.check(&record);
+                if let Err(error) = identity.as_ref() {
+                    trace.event_timestamp_ns = processor.event_timestamp(&record).ok();
+                    let mut file_scope = scope.clone();
+                    file_scope.stream_id.clear();
+                    super::integrity::record_trace(metrics, &file_scope, &trace, None)?;
+                    return Err(MarketForgeError::InvalidConfiguration(error.to_string()));
+                }
+                match identity? {
                     IdentityDecision::Skip => {
+                        trace.event_timestamp_ns = processor.event_timestamp(&record).ok();
+                        let mut file_scope = scope.clone();
+                        file_scope.stream_id.clear();
+                        super::integrity::record_trace(metrics, &file_scope, &trace, None)?;
                         increment(
                             &mut metrics.counters.records_skipped_instrument,
                             "records_skipped_instrument",
@@ -315,7 +331,9 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
                 // Normalize trade
                 // ---------------------------------------------------------
 
-                let trade = match processor.process_record(&record) {
+                let result = processor.process_record_observed(&record, &mut trace);
+                super::integrity::record_trace(metrics, &scope, &trace, result.as_ref().err())?;
+                let trade = match result {
                     Ok(trade) => trade,
 
                     Err(MarketForgeError::RecordIntegrity { category, message }) => {
@@ -325,6 +343,7 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
                             metrics,
                             category,
                             source_record,
+                            trace.event_timestamp_ns,
                             message.clone(),
                         )?;
 
@@ -350,20 +369,6 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
                 let timestamp = trade.envelope.event_timestamp_ns;
 
                 metrics.record_timestamp(timestamp);
-
-                // ---------------------------------------------------------
-                // Record successful integrity observations
-                // ---------------------------------------------------------
-
-                for category in [
-                    IntegrityCategory::ParseFailure,
-                    IntegrityCategory::InvalidRecord,
-                    IntegrityCategory::TransformationFailure,
-                ] {
-                    metrics
-                        .scoped_integrity
-                        .record(&scope, category, false, Some(timestamp))?;
-                }
 
                 // ---------------------------------------------------------
                 // Write canonical trade
@@ -418,6 +423,7 @@ fn record_trade_integrity_error(
     metrics: &mut TaskMetrics,
     category: IntegrityCategory,
     source_record: u64,
+    event_timestamp_ns: Option<i64>,
     message: String,
 ) -> Result<()> {
     // Count every rejected record.
@@ -427,14 +433,14 @@ fn record_trade_integrity_error(
         category,
         task_id: task.task_id.0,
         source_record: Some(source_record),
-        event_timestamp_ns: None,
+        event_timestamp_ns,
         message,
     })?;
 
     // Record the integrity violation.
     metrics
         .scoped_integrity
-        .record(scope, category, true, None)?;
+        .record(scope, category, true, event_timestamp_ns)?;
 
     Ok(())
 }

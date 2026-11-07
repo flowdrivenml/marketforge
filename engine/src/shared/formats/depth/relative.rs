@@ -26,6 +26,25 @@ pub fn apply_relative_update(
     encoding: QuantityEncoding,
     instrument: &InstrumentSpec,
 ) -> Result<Vec<BookChange>> {
+    apply_relative_update_observed(
+        book,
+        side,
+        level,
+        action,
+        encoding,
+        instrument,
+        &mut Default::default(),
+    )
+}
+pub(super) fn apply_relative_update_observed(
+    book: &mut BookStore,
+    side: BookSide,
+    level: ExtractedLevel,
+    action: RelativeAction,
+    encoding: QuantityEncoding,
+    instrument: &InstrumentSpec,
+    trace: &mut crate::shared::validation::IntegrityObservationTrace,
+) -> Result<Vec<BookChange>> {
     if !book.is_initialized() {
         return invalid("cannot apply relative update before initialization");
     }
@@ -114,7 +133,12 @@ pub fn apply_relative_update(
     // Commit through existing atomic batch mechanism
     // ---------------------------------------------------------
 
-    book.apply_batch(vec![(side, level.price, normalized)])
+    trace.passed(IntegrityCategory::TransformationFailure);
+    let result = book.apply_batch(vec![(side, level.price, normalized)]);
+    if result.is_ok() {
+        trace.passed(IntegrityCategory::InvalidRecord);
+    }
+    result
 }
 
 fn invalid_error(message: impl Into<String>) -> MarketForgeError {
