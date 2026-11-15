@@ -21,6 +21,14 @@ impl BookStore {
         bids: Vec<(Price, BookLevel)>,
         asks: Vec<(Price, BookLevel)>,
     ) -> Result<Vec<(BookSide, Price, BookLevel)>> {
+        crate::shared::historical::limits::depth(
+            bids.len().checked_add(asks.len()).ok_or_else(|| {
+                crate::shared::error::MarketForgeError::InvalidConfiguration(
+                    "snapshot level count overflow".into(),
+                )
+            })?,
+            "book snapshot",
+        )?;
         let new_bids = build_side(bids)?;
         let new_asks = build_side(asks)?;
 

@@ -34,10 +34,7 @@ impl Drop for Temp {
 
 fn sample() -> serde_json::Value {
     serde_json::to_value(
-        crate::support::migration::template(
-            "bybit-spot-spot-BTCUSDT-trade-20260901-20260904-d104.json",
-        )
-        .unwrap(),
+        crate::support::migration::template("bybit.spot.spot.trades:BTCUSDT").unwrap(),
     )
     .unwrap()
 }
@@ -71,11 +68,8 @@ fn lightweight_and_legacy_jobs_resolve_identically() {
     let t = Temp::new();
     let legacy = sample();
     let mut a = load_document_with_catalog(t.job(&legacy), &c).unwrap();
-    for task in &mut a.tasks {
-        task.raw_schema
-            .as_object_mut()
-            .unwrap()
-            .remove("marketforge_source");
+    for (priority, task) in a.tasks.iter_mut().enumerate() {
+        task.raw_schema["marketforge_source"] = serde_json::json!({"source_priority": priority});
     }
     let b = load_document_with_catalog(t.job(&lightweight(legacy, &c)), &c).unwrap();
     assert_eq!(a.tasks, b.tasks);

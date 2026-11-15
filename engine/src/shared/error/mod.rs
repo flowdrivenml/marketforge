@@ -1,2 +1,2 @@
 mod model;
-pub use model::{MarketForgeError, Result};
+pub use model::{MarketForgeError, ResourceLimitError, Result};

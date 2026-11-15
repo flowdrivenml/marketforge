@@ -6,6 +6,9 @@ use {
 
 pub trait TradeSink {
     fn write_trade(&mut self, trade: Trade) -> Result<()>;
+    fn write_trade_at(&mut self, trade: Trade, _source_ordinal: u64) -> Result<()> {
+        self.write_trade(trade)
+    }
 
     fn finish(&mut self) -> Result<()>;
 }

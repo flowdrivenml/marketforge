@@ -14,3 +14,8 @@ pub use job::{
 
 mod batch;
 pub use batch::*;
+
+pub(crate) use batch::family_of;
+
+#[cfg(test)]
+pub(crate) use batch::selection_tests as selection_test_support;

@@ -88,7 +88,7 @@ fn rejects_zero_workers() {
 
 #[test]
 fn handles_empty_task_list() {
-    let results = execute_parallel(Vec::<u64>::new(), 4, |task| Ok(task)).unwrap();
+    let results = execute_parallel(Vec::<u64>::new(), 4, Ok).unwrap();
 
     assert!(results.is_empty());
 }

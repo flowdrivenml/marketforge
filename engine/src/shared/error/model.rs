@@ -6,6 +6,23 @@ use crate::shared::validation::IntegrityCategory;
 
 #[derive(Debug, Error)]
 pub enum MarketForgeError {
+    #[error("not attempted: {reason}")]
+    NotAttempted { reason: String },
+    #[error("stream {stream}, stage={stage}: {source}")]
+    StreamFailure {
+        stream: String,
+        stage: &'static str,
+        #[source]
+        source: Box<MarketForgeError>,
+    },
+    #[error("{processing}; additionally report persistence failed: {report}")]
+    ReportPersistence {
+        #[source]
+        processing: Box<MarketForgeError>,
+        report: Box<MarketForgeError>,
+    },
+    #[error(transparent)]
+    ResourceLimit(#[from] ResourceLimitError),
     #[error("invalid canonical data: {0}")]
     InvalidCanonical(String),
 
@@ -79,4 +96,17 @@ mod tests {
             "record integrity violation (TransformationFailure): quantity conversion failed"
         );
     }
+}
+
+/// Execution constraint; never a recoverable malformed market record.
+#[derive(Debug, Clone, Error)]
+#[error(
+    "resource limit: {resource}, permitted={permitted}, requested={requested}, stage={stage}, scope={scope}"
+)]
+pub struct ResourceLimitError {
+    pub resource: &'static str,
+    pub permitted: u64,
+    pub requested: u64,
+    pub stage: &'static str,
+    pub scope: String,
 }

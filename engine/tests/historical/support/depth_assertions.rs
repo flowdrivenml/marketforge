@@ -1,19 +1,14 @@
-use std::collections::BTreeMap;
 use std::{
     fs::{self, File},
     path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
 };
 use std::{path::Path, time::Instant};
 use {
-    crate::support::migration::archive_case as load_processing_job,
-    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest,
     marketforge_engine::historical::normalize::boundary::fingerprint_book,
     marketforge_engine::historical::normalize::metrics::ScopedIntegrityMetrics,
     marketforge_engine::historical::normalize::metrics::TaskMetrics,
     marketforge_engine::historical::normalize::worker::process_depth_task_with_metrics,
-    marketforge_engine::shared::domain::book::SequencePolicy,
     marketforge_engine::shared::persistence::parquet::ParquetDepthWriter,
 };
 
@@ -32,36 +27,6 @@ use {
 
 use rust_decimal::Decimal;
 
-static NEXT_ID: AtomicU64 = AtomicU64::new(0);
-
-pub struct ExpectedDepthLevel {
-    pub side: BookSide,
-    pub price: &'static str,
-    pub quantity_base: &'static str,
-    pub quantity_quote: &'static str,
-    pub quantity_contracts: Option<&'static str>,
-    pub base_tolerance: Option<&'static str>,
-}
-
-pub struct ExpectedDepthEvent {
-    pub source_ordinal: u64,
-    pub side: BookSide,
-    pub price: &'static str,
-    pub quantity_base: Option<&'static str>,
-    pub quantity_quote: Option<&'static str>,
-    pub quantity_contracts: Option<&'static str>,
-    pub base_tolerance: Option<&'static str>,
-}
-
-pub type TestDirectory = crate::support::migration::PersistentDirectory;
-
-pub fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
 pub struct DepthFormatResult {
     pub records_read: u64,
     pub records_processed: u64,
@@ -69,219 +34,6 @@ pub struct DepthFormatResult {
     pub levels_written: u64,
     pub boundary: DepthBoundaryManifest,
     pub segment_count: usize,
-}
-
-pub fn verify_snapshot_quantities(
-    boundary: &DepthBoundaryManifest,
-    expected: &[ExpectedDepthLevel],
-) {
-    let initial = boundary
-        .initial
-        .as_ref()
-        .expect("missing initial boundary snapshot");
-
-    for sample in expected {
-        let levels = match sample.side {
-            BookSide::Bid => &initial.state.bids,
-            BookSide::Ask => &initial.state.asks,
-        };
-
-        let price: Decimal = sample.price.parse().unwrap();
-
-        let level = levels
-            .iter()
-            .find(|level| level.price == price)
-            .unwrap_or_else(|| {
-                panic!(
-                    "missing snapshot level: side={:?}, price={}",
-                    sample.side, sample.price
-                )
-            });
-
-        let expected_base: Decimal = sample.quantity_base.parse().unwrap();
-
-        let expected_quote: Decimal = sample.quantity_quote.parse().unwrap();
-
-        let actual_base = level
-            .quantity_base
-            .expect("missing canonical base quantity");
-
-        if let Some(tolerance) = sample.base_tolerance {
-            let tolerance: Decimal = tolerance.parse().unwrap();
-
-            assert!(
-                (actual_base - expected_base).abs() <= tolerance,
-                "base quantity mismatch at price {}: expected {}, actual {}",
-                sample.price,
-                expected_base,
-                actual_base
-            );
-        } else {
-            assert_eq!(
-                actual_base, expected_base,
-                "base quantity mismatch at price {}",
-                sample.price
-            );
-        }
-
-        assert_eq!(
-            level.quantity_quote,
-            Some(expected_quote),
-            "quote quantity mismatch at price {}",
-            sample.price
-        );
-
-        let expected_contracts = sample
-            .quantity_contracts
-            .map(|value| value.parse::<Decimal>().unwrap());
-
-        assert_eq!(
-            level.quantity_contracts, expected_contracts,
-            "contract quantity mismatch at price {}",
-            sample.price
-        );
-
-        println!(
-            "  VERIFIED | {:?} | price={} | base={} | quote={} | contracts={:?}",
-            sample.side, sample.price, actual_base, expected_quote, expected_contracts
-        );
-    }
-}
-pub fn run_depth_format_test(
-    job_filename: &str,
-    sequence_policy: SequencePolicy,
-) -> DepthFormatResult {
-    run_depth_format_test_with_events(job_filename, sequence_policy, &[])
-}
-pub fn run_depth_format_test_with_events(
-    job_filename: &str,
-    sequence_policy: SequencePolicy,
-    expected_events: &[ExpectedDepthEvent],
-) -> DepthFormatResult {
-    let root = project_root();
-
-    let job = load_processing_job(root.join("retained-cases").join(job_filename))
-        .expect("load depth processing job");
-
-    let task = &job.tasks[0];
-    let resolved_sequence_policy =
-        marketforge_engine::historical::normalize::resolve_sequence_policy(task).unwrap();
-    assert_eq!(sequence_policy, resolved_sequence_policy);
-
-    assert!(
-        task.input_path.is_file(),
-        "missing source archive: {}",
-        task.input_path.display()
-    );
-
-    let config = load_processing_config(root.join("data/.config/historical/general.toml"), &root)
-        .expect("load processing configuration");
-
-    let directory = TestDirectory::new();
-
-    let mut writer = ParquetDepthWriter::new(&directory.path, config.resources.parquet.clone())
-        .expect("create Parquet depth writer");
-
-    let mut metrics = TaskMetrics::default();
-
-    process_depth_task_with_metrics(
-        task,
-        &mut writer,
-        &mut metrics,
-        &config.integrity_policy,
-        &ScopedIntegrityMetrics::default(),
-        resolved_sequence_policy,
-    )
-    .expect("process depth archive");
-
-    writer.finish().expect("finalize Parquet depth writer");
-
-    let segments = read_depth_segments(&directory.path).expect("read reconstruction segments");
-
-    segments
-        .validate()
-        .expect("validate reconstruction segments");
-
-    let segment_count = segments.segments.len();
-
-    println!("\nRECONSTRUCTION SEGMENTS");
-    println!("  Segments         : {segment_count}");
-    println!("  Total levels     : {}", segments.total_levels);
-
-    for segment in &segments.segments {
-        println!(
-            "  Segment {} | offset={} | initial_levels={} | timestamp={}",
-            segment.segment_id,
-            segment.initial_event_offset,
-            segment.initial_level_count,
-            segment.start_timestamp_ns,
-        );
-    }
-
-    let boundary: DepthBoundaryManifest = serde_json::from_reader(
-        File::open(directory.path.join("boundary.json")).expect("open boundary metadata"),
-    )
-    .expect("deserialize boundary metadata");
-
-    assert_eq!(
-        segments.total_levels,
-        writer.metrics().levels_written,
-        "segment manifest row count differs from Parquet writer"
-    );
-
-    assert_eq!(boundary.version, 1);
-
-    if let Some(initial) = &boundary.initial {
-        assert_eq!(initial.fingerprint, fingerprint_book(&initial.state));
-    }
-
-    if let Some(final_state) = &boundary.final_state {
-        assert_eq!(
-            final_state.fingerprint,
-            fingerprint_book(&final_state.state)
-        );
-    }
-    verify_parquet_replay(&directory.path, &boundary, writer.metrics().levels_written);
-    verify_source_events(&directory.path, expected_events);
-    if !expected_events.is_empty() {
-        verify_source_events(&directory.path, expected_events);
-    }
-
-    println!("\n{}", "=".repeat(90));
-    println!("MARKETFORGE — DEPTH FORMAT VALIDATION");
-    println!("{}", "=".repeat(90));
-
-    println!("Job              : {job_filename}");
-    println!("Source records   : {}", metrics.counters.records_read);
-    println!("Processed records: {}", metrics.counters.records_processed);
-    println!("Rejected records : {}", metrics.counters.records_rejected);
-    println!("Canonical levels : {}", writer.metrics().levels_written);
-    println!("Continuity       : {:?}", boundary.continuity);
-
-    if let Some(initial) = &boundary.initial {
-        println!(
-            "Initial book     : {} bids / {} asks",
-            initial.state.bids.len(),
-            initial.state.asks.len()
-        );
-    }
-
-    if let Some(final_state) = &boundary.final_state {
-        println!(
-            "Final book       : {} bids / {} asks",
-            final_state.state.bids.len(),
-            final_state.state.asks.len()
-        );
-    }
-
-    DepthFormatResult {
-        records_read: metrics.counters.records_read,
-        records_processed: metrics.counters.records_processed,
-        records_rejected: metrics.counters.records_rejected,
-        levels_written: writer.metrics().levels_written,
-        segment_count,
-        boundary,
-    }
 }
 
 fn parquet_files(directory: &Path) -> Vec<PathBuf> {
@@ -305,227 +57,6 @@ fn decimal_at(array: &Decimal256Array, index: usize) -> Option<Decimal> {
     } else {
         Some(i256_to_decimal(array.value(index)).unwrap())
     }
-}
-
-fn read_source_event_offsets(directory: &Path) -> BTreeMap<u64, (u64, u64)> {
-    let file = File::open(directory.join("events.parquet")).expect("open source-event index");
-
-    let reader = ParquetRecordBatchReaderBuilder::try_new(file)
-        .expect("open event-index reader")
-        .build()
-        .expect("build event-index reader");
-
-    let mut offsets = BTreeMap::new();
-
-    for batch in reader {
-        let batch = batch.expect("read event-index batch");
-
-        let ordinals = batch
-            .column_by_name("event_ordinal")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .unwrap();
-
-        let row_offsets = batch
-            .column_by_name("canonical_row_offset")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .unwrap();
-
-        let row_counts = batch
-            .column_by_name("canonical_row_count")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .unwrap();
-
-        for index in 0..batch.num_rows() {
-            let ordinal = ordinals.value(index);
-
-            assert!(
-                offsets
-                    .insert(
-                        ordinal,
-                        (row_offsets.value(index), row_counts.value(index),),
-                    )
-                    .is_none(),
-                "duplicate source-event ordinal: {ordinal}"
-            );
-        }
-    }
-
-    offsets
-}
-
-pub fn verify_source_events(directory: &Path, expected: &[ExpectedDepthEvent]) {
-    if expected.is_empty() {
-        return;
-    }
-
-    let offsets = read_source_event_offsets(directory);
-
-    // Resolve the expected global canonical row offsets.
-    let mut targets = BTreeMap::<u64, &ExpectedDepthEvent>::new();
-
-    for sample in expected {
-        let &(offset, count) = offsets
-            .get(&sample.source_ordinal)
-            .unwrap_or_else(|| panic!("missing source-event ordinal {}", sample.source_ordinal));
-
-        assert_eq!(
-            count, 1,
-            "expected exactly one canonical row for source ordinal {}",
-            sample.source_ordinal
-        );
-
-        assert!(
-            targets.insert(offset, sample).is_none(),
-            "multiple expected events reference canonical row {offset}"
-        );
-    }
-
-    let mut global_offset = 0u64;
-    let mut verified = 0usize;
-
-    for path in parquet_files(directory) {
-        let file = File::open(&path).expect("open canonical Parquet file");
-
-        let reader = ParquetRecordBatchReaderBuilder::try_new(file)
-            .expect("open canonical Parquet reader")
-            .build()
-            .expect("build canonical Parquet reader");
-
-        for batch in reader {
-            let batch = batch.expect("read canonical Parquet batch");
-
-            let sides = batch
-                .column_by_name("side")
-                .unwrap()
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .unwrap();
-
-            let prices = batch
-                .column_by_name("price")
-                .unwrap()
-                .as_any()
-                .downcast_ref::<Decimal256Array>()
-                .unwrap();
-
-            let quantities_base = batch
-                .column_by_name("quantity_base")
-                .unwrap()
-                .as_any()
-                .downcast_ref::<Decimal256Array>()
-                .unwrap();
-
-            let quantities_quote = batch
-                .column_by_name("quantity_quote")
-                .unwrap()
-                .as_any()
-                .downcast_ref::<Decimal256Array>()
-                .unwrap();
-
-            let quantities_contracts = batch
-                .column_by_name("quantity_contracts")
-                .unwrap()
-                .as_any()
-                .downcast_ref::<Decimal256Array>()
-                .unwrap();
-
-            for index in 0..batch.num_rows() {
-                if let Some(sample) = targets.get(&global_offset) {
-                    let expected_side = match sample.side {
-                        BookSide::Bid => "bid",
-                        BookSide::Ask => "ask",
-                    };
-
-                    assert_eq!(
-                        sides.value(index),
-                        expected_side,
-                        "side mismatch at source ordinal {}",
-                        sample.source_ordinal
-                    );
-
-                    let expected_price: Decimal = sample.price.parse().unwrap();
-
-                    assert_eq!(
-                        decimal_at(prices, index),
-                        Some(expected_price),
-                        "price mismatch at source ordinal {}",
-                        sample.source_ordinal
-                    );
-
-                    let expected_base = sample
-                        .quantity_base
-                        .map(|value| value.parse::<Decimal>().unwrap());
-
-                    let actual_base = decimal_at(quantities_base, index);
-
-                    if let Some(tolerance) = sample.base_tolerance {
-                        let tolerance: Decimal = tolerance.parse().unwrap();
-
-                        let actual = actual_base.expect("missing canonical base quantity");
-                        let expected = expected_base.expect("missing expected base quantity");
-
-                        assert!(
-                            (actual - expected).abs() <= tolerance,
-                            "base quantity mismatch at source ordinal {}: expected {}, actual {}",
-                            sample.source_ordinal,
-                            expected,
-                            actual
-                        );
-                    } else {
-                        assert_eq!(
-                            actual_base, expected_base,
-                            "base quantity mismatch at source ordinal {}",
-                            sample.source_ordinal
-                        );
-                    }
-
-                    let expected_quote = sample
-                        .quantity_quote
-                        .map(|value| value.parse::<Decimal>().unwrap());
-
-                    assert_eq!(
-                        decimal_at(quantities_quote, index),
-                        expected_quote,
-                        "quote quantity mismatch at source ordinal {}",
-                        sample.source_ordinal
-                    );
-
-                    let expected_contracts = sample
-                        .quantity_contracts
-                        .map(|value| value.parse::<Decimal>().unwrap());
-
-                    assert_eq!(
-                        decimal_at(quantities_contracts, index),
-                        expected_contracts,
-                        "contract quantity mismatch at source ordinal {}",
-                        sample.source_ordinal
-                    );
-
-                    verified += 1;
-                    println!(
-                        "  VERIFIED | ordinal={} | {:?} | price={} | base={:?}",
-                        sample.source_ordinal, sample.side, sample.price, actual_base
-                    );
-                }
-
-                global_offset += 1;
-            }
-        }
-    }
-
-    assert_eq!(
-        verified,
-        expected.len(),
-        "not all expected source events were verified"
-    );
-
-    println!("\nSOURCE-TO-PARQUET NORMALIZATION: {verified} EVENTS VERIFIED");
 }
 
 pub fn replay_parquet(directory: &Path) -> (BookStore, u64) {
@@ -754,4 +285,687 @@ fn verify_parquet_replay(directory: &Path, boundary: &DepthBoundaryManifest, exp
     println!("SHA-256           : MATCH");
 
     println!("\nREPLAY RESULT: PASS");
+}
+
+// Real-depth tests select only current prepared sources.
+// Keep the existing independent Parquet replay and boundary assertions.
+pub fn run_prepared_real_depth_test(
+    exchange: marketforge_engine::shared::domain::canonical::Exchange,
+    instrument_type: &str,
+    category: &str,
+    source_index: usize,
+) -> DepthFormatResult {
+    run_prepared_depth_impl(exchange, instrument_type, category, source_index, None)
+}
+
+pub fn run_prepared_real_depth_family_test(
+    exchange: marketforge_engine::shared::domain::canonical::Exchange,
+    instrument_type: &str,
+    category: &str,
+    source_index: usize,
+    member_index: usize,
+) -> DepthFormatResult {
+    run_prepared_depth_impl(
+        exchange,
+        instrument_type,
+        category,
+        source_index,
+        Some(member_index),
+    )
+}
+
+fn run_prepared_depth_impl(
+    exchange: marketforge_engine::shared::domain::canonical::Exchange,
+    instrument_type: &str,
+    category: &str,
+    source_index: usize,
+    family_member_index: Option<usize>,
+) -> DepthFormatResult {
+    use crate::support::{fixtures::workload, runtime::TestRun};
+    use marketforge_engine::historical::job::ContentType;
+    use marketforge_engine::shared::domain::book::SequencePolicy;
+    use marketforge_engine::shared::historical::limits::LimitScope;
+
+    let mut batch = workload().expect("load authoritative normalization batch");
+    batch.jobs.retain_mut(|job| {
+        if job.output.content_type != ContentType::Depth {
+            return false;
+        }
+        job.tasks.retain(|task| {
+            task.exchange == exchange
+                && serde_json::to_value(task.instrument_type).unwrap().as_str()
+                    == Some(instrument_type)
+                && serde_json::to_value(task.market_category).unwrap().as_str() == Some(category)
+                && if family_member_index.is_some() {
+                    task.scope.is_some()
+                } else {
+                    task.scope.is_none() && task.symbol.is_some()
+                }
+        });
+        !job.tasks.is_empty()
+    });
+    assert_eq!(
+        batch.jobs.len(),
+        1,
+        "expected one matching concrete depth job"
+    );
+    let tasks = &mut batch.jobs[0].tasks;
+
+    if let Some(member_index) = family_member_index {
+        // Choose an archive from the prepared batch.
+        tasks.sort_by(|a, b| a.input_path.cmp(&b.input_path));
+
+        assert!(
+            tasks.len() > source_index,
+            "missing family source index {source_index}"
+        );
+
+        let selected_id = tasks[source_index].task_id.0;
+        tasks.retain(|task| task.task_id.0 == selected_id);
+
+        assert_eq!(tasks.len(), 1);
+
+        let task = &mut tasks[0];
+        let family = task
+            .scope
+            .as_ref()
+            .expect("expected family scope")
+            .identifier
+            .clone();
+
+        // Select authoritative concrete metadata belonging to this family.
+        let mut members = batch
+            .instruments
+            .iter()
+            .filter(|instrument| {
+                if instrument.exchange != exchange {
+                    return false;
+                }
+
+                if serde_json::to_value(instrument.instrument_type)
+                    .unwrap()
+                    .as_str()
+                    != Some(instrument_type)
+                {
+                    return false;
+                }
+
+                if serde_json::to_value(instrument.market_category)
+                    .unwrap()
+                    .as_str()
+                    != Some(category)
+                {
+                    return false;
+                }
+
+                match instrument_type {
+                    "perpetual" => instrument.symbol.strip_suffix("-SWAP") == Some(family.as_str()),
+
+                    "future" => instrument
+                        .symbol
+                        .strip_prefix(&format!("{family}-"))
+                        .is_some(),
+
+                    _ => false,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        members.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+
+        let member = members.get(member_index).unwrap_or_else(|| {
+            panic!(
+                "missing authoritative family member index {} for {}",
+                member_index, family
+            )
+        });
+
+        println!(
+            "Selected OKX family={} member={} instrument_id={}",
+            family, member.symbol, member.instrument_id
+        );
+
+        // Explicitly test this concrete member. Other symbols in a
+        // mixed archive are outside this particular test's selection.
+        task.instrument_selection = Some(
+            serde_json::from_value(serde_json::json!({
+                "mode": "include",
+                "symbols": [member.symbol.clone()]
+            }))
+            .expect("valid concrete family-member selection"),
+        );
+
+        // OKX futures-chain archives contain separate TAR members
+        // for individual contracts. Route the selected instrument
+        // to its exact source member.
+        if instrument_type == "future" {
+            let archive_name = task
+                .input_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("valid futures archive filename");
+
+            let prefix = format!("{family}-futureschain-");
+
+            let suffix = archive_name
+                .strip_prefix(&prefix)
+                .and_then(|name| name.strip_suffix(".tar.gz"))
+                .expect("expected OKX futures-chain archive");
+
+            let archive_member = format!("{}-{}.data", member.symbol, suffix);
+
+            task.scope
+                .as_mut()
+                .expect("missing family scope")
+                .members
+                .push(
+                    serde_json::from_value(serde_json::json!({
+                        "instrument_id": member.instrument_id,
+                        "archive_member": archive_member
+                    }))
+                    .expect("valid family member mapping"),
+                );
+
+            println!("Selected futures archive member: {}", archive_member);
+        }
+    } else {
+        // Preserve the existing concrete-source selection behavior.
+        tasks.sort_by(|a, b| {
+            a.symbol
+                .cmp(&b.symbol)
+                .then(a.input_path.cmp(&b.input_path))
+        });
+
+        let selected_symbol = tasks[0].symbol.clone();
+
+        tasks.retain(|task| task.symbol == selected_symbol);
+        tasks.sort_by(|a, b| a.input_path.cmp(&b.input_path));
+
+        assert!(
+            tasks.len() > source_index,
+            "missing source index {source_index} for {exchange:?}/{instrument_type}/{category}"
+        );
+
+        let selected_id = tasks[source_index].task_id.0;
+
+        tasks.retain(|task| task.task_id.0 == selected_id);
+        assert_eq!(tasks.len(), 1);
+    }
+
+    let mut run =
+        TestRun::new("exchanges/prepared_real_depth").expect("create isolated depth test run");
+    let config = run
+        .runtime_from_general()
+        .expect("load production general.toml");
+    let resolved = run
+        .prepare(&batch, &config)
+        .expect("resolve prepared depth source");
+    assert_eq!(resolved.jobs.len(), 1);
+    assert_eq!(resolved.jobs[0].tasks.len(), 1);
+    // Family-selected inputs must be decoded and routed by the
+    // production stream executor. The isolated worker intentionally
+    // rejects them because it cannot validate the selected population.
+    if family_member_index.is_some() {
+        return run_resolved_family_depth(&run, &resolved.jobs, &config);
+    }
+
+    let task = &resolved.jobs[0].tasks[0];
+    assert!(
+        task.input_path.is_file(),
+        "missing archive: {}",
+        task.input_path.display()
+    );
+    let policy = marketforge_engine::historical::normalize::resolve_sequence_policy(task)
+        .expect("resolve source sequence policy");
+
+    let _limits = LimitScope::enter(
+        config.resources.normalization_limits,
+        format!("prepared depth test: {}", task.input_path.display()),
+    );
+    let output = run.path.join("depth-parquet");
+    run.owned(&output).expect("output must belong to test run");
+    let mut writer = ParquetDepthWriter::new(&output, config.resources.parquet.clone())
+        .expect("create depth writer");
+    let mut metrics = TaskMetrics::default();
+    process_depth_task_with_metrics(
+        task,
+        &mut writer,
+        &mut metrics,
+        &config.integrity_policy,
+        &ScopedIntegrityMetrics::default(),
+        policy,
+    )
+    .expect("process prepared depth archive");
+    writer.finish().expect("finish depth writer");
+
+    let segments = read_depth_segments(&output).expect("read reconstruction segments");
+    segments
+        .validate()
+        .expect("validate reconstruction segments");
+    let written = writer.metrics().levels_written;
+    assert_eq!(
+        segments.total_levels, written,
+        "segment/Parquet row mismatch"
+    );
+    assert!(written > 0, "no canonical depth levels");
+    assert!(!segments.segments.is_empty(), "no reconstruction segment");
+
+    let boundary: DepthBoundaryManifest = serde_json::from_reader(
+        File::open(output.join("boundary.json")).expect("open boundary metadata"),
+    )
+    .expect("deserialize boundary metadata");
+    assert_eq!(boundary.version, 1);
+    let initial = boundary
+        .initial
+        .as_ref()
+        .expect("missing initial depth snapshot");
+    let final_state = boundary
+        .final_state
+        .as_ref()
+        .expect("missing final depth state");
+    assert!(!initial.state.bids.is_empty() && !initial.state.asks.is_empty());
+    assert!(!final_state.state.bids.is_empty() && !final_state.state.asks.is_empty());
+    assert!(initial.timestamp_ns <= final_state.timestamp_ns);
+    assert_eq!(initial.fingerprint, fingerprint_book(&initial.state));
+    assert_eq!(
+        final_state.fingerprint,
+        fingerprint_book(&final_state.state)
+    );
+    match policy {
+        SequencePolicy::Unsequenced => assert_eq!(
+            boundary.continuity,
+            marketforge_engine::historical::normalize::boundary::BoundaryContinuity::Unverifiable
+        ),
+        SequencePolicy::Consecutive | SequencePolicy::Ranged => assert_eq!(
+            boundary.continuity,
+            marketforge_engine::historical::normalize::boundary::BoundaryContinuity::Verified
+        ),
+    }
+    assert!(metrics.counters.records_read > 0);
+    if family_member_index.is_some() {
+        assert!(
+            metrics.counters.records_matched > 0,
+            "selected family member produced no matched records"
+        );
+
+        assert!(metrics.counters.records_processed <= metrics.counters.records_read);
+    } else {
+        assert_eq!(
+            metrics.counters.records_read,
+            metrics.counters.records_processed
+        );
+    }
+    assert_eq!(metrics.counters.records_rejected, 0);
+    if family_member_index.is_some() {
+        let contract_value = task
+            .instrument
+            .contract_value
+            .expect("derivative contract value required");
+
+        let contract_asset = task
+            .instrument
+            .contract_value_asset
+            .as_deref()
+            .expect("derivative contract denomination required");
+
+        let instrument = &task.raw_schema["marketforge_source"]["instrument"];
+        let base_asset = instrument["base_asset"]
+            .as_str()
+            .expect("authoritative base asset");
+        let quote_asset = instrument["quote_asset"]
+            .as_str()
+            .expect("authoritative quote asset");
+        assert!(contract_value > rust_decimal::Decimal::ZERO);
+
+        let levels = initial.state.bids.iter().chain(&initial.state.asks);
+
+        let mut checked = 0usize;
+
+        for level in levels {
+            let contracts = level
+                .quantity_contracts
+                .expect("canonical contract quantity missing");
+
+            let base = level
+                .quantity_base
+                .expect("canonical base quantity missing");
+
+            let quote = level
+                .quantity_quote
+                .expect("canonical quote quantity missing");
+
+            match contract_asset {
+                asset if asset == base_asset => {
+                    assert_eq!(
+                        base,
+                        contracts * contract_value,
+                        "linear contract-to-base conversion"
+                    );
+
+                    assert_eq!(quote, base * level.price, "linear base-to-quote conversion");
+                }
+
+                asset if asset == quote_asset => {
+                    assert_eq!(
+                        quote,
+                        contracts * contract_value,
+                        "inverse contract-to-quote conversion"
+                    );
+
+                    assert_eq!(
+                        base,
+                        quote / level.price,
+                        "inverse quote-to-base conversion"
+                    );
+                }
+
+                other => panic!("unsupported test contract denomination: {other}"),
+            }
+
+            checked += 1;
+        }
+
+        assert!(checked > 0, "no derivative levels checked");
+
+        println!(
+            "Contract conversion verified: {} levels, {} {} per contract",
+            checked, contract_value, contract_asset
+        );
+    }
+
+    verify_parquet_replay(&output, &boundary, written);
+    println!(
+        "PREPARED DEPTH PASS: task={} stream={} source={} records={} levels={} segments={}",
+        task.task_id.0,
+        task.stream_id.0,
+        task.input_path.display(),
+        metrics.counters.records_read,
+        written,
+        segments.segments.len()
+    );
+    DepthFormatResult {
+        records_read: metrics.counters.records_read,
+        records_processed: metrics.counters.records_processed,
+        records_rejected: metrics.counters.records_rejected,
+        levels_written: written,
+        segment_count: segments.segments.len(),
+        boundary,
+    }
+}
+
+/// Execute one explicitly selected concrete member of a prepared family
+/// through the production stream-routing pipeline.
+fn run_resolved_family_depth(
+    run: &crate::support::runtime::TestRun,
+    jobs: &[marketforge_engine::historical::job::ProcessingJob],
+    config: &marketforge_engine::historical::normalize::config::ProcessingConfig,
+) -> DepthFormatResult {
+    use marketforge_engine::historical::normalize::{
+        boundary::BoundaryContinuity, session::execute_session_tasks,
+    };
+    use marketforge_engine::shared::domain::book::SequencePolicy;
+    use marketforge_engine::shared::persistence::parquet::read_depth_segments;
+    use rust_decimal::Decimal;
+
+    let job = &jobs[0];
+    assert_eq!(job.tasks.len(), 1);
+
+    let task = &job.tasks[0];
+
+    assert!(task.input_path.is_file());
+
+    let staging = &job.output.staging_path;
+
+    run.owned(staging)
+        .expect("family output must belong to isolated run");
+
+    println!(
+        "FAMILY SESSION: task={} instrument={} source={}",
+        task.task_id.0,
+        task.symbol,
+        task.input_path.display(),
+    );
+
+    let session = execute_session_tasks(jobs, config)
+        .expect("execute family through production stream routing");
+
+    assert_eq!(session.jobs.len(), 1);
+    assert_eq!(session.total_tasks, 1);
+
+    let executions = &session.jobs[0].executions;
+    assert_eq!(executions.len(), 1);
+
+    let execution = &executions[0];
+
+    assert_eq!(execution.task_id, task.task_id.0);
+
+    assert!(
+        execution.is_success(),
+        "family task failed: {:?}",
+        execution.error
+    );
+
+    let metrics = &execution.metrics;
+    let counters = &metrics.counters;
+
+    assert!(counters.records_read > 0);
+    assert!(
+        counters.records_matched > 0,
+        "selected concrete instrument produced no matched records"
+    );
+
+    assert_eq!(counters.records_rejected, 0);
+    assert_eq!(counters.tasks_completed, 1);
+    assert_eq!(counters.tasks_failed, 0);
+
+    assert!(!execution.output_paths.is_empty());
+
+    // Production writes stream-oriented artifacts. Find the stream's
+    // persisted boundary instead of assuming the legacy tasks/ layout.
+    let mut boundaries = Vec::new();
+    let mut pending = vec![staging.to_path_buf()];
+
+    while let Some(directory) = pending.pop() {
+        for entry in std::fs::read_dir(&directory).expect("inspect staging directory") {
+            let entry = entry.expect("read staging entry");
+            let path = entry.path();
+
+            if path.is_dir() {
+                pending.push(path);
+            } else if path
+                .file_name()
+                .is_some_and(|name| name == std::ffi::OsStr::new("boundary.json"))
+            {
+                boundaries.push(path);
+            }
+        }
+    }
+
+    assert_eq!(
+        boundaries.len(),
+        1,
+        "expected exactly one selected concrete depth stream; found {:?}",
+        boundaries
+    );
+
+    let boundary_path = &boundaries[0];
+    let output = boundary_path
+        .parent()
+        .expect("boundary must have a stream directory");
+
+    // Production session output uses a V2 stream boundary
+    // containing independently validated V1 source boundaries.
+    let stream_boundaries =
+        marketforge_engine::shared::persistence::parquet::read_depth_stream_boundaries(output)
+            .expect("read production V2 stream boundaries");
+
+    assert_eq!(stream_boundaries.version, 2);
+    assert_eq!(stream_boundaries.continuity, "independent_sources");
+
+    assert_eq!(
+        stream_boundaries.sources.len(),
+        1,
+        "expected one selected source in this family stream"
+    );
+
+    let source = &stream_boundaries.sources[0];
+
+    assert_eq!(source.task_id, task.task_id.0);
+    assert_eq!(source.start_row, 0);
+    assert_eq!(source.start_event, 0);
+
+    let boundary = source.boundary.clone();
+
+    assert_eq!(boundary.version, 1);
+
+    let segments = read_depth_segments(output).expect("read stream reconstruction segments");
+
+    segments
+        .validate()
+        .expect("validate reconstruction segment manifest");
+
+    let written = segments.total_levels;
+
+    assert_eq!(
+        source.end_row, written,
+        "V2 source row range differs from reconstruction inventory"
+    );
+
+    assert!(
+        source.end_event > source.start_event,
+        "selected source produced no persisted depth events"
+    );
+
+    assert!(written > 0);
+    assert!(!segments.segments.is_empty());
+
+    let initial = boundary.initial.as_ref().expect("missing initial snapshot");
+
+    let final_state = boundary.final_state.as_ref().expect("missing final book");
+
+    assert!(!initial.state.bids.is_empty());
+    assert!(!initial.state.asks.is_empty());
+
+    assert!(!final_state.state.bids.is_empty());
+    assert!(!final_state.state.asks.is_empty());
+
+    assert!(initial.timestamp_ns <= final_state.timestamp_ns);
+
+    assert_eq!(initial.fingerprint, fingerprint_book(&initial.state));
+
+    assert_eq!(
+        final_state.fingerprint,
+        fingerprint_book(&final_state.state)
+    );
+
+    let policy = marketforge_engine::historical::normalize::resolve_sequence_policy(task)
+        .expect("resolve family sequence policy");
+
+    match policy {
+        SequencePolicy::Unsequenced => {
+            assert_eq!(boundary.continuity, BoundaryContinuity::Unverifiable);
+        }
+        SequencePolicy::Consecutive | SequencePolicy::Ranged => {
+            assert_eq!(boundary.continuity, BoundaryContinuity::Verified);
+        }
+    }
+
+    // Independently validate the conversion arithmetic using
+    // authoritative contract specifications from the prepared batch.
+    let value = task
+        .instrument
+        .contract_value
+        .expect("missing authoritative contract value");
+
+    let denomination = task
+        .instrument
+        .contract_value_asset
+        .as_deref()
+        .expect("missing authoritative contract denomination");
+
+    let instrument = &task.raw_schema["marketforge_source"]["instrument"];
+    let base_asset = instrument["base_asset"]
+        .as_str()
+        .expect("authoritative base asset");
+    let quote_asset = instrument["quote_asset"]
+        .as_str()
+        .expect("authoritative quote asset");
+    assert!(value > Decimal::ZERO);
+
+    let mut verified = 0usize;
+
+    for level in initial.state.bids.iter().chain(&initial.state.asks) {
+        let contracts = level
+            .quantity_contracts
+            .expect("missing canonical contracts");
+
+        let base = level
+            .quantity_base
+            .expect("missing canonical base quantity");
+
+        let quote = level
+            .quantity_quote
+            .expect("missing canonical quote quantity");
+
+        match denomination {
+            asset if asset == base_asset => {
+                assert_eq!(
+                    base,
+                    contracts * value,
+                    "incorrect contract-to-base conversion"
+                );
+
+                assert_eq!(
+                    quote,
+                    base * level.price,
+                    "incorrect base-to-quote conversion"
+                );
+            }
+
+            asset if asset == quote_asset => {
+                assert_eq!(
+                    quote,
+                    contracts * value,
+                    "incorrect inverse contract-to-quote conversion"
+                );
+
+                assert_eq!(
+                    base,
+                    quote / level.price,
+                    "incorrect inverse quote-to-base conversion"
+                );
+            }
+
+            other => panic!("unexpected contract denomination: {other}"),
+        }
+
+        verified += 1;
+    }
+
+    assert!(verified > 0);
+
+    // This reuses the independent Parquet replay implementation already
+    // exercised by the other real-depth integration tests.
+    verify_parquet_replay(output, &boundary, written);
+
+    println!(
+        "OKX FAMILY PASS: symbol={} records={} matched={} levels={} \
+         segments={} contract={} {}",
+        task.symbol,
+        counters.records_read,
+        counters.records_matched,
+        written,
+        segments.segments.len(),
+        value,
+        denomination
+    );
+
+    DepthFormatResult {
+        records_read: counters.records_read,
+        records_processed: counters.records_processed,
+        records_rejected: counters.records_rejected,
+        levels_written: written,
+        segment_count: segments.segments.len(),
+        boundary,
+    }
 }

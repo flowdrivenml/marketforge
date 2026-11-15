@@ -2,14 +2,10 @@
 
 use marketforge_engine::historical::job::IntegrityAction;
 use marketforge_engine::historical::normalize::metrics::enforce_immediate_integrity;
-use marketforge_engine::historical::normalize::{
-    load_processing_config,
-    metrics::{
-        IntegrityCategory, IntegrityScope, IntegrityStatus, IntegrityThreshold,
-        ScopedIntegrityMetrics, evaluate_integrity_policy,
-    },
+use marketforge_engine::historical::normalize::metrics::{
+    IntegrityCategory, IntegrityScope, IntegrityStatus, IntegrityThreshold, ScopedIntegrityMetrics,
+    evaluate_integrity_policy,
 };
-use std::path::Path;
 
 fn policy() -> marketforge_engine::historical::job::IntegrityPolicy {
     crate::support::migration::threshold_fixture().integrity_policy
@@ -19,7 +15,7 @@ fn scope() -> IntegrityScope {
     IntegrityScope {
         task_id: 120,
         stream_id: "okx:BTCUSDT:trades".to_owned(),
-        source_file: "BTCUSDT-2026-09-01.zip".to_owned(),
+        source_file: "synthetic-source.zip".to_owned(),
     }
 }
 

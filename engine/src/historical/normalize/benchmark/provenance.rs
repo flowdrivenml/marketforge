@@ -10,7 +10,7 @@ use std::{
     time::UNIX_EPOCH,
 };
 pub fn hex(bytes: impl AsRef<[u8]>) -> String {
-    bytes.as_ref().iter().map(|b| format!("{b:02x}")).collect()
+    super::super::hex_digest(bytes)
 }
 pub fn file_sha256(path: &Path) -> Result<String> {
     let mut f = fs::File::open(path).map_err(|e| e.to_string())?;
@@ -177,5 +177,14 @@ pub fn environment(root: &Path) -> Environment {
                 .into(),
             "dirty source changes are not captured by Git SHA alone".into(),
         ],
+    }
+}
+
+#[cfg(test)]
+mod hex_tests {
+    #[test]
+    fn lowercase_hex_preserves_leading_zeroes() {
+        assert_eq!(super::hex([0, 15, 16, 128, 171, 255]), "000f1080abff");
+        assert_eq!(super::hex([]), "");
     }
 }

@@ -11,24 +11,16 @@ use crate::{
 };
 use std::io::Read;
 use {
-    crate::historical::job::IntegrityPolicy, crate::historical::job::WorkTask,
-    crate::historical::normalize::metrics::IntegrityCategory,
+    super::decoded::with_source_reader, crate::historical::job::IntegrityPolicy,
+    crate::historical::job::WorkTask, crate::historical::normalize::metrics::IntegrityCategory,
     crate::historical::normalize::metrics::IntegrityScope,
     crate::historical::normalize::metrics::ScopedIntegrityMetrics,
     crate::historical::normalize::metrics::TaskMetrics,
     crate::shared::domain::book::SequencePolicy, crate::shared::error::MarketForgeError,
     crate::shared::error::Result, crate::shared::formats::depth::DepthContext,
     crate::shared::formats::depth::DepthProcessor, crate::shared::io::source::JsonlDecoder,
-    crate::shared::io::source::with_validated_source_reader as with_source_reader,
     crate::shared::normalization::TargetSchema,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DepthSourceFormat {
-    Jsonl,
-    Csv,
-    Xlsx,
-}
 
 // -----------------------------------------------------------------------------
 // Depth worker
@@ -42,6 +34,7 @@ pub fn process_depth_task_with_metrics<S: DepthSink>(
     previous_job_integrity: &ScopedIntegrityMetrics,
     sequence_policy: SequencePolicy,
 ) -> Result<()> {
+    let _limits = super::resource_scope(task);
     process_depth_task_with_metrics_impl(
         task,
         sink,
@@ -62,6 +55,7 @@ pub fn process_depth_task_with_metrics_and_progress<S: DepthSink>(
     sequence_policy: SequencePolicy,
     progress: &mut WorkerProgress,
 ) -> Result<()> {
+    let _limits = super::resource_scope(task);
     process_depth_task_with_metrics_impl(
         task,
         sink,
@@ -82,6 +76,9 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
     sequence_policy: SequencePolicy,
     mut progress: Option<&mut WorkerProgress>,
 ) -> Result<()> {
+    let _limits = super::resource_scope(task);
+    super::decoded::ensure_routed(task)?;
+    super::begin_observation(task, metrics);
     // -------------------------------------------------------------------------
     // Validate depth normalization configuration
     // -------------------------------------------------------------------------
@@ -182,11 +179,11 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
             // Source format dispatch
             // -----------------------------------------------------------------
 
-            match depth_source_format(task)? {
+            match super::super::resources::source_format(task)? {
                 // -------------------------------------------------------------
                 // CSV depth processing
                 // -------------------------------------------------------------
-                DepthSourceFormat::Csv => {
+                super::super::resources::SourceFormat::Csv => {
                     process_csv_depth(
                         reader,
                         task,
@@ -205,8 +202,9 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
                 // -------------------------------------------------------------
                 // JSONL depth processing
                 // -------------------------------------------------------------
-                DepthSourceFormat::Jsonl => {
+                super::super::resources::SourceFormat::Jsonl => {
                     let mut decoder = JsonlDecoder::new(reader);
+                    let mut cached = super::decoded::take_json();
 
                     let mut source_record = 0u64;
 
@@ -219,7 +217,23 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
                             reporter.maybe_update(&metrics.counters);
                         }
 
-                        let record = match decoder.next_json() {
+                        let next = if let Some(records) = cached.as_mut() {
+                            match records.next() {
+                                Some(Ok((ordinal, value))) => {
+                                    source_record = ordinal.checked_sub(1).ok_or_else(|| {
+                                        MarketForgeError::InvalidConfiguration(
+                                            "zero physical record ordinal".into(),
+                                        )
+                                    })?;
+                                    Ok(Some(value))
+                                }
+                                Some(Err(error)) => return Err(error),
+                                None => Ok(None),
+                            }
+                        } else {
+                            decoder.next_json()
+                        };
+                        let record = match next {
                             Ok(Some(record)) => record,
 
                             Ok(None) => break,
@@ -228,10 +242,10 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
                             // JSON parsing failure
                             // -------------------------------------------------
                             Err(crate::shared::io::source::JsonlError::Source(source)) => {
-                                return Err(MarketForgeError::SourceRead {
-                                    path: task.input_path.clone(),
+                                return Err(crate::shared::historical::limits::source_error(
+                                    task.input_path.clone(),
                                     source,
-                                });
+                                ));
                             }
                             Err(crate::shared::io::source::JsonlError::Record(error)) => {
                                 source_record = source_record.checked_add(1).ok_or_else(|| {
@@ -367,7 +381,7 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
                         )?;
                     }
                 }
-                DepthSourceFormat::Xlsx => {
+                super::super::resources::SourceFormat::Xlsx => {
                     process_xlsx_depth(
                         reader,
                         task,
@@ -422,10 +436,11 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
         }
     };
 
-    if let Some(reporter) = progress.as_deref_mut() {
+    if let Some(reporter) = progress {
         reporter.finish(&metrics.counters);
     }
 
+    super::finish_observation(metrics);
     outcome
 }
 
@@ -450,13 +465,34 @@ fn process_csv_depth<R: Read, S: DepthSink>(
     let mut snapshot_rows = 0u64;
     let mut snapshot_timestamp = None;
 
-    for row in decoder.records() {
+    let cached = super::decoded::take_csv();
+    let rows: Box<
+        dyn Iterator<
+                Item = (
+                    Option<u64>,
+                    std::result::Result<csv::ByteRecord, csv::Error>,
+                ),
+            > + '_,
+    > = if let Some((_, rows)) = cached {
+        Box::new(rows.map(|row| match row {
+            Ok((ordinal, row)) => (Some(ordinal), Ok(row)),
+            Err(e) => (None, Err(e)),
+        }))
+    } else {
+        Box::new(decoder.records().map(|row| (None, row)))
+    };
+    for (physical_ordinal, row) in rows {
         if let Some(reporter) = progress.as_deref_mut() {
             reporter.maybe_update(&metrics.counters);
         }
-        source_ordinal = source_ordinal.checked_add(1).ok_or_else(|| {
-            MarketForgeError::InvalidConfiguration("CSV source ordinal overflow".to_owned())
-        })?;
+        let previous_source_ordinal = source_ordinal;
+        source_ordinal = if let Some(ordinal) = physical_ordinal {
+            ordinal
+        } else {
+            source_ordinal.checked_add(1).ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration("CSV source ordinal overflow".to_owned())
+            })?
+        };
 
         increment(&mut metrics.counters.records_read, "records_read")?;
 
@@ -622,7 +658,7 @@ fn process_csv_depth<R: Read, S: DepthSink>(
                     scope,
                     metrics,
                     *category,
-                    source_ordinal - 1,
+                    previous_source_ordinal,
                     snapshot_rows,
                     snapshot_timestamp,
                     message.clone(),
@@ -650,7 +686,7 @@ fn process_csv_depth<R: Read, S: DepthSink>(
                     scope,
                     metrics,
                     *category,
-                    source_ordinal - 1,
+                    previous_source_ordinal,
                     snapshot_rows,
                     timestamp,
                     message.clone(),
@@ -660,7 +696,7 @@ fn process_csv_depth<R: Read, S: DepthSink>(
 
             accept_outcome(
                 outcome,
-                source_ordinal - 1,
+                previous_source_ordinal,
                 snapshot_rows,
                 processor,
                 sink,
@@ -915,6 +951,9 @@ fn accept_outcome<S: DepthSink>(
             MarketForgeError::InvalidConfiguration("accepted depth events overflow".into())
         })?;
     sink.write_outcome(outcome)?;
+    if let Some(source) = metrics.source.as_mut() {
+        source.observe(timestamp);
+    }
     metrics.accepted_depth_events = accepted;
     ordering.accept(timestamp);
 
@@ -985,43 +1024,6 @@ fn increment(counter: &mut u64, name: &str) -> Result<()> {
     Ok(())
 }
 
-fn depth_source_format(task: &WorkTask) -> Result<DepthSourceFormat> {
-    let fields = task
-        .raw_schema
-        .get("fields")
-        .and_then(|value| value.as_array())
-        .ok_or_else(|| {
-            MarketForgeError::InvalidConfiguration("depth raw schema missing fields".to_owned())
-        })?;
-
-    // XLSX workbooks must be identified explicitly.
-    //
-    // Non-positional fields alone are insufficient because
-    // JSONL sources also use non-positional schemas.
-    let is_xlsx = task.raw_schema.get("workbook_sheets").is_some();
-
-    if is_xlsx {
-        return Ok(DepthSourceFormat::Xlsx);
-    }
-
-    let positional = fields
-        .iter()
-        .filter(|field| field.get("position").is_some())
-        .count();
-
-    if positional == fields.len() && !fields.is_empty() {
-        return Ok(DepthSourceFormat::Csv);
-    }
-
-    if positional == 0 {
-        return Ok(DepthSourceFormat::Jsonl);
-    }
-
-    Err(MarketForgeError::InvalidConfiguration(
-        "depth raw schema mixes positional and non-positional fields".to_owned(),
-    ))
-}
-
 fn process_xlsx_depth<R: Read, S: DepthSink>(
     mut reader: R,
     task: &WorkTask,
@@ -1041,14 +1043,15 @@ fn process_xlsx_depth<R: Read, S: DepthSink>(
     // Buffer XLSX workbook
     // -------------------------------------------------------------------------
 
-    let mut bytes = Vec::new();
-
-    reader
-        .read_to_end(&mut bytes)
-        .map_err(|error| MarketForgeError::SourceRead {
-            path: task.input_path.clone(),
-            source: error,
-        })?;
+    let limits = crate::shared::historical::limits::current().unwrap_or_default();
+    let bytes = crate::shared::io::bounded::read_bounded(
+        &mut reader,
+        limits.workbook_bytes,
+        "workbook input",
+    )
+    .map_err(|error| {
+        crate::shared::historical::limits::source_error(task.input_path.clone(), error)
+    })?;
 
     // -------------------------------------------------------------------------
     // Decode and chronologically sort snapshots
@@ -1120,7 +1123,7 @@ fn process_xlsx_depth<R: Read, S: DepthSink>(
         observe_depth(
             metrics,
             scope,
-            &processor,
+            processor,
             result.as_ref().err(),
             false,
             event_timestamp_ns,

@@ -2,7 +2,13 @@
 use std::time::Duration;
 
 pub fn compact(value: u64) -> String {
-    if value >= 1_000_000_000 {
+    if value >= 1_000_000_000_000_000_000 {
+        format!("{:.2}E", value as f64 / 1e18)
+    } else if value >= 1_000_000_000_000_000 {
+        format!("{:.2}P", value as f64 / 1e15)
+    } else if value >= 1_000_000_000_000 {
+        format!("{:.2}T", value as f64 / 1e12)
+    } else if value >= 1_000_000_000 {
         format!("{:.2}B", value as f64 / 1_000_000_000.0)
     } else if value >= 1_000_000 {
         format!("{:.2}M", value as f64 / 1_000_000.0)

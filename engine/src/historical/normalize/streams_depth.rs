@@ -18,7 +18,6 @@ struct Output<'a> {
     writer: &'a mut ParquetDepthWriter,
     previous: Option<i64>,
     preceding_source_end: Option<i64>,
-    bounds: Option<(i64, i64, Option<u64>)>,
 }
 impl DepthSink for Output<'_> {
     fn write_outcome(&mut self, outcome: DepthProcessingOutcome) -> Result<()> {
@@ -27,15 +26,6 @@ impl DepthSink for Output<'_> {
             return Err(invalid(format!(
                 "depth stream append regression: previous={:?}, current={timestamp}; stateful events cannot be reordered",
                 self.preceding_source_end
-            )));
-        }
-        if self
-            .bounds
-            .is_some_and(|(start, end, _)| timestamp < start || timestamp > end)
-        {
-            return Err(invalid(format!(
-                "accepted depth timestamp {timestamp} outside declared bounds {:?}",
-                self.bounds
             )));
         }
         self.writer.write_outcome(outcome)?;
@@ -62,12 +52,32 @@ pub(crate) fn execute(
         writer: &mut writer,
         previous: None,
         preceding_source_end: None,
-        bounds: None,
     };
     let mut executions = Vec::new();
     let mut sources = Vec::new();
     for (index, task) in &unit.tasks {
         let id = ProgressTaskId::new(unit.job.job_id.0, task.task_id.0);
+        if super::streams::stopped(&executions) {
+            reporter.task_skipped(id, "Stream stopped after a fatal source failure".into());
+            executions.push((
+                *index,
+                TaskExecution {
+                    task_id: task.task_id.0,
+                    output_paths: vec![],
+                    metrics: Default::default(),
+                    error: Some(MarketForgeError::NotAttempted {
+                        reason: "source not attempted: preceding stream failure".into(),
+                    }),
+                },
+            ));
+            continue;
+        }
+
+        reporter.phase(
+            id,
+            &unit.key,
+            "source read/decode/normalize and ordered depth replay into Parquet",
+        );
         reporter.task_started(
             id,
             format!("{:?}", task.exchange),
@@ -82,7 +92,6 @@ pub(crate) fn execute(
         let events = sink.writer.events_indexed();
         let result = (|| {
             sink.writer.begin_source(task.task_id.0)?;
-            sink.bounds = super::streams::bounds(task)?;
             let policy = super::task::worker_integrity_policy(&config.integrity_policy);
             let sequence = super::resolve_sequence_policy(task)?;
             super::worker::process_depth_task_with_metrics_and_progress(
@@ -102,15 +111,23 @@ pub(crate) fn execute(
             Ok(())
         })();
         progress.finish(&metrics.counters);
+        reporter.phase(
+            id,
+            &unit.key,
+            if result.is_ok() {
+                "source normalization complete"
+            } else {
+                "source normalization failed"
+            },
+        );
         if let Err(e) = &result {
             reporter.task_failed(id, e.to_string());
-        } else {
-            reporter.task_completed(id, &metrics.counters);
         }
         sources.push(SourceSpan {
             task_id: task.task_id.0,
             start_row: start,
             end_row: sink.writer.metrics().levels_written,
+            ranges: vec![],
         });
         executions.push((
             *index,
@@ -123,8 +140,13 @@ pub(crate) fn execute(
         ));
     }
     if executions.iter().all(|(_, e)| e.error.is_none()) {
+        reporter.stream_phase(unit.job.job_id.0, &unit.key, "Parquet writing/finalization");
         if let Err(e) = writer.finish() {
-            executions.last_mut().unwrap().1.error = Some(e);
+            executions.last_mut().unwrap().1.error = Some(MarketForgeError::StreamFailure {
+                stream: unit.key.clone(),
+                stage: "writer finalization",
+                source: Box::new(e),
+            });
         } else {
             let result = write_output(
                 &path,
@@ -135,35 +157,48 @@ pub(crate) fn execute(
                 },
             );
             if let Err(error) = result {
-                executions.last_mut().unwrap().1.error = Some(error);
+                executions.last_mut().unwrap().1.error = Some(MarketForgeError::StreamFailure {
+                    stream: unit.key.clone(),
+                    stage: "writer finalization",
+                    source: Box::new(error),
+                });
             }
         }
     }
     Ok(executions)
 }
 /// Validate persisted event identities, row spans and initialization segments.
-pub(crate) fn validate(
+pub(crate) fn validate<
+    F: FnMut(&crate::shared::persistence::parquet::DepthSourceBoundary) -> Result<()>,
+>(
     directory: &std::path::Path,
     stream: &StreamOutput,
     rows: u64,
+    bounds: crate::shared::persistence::parquet::BoundaryReadLimits,
+    mut check_source: F,
 ) -> Result<()> {
     use crate::{
         historical::merge::DepthEventCursor,
         shared::{
             domain::canonical::DepthEventBoundary,
-            persistence::parquet::{read_depth_segments, read_depth_stream_boundaries},
+            persistence::parquet::{read_depth_segments, visit_depth_stream_boundaries},
         },
     };
-    let sources = read_depth_stream_boundaries(directory)?;
     let segments = read_depth_segments(directory)?;
-    if segments.total_levels != rows || sources.sources.len() != stream.sources.len() {
+    if segments.total_levels != rows {
         return Err(invalid("depth stream reconstruction inventory mismatch"));
     }
     let mut cursor = DepthEventCursor::open(&directory.join("events.parquet"))?;
     let mut offset = 0u64;
     let mut ordinal = 0u64;
-    let mut initialization = Vec::new();
-    for (source, span) in sources.sources.iter().zip(&stream.sources) {
+    let mut initialization = 0usize;
+    let mut source_index = 0usize;
+    let summary = visit_depth_stream_boundaries(directory, bounds, |source| {
+        let span = stream
+            .sources
+            .get(source_index)
+            .ok_or_else(|| invalid("unexpected depth source inventory"))?;
+        source_index += 1;
         if (source.task_id, source.start_row, source.end_row)
             != (span.task_id, span.start_row, span.end_row)
         {
@@ -188,11 +223,22 @@ pub(crate) fn validate(
                 if event.canonical_row_count == 0 {
                     return Err(invalid("empty depth initialization"));
                 }
-                initialization.push((
+                let segment = segments
+                    .segments
+                    .get(initialization)
+                    .ok_or_else(|| invalid("unexpected depth initialization"))?;
+                if (
+                    segment.initial_event_offset,
+                    segment.initial_level_count,
+                    segment.start_timestamp_ns,
+                ) != (
                     event.canonical_row_offset,
                     event.canonical_row_count,
                     event.event_timestamp_ns,
-                ));
+                ) {
+                    return Err(invalid("depth reconstruction initialization mismatch"));
+                }
+                initialization += 1;
             }
             local = Some(event.event_ordinal);
             offset = offset
@@ -205,22 +251,16 @@ pub(crate) fn validate(
         if offset != source.end_row {
             return Err(invalid("depth source index row mismatch"));
         }
-    }
-    if cursor.next_event()?.is_some()
+        check_source(&source)
+    })?;
+    if summary.sources != stream.sources.len()
+        || summary.total_rows != rows
+        || summary.total_events != ordinal
+        || cursor.next_event()?.is_some()
         || offset != rows
-        || initialization.len() != segments.segments.len()
+        || initialization != segments.segments.len()
     {
         return Err(invalid("depth stream index/segment totals mismatch"));
-    }
-    for (segment, expected) in segments.segments.iter().zip(initialization) {
-        if (
-            segment.initial_event_offset,
-            segment.initial_level_count,
-            segment.start_timestamp_ns,
-        ) != expected
-        {
-            return Err(invalid("depth reconstruction initialization mismatch"));
-        }
     }
     Ok(())
 }

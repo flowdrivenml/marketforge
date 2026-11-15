@@ -39,6 +39,38 @@ impl BookStore {
             }
         }
 
+        if crate::shared::historical::limits::current().is_some() {
+            // Check the peak in source order before mutating the atomic batch.
+            let mut count = self
+                .bids
+                .len()
+                .checked_add(self.asks.len())
+                .ok_or_else(|| {
+                    crate::shared::error::MarketForgeError::InvalidConfiguration(
+                        "book size overflow".into(),
+                    )
+                })?;
+            for (side, price, level) in &updates {
+                let present = match side {
+                    BookSide::Bid => self.bids.contains_key(price),
+                    BookSide::Ask => self.asks.contains_key(price),
+                };
+                if level.is_zero() && present {
+                    count = count.checked_sub(1).ok_or_else(|| {
+                        crate::shared::error::MarketForgeError::InvalidConfiguration(
+                            "book size underflow".into(),
+                        )
+                    })?;
+                } else if !level.is_zero() && !present {
+                    count = count.checked_add(1).ok_or_else(|| {
+                        crate::shared::error::MarketForgeError::InvalidConfiguration(
+                            "book size overflow".into(),
+                        )
+                    })?;
+                    crate::shared::historical::limits::depth(count, "atomic book update")?;
+                }
+            }
+        }
         // ---------------------------------------------------------------------
         // Apply validated updates
         // ---------------------------------------------------------------------

@@ -174,19 +174,68 @@ impl Default for RuntimeMetrics {
 }
 
 impl RuntimeMetrics {
-    pub(crate) fn set_websocket(&self,counts:Option<(u64,u64)>){if let Some((slots,streams))=counts{self.websocket_slots.store(slots,Ordering::Relaxed);self.websocket_streams.store(streams,Ordering::Relaxed);self.has_websocket.store(true,Ordering::Relaxed);}else{self.has_websocket.store(false,Ordering::Relaxed);}}
-    pub(crate) fn record_source_messages_total(&self){self.source_messages_total.fetch_add(1,Ordering::Relaxed);}
-    pub(crate) fn record_source_normalization_errors_total(&self){self.source_normalization_errors_total.fetch_add(1,Ordering::Relaxed);}
-    pub(crate) fn record_source_reacquisitions_total(&self){self.source_reacquisitions_total.fetch_add(1,Ordering::Relaxed);}
-    pub(crate) fn record_source_recovery_requests_total(&self){self.source_recovery_requests_total.fetch_add(1,Ordering::Relaxed);}    pub(crate) fn set_router(&self,status:&crate::live::stream::router::RouterStatus){self.router_accepted_publications_total.store(status.accepted,Ordering::Relaxed);self.router_ingress_publications.store(status.ingress_publications as u64,Ordering::Relaxed);self.router_ingress_bytes.store(status.ingress_bytes as u64,Ordering::Relaxed);self.router_consumer_publications.store(status.consumer_publications as u64,Ordering::Relaxed);self.router_consumer_bytes.store(status.consumer_bytes as u64,Ordering::Relaxed);}
-    pub(crate) fn set_limiter(&self,pending:u64,budgets:u64){self.limiter_pending.store(pending,Ordering::Relaxed);self.limiter_budgets.store(budgets,Ordering::Relaxed);}
+    pub(crate) fn set_websocket(&self, counts: Option<(u64, u64)>) {
+        if let Some((slots, streams)) = counts {
+            self.websocket_slots.store(slots, Ordering::Relaxed);
+            self.websocket_streams.store(streams, Ordering::Relaxed);
+            self.has_websocket.store(true, Ordering::Relaxed);
+        } else {
+            self.has_websocket.store(false, Ordering::Relaxed);
+        }
+    }
+    pub(crate) fn record_source_messages_total(&self) {
+        self.source_messages_total.fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn record_source_normalization_errors_total(&self) {
+        self.source_normalization_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn record_source_reacquisitions_total(&self) {
+        self.source_reacquisitions_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn record_source_recovery_requests_total(&self) {
+        self.source_recovery_requests_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn set_router(&self, status: &crate::live::stream::router::RouterStatus) {
+        self.router_accepted_publications_total
+            .store(status.accepted, Ordering::Relaxed);
+        self.router_ingress_publications
+            .store(status.ingress_publications as u64, Ordering::Relaxed);
+        self.router_ingress_bytes
+            .store(status.ingress_bytes as u64, Ordering::Relaxed);
+        self.router_consumer_publications
+            .store(status.consumer_publications as u64, Ordering::Relaxed);
+        self.router_consumer_bytes
+            .store(status.consumer_bytes as u64, Ordering::Relaxed);
+    }
+    pub(crate) fn set_limiter(&self, pending: u64, budgets: u64) {
+        self.limiter_pending.store(pending, Ordering::Relaxed);
+        self.limiter_budgets.store(budgets, Ordering::Relaxed);
+    }
 
-    pub(crate) fn clear_process_observations(&self){self.has_memory_rss.store(false,Ordering::Relaxed);self.has_cpu_usage.store(false,Ordering::Relaxed);}
-    pub(crate) fn record_lifecycle_starts_total(&self){self.lifecycle_starts_total.fetch_add(1,Ordering::Relaxed);}
-    pub(crate) fn record_lifecycle_stops_total(&self){self.lifecycle_stops_total.fetch_add(1,Ordering::Relaxed);}
-    pub(crate) fn record_lifecycle_failures_total(&self){self.lifecycle_failures_total.fetch_add(1,Ordering::Relaxed);}
-    pub(crate) fn record_reconciliations_total(&self){self.reconciliations_total.fetch_add(1,Ordering::Relaxed);}
-    pub(crate) fn record_incomplete_shutdown_total(&self){self.incomplete_shutdown_total.fetch_add(1,Ordering::Relaxed);}
+    pub(crate) fn clear_process_observations(&self) {
+        self.has_memory_rss.store(false, Ordering::Relaxed);
+        self.has_cpu_usage.store(false, Ordering::Relaxed);
+    }
+    pub(crate) fn record_lifecycle_starts_total(&self) {
+        self.lifecycle_starts_total.fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn record_lifecycle_stops_total(&self) {
+        self.lifecycle_stops_total.fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn record_lifecycle_failures_total(&self) {
+        self.lifecycle_failures_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn record_reconciliations_total(&self) {
+        self.reconciliations_total.fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn record_incomplete_shutdown_total(&self) {
+        self.incomplete_shutdown_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
     /// Create empty global runtime metrics.
     ///
     /// Uptime begins when this instance is created.
@@ -213,9 +262,9 @@ impl RuntimeMetrics {
             source_normalization_errors_total: AtomicU64::new(0),
             source_reacquisitions_total: AtomicU64::new(0),
             source_recovery_requests_total: AtomicU64::new(0),
-            websocket_slots:AtomicU64::new(0),
-            websocket_streams:AtomicU64::new(0),
-            has_websocket:std::sync::atomic::AtomicBool::new(false),
+            websocket_slots: AtomicU64::new(0),
+            websocket_streams: AtomicU64::new(0),
+            has_websocket: std::sync::atomic::AtomicBool::new(false),
             started_at: Instant::now(),
 
             source_streams_running: AtomicU64::new(0),
@@ -389,14 +438,26 @@ impl RuntimeMetrics {
     /// synchronized with each other.
     pub fn snapshot(&self) -> RuntimeMetricsSnapshot {
         RuntimeMetricsSnapshot {
-            websocket_slots:self.has_websocket.load(Ordering::Relaxed).then(||self.websocket_slots.load(Ordering::Relaxed)),
-            websocket_streams:self.has_websocket.load(Ordering::Relaxed).then(||self.websocket_streams.load(Ordering::Relaxed)),
+            websocket_slots: self
+                .has_websocket
+                .load(Ordering::Relaxed)
+                .then(|| self.websocket_slots.load(Ordering::Relaxed)),
+            websocket_streams: self
+                .has_websocket
+                .load(Ordering::Relaxed)
+                .then(|| self.websocket_streams.load(Ordering::Relaxed)),
             source_messages_total: self.source_messages_total.load(Ordering::Relaxed),
-            source_normalization_errors_total: self.source_normalization_errors_total.load(Ordering::Relaxed),
+            source_normalization_errors_total: self
+                .source_normalization_errors_total
+                .load(Ordering::Relaxed),
             source_reacquisitions_total: self.source_reacquisitions_total.load(Ordering::Relaxed),
-            source_recovery_requests_total: self.source_recovery_requests_total.load(Ordering::Relaxed),
+            source_recovery_requests_total: self
+                .source_recovery_requests_total
+                .load(Ordering::Relaxed),
 
-            router_accepted_publications_total: self.router_accepted_publications_total.load(Ordering::Relaxed),
+            router_accepted_publications_total: self
+                .router_accepted_publications_total
+                .load(Ordering::Relaxed),
             router_ingress_publications: self.router_ingress_publications.load(Ordering::Relaxed),
             router_ingress_bytes: self.router_ingress_bytes.load(Ordering::Relaxed),
             router_consumer_publications: self.router_consumer_publications.load(Ordering::Relaxed),

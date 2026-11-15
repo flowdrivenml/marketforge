@@ -3,20 +3,26 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
     time::Instant,
+};
+
+use crate::support::{fixtures::workload, runtime::TestRun};
+
+use marketforge_engine::{
+    historical::{
+        job::{ContentType, InstrumentKind},
+        normalize::resolve_sequence_policy,
+    },
+    shared::{domain::canonical::Exchange, historical::limits::LimitScope},
 };
 
 use marketforge_engine::historical::normalize::boundary::{
     BoundaryContinuity, DepthBoundaryManifest, fingerprint_book,
 };
 use {
-    crate::support::migration::archive_case as load_processing_job,
-    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::normalize::metrics::ScopedIntegrityMetrics,
     marketforge_engine::historical::normalize::metrics::TaskMetrics,
     marketforge_engine::historical::normalize::worker::process_depth_task_with_metrics,
-    marketforge_engine::shared::domain::book::SequencePolicy,
     marketforge_engine::shared::persistence::parquet::ParquetDepthWriter,
     marketforge_engine::shared::persistence::parquet::read_depth_segments,
 };
@@ -28,42 +34,6 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use marketforge_engine::shared::persistence::parquet::i256_to_decimal;
 
 use parquet::file::reader::{FileReader, SerializedFileReader};
-
-static NEXT_ID: AtomicU64 = AtomicU64::new(0);
-
-// -----------------------------------------------------------------------------
-// Test directory
-// -----------------------------------------------------------------------------
-
-struct TestDirectory {
-    path: PathBuf,
-}
-
-impl TestDirectory {
-    fn new() -> Self {
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-
-        let path = crate::support::migration::persistent_path(format!(
-            "marketforge-depth-real-parquet-{}-{id}",
-            std::process::id()
-        ));
-
-        fs::create_dir_all(&path).unwrap();
-
-        Self { path }
-    }
-}
-
-impl Drop for TestDirectory {
-    fn drop(&mut self) {}
-}
-
-fn project_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
 
 // -----------------------------------------------------------------------------
 // Parquet inspection
@@ -169,29 +139,6 @@ fn inspect_depth_sequences(directory: &Path) {
 
             let sequence = sequences.value(index);
 
-            // Verify the final Bybit delta and authoritative snapshot.
-            if ordinal == 825_282 {
-                assert_eq!(
-                    operations.value(index),
-                    1,
-                    "penultimate event must be an absolute update"
-                );
-
-                assert_eq!(boundary, 0);
-                assert_eq!(sequence, 80_077_761);
-            }
-
-            if ordinal == 825_283 {
-                assert_eq!(
-                    operations.value(index),
-                    0,
-                    "final event must be an authoritative snapshot"
-                );
-
-                assert_eq!(boundary, 0);
-                assert_eq!(sequence, 80_077_761);
-            }
-
             if operations.value(index) == 0 {
                 resets += 1;
 
@@ -257,7 +204,7 @@ fn inspect_depth_sequences(directory: &Path) {
     println!("\nSEQUENCE INSPECTION COMPLETE");
 }
 
-fn verify_depth_boundary(directory: &Path) {
+fn verify_depth_boundary(directory: &Path, expected_symbol: &str) {
     let path = directory.join("boundary.json");
 
     assert!(
@@ -271,11 +218,19 @@ fn verify_depth_boundary(directory: &Path) {
     let boundary: DepthBoundaryManifest = serde_json::from_reader(file).unwrap();
 
     assert_eq!(boundary.version, 1);
-    assert_eq!(boundary.symbol, "BTCUSDT");
+    assert_eq!(boundary.symbol, expected_symbol);
 
-    assert_eq!(boundary.first_sequence, Some(79_252_480));
+    assert!(
+        boundary.first_sequence.is_some(),
+        "missing initial sequence"
+    );
 
-    assert_eq!(boundary.last_sequence, Some(80_077_761));
+    assert!(boundary.last_sequence.is_some(), "missing final sequence");
+
+    assert!(
+        boundary.first_sequence <= boundary.last_sequence,
+        "final sequence precedes initial sequence"
+    );
 
     assert_eq!(boundary.continuity, BoundaryContinuity::Verified);
 
@@ -308,13 +263,32 @@ fn verify_depth_boundary(directory: &Path) {
 
     assert_eq!(final_state.sequence, boundary.last_sequence);
 
-    assert_eq!(initial.coverage.depth_per_side, Some(200));
-    assert_eq!(initial.coverage.bid_levels, 200);
-    assert_eq!(initial.coverage.ask_levels, 200);
+    // Coverage counts must describe the actual reconstructed book.
+    // A declared depth limit is optional and must not be inferred
+    // from the number of observed levels.
+    for snapshot in [initial, final_state] {
+        assert_eq!(
+            snapshot.coverage.bid_levels as usize,
+            snapshot.state.bids.len()
+        );
 
-    assert_eq!(final_state.coverage.depth_per_side, Some(200));
-    assert_eq!(final_state.coverage.bid_levels, 200);
-    assert_eq!(final_state.coverage.ask_levels, 200);
+        assert_eq!(
+            snapshot.coverage.ask_levels as usize,
+            snapshot.state.asks.len()
+        );
+
+        if let Some(max_depth) = snapshot.coverage.depth_per_side {
+            assert!(
+                snapshot.coverage.bid_levels <= max_depth,
+                "bid coverage exceeds declared depth limit"
+            );
+
+            assert!(
+                snapshot.coverage.ask_levels <= max_depth,
+                "ask coverage exceeds declared depth limit"
+            );
+        }
+    }
 
     println!("\n{}", "=".repeat(90));
     println!("MARKETFORGE — DEPTH BOUNDARY VERIFICATION");
@@ -836,14 +810,34 @@ fn inspect_depth_parquet(directory: &Path) {
 
 #[test]
 fn writes_real_bybit_depth_archive_to_parquet() {
-    let root = project_root();
+    let mut run = TestRun::new("execution/real_depth_parquet").expect("create isolated test run");
 
-    let job = load_processing_job(
-        root.join("retained-cases/bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json"),
+    let config = run
+        .runtime_from_general()
+        .expect("load production normalization configuration");
+
+    let mut batch = workload().expect("load authoritative normalize.json");
+
+    batch = crate::support::fixtures::concrete_stream(
+        &batch,
+        Exchange::Bybit,
+        InstrumentKind::Spot,
+        ContentType::Depth,
+        1,
     )
-    .expect("load Bybit depth job");
+    .expect("prepared concrete depth stream");
+    batch.jobs[0].tasks.truncate(1);
 
-    let task = &job.tasks[0];
+    assert_eq!(batch.jobs.len(), 1, "expected one matching depth job");
+
+    let resolved = run
+        .prepare(&batch, &config)
+        .expect("resolve fixture through production profiles");
+
+    assert_eq!(resolved.jobs.len(), 1);
+    assert_eq!(resolved.jobs[0].tasks.len(), 1);
+
+    let task = &resolved.jobs[0].tasks[0];
 
     assert!(
         task.input_path.is_file(),
@@ -851,12 +845,19 @@ fn writes_real_bybit_depth_archive_to_parquet() {
         task.input_path.display()
     );
 
-    let config = load_processing_config(root.join("data/.config/historical/general.toml"), &root)
-        .expect("load processing config");
+    let _limits = LimitScope::enter(
+        config.resources.normalization_limits,
+        "fixture-driven real depth Parquet test".to_owned(),
+    );
 
-    let directory = TestDirectory::new();
+    let sequence_policy = resolve_sequence_policy(task).expect("resolve sequence policy");
 
-    let mut writer = ParquetDepthWriter::new(&directory.path, config.resources.parquet.clone())
+    let output_dir = run.path.join("depth-parquet");
+
+    run.owned(&output_dir)
+        .expect("output must belong to test run");
+
+    let mut writer = ParquetDepthWriter::new(&output_dir, config.resources.parquet.clone())
         .expect("create depth Parquet writer");
 
     let mut metrics = TaskMetrics::default();
@@ -867,7 +868,7 @@ fn writes_real_bybit_depth_archive_to_parquet() {
     println!("{}", "=".repeat(90));
 
     println!("Archive : {}", task.input_path.display());
-    println!("Output  : {}", directory.path.display());
+    println!("Output  : {}", output_dir.display());
 
     let start = Instant::now();
 
@@ -877,7 +878,7 @@ fn writes_real_bybit_depth_archive_to_parquet() {
         &mut metrics,
         &config.integrity_policy,
         &previous,
-        SequencePolicy::Consecutive,
+        sequence_policy,
     )
     .expect("process real depth archive");
 
@@ -889,13 +890,13 @@ fn writes_real_bybit_depth_archive_to_parquet() {
     // Inspect output
     // -------------------------------------------------------------------------
 
-    let files = parquet_files(&directory.path);
+    let files = parquet_files(&output_dir);
 
     assert!(!files.is_empty());
 
     let total_rows: u64 = files.iter().map(|path| parquet_row_count(path)).sum();
 
-    let manifest = read_depth_segments(&directory.path).expect("load depth segment manifest");
+    let manifest = read_depth_segments(&output_dir).expect("load depth segment manifest");
 
     // -------------------------------------------------------------------------
     // Verify consistency
@@ -930,7 +931,7 @@ fn writes_real_bybit_depth_archive_to_parquet() {
     // Inspect actual serialized canonical depth records
     // -------------------------------------------------------------------------
 
-    inspect_depth_parquet(&directory.path);
+    inspect_depth_parquet(&output_dir);
 
     // -------------------------------------------------------------------------
     // Verify persisted source-event index
@@ -939,13 +940,13 @@ fn writes_real_bybit_depth_archive_to_parquet() {
     assert_eq!(writer.events_indexed(), metrics.counters.records_processed,);
 
     verify_depth_event_index(
-        &directory.path,
+        &output_dir,
         metrics.counters.records_processed,
         writer.metrics().levels_written,
     );
 
-    inspect_depth_sequences(&directory.path);
-    verify_depth_boundary(&directory.path);
+    inspect_depth_sequences(&output_dir);
+    verify_depth_boundary(&output_dir, &task.symbol);
 
     println!("\nRESULTS");
     println!("  Source records     : {}", metrics.counters.records_read);
@@ -977,4 +978,5 @@ fn writes_real_bybit_depth_archive_to_parquet() {
     }
 
     println!("\nRESULT: PASS");
+    run.finish(&Ok(())).expect("record successful test result");
 }

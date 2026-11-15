@@ -246,8 +246,7 @@ Do not modify original source archives.
 
 Do not overwrite committed datasets.
 
-Do not create commits or branches unless requested.
-
+Do not create or switch branches. After successfully completing and verifying this task, create one local Git commit containing only its changes, following the repository's AGENTS.md. Do not push.
 ---
 
 # 5. Verify Shared Runtime Configuration

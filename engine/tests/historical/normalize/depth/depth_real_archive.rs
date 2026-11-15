@@ -1,37 +1,27 @@
 #![cfg(feature = "historical")]
 
-use std::path::{Path, PathBuf};
+use crate::support::{fixtures::workload, runtime::TestRun};
 
-use marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest;
 use marketforge_engine::{
-    shared::domain::book::SegmentTracker,
-    shared::formats::depth::{DepthEventBoundary, DepthProcessingOutcome},
+    historical::{
+        job::{ContentType, InstrumentKind},
+        normalize::{
+            boundary::DepthBoundaryManifest,
+            metrics::{ScopedIntegrityMetrics, TaskMetrics},
+            resolve_sequence_policy,
+            worker::{DepthSink, process_depth_task_with_metrics},
+        },
+    },
+    shared::{
+        domain::{
+            book::SegmentTracker,
+            canonical::{Exchange, L2LevelUpdate},
+        },
+        error::Result,
+        formats::depth::{DepthEventBoundary, DepthProcessingOutcome},
+        historical::limits::LimitScope,
+    },
 };
-use {
-    crate::support::migration::archive_case as load_processing_job,
-    crate::support::migration::configuration as load_processing_config,
-    marketforge_engine::historical::normalize::metrics::ScopedIntegrityMetrics,
-    marketforge_engine::historical::normalize::metrics::TaskMetrics,
-    marketforge_engine::historical::normalize::worker::DepthSink,
-    marketforge_engine::historical::normalize::worker::process_depth_task_with_metrics,
-    marketforge_engine::shared::domain::book::SequencePolicy,
-    marketforge_engine::shared::domain::canonical::L2LevelUpdate,
-    marketforge_engine::shared::error::Result,
-};
-// -----------------------------------------------------------------------------
-// Test configuration
-// -----------------------------------------------------------------------------
-
-fn project_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("project root")
-        .to_path_buf()
-}
-
-// -----------------------------------------------------------------------------
-// Counting sink
-// -----------------------------------------------------------------------------
 
 #[derive(Default)]
 struct CountingDepthSink {
@@ -156,14 +146,38 @@ impl DepthSink for CountingDepthSink {
 
 #[test]
 fn processes_real_bybit_depth_archive() {
-    let root = project_root();
+    let mut run = TestRun::new("execution/real_depth_task").expect("create isolated test run");
 
-    let job_path =
-        root.join("retained-cases/bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json");
+    let config = run
+        .runtime_from_general()
+        .expect("load processing configuration");
 
-    let job = load_processing_job(&job_path).expect("load Bybit depth job");
+    let mut batch = workload().expect("load authoritative normalize.json");
 
-    let task = &job.tasks[0];
+    batch = crate::support::fixtures::concrete_stream(
+        &batch,
+        Exchange::Bybit,
+        InstrumentKind::Spot,
+        ContentType::Depth,
+        1,
+    )
+    .expect("prepared concrete depth stream");
+    batch.jobs[0].tasks.truncate(1);
+
+    assert_eq!(
+        batch.jobs.len(),
+        1,
+        "expected one matching depth job in normalize.json"
+    );
+
+    let resolved = run
+        .prepare(&batch, &config)
+        .expect("resolve selected depth fixture");
+
+    assert_eq!(resolved.jobs.len(), 1);
+    assert_eq!(resolved.jobs[0].tasks.len(), 1);
+
+    let task = &resolved.jobs[0].tasks[0];
 
     assert!(
         task.input_path.is_file(),
@@ -171,8 +185,13 @@ fn processes_real_bybit_depth_archive() {
         task.input_path.display()
     );
 
-    let config = load_processing_config(root.join("data/.config/historical/general.toml"), &root)
-        .expect("load processing config");
+    // Use the resolved production resource limits.
+    let _limits = LimitScope::enter(
+        config.resources.normalization_limits,
+        "fixture-driven real depth test".to_owned(),
+    );
+
+    let sequence_policy = resolve_sequence_policy(task).expect("resolve depth sequence policy");
 
     let mut sink = CountingDepthSink::default();
     let mut metrics = TaskMetrics::default();
@@ -195,7 +214,7 @@ fn processes_real_bybit_depth_archive() {
         &mut metrics,
         &config.integrity_policy,
         &previous,
-        SequencePolicy::Consecutive,
+        sequence_policy,
     );
 
     let elapsed = start.elapsed().as_secs_f64();
@@ -265,16 +284,16 @@ fn processes_real_bybit_depth_archive() {
             event.price,
             event
                 .quantity_base
-                .map_or("-".to_owned(), |value| value.to_string()),
+                .map_or_else(|| "-".to_owned(), |value| value.to_string()),
             event
                 .quantity_quote
-                .map_or("-".to_owned(), |value| value.to_string()),
+                .map_or_else(|| "-".to_owned(), |value| value.to_string()),
             event
                 .quantity_contracts
-                .map_or("-".to_owned(), |value| value.to_string()),
+                .map_or_else(|| "-".to_owned(), |value| value.to_string()),
             event
                 .order_count
-                .map_or("-".to_owned(), |value| value.to_string()),
+                .map_or_else(|| "-".to_owned(), |value| value.to_string()),
         );
     }
     println!("\nRECONSTRUCTION SEGMENTS");

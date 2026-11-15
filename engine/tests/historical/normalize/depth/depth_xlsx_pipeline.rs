@@ -4,7 +4,6 @@ use std::{
     fs::{self, File},
     io::{Cursor, Write},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
 };
 
 use arrow_array::{Array, Decimal256Array, StringArray, UInt64Array};
@@ -96,7 +95,7 @@ fn create_bitget_archive(path: &Path) {
     let mut writer = ZipWriter::new(file);
 
     writer
-        .start_file("20260901_6.xlsx", SimpleFileOptions::default())
+        .start_file("sample.xlsx", SimpleFileOptions::default())
         .expect("start XLSX member");
 
     writer.write_all(&create_xlsx()).expect("write XLSX member");
@@ -372,10 +371,8 @@ fn processes_bitget_xlsx_pipeline() {
     // Load existing Bitget processing configuration
     // -------------------------------------------------------------------------
 
-    let job = load_processing_job(
-        root.join("retained-cases/bitget-spot-spot-BTCUSDT-l2-20260901-20260904-d110.json"),
-    )
-    .expect("load Bitget processing job");
+    let job =
+        load_processing_job("bitget.spot.spot.depth:BTCUSDT").expect("load Bitget processing job");
 
     let mut task = job.tasks[0].clone();
 

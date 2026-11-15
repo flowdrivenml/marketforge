@@ -388,8 +388,29 @@ pub fn run_with(
             {
                 return Err("execution duration unavailable or invalid".into());
             }
+            let reporter = crate::historical::normalize::progress::ProgressReporter::disabled();
+            let diagnostics =
+                crate::historical::normalize::progress::diagnostics::Diagnostics::start(
+                    &t.config,
+                    &t.directory,
+                    &reporter,
+                );
+            for job in &t.jobs {
+                reporter.record_workload(job);
+                reporter.stream_phase(job.job_id.0, "", "benchmark output verification");
+            }
             let start = Instant::now();
             let output = verify(&t, &execution)?;
+            for job in &t.jobs {
+                reporter.measured_wall_time(
+                    crate::historical::normalize::progress::ProgressTaskId::new(job.job_id.0, 0),
+                    "benchmark output verification",
+                    start.elapsed(),
+                );
+            }
+            if let Some(diagnostics) = diagnostics {
+                diagnostics.finish(true);
+            }
             result.verification_wall_seconds = Some(start.elapsed().as_secs_f64());
             result.output = Some(output.clone());
             result.correctness_verified = true;

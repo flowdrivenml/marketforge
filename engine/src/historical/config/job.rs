@@ -325,6 +325,16 @@ fn load_document_inner(
         }?;
         // Validate embedded legacy settings before replacing them. They are never
         // authoritative in the executable, but malformed legacy documents still fail.
+        for (priority, task) in job.tasks.iter_mut().enumerate() {
+            // Saved descriptive coverage metadata never controls current execution.
+            if task.raw_schema.get("marketforge_source").is_none() {
+                task.raw_schema["marketforge_source"] = serde_json::json!({});
+            }
+            if let Some(source) = task.raw_schema["marketforge_source"].as_object_mut() {
+                source.remove("prepared_schema_version");
+            }
+            task.raw_schema["marketforge_source"]["source_priority"] = serde_json::json!(priority);
+        }
         validate_resources(&job.resources)?;
         validate_integrity_policy(&job.integrity_policy)?;
         if let Some(runtime) = runtime {

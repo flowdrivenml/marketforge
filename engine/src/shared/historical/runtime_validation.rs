@@ -7,6 +7,7 @@ use crate::shared::error::{MarketForgeError, Result};
 // -----------------------------------------------------------------------------
 
 pub fn validate_resources(resources: &ResourceConfig) -> Result<()> {
+    resources.normalization_limits.validate()?;
     if resources.scratch_path.as_os_str().is_empty() {
         return invalid("resources.scratch_path: must not be empty");
     }

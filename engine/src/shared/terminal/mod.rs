@@ -2,3 +2,5 @@
 pub mod format;
 pub mod guard;
 pub mod palette;
+
+pub mod widgets;

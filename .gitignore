@@ -42,6 +42,7 @@ downloads/
 *.xls
 *.parquet
 *.json
+!docs/historical/normalize-batch-v4.example.json
 
 # Obsidian
 .obsidian/
@@ -140,3 +141,8 @@ handoff.md
 
 # Persistent historical benchmark metadata and generated datasets.
 /data/benchmarks/
+
+# Documentation-only environment and generated site
+/docs/.venv/
+/docs/site/
+/docs/.cache/

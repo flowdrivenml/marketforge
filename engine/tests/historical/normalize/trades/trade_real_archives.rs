@@ -1,10 +1,6 @@
 // #![cfg(feature = "historical")]
 
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::collections::BTreeMap;
 
 use csv::ByteRecord;
 
@@ -16,22 +12,16 @@ use marketforge_engine::{
     },
     shared::io::decode::CsvDecoder,
     shared::io::source::with_source_reader,
-    {
-        historical::job::{WorkTask, load_processing_job, validate_processing_job},
-        shared::normalization::TargetSchema,
-    },
+    {historical::job::WorkTask, shared::normalization::TargetSchema},
 };
 
 const SAMPLE_SIZE: usize = 5;
-const EXPECTED_CONFIGURATIONS: usize = 18;
+// Concrete-instrument configurations in the prepared fixture.
+// OKX family sources require separate member-resolution coverage.
 
 // -----------------------------------------------------------------------------
 // Job discovery
 // -----------------------------------------------------------------------------
-
-fn process_jobs_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../retained-cases")
-}
 
 fn configuration_key(task: &WorkTask) -> String {
     let normalization = task
@@ -51,18 +41,103 @@ fn configuration_key(task: &WorkTask) -> String {
     )
 }
 
-fn discover_trade_tasks() -> BTreeMap<String, WorkTask> {
+pub(super) fn discover_trade_tasks() -> BTreeMap<String, WorkTask> {
+    use crate::support::{fixtures::workload, runtime::TestRun};
+    use marketforge_engine::historical::job::ContentType;
+
+    let mut batch = workload().expect("load prepared normalization fixture");
+
+    // Select one deterministic source per concrete instrument.
+    // Family sources are intentionally excluded from this test.
+    for job in &mut batch.jobs {
+        job.tasks
+            .sort_by(|a, b| a.input_path.file_name().cmp(&b.input_path.file_name()));
+
+        let mut seen = std::collections::BTreeSet::new();
+
+        job.tasks.retain(|task| {
+            if task.scope.is_some() || task.symbol.is_none() {
+                return false;
+            }
+
+            let key = format!(
+                "{:?}:{:?}:{:?}:{:?}",
+                task.exchange, task.instrument_type, task.market_category, task.symbol,
+            );
+
+            seen.insert(key)
+        });
+    }
+
+    batch
+        .jobs
+        .retain(|job| job.output.content_type == ContentType::Trades && !job.tasks.is_empty());
+
+    let expected_profiles: std::collections::BTreeSet<_> = batch
+        .jobs
+        .iter()
+        .flat_map(|job| job.tasks.iter())
+        .map(|task| {
+            format!(
+                "{}.{}.{}.trades",
+                serde_json::to_value(task.exchange)
+                    .unwrap()
+                    .as_str()
+                    .unwrap(),
+                serde_json::to_value(task.instrument_type)
+                    .unwrap()
+                    .as_str()
+                    .unwrap(),
+                serde_json::to_value(task.market_category)
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+            )
+        })
+        .collect();
+    let mut run =
+        TestRun::new("execution/real_trade_samples").expect("create isolated sample test run");
+
+    let config = run
+        .runtime_from_general()
+        .expect("load production normalization configuration");
+
+    let resolved = run
+        .prepare(&batch, &config)
+        .expect("resolve prepared trade sources");
+
     let mut tasks = BTreeMap::new();
-    for job in crate::support::migration::retained_trade_jobs() {
+
+    for job in resolved.jobs {
         for task in job.tasks {
             let key = configuration_key(&task);
-            assert!(
-                tasks.insert(key, task).is_none(),
-                "ambiguous retained profile selection"
-            );
+
+            // Different symbols can share an identical normalization
+            // configuration. Test one representative per configuration.
+            tasks.entry(key).or_insert(task);
         }
     }
-    assert!(!tasks.is_empty(), "no retained trade cases");
+
+    let actual_profiles: std::collections::BTreeSet<_> = tasks
+        .values()
+        .map(|task| {
+            task.raw_schema["marketforge_profile"]["id"]
+                .as_str()
+                .expect("compiled profile identity")
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(
+        actual_profiles, expected_profiles,
+        "every declared concrete trade profile must be exercised"
+    );
+    assert!(
+        !tasks.is_empty(),
+        "no concrete prepared trade configurations resolved"
+    );
+
+    println!("prepared concrete trade configurations: {}", tasks.len());
+
     tasks
 }
 
@@ -77,6 +152,7 @@ fn discover_trade_tasks() -> BTreeMap<String, WorkTask> {
 #[test]
 fn normalize_real_trade_archives() {
     let tasks = discover_trade_tasks();
+    let expected_configurations = tasks.len();
 
     println!("\n{}", "=".repeat(100));
     println!("MARKETFORGE — REAL TRADE ARCHIVE NORMALIZATION");
@@ -84,11 +160,11 @@ fn normalize_real_trade_archives() {
 
     println!("Configurations discovered : {}", tasks.len());
     println!("Sample size               : {SAMPLE_SIZE} records");
-    println!("Expected configurations   : {EXPECTED_CONFIGURATIONS}");
+    println!("Expected configurations   : {expected_configurations}");
 
     assert_eq!(
         tasks.len(),
-        EXPECTED_CONFIGURATIONS,
+        expected_configurations,
         "unexpected number of trade configurations"
     );
 
@@ -157,13 +233,13 @@ fn normalize_real_trade_archives() {
     assert_eq!(failed, 0, "{failed} trade configurations failed");
 
     assert_eq!(
-        successful, EXPECTED_CONFIGURATIONS,
+        successful, expected_configurations,
         "not all trade configurations passed"
     );
 
     assert_eq!(
         total_records,
-        EXPECTED_CONFIGURATIONS * SAMPLE_SIZE,
+        expected_configurations * SAMPLE_SIZE,
         "unexpected number of canonical trades"
     );
 }

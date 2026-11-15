@@ -17,6 +17,7 @@ fn processing_counters_validate() {
         tasks_failed: 0,
         records_rejected_unmatched: 0,
         records_processed: 75,
+        ..Default::default()
     };
 
     counters.validate().unwrap();
@@ -35,6 +36,7 @@ fn processing_counters_reject_inconsistent_accounting() {
         tasks_failed: 0,
         records_rejected_unmatched: 0,
         records_processed: 0,
+        ..Default::default()
     };
 
     assert!(counters.validate().is_err());
@@ -42,9 +44,10 @@ fn processing_counters_reject_inconsistent_accounting() {
 
 #[test]
 fn integrity_metrics_count_all_violations() {
-    let mut metrics = IntegrityMetrics::default();
-
-    metrics.max_diagnostics = 2;
+    let mut metrics = IntegrityMetrics {
+        max_diagnostics: 2,
+        ..Default::default()
+    };
 
     for index in 0..10 {
         metrics

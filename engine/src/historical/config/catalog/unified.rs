@@ -39,6 +39,8 @@ struct Source {
     daily_packaging: Option<String>,
     maximum_depth_per_side: Option<u64>,
     workbook_sheets: Option<u64>,
+    trade_id_scope: Option<crate::shared::formats::trades::TradeIdScope>,
+    trade_id_reset_domain: Option<String>,
 }
 
 pub(super) fn compile(
@@ -173,6 +175,22 @@ fn compile_wire(wire: Unified, path: &Path, data_type: &str) -> Result<(Profile,
     }
     fields.sort_by_key(|v| v["position"].as_u64().unwrap_or(u64::MAX));
     let mut raw = json!({"fields":fields});
+    if let Some(scope) = wire.source.trade_id_scope {
+        let contract = crate::shared::formats::trades::TradeIdentityContract {
+            scope,
+            reset_domain: wire.source.trade_id_reset_domain.clone(),
+        };
+        contract.validate().map_err(invalid)?;
+        if data_type != "trades" || wire.normalization["trade_id"]["field"].as_str().is_none() {
+            return Err(invalid(
+                "trade identity contract requires a trade profile and native trade_id field",
+            ));
+        }
+        raw["marketforge_trade_identity"] =
+            serde_json::to_value(contract).map_err(|e| invalid(e.to_string()))?;
+    } else if wire.source.trade_id_reset_domain.is_some() {
+        return Err(invalid("trade_id_reset_domain requires trade_id_scope"));
+    }
     if !compiled_feeds.is_empty() {
         raw["marketforge_feeds"] = Value::Object(compiled_feeds);
     }

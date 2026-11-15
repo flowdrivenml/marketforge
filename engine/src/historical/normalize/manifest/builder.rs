@@ -20,39 +20,74 @@ impl DatasetManifest {
         processing_metrics: ProcessingMetricsReport,
         integrity_evaluation: IntegrityEvaluation,
     ) -> Result<Self> {
+        Self::build_with_metrics(
+            job,
+            dataset_root,
+            processing_metrics,
+            integrity_evaluation,
+            job.resources.normalization_limits,
+        )
+    }
+    pub(crate) fn from_processing_job_ref<'a>(
+        job: &ProcessingJob,
+        dataset_root: &Path,
+        processing_metrics: &'a ProcessingMetricsReport,
+        integrity_evaluation: IntegrityEvaluation,
+        limits: crate::shared::historical::limits::NormalizationLimits,
+    ) -> Result<DatasetManifest<&'a ProcessingMetricsReport>> {
+        DatasetManifest::build_with_metrics(
+            job,
+            dataset_root,
+            processing_metrics,
+            integrity_evaluation,
+            limits,
+        )
+    }
+}
+impl<M: std::borrow::Borrow<ProcessingMetricsReport>> DatasetManifest<M> {
+    fn build_with_metrics(
+        job: &ProcessingJob,
+        dataset_root: &Path,
+        metrics: M,
+        integrity_evaluation: IntegrityEvaluation,
+        limits: crate::shared::historical::limits::NormalizationLimits,
+    ) -> Result<Self> {
+        let processing_metrics = metrics.borrow();
         let files = inspect_parquet_files(dataset_root)?;
         let streams = crate::historical::normalize::streams::read_outputs(dataset_root)?;
+        let tasks: std::collections::HashMap<_, _> =
+            job.tasks.iter().map(|t| (t.task_id.0, t)).collect();
+        let reports: std::collections::HashMap<_, _> = processing_metrics
+            .tasks
+            .iter()
+            .map(|t| (t.task_id, t))
+            .collect();
+        if tasks.len() != job.tasks.len() || reports.len() != processing_metrics.tasks.len() {
+            return Err(MarketForgeError::InvalidConfiguration(
+                "duplicate task/report identity".into(),
+            ));
+        }
         let mut seen = std::collections::HashSet::new();
         for stream in &streams {
             let mut offset = 0u64;
             for source in &stream.sources {
-                let task = job
-                    .tasks
-                    .iter()
-                    .find(|t| t.task_id.0 == source.task_id)
-                    .ok_or_else(|| {
-                        MarketForgeError::InvalidConfiguration("unknown stream source task".into())
-                    })?;
-                let metrics = processing_metrics
-                    .tasks
-                    .iter()
-                    .find(|t| t.task_id == source.task_id)
-                    .ok_or_else(|| {
-                        MarketForgeError::InvalidConfiguration(
-                            "missing stream source metrics".into(),
-                        )
-                    })?;
+                let task = tasks.get(&source.task_id).ok_or_else(|| {
+                    MarketForgeError::InvalidConfiguration("unknown stream source task".into())
+                })?;
+                let metrics = reports.get(&source.task_id).ok_or_else(|| {
+                    MarketForgeError::InvalidConfiguration("missing stream source metrics".into())
+                })?;
                 if !seen.insert(source.task_id)
                     || task.stream_id.0 != stream.stream_id
-                    || source.start_row != offset
-                    || source.end_row.checked_sub(source.start_row)
-                        != Some(metrics.counters.events_written)
+                    || source.row_count()? != metrics.counters.events_written
                 {
                     return Err(MarketForgeError::InvalidConfiguration(
                         "invalid stream source contribution".into(),
                     ));
                 }
-                offset = source.end_row;
+                offset = offset.checked_add(source.row_count()?).ok_or_else(|| {
+                    MarketForgeError::InvalidConfiguration("source inventory overflow".into())
+                })?;
             }
             let rows = files
                 .iter()
@@ -68,9 +103,22 @@ impl DatasetManifest {
                 ));
             }
         }
-        if dataset_root.join("streams").exists() && seen.len() != job.tasks.len() {
+        let absent_candidates = processing_metrics
+            .tasks
+            .iter()
+            .filter(|task| {
+                !seen.contains(&task.task_id)
+                    && task.counters.events_written == 0
+                    && task.source.as_ref().is_some_and(|source| {
+                        source.family_candidate && source.observed_selected_records == 0
+                    })
+            })
+            .count();
+        if dataset_root.join("streams").exists()
+            && seen.len() + absent_candidates != job.tasks.len()
+        {
             return Err(MarketForgeError::InvalidConfiguration(
-                "missing trade source contributions".into(),
+                "missing source contributions".into(),
             ));
         }
 
@@ -82,43 +130,39 @@ impl DatasetManifest {
                     let rows = stream.sources.last().map_or(0, |s| s.end_row);
                     let directory = dataset_root.join(&stream.directory);
                     crate::historical::normalize::streams_depth::validate(
-                        &directory, stream, rows,
-                    )?;
-                    let boundaries =
-                        crate::shared::persistence::parquet::read_depth_stream_boundaries(
-                            &directory,
-                        )?;
-                    for source in &boundaries.sources {
-                        let task = job
-                            .tasks
-                            .iter()
-                            .find(|t| t.task_id.0 == source.task_id)
-                            .ok_or_else(|| {
+                        &directory,
+                        stream,
+                        rows,
+                        crate::historical::normalize::resources::boundary_read_limits(
+                            job,
+                            limits,
+                            stream.sources.len(),
+                        )?,
+                        |source| {
+                            let task = tasks.get(&source.task_id).ok_or_else(|| {
                                 MarketForgeError::InvalidConfiguration(
                                     "unknown depth source".into(),
                                 )
                             })?;
-                        let metrics = processing_metrics
-                            .tasks
-                            .iter()
-                            .find(|t| t.task_id == source.task_id)
-                            .ok_or_else(|| {
+                            let metrics = reports.get(&source.task_id).ok_or_else(|| {
                                 MarketForgeError::InvalidConfiguration(
                                     "missing depth metrics".into(),
                                 )
                             })?;
-                        if source.boundary.exchange != task.exchange
-                            || source.boundary.instrument_id != task.instrument_id
-                            || source.boundary.symbol != task.symbol
-                            || source.boundary.stream_id != task.stream_id.0
-                            || Some(source.end_event - source.start_event)
-                                != metrics.accepted_depth_events
-                        {
-                            return Err(MarketForgeError::InvalidConfiguration(
-                                "depth source identity/event accounting mismatch".into(),
-                            ));
-                        }
-                    }
+                            if source.boundary.exchange != task.exchange
+                                || source.boundary.instrument_id != task.instrument_id
+                                || source.boundary.symbol != task.symbol
+                                || source.boundary.stream_id != task.stream_id.0
+                                || Some(source.end_event - source.start_event)
+                                    != metrics.accepted_depth_events
+                            {
+                                return Err(MarketForgeError::InvalidConfiguration(
+                                    "depth source identity/event accounting mismatch".into(),
+                                ));
+                            }
+                            Ok(())
+                        },
+                    )?;
                 }
             } else {
                 for task in &job.tasks {
@@ -182,7 +226,16 @@ impl DatasetManifest {
         }
 
         let manifest = Self {
-            protocol_version: DATASET_MANIFEST_VERSION,
+            protocol_version: if streams
+                .iter()
+                .any(|s| s.sources.iter().any(|source| !source.ranges.is_empty()))
+                || processing_metrics.counters.rows_suppressed > 0
+                || absent_candidates > 0
+            {
+                super::models::RECONCILED_MANIFEST_VERSION
+            } else {
+                DATASET_MANIFEST_VERSION
+            },
 
             job_id: job.job_id.0,
             dataset_id: job.dataset_id.0,
@@ -203,7 +256,7 @@ impl DatasetManifest {
 
             integrity_status: integrity_evaluation.status,
             integrity_evaluation,
-            processing_metrics,
+            processing_metrics: metrics,
         };
         manifest.validate_streams()?;
         Ok(manifest)

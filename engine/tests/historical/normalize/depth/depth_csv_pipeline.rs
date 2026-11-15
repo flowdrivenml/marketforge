@@ -1,13 +1,11 @@
 #![cfg(feature = "historical")]
 #[allow(dead_code)]
-#[path = "../../support/depth_assertions.rs"]
-mod depth_format_common;
+use crate::support::depth_assertions as depth_format_common;
 
 use std::{
     fs::{self, File},
     io::Write,
     path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
 };
 
 use marketforge_engine::historical::normalize::boundary::{BoundaryBookState, fingerprint_book};
@@ -44,11 +42,8 @@ fn project_root() -> PathBuf {
 fn processes_gateio_spot_csv_pipeline() {
     let root = project_root();
 
-    let job = load_processing_job(
-        root.join("retained-cases/")
-            .join("gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
-    )
-    .expect("load Gate.io spot job");
+    let job =
+        load_processing_job("gateio.spot.spot.depth:BTC_USDT").expect("load Gate.io spot job");
 
     let mut task = job.tasks[0].clone();
 
@@ -209,10 +204,8 @@ fn processes_gateio_spot_csv_pipeline() {
 fn recovers_after_malformed_gateio_snapshot() {
     let root = project_root();
 
-    let job = load_processing_job(
-        root.join("retained-cases/gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
-    )
-    .expect("load Gate.io spot job");
+    let job =
+        load_processing_job("gateio.spot.spot.depth:BTC_USDT").expect("load Gate.io spot job");
 
     let mut task = job.tasks[0].clone();
 
@@ -308,10 +301,8 @@ fn recovers_after_malformed_gateio_snapshot() {
 fn recovers_after_gateio_sequence_gap() {
     let root = project_root();
 
-    let job = load_processing_job(
-        root.join("retained-cases/gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
-    )
-    .expect("load Gate.io spot job");
+    let job =
+        load_processing_job("gateio.spot.spot.depth:BTC_USDT").expect("load Gate.io spot job");
 
     let mut task = job.tasks[0].clone();
 
@@ -425,10 +416,8 @@ fn recovers_after_gateio_sequence_gap() {
 fn flushes_gateio_snapshot_at_eof() {
     let root = project_root();
 
-    let job = load_processing_job(
-        root.join("retained-cases/gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
-    )
-    .expect("load Gate.io spot job");
+    let job =
+        load_processing_job("gateio.spot.spot.depth:BTC_USDT").expect("load Gate.io spot job");
 
     let mut task = job.tasks[0].clone();
 
@@ -492,10 +481,8 @@ fn flushes_gateio_snapshot_at_eof() {
 fn rejects_incomplete_initial_snapshot_at_eof() {
     let root = project_root();
 
-    let job = load_processing_job(
-        root.join("retained-cases/gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
-    )
-    .expect("load Gate.io spot job");
+    let job =
+        load_processing_job("gateio.spot.spot.depth:BTC_USDT").expect("load Gate.io spot job");
 
     let mut task = job.tasks[0].clone();
 
@@ -560,10 +547,8 @@ fn rejects_incomplete_initial_snapshot_at_eof() {
 fn rejects_incomplete_replacement_snapshot_at_eof() {
     let root = project_root();
 
-    let job = load_processing_job(
-        root.join("retained-cases/gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json"),
-    )
-    .expect("load Gate.io spot job");
+    let job =
+        load_processing_job("gateio.spot.spot.depth:BTC_USDT").expect("load Gate.io spot job");
 
     let mut task = job.tasks[0].clone();
 

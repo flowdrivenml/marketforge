@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResourceConfig {
+    #[serde(default)]
+    pub normalization_limits: super::limits::NormalizationLimits,
+
     pub workers: usize,
 
     pub memory_budget_bytes: u64,

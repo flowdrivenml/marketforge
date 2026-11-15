@@ -94,10 +94,27 @@ impl Default for RecordingMetrics {
 }
 
 impl RecordingMetrics {
-    pub(crate) fn activate(&self){self.available.store(true,Ordering::Relaxed);}
-    pub(crate) fn pending_add(&self){self.pending_records.fetch_add(1,Ordering::Relaxed);}
-    pub(crate) fn pending_remove(&self){self.pending_records.fetch_sub(1,Ordering::Relaxed);}
-    pub(crate) fn confirmed(&self,count:u64){self.records_written_total.fetch_add(count,Ordering::Relaxed);if let Some(t)=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().and_then(|d|i64::try_from(d.as_nanos()).ok()){self.last_successful_write_at_ns.store(t,Ordering::Relaxed);self.has_successful_write.store(true,Ordering::Relaxed);}}
+    pub(crate) fn activate(&self) {
+        self.available.store(true, Ordering::Relaxed);
+    }
+    pub(crate) fn pending_add(&self) {
+        self.pending_records.fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn pending_remove(&self) {
+        self.pending_records.fetch_sub(1, Ordering::Relaxed);
+    }
+    pub(crate) fn confirmed(&self, count: u64) {
+        self.records_written_total
+            .fetch_add(count, Ordering::Relaxed);
+        if let Some(t) = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .and_then(|d| i64::try_from(d.as_nanos()).ok())
+        {
+            self.last_successful_write_at_ns.store(t, Ordering::Relaxed);
+            self.has_successful_write.store(true, Ordering::Relaxed);
+        }
+    }
     /// Create empty recording metrics.
     ///
     /// Counters and pending-record measurements begin at zero.
@@ -105,7 +122,8 @@ impl RecordingMetrics {
     /// No successful commit timestamp is initially available.
     pub fn new() -> Self {
         Self {
-            available: AtomicBool::new(false),            records_written_total: AtomicU64::new(0),
+            available: AtomicBool::new(false),
+            records_written_total: AtomicU64::new(0),
 
             write_failures_total: AtomicU64::new(0),
 

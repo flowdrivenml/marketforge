@@ -49,18 +49,14 @@ impl DepthBoundaryTracker {
         self.manifest.last_timestamp_ns = Some(timestamp);
         self.manifest.last_sequence = source.sequence_end;
 
-        if boundary == DepthEventBoundary::Initialization {
-            if let Some(state) = initial_state {
-                let snapshot = BoundarySnapshot::new(
-                    source.sequence_end,
-                    timestamp,
-                    state,
-                    self.depth_per_side,
-                );
+        if boundary == DepthEventBoundary::Initialization
+            && let Some(state) = initial_state
+        {
+            let snapshot =
+                BoundarySnapshot::new(source.sequence_end, timestamp, state, self.depth_per_side);
 
-                if self.manifest.initial.is_none() {
-                    self.manifest.initial = Some(snapshot);
-                }
+            if self.manifest.initial.is_none() {
+                self.manifest.initial = Some(snapshot);
             }
         }
     }

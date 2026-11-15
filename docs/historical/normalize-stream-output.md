@@ -1,10 +1,17 @@
 # Normalized stream output
 
-Production jobs and sessions schedule independent stream units concurrently and process each unit's sources sequentially. One reservation covers the largest source estimate plus stream bookkeeping and remains held through writer finalization. Estimates govern admission; they are not OS RSS limits.
+Production jobs and sessions schedule independent stream units concurrently, read participating sources forward, and retain long-lived per-stream writers. One reservation covers the largest source estimate plus stream bookkeeping and remains held through writer finalization. Estimates govern admission; they are not OS RSS limits.
 
-Compatible sources have identical resolved logical stream, exchange, instrument identity/specification, normalization rules, ordering policy, profile fingerprint and feed options. Exact-profile compatibility is conservative. Each job/dataset owns separate units. Family expansion keeps concrete instruments independent; current family routing can reread archives. Missing concrete specifications are rejected.
+Compatible sources have identical resolved logical stream, exchange, instrument identity/specification, normalization rules, ordering policy, profile fingerprint and feed options. Exact-profile compatibility is conservative. Each job/dataset owns separate units. Family expansion keeps concrete instruments independent; family routing shares a forward decode across concrete instruments. Encountered selected instruments require authoritative specifications.
 
-Multiple sources require declared inclusive `source_time_bounds` in prepared v3 tasks. Distinct periods or explicit positive partitions of an identical window establish order. Touching inclusive periods are permitted. Accepted event times must satisfy declarations and cross-source append order. Task-local timestamp regressions retain the configured Fail/Degrade behavior; degraded output is not advertised as globally monotonic. Unsupported overlap fails; normalization neither merges nor deduplicates archives.
+Prepared schema 4 removes external source coverage. Original request-array order
+supplies conflict priority; Rust collects bounded source observations and decides
+chronological emission. Supported native trade identities use first-source-wins;
+ambiguous depth overlap fails safely. Mixed family sources route once into
+independent concrete workers. Interleaved/suppressed output uses manifest 4;
+legacy contiguous output retains manifest 3. See
+[the source/selection contract](normalization-source-selection.md) for exact
+selection, safe-emission, resource and downstream compatibility rules.
 
 ```
 dataset/
@@ -36,7 +43,8 @@ Merge readers accept manifest2 task output and manifest3 stream output. New dept
 
 Failed source, writer or metadata operations prevent dataset commit. Finalization checks source contributions, persisted footer rows, event-index coverage, local ordinal monotonicity, initialization segments, source boundaries and accepted-event metrics. Existing committed destinations are refused and commit remains same-filesystem rename. No stronger crash-durability guarantee is claimed.
 
-When source timestamps tie, explicit partition/inventory order is preserved by
-trade/depth streams and checkpoint selection. Task IDs do not establish temporal
-precedence. `CanonicalReferenceResolver::register_source_task` accepts physical
+When trade timestamps tie, captured original request priority and source-record
+ordinals determine output order. Task IDs do not establish priority. Ambiguous
+cross-source equal-time depth books fail; retired partitions do not establish
+synchronization. `CanonicalReferenceResolver::register_source_task` accepts physical
 source slices; legacy `register_task` retains complete-file validation.

@@ -77,7 +77,9 @@ fn depth(d: &RouterDepthEvent, max_records: usize) -> Result<m::Depth, String> {
             value.timestamp_provenance=timestamp.latest_source.map(|t|match t.provenance {crate::live::infrastructure::normalization::DepthTimestampProvenance::Exchange=>"exchange",crate::live::infrastructure::normalization::DepthTimestampProvenance::ReceiveTimeFallback=>"receive_time_fallback"}.into());
             value.composition = Some(
                 match timestamp.composition {
-                crate::live::integrity::DepthTimestampComposition::CurrentBookHandoff => "current_book_handoff",
+                    crate::live::integrity::DepthTimestampComposition::CurrentBookHandoff => {
+                        "current_book_handoff"
+                    }
                     crate::live::integrity::DepthTimestampComposition::SingleMessage => {
                         "single_message"
                     }

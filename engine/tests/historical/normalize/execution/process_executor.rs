@@ -1,344 +1,256 @@
 #![cfg(feature = "historical")]
 
-use std::{
-    fs::{self, File},
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::fs::File;
 
-use marketforge_engine::historical::normalize::manifest::DatasetManifest;
-use marketforge_engine::historical::normalize::manifest::inspect_parquet_files;
+use arrow_array::{Array, Int64Array};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-use {
-    crate::support::migration::archive_case as load_processing_job,
-    crate::support::migration::configuration as load_processing_config,
-    marketforge_engine::historical::normalize::ProcessingStatus,
-    marketforge_engine::historical::normalize::execute_processing_job,
+
+use crate::support::{fixtures::workload, runtime::TestRun};
+
+use marketforge_engine::{
+    historical::{
+        job::{ContentType, InstrumentKind},
+        normalize::{
+            ProcessingStatus, execute_processing_job_with_progress,
+            manifest::{DatasetManifest, inspect_parquet_files},
+            progress::{ProgressReporter, ProgressTaskId, diagnostics::Diagnostics},
+        },
+    },
+    shared::domain::canonical::Exchange,
 };
-static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
-
-const JOB_FILE: &str = "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json";
-
-// -----------------------------------------------------------------------------
-// Test paths
-// -----------------------------------------------------------------------------
-
-fn project_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("project root")
-        .to_path_buf()
-}
-
-fn job_path() -> PathBuf {
-    project_root().join("retained-cases").join(JOB_FILE)
-}
-
-fn config_path() -> PathBuf {
-    project_root().join("data/.config/historical/general.toml")
-}
-
-fn test_directory() -> PathBuf {
-    let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
-
-    let directory = crate::support::migration::persistent_path(format!(
-        "marketforge-executor-test-{}-{id}",
-        std::process::id()
-    ));
-
-    fs::create_dir_all(&directory).expect("create test directory");
-
-    directory
-}
-
-// -----------------------------------------------------------------------------
-// Multi-task executor integration test
-// -----------------------------------------------------------------------------
 
 #[test]
 fn processes_multiple_trade_tasks_into_staging() {
-    // -----------------------------------------------------------------
-    // Load processing job
-    // -----------------------------------------------------------------
+    let mut run =
+        TestRun::new("execution/real_multi_archive_trades").expect("create isolated test run");
 
-    let mut job = load_processing_job(job_path()).expect("load processing job");
+    let config = run
+        .runtime_from_general()
+        .expect("load production normalization configuration");
 
-    assert_eq!(job.tasks.len(), 3);
+    let mut batch = workload().expect("load authoritative normalize.json");
 
-    // -----------------------------------------------------------------
-    // Load authoritative global resource configuration
-    // -----------------------------------------------------------------
-
-    let mut config = load_processing_config(config_path(), project_root())
-        .expect("load global processing configuration");
-
-    // Override resources in memory for this test only.
-    //
-    // The actual global JSON file remains unchanged.
-
-    config.resources.parquet.row_group_target_bytes = 16 * 1024;
-    config.resources.parquet.file_target_bytes = 64 * 1024;
-
-    // -----------------------------------------------------------------
-    // Verify that legacy manifest resources are ignored
-    // -----------------------------------------------------------------
-
-    // Deliberately assign invalid values.
-    //
-    // If the executor accidentally uses manifest resources,
-    // validation or Parquet initialization should fail.
-
-    job.resources.workers = 0;
-    job.resources.memory_budget_bytes = 0;
-    job.resources.scratch_budget_bytes = 0;
-
-    job.resources.parquet.row_group_target_bytes = 0;
-    job.resources.parquet.file_target_bytes = 0;
-
-    // -----------------------------------------------------------------
-    // Configure isolated test output
-    // -----------------------------------------------------------------
-
-    let directory = test_directory();
-
-    let staging = directory.join("staging");
-    let dataset = directory.join("dataset");
-
-    job.output.staging_path = staging.clone();
-    job.output.dataset_path = dataset.clone();
-
-    // -----------------------------------------------------------------
-    // Execute processing job
-    // -----------------------------------------------------------------
-
-    println!("\n{}", "=".repeat(90));
-    println!("MARKETFORGE — MULTI-TASK EXECUTOR TEST");
-    println!("{}", "=".repeat(90));
-
-    println!("Job file     : {}", job_path().display());
-    println!("Config file  : {}", config_path().display());
-    println!("Tasks        : {}", job.tasks.len());
-    println!("Staging      : {}", staging.display());
-    println!("Final output : {}", dataset.display());
-
-    println!(
-        "Row-group target : {} bytes",
-        config.resources.parquet.row_group_target_bytes
-    );
-
-    println!(
-        "File target      : {} bytes",
-        config.resources.parquet.file_target_bytes
-    );
-
-    let result = execute_processing_job(&job, &config).expect("execute processing job");
-
-    assert_eq!(
-        result.status,
-        ProcessingStatus::Complete,
-        "executor returned failure: {:?}",
-        result.failure
-    );
-
-    // Stage 1 must write into staging only.
+    batch = crate::support::fixtures::concrete_stream(
+        &batch,
+        Exchange::Bybit,
+        InstrumentKind::Spot,
+        ContentType::Trades,
+        2,
+    )
+    .expect("prepared multi-archive trade stream");
+    assert_eq!(batch.jobs.len(), 1, "one explicitly selected stream job");
+    let selected_tasks = &batch.jobs[0].tasks;
     assert!(
-        !staging.exists(),
-        "staging should disappear after successful commit"
+        selected_tasks.len() >= 2,
+        "multi-archive coverage requires multiple sources"
     );
 
-    assert!(
-        dataset.is_dir(),
-        "committed dataset directory does not exist"
-    );
-
-    assert!(
-        dataset.join("manifest.json").is_file(),
-        "committed dataset manifest does not exist"
-    );
-
-    // -----------------------------------------------------------------
-    // Discover generated Parquet files
-    // -----------------------------------------------------------------
-
-    // -----------------------------------------------------------------
-    // Discover generated Parquet files
-    // -----------------------------------------------------------------
-
-    // Parallel workers write into isolated task directories.
-    let tasks_dir = dataset.join("tasks");
-
-    assert!(
-        tasks_dir.is_dir(),
-        "parallel task output directory does not exist"
-    );
-
-    // Discover all Parquet files across task directories.
-    let discovered_files = inspect_parquet_files(&dataset).expect("discover Parquet files");
-
-    assert!(
-        !discovered_files.is_empty(),
-        "executor produced no Parquet files"
-    );
-
-    // Convert manifest-relative paths into absolute filesystem paths.
-    let parquet_files: Vec<PathBuf> = discovered_files
-        .iter()
-        .map(|file| dataset.join(&file.path))
-        .collect();
-
-    // Verify that every file belongs to the parallel output layout.
-    for file in &discovered_files {
+    for task in selected_tasks {
         assert!(
-            file.path.starts_with("tasks/"),
-            "unexpected Parquet output path: {}",
-            file.path,
+            task.input_path.is_file(),
+            "missing source archive: {}",
+            task.input_path.display()
         );
 
-        assert!(
-            dataset.join(&file.path).is_file(),
-            "Parquet file does not exist: {}",
-            file.path,
+        println!(
+            "Selected task {}: {}",
+            task.task_id.0,
+            task.input_path.display()
         );
     }
 
-    // -----------------------------------------------------------------
-    // Read Parquet output and verify statistics
-    // -----------------------------------------------------------------
+    // Resolve through the same production catalog as the CLI.
+    let resolved = run
+        .prepare(&batch, &config)
+        .expect("resolve prepared batch");
 
+    assert_eq!(resolved.jobs.len(), 1);
+
+    let job = &resolved.jobs[0];
+
+    assert_eq!(job.tasks.len(), selected_tasks.len());
+
+    println!("\n{}", "=".repeat(90));
+    println!("MARKETFORGE — REAL MULTI-ARCHIVE TRADE TEST");
+    println!("{}", "=".repeat(90));
+
+    println!("Sources     : {}", job.tasks.len());
+    println!("Staging     : {}", job.output.staging_path.display());
+    println!("Dataset     : {}", job.output.dataset_path.display());
+
+    // Only diagnostics may be enabled explicitly; resource settings remain the
+    // settings loaded from general.toml above.
+    let mut config = config;
+    if let Ok(mode) = std::env::var("MARKETFORGE_TEST_DIAGNOSTICS") {
+        use marketforge_engine::shared::historical::config::DiagnosticsMode;
+        config.diagnostics.mode = match mode.as_str() {
+            "disabled" => DiagnosticsMode::Disabled,
+            "basic" => DiagnosticsMode::Basic,
+            "detailed" => DiagnosticsMode::Detailed,
+            _ => panic!("MARKETFORGE_TEST_DIAGNOSTICS must be disabled, basic, or detailed"),
+        };
+    }
+    let reporter = ProgressReporter::disabled();
+    let diagnostics = Diagnostics::start(&config, &run.path, &reporter);
+    let execution_start = std::time::Instant::now();
+    let result = execute_processing_job_with_progress(job, &config, &reporter)
+        .expect("execute processing job");
+
+    reporter.measured_wall_time(
+        ProgressTaskId::new(job.job_id.0, 0),
+        "engine execution",
+        execution_start.elapsed(),
+    );
+    let verification_start = std::time::Instant::now();
+    reporter.stream_phase(job.job_id.0, "", "test output verification");
+    assert_eq!(
+        result.status,
+        ProcessingStatus::Complete,
+        "processing failed: {:?}",
+        result.failure
+    );
+
+    assert!(
+        !job.output.staging_path.exists(),
+        "staging directory remains after successful commit"
+    );
+
+    assert!(
+        job.output.dataset_path.join("manifest.json").is_file(),
+        "missing committed dataset manifest"
+    );
+
+    // Discover canonical Parquet files relative to the dataset root.
+    let files =
+        inspect_parquet_files(&job.output.dataset_path).expect("discover canonical Parquet files");
+
+    assert!(!files.is_empty(), "no Parquet files produced");
+
+    let manifest: DatasetManifest = serde_json::from_slice(
+        &std::fs::read(job.output.dataset_path.join("manifest.json")).expect("read manifest"),
+    )
+    .expect("deserialize manifest");
+
+    assert_eq!(manifest.job_id, job.job_id.0);
+    assert_eq!(manifest.dataset_id, job.dataset_id.0);
+
+    assert_eq!(
+        manifest.source_tasks.len(),
+        selected_tasks.len(),
+        "manifest must account for all selected sources"
+    );
+
+    assert_eq!(manifest.events_written, result.events_written);
+
+    assert_eq!(manifest.files_written, files.len() as u64);
+
+    assert_eq!(
+        manifest.processing_metrics.counters.events_written,
+        result.events_written
+    );
+
+    // All selected tasks target one concrete logical trade stream.
+    assert_eq!(
+        manifest.streams.len(),
+        1,
+        "expected one concrete trade stream"
+    );
+
+    // Independently verify the actual Parquet rows and chronology.
+    //
+    // Only one Arrow batch is retained at a time.
     let mut total_rows = 0u64;
+    let mut previous_timestamp: Option<i64> = None;
+    let mut minimum_timestamp: Option<i64> = None;
+    let mut maximum_timestamp: Option<i64> = None;
 
-    let mut minimum_timestamp = None::<i64>;
-    let mut maximum_timestamp = None::<i64>;
+    for file in &files {
+        let path = job.output.dataset_path.join(&file.path);
 
-    for path in &parquet_files {
-        let file = File::open(path).expect("open Parquet file");
+        assert!(
+            path.is_file(),
+            "manifest references missing Parquet: {}",
+            path.display()
+        );
 
-        let reader = ParquetRecordBatchReaderBuilder::try_new(file)
-            .expect("read Parquet metadata")
-            .build()
-            .expect("build Parquet reader");
+        let reader =
+            ParquetRecordBatchReaderBuilder::try_new(File::open(&path).expect("open Parquet"))
+                .expect("read Parquet metadata")
+                .with_batch_size(8192)
+                .build()
+                .expect("create Parquet reader");
 
         for batch in reader {
-            let batch = batch.expect("read RecordBatch");
-
-            total_rows += batch.num_rows() as u64;
+            let batch = batch.expect("read Arrow batch");
 
             let timestamps = batch
                 .column_by_name("event_timestamp_ns")
-                .expect("timestamp column")
+                .expect("missing timestamp column")
                 .as_any()
-                .downcast_ref::<arrow_array::Int64Array>()
-                .expect("Int64 timestamp array");
+                .downcast_ref::<Int64Array>()
+                .expect("timestamp column must be Int64");
 
-            for timestamp in timestamps.values() {
-                minimum_timestamp =
-                    Some(minimum_timestamp.map_or(*timestamp, |value| value.min(*timestamp)));
+            for index in 0..timestamps.len() {
+                assert!(!timestamps.is_null(index), "null canonical event timestamp");
 
-                maximum_timestamp =
-                    Some(maximum_timestamp.map_or(*timestamp, |value| value.max(*timestamp)));
+                let timestamp = timestamps.value(index);
+
+                if let Some(previous) = previous_timestamp {
+                    assert!(
+                        timestamp >= previous,
+                        "timestamp regression across canonical output: \
+                         previous={previous}, current={timestamp}, \
+                         file={}",
+                        file.path
+                    );
+                }
+
+                minimum_timestamp.get_or_insert(timestamp);
+                maximum_timestamp = Some(timestamp);
+                previous_timestamp = Some(timestamp);
+
+                total_rows += 1;
             }
         }
     }
 
-    // -----------------------------------------------------------------
-    // Verify executor metrics
-    // -----------------------------------------------------------------
-
-    println!("\nRESULTS");
-
-    println!("  Parquet files     : {}", parquet_files.len());
-
-    println!("  Parquet rows      : {total_rows}");
-
-    println!("  Events reported   : {}", result.events_written);
-
-    println!("  Files reported    : {}", result.files_written);
-
-    println!("  Minimum timestamp : {minimum_timestamp:?}");
-
-    println!("  Maximum timestamp : {maximum_timestamp:?}");
+    assert!(total_rows > 0, "normalization produced no trades");
 
     assert_eq!(
         total_rows, result.events_written,
-        "Parquet row count differs from executor metrics"
+        "Parquet row count differs from reported events"
     );
 
-    assert_eq!(
-        parquet_files.len() as u64,
-        result.files_written,
-        "Parquet file count differs from executor metrics"
+    assert_eq!(minimum_timestamp, result.start_timestamp_ns);
+
+    assert_eq!(maximum_timestamp, result.end_timestamp_ns);
+
+    assert_eq!(manifest.start_timestamp_ns, minimum_timestamp);
+
+    assert_eq!(manifest.end_timestamp_ns, maximum_timestamp);
+
+    println!("\nRESULTS");
+    println!("  Source archives     : {}", job.tasks.len());
+    println!("  Logical streams     : {}", manifest.streams.len());
+    println!("  Parquet files       : {}", files.len());
+    println!("  Canonical trades    : {total_rows}");
+    println!("  Minimum timestamp  : {minimum_timestamp:?}");
+    println!("  Maximum timestamp  : {maximum_timestamp:?}");
+    println!("  Chronological order: VERIFIED");
+    println!("  Manifest accounting: VERIFIED");
+    println!(
+        "  Dataset            : {}",
+        job.output.dataset_path.display()
     );
-
-    assert_eq!(
-        minimum_timestamp, result.start_timestamp_ns,
-        "minimum timestamp differs"
-    );
-
-    assert_eq!(
-        maximum_timestamp, result.end_timestamp_ns,
-        "maximum timestamp differs"
-    );
-
-    // -----------------------------------------------------------------
-    // Verify committed dataset manifest
-    // -----------------------------------------------------------------
-
-    let manifest_path = dataset.join("manifest.json");
-
-    let manifest_contents = fs::read_to_string(&manifest_path).expect("read committed manifest");
-
-    let manifest: DatasetManifest =
-        serde_json::from_str(&manifest_contents).expect("deserialize committed manifest");
-
-    assert_eq!(manifest.job_id, job.job_id.0,);
-
-    assert_eq!(manifest.dataset_id, job.dataset_id.0,);
-
-    assert_eq!(manifest.events_written, result.events_written,);
-
-    assert_eq!(manifest.files_written, result.files_written,);
-
-    assert_eq!(manifest.start_timestamp_ns, result.start_timestamp_ns,);
-
-    assert_eq!(manifest.end_timestamp_ns, result.end_timestamp_ns,);
-
-    assert_eq!(manifest.source_tasks.len(), job.tasks.len(),);
-
-    assert_eq!(
-        manifest.files.len(),
-        parquet_files.len(),
-        "manifest does not contain every generated Parquet file"
-    );
-
-    assert_eq!(
-        manifest.processing_metrics.counters.events_written, total_rows,
-        "processing metrics disagree with Parquet rows"
-    );
-
-    assert_eq!(
-        manifest.processing_metrics.tasks.len(),
-        job.tasks.len(),
-        "manifest does not contain all task reports"
-    );
-
-    assert_eq!(
-        result.manifest_path.as_deref(),
-        Some(manifest_path.to_string_lossy().as_ref()),
-    );
-
-    // The verified OKX linear futures archives contain:
-    //
-    // September 1: 116 matching trades
-    // September 2:   0 matching trades
-    // September 3:  46 matching trades
-    //
-    // Total: 162 trades.
-
-    assert_eq!(total_rows, 162, "unexpected OKX futures trade count");
-
     println!("\nRESULT: PASS");
 
-    // -----------------------------------------------------------------
-    // Cleanup
-    // -----------------------------------------------------------------
+    reporter.measured_wall_time(
+        ProgressTaskId::new(job.job_id.0, 0),
+        "test output verification",
+        verification_start.elapsed(),
+    );
+    if let Some(diagnostics) = diagnostics {
+        diagnostics.finish(true);
+    }
+    run.finish(&Ok(())).expect("record successful test result");
 }

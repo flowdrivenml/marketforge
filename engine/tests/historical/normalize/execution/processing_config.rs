@@ -1,17 +1,6 @@
 #![cfg(feature = "historical")]
 
-use std::path::{Path, PathBuf};
-
-use marketforge_engine::historical::normalize::{
-    load_processing_config, validate_integrity_policy,
-};
-
-fn project_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("project root")
-        .to_path_buf()
-}
+use marketforge_engine::historical::normalize::validate_integrity_policy;
 
 fn load_config() -> marketforge_engine::historical::normalize::ProcessingConfig {
     crate::support::migration::threshold_fixture()

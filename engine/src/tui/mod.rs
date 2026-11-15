@@ -9,5 +9,5 @@ pub mod processing;
 #[cfg(feature = "live")]
 pub mod live;
 
-#[cfg(feature="management-tui")]
+#[cfg(feature = "management-tui")]
 pub mod management;

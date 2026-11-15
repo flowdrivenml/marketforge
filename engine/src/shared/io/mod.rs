@@ -4,3 +4,5 @@ pub mod decode;
 mod instrument;
 #[cfg(feature = "historical")]
 pub mod source;
+
+pub mod bounded;

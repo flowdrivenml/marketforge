@@ -3,14 +3,12 @@ use std::{collections::HashSet, path::PathBuf};
 use super::progress::{ProgressReporter, ProgressTaskId};
 use super::{
     ProcessingResult,
-    executor::{
-        ExecutionContext, finalize_processing_job, persist_processing_failure, prepare_staging,
-    },
+    executor::{ExecutionContext, persist_processing_failure, prepare_staging},
 };
 use super::{
     config::{ProcessingConfig, validate_processing_config},
-    resources::{ResourceBudget, estimate_task_resources},
-    scheduler::execute_parallel_budgeted,
+    resources::{ResourceBudget, estimate_task_resources_with_limits},
+    scheduler::execute_parallel_budgeted_observed,
     task::TaskExecution,
 };
 use crate::{historical::job::ContentType, shared::normalization::TargetSchema};
@@ -27,7 +25,7 @@ pub struct ProcessingSessionResult {
 }
 #[derive(Debug)]
 struct JobPreflightFailure {
-    task_id: u64,
+    task_id: Option<u64>,
     error: MarketForgeError,
 }
 
@@ -68,6 +66,36 @@ fn execute_processing_session_inner(
     reporter: &ProgressReporter,
     on_result: &mut dyn FnMut(&ProcessingResult),
 ) -> Result<ProcessingSessionResult> {
+    let diagnostics = jobs.first().and_then(|job| {
+        super::progress::diagnostics::Diagnostics::start(
+            config,
+            job.output
+                .staging_path
+                .parent()
+                .unwrap_or(std::path::Path::new(".")),
+            reporter,
+        )
+    });
+    for job in jobs {
+        reporter.record_workload(job);
+        reporter.stream_phase(job.job_id.0, "", "planning/admission");
+    }
+    let result = execute_processing_session_inner_impl(jobs, config, reporter, on_result);
+    if let Some(diagnostics) = diagnostics {
+        diagnostics.finish(result.as_ref().is_ok_and(|s| {
+            s.jobs
+                .iter()
+                .all(|j| j.status == super::ProcessingStatus::Complete)
+        }));
+    }
+    result
+}
+fn execute_processing_session_inner_impl(
+    jobs: &[ProcessingJob],
+    config: &ProcessingConfig,
+    reporter: &ProgressReporter,
+    on_result: &mut dyn FnMut(&ProcessingResult),
+) -> Result<ProcessingSessionResult> {
     validate_processing_config(config)?;
     validate_session(jobs)?;
 
@@ -98,14 +126,20 @@ fn execute_processing_session_inner(
     let mut preflight_failures = HashMap::new();
     let mut eligible_jobs = Vec::new();
     let mut eligible_indices = Vec::new();
+    let mut retained_admitted = 0u64;
+    let mut maximum_admitted = 0u64;
 
     for (job_index, job) in jobs.iter().enumerate() {
         let mut failure = None;
 
         for task in &job.tasks {
-            if let Err(error) = estimate_task_resources(task, &config.resources.parquet) {
+            if let Err(error) = estimate_task_resources_with_limits(
+                task,
+                &config.resources.parquet,
+                &config.resources.normalization_limits,
+            ) {
                 failure = Some(JobPreflightFailure {
-                    task_id: task.task_id.0,
+                    task_id: Some(task.task_id.0),
                     error,
                 });
 
@@ -114,20 +148,71 @@ fn execute_processing_session_inner(
         }
 
         if failure.is_none() {
-            let admission = super::streams::plan(job).and_then(|units| {
-                for unit in units {
-                    let required=super::streams::estimate(&unit,config)?;
-                    if required.memory_bytes>config.resources.memory_budget_bytes || required.scratch_bytes>config.resources.scratch_budget_bytes {
-                        return Err(MarketForgeError::InvalidConfiguration(format!("stream {} requires memory={} scratch={}, exceeding job admission budget",unit.tasks[0].1.stream_id.0,required.memory_bytes,required.scratch_bytes)));
-                    }
+            let mut next_retained = retained_admitted
+                .checked_add(super::resources::estimate::failure_report_memory(
+                    job,
+                    &config.resources.normalization_limits,
+                    config.resources.workers,
+                )?)
+                .ok_or_else(|| {
+                    MarketForgeError::InvalidConfiguration("failure report reserve overflow".into())
+                })?;
+            let mut next_maximum = maximum_admitted;
+            let admission = (|| -> Result<()> {
+                for task in &job.tasks {
+                    next_retained = next_retained
+                        .checked_add(super::resources::retained_task_memory(
+                            task,
+                            &config.resources.normalization_limits,
+                        )?)
+                        .ok_or_else(|| {
+                            MarketForgeError::InvalidConfiguration(
+                                "retained admission overflow".into(),
+                            )
+                        })?;
+                }
+                for unit in super::streams::plan(job)? {
+                    let _scope = crate::shared::historical::limits::LimitScope::enter(
+                        config.resources.normalization_limits,
+                        format!("job={}, stream={}", job.job_id.0, unit.key),
+                    );
+                    let required = super::streams::estimate(&unit, config)?;
+                    next_maximum = next_maximum.max(required.memory_bytes).max(
+                        super::resources::job_finalization_memory(
+                            &config.resources.parquet,
+                            job,
+                            &config.resources.normalization_limits,
+                        )?,
+                    );
+                    crate::shared::historical::limits::check(
+                        "memory bytes",
+                        config.resources.memory_budget_bytes,
+                        next_retained.checked_add(next_maximum).ok_or_else(|| {
+                            MarketForgeError::InvalidConfiguration("admission overflow".into())
+                        })?,
+                        "stream and retained-state admission",
+                    )?;
+                    crate::shared::historical::limits::check(
+                        "open files",
+                        config.resources.normalization_limits.open_files,
+                        required.open_files.checked_add(8).ok_or_else(|| {
+                            MarketForgeError::InvalidConfiguration(
+                                "file accounting overflow".into(),
+                            )
+                        })?,
+                        "stream admission",
+                    )?;
                 }
                 Ok(())
-            });
+            })();
             if let Err(error) = admission {
                 failure = Some(JobPreflightFailure {
-                    task_id: job.tasks[0].task_id.0,
+                    task_id: None,
                     error,
                 });
+            } else {
+                retained_admitted = next_retained;
+                maximum_admitted = next_maximum;
             }
         }
 
@@ -139,7 +224,7 @@ fn execute_processing_session_inner(
                     for task in &job.tasks {
                         let id = ProgressTaskId::new(job.job_id.0, task.task_id.0);
 
-                        if task.task_id.0 == failure.task_id {
+                        if Some(task.task_id.0) == failure.task_id {
                             reporter.task_failed(id, reason.clone());
                         } else {
                             reporter.task_skipped(id, "Job rejected during preflight".to_owned());
@@ -147,6 +232,10 @@ fn execute_processing_session_inner(
                     }
                 }
 
+                reporter.emit(super::progress::ProgressEvent::JobFinished {
+                    job_id: job.job_id.0,
+                    success: false,
+                });
                 preflight_failures.insert(job_index, failure);
             }
 
@@ -170,6 +259,10 @@ fn execute_processing_session_inner(
     // -------------------------------------------------------------
 
     let session = execute_session_tasks_with_progress(&eligible_jobs, config, reporter)?;
+    for job in jobs {
+        reporter.stream_phase(job.job_id.0, "", "finalization resource admission");
+    }
+    let _finalization = session.reserve_finalization()?;
 
     let total_tasks = jobs.iter().map(|job| job.tasks.len()).sum();
 
@@ -196,7 +289,7 @@ fn execute_processing_session_inner(
         reporter.finalizing();
 
         let result = if let Some(failure) = preflight_failures.remove(&job_index) {
-            context.failed_task_id = Some(failure.task_id);
+            context.failed_task_id = failure.task_id;
 
             persist_processing_failure(job, context, failure.error)?
         } else {
@@ -207,13 +300,20 @@ fn execute_processing_session_inner(
                 ))
             })?;
 
-            match finalize_processing_job(job, config, executions, &mut context) {
+            match super::executor::finalize_processing_job_with_progress(
+                job,
+                config,
+                executions,
+                &mut context,
+                reporter,
+            ) {
                 Ok(result) => result,
 
                 Err(error) => persist_processing_failure(job, context, error)?,
             }
         };
 
+        reporter.job_outcome(&result);
         on_result(&result);
         results.push(result);
     }
@@ -246,10 +346,18 @@ pub struct JobTaskResults {
     pub executions: Vec<TaskExecution>,
 }
 
+pub(crate) type ReportReservations = (
+    crate::shared::historical::budget::OwnedResourceReservation,
+    crate::shared::historical::budget::OwnedResourceReservation,
+);
+
 #[derive(Debug)]
 pub struct ProcessingSessionTasks {
     pub jobs: Vec<JobTaskResults>,
     pub total_tasks: usize,
+    _retained_reservation: crate::shared::historical::budget::OwnedResourceReservation,
+    budget: std::sync::Arc<ResourceBudget>,
+    finalization_memory: u64,
 }
 
 // -----------------------------------------------------------------------------
@@ -274,42 +382,173 @@ pub fn execute_session_tasks_with_progress(
     let mut scheduled = Vec::new();
     for (job_index, job) in jobs.iter().enumerate() {
         for unit in super::streams::plan(job)? {
+            for (_, task) in &unit.tasks {
+                reporter.phase(
+                    ProgressTaskId::new(job.job_id.0, task.task_id.0),
+                    &unit.key,
+                    "queued for resource admission",
+                );
+            }
             scheduled.push((job_index, unit));
         }
     }
     let total_tasks = jobs.iter().map(|job| job.tasks.len()).sum();
-    let budget = ResourceBudget::new(
+    let budget = std::sync::Arc::new(ResourceBudget::with_file_limit(
         config.resources.memory_budget_bytes,
         config.resources.scratch_budget_bytes,
+        config.resources.normalization_limits.open_files,
+    )?);
+    let retained = super::resources::retained_jobs_memory(
+        jobs,
+        &config.resources.normalization_limits,
+        config.resources.workers,
     )?;
-    let executions = execute_parallel_budgeted(
+    // Session logging, metadata, provenance and finalization handle headroom.
+    let headroom = 8;
+    let finalization_memory = jobs.iter().try_fold(0u64, |maximum, job| -> Result<u64> {
+        Ok(maximum.max(super::resources::job_finalization_memory(
+            &config.resources.parquet,
+            job,
+            &config.resources.normalization_limits,
+        )?))
+    })?;
+    let mut maximum = finalization_memory;
+    for (_, unit) in &scheduled {
+        let required = super::streams::estimate(unit, config)?;
+        maximum = maximum.max(required.memory_bytes);
+        crate::shared::historical::limits::check(
+            "open files",
+            config.resources.normalization_limits.open_files,
+            required.open_files.checked_add(headroom).ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration("file accounting overflow".into())
+            })?,
+            "session admission",
+        )?;
+    }
+    crate::shared::historical::limits::check(
+        "memory bytes",
+        config.resources.memory_budget_bytes,
+        retained.checked_add(maximum).ok_or_else(|| {
+            MarketForgeError::InvalidConfiguration("retained accounting overflow".into())
+        })?,
+        "session retained-state admission",
+    )?;
+    let retained_reservation = budget.acquire_owned(super::resources::ResourceRequirements {
+        memory_bytes: retained,
+        scratch_bytes: 0,
+        open_files: headroom,
+    })?;
+    let report_storage_failed = std::sync::atomic::AtomicBool::new(false);
+    let executions = execute_parallel_budgeted_observed(
         scheduled,
         config.resources.workers,
         &budget,
         |(_, unit)| super::streams::estimate(unit, config),
         |(job_index, unit)| {
-            let results = match super::streams::execute(&unit, config, reporter) {
-                Ok(results) => results,
-                Err(error) => unit
-                    .tasks
-                    .iter()
-                    .map(|(index, task)| {
-                        (
-                            *index,
-                            TaskExecution {
-                                task_id: task.task_id.0,
-                                output_paths: vec![],
-                                metrics: Default::default(),
-                                error: Some(MarketForgeError::InvalidConfiguration(format!(
-                                    "stream {}: {error}",
-                                    task.stream_id.0
-                                ))),
-                            },
-                        )
-                    })
-                    .collect(),
+            let stopped = report_storage_failed.load(std::sync::atomic::Ordering::Acquire);
+            let execution = if stopped {
+                Err(MarketForgeError::NotAttempted {
+                    reason: "session stopped after report persistence failure".into(),
+                })
+            } else {
+                super::streams::execute(&unit, config, reporter)
             };
+            let results = match execution {
+                Ok(results) => results,
+                Err(error) => {
+                    let mut original =
+                        Some(if matches!(error, MarketForgeError::NotAttempted { .. }) {
+                            error
+                        } else {
+                            MarketForgeError::StreamFailure {
+                                stream: unit.key.clone(),
+                                stage: "stream execution",
+                                source: Box::new(error),
+                            }
+                        });
+                    unit.tasks
+                        .iter()
+                        .map(|(index, task)| {
+                            (
+                                *index,
+                                TaskExecution {
+                                    task_id: task.task_id.0,
+                                    output_paths: vec![],
+                                    metrics: Default::default(),
+                                    error: Some(original.take().unwrap_or_else(|| {
+                                        MarketForgeError::NotAttempted {
+                                            reason: "source not attempted: stream setup failed"
+                                                .into(),
+                                        }
+                                    })),
+                                },
+                            )
+                        })
+                        .collect()
+                }
+            };
+            if results.iter().any(|(_, e)| {
+                !e.metrics.scoped_integrity.files.is_empty()
+                    || !e.metrics.scoped_integrity.hourly.is_empty()
+                    || !e.metrics.scoped_integrity.daily.is_empty()
+            }) {
+                report_storage_failed.store(true, std::sync::atomic::Ordering::Release);
+            }
+            let stream_error = results.iter().find_map(|(_, e)| {
+                e.error
+                    .as_ref()
+                    .filter(|error| matches!(error, MarketForgeError::StreamFailure { .. }))
+            });
+            if let Some(error) = stream_error {
+                reporter.emit(super::progress::ProgressEvent::StreamFailed {
+                    job_id: unit.job.job_id.0,
+                    stream: unit.key.clone(),
+                    task_ids: unit.tasks.iter().map(|(_, t)| t.task_id.0).collect(),
+                    message: error.to_string(),
+                });
+            }
+            for (_, execution) in &results {
+                let id = ProgressTaskId::new(unit.job.job_id.0, execution.task_id);
+                match &execution.error {
+                    None if execution
+                        .metrics
+                        .source
+                        .as_ref()
+                        .is_some_and(|s| s.redundant_of_task.is_some()) =>
+                    {
+                        reporter.task_skipped(
+                            id,
+                            "Equivalent source selection already normalized".into(),
+                        );
+                    }
+                    None if stream_error.is_none() => {
+                        reporter.task_completed(id, &execution.metrics.counters)
+                    }
+                    Some(MarketForgeError::StreamFailure { .. }) | None => (),
+                    Some(MarketForgeError::NotAttempted { reason })
+                        if execution.metrics.counters.records_read == 0 =>
+                    {
+                        reporter.task_skipped(id, reason.clone())
+                    }
+                    Some(MarketForgeError::NotAttempted { .. }) => (),
+                    Some(error) => reporter.task_failed(id, error.to_string()),
+                }
+            }
             Ok((job_index, results))
+        },
+        |(_, unit), waiting, elapsed, queued| {
+            reporter.resource_snapshot("scheduler",serde_json::json!({"queue_occupancy":queued,"workers_limit":config.resources.workers}));
+            let id = ProgressTaskId::new(unit.job.job_id.0, 0);
+            reporter.stream_phase(
+                id.job_id,
+                &unit.key,
+                if waiting {
+                    "resource admission wait"
+                } else {
+                    "admitted"
+                },
+            );
+            reporter.resource_wait(id, &unit.key, elapsed);
         },
     )?;
 
@@ -341,7 +580,13 @@ pub fn execute_session_tasks_with_progress(
         })
         .collect();
 
-    Ok(ProcessingSessionTasks { jobs, total_tasks })
+    Ok(ProcessingSessionTasks {
+        jobs,
+        total_tasks,
+        _retained_reservation: retained_reservation,
+        budget,
+        finalization_memory,
+    })
 }
 
 // -----------------------------------------------------------------------------
@@ -448,4 +693,23 @@ pub fn execute_processing_session_reporting(
     on_result: &mut dyn FnMut(&ProcessingResult),
 ) -> Result<ProcessingSessionResult> {
     execute_processing_session_inner(jobs, config, &ProgressReporter::disabled(), on_result)
+}
+
+impl ProcessingSessionTasks {
+    pub(crate) fn into_report_ownership(
+        self,
+        finalization: crate::shared::historical::budget::OwnedResourceReservation,
+    ) -> (Vec<JobTaskResults>, ReportReservations) {
+        (self.jobs, (self._retained_reservation, finalization))
+    }
+    pub(crate) fn reserve_finalization(
+        &self,
+    ) -> Result<crate::shared::historical::budget::OwnedResourceReservation> {
+        self.budget
+            .acquire_owned(super::resources::ResourceRequirements {
+                memory_bytes: self.finalization_memory,
+                scratch_bytes: 0,
+                open_files: 0,
+            })
+    }
 }

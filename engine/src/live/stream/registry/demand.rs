@@ -11,7 +11,11 @@ use super::graph::{StreamGraph, StreamGraphError};
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DemandOwner {
     /// Internal processing ownership is not an independent activation root.
-    Processing { stream_id: String, generation: u64, input_position: usize },
+    Processing {
+        stream_id: String,
+        generation: u64,
+        input_position: usize,
+    },
     Unix {
         connection_id: String,
         subscription_id: String,
@@ -55,7 +59,7 @@ pub enum DemandError {
 /// PostgreSQL definitions, or persistent dependencies.
 #[derive(Debug, Default)]
 pub struct DemandRegistry {
-    revision:u64,
+    revision: u64,
     owners: BTreeMap<DemandOwner, String>,
 }
 
@@ -74,7 +78,9 @@ impl DemandRegistry {
         owner: DemandOwner,
         stream_id: &str,
     ) -> Result<BTreeSet<String>, DemandError> {
-        if self.owners.len()>=65536 {return Err(DemandError::Capacity);}
+        if self.owners.len() >= 65536 {
+            return Err(DemandError::Capacity);
+        }
         if self.owners.contains_key(&owner) {
             return Err(DemandError::AlreadyOwned);
         }
@@ -85,7 +91,7 @@ impl DemandRegistry {
 
         let required = resolve(graph, &proposed)?;
 
-        self.revision=self.revision.checked_add(1).ok_or(DemandError::Capacity)?;
+        self.revision = self.revision.checked_add(1).ok_or(DemandError::Capacity)?;
         self.owners = proposed;
 
         Ok(required)
@@ -117,16 +123,27 @@ impl DemandRegistry {
 
         let required = resolve(graph, &proposed)?;
 
-        self.revision=self.revision.checked_add(1).ok_or(DemandError::Capacity)?;
+        self.revision = self.revision.checked_add(1).ok_or(DemandError::Capacity)?;
         self.owners = proposed;
 
         Ok(required)
     }
 
-    pub(crate) fn clear(&mut self){if !self.owners.is_empty(){self.owners.clear();self.revision=self.revision.saturating_add(1);}}
-    pub fn revision(&self)->u64{self.revision}
-    pub fn owners(&self)->impl Iterator<Item=(&DemandOwner,&String)>{self.owners.iter()}
-    pub fn registered_owners(&self)->usize{self.owners.len()}
+    pub(crate) fn clear(&mut self) {
+        if !self.owners.is_empty() {
+            self.owners.clear();
+            self.revision = self.revision.saturating_add(1);
+        }
+    }
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+    pub fn owners(&self) -> impl Iterator<Item = (&DemandOwner, &String)> {
+        self.owners.iter()
+    }
+    pub fn registered_owners(&self) -> usize {
+        self.owners.len()
+    }
     /// Resolve the complete currently required stream set.
     pub fn required_streams(&self, graph: &StreamGraph) -> Result<BTreeSet<String>, DemandError> {
         resolve(graph, &self.owners)
@@ -156,7 +173,11 @@ fn resolve(
     graph: &StreamGraph,
     owners: &BTreeMap<DemandOwner, String>,
 ) -> Result<BTreeSet<String>, DemandError> {
-    let roots: HashSet<String> = owners.iter().filter(|(owner, _)| !matches!(owner, DemandOwner::Processing { .. })).map(|(_, id)| id.clone()).collect();
+    let roots: HashSet<String> = owners
+        .iter()
+        .filter(|(owner, _)| !matches!(owner, DemandOwner::Processing { .. }))
+        .map(|(_, id)| id.clone())
+        .collect();
 
     Ok(graph.required_streams(&roots)?)
 }

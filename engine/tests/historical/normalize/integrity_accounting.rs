@@ -42,33 +42,34 @@ impl DepthSink for Depth {
 }
 pub(super) fn subset(depth: bool, gate: bool) -> PreparedBatch {
     let b = workload().unwrap();
-    let s = Selection {
-        exchange: if gate {
+    profile_source(
+        &b,
+        if gate {
             Exchange::GateIo
         } else {
             Exchange::Bybit
         },
-        instrument_type: InstrumentKind::Spot,
-        market_category: "spot",
-        content_type: if depth {
+        InstrumentKind::Spot,
+        "spot",
+        if depth {
             ContentType::Depth
         } else {
             ContentType::Trades
         },
-        symbol: Some(if gate { "BTC_USDT" } else { "BTCUSDT" }),
-        family: None,
-        feed: if gate { Some(Feed::Incremental) } else { None },
-        filename: Some(if gate {
-            "BTC_USDT-2026102700.csv.gz"
-        } else if depth {
-            "2026-10-27_BTCUSDT_ob200.data.zip"
-        } else {
-            "BTCUSDT_2026-10-27.csv.gz"
-        }),
-    };
-    select(&b, "synthetic integrity", &s, 1).unwrap()
+        if gate { Some(Feed::Incremental) } else { None },
+        false,
+    )
+    .unwrap()
 }
 pub(super) fn input(run: &TestRun, b: &mut PreparedBatch, bytes: &[u8], zip: bool) {
+    let symbol = b.jobs[0].tasks[0].symbol.as_deref().unwrap_or("BTCUSDT");
+    let replaced = std::str::from_utf8(bytes).ok().map(|text| {
+        text.replace(
+            "\"s\":\"BTCUSDT\"",
+            &format!("\"s\":{}", serde_json::to_string(symbol).unwrap()),
+        )
+    });
+    let bytes = replaced.as_ref().map_or(bytes, |text| text.as_bytes());
     let path = run.path.join("synthetic.archive");
     let f = fs::File::create(&path).unwrap();
     if zip {
@@ -83,7 +84,6 @@ pub(super) fn input(run: &TestRun, b: &mut PreparedBatch, bytes: &[u8], zip: boo
         z.finish().unwrap();
     }
     b.jobs[0].tasks[0].input_path = path;
-    b.jobs[0].tasks[0].source_time_bounds = None;
 }
 pub(super) fn allow(rule: &mut IntegrityRule) {
     rule.action = IntegrityAction::Degrade;
@@ -412,18 +412,16 @@ fn missing_initialization_counts_only_checks_reached() {
 #[test]
 fn unsequenced_feed_does_not_invent_sequence_observations() {
     let source = workload().unwrap();
-    let s = Selection {
-        exchange: Exchange::GateIo,
-        instrument_type: InstrumentKind::Perpetual,
-        market_category: "linear",
-        content_type: ContentType::Depth,
-        symbol: Some("BTC_USDT"),
-        family: None,
-        feed: Some(Feed::Snapshot),
-        filename: Some("BTC_USDT-2026102700.gz"),
-    };
-    let selected = select(&source, "unsequenced snapshot", &s, 1).unwrap();
-    let mut b = selected;
+    let mut b = super::support::fixtures::profile_source(
+        &source,
+        Exchange::GateIo,
+        InstrumentKind::Perpetual,
+        "linear",
+        ContentType::Depth,
+        Some(Feed::Snapshot),
+        false,
+    )
+    .unwrap();
     let mut run = TestRun::new("integrity_unsequenced").unwrap();
     input(
         &run,
@@ -559,17 +557,16 @@ fn invalid_event_time_is_unattributed_not_assigned_to_neighbors() {
 #[test]
 fn xlsx_rows_are_observed_before_sorting_and_not_counted_per_level() {
     let source = workload().unwrap();
-    let selection = Selection {
-        exchange: Exchange::Bitget,
-        instrument_type: InstrumentKind::Spot,
-        market_category: "spot",
-        content_type: ContentType::Depth,
-        symbol: Some("BTCUSDT"),
-        family: None,
-        feed: None,
-        filename: Some("BTC_USDT-BTCUSDT_1_20261027.zip"),
-    };
-    let mut b = select(&source, "xlsx accounting", &selection, 1).unwrap();
+    let mut b = super::support::fixtures::profile_source(
+        &source,
+        Exchange::Bitget,
+        InstrumentKind::Spot,
+        "spot",
+        ContentType::Depth,
+        None,
+        false,
+    )
+    .unwrap();
     let mut run = TestRun::new("integrity_xlsx_units").unwrap();
     let xml = r#"<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>timestamp</t></is></c><c r="B1" t="inlineStr"><is><t>asks</t></is></c><c r="C1" t="inlineStr"><is><t>bids</t></is></c></row><row r="2"><c r="A2"><v>2</v></c><c r="B2" t="inlineStr"><is><t>[[101,1]]</t></is></c><c r="C2" t="inlineStr"><is><t>[[100,1]]</t></is></c></row><row r="3"><c r="A3"><v>1</v></c><c r="B3" t="inlineStr"><is><t>[[101,1]]</t></is></c><c r="C3" t="inlineStr"><is><t>[[100,1]]</t></is></c></row></sheetData></worksheet>"#;
     let mut z = zip::ZipWriter::new(std::io::Cursor::new(vec![]));

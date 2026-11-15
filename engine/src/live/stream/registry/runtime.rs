@@ -229,35 +229,54 @@ impl StreamRuntimeRegistry {
     /// Called at the Router graph boundary after affected generations have settled.
     pub(crate) fn install_graph(&mut self, graph: &StreamGraph) -> Result<(), String> {
         for (id, authority) in &self.authorities {
-            let changed = graph.get(id).is_none_or(|d| d.definition != authority.definition.definition || (!d.desired.enabled && authority.definition.desired.enabled));
+            let changed = graph.get(id).is_none_or(|d| {
+                d.definition != authority.definition.definition
+                    || (!d.desired.enabled && authority.definition.desired.enabled)
+            });
             if changed && self.streams[id].lifecycle != StreamLifecycleState::Stopped {
-                return Err(format!("generation must settle before definition changes: {id}"));
+                return Err(format!(
+                    "generation must settle before definition changes: {id}"
+                ));
             }
         }
-        let removed: Vec<_> = self.streams.keys().filter(|id|graph.get(id).is_none()).cloned().collect();
-        if self.deleted_generations.len()+removed.len()>65536 {return Err("retired identity capacity".into());}
+        let removed: Vec<_> = self
+            .streams
+            .keys()
+            .filter(|id| graph.get(id).is_none())
+            .cloned()
+            .collect();
+        if self.deleted_generations.len() + removed.len() > 65536 {
+            return Err("retired identity capacity".into());
+        }
         for id in removed {
-            let old=self.streams.remove(&id).unwrap();
-            self.deleted_generations.insert(id.clone(),old.generation);
+            let old = self.streams.remove(&id).unwrap();
+            self.deleted_generations.insert(id.clone(), old.generation);
             self.authorities.remove(&id);
         }
-        let mut fresh=Self::new(graph);
+        let mut fresh = Self::new(graph);
         for id in graph.stream_ids() {
-            if let Some(a)=self.authorities.get_mut(id) {
-                a.definition=Arc::new(graph.get(id).unwrap().clone());
+            if let Some(a) = self.authorities.get_mut(id) {
+                a.definition = Arc::new(graph.get(id).unwrap().clone());
             } else {
-                let mut status=fresh.streams.remove(id).unwrap();
-                status.generation=self.deleted_generations.get(id).copied().unwrap_or(RuntimeGeneration(0));
-                let mut authority=fresh.authorities.remove(id).unwrap();
-                authority.generation=status.generation;
-                self.streams.insert(id.into(),status);
-                self.authorities.insert(id.into(),authority);
+                let mut status = fresh.streams.remove(id).unwrap();
+                status.generation = self
+                    .deleted_generations
+                    .get(id)
+                    .copied()
+                    .unwrap_or(RuntimeGeneration(0));
+                let mut authority = fresh.authorities.remove(id).unwrap();
+                authority.generation = status.generation;
+                self.streams.insert(id.into(), status);
+                self.authorities.insert(id.into(), authority);
             }
         }
-        self.changed(); Ok(())
+        self.changed();
+        Ok(())
     }
 
-    pub(crate) fn install_metrics(&mut self,metrics:Arc<crate::live::metrics::RuntimeMetrics>){self.metrics=Some(metrics);}
+    pub(crate) fn install_metrics(&mut self, metrics: Arc<crate::live::metrics::RuntimeMetrics>) {
+        self.metrics = Some(metrics);
+    }
     pub(crate) fn subscribe_changes(&self) -> tokio::sync::watch::Receiver<u64> {
         self.changes.subscribe()
     }
@@ -350,7 +369,7 @@ impl StreamRuntimeRegistry {
         status.generation = RuntimeGeneration(next);
         status.lifecycle = StreamLifecycleState::Starting;
         status.last_error = None;
-        status.error_truncated=false;
+        status.error_truncated = false;
 
         let generation = status.generation;
         if let Some(old) = self.authorities.insert(
@@ -366,7 +385,9 @@ impl StreamRuntimeRegistry {
         ) {
             old.revoke();
         }
-        if let Some(metrics)=&self.metrics {metrics.record_lifecycle_starts_total();}
+        if let Some(metrics) = &self.metrics {
+            metrics.record_lifecycle_starts_total();
+        }
         self.changed();
         Ok(generation)
     }
@@ -461,7 +482,9 @@ impl StreamRuntimeRegistry {
         if let Some(authority) = self.authorities.get(stream_id) {
             authority.revoke();
         }
-        if let Some(metrics)=&self.metrics {metrics.record_lifecycle_stops_total();}
+        if let Some(metrics) = &self.metrics {
+            metrics.record_lifecycle_stops_total();
+        }
         self.changed();
         Ok(generation)
     }
@@ -495,8 +518,10 @@ impl StreamRuntimeRegistry {
         error: impl Into<String>,
     ) -> Result<bool, StreamRuntimeError> {
         let mut error = error.into();
-        let error_truncated=error.len()>4096;
-        if error_truncated{error.truncate(error.floor_char_boundary(4096));}
+        let error_truncated = error.len() > 4096;
+        if error_truncated {
+            error.truncate(error.floor_char_boundary(4096));
+        }
 
         if error.trim().is_empty() {
             return Err(StreamRuntimeError::InvalidFailure);
@@ -516,15 +541,19 @@ impl StreamRuntimeRegistry {
             });
         }
 
-        let newly_failed=status.lifecycle!=StreamLifecycleState::Failed;
+        let newly_failed = status.lifecycle != StreamLifecycleState::Failed;
         status.lifecycle = StreamLifecycleState::Failed;
         status.last_error = Some(error);
-        status.error_truncated=error_truncated;
+        status.error_truncated = error_truncated;
         if let Some(authority) = self.authorities.get(stream_id) {
             authority.revoke();
         }
 
-        if newly_failed {if let Some(metrics)=&self.metrics {metrics.record_lifecycle_failures_total();}}
+        if newly_failed {
+            if let Some(metrics) = &self.metrics {
+                metrics.record_lifecycle_failures_total();
+            }
+        }
         self.changed();
         Ok(true)
     }
@@ -623,10 +652,32 @@ mod tests {
     }
 
     #[test]
-    fn graph_replacement_retains_generation_tombstones_and_rejects_old_completions(){
-        let graph=graph();let mut registry=StreamRuntimeRegistry::new(&graph);let original=registry.begin_start("btc").unwrap();registry.mark_running("btc",original).unwrap();let old=registry.publication_authority("btc").unwrap();
-        assert!(registry.install_graph(&StreamGraph::restore(vec![],vec![]).unwrap()).is_err());
-        let stopping=registry.begin_stop("btc").unwrap();registry.mark_stopped("btc",stopping).unwrap();registry.install_graph(&StreamGraph::restore(vec![],vec![]).unwrap()).unwrap();registry.install_graph(&graph).unwrap();let next=registry.begin_start("btc").unwrap();assert!(next.get()>original.get());assert!(!registry.mark_running("btc",original).unwrap());assert!(!*old.guard());assert_eq!(registry.status("btc").unwrap().lifecycle,StreamLifecycleState::Starting);registry.mark_running("btc",next).unwrap();
+    fn graph_replacement_retains_generation_tombstones_and_rejects_old_completions() {
+        let graph = graph();
+        let mut registry = StreamRuntimeRegistry::new(&graph);
+        let original = registry.begin_start("btc").unwrap();
+        registry.mark_running("btc", original).unwrap();
+        let old = registry.publication_authority("btc").unwrap();
+        assert!(
+            registry
+                .install_graph(&StreamGraph::restore(vec![], vec![]).unwrap())
+                .is_err()
+        );
+        let stopping = registry.begin_stop("btc").unwrap();
+        registry.mark_stopped("btc", stopping).unwrap();
+        registry
+            .install_graph(&StreamGraph::restore(vec![], vec![]).unwrap())
+            .unwrap();
+        registry.install_graph(&graph).unwrap();
+        let next = registry.begin_start("btc").unwrap();
+        assert!(next.get() > original.get());
+        assert!(!registry.mark_running("btc", original).unwrap());
+        assert!(!*old.guard());
+        assert_eq!(
+            registry.status("btc").unwrap().lifecycle,
+            StreamLifecycleState::Starting
+        );
+        registry.mark_running("btc", next).unwrap();
     }
 
     #[test]

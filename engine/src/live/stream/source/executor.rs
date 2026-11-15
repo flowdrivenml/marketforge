@@ -136,7 +136,9 @@ impl SourceStreamExecutor {
     ) {
         self.runner.observe_depth(producer);
     }
-    pub(crate) fn metrics_handle(&self)->std::sync::Arc<crate::live::metrics::SourceMetrics>{self.runner.instance().metrics_handle()}
+    pub(crate) fn metrics_handle(&self) -> std::sync::Arc<crate::live::metrics::SourceMetrics> {
+        self.runner.instance().metrics_handle()
+    }
     pub fn stream_id(&self) -> &str {
         self.runner.stream_id()
     }
@@ -663,7 +665,7 @@ impl SourceStreamExecutor {
         readiness_tx.send_replace(self.runner.readiness());
         let execution_result = loop {
             let retry_deadline = self.depth_retry_at;
-            let baseline_signal=self.runner.processor().baseline_signal();
+            let baseline_signal = self.runner.processor().baseline_signal();
             tokio::select! {
 
             _=async {match baseline_signal {Some(signal)=>signal.notified().await,None=>std::future::pending::<()>().await}}=>{
@@ -1007,7 +1009,12 @@ impl SourceStreamExecutor {
         let started = StdInstant::now();
         // This timestamp is Source processing receipt, not original socket receipt.
         let received_at_ns = system_time_ns();
-        if matches!(message,Message::Text(_) | Message::Binary(_)) {self.runner.instance().metrics().record_message_observed(received_at_ns);}
+        if matches!(message, Message::Text(_) | Message::Binary(_)) {
+            self.runner
+                .instance()
+                .metrics()
+                .record_message_observed(received_at_ns);
+        }
         let (payload, accounted_bytes) = match message {
             Message::Text(text) => {
                 let size = text.len();
@@ -1053,7 +1060,6 @@ impl SourceStreamExecutor {
             _ => return Ok(()),
         };
 
-
         let reset_buffering = self.depth_policy.is_some()
             && self
                 .runner
@@ -1064,17 +1070,36 @@ impl SourceStreamExecutor {
                         && publication.reset_invalidation_complete()
                 });
 
-        let receipt_metrics=self.runner.instance().metrics_handle();
-        let mut observed_trades=|payload:SourceTradePublication<'_>| {
-            let exchange=match &payload {SourceTradePublication::Integrity(crate::live::integrity::IntegrityOutcome::Trades(crate::live::integrity::BoundTradeIngressOutcome::Processed(crate::live::integrity::TradeControllerOutcome::Accepted(batch))))=>batch.trades.last().map(|t|t.envelope.event_timestamp_ns),_=>None};
-            let result=publish_trades(payload);if result.is_ok(){if let (Some(received),Some(exchange))=(received_at_ns,exchange){receipt_metrics.record_source_delay(received,exchange);}}result
+        let receipt_metrics = self.runner.instance().metrics_handle();
+        let mut observed_trades = |payload: SourceTradePublication<'_>| {
+            let exchange = match &payload {
+                SourceTradePublication::Integrity(
+                    crate::live::integrity::IntegrityOutcome::Trades(
+                        crate::live::integrity::BoundTradeIngressOutcome::Processed(
+                            crate::live::integrity::TradeControllerOutcome::Accepted(batch),
+                        ),
+                    ),
+                ) => batch.trades.last().map(|t| t.envelope.event_timestamp_ns),
+                _ => None,
+            };
+            let result = publish_trades(payload);
+            if result.is_ok() {
+                if let (Some(received), Some(exchange)) = (received_at_ns, exchange) {
+                    receipt_metrics.record_source_delay(received, exchange);
+                }
+            }
+            result
         };
         let result = if reset_buffering {
             self.runner
                 .data_during_depth_reset(&payload, accounted_bytes)
         } else {
-            self.runner
-                .data(&payload, accounted_bytes, publish_depth, &mut observed_trades)
+            self.runner.data(
+                &payload,
+                accounted_bytes,
+                publish_depth,
+                &mut observed_trades,
+            )
         };
 
         {
@@ -1617,7 +1642,10 @@ impl SourceStreamExecutor {
 }
 
 fn system_time_ns() -> Option<i64> {
-    SystemTime::now().duration_since(UNIX_EPOCH).ok().and_then(|d|i64::try_from(d.as_nanos()).ok())
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|d| i64::try_from(d.as_nanos()).ok())
 }
 
 #[cfg(test)]

@@ -249,3 +249,74 @@ fn malformed_and_out_of_range_values_are_rejected() {
         assert!(load(&TOML.replace(old, new)).is_err(), "{new}");
     }
 }
+
+#[test]
+fn normalization_limits_default_validate_and_serialize() {
+    let config = load(TOML).unwrap();
+    assert_eq!(
+        config.resources.normalization_limits,
+        super::super::limits::NormalizationLimits::default()
+    );
+    assert_eq!(
+        serde_json::to_value(&config).unwrap()["resources"]["normalization_limits"]["open_files"],
+        64
+    );
+    for field in [
+        "workbook_bytes",
+        "workbook_xml_bytes",
+        "workbook_rows",
+        "record_bytes",
+        "depth_levels",
+        "metric_entries",
+        "open_files",
+    ] {
+        let text = TOML.replace(
+            "[resources.parquet]",
+            &format!("[resources.normalization_limits]\n{field} = 0\n[resources.parquet]"),
+        );
+        assert!(load(&text).unwrap_err().to_string().contains(field));
+    }
+    let text = TOML.replace(
+        "[resources.parquet]",
+        "[resources.normalization_limits]\nunknown_limit = 1\n[resources.parquet]",
+    );
+    assert!(
+        load(&text)
+            .unwrap_err()
+            .to_string()
+            .contains("unknown_limit")
+    );
+}
+
+#[test]
+fn performance_settings_default_validate_and_roundtrip() {
+    let config = load(TOML).unwrap();
+    assert_eq!(config.diagnostics.mode, DiagnosticsMode::Disabled);
+    assert_eq!(config.diagnostics.interval_ms, 1000);
+    assert_eq!(config.merge_fan_in, 8);
+    assert_eq!(config.scratch_format, ScratchFormat::Json);
+    for setting in [
+        "merge_fan_in = 1",
+        "merge_fan_in = 65",
+        "scratch_format = \"unknown\"",
+        "scratch_codec = \"unknown\"",
+        "[diagnostics]\ninterval_ms = 0",
+        "[diagnostics]\nmode = \"unknown\"",
+    ] {
+        assert!(
+            load(&TOML.replace(
+                "schema_version = 1",
+                &format!("schema_version = 1\n{setting}")
+            ))
+            .is_err(),
+            "{setting}"
+        );
+    }
+    let text=TOML.replace("schema_version = 1","schema_version = 1\nmerge_fan_in = 3\nscratch_format = \"typed_trades\"\nscratch_codec = \"uncompressed\"\n[diagnostics]\nmode = \"detailed\"\ninterval_ms = 100");
+    let config = load(&text).unwrap();
+    let value = serde_json::to_value(&config).unwrap();
+    let decoded: ProcessingConfig = serde_json::from_value(value).unwrap();
+    assert_eq!(decoded.merge_fan_in, 3);
+    assert_eq!(decoded.scratch_codec, ScratchCodec::Uncompressed);
+    assert_eq!(decoded.diagnostics.mode, DiagnosticsMode::Detailed);
+}

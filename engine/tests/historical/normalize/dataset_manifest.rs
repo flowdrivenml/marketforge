@@ -1,10 +1,6 @@
 #![cfg(feature = "historical")]
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::fs;
 
 use {
     crate::support::migration::template as load_processing_job,
@@ -22,18 +18,7 @@ use {
     marketforge_engine::shared::persistence::parquet::ParquetTradeWriter,
 };
 
-const JOB_FILE: &str = "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json";
-
-fn project_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("project root")
-        .to_path_buf()
-}
-
-fn job_path() -> PathBuf {
-    project_root().join("retained-cases").join(JOB_FILE)
-}
+const JOB_FILE: &str = "okx.future.linear.trades:BTC-USD_UM-261225";
 
 fn test_directory() -> crate::support::migration::PersistentDirectory {
     crate::support::migration::PersistentDirectory::new()
@@ -100,7 +85,7 @@ fn creates_valid_dataset_manifest() {
 
     writer.finish().unwrap();
 
-    let job = load_processing_job(job_path()).unwrap();
+    let job = load_processing_job(JOB_FILE).unwrap();
 
     let manifest = DatasetManifest::from_processing_job(
         &job,
@@ -186,7 +171,7 @@ fn rejects_duplicate_manifest() {
     writer.write_trade(sample_trade(0)).unwrap();
     writer.finish().unwrap();
 
-    let job = load_processing_job(job_path()).unwrap();
+    let job = load_processing_job(JOB_FILE).unwrap();
 
     let manifest = DatasetManifest::from_processing_job(
         &job,
@@ -205,7 +190,7 @@ fn rejects_duplicate_manifest() {
 fn rejects_missing_parquet_directory() {
     let directory = test_directory();
 
-    let job = load_processing_job(job_path()).unwrap();
+    let job = load_processing_job(JOB_FILE).unwrap();
 
     let result = DatasetManifest::from_processing_job(
         &job,
@@ -233,10 +218,12 @@ fn rejects_failed_integrity_evaluation() {
     writer.write_trade(sample_trade(0)).unwrap();
     writer.finish().unwrap();
 
-    let job = load_processing_job(job_path()).unwrap();
+    let job = load_processing_job(JOB_FILE).unwrap();
 
-    let mut evaluation = IntegrityEvaluation::default();
-    evaluation.status = IntegrityStatus::Failed;
+    let evaluation = IntegrityEvaluation {
+        status: IntegrityStatus::Failed,
+        ..Default::default()
+    };
 
     let result =
         DatasetManifest::from_processing_job(&job, &directory, sample_metrics(1), evaluation);
@@ -260,7 +247,7 @@ fn rejects_metrics_parquet_row_mismatch() {
     writer.write_trade(sample_trade(0)).unwrap();
     writer.finish().unwrap();
 
-    let job = load_processing_job(job_path()).unwrap();
+    let job = load_processing_job(JOB_FILE).unwrap();
 
     // Parquet contains one trade, but metrics claim two.
     let result = DatasetManifest::from_processing_job(

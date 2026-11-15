@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "kind": "normalization_batch",
   "status": "prepared",
   "run_id": "normalize-de2b8f7f2acab1dafd40",
@@ -1598,7 +1598,10 @@
           "base_asset": "BTC",
           "quote_asset": "USD",
           "stream_id": "okx.inverse.perpetual.family:BTC-USD.trades",
-          "stream_rank": 16
+          "stream_rank": 16,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 89,
@@ -1615,7 +1618,10 @@
           "base_asset": "BTC",
           "quote_asset": "USD",
           "stream_id": "okx.inverse.perpetual.family:BTC-USD.trades",
-          "stream_rank": 16
+          "stream_rank": 16,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 90,
@@ -1632,7 +1638,10 @@
           "base_asset": "BTC",
           "quote_asset": "USD",
           "stream_id": "okx.inverse.perpetual.family:BTC-USD.trades",
-          "stream_rank": 16
+          "stream_rank": 16,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 91,
@@ -1649,7 +1658,10 @@
           "base_asset": "BTC",
           "quote_asset": "USD",
           "stream_id": "okx.inverse.perpetual.family:BTC-USD.trades",
-          "stream_rank": 16
+          "stream_rank": 16,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 92,
@@ -1666,7 +1678,10 @@
           "base_asset": "BTC",
           "quote_asset": "USD",
           "stream_id": "okx.linear.future.family:BTC-USD_UM.trades",
-          "stream_rank": 17
+          "stream_rank": 17,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 93,
@@ -1683,7 +1698,10 @@
           "base_asset": "BTC",
           "quote_asset": "USD",
           "stream_id": "okx.linear.future.family:BTC-USD_UM.trades",
-          "stream_rank": 17
+          "stream_rank": 17,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 94,
@@ -1700,7 +1718,10 @@
           "base_asset": "BTC",
           "quote_asset": "USD",
           "stream_id": "okx.linear.future.family:BTC-USD_UM.trades",
-          "stream_rank": 17
+          "stream_rank": 17,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 95,
@@ -1717,7 +1738,10 @@
           "base_asset": "BTC",
           "quote_asset": "USD",
           "stream_id": "okx.linear.future.family:BTC-USD_UM.trades",
-          "stream_rank": 17
+          "stream_rank": 17,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 96,
@@ -1734,7 +1758,10 @@
           "base_asset": "BTC",
           "quote_asset": "USDT",
           "stream_id": "okx.linear.perpetual.family:BTC-USDT.trades",
-          "stream_rank": 18
+          "stream_rank": 18,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 97,
@@ -1751,7 +1778,10 @@
           "base_asset": "BTC",
           "quote_asset": "USDT",
           "stream_id": "okx.linear.perpetual.family:BTC-USDT.trades",
-          "stream_rank": 18
+          "stream_rank": 18,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 98,
@@ -1768,7 +1798,10 @@
           "base_asset": "BTC",
           "quote_asset": "USDT",
           "stream_id": "okx.linear.perpetual.family:BTC-USDT.trades",
-          "stream_rank": 18
+          "stream_rank": 18,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 99,
@@ -1785,7 +1818,10 @@
           "base_asset": "BTC",
           "quote_asset": "USDT",
           "stream_id": "okx.linear.perpetual.family:BTC-USDT.trades",
-          "stream_rank": 18
+          "stream_rank": 18,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 100,
@@ -6894,7 +6930,10 @@
           "base_asset": "BTC",
           "quote_asset": "USD",
           "stream_id": "okx.inverse.perpetual.family:BTC-USD.depth",
-          "stream_rank": 12
+          "stream_rank": 12,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 244,
@@ -6911,7 +6950,10 @@
           "base_asset": "BTC",
           "quote_asset": "USD",
           "stream_id": "okx.inverse.perpetual.family:BTC-USD.depth",
-          "stream_rank": 12
+          "stream_rank": 12,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 245,
@@ -6928,7 +6970,10 @@
           "base_asset": "BTC",
           "quote_asset": "USD",
           "stream_id": "okx.inverse.perpetual.family:BTC-USD.depth",
-          "stream_rank": 12
+          "stream_rank": 12,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 246,
@@ -6945,7 +6990,10 @@
           "base_asset": "BTC",
           "quote_asset": "USD",
           "stream_id": "okx.linear.future.family:BTC-USD_UM.depth",
-          "stream_rank": 13
+          "stream_rank": 13,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 247,
@@ -6962,7 +7010,10 @@
           "base_asset": "BTC",
           "quote_asset": "USD",
           "stream_id": "okx.linear.future.family:BTC-USD_UM.depth",
-          "stream_rank": 13
+          "stream_rank": 13,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 248,
@@ -6979,7 +7030,10 @@
           "base_asset": "BTC",
           "quote_asset": "USD",
           "stream_id": "okx.linear.future.family:BTC-USD_UM.depth",
-          "stream_rank": 13
+          "stream_rank": 13,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 249,
@@ -6996,7 +7050,10 @@
           "base_asset": "BTC",
           "quote_asset": "USDT",
           "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth",
-          "stream_rank": 14
+          "stream_rank": 14,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 250,
@@ -7013,7 +7070,10 @@
           "base_asset": "BTC",
           "quote_asset": "USDT",
           "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth",
-          "stream_rank": 14
+          "stream_rank": 14,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 251,
@@ -7030,7 +7090,10 @@
           "base_asset": "BTC",
           "quote_asset": "USDT",
           "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth",
-          "stream_rank": 14
+          "stream_rank": 14,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 252,
@@ -7322,6 +7385,62 @@
         "tick_size": "0.1",
         "contract_value": null,
         "contract_value_asset": null
+      }
+    },
+    {
+      "instrument_id": 4478,
+      "exchange": "okx",
+      "instrument_type": "perpetual",
+      "market_category": "inverse",
+      "symbol": "BTC-USD-SWAP",
+      "base_asset": "BTC",
+      "quote_asset": "USD",
+      "instrument": {
+        "tick_size": "0.1",
+        "contract_value": "100",
+        "contract_value_asset": "USD"
+      }
+    },
+    {
+      "instrument_id": 3954,
+      "exchange": "okx",
+      "instrument_type": "perpetual",
+      "market_category": "linear",
+      "symbol": "BTC-USDT-SWAP",
+      "base_asset": "BTC",
+      "quote_asset": "USDT",
+      "instrument": {
+        "tick_size": "0.1",
+        "contract_value": "0.01",
+        "contract_value_asset": "BTC"
+      }
+    },
+    {
+      "instrument_id": 161049,
+      "exchange": "okx",
+      "instrument_type": "future",
+      "market_category": "linear",
+      "symbol": "BTC-USD_UM-261127",
+      "base_asset": "BTC",
+      "quote_asset": "USD",
+      "instrument": {
+        "tick_size": "0.1",
+        "contract_value": "0.01",
+        "contract_value_asset": "BTC"
+      }
+    },
+    {
+      "instrument_id": 161050,
+      "exchange": "okx",
+      "instrument_type": "future",
+      "market_category": "linear",
+      "symbol": "BTC-USD_UM-261225",
+      "base_asset": "BTC",
+      "quote_asset": "USD",
+      "instrument": {
+        "tick_size": "0.1",
+        "contract_value": "0.01",
+        "contract_value_asset": "BTC"
       }
     }
   ]

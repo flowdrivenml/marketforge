@@ -15,7 +15,7 @@ use marketforge_engine::{
 };
 use serde_json::json;
 fn fixture(run: &TestRun) -> (ProcessingJob, ProcessingConfig) {
-    let mut job = template("bybit-spot-spot-BTCUSDT-l2-synthetic.json").unwrap();
+    let mut job = template("bybit.spot.spot.depth:BTCUSDT").unwrap();
     let config = run.runtime(Default::default()).unwrap();
     job.output.staging_path = run.path.join("staging");
     job.output.dataset_path = run.path.join("dataset");
@@ -38,8 +38,6 @@ fn fixture(run: &TestRun) -> (ProcessingJob, ProcessingConfig) {
                 .collect::<String>(),
         )
         .unwrap();
-        task.raw_schema["marketforge_source"]["source_time_bounds"] =
-            json!({"start_timestamp_ns":time*1_000_000,"end_timestamp_ns":(time+99)*1_000_000});
     }
     job.tasks.reverse();
     (job, config)
@@ -160,7 +158,7 @@ fn depth_shared_index_local_ordinals_zero_changes_and_replay() {
         for batch in reader {
             let batch = batch.unwrap();
             for n in 0..batch.num_rows() {
-                if row % 4 == 0 {
+                if row.is_multiple_of(4) {
                     book.clear();
                 }
                 let text = |name: &str| {
@@ -407,8 +405,6 @@ fn production_depth_execution_preserves_degraded_sequence_order() {
     let (mut job, mut config) = fixture(&run);
     job.tasks.truncate(1);
     let task = &mut job.tasks[0];
-    task.raw_schema["marketforge_source"]["source_time_bounds"] =
-        json!({"start_timestamp_ns":0,"end_timestamp_ns":2_000_000_000i64});
     let bytes = std::fs::read_to_string(&task.input_path)
         .unwrap()
         .replace("1201", "1199");
@@ -513,7 +509,7 @@ fn legacy_manifest2_depth_and_boundary1_remain_readable() {
         job_id: 42,
         operation: MergeOperation::Merge,
         inputs: vec![job.dataset_id.0],
-        input_paths: std::collections::HashMap::from([(job.dataset_id.0, root.clone())]),
+        input_paths: std::collections::HashMap::from([(job.dataset_id.0, root)]),
         time_range: MergeTimeRange {
             start_ns: 0,
             end_ns: 2_000_000_000,
@@ -545,33 +541,21 @@ fn legacy_manifest2_depth_and_boundary1_remain_readable() {
     }
 }
 #[test]
-fn equal_time_depth_checkpoints_follow_partitions_instead_of_task_ids() {
-    let run = TestRun::new("depth/equal_checkpoints").unwrap();
+fn equal_time_independent_depth_books_fail_without_identity_evidence() {
+    let run = TestRun::new("depth/equal_time_ambiguity").unwrap();
     let (mut job, config) = fixture(&run);
     for (index, task) in job.tasks.iter_mut().enumerate() {
         let message = json!({"type":"snapshot","ts":1000,"cts":1000,"data":{"s":"BTCUSDT","u":10,"b":[["99",(index+2).to_string()]],"a":[["101","5"]]}});
         std::fs::write(&task.input_path, format!("{message}\n")).unwrap();
-        task.raw_schema["marketforge_source"]["source_time_bounds"] = json!({"start_timestamp_ns":1_000_000_000i64,"end_timestamp_ns":1_000_000_000i64,"partition":index+1});
     }
-    assert_eq!(
-        execute_processing_job(&job, &config).unwrap().status,
-        ProcessingStatus::Complete
+    let result = execute_processing_job(&job, &config).unwrap();
+    assert_eq!(result.status, ProcessingStatus::Failed);
+    assert!(
+        result
+            .failure
+            .unwrap()
+            .message
+            .contains("unsupported depth overlap")
     );
-    let tasks = inventory(&job, manifest(&job));
-    let checkpoints = merge::build_merge_checkpoints(&tasks).unwrap();
-    assert_eq!(
-        checkpoints.iter().map(|c| c.task_id).collect::<Vec<_>>(),
-        vec![3, 2, 1]
-    );
-    let selected =
-        merge::select_merge_checkpoints(&checkpoints, &[job.dataset_id.0], 1_000_000_000).unwrap();
-    assert_eq!(selected[0].task_id, 1);
-    let initial = merge::resolve_initial_checkpoints(
-        &checkpoints,
-        &[job.dataset_id.0],
-        1_000_000_000,
-        2_000_000_000,
-    )
-    .unwrap();
-    assert_eq!(initial[0].checkpoint.task_id, 1);
+    assert!(!job.output.dataset_path.exists());
 }

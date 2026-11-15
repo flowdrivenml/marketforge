@@ -207,7 +207,8 @@ mod tests {
         p.register(token, Acknowledge(tx)).unwrap();
         for _ in 0..128 {
             p.notify(token).unwrap();
-            rx.recv_timeout(Duration::from_secs(2)).expect("accepted activation stranded");
+            rx.recv_timeout(Duration::from_secs(2))
+                .expect("accepted activation stranded");
         }
         p.shutdown();
     }

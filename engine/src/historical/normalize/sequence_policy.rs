@@ -53,13 +53,13 @@ pub fn resolve_sequence_policy(task: &WorkTask) -> Result<SequencePolicy> {
             }
         };
 
-        if let Some(previous) = resolved {
-            if previous != policy {
-                return Err(MarketForgeError::InvalidConfiguration(format!(
-                    "task {} contains conflicting depth sequence policies",
-                    task.task_id.0,
-                )));
-            }
+        if let Some(previous) = resolved
+            && previous != policy
+        {
+            return Err(MarketForgeError::InvalidConfiguration(format!(
+                "task {} contains conflicting depth sequence policies",
+                task.task_id.0,
+            )));
         }
 
         resolved = Some(policy);

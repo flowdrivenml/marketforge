@@ -28,10 +28,16 @@ pub use transforms::{transform_bool, transform_quantity, transform_side};
 // ---- Historical (CSV archive processing only) ----
 
 #[cfg(feature = "historical")]
-pub use identity::InstrumentMatcher;
+pub use identity::{InstrumentMatcher, okx_futures_family};
 
 #[cfg(feature = "historical")]
 pub use headers::resolve_trade_headers;
 
 #[cfg(feature = "historical")]
 pub use processor::{TradeContext, TradeProcessor};
+
+#[cfg(feature = "historical")]
+pub(crate) use identity::resolve_identity_column;
+
+mod native_identity;
+pub use native_identity::{TradeIdScope, TradeIdentityContract};

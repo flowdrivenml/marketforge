@@ -72,23 +72,73 @@ impl SourceRuntimeSupervisor {
     }
 
     pub fn shared(registry: std::sync::Arc<std::sync::Mutex<StreamRuntimeRegistry>>) -> Self {
-        Self { registry, tasks: BTreeMap::new(), cleanup:Vec::new() }
+        Self {
+            registry,
+            tasks: BTreeMap::new(),
+            cleanup: Vec::new(),
+        }
     }
 
     fn registry_lock(&self) -> std::sync::MutexGuard<'_, StreamRuntimeRegistry> {
         self.registry.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    pub fn fail_preparation(&mut self,id:&str,reason:String) {
-        if !self.tasks.contains_key(id) {let mut registry=self.registry_lock();if let Ok(g)=registry.begin_start(id){let _=registry.mark_failed(id,g,reason);}}
+    pub fn fail_preparation(&mut self, id: &str, reason: String) {
+        if !self.tasks.contains_key(id) {
+            let mut registry = self.registry_lock();
+            if let Ok(g) = registry.begin_start(id) {
+                let _ = registry.mark_failed(id, g, reason);
+            }
+        }
     }
-    pub fn registry(&self)->SourceRegistryRead {SourceRegistryRead(self.registry.clone())}
+    pub fn registry(&self) -> SourceRegistryRead {
+        SourceRegistryRead(self.registry.clone())
+    }
     /// Deadline changes authority first, then requests ordinary executor cleanup.
-    pub fn expire_starting(&mut self,deadline:std::time::Duration){
-        let expired=self.tasks.iter().filter(|(_,t)|!t.ever_ready && t.started_at.elapsed()>=deadline).filter_map(|(id,t)|self.registry_lock().status(id).filter(|s|s.generation==t.generation && matches!(s.lifecycle,StreamLifecycleState::Starting|StreamLifecycleState::Recovering|StreamLifecycleState::Degraded)).map(|_|(id.clone(),t.generation))).collect::<Vec<_>>();
-        for(id,generation)in expired {let _=self.registry_lock().mark_failed(&id,generation,"Source readiness deadline expired");if let Some(task)=self.tasks.get_mut(&id){if let Some(shutdown)=task.shutdown.take(){let _=shutdown.send(());}}}
+    pub fn expire_starting(&mut self, deadline: std::time::Duration) {
+        let expired = self
+            .tasks
+            .iter()
+            .filter(|(_, t)| !t.ever_ready && t.started_at.elapsed() >= deadline)
+            .filter_map(|(id, t)| {
+                self.registry_lock()
+                    .status(id)
+                    .filter(|s| {
+                        s.generation == t.generation
+                            && matches!(
+                                s.lifecycle,
+                                StreamLifecycleState::Starting
+                                    | StreamLifecycleState::Recovering
+                                    | StreamLifecycleState::Degraded
+                            )
+                    })
+                    .map(|_| (id.clone(), t.generation))
+            })
+            .collect::<Vec<_>>();
+        for (id, generation) in expired {
+            let _ = self.registry_lock().mark_failed(
+                &id,
+                generation,
+                "Source readiness deadline expired",
+            );
+            if let Some(task) = self.tasks.get_mut(&id) {
+                if let Some(shutdown) = task.shutdown.take() {
+                    let _ = shutdown.send(());
+                }
+            }
+        }
     }
-    pub fn readiness_statuses(&self)->Vec<SourceReadinessStatus>{self.tasks.iter().map(|(id,task)|SourceReadinessStatus{stream_id:id.clone(),generation:task.generation,readiness:*task.readiness.borrow(),initial_readiness_pending:!task.ever_ready}).collect()}
+    pub fn readiness_statuses(&self) -> Vec<SourceReadinessStatus> {
+        self.tasks
+            .iter()
+            .map(|(id, task)| SourceReadinessStatus {
+                stream_id: id.clone(),
+                generation: task.generation,
+                readiness: *task.readiness.borrow(),
+                initial_readiness_pending: !task.ever_ready,
+            })
+            .collect()
+    }
     pub fn active_count(&self) -> usize {
         self.tasks.len()
     }
@@ -223,7 +273,9 @@ impl SourceRuntimeSupervisor {
             return Ok(false);
         }
 
-        Ok(self.registry_lock().mark_recovering(stream_id, generation)?)
+        Ok(self
+            .registry_lock()
+            .mark_recovering(stream_id, generation)?)
     }
 
     /// A running source has lost readiness but its executor
@@ -264,51 +316,77 @@ impl SourceRuntimeSupervisor {
     /// Graceful executor shutdown is important because
     /// SourceStreamExecutor::run() performs explicit
     /// WebSocket detachment.
-    pub async fn stop(&mut self,stream_id:&str)->Result<(),SourceSupervisorError>{self.request_stop(stream_id)?.finish().await}
+    pub async fn stop(&mut self, stream_id: &str) -> Result<(), SourceSupervisorError> {
+        self.request_stop(stream_id)?.finish().await
+    }
     /// Transfers the wait to an owned cleanup task. Dropping the ticket does not
     /// cancel WebSocket detachment, joining, or the generation-fenced completion.
-    pub fn request_stop(&mut self,stream_id:&str)->Result<SourceStopOperation,SourceSupervisorError>{
-        if !self.tasks.contains_key(stream_id){return Err(SourceSupervisorError::NotActive(stream_id.into()));}
-        let runtime=tokio::runtime::Handle::try_current().map_err(|_|SourceSupervisorError::UnexpectedExit("Source cleanup requires an async runtime".into()))?;
-        self.cleanup.retain(|task|!task.is_finished());
-        let stop_generation=self.registry_lock().begin_stop(stream_id)?;
-        let mut managed=self.tasks.remove(stream_id).unwrap();
-        if let Some(shutdown)=managed.shutdown.take(){let _=shutdown.send(());}
-        let registry=self.registry.clone();let id=stream_id.to_owned();let(reply,result)=oneshot::channel();
-        self.cleanup.push(runtime.spawn(async move {let stream_id=id.as_str();let outcome=async {
-        match managed.task.await {
-            Ok(Ok(SourceExecutorExit::ShutdownRequested)) => {
-                registry.lock().unwrap_or_else(|p|p.into_inner()).mark_stopped(stream_id, stop_generation)?;
-
-                Ok(())
-            }
-
-            Ok(Ok(SourceExecutorExit::TransportClosed)) => {
-                let reason = "transport closed before coordinated shutdown";
-
-                registry.lock().unwrap_or_else(|p|p.into_inner())
-                    .mark_failed(stream_id, stop_generation, reason)?;
-
-                Err(SourceSupervisorError::UnexpectedExit(reason.into()))
-            }
-
-            Ok(Err(error)) => {
-                registry.lock().unwrap_or_else(|p|p.into_inner())
-                    .mark_failed(stream_id, stop_generation, error.to_string())?;
-
-                Err(SourceSupervisorError::Executor(error))
-            }
-
-            Err(error) => {
-                registry.lock().unwrap_or_else(|p|p.into_inner())
-                    .mark_failed(stream_id, stop_generation, error.to_string())?;
-
-                Err(SourceSupervisorError::Join(error))
-            }
+    pub fn request_stop(
+        &mut self,
+        stream_id: &str,
+    ) -> Result<SourceStopOperation, SourceSupervisorError> {
+        if !self.tasks.contains_key(stream_id) {
+            return Err(SourceSupervisorError::NotActive(stream_id.into()));
         }
+        let runtime = tokio::runtime::Handle::try_current().map_err(|_| {
+            SourceSupervisorError::UnexpectedExit("Source cleanup requires an async runtime".into())
+        })?;
+        self.cleanup.retain(|task| !task.is_finished());
+        let stop_generation = self.registry_lock().begin_stop(stream_id)?;
+        let mut managed = self.tasks.remove(stream_id).unwrap();
+        if let Some(shutdown) = managed.shutdown.take() {
+            let _ = shutdown.send(());
+        }
+        let registry = self.registry.clone();
+        let id = stream_id.to_owned();
+        let (reply, result) = oneshot::channel();
+        self.cleanup.push(runtime.spawn(async move {
+            let stream_id = id.as_str();
+            let outcome = async {
+                match managed.task.await {
+                    Ok(Ok(SourceExecutorExit::ShutdownRequested)) => {
+                        registry
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner())
+                            .mark_stopped(stream_id, stop_generation)?;
 
-        }.await;let _=reply.send(outcome);}));
-        Ok(SourceStopOperation{result})
+                        Ok(())
+                    }
+
+                    Ok(Ok(SourceExecutorExit::TransportClosed)) => {
+                        let reason = "transport closed before coordinated shutdown";
+
+                        registry
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner())
+                            .mark_failed(stream_id, stop_generation, reason)?;
+
+                        Err(SourceSupervisorError::UnexpectedExit(reason.into()))
+                    }
+
+                    Ok(Err(error)) => {
+                        registry
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner())
+                            .mark_failed(stream_id, stop_generation, error.to_string())?;
+
+                        Err(SourceSupervisorError::Executor(error))
+                    }
+
+                    Err(error) => {
+                        registry
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner())
+                            .mark_failed(stream_id, stop_generation, error.to_string())?;
+
+                        Err(SourceSupervisorError::Join(error))
+                    }
+                }
+            }
+            .await;
+            let _ = reply.send(outcome);
+        }));
+        Ok(SourceStopOperation { result })
     }
 
     /// Collect executors that terminated independently of
@@ -349,9 +427,16 @@ impl SourceRuntimeSupervisor {
                 Err(error) => error.to_string(),
             };
 
-            let previous=self.registry_lock().status(&stream_id).cloned();
-            let reason=previous.filter(|s|s.generation==managed.generation && s.lifecycle==StreamLifecycleState::Failed).and_then(|s|s.last_error).unwrap_or(reason);
-            self.registry_lock().mark_failed(&stream_id, managed.generation, reason)?;
+            let previous = self.registry_lock().status(&stream_id).cloned();
+            let reason = previous
+                .filter(|s| {
+                    s.generation == managed.generation
+                        && s.lifecycle == StreamLifecycleState::Failed
+                })
+                .and_then(|s| s.last_error)
+                .unwrap_or(reason);
+            self.registry_lock()
+                .mark_failed(&stream_id, managed.generation, reason)?;
 
             retired.push(stream_id);
         }
@@ -375,7 +460,13 @@ impl SourceRuntimeSupervisor {
             }
         }
 
-        while let Some(task)=self.cleanup.pop(){if let Err(error)=task.await{if first_error.is_none(){first_error=Some(SourceSupervisorError::Join(error));}}}
+        while let Some(task) = self.cleanup.pop() {
+            if let Err(error) = task.await {
+                if first_error.is_none() {
+                    first_error = Some(SourceSupervisorError::Join(error));
+                }
+            }
+        }
         match first_error {
             Some(error) => Err(error),
             None => Ok(()),
@@ -432,7 +523,11 @@ impl SourceRuntimeSupervisor {
                 continue;
             }
 
-            if readiness==SourceReadiness::Ready {if let Some(task)=self.tasks.get_mut(&stream_id){task.ever_ready=true;}}
+            if readiness == SourceReadiness::Ready {
+                if let Some(task) = self.tasks.get_mut(&stream_id) {
+                    task.ever_ready = true;
+                }
+            }
             let changed = match readiness {
                 SourceReadiness::Ready => {
                     if current == StreamLifecycleState::Running {
@@ -446,7 +541,8 @@ impl SourceRuntimeSupervisor {
                     if current == StreamLifecycleState::Recovering {
                         false
                     } else {
-                        self.registry_lock().mark_recovering(&stream_id, generation)?
+                        self.registry_lock()
+                            .mark_recovering(&stream_id, generation)?
                     }
                 }
 
@@ -461,7 +557,8 @@ impl SourceRuntimeSupervisor {
                     {
                         false
                     } else {
-                        self.registry_lock().mark_recovering(&stream_id, generation)?
+                        self.registry_lock()
+                            .mark_recovering(&stream_id, generation)?
                     }
                 }
 
@@ -528,11 +625,41 @@ mod readiness_tests {
 
 /// Immutable compatibility view; a read never lends out a registry lock.
 pub struct SourceRegistryRead(std::sync::Arc<std::sync::Mutex<StreamRuntimeRegistry>>);
-impl SourceRegistryRead {pub fn publication_authority(&self,id:&str)->Option<crate::live::stream::registry::RuntimePublicationAuthority>{self.0.lock().unwrap_or_else(|p|p.into_inner()).publication_authority(id)}pub fn status(&self,id:&str)->Option<crate::live::stream::registry::StreamRuntimeStatus>{self.0.lock().unwrap_or_else(|p|p.into_inner()).status(id).cloned()}}
+impl SourceRegistryRead {
+    pub fn publication_authority(
+        &self,
+        id: &str,
+    ) -> Option<crate::live::stream::registry::RuntimePublicationAuthority> {
+        self.0
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .publication_authority(id)
+    }
+    pub fn status(&self, id: &str) -> Option<crate::live::stream::registry::StreamRuntimeStatus> {
+        self.0
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .status(id)
+            .cloned()
+    }
+}
 
 /// A wait handle only; cleanup ownership remains in the supervisor-issued task.
-pub struct SourceStopOperation {result:oneshot::Receiver<Result<(),SourceSupervisorError>>}
-impl SourceStopOperation {pub async fn finish(self)->Result<(),SourceSupervisorError>{self.result.await.map_err(|_|SourceSupervisorError::UnexpectedExit("Source cleanup task lost".into()))?}}
+pub struct SourceStopOperation {
+    result: oneshot::Receiver<Result<(), SourceSupervisorError>>,
+}
+impl SourceStopOperation {
+    pub async fn finish(self) -> Result<(), SourceSupervisorError> {
+        self.result
+            .await
+            .map_err(|_| SourceSupervisorError::UnexpectedExit("Source cleanup task lost".into()))?
+    }
+}
 
-#[derive(Debug,Clone)]
-pub struct SourceReadinessStatus {pub stream_id:String,pub generation:RuntimeGeneration,pub readiness:SourceReadiness,pub initial_readiness_pending:bool}
+#[derive(Debug, Clone)]
+pub struct SourceReadinessStatus {
+    pub stream_id: String,
+    pub generation: RuntimeGeneration,
+    pub readiness: SourceReadiness,
+    pub initial_readiness_pending: bool,
+}

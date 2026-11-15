@@ -208,6 +208,16 @@ impl ParquetDepthWriter {
             return Ok(());
         }
 
+        if let Some(limits) = crate::shared::historical::limits::current() {
+            crate::shared::historical::limits::check(
+                "stream output files",
+                limits.metric_entries,
+                self.next_file_index.checked_add(1).ok_or_else(|| {
+                    MarketForgeError::InvalidConfiguration("file count overflow".into())
+                })?,
+                "writer file creation",
+            )?;
+        }
         let path = self
             .output_dir
             .join(format!("part-{:06}.parquet", self.next_file_index));
@@ -308,6 +318,14 @@ impl ParquetDepthWriter {
             .finish()?
             .expect("nonempty event-index batch");
 
+        super::footprint::check_row_group_growth(
+            self.event_writer
+                .as_ref()
+                .expect("event writer initialized")
+                .flushed_row_groups()
+                .len(),
+            batch.num_rows(),
+        )?;
         self.event_writer
             .as_mut()
             .expect("event writer initialized")
@@ -355,6 +373,10 @@ impl ParquetDepthWriter {
 
         let writer = self.writer.as_mut().expect("writer initialized");
 
+        super::footprint::check_row_group_growth(
+            writer.flushed_row_groups().len(),
+            batch.num_rows(),
+        )?;
         writer.write(&batch).map_err(|error| {
             MarketForgeError::InvalidConfiguration(format!(
                 "failed to write depth Parquet batch: {error}"
@@ -470,6 +492,43 @@ impl ParquetDepthWriter {
             }
         }
 
+        let next_count = self
+            .segments
+            .segments()
+            .len()
+            .checked_add(usize::from(
+                outcome.boundary == DepthEventBoundary::Initialization,
+            ))
+            .ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration("segment count overflow".into())
+            })?;
+        let requested = (next_count as u64)
+            .checked_mul(std::mem::size_of::<BookSegment>() as u64)
+            .ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration("segment footprint overflow".into())
+            })?;
+        if let Some(limits) = crate::shared::historical::limits::current() {
+            crate::shared::historical::limits::check(
+                "segment metadata entries",
+                limits.metric_entries,
+                next_count as u64,
+                "depth writer segment growth",
+            )?;
+        }
+        // Existing shared allowance, now checked before cloning or growing it.
+        let permitted = self.resources.row_group_target_bytes.max(1024 * 1024);
+        if crate::shared::historical::limits::current().is_some() {
+            crate::shared::historical::limits::check(
+                "segment metadata bytes",
+                permitted,
+                requested,
+                "depth writer segment growth",
+            )?;
+        } else if requested > permitted {
+            return Err(MarketForgeError::InvalidConfiguration(
+                "depth reconstruction segment metadata exceeds bounded writer allowance".into(),
+            ));
+        }
         // Prepare the next segment state before modifying writer state.
         let mut next_segments = self.segments.clone();
 

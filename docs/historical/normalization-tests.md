@@ -1,6 +1,6 @@
 # Normalization correctness tests
 
-The maintained archive workload is `engine/tests/historical/fixtures/normalize.json`. Shared test support selects by classified identity, source feed and exact filename and rejects missing/ambiguous selections. It serializes valid subsets through the production schema-3 loader and profile resolver. Runtime overrides are isolated in memory; policies remain unchanged.
+The maintained archive workload is `engine/tests/historical/fixtures/normalize.json`. Shared test support selects by classified identity, source feed and exact filename and rejects missing/ambiguous selections. It serializes valid subsets through the production schema-4 loader and profile resolver. Runtime overrides are isolated in memory; policies remain unchanged.
 
 Run source-only harness tests:
 

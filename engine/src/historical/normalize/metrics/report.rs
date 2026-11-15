@@ -14,6 +14,7 @@ use crate::{
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TaskMetrics {
     pub accepted_depth_events: u64,
+    pub source: Option<crate::historical::normalize::reconcile::SourceObservation>,
     pub counters: ProcessingCounters,
     pub integrity: IntegrityMetrics,
     pub scoped_integrity: ScopedIntegrityMetrics,
@@ -38,6 +39,7 @@ impl TaskMetrics {
 impl TaskMetrics {
     pub fn into_report(self, task: &WorkTask) -> TaskMetricsReport {
         TaskMetricsReport {
+            source: self.source,
             accepted_depth_events: if task.normalizations[0].target_schema
                 == crate::shared::normalization::TargetSchema::Depth
             {
@@ -64,6 +66,8 @@ impl TaskMetrics {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskMetricsReport {
+    #[serde(default)]
+    pub source: Option<crate::historical::normalize::reconcile::SourceObservation>,
     #[serde(default)]
     pub accepted_depth_events: Option<u64>,
     pub task_id: u64,
@@ -115,8 +119,8 @@ impl ProcessingMetricsReport {
         let mut integrity = self.integrity.clone();
         integrity.merge(&task.integrity)?;
 
-        let mut scoped_integrity = self.scoped_integrity.clone();
-        scoped_integrity.merge(&task.scoped_integrity)?;
+        self.scoped_integrity
+            .validate_append(&task.scoped_integrity)?;
 
         let start_timestamp_ns = match (self.start_timestamp_ns, task.start_timestamp_ns) {
             (Some(left), Some(right)) => Some(left.min(right)),
@@ -136,7 +140,8 @@ impl ProcessingMetricsReport {
 
         self.counters = counters;
         self.integrity = integrity;
-        self.scoped_integrity = scoped_integrity;
+        self.scoped_integrity
+            .append_validated(&task.scoped_integrity);
 
         self.start_timestamp_ns = start_timestamp_ns;
         self.end_timestamp_ns = end_timestamp_ns;

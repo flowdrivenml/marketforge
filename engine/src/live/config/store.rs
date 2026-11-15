@@ -92,7 +92,19 @@ impl ExchangeConfigStore {
     }
 
     /// Restrict immutable configuration to the explicitly restored Source profiles.
-    pub fn selected(&self,names:&std::collections::BTreeSet<String>)->Result<Self,String>{let mut profiles=BTreeMap::new();for name in names {profiles.insert(name.clone(),self.profiles.get(name).ok_or_else(||format!("missing exchange profile {name}"))?.clone());}Ok(Self{profiles})}
+    pub fn selected(&self, names: &std::collections::BTreeSet<String>) -> Result<Self, String> {
+        let mut profiles = BTreeMap::new();
+        for name in names {
+            profiles.insert(
+                name.clone(),
+                self.profiles
+                    .get(name)
+                    .ok_or_else(|| format!("missing exchange profile {name}"))?
+                    .clone(),
+            );
+        }
+        Ok(Self { profiles })
+    }
     /// Retrieve a profile by its unique name.
     ///
     /// Example: "binance_spot".

@@ -115,21 +115,21 @@ pub fn enforce_immediate_integrity(
 
     // Absolute limits are safe to enforce immediately because
     // violation counts cannot decrease during processing.
-    if let Some(max_count) = rule.max_count {
-        if observation.violations > max_count {
-            record_failure(
-                &mut evaluation,
-                category,
-                IntegrityThreshold::MaximumCount,
-                None,
-                None,
-                observation,
-                format!(
-                    "integrity count exceeded: {} > {}",
-                    observation.violations, max_count,
-                ),
-            )?;
-        }
+    if let Some(max_count) = rule.max_count
+        && observation.violations > max_count
+    {
+        record_failure(
+            &mut evaluation,
+            category,
+            IntegrityThreshold::MaximumCount,
+            None,
+            None,
+            observation,
+            format!(
+                "integrity count exceeded: {} > {}",
+                observation.violations, max_count,
+            ),
+        )?;
     }
 
     Ok(evaluation)
@@ -254,21 +254,21 @@ pub fn evaluate_integrity_policy(
         // Absolute count
         // ---------------------------------------------------------
 
-        if let Some(max_count) = rule.max_count {
-            if global.violations > max_count {
-                record_failure(
-                    &mut evaluation,
-                    category,
-                    IntegrityThreshold::MaximumCount,
-                    None,
-                    None,
-                    global,
-                    format!(
-                        "integrity count exceeded: {} > {}",
-                        global.violations, max_count
-                    ),
-                )?;
-            }
+        if let Some(max_count) = rule.max_count
+            && global.violations > max_count
+        {
+            record_failure(
+                &mut evaluation,
+                category,
+                IntegrityThreshold::MaximumCount,
+                None,
+                None,
+                global,
+                format!(
+                    "integrity count exceeded: {} > {}",
+                    global.violations, max_count
+                ),
+            )?;
         }
 
         // ---------------------------------------------------------
@@ -292,7 +292,7 @@ pub fn evaluate_integrity_policy(
             // Per-file rates
             // -----------------------------------------------------
 
-            for (scope, stats) in &metrics.files {
+            metrics.visit_files(|scope, stats| {
                 let observation = stats.get(category);
 
                 if rate_exceeded(observation, max_rate, rule.minimum_samples)? {
@@ -306,13 +306,14 @@ pub fn evaluate_integrity_policy(
                         "source-file integrity rate exceeded".to_owned(),
                     )?;
                 }
-            }
+                Ok(())
+            })?;
 
             // -----------------------------------------------------
             // Per-stream rates
             // -----------------------------------------------------
 
-            let streams = aggregate_streams(&metrics.files)?;
+            let streams = aggregate_streams(metrics)?;
 
             for (stream_id, stats) in streams {
                 let observation = stats.get(category);
@@ -343,7 +344,8 @@ pub fn evaluate_integrity_policy(
             evaluate_windows(
                 &mut evaluation,
                 category,
-                &metrics.daily,
+                metrics,
+                true,
                 window_rule,
                 IntegrityThreshold::DailyRate,
             )?;
@@ -357,7 +359,8 @@ pub fn evaluate_integrity_policy(
             evaluate_windows(
                 &mut evaluation,
                 category,
-                &metrics.hourly,
+                metrics,
+                false,
                 window_rule,
                 IntegrityThreshold::HourlyRate,
             )?;
@@ -374,11 +377,12 @@ pub fn evaluate_integrity_policy(
 fn evaluate_windows(
     evaluation: &mut IntegrityEvaluation,
     category: IntegrityCategory,
-    windows: &BTreeMap<(IntegrityScope, i64), CategoryStatistics>,
+    metrics: &ScopedIntegrityMetrics,
+    daily: bool,
     rule: &IntegrityWindowRule,
     threshold: IntegrityThreshold,
 ) -> Result<()> {
-    for ((scope, start_ns), stats) in windows {
+    metrics.visit_windows(daily, |(scope, start_ns), stats| {
         let observation = stats.get(category);
 
         if rate_exceeded(observation, rule.max_rate, rule.minimum_samples)? {
@@ -392,9 +396,8 @@ fn evaluate_windows(
                 "integrity time-window rate exceeded".to_owned(),
             )?;
         }
-    }
-
-    Ok(())
+        Ok(())
+    })
 }
 
 // -----------------------------------------------------------------------------
@@ -437,15 +440,16 @@ fn rate_exceeded(
 // -----------------------------------------------------------------------------
 
 fn aggregate_streams(
-    files: &BTreeMap<IntegrityScope, CategoryStatistics>,
+    metrics: &ScopedIntegrityMetrics,
 ) -> Result<BTreeMap<String, CategoryStatistics>> {
     let mut streams = BTreeMap::<String, CategoryStatistics>::new();
 
-    for (scope, stats) in files {
+    metrics.visit_files(|scope, stats| {
         let entry = streams.entry(scope.stream_id.clone()).or_default();
 
         entry.merge(stats)?;
-    }
+        Ok(())
+    })?;
 
     Ok(streams)
 }

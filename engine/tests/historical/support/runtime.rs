@@ -126,9 +126,27 @@ impl TestRun {
         self.metadata["failure"] = json!(result.as_ref().err());
         self.save()
     }
+    /// Load production normalization settings without resource overrides.
+    ///
+    /// Only the scratch directory is relocated to the isolated test run.
+    pub fn runtime_from_general(&self) -> TestResult<ProcessingConfig> {
+        let mut config = load_processing_config("data/.config/historical/general.toml", root())
+            .map_err(|e| e.to_string())?;
+
+        config.resources.scratch_path = self.path.join("scratch");
+        self.owned(&config.resources.scratch_path)?;
+
+        validate_processing_config(&config).map_err(|e| e.to_string())?;
+
+        Ok(config)
+    }
+
+    /// Explicit small-workload settings for synthetic tests only. Real archives
+    /// use `runtime_from_general` without execution-resource overrides.
     pub fn runtime(&self, overrides: Overrides) -> TestResult<ProcessingConfig> {
         let mut c = load_processing_config("data/.config/historical/general.toml", root())
             .map_err(|e| e.to_string())?;
+        c.resources.normalization_limits = Default::default();
         c.resources.workers = overrides.workers.unwrap_or(1);
         c.resources.memory_budget_bytes = overrides.memory.unwrap_or(1 << 30);
         c.resources.scratch_budget_bytes = overrides.scratch.unwrap_or(1 << 30);
@@ -291,4 +309,35 @@ pub fn sample_prefix(run: &mut TestRun, batch: &mut PreparedBatch, lines: usize)
         }
     }
     run.save()
+}
+
+/// Read the bounded prefix archive produced by `sample_prefix`, never a full archive.
+pub fn sample_bytes(task: &marketforge_engine::historical::job::WorkTask) -> TestResult<Vec<u8>> {
+    with_source_reader(
+        &task.input_path,
+        task.source_compression,
+        task.archive_member.as_deref(),
+        |reader| {
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(
+                &mut std::io::Read::take(reader, 1024 * 1024 + 1),
+                &mut bytes,
+            )
+            .map_err(|source| {
+                marketforge_engine::shared::error::MarketForgeError::SourceRead {
+                    path: task.input_path.clone(),
+                    source,
+                }
+            })?;
+            Ok(bytes)
+        },
+    )
+    .map_err(|e| e.to_string())
+    .and_then(|bytes| {
+        if bytes.len() > 1024 * 1024 {
+            Err("sample oracle exceeds 1 MiB".into())
+        } else {
+            Ok(bytes)
+        }
+    })
 }

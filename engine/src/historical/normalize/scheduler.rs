@@ -113,6 +113,23 @@ where
     E: Fn(&T) -> Result<ResourceRequirements> + Sync,
     F: Fn(T) -> Result<O> + Sync,
 {
+    execute_parallel_budgeted_observed(tasks, workers, budget, estimate, execute, |_, _, _, _| {})
+}
+pub(crate) fn execute_parallel_budgeted_observed<T, O, E, F, P>(
+    tasks: Vec<T>,
+    workers: usize,
+    budget: &ResourceBudget,
+    estimate: E,
+    execute: F,
+    observe: P,
+) -> Result<Vec<Result<O>>>
+where
+    T: Send,
+    O: Send,
+    E: Fn(&T) -> Result<ResourceRequirements> + Sync,
+    F: Fn(T) -> Result<O> + Sync,
+    P: Fn(&T, bool, std::time::Duration, usize) + Sync,
+{
     if workers == 0 {
         return Err(MarketForgeError::InvalidConfiguration(
             "parallel scheduler requires at least one worker".to_owned(),
@@ -140,11 +157,31 @@ where
     // Execute through existing worker pool
     // -------------------------------------------------------------------------
 
+    let queued = std::sync::atomic::AtomicUsize::new(scheduled.len());
+    let compute = super::resources::compute::ComputeBudget::new(workers);
     execute_parallel(scheduled, workers, |(task, requirements)| {
+        let queue_occupancy = queued.fetch_sub(1, std::sync::atomic::Ordering::Relaxed) - 1;
         // Wait for available resources.
-        let _reservation = budget.acquire(requirements)?;
+        let _reservation = match budget.try_acquire(requirements)? {
+            Some(reservation) => {
+                observe(&task, false, std::time::Duration::ZERO, queue_occupancy);
+                reservation
+            }
+            None => {
+                let start = std::time::Instant::now();
+                observe(&task, true, std::time::Duration::ZERO, queue_occupancy);
+                let reservation = budget.acquire(requirements)?;
+                observe(
+                    &task,
+                    false,
+                    start.elapsed(),
+                    queued.load(std::sync::atomic::Ordering::Relaxed),
+                );
+                reservation
+            }
+        };
 
         // Process while reservation is held.
-        execute(task)
+        super::resources::compute::with_budget(&compute, || execute(task))
     })
 }

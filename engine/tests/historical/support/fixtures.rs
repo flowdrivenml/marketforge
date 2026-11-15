@@ -62,3 +62,78 @@ pub fn select(
     }
     Ok(subset)
 }
+
+/// Select one concrete stream from current prepared metadata. The minimum is a
+/// coverage prerequisite (for example, multi-archive execution), not a fixture count.
+pub fn concrete_stream(
+    batch: &PreparedBatch,
+    exchange: Exchange,
+    instrument_type: InstrumentKind,
+    content_type: ContentType,
+    minimum_sources: usize,
+) -> TestResult<PreparedBatch> {
+    let mut candidates = std::collections::BTreeMap::new();
+    for job in &batch.jobs {
+        if job.output.content_type != content_type {
+            continue;
+        }
+        for task in &job.tasks {
+            if task.exchange == exchange
+                && task.instrument_type == instrument_type
+                && task.scope.is_none()
+                && task.symbol.is_some()
+            {
+                *candidates
+                    .entry((job.job_id.0, task.stream_id.0.clone()))
+                    .or_insert(0usize) += 1;
+            }
+        }
+    }
+    let ((job_id,stream_id),_) = candidates.into_iter().find(|(_,count)| *count>=minimum_sources)
+        .ok_or_else(||format!("prepared batch has no {exchange:?}/{instrument_type:?}/{content_type:?} concrete stream with at least {minimum_sources} sources"))?;
+    let mut subset = batch.clone();
+    subset.jobs.retain_mut(|job| {
+        if job.job_id.0 != job_id {
+            return false;
+        }
+        job.tasks
+            .retain(|task| task.stream_id.0 == stream_id && task.scope.is_none());
+        !job.tasks.is_empty()
+    });
+    Ok(subset)
+}
+
+/// Select profile metadata for synthetic payload tests, independently of archive
+/// names and concrete instrument identities. The caller replaces the source.
+pub fn profile_source(
+    batch: &PreparedBatch,
+    exchange: Exchange,
+    instrument_type: InstrumentKind,
+    market_category: &str,
+    content_type: ContentType,
+    feed: Option<Feed>,
+    family: bool,
+) -> TestResult<PreparedBatch> {
+    let mut subset = batch.clone();
+    subset.jobs.retain_mut(|job| {
+        if job.output.content_type != content_type {
+            return false;
+        }
+        job.tasks.retain(|task| {
+            task.exchange == exchange
+                && task.instrument_type == instrument_type
+                && serde_json::to_value(task.market_category).unwrap().as_str()
+                    == Some(market_category)
+                && task.source_options.as_ref().map(|o| o.feed) == feed
+                && task.scope.is_some() == family
+        });
+        !job.tasks.is_empty()
+    });
+    subset.jobs.truncate(1);
+    let job = subset
+        .jobs
+        .first_mut()
+        .ok_or("prepared batch lacks the required synthetic test profile")?;
+    job.tasks.truncate(1);
+    Ok(subset)
+}

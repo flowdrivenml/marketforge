@@ -1,111 +1,194 @@
 #![cfg(feature = "historical")]
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+use std::{collections::BTreeSet, fs};
+
+use crate::support::{fixtures::workload, runtime::TestRun};
+
+use marketforge_engine::historical::{
+    job::ContentType, normalize::manifest::inspect_parquet_files,
 };
-
-use {
-    crate::support::migration::archive_case as load_processing_job,
-    crate::support::migration::configuration as load_processing_config,
-    marketforge_engine::historical::normalize::manifest::inspect_parquet_files,
-    marketforge_engine::historical::normalize::task::execute_trade_task,
-};
-
-static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
-
-const JOB_FILE: &str = "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json";
-
-fn project_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("project root")
-        .to_path_buf()
-}
-
-fn test_directory() -> PathBuf {
-    let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
-
-    let directory = crate::support::migration::persistent_path(format!(
-        "marketforge-discovery-test-{}-{id}",
-        std::process::id(),
-    ));
-
-    fs::create_dir_all(&directory).expect("create test directory");
-
-    directory
-}
 
 #[test]
 fn discovers_parquet_files_from_multiple_tasks() {
-    let root = project_root();
+    let mut run = TestRun::new("execution/parquet_discovery").expect("create isolated test run");
 
-    let job = load_processing_job(root.join("retained-cases").join(JOB_FILE))
-        .expect("load processing job");
+    let config = run
+        .runtime_from_general()
+        .expect("load production normalization configuration");
 
-    let config = load_processing_config(root.join("data/.config/historical/general.toml"), &root)
-        .expect("load processing configuration");
+    let mut batch = workload().expect("load authoritative normalization batch");
 
-    let directory = test_directory();
+    batch
+        .jobs
+        .retain(|job| job.output.content_type == ContentType::Trades);
 
-    let mut parquet = config.resources.parquet.clone();
+    assert_eq!(batch.jobs.len(), 1);
 
-    parquet.row_group_target_bytes = 16 * 1024;
-    parquet.file_target_bytes = 64 * 1024;
+    // Select two available concrete trade sources from distinct
+    // streams, preferring smaller archives.
+    let job = &mut batch.jobs[0];
+
+    let mut candidates = job
+        .tasks
+        .iter()
+        .filter(|task| task.scope.is_none() && task.symbol.is_some())
+        .map(|task| {
+            let size = fs::metadata(&task.input_path)
+                .expect("required real archive")
+                .len();
+
+            (size, task.stream_id.0.clone(), task.task_id.0)
+        })
+        .collect::<Vec<_>>();
+
+    candidates.sort();
+
+    let mut streams = BTreeSet::new();
+    let mut selected = BTreeSet::new();
+
+    for (_, stream, task_id) in candidates {
+        if streams.insert(stream) {
+            selected.insert(task_id);
+        }
+
+        if selected.len() == 2 {
+            break;
+        }
+    }
+
+    assert_eq!(
+        selected.len(),
+        2,
+        "expected two available concrete trade streams"
+    );
+
+    job.tasks.retain(|task| selected.contains(&task.task_id.0));
+
+    let resolved = run
+        .prepare(&batch, &config)
+        .expect("resolve selected trade tasks");
+
+    assert_eq!(resolved.jobs.len(), 1);
+
+    let job = &resolved.jobs[0];
+
+    assert_eq!(job.tasks.len(), 2);
+
+    // Use the production session task executor with the explicitly
+    // loaded runtime, rather than the legacy compatibility executor.
+    let output = job.output.staging_path.clone();
+
+    run.owned(&output).expect("validate staging ownership");
+
+    let results = marketforge_engine::historical::normalize::session::execute_session_tasks(
+        &resolved.jobs,
+        &config,
+    )
+    .expect("execute selected trade tasks");
+
+    assert_eq!(results.jobs.len(), 1);
+    assert_eq!(results.total_tasks, job.tasks.len());
+
+    let executions = &results.jobs[0].executions;
+
+    assert_eq!(executions.len(), job.tasks.len());
 
     let mut expected_rows = 0u64;
 
-    for task in &job.tasks {
-        let execution = execute_trade_task(task, &config.integrity_policy, &parquet, &directory);
+    for (task, execution) in job.tasks.iter().zip(executions) {
+        println!(
+            "Processed task={} stream={} source={}",
+            task.task_id.0,
+            task.stream_id.0,
+            task.input_path.display()
+        );
+
+        assert_eq!(execution.task_id, task.task_id.0);
 
         assert!(
             execution.is_success(),
             "task {} failed: {:?}",
             task.task_id.0,
-            execution.error,
+            execution.error
         );
+
+        assert_eq!(execution.metrics.counters.tasks_completed, 1);
+
+        assert_eq!(execution.metrics.counters.tasks_failed, 0);
+
+        assert!(!execution.output_paths.is_empty());
+
+        for task_output in &execution.output_paths {
+            assert!(
+                task_output.starts_with(&output),
+                "task output escaped staging: {}",
+                task_output.display()
+            );
+        }
 
         expected_rows += execution.metrics.counters.events_written;
     }
 
-    let files = inspect_parquet_files(&directory).expect("discover task Parquet files");
+    let files = inspect_parquet_files(&output).expect("discover nested Parquet files");
+
+    assert!(!files.is_empty(), "no Parquet files discovered");
 
     let actual_rows: u64 = files.iter().map(|file| file.rows).sum();
 
-    assert_eq!(actual_rows, expected_rows);
+    assert_eq!(
+        actual_rows, expected_rows,
+        "Parquet row count differs from worker accounting"
+    );
 
-    assert_eq!(actual_rows, 162);
-
-    assert!(!files.is_empty());
+    assert!(
+        actual_rows > 0,
+        "selected sources produced no canonical trades"
+    );
 
     for file in &files {
         assert!(
-            file.path.starts_with("tasks/"),
-            "unexpected file path: {}",
-            file.path,
+            file.path.starts_with("streams/"),
+            "unexpected Parquet path: {}",
+            file.path
+        );
+
+        let components: Vec<_> = std::path::Path::new(&file.path).components().collect();
+
+        assert_eq!(
+            components.len(),
+            4,
+            "unexpected stream Parquet layout: {}",
+            file.path
+        );
+
+        assert_eq!(
+            components[2].as_os_str(),
+            std::ffi::OsStr::new("trades"),
+            "Parquet file is not under a trade stream"
         );
 
         assert!(file.path.ends_with(".parquet"));
 
-        assert!(directory.join(&file.path).is_file());
-    }
+        let path = output.join(&file.path);
 
-    println!("\n{}", "=".repeat(80));
-    println!("MARKETFORGE — NESTED PARQUET DISCOVERY");
-    println!("{}", "=".repeat(80));
+        assert!(
+            path.is_file(),
+            "missing discovered file: {}",
+            path.display()
+        );
 
-    println!("Tasks processed : {}", job.tasks.len());
-    println!("Parquet files   : {}", files.len());
-    println!("Expected rows   : {expected_rows}");
-    println!("Actual rows     : {actual_rows}");
+        let metadata = fs::metadata(&path).expect("read Parquet metadata");
 
-    for file in &files {
-        println!(
-            "  {} | rows={} | bytes={}",
-            file.path, file.rows, file.size_bytes,
+        assert_eq!(
+            metadata.len(),
+            file.size_bytes,
+            "discovered file size mismatch"
         );
     }
 
-    println!("RESULT          : PASS");
+    println!("Tasks processed: {}", job.tasks.len());
+    println!("Parquet files:   {}", files.len());
+    println!("Expected rows:   {expected_rows}");
+    println!("Actual rows:     {actual_rows}");
+    println!("PARQUET DISCOVERY: PASS");
 }

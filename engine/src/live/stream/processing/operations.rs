@@ -174,7 +174,9 @@ impl DerivedProcessor {
             return Ok(());
         }
         let input = &batch[0];
-        if let Some(m)=self.context.output.metrics(){m.record_events_received(publication(input).market_event_count());}
+        if let Some(m) = self.context.output.metrics() {
+            m.record_events_received(publication(input).market_event_count());
+        }
         let rank = input.input_position;
         if rank >= self.observed.len() {
             return Err("invalid input position".into());
@@ -320,7 +322,7 @@ impl Processor for DerivedProcessor {
         unreachable!("fallible production processor")
     }
     fn try_run_turn(&mut self, max: usize) -> Result<bool, String> {
-        let started=Instant::now();
+        let started = Instant::now();
         let result = (|| {
             // The state mutex has no pool, registry or Router lock beneath it.
             // Service reads it only for status/deadlines and after worker retirement.
@@ -368,7 +370,12 @@ impl Processor for DerivedProcessor {
                             )
                         })
                     }) {
-                        conversion.value(key, &mut e).map_err(|reason|{if let Some(m)=self.context.output.metrics(){m.record_conversion_failure();}reason})?;
+                        conversion.value(key, &mut e).map_err(|reason| {
+                            if let Some(m) = self.context.output.metrics() {
+                                m.record_conversion_failure();
+                            }
+                            reason
+                        })?;
                     } else if !e.baseline_barrier {
                         return Err("missing exchange timestamp on conversion data event".into());
                     }
@@ -386,9 +393,14 @@ impl Processor for DerivedProcessor {
                             );
                         }
                     }
-                    let publication=RouterPublication::Derived(vec![e].into());
-                    if let Some(m)=self.context.output.metrics(){m.record_events_calculated_total(publication.market_event_count());}
-                    self.context.output.try_emit(publication).map_err(|e|e.reason.to_owned())?;
+                    let publication = RouterPublication::Derived(vec![e].into());
+                    if let Some(m) = self.context.output.metrics() {
+                        m.record_events_calculated_total(publication.market_event_count());
+                    }
+                    self.context
+                        .output
+                        .try_emit(publication)
+                        .map_err(|e| e.reason.to_owned())?;
                 }
                 self.last_emitted = k.or(self.last_emitted);
                 if self.ordered {
@@ -457,7 +469,15 @@ impl Processor for DerivedProcessor {
             }
             Ok(!self.context.input.is_empty() || self.next(&state)?.is_some())
         })();
-        if let Some(m)=self.context.output.metrics(){m.record_processing_latency(started.elapsed());if result.as_ref().is_err_and(|detail|detail.contains("event-time emission frontier regressed")){m.record_late_event();}}
+        if let Some(m) = self.context.output.metrics() {
+            m.record_processing_latency(started.elapsed());
+            if result
+                .as_ref()
+                .is_err_and(|detail| detail.contains("event-time emission frontier regressed"))
+            {
+                m.record_late_event();
+            }
+        }
         if let Err(detail) = &result {
             self.context.output.record_data_discontinuity(detail);
         }

@@ -95,7 +95,11 @@ fn validate_publication(config: &GeneralConfig) -> Result<(), String> {
 // ============================================================
 
 fn validate_control(config: &GeneralConfig) -> Result<(), String> {
-    let address:SocketAddr=config.control.listen_address.parse().map_err(|_|"control.listen_address must be a valid IP socket address".to_string())?;
+    let address: SocketAddr = config
+        .control
+        .listen_address
+        .parse()
+        .map_err(|_| "control.listen_address must be a valid IP socket address".to_string())?;
 
     // Port zero requests an owned ephemeral listener. v1 remains loopback-only
     // with credential authentication; no remote exposure policy is implemented.
@@ -171,7 +175,17 @@ fn validate_prometheus(config: &GeneralConfig) -> Result<(), String> {
         return Err("metrics.prometheus.path must not contain whitespace".into());
     }
 
-    if prometheus.path.len()>256 || prometheus.max_concurrent_requests>128 || prometheus.max_response_bytes>16*1024*1024 || prometheus.max_response_bytes.checked_mul(prometheus.max_concurrent_requests).is_none_or(|n|n>64*1024*1024) || prometheus.cache_interval_ms>60000 {return Err("metrics.prometheus resource limits exceed v1 bounds".into());}
+    if prometheus.path.len() > 256
+        || prometheus.max_concurrent_requests > 128
+        || prometheus.max_response_bytes > 16 * 1024 * 1024
+        || prometheus
+            .max_response_bytes
+            .checked_mul(prometheus.max_concurrent_requests)
+            .is_none_or(|n| n > 64 * 1024 * 1024)
+        || prometheus.cache_interval_ms > 60000
+    {
+        return Err("metrics.prometheus resource limits exceed v1 bounds".into());
+    }
     if prometheus.max_concurrent_requests == 0 {
         return Err("metrics.prometheus.max_concurrent_requests must be greater than zero".into());
     }

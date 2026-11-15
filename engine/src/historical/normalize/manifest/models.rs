@@ -8,6 +8,8 @@ use {
 };
 
 pub const DATASET_MANIFEST_VERSION: u32 = 3;
+/// Interleaved source row ownership / explicit cross-source suppression.
+pub const RECONCILED_MANIFEST_VERSION: u32 = 4;
 pub const DATASET_MANIFEST_FILENAME: &str = "manifest.json";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,7 +41,7 @@ pub struct AuxiliaryFile {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct DatasetManifest {
+pub struct DatasetManifest<M = ProcessingMetricsReport> {
     pub protocol_version: u32,
 
     pub job_id: u64,
@@ -63,5 +65,5 @@ pub struct DatasetManifest {
 
     pub integrity_status: IntegrityStatus,
     pub integrity_evaluation: IntegrityEvaluation,
-    pub processing_metrics: ProcessingMetricsReport,
+    pub processing_metrics: M,
 }

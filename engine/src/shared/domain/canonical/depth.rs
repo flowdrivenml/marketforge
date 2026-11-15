@@ -38,7 +38,7 @@ pub enum DepthSourceOperation {
 }
 
 /// Result of processing one source depth message.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct DepthProcessingOutcome {
     pub boundary: DepthEventBoundary,
     pub operation: DepthSourceOperation,

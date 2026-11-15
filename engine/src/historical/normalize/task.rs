@@ -83,6 +83,18 @@ pub fn execute_trade_task(
         .join(format!("task-{:06}", task.task_id.0))
         .join("trades");
 
+    let _compatibility = match super::resources::reserve_compatibility_trade(task, parquet) {
+        Ok(reservation) => reservation,
+        Err(error) => {
+            return TradeTaskExecution {
+                task_id: task.task_id.0,
+                output_path,
+                metrics: Default::default(),
+                error: Some(error),
+            };
+        }
+    };
+    let _limits = super::worker::resource_scope(task);
     let mut metrics = TaskMetrics::default();
 
     let result = execute_trade_task_inner(task, policy, parquet, &output_path, &mut metrics);
@@ -107,6 +119,18 @@ pub fn execute_trade_task_with_progress(
         .join(format!("task-{:06}", task.task_id.0))
         .join("trades");
 
+    let _compatibility = match super::resources::reserve_compatibility_trade(task, parquet) {
+        Ok(reservation) => reservation,
+        Err(error) => {
+            return TradeTaskExecution {
+                task_id: task.task_id.0,
+                output_path,
+                metrics: Default::default(),
+                error: Some(error),
+            };
+        }
+    };
+    let _limits = super::worker::resource_scope(task);
     let mut metrics = TaskMetrics::default();
     let mut progress = WorkerProgress::new(reporter, progress_id);
 
@@ -176,11 +200,26 @@ pub fn execute_depth_task_with_progress(
     reporter: &ProgressReporter,
     progress_id: ProgressTaskId,
 ) -> TaskExecution {
+    let _limits = crate::shared::historical::limits::LimitScope::enter(
+        config.resources.normalization_limits,
+        format!("task={}", task.task_id.0),
+    );
     let output_path = staging
         .join("tasks")
         .join(format!("task-{:06}", task.task_id.0))
         .join("depth");
 
+    let _reservation = match super::resources::reserve_isolated(task, config) {
+        Ok(reservation) => reservation,
+        Err(error) => {
+            return TaskExecution {
+                task_id: task.task_id.0,
+                output_paths: vec![],
+                metrics: Default::default(),
+                error: Some(error),
+            };
+        }
+    };
     let mut metrics = TaskMetrics::default();
     let mut progress = WorkerProgress::new(reporter, progress_id);
 
@@ -251,6 +290,10 @@ pub fn execute_task_with_progress(
     reporter: &ProgressReporter,
     progress_id: ProgressTaskId,
 ) -> TaskExecution {
+    let _limits = crate::shared::historical::limits::LimitScope::enter(
+        config.resources.normalization_limits,
+        format!("task={}", task.task_id.0),
+    );
     if !reporter.is_enabled() {
         return execute_task(task, config, staging);
     }
@@ -284,6 +327,17 @@ pub fn execute_task_with_progress(
 
     match target {
         TargetSchema::Trade => {
+            let _reservation = match super::resources::reserve_isolated(task, config) {
+                Ok(reservation) => reservation,
+                Err(error) => {
+                    return TaskExecution {
+                        task_id: task.task_id.0,
+                        output_paths: vec![],
+                        metrics: Default::default(),
+                        error: Some(error),
+                    };
+                }
+            };
             if task.normalizations.len() != 1 {
                 return unsupported(format!(
                     "task {} requires exactly one trade normalization",
@@ -352,11 +406,26 @@ pub fn execute_depth_task(
     config: &ProcessingConfig,
     staging: &Path,
 ) -> TaskExecution {
+    let _limits = crate::shared::historical::limits::LimitScope::enter(
+        config.resources.normalization_limits,
+        format!("task={}", task.task_id.0),
+    );
     let output_path = staging
         .join("tasks")
         .join(format!("task-{:06}", task.task_id.0))
         .join("depth");
 
+    let _reservation = match super::resources::reserve_isolated(task, config) {
+        Ok(reservation) => reservation,
+        Err(error) => {
+            return TaskExecution {
+                task_id: task.task_id.0,
+                output_paths: vec![],
+                metrics: Default::default(),
+                error: Some(error),
+            };
+        }
+    };
     let mut metrics = TaskMetrics::default();
 
     let result = execute_depth_task_inner(task, config, &output_path, &mut metrics);
@@ -444,6 +513,10 @@ fn execute_depth_task_inner(
 // -----------------------------------------------------------------------------
 
 pub fn execute_task(task: &WorkTask, config: &ProcessingConfig, staging: &Path) -> TaskExecution {
+    let _limits = crate::shared::historical::limits::LimitScope::enter(
+        config.resources.normalization_limits,
+        format!("task={}", task.task_id.0),
+    );
     let unsupported = |message: String| TaskExecution {
         task_id: task.task_id.0,
         output_paths: Vec::new(),
@@ -482,6 +555,17 @@ pub fn execute_task(task: &WorkTask, config: &ProcessingConfig, staging: &Path) 
 
     match target {
         TargetSchema::Trade => {
+            let _reservation = match super::resources::reserve_isolated(task, config) {
+                Ok(reservation) => reservation,
+                Err(error) => {
+                    return TaskExecution {
+                        task_id: task.task_id.0,
+                        output_paths: vec![],
+                        metrics: Default::default(),
+                        error: Some(error),
+                    };
+                }
+            };
             // Trade tasks currently require exactly one normalization.
             if task.normalizations.len() != 1 {
                 return unsupported(format!(

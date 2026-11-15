@@ -4,7 +4,7 @@ Real benchmark execution requires separate user authorization. The refactor was
 verified using mocks, synthetic statistics and nonexecuting plans only.
 
 The existing binary is retained: `marketforge-normalize-benchmark`.
-`--input` is required and accepts a prepared schema-3 batch anywhere on the
+`--input` is required and accepts a prepared schema-4 batch anywhere on the
 filesystem. Relative input paths use the invocation directory; source paths use
 the production batch/project-root contract. There is no automatic exchange,
 filename, duration or size exclusion. Unresolved family specifications fail

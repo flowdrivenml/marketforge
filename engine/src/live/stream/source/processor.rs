@@ -106,12 +106,36 @@ impl SourceProcessor {
     ) {
         self.depth_observer = Some(producer);
     }
-    pub(crate) fn baseline_signal(&self)->Option<std::sync::Arc<tokio::sync::Notify>>{self.depth_observer.as_ref().map(|p|p.baseline_signal())}
-    pub(crate) fn publish_current_baseline(&self,publish:&mut impl FnMut(&[DepthPublicationEvent<'_>])->Result<(),String>)->Result<(),String>{
-        let Some(publication)=self.publication.as_ref() else{return Ok(())};if publication.phase()!=crate::live::integrity::DepthPublicationPhase::Ready{return Err("depth handoff unavailable during pending/reset publication".into());}
-        let Some((book_generation,baseline,levels))=self.integrity.current_book_handoff() else{return Err("no synchronized authoritative depth book for handoff".into())};
-        if publication.state().published_book_generation!=Some(book_generation){return Err("depth book not acknowledged for handoff".into());}
-        publish(&[DepthPublicationEvent::Snapshot{stream_generation:self.integrity.stream_generation(),book_generation,baseline,levels:&levels,timestamp:crate::live::integrity::DepthAcceptedTimestamp{latest_source:None,composition:crate::live::integrity::DepthTimestampComposition::CurrentBookHandoff}}])
+    pub(crate) fn baseline_signal(&self) -> Option<std::sync::Arc<tokio::sync::Notify>> {
+        self.depth_observer.as_ref().map(|p| p.baseline_signal())
+    }
+    pub(crate) fn publish_current_baseline(
+        &self,
+        publish: &mut impl FnMut(&[DepthPublicationEvent<'_>]) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let Some(publication) = self.publication.as_ref() else {
+            return Ok(());
+        };
+        if publication.phase() != crate::live::integrity::DepthPublicationPhase::Ready {
+            return Err("depth handoff unavailable during pending/reset publication".into());
+        }
+        let Some((book_generation, baseline, levels)) = self.integrity.current_book_handoff()
+        else {
+            return Err("no synchronized authoritative depth book for handoff".into());
+        };
+        if publication.state().published_book_generation != Some(book_generation) {
+            return Err("depth book not acknowledged for handoff".into());
+        }
+        publish(&[DepthPublicationEvent::Snapshot {
+            stream_generation: self.integrity.stream_generation(),
+            book_generation,
+            baseline,
+            levels: &levels,
+            timestamp: crate::live::integrity::DepthAcceptedTimestamp {
+                latest_source: None,
+                composition: crate::live::integrity::DepthTimestampComposition::CurrentBookHandoff,
+            },
+        }])
     }
     pub fn integrity(&self) -> &StreamIntegrityHandle {
         &self.integrity

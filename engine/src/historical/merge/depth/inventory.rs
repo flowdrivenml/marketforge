@@ -333,13 +333,33 @@ fn invalid<T>(message: impl Into<String>) -> Result<T> {
 }
 
 fn build_stream_inventory(input: &ResolvedMergeInput) -> Result<Vec<DepthTaskInventory>> {
-    use crate::shared::persistence::parquet::{DepthSegmentManifest, read_depth_stream_boundaries};
+    use crate::shared::persistence::parquet::{
+        BoundaryReadLimits, DepthSegmentManifest, visit_depth_stream_boundaries,
+    };
     let mut tasks = Vec::new();
     let mut seen = HashSet::new();
     let mut total = 0u64;
+    let limits = if let Some(limits) = crate::shared::historical::limits::current() {
+        limits
+    } else if input.dataset_path.join("processing-runtime.toml").exists() {
+        crate::historical::normalize::load_processing_config(
+            input.dataset_path.join("processing-runtime.toml"),
+            &input.dataset_path,
+        )?
+        .resources
+        .normalization_limits
+    } else if input.dataset_path.join("processing-job.json").exists() {
+        crate::historical::job::load_committed_processing_job(&input.dataset_path)?
+            .resources
+            .normalization_limits
+    } else {
+        crate::shared::historical::limits::NormalizationLimits::default()
+    };
+    let legacy_limits = crate::shared::historical::limits::current().is_none()
+        && !input.dataset_path.join("processing-runtime.toml").exists()
+        && !input.dataset_path.join("processing-job.json").exists();
     for stream in &input.manifest.streams {
         let directory = input.dataset_path.join(&stream.directory);
-        let boundaries = read_depth_stream_boundaries(&directory)?;
         let global = read_depth_segments(&directory)?;
         let mut parts = input
             .manifest
@@ -348,7 +368,21 @@ fn build_stream_inventory(input: &ResolvedMergeInput) -> Result<Vec<DepthTaskInv
             .filter(|f| f.path.starts_with(&format!("{}/", stream.directory)))
             .collect::<Vec<_>>();
         parts.sort_by(|a, b| a.path.cmp(&b.path));
-        for source in boundaries.sources {
+        let mut source_limits = limits;
+        if legacy_limits {
+            // Without persisted runtime limits, independent initialization means
+            // a source book cannot contain more levels than its canonical rows.
+            // Do not impose today's default book cap on a valid legacy dataset.
+            source_limits.depth_levels = stream
+                .sources
+                .iter()
+                .map(|s| s.end_row.saturating_sub(s.start_row))
+                .max()
+                .unwrap_or(0)
+                .max(1);
+        }
+        let bounds = BoundaryReadLimits::for_sources(stream.sources.len(), source_limits)?;
+        let summary = visit_depth_stream_boundaries(&directory, bounds, |source| {
             if !seen.insert(source.task_id)
                 || !stream.sources.iter().any(|s| {
                     s.task_id == source.task_id
@@ -410,6 +444,10 @@ fn build_stream_inventory(input: &ResolvedMergeInput) -> Result<Vec<DepthTaskInv
             };
             super::event_validation::validate_depth_events(&task)?;
             tasks.push(task);
+            Ok(())
+        })?;
+        if summary.sources != stream.sources.len() || summary.total_rows != global.total_levels {
+            return invalid("depth boundary/source inventory mismatch");
         }
     }
     if total != input.manifest.events_written

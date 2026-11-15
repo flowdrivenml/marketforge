@@ -71,7 +71,10 @@ fn options_profile(
         "/../data/.config/live/general.toml"
     ))
     .unwrap();
-    config.runtime.processing.get_or_insert_with(Default::default);
+    config
+        .runtime
+        .processing
+        .get_or_insert_with(Default::default);
     config.publication.socket_path = dir.path().join("data.sock").display().to_string();
     config.metrics.snapshot_interval_ms = 10;
     config.metrics.prometheus.enabled = prometheus;
@@ -1068,7 +1071,7 @@ async fn executable_signal_shutdown_owns_actual_services_without_database() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     let mut opts = options(&dir, "ws://127.0.0.1:1", vec![], false);
-    opts.config.control.listen_address="127.0.0.1:0".into();
+    opts.config.control.listen_address = "127.0.0.1:0".into();
     let general = dir.path().join("general.toml");
     std::fs::write(&general, toml::to_string(&opts.config).unwrap()).unwrap();
     let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_marketforge-live"))

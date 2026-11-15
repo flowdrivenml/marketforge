@@ -167,7 +167,7 @@ impl InstrumentMatcher {
     }
 }
 
-fn okx_futures_family(symbol: &str) -> Option<&str> {
+pub fn okx_futures_family(symbol: &str) -> Option<&str> {
     let (family, expiry) = symbol.rsplit_once('-')?;
 
     if family.is_empty() || expiry.len() != 6 || !expiry.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -177,7 +177,7 @@ fn okx_futures_family(symbol: &str) -> Option<&str> {
     Some(family)
 }
 
-fn resolve_identity_column(headers: &ByteRecord) -> Result<usize> {
+pub(crate) fn resolve_identity_column(headers: &ByteRecord) -> Result<usize> {
     for name in ["instrument_name", "symbol"] {
         if let Some(index) = headers.iter().position(|header| header == name.as_bytes()) {
             return Ok(index);

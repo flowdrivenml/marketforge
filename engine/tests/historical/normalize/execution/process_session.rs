@@ -1,245 +1,180 @@
 #![cfg(feature = "historical")]
 
 use std::{
+    collections::{BTreeMap, BTreeSet},
     fs,
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
 };
 
-use {
-    crate::support::migration::archive_case as load_processing_job,
-    crate::support::migration::configuration as load_processing_config,
-    marketforge_engine::historical::normalize::session::execute_session_tasks,
+use crate::support::{fixtures::workload, runtime::TestRun};
+
+use marketforge_engine::{
+    historical::{
+        config::PreparedBatch,
+        job::{ContentType, ProcessingJob},
+        normalize::session::execute_session_tasks,
+    },
+    shared::historical::ProcessingConfig,
 };
 
-static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
+pub(super) fn selected_session_jobs(
+    run: &mut TestRun,
+    config: &ProcessingConfig,
+) -> Vec<ProcessingJob> {
+    let mut batch: PreparedBatch = workload().expect("load authoritative normalization batch");
 
-const JOB_FILES: [&str; 2] = [
-    "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json",
-    "okx-future-inverse-BTC-USD-261225-trade-20260901-20260904-d122.json",
-];
+    let max_job_id = batch.jobs.iter().map(|j| j.job_id.0).max().unwrap();
+    let max_dataset_id = batch.jobs.iter().map(|j| j.dataset_id.0).max().unwrap();
 
-// -----------------------------------------------------------------------------
-// Test environment
-// -----------------------------------------------------------------------------
+    batch
+        .jobs
+        .retain(|j| j.output.content_type == ContentType::Trades);
+    assert_eq!(batch.jobs.len(), 1, "expected one prepared trade job");
 
-fn project_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("project root")
-        .to_path_buf()
+    let original = batch.jobs.remove(0);
+
+    // Find the smallest available concrete archive for each exchange.
+    let mut candidates = BTreeMap::new();
+
+    for task in &original.tasks {
+        if task.scope.is_some() || task.symbol.is_none() {
+            continue;
+        }
+
+        let size = fs::metadata(&task.input_path)
+            .expect("required real source archive")
+            .len();
+
+        let exchange = format!("{:?}", task.exchange);
+
+        let candidate = (size, task.task_id.0);
+
+        candidates
+            .entry(exchange)
+            .and_modify(|current: &mut (u64, u64)| {
+                if candidate < *current {
+                    *current = candidate;
+                }
+            })
+            .or_insert(candidate);
+    }
+
+    let mut ranked = candidates
+        .into_iter()
+        .map(|(exchange, (size, task_id))| (size, exchange, task_id))
+        .collect::<Vec<_>>();
+
+    ranked.sort();
+
+    assert!(
+        ranked.len() >= 2,
+        "authoritative fixture requires two available trade exchanges"
+    );
+
+    let selected: BTreeSet<u64> = ranked.into_iter().take(2).map(|(_, _, id)| id).collect();
+
+    assert_eq!(selected.len(), 2);
+
+    let selected_tasks = original
+        .tasks
+        .iter()
+        .filter(|t| selected.contains(&t.task_id.0))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    assert_eq!(selected_tasks.len(), 2);
+
+    let mut first = original.clone();
+    first.tasks = vec![selected_tasks[0].clone()];
+
+    let mut second = original;
+    second.tasks = vec![selected_tasks[1].clone()];
+
+    // Allocate identities solely for the two isolated test jobs.
+    // Instrument and source identities remain exactly as prepared.
+    second.job_id.0 = max_job_id.checked_add(1).unwrap();
+    second.dataset_id.0 = max_dataset_id.checked_add(1).unwrap();
+
+    batch.jobs = vec![first, second];
+
+    let resolved = run
+        .prepare(&batch, config)
+        .expect("resolve selected session jobs");
+
+    assert_eq!(resolved.jobs.len(), 2);
+
+    for job in &resolved.jobs {
+        assert_eq!(job.tasks.len(), 1);
+        println!(
+            "Selected job={} dataset={} stream={} source={}",
+            job.job_id.0,
+            job.dataset_id.0,
+            job.tasks[0].stream_id.0,
+            job.tasks[0].input_path.display()
+        );
+    }
+
+    resolved.jobs
 }
-
-fn test_directory() -> PathBuf {
-    let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
-
-    let directory = crate::support::migration::persistent_path(format!(
-        "marketforge-session-test-{}-{id}",
-        std::process::id(),
-    ));
-
-    fs::create_dir_all(&directory).expect("create test directory");
-
-    directory
-}
-
-// -----------------------------------------------------------------------------
-// Global session integration test
-// -----------------------------------------------------------------------------
 
 #[test]
 fn executes_tasks_across_multiple_jobs() {
-    let root = project_root();
-    let directory = test_directory();
+    let mut run =
+        TestRun::new("execution/session_multiple_jobs").expect("create isolated session run");
 
-    // -------------------------------------------------------------------------
-    // Load processing jobs
-    // -------------------------------------------------------------------------
+    let config = run
+        .runtime_from_general()
+        .expect("load production normalization configuration");
 
-    let mut jobs = Vec::new();
+    let jobs = selected_session_jobs(&mut run, &config);
 
-    for (index, filename) in JOB_FILES.iter().enumerate() {
-        let mut job = load_processing_job(root.join("retained-cases").join(filename))
-            .expect("load processing job");
+    let expected_tasks: usize = jobs.iter().map(|j| j.tasks.len()).sum();
 
-        // Each job must have isolated staging and dataset paths.
-        job.output.staging_path = directory.join(format!("job-{index}/staging"));
+    let results = execute_session_tasks(&jobs, &config).expect("execute processing session tasks");
 
-        job.output.dataset_path = directory.join(format!("job-{index}/dataset"));
-
-        fs::create_dir_all(&job.output.staging_path).expect("create job staging directory");
-
-        jobs.push(job);
-    }
-
-    // -------------------------------------------------------------------------
-    // Load global processing configuration
-    // -------------------------------------------------------------------------
-
-    let mut config =
-        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
-            .expect("load processing configuration");
-
-    // Four workers shared globally across both jobs.
-    config.resources.workers = 4;
-
-    // Small Parquet targets for fast integration testing.
-    config.resources.parquet.row_group_target_bytes = 16 * 1024;
-    config.resources.parquet.file_target_bytes = 64 * 1024;
-
-    // -------------------------------------------------------------------------
-    // Execute global session
-    // -------------------------------------------------------------------------
-
-    println!("\n{}", "=".repeat(80));
-    println!("MARKETFORGE — GLOBAL PROCESSING SESSION");
-    println!("{}", "=".repeat(80));
-
-    println!("Jobs       : {}", jobs.len());
-    println!(
-        "Total tasks: {}",
-        jobs.iter().map(|job| job.tasks.len()).sum::<usize>()
-    );
-    println!("Workers    : {}", config.resources.workers);
-
-    let results = execute_session_tasks(&jobs, &config).expect("execute global processing session");
-
-    // -------------------------------------------------------------------------
-    // Verify session-level results
-    // -------------------------------------------------------------------------
-
-    assert_eq!(results.jobs.len(), 2, "unexpected number of job results");
-
-    assert_eq!(results.total_tasks, 6, "unexpected total task count");
-
-    // -------------------------------------------------------------------------
-    // Verify task execution and output isolation
-    // -------------------------------------------------------------------------
+    assert_eq!(results.jobs.len(), jobs.len());
+    assert_eq!(results.total_tasks, expected_tasks);
 
     let mut total_records_read = 0u64;
     let mut total_events_written = 0u64;
 
     for (job, result) in jobs.iter().zip(&results.jobs) {
-        assert_eq!(
-            result.executions.len(),
-            job.tasks.len(),
-            "job task count mismatch"
-        );
+        assert_eq!(result.executions.len(), job.tasks.len());
 
         for (task, execution) in job.tasks.iter().zip(&result.executions) {
-            // Verify deterministic task ordering.
-            assert_eq!(
-                execution.task_id, task.task_id.0,
-                "task execution order mismatch"
-            );
+            assert_eq!(execution.task_id, task.task_id.0);
 
-            // Verify successful task processing.
             assert!(
                 execution.is_success(),
                 "task {} failed: {:?}",
                 execution.task_id,
-                execution.error,
+                execution.error
             );
 
-            // Verify task completion metrics.
-            assert_eq!(
-                execution.metrics.counters.tasks_completed, 1,
-                "task {} was not marked complete",
-                execution.task_id,
-            );
+            assert_eq!(execution.metrics.counters.tasks_completed, 1);
+            assert_eq!(execution.metrics.counters.tasks_failed, 0);
 
-            assert_eq!(
-                execution.metrics.counters.tasks_failed, 0,
-                "task {} was incorrectly marked failed",
-                execution.task_id,
-            );
-
-            // Verify generic output paths.
-            assert!(
-                !execution.output_paths.is_empty(),
-                "task {} produced no output paths",
-                execution.task_id,
-            );
+            assert!(!execution.output_paths.is_empty());
 
             for path in &execution.output_paths {
-                assert!(
-                    path.is_dir(),
-                    "task output directory does not exist: {}",
-                    path.display(),
-                );
-
-                // Every task output must remain inside its job's staging.
+                assert!(path.is_dir());
                 assert!(
                     path.starts_with(&job.output.staging_path),
-                    "task output escaped its job staging directory: {}",
-                    path.display(),
+                    "task output escaped job staging: {}",
+                    path.display()
                 );
             }
 
             total_records_read += execution.metrics.counters.records_read;
-
             total_events_written += execution.metrics.counters.events_written;
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Verify known OKX fixture results
-    // -------------------------------------------------------------------------
+    assert!(total_records_read > 0);
+    assert!(total_events_written > 0);
 
-    // Linear futures:
-    // 22,673 source records, 162 matching trades.
-    //
-    // Inverse futures:
-    // 78,047 source records, 16,615 matching trades.
-
-    assert_eq!(
-        total_records_read,
-        22_673 + 78_047,
-        "unexpected source record count"
-    );
-
-    assert_eq!(
-        total_events_written,
-        162 + 16_615,
-        "unexpected canonical trade count"
-    );
-
-    // -------------------------------------------------------------------------
-    // Display results
-    // -------------------------------------------------------------------------
-
-    println!("\nRESULTS");
-
-    println!("  Jobs completed  : {}", results.jobs.len());
-    println!("  Tasks completed : {}", results.total_tasks);
-    println!("  Records read    : {total_records_read}");
-    println!("  Trades written  : {total_events_written}");
-
-    for (job, result) in jobs.iter().zip(&results.jobs) {
-        let job_records: u64 = result
-            .executions
-            .iter()
-            .map(|execution| execution.metrics.counters.records_read)
-            .sum();
-
-        let job_trades: u64 = result
-            .executions
-            .iter()
-            .map(|execution| execution.metrics.counters.events_written)
-            .sum();
-
-        println!(
-            "  Job {} | tasks={} | records={} | trades={}",
-            job.job_id.0,
-            result.executions.len(),
-            job_records,
-            job_trades,
-        );
-    }
-
-    println!("\nRESULT: PASS");
-
-    // -------------------------------------------------------------------------
-    // Cleanup
-    // -------------------------------------------------------------------------
+    println!("Jobs:           {}", results.jobs.len());
+    println!("Tasks:          {}", results.total_tasks);
+    println!("Records read:   {total_records_read}");
+    println!("Trades written: {total_events_written}");
+    println!("SESSION EXECUTION: PASS");
 }

@@ -124,6 +124,37 @@ impl ResourceBudget {
         })
     }
 
+    /// Nonblocking admission for callers that already retain capacity.
+    pub fn try_acquire(
+        &self,
+        requirements: ResourceRequirements,
+    ) -> Result<Option<ResourceReservation<'_>>> {
+        self.validate_requirements(requirements)?;
+        let mut usage = self
+            .usage
+            .lock()
+            .map_err(|_| invalid_error("resource budget mutex poisoned"))?;
+        if !self.fits(*usage, requirements) {
+            return Ok(None);
+        }
+        usage.memory_bytes = usage
+            .memory_bytes
+            .checked_add(requirements.memory_bytes)
+            .ok_or_else(|| invalid_error("memory reservation overflow"))?;
+        usage.scratch_bytes = usage
+            .scratch_bytes
+            .checked_add(requirements.scratch_bytes)
+            .ok_or_else(|| invalid_error("scratch reservation overflow"))?;
+        usage.open_files = usage
+            .open_files
+            .checked_add(requirements.open_files)
+            .ok_or_else(|| invalid_error("file reservation overflow"))?;
+        Ok(Some(ResourceReservation {
+            budget: self,
+            requirements,
+        }))
+    }
+
     // -------------------------------------------------------------------------
     // Resource inspection
     // -------------------------------------------------------------------------
@@ -144,27 +175,30 @@ impl ResourceBudget {
     // -------------------------------------------------------------------------
 
     fn validate_requirements(&self, requirements: ResourceRequirements) -> Result<()> {
-        if requirements.memory_bytes > self.capacity.memory_bytes {
-            return invalid(format!(
-                "task memory requirement {} exceeds budget {}",
-                requirements.memory_bytes, self.capacity.memory_bytes,
-            ));
+        for (name, permitted, requested) in [
+            (
+                "memory bytes",
+                self.capacity.memory_bytes,
+                requirements.memory_bytes,
+            ),
+            (
+                "scratch bytes",
+                self.capacity.scratch_bytes,
+                requirements.scratch_bytes,
+            ),
+            (
+                "open files",
+                self.capacity.open_files,
+                requirements.open_files,
+            ),
+        ] {
+            crate::shared::historical::limits::check(
+                name,
+                permitted,
+                requested,
+                "resource admission",
+            )?;
         }
-
-        if requirements.scratch_bytes > self.capacity.scratch_bytes {
-            return invalid(format!(
-                "task scratch requirement {} exceeds budget {}",
-                requirements.scratch_bytes, self.capacity.scratch_bytes,
-            ));
-        }
-
-        if requirements.open_files > self.capacity.open_files {
-            return invalid(format!(
-                "task open-file requirement {} exceeds budget {}",
-                requirements.open_files, self.capacity.open_files,
-            ));
-        }
-
         Ok(())
     }
 
@@ -220,4 +254,29 @@ fn invalid_error(message: impl Into<String>) -> MarketForgeError {
 
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(invalid_error(message))
+}
+
+/// A retained-state reservation can outlive the worker-pool stack frame.
+#[derive(Debug)]
+pub struct OwnedResourceReservation {
+    budget: std::sync::Arc<ResourceBudget>,
+    requirements: ResourceRequirements,
+}
+impl ResourceBudget {
+    pub fn acquire_owned(
+        self: &std::sync::Arc<Self>,
+        requirements: ResourceRequirements,
+    ) -> Result<OwnedResourceReservation> {
+        let reservation = self.acquire(requirements)?;
+        std::mem::forget(reservation);
+        Ok(OwnedResourceReservation {
+            budget: self.clone(),
+            requirements,
+        })
+    }
+}
+impl Drop for OwnedResourceReservation {
+    fn drop(&mut self) {
+        self.budget.release(self.requirements);
+    }
 }

@@ -24,8 +24,8 @@ use super::latency::{LatencySnapshot, LatencyTracker};
 /// previous snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicationMetricsSnapshot {
-    pub queued_frames:u64,
-    pub frame_capacity_failures_total:u64,
+    pub queued_frames: u64,
+    pub frame_capacity_failures_total: u64,
 
     pub frames_written_total: u64,
     pub bytes_written_total: u64,
@@ -95,8 +95,8 @@ pub struct PublicationConnectionSnapshot {
 /// succeeds or changes the authoritative state.
 #[derive(Debug)]
 pub struct PublicationMetrics {
-    queued_frames:AtomicU64,
-    frame_capacity_failures_total:AtomicU64,
+    queued_frames: AtomicU64,
+    frame_capacity_failures_total: AtomicU64,
 
     frames_written_total: AtomicU64,
     bytes_written_total: AtomicU64,
@@ -123,15 +123,38 @@ impl Default for PublicationMetrics {
 }
 
 impl PublicationMetrics {
-    pub(crate) fn frame_capacity_failed(&self){self.frame_capacity_failures_total.fetch_add(1,Ordering::Relaxed);}
-    pub(crate) fn connection_opened(&self){self.connections_active.fetch_add(1,Ordering::Relaxed);}
-    pub(crate) fn connection_closed(&self){self.connections_active.fetch_sub(1,Ordering::Relaxed);self.record_connection_disconnected();}
-    pub(crate) fn subscription_opened(&self){self.subscriptions_active.fetch_add(1,Ordering::Relaxed);}
-    pub(crate) fn subscription_closed(&self){self.subscriptions_active.fetch_sub(1,Ordering::Relaxed);}
-    pub(crate) fn queue_added(&self,bytes:u64){self.queued_frames.fetch_add(1,Ordering::Relaxed);self.queued_bytes_total.fetch_add(bytes,Ordering::Relaxed);}
-    pub(crate) fn queue_removed(&self,bytes:u64){self.queued_frames.fetch_sub(1,Ordering::Relaxed);self.queued_bytes_total.fetch_sub(bytes,Ordering::Relaxed);}
-    pub(crate) fn written(&self,bytes:u64){self.frames_written_total.fetch_add(1,Ordering::Relaxed);self.bytes_written_total.fetch_add(bytes,Ordering::Relaxed);}
-    pub(crate) fn write_failed(&self){self.write_failures_total.fetch_add(1,Ordering::Relaxed);}
+    pub(crate) fn frame_capacity_failed(&self) {
+        self.frame_capacity_failures_total
+            .fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn connection_opened(&self) {
+        self.connections_active.fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn connection_closed(&self) {
+        self.connections_active.fetch_sub(1, Ordering::Relaxed);
+        self.record_connection_disconnected();
+    }
+    pub(crate) fn subscription_opened(&self) {
+        self.subscriptions_active.fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn subscription_closed(&self) {
+        self.subscriptions_active.fetch_sub(1, Ordering::Relaxed);
+    }
+    pub(crate) fn queue_added(&self, bytes: u64) {
+        self.queued_frames.fetch_add(1, Ordering::Relaxed);
+        self.queued_bytes_total.fetch_add(bytes, Ordering::Relaxed);
+    }
+    pub(crate) fn queue_removed(&self, bytes: u64) {
+        self.queued_frames.fetch_sub(1, Ordering::Relaxed);
+        self.queued_bytes_total.fetch_sub(bytes, Ordering::Relaxed);
+    }
+    pub(crate) fn written(&self, bytes: u64) {
+        self.frames_written_total.fetch_add(1, Ordering::Relaxed);
+        self.bytes_written_total.fetch_add(bytes, Ordering::Relaxed);
+    }
+    pub(crate) fn write_failed(&self) {
+        self.write_failures_total.fetch_add(1, Ordering::Relaxed);
+    }
 
     // ========================================================
     // CONSTRUCTION
@@ -139,8 +162,8 @@ impl PublicationMetrics {
 
     pub fn new() -> Self {
         Self {
-            queued_frames:AtomicU64::new(0),
-            frame_capacity_failures_total:AtomicU64::new(0),
+            queued_frames: AtomicU64::new(0),
+            frame_capacity_failures_total: AtomicU64::new(0),
             frames_written_total: AtomicU64::new(0),
             bytes_written_total: AtomicU64::new(0),
             write_failures_total: AtomicU64::new(0),
@@ -272,12 +295,14 @@ impl PublicationMetrics {
     /// Latency interval statistics reset after collection.
     pub fn take_snapshot(&self) -> PublicationMetricsSnapshot {
         PublicationMetricsSnapshot {
-            queued_frames:self.queued_frames.load(Ordering::Relaxed),
-            frame_capacity_failures_total:self.frame_capacity_failures_total.load(Ordering::Relaxed),
+            queued_frames: self.queued_frames.load(Ordering::Relaxed),
+            frame_capacity_failures_total: self
+                .frame_capacity_failures_total
+                .load(Ordering::Relaxed),
 
-            frames_written_total:self.frames_written_total.load(Ordering::Relaxed),
-            bytes_written_total:self.bytes_written_total.load(Ordering::Relaxed),
-            write_failures_total:self.write_failures_total.load(Ordering::Relaxed),
+            frames_written_total: self.frames_written_total.load(Ordering::Relaxed),
+            bytes_written_total: self.bytes_written_total.load(Ordering::Relaxed),
+            write_failures_total: self.write_failures_total.load(Ordering::Relaxed),
             connections_active: self.connections_active.load(Ordering::Relaxed),
 
             subscriptions_active: self.subscriptions_active.load(Ordering::Relaxed),

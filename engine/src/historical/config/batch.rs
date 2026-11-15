@@ -1,4 +1,4 @@
-//! Production schema-v3 prepared batches. No database, archive reads, or writes.
+//! Production schema-v4 prepared batches. No database, archive reads, or writes.
 use super::{
     FormatCatalog, MarketCategory,
     catalog::{fingerprint, invalid},
@@ -90,26 +90,63 @@ pub struct PreparedTask {
     pub stream_rank: u32,
     pub scope: Option<FamilyScope>,
     pub source_options: Option<SourceOptions>,
-    pub source_time_bounds: Option<SourceTimeBounds>,
+    pub instrument_selection: Option<InstrumentSelection>,
 }
-/// Inclusive declared event-time bounds, verified against accepted output.
-/// Numbered partitions may share a calendar window; partition order must be
-/// explicit and actual append boundaries are still checked during execution.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct SourceTimeBounds {
-    pub start_timestamp_ns: i64,
-    pub end_timestamp_ns: i64,
-    pub partition: Option<u32>,
+/// Exact native-symbol selection inside the declared source population.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum InstrumentSelection {
+    All,
+    Include { symbols: Vec<String> },
 }
-impl SourceTimeBounds {
+impl<'de> Deserialize<'de> for InstrumentSelection {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        use serde::de::Error;
+        let value = Value::deserialize(deserializer)?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| D::Error::custom("instrument_selection must be an object"))?;
+        let selection = match object.get("mode").and_then(Value::as_str) {
+            Some("all") if object.len() == 1 => Self::All,
+            Some("include") if object.len() == 2 && object.contains_key("symbols") => {
+                Self::Include {
+                    symbols: serde_json::from_value(object["symbols"].clone())
+                        .map_err(D::Error::custom)?,
+                }
+            }
+            _ => {
+                return Err(D::Error::custom(
+                    "instrument_selection accepts only {mode: all} or {mode: include, symbols: [exact symbols]}",
+                ));
+            }
+        };
+        selection.validate().map_err(D::Error::custom)?;
+        Ok(selection)
+    }
+}
+impl InstrumentSelection {
     pub fn validate(&self) -> Result<()> {
-        if self.start_timestamp_ns > self.end_timestamp_ns || self.partition == Some(0) {
-            return Err(invalid(
-                "invalid inclusive source_time_bounds or zero partition",
-            ));
+        if let Self::Include { symbols } = self {
+            let mut seen = BTreeSet::new();
+            if symbols.is_empty()
+                || symbols
+                    .iter()
+                    .any(|s| s.trim().is_empty() || !seen.insert(s))
+            {
+                return Err(invalid(
+                    "instrument_selection.include requires nonempty unique exact symbols",
+                ));
+            }
         }
         Ok(())
+    }
+    pub fn selects(&self, symbol: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Include { symbols } => symbols.iter().any(|s| s == symbol),
+        }
     }
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -194,12 +231,12 @@ pub fn load_normalization_batch(
 }
 impl PreparedBatch {
     pub fn validate(&self, root: &Path) -> Result<()> {
-        if self.schema_version != 3
+        if self.schema_version != 4
             || self.kind != "normalization_batch"
             || self.status != "prepared"
         {
             return Err(invalid(
-                "expected schema_version=3, kind=normalization_batch, status=prepared",
+                "expected schema_version=4, kind=normalization_batch, status=prepared",
             ));
         }
         if self.run_id.trim().is_empty()
@@ -285,8 +322,21 @@ impl PreparedBatch {
             let mut streams = BTreeMap::new();
             let mut ranks = BTreeMap::new();
             for t in &j.tasks {
-                if let Some(bounds) = &t.source_time_bounds {
-                    bounds.validate()?;
+                if let Some(selection) = &t.instrument_selection {
+                    selection.validate()?;
+                    if let Some(symbol) = &t.symbol {
+                        if !matches!(selection, InstrumentSelection::Include { symbols } if symbols.as_slice() == [symbol.clone()])
+                        {
+                            return Err(invalid(
+                                "concrete symbol permits only omitted selection or include of that exact symbol; all cannot broaden it",
+                            ));
+                        }
+                    }
+                }
+                if t.scope.is_some() && t.instrument_selection.is_none() {
+                    return Err(invalid(
+                        "family task requires explicit instrument_selection",
+                    ));
                 }
                 if t.task_id.0 == 0
                     || !tasks.insert(t.task_id.0)
@@ -341,9 +391,18 @@ impl PreparedBatch {
     ) -> Result<ProcessingJob> {
         validate_processing_config(runtime)?;
         let mut tasks = vec![];
+        let mut prepared_bytes = 0u64;
+        let instrument_catalog_sha256 = fingerprint(&self.instruments)?;
         let mut stream_keys = BTreeMap::new();
         let mut next_id = job.tasks.iter().map(|t| t.task_id.0).max().unwrap_or(0);
-        for t in &job.tasks {
+        for (source_priority, t) in job.tasks.iter().enumerate() {
+            let _limits = crate::shared::historical::limits::LimitScope::enter(
+                runtime.resources.normalization_limits,
+                format!(
+                    "job={}, source task={}, preparation",
+                    job.job_id.0, t.task_id.0
+                ),
+            );
             let data_type = match job.output.content_type {
                 ContentType::Trades => "trades",
                 ContentType::Depth => "depth",
@@ -360,23 +419,61 @@ impl PreparedBatch {
                 .get(&id)
                 .map_err(|e| invalid(format!("task {} expected profile {id}: {e}", t.task_id.0)))?;
             let bindings = if let Some(scope) = &t.scope {
-                if scope.members.is_empty() {
+                let selection = t
+                    .instrument_selection
+                    .as_ref()
+                    .ok_or_else(|| invalid("family task requires instrument_selection"))?;
+                let mut selected = self
+                    .instruments
+                    .iter()
+                    .filter(|i| {
+                        i.exchange == t.exchange
+                            && i.instrument_type == t.instrument_type
+                            && i.market_category == t.market_category
+                            && family_of(i.exchange, i.instrument_type, &i.symbol)
+                                == Some(scope.identifier.as_str())
+                            && selection.selects(&i.symbol)
+                    })
+                    .collect::<Vec<_>>();
+                selected.sort_by(|a, b| {
+                    a.symbol
+                        .cmp(&b.symbol)
+                        .then(a.instrument_id.cmp(&b.instrument_id))
+                });
+                if let InstrumentSelection::Include { symbols } = selection {
+                    for symbol in symbols {
+                        if family_of(t.exchange, t.instrument_type, symbol)
+                            != Some(scope.identifier.as_str())
+                        {
+                            return Err(invalid(format!(
+                                "selected symbol {symbol} is outside family scope {}",
+                                scope.identifier
+                            )));
+                        }
+                        if !selected.iter().any(|i| &i.symbol == symbol) {
+                            return Err(invalid(format!(
+                                "selected symbol {symbol} requires authoritative offline metadata; no specification may be fabricated"
+                            )));
+                        }
+                    }
+                }
+                if selected.is_empty() {
                     return Err(invalid(format!(
-                        "task {} family {} requires authoritative concrete scope.members and metadata",
+                        "task {} family {} has no authoritative concrete metadata; all still requires metadata for every encountered eligible symbol",
                         t.task_id.0, scope.identifier
                     )));
                 }
-                scope
-                    .members
-                    .iter()
-                    .map(|m| {
-                        self.instruments
-                            .iter()
-                            .find(|i| i.instrument_id == m.instrument_id)
-                            .map(|i| (i, m.archive_member.clone()))
-                            .ok_or_else(|| invalid("unknown family member"))
-                    })
-                    .collect::<Result<Vec<_>>>()?
+                crate::shared::historical::limits::check(
+                    "family concrete instruments",
+                    runtime.resources.normalization_limits.metric_entries,
+                    selected.len() as u64,
+                    "family resolution",
+                )?;
+                selected.into_iter().map(|i| {
+                    let member = scope.members.iter().find(|m| m.instrument_id == i.instrument_id).and_then(|m|m.archive_member.clone());
+                    if matches!(selection,InstrumentSelection::All) && member.is_some() { return Err(invalid("all cannot be confined to a finite archive-member map; use a native-symbol mixed member or an archive with one data member; full multi-member enumeration is not supported")); }
+                    Ok((i,member))
+                }).collect::<Result<Vec<_>>>()?
             } else {
                 let matches: Vec<_> = self
                     .instruments
@@ -405,7 +502,6 @@ impl PreparedBatch {
                 }
                 vec![(*i, None)]
             };
-            let family_symbols: Vec<_> = bindings.iter().map(|(i, _)| i.symbol.clone()).collect();
             for (index, (i, member)) in bindings.into_iter().enumerate() {
                 if i.exchange != t.exchange
                     || i.instrument_type != t.instrument_type
@@ -416,13 +512,10 @@ impl PreparedBatch {
                     return Err(invalid("incompatible family instrument identity/assets"));
                 }
                 if let Some(scope) = &t.scope {
-                    if !i.symbol.starts_with(&format!("{}-", scope.identifier)) {
+                    if family_of(i.exchange, i.instrument_type, &i.symbol)
+                        != Some(scope.identifier.as_str())
+                    {
                         return Err(invalid("family member symbol does not belong to scope"));
-                    }
-                    if data_type == "depth" && member.is_none() {
-                        return Err(invalid(
-                            "family depth requires explicit archive_member per concrete instrument",
-                        ));
                     }
                 }
                 let task_id = if index == 0 {
@@ -438,7 +531,14 @@ impl PreparedBatch {
                 } else {
                     t.stream_id.clone()
                 };
-                stream_keys.insert(stream_id.0.clone(), (t.stream_rank, i.symbol.clone()));
+                if stream_keys
+                    .insert(stream_id.0.clone(), (t.stream_rank, i.symbol.clone()))
+                    .is_some_and(|old| old != (t.stream_rank, i.symbol.clone()))
+                {
+                    return Err(invalid(
+                        "derived concrete stream identity collides with another declared stream",
+                    ));
+                }
                 let mut task = WorkTask {
                     task_id,
                     stream_id,
@@ -476,30 +576,64 @@ impl PreparedBatch {
                     .source_ordering
                     .ok_or_else(|| invalid("missing source ordering"))?;
                 task.normalizations = effective_profile.normalizations.clone();
-                catalog.check_task(&task, &effective_profile)?;
+                let deferred_instrument_error = match catalog.check_task(&task, &effective_profile)
+                {
+                    Ok(()) => None,
+                    Err(error) if t.scope.is_some() => Some(error.to_string()),
+                    Err(error) => return Err(error),
+                };
                 task.raw_schema["marketforge_profile"] =
                     json!({"id":id,"sha256":profile.fingerprint});
-                task.raw_schema["marketforge_source"] = json!({"task_id":t.task_id,"stream_id":t.stream_id,"stream_rank":t.stream_rank,"scope":t.scope,"source_options":t.source_options,"source_time_bounds":t.source_time_bounds,"family_symbols":if t.scope.is_some(){Some(&family_symbols)}else{None},"instrument_namespace":self.instrument_namespace,"instrument":i,"instrument_catalog_sha256":fingerprint(&self.instruments)?});
+                task.raw_schema["marketforge_source"] = json!({"task_id":t.task_id,"stream_id":t.stream_id,"stream_rank":t.stream_rank,"scope":t.scope,"source_options":t.source_options,"prepared_schema_version":4,"source_priority":source_priority,"instrument_selection":t.instrument_selection,"instrument_namespace":self.instrument_namespace,"instrument":i,"deferred_instrument_error":deferred_instrument_error,"instrument_catalog_sha256":instrument_catalog_sha256});
+                let footprint =
+                    crate::historical::normalize::resources::prepared_task_memory(&task)?;
+                prepared_bytes = prepared_bytes
+                    .checked_add(
+                        footprint
+                            .checked_mul(3)
+                            .ok_or_else(|| invalid("prepared expansion accounting overflow"))?,
+                    )
+                    .ok_or_else(|| invalid("prepared expansion accounting overflow"))?;
+                crate::shared::historical::limits::check(
+                    "prepared expansion bytes",
+                    runtime.resources.memory_budget_bytes,
+                    prepared_bytes,
+                    "family/concrete resolution",
+                )?;
                 tasks.push(task);
             }
         }
-        let expanded = job.tasks.iter().any(|t| t.scope.is_some());
+        let explicit = job
+            .tasks
+            .iter()
+            .filter(|t| t.scope.is_none())
+            .map(|t| (t.stream_id.0.clone(), t.stream_rank))
+            .collect::<BTreeMap<_, _>>();
+        let mut occupied = explicit.values().copied().collect::<BTreeSet<_>>();
+        let mut next_rank = 0u32;
         let mut keys: Vec<_> = stream_keys.into_iter().collect();
         keys.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
         let streams = keys
             .into_iter()
-            .enumerate()
-            .map(|(index, (id, (rank, _)))| {
+            .map(|(id, _)| {
+                let rank = if let Some(rank) = explicit.get(&id) {
+                    *rank
+                } else {
+                    loop {
+                        next_rank = next_rank
+                            .checked_add(1)
+                            .ok_or_else(|| invalid("derived stream rank overflow"))?;
+                        if occupied.insert(next_rank) {
+                            break next_rank;
+                        }
+                    }
+                };
                 Ok(StreamConfig {
                     stream_id: StreamId(id),
-                    stream_rank: if expanded {
-                        u32::try_from(index + 1).map_err(|_| invalid("stream rank overflow"))?
-                    } else {
-                        rank
-                    },
+                    stream_rank: rank,
                 })
             })
-            .collect::<Result<_>>()?;
+            .collect::<Result<Vec<_>>>()?;
         let resolved = ProcessingJob {
             protocol_version: PROCESSING_PROTOCOL_VERSION,
             job_id: job.job_id,
@@ -518,6 +652,17 @@ impl PreparedBatch {
         };
         validate_processing_job_structure(&resolved)?;
         Ok(resolved)
+    }
+}
+pub(crate) fn family_of(exchange: Exchange, kind: InstrumentKind, symbol: &str) -> Option<&str> {
+    match (exchange, kind) {
+        (Exchange::Okx, InstrumentKind::Future) => {
+            crate::shared::formats::trades::okx_futures_family(symbol)
+        }
+        (Exchange::Okx, InstrumentKind::Perpetual) => {
+            symbol.strip_suffix("-SWAP").filter(|s| !s.is_empty())
+        }
+        _ => None,
     }
 }
 fn token(v: &impl Serialize) -> Result<String> {
@@ -539,3 +684,6 @@ fn identity(i: &OfflineInstrument) -> Result<String> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(crate) mod selection_tests;

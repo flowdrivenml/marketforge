@@ -114,8 +114,8 @@ pub struct PublicationConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ControlConfig {
-    #[serde(default,skip_serializing_if="super::ManagementConfig::is_default")]
-    pub management:super::ManagementConfig,
+    #[serde(default, skip_serializing_if = "super::ManagementConfig::is_default")]
+    pub management: super::ManagementConfig,
     /// Address on which the mandatory management REST API listens.
     ///
     /// Example: "127.0.0.1:8080"
@@ -1031,11 +1031,46 @@ impl DerivedProcessingConfig {
 }
 
 /// Bounded coordination settings; existing configurations inherit explicit defaults.
-#[derive(Debug,Clone,Copy,PartialEq,Eq,Serialize,Deserialize)]
-#[serde(default,deny_unknown_fields)]
-pub struct ApplicationRuntimeConfig {pub command_capacity:usize,pub max_definitions:usize,pub max_lifecycle_operations:usize,pub source_start_concurrency:usize,pub reconcile_interval_ms:u64,pub source_readiness_timeout_ms:u64}
-impl Default for ApplicationRuntimeConfig {fn default()->Self{Self{command_capacity:64,max_definitions:256,max_lifecycle_operations:260,source_start_concurrency:4,reconcile_interval_ms:25,source_readiness_timeout_ms:30000}}}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ApplicationRuntimeConfig {
+    pub command_capacity: usize,
+    pub max_definitions: usize,
+    pub max_lifecycle_operations: usize,
+    pub source_start_concurrency: usize,
+    pub reconcile_interval_ms: u64,
+    pub source_readiness_timeout_ms: u64,
+}
+impl Default for ApplicationRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            command_capacity: 64,
+            max_definitions: 256,
+            max_lifecycle_operations: 260,
+            source_start_concurrency: 4,
+            reconcile_interval_ms: 25,
+            source_readiness_timeout_ms: 30000,
+        }
+    }
+}
 impl ApplicationRuntimeConfig {
-    fn is_default(&self)->bool{self==&Self::default()}
-    pub fn validate(&self)->Result<(),String>{if !(1..=1024).contains(&self.command_capacity)||!(1..=1024).contains(&self.max_definitions)||self.max_lifecycle_operations<self.max_definitions.saturating_add(self.source_start_concurrency)||self.max_lifecycle_operations>2048||!(1..=64).contains(&self.source_start_concurrency)||!(1..=60000).contains(&self.reconcile_interval_ms)||!(1..=3600000).contains(&self.source_readiness_timeout_ms){return Err("runtime.application limits invalid or insufficient to prepare a cold dependency chain".into());}Ok(())}
+    fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+    pub fn validate(&self) -> Result<(), String> {
+        if !(1..=1024).contains(&self.command_capacity)
+            || !(1..=1024).contains(&self.max_definitions)
+            || self.max_lifecycle_operations
+                < self
+                    .max_definitions
+                    .saturating_add(self.source_start_concurrency)
+            || self.max_lifecycle_operations > 2048
+            || !(1..=64).contains(&self.source_start_concurrency)
+            || !(1..=60000).contains(&self.reconcile_interval_ms)
+            || !(1..=3600000).contains(&self.source_readiness_timeout_ms)
+        {
+            return Err("runtime.application limits invalid or insufficient to prepare a cold dependency chain".into());
+        }
+        Ok(())
+    }
 }

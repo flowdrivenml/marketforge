@@ -11,7 +11,7 @@ use super::models::{DATASET_MANIFEST_FILENAME, DatasetManifest};
 // Dataset manifest persistence
 // -----------------------------------------------------------------------------
 
-impl DatasetManifest {
+impl<M: serde::Serialize> DatasetManifest<M> {
     /// Persist the completed dataset manifest.
     ///
     /// The manifest is written only after all processing tasks
@@ -36,20 +36,27 @@ impl DatasetManifest {
         // Serialize manifest
         // ---------------------------------------------------------------------
 
-        let contents = serde_json::to_vec_pretty(self).map_err(|error| {
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|error| {
+                MarketForgeError::InvalidConfiguration(format!(
+                    "failed to create report {}: {error}",
+                    path.display()
+                ))
+            })?;
+        let mut writer = std::io::BufWriter::new(file);
+        serde_json::to_writer_pretty(&mut writer, self).map_err(|error| {
             MarketForgeError::InvalidConfiguration(format!(
-                "failed to serialize dataset manifest: {error}",
+                "failed to persist report {}: {error}",
+                path.display()
             ))
         })?;
-
-        // ---------------------------------------------------------------------
-        // Write manifest
-        // ---------------------------------------------------------------------
-
-        fs::write(&path, contents).map_err(|error| {
+        std::io::Write::flush(&mut writer).map_err(|error| {
             MarketForgeError::InvalidConfiguration(format!(
-                "failed to write dataset manifest {}: {error}",
-                path.display(),
+                "failed to flush report {}: {error}",
+                path.display()
             ))
         })?;
 

@@ -354,11 +354,17 @@ impl MetricsSnapshotCollector {
         // Build immutable snapshot
         // ----------------------------------------------------
 
-        let revision=state.revision.checked_add(1).ok_or("metrics revision exhausted")?;
+        let revision = state
+            .revision
+            .checked_add(1)
+            .ok_or("metrics revision exhausted")?;
         let snapshot = Arc::new(MetricsSnapshot {
             revision,
-            collected_at_unix_ns:std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().and_then(|d|u64::try_from(d.as_nanos()).ok()),
-            collection_duration_ns:u64::try_from(now.elapsed().as_nanos()).unwrap_or(u64::MAX),
+            collected_at_unix_ns: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|d| u64::try_from(d.as_nanos()).ok()),
+            collection_duration_ns: u64::try_from(now.elapsed().as_nanos()).unwrap_or(u64::MAX),
             interval_seconds,
 
             runtime: runtime_snapshot.clone(),
@@ -381,7 +387,7 @@ impl MetricsSnapshotCollector {
         // Commit new rate baselines
         // ----------------------------------------------------
 
-        state.revision=revision;
+        state.revision = revision;
         state.previous_collection_at = Some(now);
 
         state.previous_source_total = Some(runtime_snapshot.source_events_total);

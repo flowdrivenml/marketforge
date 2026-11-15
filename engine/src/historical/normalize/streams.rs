@@ -4,7 +4,7 @@ use super::{
     metrics::{ScopedIntegrityMetrics, TaskMetrics},
     parquet::ParquetTradeWriter,
     progress::{ProgressReporter, ProgressTaskId, WorkerProgress},
-    resources::{ResourceRequirements, estimate_task_resources},
+    resources::{ResourceRequirements, estimate_task_resources_with_limits},
     task::TaskExecution,
     worker::TradeSink,
 };
@@ -26,6 +26,32 @@ pub struct SourceSpan {
     /// Half-open canonical row range within this stream's ordered files.
     pub start_row: u64,
     pub end_row: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ranges: Vec<RowRange>,
+}
+impl SourceSpan {
+    pub fn row_count(&self) -> Result<u64> {
+        if self.ranges.is_empty() {
+            return self
+                .end_row
+                .checked_sub(self.start_row)
+                .ok_or_else(|| invalid("source row range underflow"));
+        }
+        self.ranges.iter().try_fold(0u64, |n, r| {
+            n.checked_add(
+                r.end_row
+                    .checked_sub(r.start_row)
+                    .ok_or_else(|| invalid("invalid source row range"))?,
+            )
+            .ok_or_else(|| invalid("source row total overflow"))
+        })
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RowRange {
+    pub start_row: u64,
+    pub end_row: u64,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -45,78 +71,59 @@ fn invalid(message: impl Into<String>) -> MarketForgeError {
 }
 fn fingerprint(value: &impl Serialize) -> Result<String> {
     use sha2::{Digest, Sha256};
-    Ok(
-        Sha256::digest(serde_json::to_vec(value).map_err(|e| invalid(e.to_string()))?)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect(),
-    )
+    Ok(super::hex_digest(Sha256::digest(
+        serde_json::to_vec(value).map_err(|e| invalid(e.to_string()))?,
+    )))
 }
-pub(super) fn bounds(task: &WorkTask) -> Result<Option<(i64, i64, Option<u64>)>> {
-    let v = &task.raw_schema["marketforge_source"]["source_time_bounds"];
-    if v.is_null() {
-        return Ok(None);
+pub(crate) fn is_family(task: &WorkTask) -> bool {
+    task.raw_schema["marketforge_source"]["prepared_schema_version"].as_u64() == Some(4)
+        && !task.raw_schema["marketforge_source"]["scope"].is_null()
+}
+pub(crate) fn priority(index: usize, task: &WorkTask) -> u64 {
+    if task.raw_schema["marketforge_source"]["prepared_schema_version"].as_u64() == Some(4) {
+        task.raw_schema["marketforge_source"]["source_priority"]
+            .as_u64()
+            .unwrap_or(index as u64)
+    } else {
+        index as u64
     }
-    let start = v["start_timestamp_ns"]
-        .as_i64()
-        .ok_or_else(|| invalid("invalid source start bound"))?;
-    let end = v["end_timestamp_ns"]
-        .as_i64()
-        .ok_or_else(|| invalid("invalid source end bound"))?;
-    let partition = v["partition"].as_u64();
-    if start > end || partition == Some(0) {
-        return Err(invalid("invalid source bounds/partition"));
-    }
-    Ok(Some((start, end, partition)))
+}
+pub(super) fn stream_key(task: &WorkTask) -> Result<String> {
+    fingerprint(&serde_json::json!([
+        task.stream_id,
+        task.exchange,
+        task.instrument_id,
+        task.symbol,
+        task.instrument,
+        task.normalizations,
+        task.source_ordering,
+        task.raw_schema["marketforge_source"]["instrument_namespace"],
+        task.raw_schema["marketforge_profile"],
+        task.raw_schema["marketforge_source"]["source_options"]
+    ]))
 }
 pub(crate) fn plan(job: &ProcessingJob) -> Result<Vec<StreamUnit<'_>>> {
     let mut groups: BTreeMap<String, Vec<(usize, &WorkTask)>> = BTreeMap::new();
     for (index, task) in job.tasks.iter().enumerate() {
-        // Exact interpreted-profile compatibility is intentionally conservative.
-        let identity = serde_json::json!([
-            task.stream_id,
-            task.exchange,
-            task.instrument_id,
-            task.symbol,
-            task.instrument,
-            task.normalizations,
-            task.source_ordering,
-            task.raw_schema["marketforge_profile"],
-            task.raw_schema["marketforge_source"]["source_options"]
-        ]);
-        let key = fingerprint(&identity)?;
+        let key = if is_family(task) {
+            fingerprint(&serde_json::json!([
+                "family-routing",
+                task.exchange,
+                task.instrument.instrument_kind,
+                task.raw_schema["marketforge_source"]["stream_id"],
+                task.raw_schema["marketforge_source"]["instrument_namespace"],
+                task.raw_schema["marketforge_source"]["scope"]["identifier"],
+                task.raw_schema["marketforge_profile"],
+                task.raw_schema["marketforge_source"]["source_options"]
+            ]))?
+        } else {
+            stream_key(task)?
+        };
         groups.entry(key).or_default().push((index, task));
     }
     let mut units = Vec::with_capacity(groups.len());
     for (key, mut tasks) in groups {
-        if tasks.len() > 1 {
-            let mut ordered = Vec::with_capacity(tasks.len());
-            for item in tasks {
-                let range = bounds(item.1)?.ok_or_else(|| {
-                    invalid(format!(
-                        "stream {} task {} requires source_time_bounds for shared output",
-                        item.1.stream_id.0, item.1.task_id.0
-                    ))
-                })?;
-                ordered.push((range, item));
-            }
-            ordered.sort_by_key(|(range, _)| *range);
-            for pair in ordered.windows(2) {
-                let (earlier, later) = (pair[0].0, pair[1].0);
-                let partitioned = earlier.0 == later.0
-                    && earlier.1 == later.1
-                    && earlier.2.is_some()
-                    && later.2.is_some()
-                    && earlier.2 < later.2;
-                if !partitioned && (earlier.1 > later.0 || earlier.0 == later.0) {
-                    return Err(invalid(format!(
-                        "stream {} has ambiguous/overlapping declared source ranges; provide distinct ordered partitions or reconcile upstream",
-                        pair[0].1.1.stream_id.0
-                    )));
-                }
-            }
-            tasks = ordered.into_iter().map(|(_, item)| item).collect();
-        }
+        tasks.sort_by_key(|(index, task)| (priority(*index, task), *index));
         units.push(StreamUnit { job, tasks, key });
     }
     Ok(units)
@@ -128,16 +135,42 @@ pub(crate) fn estimate(
 ) -> Result<ResourceRequirements> {
     let mut max = ResourceRequirements::default();
     for (_, task) in &unit.tasks {
-        let r = estimate_task_resources(task, &config.resources.parquet)?;
+        let r = estimate_task_resources_with_limits(
+            task,
+            &config.resources.parquet,
+            &config.resources.normalization_limits,
+        )?;
         max.memory_bytes = max.memory_bytes.max(r.memory_bytes);
         max.scratch_bytes = max.scratch_bytes.max(r.scratch_bytes);
         max.open_files = max.open_files.max(r.open_files);
+    }
+    if unit.tasks.len() > 1 || unit.tasks.iter().any(|(_, t)| is_family(t)) {
+        max.open_files = max.open_files.max(
+            config
+                .merge_fan_in
+                .min(
+                    config
+                        .resources
+                        .normalization_limits
+                        .open_files
+                        .saturating_sub(6) as usize,
+                )
+                .max(2) as u64
+                + 6,
+        ); // cursors, spool output, source/Parquet headroom
+        max.memory_bytes = max
+            .memory_bytes
+            .checked_add(config.resources.normalization_limits.reconciliation_bytes)
+            .ok_or_else(|| invalid("reconciliation reservation overflow"))?;
     }
     max.memory_bytes = max
         .memory_bytes
         .checked_add(
             (unit.tasks.len() as u64)
-                .checked_mul(512)
+                .checked_mul(
+                    (std::mem::size_of::<SourceSpan>()
+                        + std::mem::size_of::<(usize, TaskExecution)>()) as u64,
+                )
                 .ok_or_else(|| invalid("stream metadata estimate overflow"))?,
         )
         .ok_or_else(|| invalid("stream memory estimate overflow"))?;
@@ -148,7 +181,6 @@ struct TradeOutput<'a> {
     rows: u64,
     previous: Option<i64>,
     preceding_source_end: Option<i64>,
-    declared: Option<(i64, i64, Option<u64>)>,
 }
 impl TradeSink for TradeOutput<'_> {
     fn write_trade(&mut self, trade: Trade) -> Result<()> {
@@ -157,15 +189,6 @@ impl TradeSink for TradeOutput<'_> {
             return Err(invalid(format!(
                 "cross-source stream append regression: previous={:?}, current={timestamp}; reconciliation required",
                 self.preceding_source_end
-            )));
-        }
-        if self
-            .declared
-            .is_some_and(|(start, end, _)| timestamp < start || timestamp > end)
-        {
-            return Err(invalid(format!(
-                "accepted timestamp {timestamp} outside declared source bounds {:?}",
-                self.declared
             )));
         }
         let next = self
@@ -186,9 +209,20 @@ pub(crate) fn execute(
     config: &ProcessingConfig,
     reporter: &ProgressReporter,
 ) -> Result<Vec<(usize, TaskExecution)>> {
+    let _limits = crate::shared::historical::limits::LimitScope::enter(
+        config.resources.normalization_limits,
+        format!("job={}, stream={}", unit.job.job_id.0, unit.key),
+    );
+    if unit.tasks.len() > 1 || unit.tasks.iter().any(|(_, t)| is_family(t)) {
+        let mut results = super::reconciled::execute(unit, config, reporter)?;
+        spill_results(unit, config, &mut results, reporter)?;
+        return Ok(results);
+    }
     let first = unit.tasks[0].1;
     if first.normalizations[0].target_schema == TargetSchema::Depth {
-        return super::streams_depth::execute(unit, config, reporter);
+        let mut results = super::streams_depth::execute(unit, config, reporter)?;
+        spill_results(unit, config, &mut results, reporter)?;
+        return Ok(results);
     }
     let directory = format!("streams/{}/trades", unit.key);
     let path = unit.job.output.staging_path.join(&directory);
@@ -198,12 +232,28 @@ pub(crate) fn execute(
         rows: 0,
         previous: None,
         preceding_source_end: None,
-        declared: None,
     };
     let mut executions = Vec::new();
     let mut sources = Vec::new();
     for (index, task) in &unit.tasks {
         let id = ProgressTaskId::new(unit.job.job_id.0, task.task_id.0);
+        if stopped(&executions) {
+            reporter.task_skipped(id, "Stream stopped after a fatal source failure".into());
+            executions.push((
+                *index,
+                TaskExecution {
+                    task_id: task.task_id.0,
+                    output_paths: vec![],
+                    metrics: Default::default(),
+                    error: Some(MarketForgeError::NotAttempted {
+                        reason: "source not attempted: preceding stream failure".into(),
+                    }),
+                },
+            ));
+            continue;
+        }
+
+        reporter.phase(id, &unit.key, "source read/decode/normalize into Parquet");
         reporter.task_started(
             id,
             format!("{:?}", task.exchange),
@@ -212,7 +262,6 @@ pub(crate) fn execute(
             task.input_path.display().to_string(),
         );
         sink.preceding_source_end = sink.previous;
-        sink.declared = bounds(task)?;
         let start = sink.rows;
         let mut metrics = TaskMetrics::default();
         let mut progress = WorkerProgress::new(reporter, id);
@@ -226,6 +275,15 @@ pub(crate) fn execute(
             &mut progress,
         );
         progress.finish(&metrics.counters);
+        reporter.phase(
+            id,
+            &unit.key,
+            if result.is_ok() {
+                "source normalization complete"
+            } else {
+                "source normalization failed"
+            },
+        );
         let result = result.and_then(|()| {
             if sink.rows - start == metrics.counters.events_written {
                 Ok(())
@@ -235,13 +293,12 @@ pub(crate) fn execute(
         });
         if let Err(error) = &result {
             reporter.task_failed(id, error.to_string());
-        } else {
-            reporter.task_completed(id, &metrics.counters);
         }
         sources.push(SourceSpan {
             task_id: task.task_id.0,
             start_row: start,
             end_row: sink.rows,
+            ranges: vec![],
         });
         executions.push((
             *index,
@@ -255,6 +312,7 @@ pub(crate) fn execute(
     }
     let total = sink.rows;
     if executions.iter().all(|(_, e)| e.error.is_none()) {
+        reporter.stream_phase(unit.job.job_id.0, &unit.key, "Parquet writing/finalization");
         let result = writer.finish().and_then(|()| {
             if writer.metrics().trades_written == total
                 && writer.is_finished()
@@ -266,7 +324,11 @@ pub(crate) fn execute(
             }
         });
         if let Err(error) = result {
-            executions.last_mut().unwrap().1.error = Some(error);
+            executions.last_mut().unwrap().1.error = Some(MarketForgeError::StreamFailure {
+                stream: unit.key.clone(),
+                stage: "writer finalization",
+                source: Box::new(error),
+            });
         } else {
             let output = StreamOutput {
                 stream_id: first.stream_id.0.clone(),
@@ -274,10 +336,15 @@ pub(crate) fn execute(
                 sources,
             };
             if let Err(error) = write_output(&path, &output) {
-                executions.last_mut().unwrap().1.error = Some(error);
+                executions.last_mut().unwrap().1.error = Some(MarketForgeError::StreamFailure {
+                    stream: unit.key.clone(),
+                    stage: "writer finalization",
+                    source: Box::new(error),
+                });
             }
         }
     }
+    spill_results(unit, config, &mut executions, reporter)?;
     Ok(executions)
 }
 pub(super) fn write_output(path: &Path, output: &StreamOutput) -> Result<()> {
@@ -335,13 +402,9 @@ mod tests {
             &root,
         )
         .unwrap();
-        job.tasks[0].raw_schema["marketforge_source"] =
-            serde_json::json!({"source_time_bounds":{"start_timestamp_ns":0,"end_timestamp_ns":9}});
         let mut next = job.tasks[0].clone();
         next.task_id = TaskId(2);
         next.input_path = "another-path".into();
-        next.raw_schema["marketforge_source"]["source_time_bounds"] =
-            serde_json::json!({"start_timestamp_ns":10,"end_timestamp_ns":19});
         job.tasks.push(next);
         job
     }
@@ -370,4 +433,46 @@ mod tests {
             assert_eq!(plan(&job).unwrap().len(), 2, "dimension {dimension}");
         }
     }
+}
+
+pub(super) fn stopped(executions: &[(usize, TaskExecution)]) -> bool {
+    executions
+        .iter()
+        .any(|(_, execution)| execution.error.is_some())
+}
+
+fn spill_results(
+    unit: &StreamUnit<'_>,
+    config: &ProcessingConfig,
+    results: &mut [(usize, TaskExecution)],
+    reporter: &ProgressReporter,
+) -> Result<()> {
+    for (_, e) in results {
+        if e.metrics.scoped_integrity.files.is_empty()
+            && e.metrics.scoped_integrity.hourly.is_empty()
+            && e.metrics.scoped_integrity.daily.is_empty()
+        {
+            continue;
+        }
+        reporter.phase(
+            ProgressTaskId::new(unit.job.job_id.0, e.task_id),
+            &unit.key,
+            "persisting source integrity observations",
+        );
+        if let Err(error) = e
+            .metrics
+            .scoped_integrity
+            .spill(unit.job.job_id.0, e.task_id, config)
+        {
+            e.metrics.counters.tasks_completed = 0;
+            e.metrics.counters.tasks_failed = 1;
+            // Keep metrics and any original processing error if persistence fails.
+            if let Some(original) = e.error.take() {
+                e.error = Some(super::failure::report_persistence_error(original, error));
+            } else {
+                e.error = Some(error);
+            }
+        }
+    }
+    Ok(())
 }

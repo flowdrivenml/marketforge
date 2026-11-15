@@ -3,13 +3,9 @@
 use std::{
     fs::{self, File},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-    time::Instant,
 };
 
 use {
-    crate::support::migration::archive_case as load_processing_job,
-    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::normalize::ProcessingStatus,
     marketforge_engine::historical::normalize::execute_processing_job,
     marketforge_engine::historical::normalize::manifest::DatasetManifest,
@@ -17,83 +13,6 @@ use {
 };
 
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-
-static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
-
-const JOB_FILE: &str = "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json";
-const BITGET_JOB_FILE: &str = "bitget-perpetual-linear-BTCUSDT-trade-20260901-20260904-d93.json";
-// -----------------------------------------------------------------------------
-// Test environment
-// -----------------------------------------------------------------------------
-
-struct TestDirectory(PathBuf);
-
-impl TestDirectory {
-    fn new() -> Self {
-        let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
-
-        let path = crate::support::migration::persistent_path(format!(
-            "marketforge-parallel-consistency-{}-{id}",
-            std::process::id(),
-        ));
-
-        fs::create_dir_all(&path).expect("create test directory");
-
-        Self(path)
-    }
-
-    fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for TestDirectory {
-    fn drop(&mut self) {}
-}
-
-fn project_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("project root")
-        .to_path_buf()
-}
-
-// -----------------------------------------------------------------------------
-// Execute job with specified worker count
-// -----------------------------------------------------------------------------
-
-fn execute_with_workers(job_file: &str, workers: usize, directory: &Path) -> DatasetManifest {
-    let root = project_root();
-
-    let mut job = load_processing_job(root.join("retained-cases").join(job_file))
-        .expect("load processing job");
-
-    let mut config =
-        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
-            .expect("load processing configuration");
-
-    config.resources.workers = workers as _;
-
-    config.resources.parquet.row_group_target_bytes = 128 * 1024 * 1024;
-    config.resources.parquet.file_target_bytes = 512 * 1024 * 1024;
-
-    job.output.staging_path = directory.join("staging");
-    job.output.dataset_path = directory.join("dataset");
-
-    let result = execute_processing_job(&job, &config).expect("execute processing job");
-
-    assert_eq!(
-        result.status,
-        ProcessingStatus::Complete,
-        "processing failed: {:?}",
-        result.failure,
-    );
-
-    let manifest_path = job.output.dataset_path.join("manifest.json");
-
-    serde_json::from_slice(&fs::read(&manifest_path).expect("read manifest"))
-        .expect("deserialize manifest")
-}
 
 // -----------------------------------------------------------------------------
 // Read canonical Parquet records
@@ -126,11 +45,15 @@ fn canonical_fingerprint(dataset: &Path) -> (String, u64) {
             //
             // This initial implementation hashes complete batches.
             // It is suitable only when batch boundaries remain identical.
-            let representation = format!("{batch:?}");
-
-            hasher.update(representation.as_bytes());
-
-            total_rows += batch.num_rows() as u64;
+            // Hash individual logical rows so reader batch boundaries
+            // cannot affect the comparison.
+            for row in 0..batch.num_rows() {
+                let record = batch.slice(row, 1);
+                let representation = format!("{record:?}");
+                hasher.update((representation.len() as u64).to_le_bytes());
+                hasher.update(representation.as_bytes());
+                total_rows += 1;
+            }
         }
     }
 
@@ -149,139 +72,196 @@ fn canonical_fingerprint(dataset: &Path) -> (String, u64) {
 // Tests
 // -----------------------------------------------------------------------------
 
-#[test]
-fn single_and_parallel_workers_produce_identical_results() {
-    let directory = TestDirectory::new();
+fn parallel_fixture() -> marketforge_engine::historical::config::PreparedBatch {
+    use crate::support::fixtures::workload;
+    use marketforge_engine::historical::job::ContentType;
+    use std::collections::BTreeSet;
 
-    let sequential_dir = directory.path().join("sequential");
-    let parallel_dir = directory.path().join("parallel");
+    let mut batch = workload().expect("authoritative normalization fixture");
 
-    fs::create_dir_all(&sequential_dir).unwrap();
-    fs::create_dir_all(&parallel_dir).unwrap();
+    batch
+        .jobs
+        .retain(|job| job.output.content_type == ContentType::Trades);
+    assert_eq!(batch.jobs.len(), 1, "expected one prepared trade job");
 
-    println!("\n{}", "=".repeat(90));
-    println!("MARKETFORGE — PARALLEL CONSISTENCY TEST");
-    println!("{}", "=".repeat(90));
+    let job = &mut batch.jobs[0];
 
-    println!("Run A: 1 worker");
-    let sequential = execute_with_workers(JOB_FILE, 1, &sequential_dir);
+    // Choose the smallest available real archive from each concrete
+    // stream. This keeps the equivalence test reasonably bounded.
+    let mut candidates = job
+        .tasks
+        .iter()
+        .filter(|task| task.scope.is_none() && task.symbol.is_some())
+        .map(|task| {
+            let size = fs::metadata(&task.input_path)
+                .expect("required real archive")
+                .len();
 
-    println!("Run B: 16 workers");
-    let parallel = execute_with_workers(JOB_FILE, 16, &parallel_dir);
+            (size, task.stream_id.0.clone(), task.task_id.0)
+        })
+        .collect::<Vec<_>>();
 
-    // -------------------------------------------------------------------------
-    // Compare processing counters
-    // -------------------------------------------------------------------------
+    candidates.sort();
+
+    let mut streams = BTreeSet::new();
+    let mut selected = BTreeSet::new();
+
+    for (_, stream, task_id) in candidates {
+        if streams.insert(stream) {
+            selected.insert(task_id);
+        }
+
+        if selected.len() == 2 {
+            break;
+        }
+    }
+
+    assert_eq!(
+        selected.len(),
+        2,
+        "authoritative fixture must provide two concrete trade streams"
+    );
+
+    job.tasks.retain(|task| selected.contains(&task.task_id.0));
+
+    for task in &job.tasks {
+        println!(
+            "Selected stream={} task={} archive={}",
+            task.stream_id.0,
+            task.task_id.0,
+            task.input_path.display()
+        );
+    }
+
+    batch
+}
+
+fn execute_selected(
+    batch: &marketforge_engine::historical::config::PreparedBatch,
+    workers: usize,
+    run: &mut crate::support::runtime::TestRun,
+) -> (DatasetManifest, PathBuf) {
+    let mut config = run
+        .runtime_from_general()
+        .expect("load production normalization settings");
+
+    config.resources.workers = workers;
+
+    let resolved = run
+        .prepare(batch, &config)
+        .expect("resolve selected real sources");
+
+    assert_eq!(resolved.jobs.len(), 1);
+
+    let job = &resolved.jobs[0];
+
+    let result = execute_processing_job(job, &config).expect("execute selected trade job");
+
+    assert_eq!(
+        result.status,
+        ProcessingStatus::Complete,
+        "processing failed: {:?}",
+        result.failure
+    );
+
+    let dataset = job.output.dataset_path.clone();
+
+    let manifest: DatasetManifest = serde_json::from_slice(
+        &fs::read(dataset.join("manifest.json")).expect("read committed manifest"),
+    )
+    .expect("deserialize committed manifest");
+
+    assert!(manifest.events_written > 0);
+    assert_eq!(manifest.events_written, result.events_written);
+
+    (manifest, dataset)
+}
+
+fn verify_parallel_consistency(
+    batch: marketforge_engine::historical::config::PreparedBatch,
+    name: &str,
+    workers: usize,
+) {
+    use crate::support::runtime::TestRun;
+
+    let mut sequential_run =
+        TestRun::new(&format!("execution/{name}_sequential")).expect("create sequential test run");
+
+    let mut parallel_run =
+        TestRun::new(&format!("execution/{name}_parallel")).expect("create parallel test run");
+
+    let (sequential, sequential_dataset) = execute_selected(&batch, 1, &mut sequential_run);
+
+    let (parallel, parallel_dataset) = execute_selected(&batch, workers, &mut parallel_run);
 
     assert_eq!(
         sequential.processing_metrics.counters, parallel.processing_metrics.counters,
         "processing counters differ",
     );
 
-    // -------------------------------------------------------------------------
-    // Compare integrity metrics
-    // -------------------------------------------------------------------------
-
     assert_eq!(
         sequential.processing_metrics.integrity, parallel.processing_metrics.integrity,
-        "integrity counters or diagnostics differ",
+        "integrity metrics differ",
     );
 
     assert_eq!(
         sequential.processing_metrics.scoped_integrity,
         parallel.processing_metrics.scoped_integrity,
-        "scoped integrity statistics differ",
+        "scoped integrity metrics differ",
     );
 
-    assert_eq!(sequential.integrity_status, parallel.integrity_status,);
-
+    assert_eq!(sequential.integrity_status, parallel.integrity_status);
     assert_eq!(
         sequential.integrity_evaluation,
         parallel.integrity_evaluation,
     );
 
-    // -------------------------------------------------------------------------
-    // Compare dataset statistics
-    // -------------------------------------------------------------------------
-
     assert_eq!(sequential.events_written, parallel.events_written);
-    assert_eq!(sequential.files_written, parallel.files_written);
-
     assert_eq!(sequential.start_timestamp_ns, parallel.start_timestamp_ns,);
-
     assert_eq!(sequential.end_timestamp_ns, parallel.end_timestamp_ns,);
 
-    // -------------------------------------------------------------------------
-    // Compare canonical records
-    // -------------------------------------------------------------------------
+    // Physical file counts can legitimately differ.
+    let (sequential_hash, sequential_rows) = canonical_fingerprint(&sequential_dataset);
 
-    let (sequential_hash, sequential_rows) = canonical_fingerprint(&sequential_dir.join("dataset"));
-
-    let (parallel_hash, parallel_rows) = canonical_fingerprint(&parallel_dir.join("dataset"));
+    let (parallel_hash, parallel_rows) = canonical_fingerprint(&parallel_dataset);
 
     assert_eq!(
         sequential_rows, parallel_rows,
-        "canonical row counts differ",
+        "canonical row counts differ"
     );
-
     assert_eq!(
         sequential_hash, parallel_hash,
-        "canonical Parquet fingerprints differ",
+        "canonical row content or ordering differs"
     );
 
-    println!("\nRESULTS");
-    println!("  Sequential records : {}", sequential.events_written);
-    println!("  Parallel records   : {}", parallel.events_written);
-    println!("  Parquet files      : {}", parallel.files_written);
-    println!("  Integrity          : {:?}", parallel.integrity_status);
-    println!("  Canonical equality : PASS");
-    println!("  Metrics equality   : PASS");
-    println!("  RESULT             : PASS");
+    println!("Sequential records: {}", sequential.events_written);
+    println!("Parallel records:   {}", parallel.events_written);
+    println!("Canonical rows:     {parallel_rows}");
+    println!("Canonical equality: PASS");
+    println!("Metrics equality:   PASS");
+}
+
+#[test]
+fn single_and_parallel_workers_produce_identical_results() {
+    verify_parallel_consistency(parallel_fixture(), "parallel_consistency", 8);
 }
 
 #[test]
 #[cfg(feature = "historical-full-tests")]
 fn large_parallel_consistency() {
-    let directory = TestDirectory::new();
-
-    let sequential_dir = directory.path().join("sequential");
-    let parallel_dir = directory.path().join("parallel");
-
-    fs::create_dir_all(&sequential_dir).unwrap();
-    fs::create_dir_all(&parallel_dir).unwrap();
-
-    let sequential = execute_with_workers(BITGET_JOB_FILE, 1, &sequential_dir);
-    let parallel = execute_with_workers(BITGET_JOB_FILE, 2, &parallel_dir);
-    assert_eq!(
-        sequential.processing_metrics.counters,
-        parallel.processing_metrics.counters,
+    let mut batch = crate::support::fixtures::workload().expect("authoritative prepared batch");
+    batch.jobs.retain_mut(|job| {
+        if job.output.content_type != marketforge_engine::historical::job::ContentType::Trades {
+            return false;
+        }
+        job.tasks.retain(|task| {
+            task.exchange == marketforge_engine::shared::domain::canonical::Exchange::Bitget
+        });
+        !job.tasks.is_empty()
+    });
+    assert!(
+        !batch.jobs.is_empty(),
+        "full parallel coverage requires Bitget trades"
     );
-
-    assert_eq!(
-        sequential.processing_metrics.integrity,
-        parallel.processing_metrics.integrity,
-    );
-
-    assert_eq!(
-        sequential.processing_metrics.scoped_integrity,
-        parallel.processing_metrics.scoped_integrity,
-    );
-
-    assert_eq!(
-        sequential.integrity_evaluation,
-        parallel.integrity_evaluation,
-    );
-
-    assert_eq!(sequential.events_written, parallel.events_written,);
-
-    assert_eq!(sequential.start_timestamp_ns, parallel.start_timestamp_ns,);
-
-    assert_eq!(sequential.end_timestamp_ns, parallel.end_timestamp_ns,);
-
-    let (sequential_hash, sequential_rows) = canonical_fingerprint(&sequential_dir.join("dataset"));
-
-    let (parallel_hash, parallel_rows) = canonical_fingerprint(&parallel_dir.join("dataset"));
-
-    assert_eq!(sequential_rows, parallel_rows);
-    assert_eq!(sequential_hash, parallel_hash);
+    verify_parallel_consistency(batch, "large_parallel_consistency", 2);
 }

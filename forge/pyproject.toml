@@ -8,7 +8,7 @@ name = "marketforge"
 version = "0.1.0"
 description = "Historical market-data acquisition and Rust engine orchestration."
 requires-python = ">=3.12"
-license = "MIT"
+license = "Apache-2.0"
 
 dependencies = [
   "beautifulsoup4",
@@ -27,6 +27,11 @@ mf = "forge.cli.main:main"
 
 [dependency-groups]
 dev = ["pyright", "pytest", "pytest-asyncio", "ruff", "types-PyYAML"]
+lab = [
+    "pyarrow>=18",
+    "polars>=1",
+    "ipykernel>=7.4.0",
+]
 
 
 # The project configuration lives inside the Python package.

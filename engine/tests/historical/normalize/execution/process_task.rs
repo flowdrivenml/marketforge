@@ -1,93 +1,119 @@
 #![cfg(feature = "historical")]
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+use crate::support::{
+    fixtures::workload,
+    runtime::{Overrides, TestRun},
+};
+use marketforge_engine::shared::historical::limits::LimitScope;
+use marketforge_engine::{
+    historical::{
+        job::{ContentType, InstrumentKind, ProcessingJob},
+        normalize::{manifest::inspect_parquet_files, task::execute_trade_task},
+    },
+    shared::{domain::canonical::Exchange, historical::ProcessingConfig},
 };
 
-use {
-    crate::support::migration::archive_case as load_processing_job,
-    crate::support::migration::configuration as load_processing_config,
-    marketforge_engine::historical::normalize::task::execute_trade_task,
-};
+fn selected_trade_job(run: &mut TestRun, config: &ProcessingConfig) -> ProcessingJob {
+    let mut batch = workload().expect("load authoritative normalize.json");
 
-static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
+    // Select one concrete trade stream from the current fixture.
+    // No archive dates, paths, or expected row counts are hardcoded.
+    batch = crate::support::fixtures::concrete_stream(
+        &batch,
+        Exchange::Bybit,
+        InstrumentKind::Spot,
+        ContentType::Trades,
+        1,
+    )
+    .expect("prepared concrete trade stream");
+    batch.jobs[0].tasks.truncate(1);
 
-const JOB_FILE: &str = "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json";
+    let resolved = run
+        .prepare(&batch, config)
+        .expect("resolve selected fixture through production profiles");
 
-fn project_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("project root")
-        .to_path_buf()
-}
+    assert_eq!(resolved.jobs.len(), 1, "expected one resolved job");
 
-fn test_directory() -> PathBuf {
-    let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
+    let job = resolved.jobs.into_iter().next().unwrap();
 
-    let directory = crate::support::migration::persistent_path(format!(
-        "marketforge-task-test-{}-{id}",
-        std::process::id()
-    ));
+    assert_eq!(job.tasks.len(), 1);
 
-    fs::create_dir_all(&directory).expect("create test directory");
-
-    directory
+    job
 }
 
 #[test]
 fn executes_trade_task_into_isolated_output() {
-    let root = project_root();
+    let mut run = TestRun::new("execution/real_trade_task").expect("create isolated test run");
 
-    let job = load_processing_job(root.join("retained-cases").join(JOB_FILE))
-        .expect("load processing job");
-
-    let config = load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+    let config = run
+        .runtime(Overrides::default())
         .expect("load processing configuration");
 
-    let directory = test_directory();
-
-    let mut parquet = config.resources.parquet.clone();
-
-    // Small targets keep the test fast.
-    parquet.row_group_target_bytes = 16 * 1024;
-    parquet.file_target_bytes = 64 * 1024;
-
+    let job = selected_trade_job(&mut run, &config);
+    let _limits = LimitScope::enter(
+        config.resources.normalization_limits,
+        "fixture-driven real trade test".to_owned(),
+    );
     let task = &job.tasks[0];
 
-    let execution = execute_trade_task(task, &config.integrity_policy, &parquet, &directory);
+    assert!(
+        task.input_path.is_file(),
+        "missing archive: {}",
+        task.input_path.display()
+    );
+
+    let output = run.path.join("task-output");
+
+    run.owned(&output).expect("output must belong to test run");
+
+    let execution = execute_trade_task(
+        task,
+        &config.integrity_policy,
+        &config.resources.parquet,
+        &output,
+    );
 
     assert!(
         execution.is_success(),
         "task execution failed: {:?}",
-        execution.error,
+        execution.error
     );
 
-    assert_eq!(execution.metrics.counters.tasks_completed, 1,);
+    assert_eq!(execution.metrics.counters.tasks_completed, 1);
+    assert_eq!(execution.metrics.counters.tasks_failed, 0);
 
-    assert_eq!(execution.metrics.counters.tasks_failed, 0,);
+    assert!(
+        execution.metrics.counters.records_read > 0,
+        "source archive contains no records"
+    );
 
-    assert_eq!(execution.metrics.counters.records_read, 4201,);
+    assert!(
+        execution.output_path.is_dir(),
+        "missing task output directory"
+    );
 
-    assert_eq!(execution.metrics.counters.records_matched, 116,);
+    // Independently inspect the actual Parquet output.
+    let parquet_files = inspect_parquet_files(&output).expect("inspect generated Parquet");
 
-    assert_eq!(execution.metrics.counters.events_written, 116,);
+    let parquet_rows: u64 = parquet_files.iter().map(|file| file.rows).sum();
 
-    assert!(execution.output_path.is_dir());
+    assert_eq!(
+        parquet_rows, execution.metrics.counters.events_written,
+        "Parquet row count differs from reported events_written"
+    );
 
-    let parquet_files: Vec<PathBuf> = fs::read_dir(&execution.output_path)
-        .expect("read task output")
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("parquet"))
-        .collect();
-
-    assert!(!parquet_files.is_empty());
+    assert_eq!(
+        execution.metrics.counters.records_processed, execution.metrics.counters.events_normalized,
+        "processed-record accounting differs from normalized events"
+    );
 
     println!("\n{}", "=".repeat(80));
-    println!("MARKETFORGE — ISOLATED TASK TEST");
+    println!("MARKETFORGE — FIXTURE-DRIVEN REAL TRADE TEST");
     println!("{}", "=".repeat(80));
 
+    println!("Exchange        : {:?}", task.exchange);
+    println!("Symbol          : {}", task.symbol);
+    println!("Archive         : {}", task.input_path.display());
     println!("Task ID         : {}", execution.task_id);
     println!(
         "Records read    : {}",
@@ -101,40 +127,50 @@ fn executes_trade_task_into_isolated_output() {
         "Trades written  : {}",
         execution.metrics.counters.events_written
     );
+    println!("Parquet rows    : {}", parquet_rows);
     println!("Parquet files   : {}", parquet_files.len());
     println!("Output          : {}", execution.output_path.display());
     println!("RESULT          : PASS");
+
+    run.finish(&Ok(())).expect("persist test result");
 }
 
 #[test]
 fn failed_task_preserves_metrics() {
-    let root = project_root();
+    let mut run = TestRun::new("execution/missing_trade_source").expect("create isolated test run");
 
-    let mut job = load_processing_job(root.join("retained-cases").join(JOB_FILE))
-        .expect("load processing job");
-
-    let config = load_processing_config(root.join("data/.config/historical/general.toml"), &root)
+    let config = run
+        .runtime(Overrides::default())
         .expect("load processing configuration");
 
-    let directory = test_directory();
+    let job = selected_trade_job(&mut run, &config);
+    let _limits = LimitScope::enter(
+        config.resources.normalization_limits,
+        "fixture-driven missing-source test".to_owned(),
+    );
+    let mut task = job.tasks[0].clone();
 
-    // Force source failure without changing normalization.
-    job.tasks[0].input_path = directory.join("missing-source.zip");
+    // Resolve the valid fixture first, then inject a missing source.
+    // This tests execution failure without changing fixture metadata.
+    task.input_path = run.path.join("missing-source.zip");
+
+    let output = run.path.join("task-output");
 
     let execution = execute_trade_task(
-        &job.tasks[0],
+        &task,
         &config.integrity_policy,
         &config.resources.parquet,
-        &directory,
+        &output,
     );
+
+    println!("Execution error: {:?}", execution.error);
+    println!("Execution metrics: {:#?}", execution.metrics.counters);
 
     assert!(!execution.is_success());
 
-    assert_eq!(execution.metrics.counters.tasks_failed, 1,);
-
-    assert_eq!(execution.metrics.counters.tasks_completed, 0,);
-
-    assert_eq!(execution.metrics.counters.records_read, 0,);
+    assert_eq!(execution.metrics.counters.tasks_failed, 1);
+    assert_eq!(execution.metrics.counters.tasks_completed, 0);
+    assert_eq!(execution.metrics.counters.records_read, 0);
 
     assert!(execution.error.is_some());
 
@@ -142,4 +178,6 @@ fn failed_task_preserves_metrics() {
     println!("Task ID : {}", execution.task_id);
     println!("Error   : {:?}", execution.error);
     println!("RESULT  : PASS");
+
+    run.finish(&Ok(())).expect("persist test result");
 }

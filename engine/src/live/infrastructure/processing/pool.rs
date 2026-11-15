@@ -112,7 +112,10 @@ struct Entry {
     processor: Option<Box<dyn Processor>>,
     registration: Arc<Registration>,
 }
-struct WorkerControl { active: AtomicBool, retire: AtomicBool }
+struct WorkerControl {
+    active: AtomicBool,
+    retire: AtomicBool,
+}
 struct PoolState {
     resize_target: Option<usize>,
     resize_error: Option<String>,
@@ -186,7 +189,8 @@ impl ProcessingPool {
         }
         let shared = Arc::new(Shared {
             state: Mutex::new(PoolState {
-                resize_target: None, resize_error: None,
+                resize_target: None,
+                resize_error: None,
                 #[cfg(test)]
                 spawn_failure_after: None,
                 scheduler: ProcessingScheduler::new(config.ready_queue_capacity)?,
@@ -218,17 +222,21 @@ impl ProcessingPool {
         });
         let mut workers = Vec::new();
         for index in 0..config.workers {
-            let control=Arc::new(WorkerControl{active:AtomicBool::new(true),retire:AtomicBool::new(false)});
-            let runtime=shared.clone(); let c=control.clone();
-            match spawn(index,Box::new(move || worker_entry(runtime,c))) {
+            let control = Arc::new(WorkerControl {
+                active: AtomicBool::new(true),
+                retire: AtomicBool::new(false),
+            });
+            let runtime = shared.clone();
+            let c = control.clone();
+            match spawn(index, Box::new(move || worker_entry(runtime, c))) {
                 Ok(worker) => {
-                    workers.push((worker,control));
+                    workers.push((worker, control));
                     lock(&shared).stats.started_workers += 1;
                 }
                 Err(error) => {
                     lock(&shared).shutdown = true;
                     shared.wake.notify_all();
-                    for (worker,_) in workers {
+                    for (worker, _) in workers {
                         let _ = worker.join();
                     }
                     return Err(PoolError::WorkerStartup(error));
@@ -245,7 +253,7 @@ impl ProcessingPool {
             .spawn(move || {
                 CURRENT_RUNTIME.with(|current| current.set(Arc::as_ptr(&runtime) as usize));
                 let workers = received.lock().unwrap().take().unwrap();
-                supervise_workers(&runtime,workers);
+                supervise_workers(&runtime, workers);
                 let mut state = lock(&runtime);
                 let mut remaining = std::mem::take(&mut state.processors);
                 for (token, entry) in state.disposals.drain(..) {
@@ -277,7 +285,7 @@ impl ProcessingPool {
             Err(error) => {
                 lock(&shared).shutdown = true;
                 shared.wake.notify_all();
-                for (worker,_) in transfer.lock().unwrap().take().unwrap() {
+                for (worker, _) in transfer.lock().unwrap().take().unwrap() {
                     let _ = worker.join();
                 }
                 return Err(PoolError::WorkerStartup(error));
@@ -504,24 +512,47 @@ impl ProcessingHandle {
     }
     /// Absolute bounded target. Completion is observed separately; threads remain
     /// owned by the existing supervisor throughout planned retirement.
-    pub fn set_workers(&self, target:usize, expected_revision:u64)->Result<u64,PoolError>{
-        if !(1..=1024).contains(&target){return Err(PoolError::InvalidConfig("worker target outside 1..=1024"));}
-        let mut state=lock(&self.shared);
-        if state.shutdown{return Err(PoolError::Shutdown);}
-        if state.stats.resize_pending {
-            return if target==state.stats.requested_workers {Ok(state.stats.resize_revision)}else{Err(PoolError::InvalidConfig("resize already pending"))};
+    pub fn set_workers(&self, target: usize, expected_revision: u64) -> Result<u64, PoolError> {
+        if !(1..=1024).contains(&target) {
+            return Err(PoolError::InvalidConfig("worker target outside 1..=1024"));
         }
-        if expected_revision!=state.stats.resize_revision{return Err(PoolError::InvalidConfig("pool revision conflict"));}
-        state.stats.resize_revision=state.stats.resize_revision.checked_add(1).ok_or(PoolError::InvalidConfig("pool revision exhausted"))?;
-        state.stats.requested_workers=target;state.stats.resize_pending=true;state.resize_error=None;state.resize_target=Some(target);
-        let revision=state.stats.resize_revision;
-        self.shared.wake.notify_all(); Ok(revision)
+        let mut state = lock(&self.shared);
+        if state.shutdown {
+            return Err(PoolError::Shutdown);
+        }
+        if state.stats.resize_pending {
+            return if target == state.stats.requested_workers {
+                Ok(state.stats.resize_revision)
+            } else {
+                Err(PoolError::InvalidConfig("resize already pending"))
+            };
+        }
+        if expected_revision != state.stats.resize_revision {
+            return Err(PoolError::InvalidConfig("pool revision conflict"));
+        }
+        state.stats.resize_revision = state
+            .stats
+            .resize_revision
+            .checked_add(1)
+            .ok_or(PoolError::InvalidConfig("pool revision exhausted"))?;
+        state.stats.requested_workers = target;
+        state.stats.resize_pending = true;
+        state.resize_error = None;
+        state.resize_target = Some(target);
+        let revision = state.stats.resize_revision;
+        self.shared.wake.notify_all();
+        Ok(revision)
     }
-    pub fn resize_error(&self)->Option<String>{lock(&self.shared).resize_error.clone()}
+    pub fn resize_error(&self) -> Option<String> {
+        lock(&self.shared).resize_error.clone()
+    }
     pub fn stats(&self) -> PoolStats {
         let state = lock(&self.shared);
         PoolStats {
-            starting_workers:state.stats.started_workers.saturating_sub(state.stats.exited_workers+state.stats.running_workers),
+            starting_workers: state
+                .stats
+                .started_workers
+                .saturating_sub(state.stats.exited_workers + state.stats.running_workers),
             registered: state.processors.len(),
             executing_processors: state
                 .processors
@@ -691,8 +722,13 @@ fn worker_loop(shared: Arc<Shared>, control: Arc<WorkerControl>) {
         let (lease, mut processor) = {
             let mut state = lock(&shared);
             loop {
-                if control.retire.load(Ordering::Acquire) || state.shutdown {return;}
-                if !control.active.load(Ordering::Acquire) {state=shared.wake.wait(state).unwrap_or_else(|e|e.into_inner());continue;}
+                if control.retire.load(Ordering::Acquire) || state.shutdown {
+                    return;
+                }
+                if !control.active.load(Ordering::Acquire) {
+                    state = shared.wake.wait(state).unwrap_or_else(|e| e.into_inner());
+                    continue;
+                }
                 #[cfg(test)]
                 if state.exit_requested {
                     state.exit_requested = false;
@@ -854,8 +890,12 @@ mod tests {
         while state.stats.unexpected_worker_exits == 0 {
             let remaining = deadline.saturating_duration_since(Instant::now());
             assert!(!remaining.is_zero(), "worker failure was not supervised");
-            state = owner.shared.wake.wait_timeout(state, remaining)
-                .unwrap_or_else(|e| e.into_inner()).0;
+            state = owner
+                .shared
+                .wake
+                .wait_timeout(state, remaining)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
         }
         drop(state);
         let result = owner.shutdown_until(Instant::now() + Duration::from_secs(2));
@@ -1559,4 +1599,4 @@ mod tests {
 }
 
 mod resize;
-use resize::{worker_entry,supervise_workers};
+use resize::{supervise_workers, worker_entry};

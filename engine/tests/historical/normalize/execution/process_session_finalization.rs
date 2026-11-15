@@ -1,113 +1,68 @@
 #![cfg(feature = "historical")]
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
+use crate::support::runtime::TestRun;
+
+use marketforge_engine::historical::normalize::{
+    ProcessingStatus, failure::PROCESSING_FAILURE_FILENAME, session::execute_processing_session,
 };
-
-use {
-    crate::support::migration::archive_case as load_processing_job,
-    crate::support::migration::configuration as load_processing_config,
-    marketforge_engine::historical::normalize::ProcessingStatus,
-    marketforge_engine::historical::normalize::failure::PROCESSING_FAILURE_FILENAME,
-    marketforge_engine::historical::normalize::session::execute_processing_session,
-};
-
-static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
-
-const JOB_FILES: [&str; 2] = [
-    "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json",
-    "okx-future-inverse-BTC-USD-261225-trade-20260901-20260904-d122.json",
-];
-
-fn project_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
 
 #[test]
 fn session_commits_successful_jobs_and_preserves_failures() {
-    let root = project_root();
+    let mut run =
+        TestRun::new("execution/session_finalization").expect("create isolated finalization run");
 
-    let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
+    let config = run
+        .runtime_from_general()
+        .expect("load production normalization configuration");
 
-    let directory = crate::support::migration::persistent_path(format!(
-        "marketforge-session-finalization-{}-{id}",
-        std::process::id(),
-    ));
+    let mut jobs = super::process_session::selected_session_jobs(&mut run, &config);
 
-    fs::create_dir_all(&directory).unwrap();
+    assert_eq!(jobs.len(), 2);
+    assert_eq!(jobs[0].tasks.len(), 1);
+    assert_eq!(jobs[1].tasks.len(), 1);
 
-    let mut jobs = Vec::new();
+    // Inject a missing source into the second resolved job only.
+    let missing = run.path.join("deliberately_missing_source.archive");
 
-    for (index, filename) in JOB_FILES.iter().enumerate() {
-        let mut job = load_processing_job(root.join("retained-cases").join(filename)).unwrap();
+    assert!(!missing.exists());
 
-        job.output.staging_path = directory.join(format!("job-{index}/staging"));
+    jobs[1].tasks[0].input_path = missing;
 
-        job.output.dataset_path = directory.join(format!("job-{index}/dataset"));
-
-        jobs.push(job);
-    }
-
-    // Force a failure in the second job.
-    jobs[1].tasks[1].input_path = directory.join("missing-source.zip");
-
-    let mut config =
-        load_processing_config(root.join("data/.config/historical/general.toml"), &root).unwrap();
-
-    config.resources.workers = 4;
-
-    config.resources.parquet.row_group_target_bytes = 16 * 1024;
-    config.resources.parquet.file_target_bytes = 64 * 1024;
+    let expected_tasks: usize = jobs.iter().map(|job| job.tasks.len()).sum();
 
     let result = execute_processing_session(&jobs, &config).expect("execute processing session");
 
-    assert_eq!(result.jobs.len(), 2);
-    assert_eq!(result.total_tasks, 6);
+    assert_eq!(result.jobs.len(), jobs.len());
+    assert_eq!(result.total_tasks, expected_tasks);
 
-    // -------------------------------------------------------------------------
-    // Successful job
-    // -------------------------------------------------------------------------
+    // The first job must commit independently.
+    assert_eq!(result.jobs[0].status, ProcessingStatus::Complete);
 
-    assert_eq!(result.jobs[0].status, ProcessingStatus::Complete,);
+    let successful_dataset = &jobs[0].output.dataset_path;
 
-    assert!(jobs[0].output.dataset_path.is_dir());
-
-    assert!(jobs[0].output.dataset_path.join("manifest.json").is_file());
-
+    assert!(successful_dataset.is_dir());
+    assert!(successful_dataset.join("manifest.json").is_file());
+    assert!(successful_dataset.join("processing-job.json").is_file());
     assert!(!jobs[0].output.staging_path.exists());
 
-    // -------------------------------------------------------------------------
-    // Failed job
-    // -------------------------------------------------------------------------
-
-    assert_eq!(result.jobs[1].status, ProcessingStatus::Failed,);
+    // The second job must fail without publishing a dataset.
+    assert_eq!(result.jobs[1].status, ProcessingStatus::Failed);
 
     assert!(!jobs[1].output.dataset_path.exists());
 
+    let failure_path = jobs[1]
+        .output
+        .staging_path
+        .join(PROCESSING_FAILURE_FILENAME);
+
     assert!(
-        jobs[1]
-            .output
-            .staging_path
-            .join(PROCESSING_FAILURE_FILENAME)
-            .is_file()
+        failure_path.is_file(),
+        "missing failure report: {}",
+        failure_path.display()
     );
 
-    println!("\n{}", "=".repeat(80));
-    println!("MARKETFORGE — GLOBAL SESSION FINALIZATION");
-    println!("{}", "=".repeat(80));
-
-    println!("Jobs       : {}", result.jobs.len());
-    println!("Tasks      : {}", result.total_tasks);
-    println!("Workers    : {}", config.resources.workers);
-
-    println!("Job 0      : {:?}", result.jobs[0].status);
-
-    println!("Job 1      : {:?}", result.jobs[1].status);
-
-    println!("RESULT     : PASS");
+    println!("Successful job: {:?}", result.jobs[0].status);
+    println!("Failed job:     {:?}", result.jobs[1].status);
+    println!("Failure report: {}", failure_path.display());
+    println!("SESSION FINALIZATION: PASS");
 }

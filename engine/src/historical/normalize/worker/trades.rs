@@ -1,12 +1,12 @@
 use super::sink::TradeSink;
 use crate::historical::normalize::progress::WorkerProgress;
 use crate::{
+    historical::normalize::worker::decoded::with_source_reader,
     shared::error::{MarketForgeError, Result},
     shared::formats::trades::{
         IdentityDecision, InstrumentMatcher, TradeContext, TradeProcessor, resolve_trade_headers,
     },
     shared::io::decode::CsvDecoder,
-    shared::io::source::with_validated_source_reader as with_source_reader,
 };
 use {
     crate::historical::job::IntegrityPolicy, crate::historical::job::WorkTask,
@@ -36,6 +36,8 @@ pub fn process_trade_task<S: TradeSink>(
     task: &WorkTask,
     sink: &mut S,
 ) -> Result<TradeWorkerMetrics> {
+    let _limits = super::resource_scope(task);
+    super::decoded::ensure_routed(task)?;
     let normalization = task
         .normalizations
         .iter()
@@ -157,6 +159,7 @@ pub fn process_trade_task_with_metrics<S: TradeSink>(
     policy: &IntegrityPolicy,
     previous_job_integrity: &ScopedIntegrityMetrics,
 ) -> Result<()> {
+    let _limits = super::resource_scope(task);
     process_trade_task_with_metrics_impl(task, sink, metrics, policy, previous_job_integrity, None)
 }
 
@@ -168,6 +171,7 @@ pub fn process_trade_task_with_metrics_and_progress<S: TradeSink>(
     previous_job_integrity: &ScopedIntegrityMetrics,
     progress: &mut WorkerProgress,
 ) -> Result<()> {
+    let _limits = super::resource_scope(task);
     process_trade_task_with_metrics_impl(
         task,
         sink,
@@ -186,6 +190,9 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
     previous_job_integrity: &ScopedIntegrityMetrics,
     mut progress: Option<&mut WorkerProgress>,
 ) -> Result<()> {
+    let _limits = super::resource_scope(task);
+    super::decoded::ensure_routed(task)?;
+    super::begin_observation(task, metrics);
     let normalization = task
         .normalizations
         .iter()
@@ -227,7 +234,10 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
         |reader| {
             let mut decoder = CsvDecoder::with_headers(reader, has_headers);
 
-            let actual_headers = if has_headers {
+            let cached = super::decoded::take_csv();
+            let actual_headers = if let Some((headers, _)) = &cached {
+                headers.clone()
+            } else if has_headers {
                 Some(
                     decoder
                         .headers()
@@ -246,18 +256,35 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
             let mut ordering =
                 super::ordering::TimestampOrder::new(task, &scope, policy, previous_job_integrity)?;
 
-            for (index, record) in decoder.records().enumerate() {
+            let rows: Box<
+                dyn Iterator<
+                        Item = (
+                            Option<u64>,
+                            std::result::Result<csv::ByteRecord, csv::Error>,
+                        ),
+                    > + '_,
+            > = if let Some((_, rows)) = cached {
+                Box::new(rows.map(|row| match row {
+                    Ok((ordinal, row)) => (Some(ordinal), Ok(row)),
+                    Err(e) => (None, Err(e)),
+                }))
+            } else {
+                Box::new(decoder.records().map(|row| (None, row)))
+            };
+            for (index, (physical_ordinal, record)) in rows.enumerate() {
                 if let Some(reporter) = progress.as_deref_mut() {
                     reporter.maybe_update(&metrics.counters);
                 }
-                let source_record = u64::try_from(index)
-                    .ok()
-                    .and_then(|value| value.checked_add(1))
-                    .ok_or_else(|| {
-                        MarketForgeError::InvalidConfiguration(
-                            "source record index overflow".to_owned(),
-                        )
-                    })?;
+                let source_record = physical_ordinal.map(Ok).unwrap_or_else(|| {
+                    u64::try_from(index)
+                        .ok()
+                        .and_then(|value| value.checked_add(1))
+                        .ok_or_else(|| {
+                            MarketForgeError::InvalidConfiguration(
+                                "source record index overflow".to_owned(),
+                            )
+                        })
+                })?;
 
                 // ---------------------------------------------------------
                 // Decode source record
@@ -389,7 +416,10 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
                 // Write canonical trade
                 // ---------------------------------------------------------
 
-                sink.write_trade(trade)?;
+                sink.write_trade_at(trade, source_record)?;
+                if let Some(source) = metrics.source.as_mut() {
+                    source.observe(timestamp);
+                }
                 ordering.accept(timestamp);
 
                 increment(&mut metrics.counters.events_written, "events_written")?;
@@ -418,10 +448,11 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
     };
 
     // Publish the final counters, including partial progress on failure.
-    if let Some(reporter) = progress.as_deref_mut() {
+    if let Some(reporter) = progress {
         reporter.finish(&metrics.counters);
     }
 
+    super::finish_observation(metrics);
     outcome
 }
 

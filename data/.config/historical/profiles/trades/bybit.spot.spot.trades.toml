@@ -13,6 +13,10 @@ record_format = "rows"
 header = true
 ordering = "chronological"
 granularity = "daily"
+# BYBIT-T1 integer id is an archive-local counter, not the UUID contract
+# used by other Bybit trade feeds. Preserve it verbatim; never deduplicate
+# across overlapping sources using this field.
+trade_id_scope = "source_local"
 
 # Field keys are literal source column names or JSON paths.
 [fields.id]

@@ -1,7 +1,7 @@
 //! Real CLI processes over tiny deterministic sources, with retained artifacts.
 use crate::support::{
     self,
-    fixtures::{Selection, select, workload},
+    fixtures::{concrete_stream, workload},
     runtime::TestRun,
 };
 use marketforge_engine::{
@@ -21,26 +21,10 @@ fn fixture(multi: bool) -> (TestRun, PreparedBatch) {
     let mut run = TestRun::new("execution/cli_contract").unwrap();
     let all = workload().unwrap();
     let pick = |kind| {
-        select(
-            &all,
-            "cli",
-            &Selection {
-                exchange: Exchange::Bybit,
-                instrument_type: InstrumentKind::Spot,
-                market_category: "spot",
-                content_type: kind,
-                symbol: Some("BTCUSDT"),
-                family: None,
-                feed: None,
-                filename: Some(if kind == ContentType::Trades {
-                    "BTCUSDT_2026-10-27.csv.gz"
-                } else {
-                    "2026-10-27_BTCUSDT_ob200.data.zip"
-                }),
-            },
-            1,
-        )
-        .unwrap()
+        let mut selected =
+            concrete_stream(&all, Exchange::Bybit, InstrumentKind::Spot, kind, 1).unwrap();
+        selected.jobs[0].tasks.truncate(1);
+        selected
     };
     let mut b = pick(ContentType::Trades);
     if multi {
@@ -57,16 +41,17 @@ fn fixture(multi: bool) -> (TestRun, PreparedBatch) {
         .unwrap();
     gzip.finish().unwrap();
     b.jobs[0].tasks[0].input_path = input;
-    b.jobs[0].tasks[0].source_time_bounds = None;
     if multi {
         b.jobs[1].tasks[0].input_path = run.path.join("unavailable-depth.zip");
     }
-    for job in &mut b.jobs {
-        for task in &mut job.tasks {
-            task.source_time_bounds = None;
-        }
-    }
-    let config = run.runtime(Default::default()).unwrap();
+    let mut config = run.runtime(Default::default()).unwrap();
+    // These CLI contract sources contain only a handful of tiny records. Give
+    // their explicit synthetic runtime matching safety bounds, rather than the
+    // production metadata allowances that exceed its 1 GiB test reservation.
+    config.resources.normalization_limits.record_bytes = 64 * 1024;
+    config.resources.normalization_limits.metric_entries = 256;
+    config.resources.normalization_limits.depth_levels = 4096;
+    config.resources.normalization_limits.reconciliation_bytes = 8 * 1024 * 1024;
     let mut value: toml::Value = toml::from_str(include_str!(
         "../../../../data/.config/historical/general.toml"
     ))
@@ -292,7 +277,8 @@ fn successful_depth_batch_preserves_auxiliary_artifacts() {
     let mut zip = zip::ZipWriter::new(fs::File::create(input).unwrap());
     zip.start_file("sample.data", zip::write::SimpleFileOptions::default())
         .unwrap();
-    zip.write_all(b"{\"type\":\"snapshot\",\"ts\":1250,\"cts\":1250,\"data\":{\"s\":\"BTCUSDT\",\"u\":10,\"seq\":1,\"b\":[[\"200\",\"2\"]],\"a\":[[\"400\",\"3\"]]}}\n").unwrap();
+    let snapshot = json!({"type":"snapshot","ts":1250,"cts":1250,"data":{"s":b.jobs[1].tasks[0].symbol.as_ref().unwrap(),"u":10,"seq":1,"b":[["200","2"]],"a":[["400","3"]]}});
+    writeln!(zip, "{snapshot}").unwrap();
     zip.finish().unwrap();
     let (o, v) = invoke(&run, &["--batch", &batch_path(&run)]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
@@ -310,5 +296,40 @@ fn successful_depth_batch_preserves_auxiliary_artifacts() {
                 .is_file()
         );
     }
+    run.finish(&Ok(())).unwrap();
+}
+
+#[test]
+fn batch_cli_diagnostics_keep_stdout_structured() {
+    let (mut run, batch) = fixture(false);
+    let path = run.path.join("runtime.toml");
+    let mut value: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    value["diagnostics"] = toml::Value::try_from(
+        marketforge_engine::shared::historical::config::DiagnosticsConfig {
+            mode: marketforge_engine::shared::historical::config::DiagnosticsMode::Basic,
+            interval_ms: 100,
+        },
+    )
+    .unwrap();
+    fs::write(&path, toml::to_string(&value).unwrap()).unwrap();
+    let (output, response) = invoke(&run, &["--batch", &batch_path(&run)]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(response["status"], "complete");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("normalization diagnostics started"));
+    let parent = batch.jobs[0].output.staging_path.parent().unwrap();
+    let report = fs::read_dir(parent)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .find(|e| e.file_name().to_string_lossy().starts_with("performance-"))
+        .unwrap()
+        .path()
+        .join("performance.json");
+    let report: Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(report["status"], "committed");
+    assert_eq!(report["schema_version"], 1);
     run.finish(&Ok(())).unwrap();
 }

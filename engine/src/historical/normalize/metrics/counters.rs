@@ -11,11 +11,15 @@ pub struct ProcessingCounters {
 
     pub events_normalized: u64,
     pub events_written: u64,
+    pub rows_suppressed: u64,
+    pub rows_unpublished: u64,
 
     pub tasks_completed: u64,
     pub tasks_failed: u64,
     pub records_rejected_unmatched: u64,
     pub records_processed: u64,
+    pub records_unprocessed: u64,
+    pub records_unrouted: u64,
 }
 
 #[derive(Deserialize)]
@@ -27,6 +31,10 @@ struct ProcessingCountersCompat {
 
     events_normalized: u64,
     events_written: u64,
+    #[serde(default)]
+    rows_suppressed: u64,
+    #[serde(default)]
+    rows_unpublished: u64,
 
     tasks_completed: u64,
     tasks_failed: u64,
@@ -34,6 +42,10 @@ struct ProcessingCountersCompat {
 
     #[serde(default)]
     records_processed: Option<u64>,
+    #[serde(default)]
+    records_unprocessed: u64,
+    #[serde(default)]
+    records_unrouted: u64,
 }
 
 impl<'de> Deserialize<'de> for ProcessingCounters {
@@ -58,6 +70,7 @@ impl<'de> Deserialize<'de> for ProcessingCounters {
 
                 raw.records_matched
                     .checked_sub(matched_rejected)
+                    .and_then(|value| value.checked_sub(raw.records_unprocessed))
                     .ok_or_else(|| {
                         D::Error::custom("cannot reconstruct legacy records_processed")
                     })?
@@ -72,11 +85,15 @@ impl<'de> Deserialize<'de> for ProcessingCounters {
 
             events_normalized: raw.events_normalized,
             events_written: raw.events_written,
+            rows_suppressed: raw.rows_suppressed,
+            rows_unpublished: raw.rows_unpublished,
 
             tasks_completed: raw.tasks_completed,
             tasks_failed: raw.tasks_failed,
             records_rejected_unmatched: raw.records_rejected_unmatched,
             records_processed,
+            records_unprocessed: raw.records_unprocessed,
+            records_unrouted: raw.records_unrouted,
         };
 
         counters.validate().map_err(D::Error::custom)?;
@@ -107,11 +124,15 @@ impl ProcessingCounters {
 
         add!(events_normalized);
         add!(events_written);
+        add!(rows_suppressed);
+        add!(rows_unpublished);
 
         add!(tasks_completed);
         add!(tasks_failed);
         add!(records_rejected_unmatched);
         add!(records_processed);
+        add!(records_unprocessed);
+        add!(records_unrouted);
 
         *self = merged;
 
@@ -138,6 +159,7 @@ impl ProcessingCounters {
             .records_skipped_instrument
             .checked_add(self.records_matched)
             .and_then(|value| value.checked_add(self.records_rejected_unmatched))
+            .and_then(|value| value.checked_add(self.records_unrouted))
             .ok_or_else(|| {
                 MarketForgeError::InvalidConfiguration(
                     "source-record accounting overflow".to_owned(),
@@ -153,6 +175,7 @@ impl ProcessingCounters {
 
         let matched_accounted = matched_rejected
             .checked_add(self.records_processed)
+            .and_then(|value| value.checked_add(self.records_unprocessed))
             .ok_or_else(|| {
                 MarketForgeError::InvalidConfiguration(
                     "matched-record accounting overflow".to_owned(),
@@ -166,7 +189,14 @@ impl ProcessingCounters {
             )));
         }
 
-        if self.events_normalized != self.events_written {
+        let accounted = self
+            .events_written
+            .checked_add(self.rows_suppressed)
+            .and_then(|n| n.checked_add(self.rows_unpublished))
+            .ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration("canonical row accounting overflow".into())
+            })?;
+        if self.events_normalized != accounted {
             return Err(MarketForgeError::InvalidConfiguration(format!(
                 "normalized/written event mismatch: normalized={}, written={}",
                 self.events_normalized, self.events_written
@@ -193,6 +223,7 @@ fn validates_unmatched_parse_failures() {
 
         tasks_completed: 1,
         tasks_failed: 0,
+        ..Default::default()
     };
 
     counters.validate().unwrap();
@@ -214,6 +245,7 @@ fn validates_one_to_many_depth_processing() {
 
         tasks_completed: 1,
         tasks_failed: 0,
+        ..Default::default()
     };
 
     counters.validate().unwrap();
@@ -235,6 +267,7 @@ fn validates_depth_records_without_emitted_changes() {
 
         tasks_completed: 1,
         tasks_failed: 0,
+        ..Default::default()
     };
 
     counters.validate().unwrap();

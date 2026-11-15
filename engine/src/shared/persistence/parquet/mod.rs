@@ -20,3 +20,12 @@ pub use segments::{DepthSegmentManifest, read_depth_segments, write_depth_segmen
 pub use trade_writer::{ParquetTradeWriter, ParquetWriterMetrics};
 
 pub use segments::{DepthSourceBoundary, DepthStreamBoundaries, read_depth_stream_boundaries};
+
+mod footprint;
+pub use footprint::{normalization_segment_memory, normalization_writer_memory};
+
+mod boundary_reader;
+pub use boundary_reader::{
+    BoundaryReadLimits, BoundaryReadSummary, collect_depth_stream_boundaries,
+    visit_depth_stream_boundaries,
+};

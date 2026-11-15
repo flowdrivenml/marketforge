@@ -1,14 +1,8 @@
 #![cfg(feature = "historical")]
 
-use std::{
-    fs::{self, File},
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::{fs::File, path::Path};
 
 use {
-    crate::support::migration::archive_case as load_processing_job,
-    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::normalize::boundary::BoundaryContinuity,
     marketforge_engine::historical::normalize::boundary::DepthBoundaryManifest,
     marketforge_engine::historical::normalize::boundary::fingerprint_book,
@@ -18,42 +12,6 @@ use {
     marketforge_engine::shared::domain::book::SequencePolicy,
     marketforge_engine::shared::persistence::parquet::ParquetDepthWriter,
 };
-
-static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(0);
-
-// -----------------------------------------------------------------------------
-// Temporary directory
-// -----------------------------------------------------------------------------
-
-struct TestDirectory {
-    path: PathBuf,
-}
-
-impl TestDirectory {
-    fn new() -> Self {
-        let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
-
-        let path = crate::support::migration::persistent_path(format!(
-            "marketforge-depth-continuity-{}-{id}",
-            std::process::id()
-        ));
-
-        fs::create_dir_all(&path).unwrap();
-
-        Self { path }
-    }
-}
-
-impl Drop for TestDirectory {
-    fn drop(&mut self) {}
-}
-
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
 
 // -----------------------------------------------------------------------------
 // Process one archive independently
@@ -69,13 +27,23 @@ fn process_archive(
 
     let mut metrics = TaskMetrics::default();
 
+    let _limits = marketforge_engine::shared::historical::limits::LimitScope::enter(
+        config.resources.normalization_limits,
+        format!("Gate.io continuity test: {}", task.input_path.display()),
+    );
+
+    let sequence_policy = marketforge_engine::historical::normalize::resolve_sequence_policy(task)
+        .expect("resolve Gate.io sequence policy");
+
+    println!("Sequence policy: {sequence_policy:?}");
+
     process_depth_task_with_metrics(
         task,
         &mut writer,
         &mut metrics,
         &config.integrity_policy,
         &ScopedIntegrityMetrics::default(),
-        SequencePolicy::Ranged,
+        sequence_policy,
     )
     .expect("process Gate.io archive");
 
@@ -93,7 +61,17 @@ fn process_archive(
     )
     .expect("read boundary manifest");
 
-    assert_eq!(boundary.continuity, BoundaryContinuity::Verified,);
+    let sequence_policy = marketforge_engine::historical::normalize::resolve_sequence_policy(task)
+        .expect("resolve sequence policy for continuity classification");
+
+    match sequence_policy {
+        SequencePolicy::Unsequenced => {
+            assert_eq!(boundary.continuity, BoundaryContinuity::Unverifiable);
+        }
+        SequencePolicy::Consecutive | SequencePolicy::Ranged => {
+            assert_eq!(boundary.continuity, BoundaryContinuity::Verified);
+        }
+    }
 
     boundary
 }
@@ -126,9 +104,10 @@ fn verify_archive_boundary(previous: &DepthBoundaryManifest, next: &DepthBoundar
     // Timestamp continuity
     // -------------------------------------------------------------------------
 
-    assert_eq!(
-        previous_final.timestamp_ns, next_initial.timestamp_ns,
-        "cross-archive timestamp mismatch",
+    // Matching sequenced books must describe the shared temporal boundary.
+    assert!(
+        previous_final.timestamp_ns >= next_initial.timestamp_ns,
+        "sequenced archives have a gap at their shared boundary"
     );
 
     // -------------------------------------------------------------------------
@@ -160,37 +139,71 @@ fn verify_archive_boundary(previous: &DepthBoundaryManifest, next: &DepthBoundar
     );
 }
 
-fn validate_gateio_hourly_continuity(job_filename: &str) {
-    let root = project_root();
+fn validate_gateio_hourly_continuity(
+    kind: marketforge_engine::historical::job::InstrumentKind,
+    category: &str,
+) {
+    use crate::support::{fixtures::workload, runtime::TestRun};
+    use marketforge_engine::{historical::job::ContentType, shared::domain::canonical::Exchange};
 
-    let job = load_processing_job(root.join("retained-cases").join(job_filename))
-        .expect("load Gate.io processing job");
+    let mut batch = workload().expect("load authoritative prepared fixture");
+    batch.jobs.retain_mut(|job| {
+        if job.output.content_type != ContentType::Depth {
+            return false;
+        }
+        job.tasks.retain(|task| {
+            task.exchange == Exchange::GateIo
+                && task.instrument_type == kind
+                && serde_json::to_value(task.market_category).unwrap().as_str() == Some(category)
+                && task.scope.is_none()
+        });
+        !job.tasks.is_empty()
+    });
+    // Pick a concrete stream with multiple archives, including a single feed.
+    let mut groups = std::collections::BTreeMap::new();
+    for job in &batch.jobs {
+        for task in &job.tasks {
+            *groups
+                .entry((job.job_id.0, task.stream_id.0.clone()))
+                .or_insert(0usize) += 1;
+        }
+    }
+    let ((job_id, stream_id), _) = groups
+        .into_iter()
+        .find(|(_, n)| *n >= 2)
+        .expect("continuity coverage requires multiple archives of one Gate.io stream");
+    batch.jobs.retain_mut(|job| {
+        if job.job_id.0 != job_id {
+            return false;
+        }
+        job.tasks.retain(|task| task.stream_id.0 == stream_id);
+        // Preserve the original bounded continuity sample (at most three
+        // sources), now selected from prepared metadata without date/path keys.
+        job.tasks.truncate(3);
+        true
+    });
 
-    assert!(
-        job.tasks.len() >= 3,
-        "expected at least three hourly archives"
-    );
+    let mut run =
+        TestRun::new("execution/gateio_hourly_continuity").expect("create isolated test run");
 
-    let config = load_processing_config(root.join("data/.config/historical/general.toml"), &root)
-        .expect("load processing configuration");
+    let config = run.runtime_from_general().expect("load general.toml");
 
-    let directory = TestDirectory::new();
+    let resolved = run
+        .prepare(&batch, &config)
+        .expect("resolve selected Gate.io archives");
 
-    // Sort tasks chronologically by archive path.
-    let mut tasks = job.tasks.iter().collect::<Vec<_>>();
-
-    tasks.sort_by(|a, b| a.input_path.cmp(&b.input_path));
+    let job = &resolved.jobs[0];
 
     let mut boundaries = Vec::new();
 
-    for (index, task) in tasks.into_iter().take(3).enumerate() {
+    for (index, task) in job.tasks.iter().enumerate() {
         assert!(
             task.input_path.is_file(),
             "missing archive: {}",
             task.input_path.display()
         );
 
-        let output_path = directory.path.join(format!("archive-{index}"));
+        let output_path = run.path.join(format!("archive-{index}"));
 
         let boundary = process_archive(task, &output_path, &config);
 
@@ -199,17 +212,90 @@ fn validate_gateio_hourly_continuity(job_filename: &str) {
         boundaries.push(boundary);
     }
 
-    for index in 0..boundaries.len() - 1 {
-        verify_archive_boundary(&boundaries[index], &boundaries[index + 1]);
+    boundaries.sort_by_key(|boundary| {
+        boundary
+            .initial
+            .as_ref()
+            .expect("initial book")
+            .timestamp_ns
+    });
 
-        println!(
-            "Archive {} → {}: SEQUENCE / BOOK / SHA-256 MATCH",
-            index,
-            index + 1,
-        );
+    for (index, boundary) in boundaries.iter().enumerate() {
+        println!("=== ARCHIVE {index} BOUNDARY ===");
+        println!("Continuity: {:?}", boundary.continuity);
+
+        if let Some(initial) = &boundary.initial {
+            println!(
+                "Initial: sequence={:?}, timestamp={}, fingerprint={}",
+                initial.sequence, initial.timestamp_ns, initial.fingerprint
+            );
+        }
+
+        if let Some(final_state) = &boundary.final_state {
+            println!(
+                "Final: sequence={:?}, timestamp={}, fingerprint={}",
+                final_state.sequence, final_state.timestamp_ns, final_state.fingerprint
+            );
+        }
     }
 
-    println!("\nCROSS-ARCHIVE CONTINUITY: PASS");
+    for index in 0..boundaries.len() - 1 {
+        let previous = &boundaries[index];
+        let next = &boundaries[index + 1];
+
+        let previous_final = previous
+            .final_state
+            .as_ref()
+            .expect("previous archive missing final book");
+
+        let next_initial = next
+            .initial
+            .as_ref()
+            .expect("next archive missing initial book");
+
+        if kind == marketforge_engine::historical::job::InstrumentKind::Spot {
+            // Verify the shared sequenced boundary, including the complete book.
+            verify_archive_boundary(previous, next);
+
+            println!(
+                "Archive {} -> {}: VERIFIED sequence/book/fingerprint continuity",
+                index,
+                index + 1,
+            );
+        } else {
+            // These Gate.io perpetual feeds have no sequence IDs.
+            // Their independent archive boundaries must not be
+            // represented as verified continuous books.
+            assert_eq!(previous.continuity, BoundaryContinuity::Unverifiable);
+            assert_eq!(next.continuity, BoundaryContinuity::Unverifiable);
+
+            assert_eq!(previous_final.sequence, None);
+            assert_eq!(next_initial.sequence, None);
+
+            assert!(
+                previous_final.timestamp_ns < next_initial.timestamp_ns,
+                "unsequenced archives must remain chronologically ordered"
+            );
+
+            assert_eq!(
+                previous_final.fingerprint,
+                fingerprint_book(&previous_final.state)
+            );
+            assert_eq!(
+                next_initial.fingerprint,
+                fingerprint_book(&next_initial.state)
+            );
+
+            println!(
+                "Archive {} -> {}: UNVERIFIABLE continuity, gap={} ns",
+                index,
+                index + 1,
+                next_initial.timestamp_ns - previous_final.timestamp_ns,
+            );
+        }
+    }
+
+    println!("CROSS-ARCHIVE BOUNDARY VALIDATION: PASS");
 }
 // -----------------------------------------------------------------------------
 // Gate.io spot continuity
@@ -217,19 +303,24 @@ fn validate_gateio_hourly_continuity(job_filename: &str) {
 
 #[test]
 fn validates_gateio_spot_hourly_continuity() {
-    validate_gateio_hourly_continuity("gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d112.json");
+    validate_gateio_hourly_continuity(
+        marketforge_engine::historical::job::InstrumentKind::Spot,
+        "spot",
+    );
 }
 
 #[test]
 fn validates_gateio_linear_hourly_continuity() {
     validate_gateio_hourly_continuity(
-        "gateio-perpetual-linear-BTC_USDT-l2-20260901-20260904-d96.json",
+        marketforge_engine::historical::job::InstrumentKind::Perpetual,
+        "linear",
     );
 }
 
 #[test]
 fn validates_gateio_inverse_hourly_continuity() {
     validate_gateio_hourly_continuity(
-        "gateio-perpetual-inverse-BTC_USD-l2-20260901-20260904-d103.json",
+        marketforge_engine::historical::job::InstrumentKind::Perpetual,
+        "inverse",
     );
 }

@@ -8,7 +8,7 @@ use {
     marketforge_engine::historical::normalize::session::execute_session_tasks,
 };
 
-const JOB_FILE: &str = "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json";
+const JOB_FILE: &str = "okx.future.linear.trades:BTC-USD_UM-261225";
 
 fn project_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -18,9 +18,7 @@ fn project_root() -> PathBuf {
 }
 
 fn load_job() -> marketforge_engine::historical::job::ProcessingJob {
-    let root = project_root();
-
-    load_processing_job(root.join("retained-cases").join(JOB_FILE)).expect("load processing job")
+    load_processing_job(JOB_FILE).expect("load processing job")
 }
 
 fn load_config() -> marketforge_engine::historical::normalize::ProcessingConfig {

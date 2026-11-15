@@ -21,6 +21,7 @@ use super::{TradeBatchBuilder, trade_schema};
 pub struct ParquetWriterMetrics {
     pub trades_written: u64,
     pub files_written: u64,
+    pub row_groups_written: u64,
     pub start_timestamp_ns: Option<i64>,
     pub end_timestamp_ns: Option<i64>,
 }
@@ -87,6 +88,16 @@ impl ParquetTradeWriter {
             return Ok(());
         }
 
+        if let Some(limits) = crate::shared::historical::limits::current() {
+            crate::shared::historical::limits::check(
+                "stream output files",
+                limits.metric_entries,
+                self.next_file_index.checked_add(1).ok_or_else(|| {
+                    MarketForgeError::InvalidConfiguration("file count overflow".into())
+                })?,
+                "writer file creation",
+            )?;
+        }
         let path = self
             .output_dir
             .join(format!("part-{:06}.parquet", self.next_file_index));
@@ -140,6 +151,11 @@ impl ParquetTradeWriter {
 
         let writer = self.writer.as_mut().expect("writer initialized");
 
+        super::footprint::check_row_group_growth(
+            writer.flushed_row_groups().len(),
+            batch.num_rows(),
+        )?;
+        let previous_row_groups = writer.flushed_row_groups().len();
         writer.write(&batch).map_err(|error| {
             MarketForgeError::InvalidConfiguration(format!(
                 "failed to write Parquet batch: {error}"
@@ -152,6 +168,13 @@ impl ParquetTradeWriter {
             ))
         })?;
 
+        self.metrics.row_groups_written = self
+            .metrics
+            .row_groups_written
+            .checked_add((writer.flushed_row_groups().len() - previous_row_groups) as u64)
+            .ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration("Parquet row group counter overflow".into())
+            })?;
         self.metrics.trades_written += batch.num_rows() as u64;
 
         self.batch_bytes = 0;

@@ -370,7 +370,9 @@ impl Drop for StartCancellation {
     }
 }
 impl ProcessingServiceHandle {
-    pub(crate) fn pool_handle(&self)->ProcessingHandle{self.shared.pool.clone()}
+    pub(crate) fn pool_handle(&self) -> ProcessingHandle {
+        self.shared.pool.clone()
+    }
 
     pub async fn start_derived(&self, id: &str) -> Result<ProcessingStreamHandle, String> {
         let graph = self.shared.router.graph();
@@ -492,7 +494,29 @@ impl ProcessingServiceHandle {
     /// accounted until the recipient explicitly discards/processes or drops them.
     /// Transfer bounded terminal ownership to the application for explicit disposal.
     /// The observed-state lock is released before reports or buffers are dropped.
-    pub fn take_reports(&self,limit:usize)->Vec<ProcessingReport>{let mut observed=lock(&self.shared.observed);let ids=observed.reports.keys().take(limit.min(1024)).cloned().collect::<Vec<_>>();let mut reports=Vec::with_capacity(ids.len());let mut views=Vec::with_capacity(ids.len());for id in ids {if let Some(report)=observed.reports.remove(&id){reports.push(report);}if let Some(view)=observed.views.remove(&id){views.push(view);}}drop(observed);drop(views);self.shared.wake.notify_one();reports}
+    pub fn take_reports(&self, limit: usize) -> Vec<ProcessingReport> {
+        let mut observed = lock(&self.shared.observed);
+        let ids = observed
+            .reports
+            .keys()
+            .take(limit.min(1024))
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut reports = Vec::with_capacity(ids.len());
+        let mut views = Vec::with_capacity(ids.len());
+        for id in ids {
+            if let Some(report) = observed.reports.remove(&id) {
+                reports.push(report);
+            }
+            if let Some(view) = observed.views.remove(&id) {
+                views.push(view);
+            }
+        }
+        drop(observed);
+        drop(views);
+        self.shared.wake.notify_one();
+        reports
+    }
     pub fn take_report(&self, id: &str, generation: RuntimeGeneration) -> Option<ProcessingReport> {
         let mut observed = lock(&self.shared.observed);
         if !observed

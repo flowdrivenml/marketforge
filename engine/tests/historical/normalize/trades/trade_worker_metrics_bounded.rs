@@ -12,7 +12,6 @@ use {
     marketforge_engine::shared::domain::canonical::Trade,
     marketforge_engine::shared::error::Result,
 };
-const JOB_FILE: &str = "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json";
 
 fn load_policy() -> marketforge_engine::historical::job::IntegrityPolicy {
     let root = project_root();
@@ -30,10 +29,7 @@ fn project_root() -> PathBuf {
 }
 
 fn load_job() -> ProcessingJob {
-    let mut job = crate::support::migration::template(
-        "bybit-spot-spot-BTCUSDT-trade-20260901-20260904-d1.json",
-    )
-    .unwrap();
+    let mut job = crate::support::migration::template("bybit.spot.spot.trades:BTCUSDT").unwrap();
     let dir = crate::support::migration::persistent_path("trades_sink_failure".into());
     let path = dir.join("input.csv");
     let mut text = String::from("id,timestamp,price,volume,side,rpi\n");

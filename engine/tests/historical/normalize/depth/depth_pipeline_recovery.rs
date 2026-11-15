@@ -1,10 +1,9 @@
 #![cfg(feature = "historical")]
 
 use std::{
-    fs::{self, File},
+    fs::File,
     io::Write,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
 };
 
 use crate::support::migration::configuration as load_processing_config;
@@ -116,10 +115,7 @@ fn read_event_ordinals(directory: &Path) -> Vec<u64> {
 fn depth_pipeline_recovers_after_sequence_gap() {
     let root = project_root();
 
-    let job = load_processing_job(
-        root.join("retained-cases/bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json"),
-    )
-    .expect("load Bybit depth job");
+    let job = load_processing_job("bybit.spot.spot.depth:BTCUSDT").expect("load Bybit depth job");
 
     let mut task = job.tasks[0].clone();
 
@@ -267,10 +263,7 @@ fn depth_pipeline_recovers_after_sequence_gap() {
 fn depth_pipeline_invalidates_final_book_after_unrecovered_gap() {
     let root = project_root();
 
-    let job = load_processing_job(
-        root.join("retained-cases/bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json"),
-    )
-    .expect("load Bybit depth job");
+    let job = load_processing_job("bybit.spot.spot.depth:BTCUSDT").expect("load Bybit depth job");
 
     let mut task = job.tasks[0].clone();
 

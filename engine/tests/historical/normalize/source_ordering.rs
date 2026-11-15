@@ -236,18 +236,16 @@ fn truncated_gzip_is_fatal_even_with_disabled_policy_and_no_dataset_commit() {
 #[test]
 fn corrupt_jsonl_gzip_terminates_instead_of_becoming_repeated_parse_errors() {
     let source = super::support::fixtures::workload().unwrap();
-    let select = super::support::fixtures::Selection {
-        exchange: marketforge_engine::shared::domain::canonical::Exchange::GateIo,
-        instrument_type: InstrumentKind::Perpetual,
-        market_category: "linear",
-        content_type: ContentType::Depth,
-        symbol: Some("BTC_USDT"),
-        family: None,
-        feed: Some(Feed::Snapshot),
-        filename: Some("BTC_USDT-2026102700.gz"),
-    };
-    let mut b =
-        super::support::fixtures::select(&source, "corrupt JSONL gzip", &select, 1).unwrap();
+    let mut b = super::support::fixtures::profile_source(
+        &source,
+        marketforge_engine::shared::domain::canonical::Exchange::GateIo,
+        InstrumentKind::Perpetual,
+        "linear",
+        ContentType::Depth,
+        Some(Feed::Snapshot),
+        false,
+    )
+    .unwrap();
     let mut run = TestRun::new("source_corrupt_jsonl_gzip").unwrap();
     input(
         &run,
@@ -351,21 +349,37 @@ fn independent_family_streams_do_not_share_timestamp_watermarks() {
     use super::support::fixtures::*;
     use marketforge_engine::shared::domain::canonical::Exchange;
     let original = workload().unwrap();
-    let selection = Selection {
-        exchange: Exchange::Okx,
-        instrument_type: InstrumentKind::Future,
-        market_category: "linear",
-        content_type: ContentType::Trades,
-        symbol: None,
-        family: Some("BTC-USD_UM"),
-        feed: None,
-        filename: Some("BTC-USD_UM-futureschain-trades-2026-10-27.zip"),
-    };
-    let mut b = select(&original, "family ordering", &selection, 1).unwrap();
+    let mut b = super::support::fixtures::profile_source(
+        &original,
+        Exchange::Okx,
+        InstrumentKind::Future,
+        "linear",
+        ContentType::Trades,
+        None,
+        true,
+    )
+    .unwrap();
     let mut run = TestRun::new("ordering_family_streams").unwrap();
+    b.instruments.retain(|instrument| {
+        !["BTC-USD_UM-261030", "BTC-USD_UM-261225"].contains(&instrument.symbol.as_str())
+    });
+    // The following records and instruments define an independent synthetic
+    // family; only the production profile is borrowed from the prepared batch.
+    b.jobs[0].tasks[0].scope.as_mut().unwrap().identifier = "BTC-USD_UM".into();
+    b.jobs[0].tasks[0].scope.as_mut().unwrap().members.clear();
+    b.jobs[0].tasks[0].instrument_selection = Some(InstrumentSelection::Include {
+        symbols: vec!["BTC-USD_UM-261030".into(), "BTC-USD_UM-261225".into()],
+    });
+    let next_id = b
+        .instruments
+        .iter()
+        .map(|i| i.instrument_id)
+        .max()
+        .unwrap_or(0)
+        + 1;
     for (id, symbol, value) in [
-        (1001, "BTC-USD_UM-261030", "0.01"),
-        (1002, "BTC-USD_UM-261225", "0.02"),
+        (next_id, "BTC-USD_UM-261030", "0.01"),
+        (next_id + 1, "BTC-USD_UM-261225", "0.02"),
     ] {
         b.instruments.push(OfflineInstrument {
             instrument_id: id,
@@ -396,26 +410,6 @@ fn independent_family_streams_do_not_share_timestamp_watermarks() {
     let c = run.runtime(Default::default()).unwrap();
     let resolved = run.prepare(&b, &c).unwrap();
     assert_eq!(resolved.jobs[0].tasks.len(), 2);
-    for t in &resolved.jobs[0].tasks {
-        let mut m = TaskMetrics::default();
-        let mut sink = Trades::default();
-        process_trade_task_with_metrics(
-            t,
-            &mut sink,
-            &mut m,
-            &c.integrity_policy,
-            &Default::default(),
-        )
-        .unwrap();
-        assert_eq!(m.scoped_integrity.global.timestamp_regression.eligible, 1);
-        assert_eq!(m.scoped_integrity.global.timestamp_regression.violations, 0);
-        assert_eq!(sink.0.len(), 2);
-        assert!(
-            sink.0
-                .iter()
-                .all(|e| e.envelope.instrument_id == t.instrument_id)
-        );
-    }
     let result = normalize::execute_processing_job(&resolved.jobs[0], &c).unwrap();
     assert_eq!(
         result.status,
@@ -427,6 +421,69 @@ fn independent_family_streams_do_not_share_timestamp_watermarks() {
         &fs::read(resolved.jobs[0].output.dataset_path.join("manifest.json")).unwrap(),
     )
     .unwrap();
+    for task in &resolved.jobs[0].tasks {
+        let metrics = manifest
+            .processing_metrics
+            .tasks
+            .iter()
+            .find(|m| m.stream_id == task.stream_id.0)
+            .unwrap();
+        assert_eq!(
+            metrics
+                .scoped_integrity
+                .global
+                .timestamp_regression
+                .eligible,
+            1
+        );
+        assert_eq!(
+            metrics
+                .scoped_integrity
+                .global
+                .timestamp_regression
+                .violations,
+            0
+        );
+        assert_eq!(metrics.counters.events_written, 2);
+    }
+    // Independently verify concrete ownership after the actual family router.
+    let mut rows = Vec::new();
+    for file in &manifest.files {
+        let reader = parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(
+            fs::File::open(resolved.jobs[0].output.dataset_path.join(&file.path)).unwrap(),
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+        for batch in reader {
+            let batch = batch.unwrap();
+            let ids = batch
+                .column_by_name("instrument_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<arrow_array::Int64Array>()
+                .unwrap();
+            let trade_ids = batch
+                .column_by_name("trade_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<arrow_array::StringArray>()
+                .unwrap();
+            for i in 0..batch.num_rows() {
+                rows.push((ids.value(i), trade_ids.value(i).to_owned()));
+            }
+        }
+    }
+    rows.sort();
+    assert_eq!(
+        rows,
+        vec![
+            (next_id, "1".into()),
+            (next_id, "3".into()),
+            (next_id + 1, "2".into()),
+            (next_id + 1, "4".into())
+        ]
+    );
     assert_eq!(manifest.streams.len(), 2);
     assert_eq!(manifest.events_written, 4);
     assert!(
@@ -442,17 +499,16 @@ fn unsupported_stateful_sorting_is_rejected_explicitly() {
     use super::support::fixtures::*;
     use marketforge_engine::shared::domain::canonical::Exchange;
     let original = workload().unwrap();
-    let selection = Selection {
-        exchange: Exchange::GateIo,
-        instrument_type: InstrumentKind::Perpetual,
-        market_category: "linear",
-        content_type: ContentType::Depth,
-        symbol: Some("BTC_USDT"),
-        family: None,
-        feed: Some(Feed::Snapshot),
-        filename: Some("BTC_USDT-2026102700.gz"),
-    };
-    let mut b = select(&original, "unsupported sorting", &selection, 1).unwrap();
+    let mut b = super::support::fixtures::profile_source(
+        &original,
+        Exchange::GateIo,
+        InstrumentKind::Perpetual,
+        "linear",
+        ContentType::Depth,
+        Some(Feed::Snapshot),
+        false,
+    )
+    .unwrap();
     b.jobs[0].tasks[0].source_options = Some(SourceOptions {
         feed: Feed::Incremental,
     });
@@ -510,17 +566,16 @@ fn zip_member_crc_failure_and_damaged_workbook_are_terminal() {
     use super::support::fixtures::*;
     use marketforge_engine::shared::domain::canonical::Exchange;
     let original = workload().unwrap();
-    let selection = Selection {
-        exchange: Exchange::Bitget,
-        instrument_type: InstrumentKind::Spot,
-        market_category: "spot",
-        content_type: ContentType::Depth,
-        symbol: Some("BTCUSDT"),
-        family: None,
-        feed: None,
-        filename: Some("BTC_USDT-BTCUSDT_1_20261027.zip"),
-    };
-    let mut b = select(&original, "damaged workbook", &selection, 1).unwrap();
+    let mut b = super::support::fixtures::profile_source(
+        &original,
+        Exchange::Bitget,
+        InstrumentKind::Spot,
+        "spot",
+        ContentType::Depth,
+        None,
+        false,
+    )
+    .unwrap();
     let mut run = TestRun::new("source_bad_workbook").unwrap();
     input(&run, &mut b, b"broken workbook", true);
     let mut c = run.runtime(Default::default()).unwrap();

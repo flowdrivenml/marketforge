@@ -187,20 +187,22 @@ pub struct IntegrityWindowEntry {
     pub statistics: CategoryStatistics,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct ScopedIntegrityMetrics {
+    #[serde(skip)]
+    pub(crate) retained: std::collections::BTreeMap<(u64, u64), super::retained::Details>,
     pub global: CategoryStatistics,
     /// Eligible observations and violations lacking trustworthy event time.
     #[serde(default)]
     pub unattributed: CategoryStatistics,
 
-    #[serde(with = "file_map_serde")]
+    #[serde(deserialize_with = "file_map_serde::deserialize")]
     pub files: BTreeMap<IntegrityScope, CategoryStatistics>,
 
-    #[serde(with = "window_map_serde")]
+    #[serde(deserialize_with = "window_map_serde::deserialize")]
     pub hourly: BTreeMap<(IntegrityScope, i64), CategoryStatistics>,
 
-    #[serde(with = "window_map_serde")]
+    #[serde(deserialize_with = "window_map_serde::deserialize")]
     pub daily: BTreeMap<(IntegrityScope, i64), CategoryStatistics>,
 }
 
@@ -212,6 +214,112 @@ impl ScopedIntegrityMetrics {
         violated: bool,
         event_timestamp_ns: Option<i64>,
     ) -> Result<()> {
+        if !self.retained.is_empty() {
+            return Err(MarketForgeError::InvalidConfiguration(
+                "cannot record observations after source report sealing".into(),
+            ));
+        }
+        // The usual ordered, task-local observation updates existing final map
+        // entries. Borrow their keys instead of cloning identical path/scope strings.
+        let windows = event_timestamp_ns.map(|t| {
+            (
+                WindowGranularity::Hourly.start_ns(t),
+                WindowGranularity::Daily.start_ns(t),
+            )
+        });
+        let file_match = self
+            .files
+            .last_key_value()
+            .is_some_and(|(key, _)| key == scope);
+        let window_match = windows.is_none_or(|(hour, day)| {
+            self.hourly
+                .last_key_value()
+                .is_some_and(|((key, t), _)| key == scope && *t == hour)
+                && self
+                    .daily
+                    .last_key_value()
+                    .is_some_and(|((key, t), _)| key == scope && *t == day)
+        });
+        if file_match && window_match {
+            if let Some(limits) = crate::shared::historical::limits::current() {
+                crate::shared::historical::limits::check(
+                    "task metric entries",
+                    limits.metric_entries,
+                    (self.files.len() + self.hourly.len() + self.daily.len()) as u64,
+                    "integrity observation",
+                )?;
+            }
+            let mut global = self.global.clone();
+            let mut file = self.files.last_key_value().unwrap().1.clone();
+            let mut unattributed = self.unattributed.clone();
+            global.record(category, violated)?;
+            file.record(category, violated)?;
+            let updates = if windows.is_some() {
+                let mut hour = self.hourly.last_key_value().unwrap().1.clone();
+                let mut day = self.daily.last_key_value().unwrap().1.clone();
+                hour.record(category, violated)?;
+                day.record(category, violated)?;
+                Some((hour, day))
+            } else {
+                unattributed.record(category, violated)?;
+                None
+            };
+            self.global = global;
+            self.unattributed = unattributed;
+            *self.files.last_entry().unwrap().get_mut() = file;
+            if let Some((hour, day)) = updates {
+                *self.hourly.last_entry().unwrap().get_mut() = hour;
+                *self.daily.last_entry().unwrap().get_mut() = day;
+            }
+            return Ok(());
+        }
+        if let Some(limits) = crate::shared::historical::limits::current() {
+            let mut requested = self
+                .files
+                .len()
+                .checked_add(self.hourly.len())
+                .and_then(|n| n.checked_add(self.daily.len()))
+                .ok_or_else(|| {
+                    MarketForgeError::InvalidConfiguration(
+                        "metric entry accounting overflow".into(),
+                    )
+                })?;
+            requested = requested
+                .checked_add(usize::from(!self.files.contains_key(scope)))
+                .ok_or_else(|| {
+                    MarketForgeError::InvalidConfiguration(
+                        "metric entry accounting overflow".into(),
+                    )
+                })?;
+            if let Some(timestamp) = event_timestamp_ns {
+                requested = requested
+                    .checked_add(usize::from(!self.hourly.contains_key(&(
+                        scope.clone(),
+                        WindowGranularity::Hourly.start_ns(timestamp),
+                    ))))
+                    .ok_or_else(|| {
+                        MarketForgeError::InvalidConfiguration(
+                            "metric entry accounting overflow".into(),
+                        )
+                    })?;
+                requested = requested
+                    .checked_add(usize::from(!self.daily.contains_key(&(
+                        scope.clone(),
+                        WindowGranularity::Daily.start_ns(timestamp),
+                    ))))
+                    .ok_or_else(|| {
+                        MarketForgeError::InvalidConfiguration(
+                            "metric entry accounting overflow".into(),
+                        )
+                    })?;
+            }
+            crate::shared::historical::limits::check(
+                "task metric entries",
+                limits.metric_entries,
+                requested as u64,
+                "integrity observation",
+            )?;
+        }
         // Precompute every update before mutating the collector.
         // This avoids partial accounting if a counter overflows.
 
@@ -260,30 +368,61 @@ impl ScopedIntegrityMetrics {
 
         Ok(())
     }
+    /// Validate all arithmetic before mutating any scope. Temporary state is one
+    /// CategoryStatistics value, independent of the retained map cardinality.
+    pub(super) fn validate_merge(&self, other: &Self) -> Result<()> {
+        let mut global = self.global.clone();
+        global.merge(&other.global)?;
+        let mut unattributed = self.unattributed.clone();
+        unattributed.merge(&other.unattributed)?;
+        fn check<K: Ord>(
+            left: &BTreeMap<K, CategoryStatistics>,
+            right: &BTreeMap<K, CategoryStatistics>,
+        ) -> Result<()> {
+            for (key, value) in right {
+                let mut updated = left.get(key).cloned().unwrap_or_default();
+                updated.merge(value)?;
+            }
+            Ok(())
+        }
+        check(&self.files, &other.files)?;
+        check(&self.hourly, &other.hourly)?;
+        check(&self.daily, &other.daily)
+    }
+    pub(super) fn merge_validated(&mut self, other: &Self) {
+        self.global
+            .merge(&other.global)
+            .expect("prevalidated global merge");
+        self.unattributed
+            .merge(&other.unattributed)
+            .expect("prevalidated unattributed merge");
+        fn apply<K: Ord + Clone>(
+            left: &mut BTreeMap<K, CategoryStatistics>,
+            right: &BTreeMap<K, CategoryStatistics>,
+        ) {
+            for (key, value) in right {
+                left.entry(key.clone())
+                    .or_default()
+                    .merge(value)
+                    .expect("prevalidated scope merge");
+            }
+        }
+        apply(&mut self.files, &other.files);
+        apply(&mut self.hourly, &other.hourly);
+        apply(&mut self.daily, &other.daily);
+    }
     pub fn merge(&mut self, other: &Self) -> Result<()> {
-        let mut merged = self.clone();
-
-        merged.global.merge(&other.global)?;
-        merged.unattributed.merge(&other.unattributed)?;
-
-        for (scope, stats) in &other.files {
-            merged
-                .files
-                .entry(scope.clone())
-                .or_default()
-                .merge(stats)?;
+        if !self.retained.is_empty() || !other.retained.is_empty() {
+            let mut left = self.clone();
+            left.materialize()?;
+            let mut right = other.clone();
+            right.materialize()?;
+            left.merge(&right)?;
+            *self = left;
+            return Ok(());
         }
-
-        for (key, stats) in &other.hourly {
-            merged.hourly.entry(key.clone()).or_default().merge(stats)?;
-        }
-
-        for (key, stats) in &other.daily {
-            merged.daily.entry(key.clone()).or_default().merge(stats)?;
-        }
-
-        *self = merged;
-
+        self.validate_merge(other)?;
+        self.merge_validated(other);
         Ok(())
     }
 }
@@ -291,54 +430,46 @@ impl ScopedIntegrityMetrics {
 mod window_map_serde {
     use std::collections::BTreeMap;
 
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde::Deserializer;
 
     use super::{CategoryStatistics, IntegrityScope, IntegrityWindowEntry};
 
     type WindowMap = BTreeMap<(IntegrityScope, i64), CategoryStatistics>;
 
-    pub fn serialize<S>(map: &WindowMap, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let entries: Vec<IntegrityWindowEntry> = map
-            .iter()
-            .map(
-                |((scope, window_start_ns), statistics)| IntegrityWindowEntry {
-                    scope: scope.clone(),
-                    window_start_ns: *window_start_ns,
-                    statistics: statistics.clone(),
-                },
-            )
-            .collect();
-
-        entries.serialize(serializer)
-    }
-
     pub fn deserialize<'de, D>(deserializer: D) -> Result<WindowMap, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let entries = Vec::<IntegrityWindowEntry>::deserialize(deserializer)?;
-
-        let mut map = WindowMap::new();
-
-        for entry in entries {
-            let key = (entry.scope, entry.window_start_ns);
-
-            if map.insert(key, entry.statistics).is_some() {
-                return Err(serde::de::Error::custom("duplicate integrity window entry"));
+        struct Entries;
+        impl<'de> serde::de::Visitor<'de> for Entries {
+            type Value = WindowMap;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("integrity window entries")
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut entries: A,
+            ) -> Result<WindowMap, A::Error> {
+                let mut map = BTreeMap::new();
+                while let Some(entry) = entries.next_element::<IntegrityWindowEntry>()? {
+                    if map
+                        .insert((entry.scope, entry.window_start_ns), entry.statistics)
+                        .is_some()
+                    {
+                        return Err(serde::de::Error::custom("duplicate integrity window entry"));
+                    }
+                }
+                Ok(map)
             }
         }
-
-        Ok(map)
+        deserializer.deserialize_seq(Entries)
     }
 }
 
 mod file_map_serde {
     use std::collections::BTreeMap;
 
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{Deserialize, Deserializer, Serialize};
 
     use super::{CategoryStatistics, IntegrityScope};
 
@@ -350,36 +481,30 @@ mod file_map_serde {
 
     type FileMap = BTreeMap<IntegrityScope, CategoryStatistics>;
 
-    pub fn serialize<S>(map: &FileMap, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let entries: Vec<FileEntry> = map
-            .iter()
-            .map(|(scope, statistics)| FileEntry {
-                scope: scope.clone(),
-                statistics: statistics.clone(),
-            })
-            .collect();
-
-        entries.serialize(serializer)
-    }
-
     pub fn deserialize<'de, D>(deserializer: D) -> Result<FileMap, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let entries = Vec::<FileEntry>::deserialize(deserializer)?;
-
-        let mut map = FileMap::new();
-
-        for entry in entries {
-            if map.insert(entry.scope, entry.statistics).is_some() {
-                return Err(serde::de::Error::custom("duplicate integrity file entry"));
+        struct Entries;
+        impl<'de> serde::de::Visitor<'de> for Entries {
+            type Value = FileMap;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("integrity file entries")
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut entries: A,
+            ) -> Result<FileMap, A::Error> {
+                let mut map = BTreeMap::new();
+                while let Some(entry) = entries.next_element::<FileEntry>()? {
+                    if map.insert(entry.scope, entry.statistics).is_some() {
+                        return Err(serde::de::Error::custom("duplicate integrity file entry"));
+                    }
+                }
+                Ok(map)
             }
         }
-
-        Ok(map)
+        deserializer.deserialize_seq(Entries)
     }
 }
 

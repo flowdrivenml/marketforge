@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use crate::support::migration::configuration as load_processing_config;
 use marketforge_engine::historical::normalize::metrics::ScopedIntegrityMetrics;
 use {
-    marketforge_engine::historical::job::ProcessingJob,
     marketforge_engine::historical::job::WorkTask,
     marketforge_engine::historical::normalize::metrics::IntegrityCategory,
     marketforge_engine::historical::normalize::metrics::TaskMetrics,
@@ -14,7 +13,6 @@ use {
     marketforge_engine::shared::domain::canonical::Trade,
     marketforge_engine::shared::error::Result,
 };
-const JOB_FILE: &str = "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json";
 
 struct CountingSink {
     count: u64,
@@ -46,10 +44,34 @@ fn project_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn load_job() -> ProcessingJob {
-    let path = project_root().join("retained-cases").join(JOB_FILE);
+fn load_task() -> WorkTask {
+    let tasks = super::trade_real_archives::discover_trade_tasks();
 
-    crate::support::migration::archive_case(path).expect("load processing job")
+    assert!(
+        !tasks.is_empty(),
+        "authoritative batch has no concrete trade configurations"
+    );
+
+    let task = tasks
+        .into_values()
+        .min_by_key(|task| {
+            std::fs::metadata(&task.input_path)
+                .expect("required real archive")
+                .len()
+        })
+        .expect("select real trade source");
+
+    assert!(task.input_path.is_file());
+
+    println!(
+        "Selected task={} exchange={:?} symbol={} source={}",
+        task.task_id.0,
+        task.exchange,
+        task.symbol,
+        task.input_path.display()
+    );
+
+    task
 }
 
 fn print_metrics(metrics: &TaskMetrics) {
@@ -149,9 +171,8 @@ fn print_hourly_integrity(metrics: &TaskMetrics) {
 
 #[test]
 fn records_trade_processing_metrics() {
-    let job = load_job();
-
-    let task: &WorkTask = &job.tasks[0];
+    let selected = load_task();
+    let task = &selected;
 
     let mut sink = CountingSink { count: 0 };
     let mut metrics = TaskMetrics::default();
@@ -223,8 +244,8 @@ fn records_trade_processing_metrics() {
 
 #[test]
 fn successful_trade_processing_has_no_integrity_violations() {
-    let job = load_job();
-    let task = &job.tasks[0];
+    let selected = load_task();
+    let task = &selected;
 
     let mut sink = CountingSink { count: 0 };
     let mut metrics = TaskMetrics::default();

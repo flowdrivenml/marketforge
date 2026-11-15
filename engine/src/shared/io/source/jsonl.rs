@@ -22,7 +22,7 @@ impl<R: Read> JsonlDecoder<R> {
     pub fn next_record(&mut self) -> io::Result<Option<&[u8]>> {
         loop {
             self.buffer.clear();
-            if self.reader.read_until(b'\n', &mut self.buffer)? == 0 {
+            if self.read_line_bounded()? == 0 {
                 return Ok(None);
             }
             // Preserve whitespace-only line skipping; invalid UTF-8 is a record
@@ -35,6 +35,44 @@ impl<R: Read> JsonlDecoder<R> {
                 Ok(text) => text.trim().as_bytes(),
                 Err(_) => bytes.trim_ascii(),
             }));
+        }
+    }
+    fn read_line_bounded(&mut self) -> io::Result<usize> {
+        let Some(limit) = crate::shared::historical::limits::current().map(|l| l.record_bytes)
+        else {
+            return self.reader.read_until(b'\n', &mut self.buffer);
+        };
+        loop {
+            let chunk = self.reader.fill_buf()?;
+            if chunk.is_empty() {
+                return Ok(self.buffer.len());
+            }
+            let count = chunk
+                .iter()
+                .position(|b| *b == b'\n')
+                .map_or(chunk.len(), |i| i + 1);
+            let requested = self
+                .buffer
+                .len()
+                .checked_add(count)
+                .ok_or_else(|| io::Error::other("JSONL size overflow"))?;
+            if requested as u64 > limit {
+                return Err(io::Error::other(crate::shared::historical::limits::error(
+                    "record bytes",
+                    limit,
+                    requested as u64,
+                    "JSONL decoding",
+                )));
+            }
+            let finished = chunk[count - 1] == b'\n';
+            self.buffer
+                .try_reserve_exact(count)
+                .map_err(io::Error::other)?;
+            self.buffer.extend_from_slice(&chunk[..count]);
+            self.reader.consume(count);
+            if finished {
+                return Ok(self.buffer.len());
+            }
         }
     }
     pub fn next_json(&mut self) -> Result<Option<Value>, JsonlError> {
@@ -90,5 +128,27 @@ mod tests {
         let mut d = JsonlDecoder::new(&b"\xff\n{}\n"[..]);
         assert!(matches!(d.next_json(), Err(JsonlError::Record(_))));
         assert!(d.next_json().unwrap().is_some());
+    }
+}
+
+#[cfg(test)]
+mod resource_tests {
+    use super::*;
+    use crate::shared::{historical::limits::*, io::bounded::resource_error};
+    #[test]
+    fn jsonl_limit_is_checked_before_buffer_growth() {
+        let mut limits = NormalizationLimits::default();
+        limits.record_bytes = 3;
+        let _scope = LimitScope::enter(limits, "jsonl synthetic".into());
+        let mut decoder = JsonlDecoder::new(&b"{}\n"[..]);
+        assert!(decoder.next_json().unwrap().is_some());
+        let mut decoder = JsonlDecoder::new(&b"{ }\n"[..]);
+        match decoder.next_json() {
+            Err(JsonlError::Source(e)) => {
+                assert_eq!(resource_error(&e).unwrap().stage, "JSONL decoding")
+            }
+            _ => panic!("expected resource error"),
+        }
+        assert!(decoder.buffer.is_empty());
     }
 }

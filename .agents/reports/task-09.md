@@ -1,6 +1,6 @@
 # Task 09 — Benchmark statistics, scaling and comparisons
 
-Status: completed. Commit: recorded in the next progress update.
+Status: completed. Commit: `02a39f3`.
 
 Implementation: persisted-only analysis in benchmark statistics/analysis/comparison/reports modules. CLI adds summarize --run [--baseline-workers] and compare --baseline --candidate [--intentional ...] [--output-root]. Original explicit-input/dry-run execution CLI remains. Neither analysis command calls normalization or needs the original input/archives/datasets to remain available.
 

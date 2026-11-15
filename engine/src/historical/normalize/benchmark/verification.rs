@@ -344,6 +344,13 @@ pub fn verify_manifest(job: &ProcessingJob, m: &DatasetManifest) -> Result<()> {
                 &job.output.dataset_path.join(&stream.directory),
                 stream,
                 stream.sources.last().map_or(0, |s| s.end_row),
+                super::super::resources::boundary_read_limits(
+                    job,
+                    job.resources.normalization_limits,
+                    stream.sources.len(),
+                )
+                .map_err(|e| e.to_string())?,
+                |_| Ok(()),
             )
             .map_err(|e| e.to_string())?;
         }
@@ -358,7 +365,7 @@ fn verify_stream_depth(
 ) -> Result<()> {
     use crate::{
         historical::merge::{DepthEventCursor, ResolvedMergeInput, build_depth_inventory},
-        shared::persistence::parquet::{DepthEventBatchBuilder, read_depth_stream_boundaries},
+        shared::persistence::parquet::{DepthEventBatchBuilder, visit_depth_stream_boundaries},
     };
     let input = ResolvedMergeInput {
         dataset_id: job.dataset_id.0,
@@ -368,6 +375,53 @@ fn verify_stream_depth(
         auxiliary_files: vec![],
     };
     let inventory = build_depth_inventory(&[input]).map_err(|e| e.to_string())?;
+    let mut grouped = BTreeMap::new();
+    for task in &inventory {
+        grouped
+            .entry(task.boundary_path.parent().unwrap().to_path_buf())
+            .or_insert_with(BTreeMap::new)
+            .insert(task.task_id, task);
+    }
+    let mut reconstruction = BTreeMap::new();
+    for (directory, tasks) in grouped {
+        let bounds = super::super::resources::boundary_read_limits(
+            job,
+            job.resources.normalization_limits,
+            tasks.len(),
+        )
+        .map_err(|e| e.to_string())?;
+        visit_depth_stream_boundaries(&directory, bounds, |source| {
+            let task = tasks.get(&source.task_id).ok_or_else(|| {
+                crate::shared::error::MarketForgeError::InvalidConfiguration(
+                    "missing source boundary task".into(),
+                )
+            })?;
+            let mut hasher = Sha256::new();
+            // Preserve the existing canonical JSON digest exactly, one source at a time.
+            hasher.update(
+                serde_json::to_vec(&serde_json::to_value(&task.segments).map_err(|e| {
+                    crate::shared::error::MarketForgeError::InvalidConfiguration(e.to_string())
+                })?)
+                .map_err(|e| {
+                    crate::shared::error::MarketForgeError::InvalidConfiguration(e.to_string())
+                })?,
+            );
+            hasher.update(
+                serde_json::to_vec(&serde_json::to_value(&source.boundary).map_err(|e| {
+                    crate::shared::error::MarketForgeError::InvalidConfiguration(e.to_string())
+                })?)
+                .map_err(|e| {
+                    crate::shared::error::MarketForgeError::InvalidConfiguration(e.to_string())
+                })?,
+            );
+            reconstruction.insert(
+                (directory.clone(), source.task_id),
+                super::provenance::hex(hasher.finalize()),
+            );
+            Ok(())
+        })
+        .map_err(|e| e.to_string())?;
+    }
     for task in inventory {
         let key = format!("{}.{}", job.job_id.0, task.task_id);
         let mut cursor = DepthEventCursor::for_task(&task, None).map_err(|e| e.to_string())?;
@@ -390,25 +444,13 @@ fn verify_stream_depth(
             key.clone(),
             super::provenance::hex(digests.remove(&key).unwrap_or_default().finalize()),
         );
-        let boundaries = read_depth_stream_boundaries(task.boundary_path.parent().unwrap())
-            .map_err(|e| e.to_string())?;
-        let boundary = &boundaries
-            .sources
-            .iter()
-            .find(|s| s.task_id == task.task_id)
-            .ok_or("missing source boundary")?
-            .boundary;
-        let mut hasher = Sha256::new();
-        hasher.update(
-            serde_json::to_vec(&serde_json::to_value(&task.segments).map_err(|e| e.to_string())?)
-                .map_err(|e| e.to_string())?,
-        );
-        hasher.update(
-            serde_json::to_vec(&serde_json::to_value(boundary).map_err(|e| e.to_string())?)
-                .map_err(|e| e.to_string())?,
-        );
-        out.reconstruction_sha256
-            .insert(key, super::provenance::hex(hasher.finalize()));
+        let digest = reconstruction
+            .remove(&(
+                task.boundary_path.parent().unwrap().to_path_buf(),
+                task.task_id,
+            ))
+            .ok_or("missing source reconstruction digest")?;
+        out.reconstruction_sha256.insert(key, digest);
     }
     Ok(())
 }

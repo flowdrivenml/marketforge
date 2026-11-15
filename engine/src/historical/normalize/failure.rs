@@ -82,19 +82,53 @@ impl ProcessingFailureReport {
             )));
         }
 
-        let contents = serde_json::to_vec_pretty(self).map_err(|error| {
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|error| {
+                MarketForgeError::InvalidConfiguration(format!(
+                    "failed to create report {}: {error}",
+                    path.display()
+                ))
+            })?;
+        let mut writer = std::io::BufWriter::new(file);
+        serde_json::to_writer_pretty(&mut writer, self).map_err(|error| {
             MarketForgeError::InvalidConfiguration(format!(
-                "failed to serialize processing failure report: {error}",
+                "failed to persist report {}: {error}",
+                path.display()
             ))
         })?;
-
-        fs::write(&path, contents).map_err(|error| {
+        std::io::Write::flush(&mut writer).map_err(|error| {
             MarketForgeError::InvalidConfiguration(format!(
-                "failed to write processing failure report {}: {error}",
-                path.display(),
+                "failed to flush report {}: {error}",
+                path.display()
             ))
         })?;
 
         Ok(path)
+    }
+}
+
+/// Preserve stream identity and the primary typed error when report persistence
+/// fails too. This is also used before failure.json itself can be assembled.
+pub(crate) fn report_persistence_error(
+    processing: MarketForgeError,
+    report: MarketForgeError,
+) -> MarketForgeError {
+    match processing {
+        MarketForgeError::StreamFailure {
+            stream,
+            stage,
+            source,
+        } => MarketForgeError::StreamFailure {
+            stream,
+            stage,
+            source: Box::new(report_persistence_error(*source, report)),
+        },
+        processing => MarketForgeError::ReportPersistence {
+            processing: Box::new(processing),
+            report: Box::new(report),
+        },
     }
 }

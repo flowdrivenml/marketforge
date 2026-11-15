@@ -59,16 +59,15 @@ impl DepthSink for TestDepthSink {
         }
 
         // Every level in one outcome must belong to the same source event.
-        if let Some(first) = outcome.events.first() {
-            if outcome
+        if let Some(first) = outcome.events.first()
+            && outcome
                 .events
                 .iter()
                 .any(|event| event.envelope.event_timestamp_ns != first.envelope.event_timestamp_ns)
-            {
-                return Err(MarketForgeError::InvalidConfiguration(
-                    "depth outcome contains multiple event timestamps".to_owned(),
-                ));
-            }
+        {
+            return Err(MarketForgeError::InvalidConfiguration(
+                "depth outcome contains multiple event timestamps".to_owned(),
+            ));
         }
 
         // ---------------------------------------------------------------------

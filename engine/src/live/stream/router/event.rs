@@ -314,13 +314,36 @@ pub enum RouterDelivery {
 
 impl RouterPublication {
     /// Canonical events, excluding invalidation/completion controls and integrity.
-    pub fn market_event_count(&self)->u64 {match self {Self::Trades{records,..}=>records.len() as u64,Self::Depth(e)=>e.iter().filter(|e|!matches!(e,RouterDepthEvent::Invalidated{..}|RouterDepthEvent::Snapshot{timestamp:crate::live::integrity::DepthAcceptedTimestamp{composition:crate::live::integrity::DepthTimestampComposition::CurrentBookHandoff,..},..})).count() as u64,Self::Derived(e)=>e.iter().filter(|e|!matches!(e.native,NativeMarketEvent::Depth(RouterDepthEvent::Invalidated{..}|RouterDepthEvent::Snapshot{timestamp:crate::live::integrity::DepthAcceptedTimestamp{composition:crate::live::integrity::DepthTimestampComposition::CurrentBookHandoff,..},..}))).count() as u64,Self::ReplayComplete=>0}}
-    pub fn last_market_timestamp(&self)->Option<i64>{match self {Self::Trades{records,..}=>records.last().map(|t|t.envelope.event_timestamp_ns),Self::Depth(e)=>e.iter().rev().find_map(RouterDepthEvent::timestamp_ns),Self::Derived(e)=>e.iter().rev().find_map(|e|e.native.timestamp_ns()),Self::ReplayComplete=>None}}
+    pub fn market_event_count(&self) -> u64 {
+        match self {Self::Trades{records,..}=>records.len() as u64,Self::Depth(e)=>e.iter().filter(|e|!matches!(e,RouterDepthEvent::Invalidated{..}|RouterDepthEvent::Snapshot{timestamp:crate::live::integrity::DepthAcceptedTimestamp{composition:crate::live::integrity::DepthTimestampComposition::CurrentBookHandoff,..},..})).count() as u64,Self::Derived(e)=>e.iter().filter(|e|!matches!(e.native,NativeMarketEvent::Depth(RouterDepthEvent::Invalidated{..}|RouterDepthEvent::Snapshot{timestamp:crate::live::integrity::DepthAcceptedTimestamp{composition:crate::live::integrity::DepthTimestampComposition::CurrentBookHandoff,..},..}))).count() as u64,Self::ReplayComplete=>0}
+    }
+    pub fn last_market_timestamp(&self) -> Option<i64> {
+        match self {
+            Self::Trades { records, .. } => records.last().map(|t| t.envelope.event_timestamp_ns),
+            Self::Depth(e) => e.iter().rev().find_map(RouterDepthEvent::timestamp_ns),
+            Self::Derived(e) => e.iter().rev().find_map(|e| e.native.timestamp_ns()),
+            Self::ReplayComplete => None,
+        }
+    }
 }
 
 impl RouterPublication {
-    pub fn market_shape(&self)->(u64,u64,u64){
-        fn depth(d:&RouterDepthEvent)->(u64,u64,u64){match d {RouterDepthEvent::Invalidated{..}=> (0,0,0),RouterDepthEvent::Snapshot{timestamp,..} if timestamp.composition==crate::live::integrity::DepthTimestampComposition::CurrentBookHandoff=>(0,0,0),RouterDepthEvent::Snapshot{levels,..}=>(0,1,levels.len() as u64),RouterDepthEvent::Delta{changes,..}=>(0,1,changes.len() as u64)}}
-        let sum=|(a,b,c),(x,y,z)|(a+x,b+y,c+z);match self {Self::Trades{records,..}=>(records.len() as u64,0,0),Self::Depth(events)=>events.iter().map(depth).fold((0,0,0),sum),Self::Derived(events)=>events.iter().map(|e|match &e.native{NativeMarketEvent::Trade(_)=>(1,0,0),NativeMarketEvent::Depth(d)=>depth(d)}).fold((0,0,0),sum),Self::ReplayComplete=>(0,0,0)}
+    pub fn market_shape(&self) -> (u64, u64, u64) {
+        fn depth(d: &RouterDepthEvent) -> (u64, u64, u64) {
+            match d {RouterDepthEvent::Invalidated{..}=> (0,0,0),RouterDepthEvent::Snapshot{timestamp,..} if timestamp.composition==crate::live::integrity::DepthTimestampComposition::CurrentBookHandoff=>(0,0,0),RouterDepthEvent::Snapshot{levels,..}=>(0,1,levels.len() as u64),RouterDepthEvent::Delta{changes,..}=>(0,1,changes.len() as u64)}
+        }
+        let sum = |(a, b, c), (x, y, z)| (a + x, b + y, c + z);
+        match self {
+            Self::Trades { records, .. } => (records.len() as u64, 0, 0),
+            Self::Depth(events) => events.iter().map(depth).fold((0, 0, 0), sum),
+            Self::Derived(events) => events
+                .iter()
+                .map(|e| match &e.native {
+                    NativeMarketEvent::Trade(_) => (1, 0, 0),
+                    NativeMarketEvent::Depth(d) => depth(d),
+                })
+                .fold((0, 0, 0), sum),
+            Self::ReplayComplete => (0, 0, 0),
+        }
     }
 }

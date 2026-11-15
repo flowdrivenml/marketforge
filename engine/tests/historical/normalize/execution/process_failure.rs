@@ -1,10 +1,6 @@
 #![cfg(feature = "historical")]
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::fs;
 
 use {
     crate::support::migration::template as load_processing_job,
@@ -17,18 +13,14 @@ use {
     marketforge_engine::historical::normalize::metrics::ProcessingMetricsReport,
 };
 
-const JOB_FILE: &str = "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json";
+const JOB_FILE: &str = "okx.future.linear.trades:BTC-USD_UM-261225";
 
 fn test_directory() -> crate::support::migration::PersistentDirectory {
     crate::support::migration::PersistentDirectory::new()
 }
 
 fn load_job() -> marketforge_engine::historical::job::ProcessingJob {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("project root");
-
-    load_processing_job(root.join("retained-cases").join(JOB_FILE)).expect("load processing job")
+    load_processing_job(JOB_FILE).expect("load processing job")
 }
 
 #[test]
@@ -48,8 +40,10 @@ fn serializes_failure_report() {
     metrics.counters.events_written = 48;
     metrics.counters.tasks_failed = 1;
 
-    let mut evaluation = IntegrityEvaluation::default();
-    evaluation.status = IntegrityStatus::Failed;
+    let evaluation = IntegrityEvaluation {
+        status: IntegrityStatus::Failed,
+        ..Default::default()
+    };
 
     let report = ProcessingFailureReport::new(
         &job,

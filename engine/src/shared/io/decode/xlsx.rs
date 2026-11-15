@@ -1,5 +1,6 @@
 use std::io::{Cursor, Read, Seek};
 
+use crate::shared::historical::limits;
 use quick_xml::{Reader, XmlVersion, events::Event};
 use serde_json::{Value, json};
 use zip::ZipArchive;
@@ -39,9 +40,7 @@ impl XlsxDepthDecoder {
 
         let mut xml = Vec::new();
 
-        sheet
-            .read_to_end(&mut xml)
-            .map_err(|error| invalid_error(format!("cannot read worksheet: {error}")))?;
+        read_xml(&mut sheet, &mut xml, "worksheet XML")?;
 
         let rows = parse_worksheet(&xml, &shared_strings)?;
 
@@ -83,7 +82,11 @@ impl XlsxDepthDecoder {
                     }),
                 })
             })();
+            if matches!(result, Err(MarketForgeError::ResourceLimit(_))) {
+                return result.map(|_| records);
+            }
             observe(source_ordinal, timestamp_ns, result.as_ref().err())?;
+            check_items(records.len(), "decoded workbook rows")?;
             records.push(result?);
         }
 
@@ -94,25 +97,25 @@ impl XlsxDepthDecoder {
 }
 
 fn find_worksheet<R: Read + Seek>(workbook: &mut ZipArchive<R>) -> Result<String> {
-    let sheets = workbook
-        .file_names()
-        .map(|name| {
-            name.map(|name| name.into_owned())
-                .map_err(|error| invalid_error(format!("invalid XLSX member name: {error}")))
-        })
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .filter(|name| name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml"))
-        .collect::<Vec<_>>();
-
-    if sheets.len() != 1 {
+    let mut sheet = None;
+    let mut count = 0usize;
+    for name in workbook.file_names() {
+        let name = name.map_err(|e| invalid_error(format!("invalid XLSX member name: {e}")))?;
+        if name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml") {
+            count = count
+                .checked_add(1)
+                .ok_or_else(|| invalid_error("worksheet count overflow"))?;
+            if sheet.is_none() {
+                sheet = Some(name.into_owned());
+            }
+        }
+    }
+    if count != 1 {
         return invalid(format!(
-            "expected exactly one XLSX worksheet, found {}",
-            sheets.len()
+            "expected exactly one XLSX worksheet, found {count}"
         ));
     }
-
-    Ok(sheets[0].clone())
+    Ok(sheet.expect("one worksheet"))
 }
 
 fn read_shared_strings<R: Read + Seek>(workbook: &mut ZipArchive<R>) -> Result<Vec<String>> {
@@ -122,8 +125,7 @@ fn read_shared_strings<R: Read + Seek>(workbook: &mut ZipArchive<R>) -> Result<V
 
     let mut xml = Vec::new();
 
-    file.read_to_end(&mut xml)
-        .map_err(|error| invalid_error(format!("cannot read XLSX shared strings: {error}")))?;
+    read_xml(&mut file, &mut xml, "shared strings XML")?;
 
     let mut reader = Reader::from_reader(Cursor::new(xml));
 
@@ -154,6 +156,7 @@ fn read_shared_strings<R: Read + Seek>(workbook: &mut ZipArchive<R>) -> Result<V
                 let text = quick_xml::escape::unescape(&text)
                     .map_err(|error| invalid_error(error.to_string()))?;
 
+                check_text(current.len(), text.len(), "shared string text")?;
                 current.push_str(&text);
             }
 
@@ -162,6 +165,7 @@ fn read_shared_strings<R: Read + Seek>(workbook: &mut ZipArchive<R>) -> Result<V
             }
 
             Event::End(event) if event.name().as_ref() == "si" => {
+                check_items(strings.len(), "shared strings")?;
                 strings.push(std::mem::take(&mut current));
                 inside_string = false;
             }
@@ -185,6 +189,7 @@ fn parse_worksheet(xml: &[u8], shared_strings: &[String]) -> Result<Vec<Vec<Stri
 
     let mut rows = Vec::new();
     let mut current_row = BTreeMap::<usize, String>::new();
+    let mut retained_text = 0u64;
 
     let mut current_value = String::new();
     let mut current_type = String::new();
@@ -288,6 +293,7 @@ fn parse_worksheet(xml: &[u8], shared_strings: &[String]) -> Result<Vec<Vec<Stri
                 let text = quick_xml::escape::unescape(&text)
                     .map_err(|error| invalid_error(error.to_string()))?;
 
+                check_text(current_value.len(), text.len(), "worksheet cell text")?;
                 current_value.push_str(&text);
             }
 
@@ -309,14 +315,18 @@ fn parse_worksheet(xml: &[u8], shared_strings: &[String]) -> Result<Vec<Vec<Stri
                         .parse::<usize>()
                         .map_err(|_| invalid_error("invalid XLSX shared-string index"))?;
 
-                    shared_strings
+                    let text = shared_strings
                         .get(index)
-                        .ok_or_else(|| invalid_error("XLSX shared-string index out of range"))?
-                        .clone()
+                        .ok_or_else(|| invalid_error("XLSX shared-string index out of range"))?;
+                    check_text(0, text.len(), "worksheet shared cell")?;
+                    check_retained_text(retained_text, text.len())?;
+                    text.clone()
                 } else {
                     std::mem::take(&mut current_value)
                 };
 
+                check_items(current_row.len(), "worksheet cells")?;
+                retained_text = check_retained_text(retained_text, value.len())?;
                 if current_row.insert(column, value).is_some() {
                     return invalid(format!("duplicate XLSX cell in column {column}",));
                 }
@@ -344,6 +354,7 @@ fn parse_worksheet(xml: &[u8], shared_strings: &[String]) -> Result<Vec<Vec<Stri
                     ));
                 }
 
+                check_items(rows.len(), "worksheet rows")?;
                 rows.push(vec![
                     current_row.remove(&0).unwrap(),
                     current_row.remove(&1).unwrap(),
@@ -379,6 +390,7 @@ fn parse_levels(text: &str, ordinal: u64, side: &str) -> Result<Value> {
         .as_array()
         .ok_or_else(|| invalid_error(format!("XLSX row {ordinal}: {side} must be an array")))?;
 
+    limits::depth(array.len(), "workbook level normalization")?;
     let mut normalized = Vec::with_capacity(array.len());
 
     for level in array {
@@ -472,5 +484,133 @@ mod reference_tests {
         assert_eq!(parse_cell_reference("C2").unwrap(), (2, 2));
 
         assert_eq!(parse_cell_reference("AA10").unwrap(), (26, 10));
+    }
+}
+
+fn read_xml(reader: &mut impl Read, xml: &mut Vec<u8>, stage: &'static str) -> Result<()> {
+    if let Some(limit) = limits::current() {
+        *xml = crate::shared::io::bounded::read_bounded(reader, limit.workbook_xml_bytes, stage)
+            .map_err(|e| match crate::shared::io::bounded::resource_error(&e) {
+                Some(limit) => MarketForgeError::ResourceLimit(limit),
+                None => invalid_error(format!("cannot read {stage}: {e}")),
+            })?;
+    } else {
+        reader
+            .read_to_end(xml)
+            .map_err(|e| invalid_error(e.to_string()))?;
+    }
+    Ok(())
+}
+fn check_text(current: usize, additional: usize, stage: &'static str) -> Result<()> {
+    let requested = current
+        .checked_add(additional)
+        .ok_or_else(|| invalid_error("XLSX text accounting overflow"))?;
+    if let Some(limit) = limits::current() {
+        limits::check("cell bytes", limit.record_bytes, requested as u64, stage)?;
+    }
+    Ok(())
+}
+fn check_retained_text(current: u64, additional: usize) -> Result<u64> {
+    let requested = current
+        .checked_add(additional as u64)
+        .ok_or_else(|| invalid_error("XLSX retained text overflow"))?;
+    if let Some(limit) = limits::current() {
+        limits::check(
+            "retained worksheet cell bytes",
+            limit.workbook_xml_bytes,
+            requested,
+            "worksheet materialization",
+        )?;
+    }
+    Ok(requested)
+}
+fn check_items(current: usize, stage: &'static str) -> Result<()> {
+    let requested = (current as u64)
+        .checked_add(1)
+        .ok_or_else(|| invalid_error("XLSX item accounting overflow"))?;
+    if let Some(limit) = limits::current() {
+        let permitted = match stage {
+            "worksheet cells" => 3,
+            "shared strings" => limit
+                .workbook_rows
+                .checked_mul(3)
+                .ok_or_else(|| invalid_error("shared string count overflow"))?,
+            _ => limit.workbook_rows,
+        };
+        limits::check("workbook items", permitted, requested, stage)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod resource_tests {
+    use super::*;
+    use std::io::Write;
+    fn workbook(xml: &[u8]) -> Cursor<Vec<u8>> {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "xl/worksheets/sheet1.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        writer.write_all(xml).unwrap();
+        writer.finish().unwrap()
+    }
+    #[test]
+    fn expanded_xml_and_materialized_rows_are_bounded() {
+        let xml = br#"<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>[[2,1]]</v></c><c r="C1"><v>[[1,1]]</v></c></row></sheetData></worksheet>"#;
+        let mut limit = limits::NormalizationLimits::default();
+        limit.workbook_xml_bytes = xml.len() as u64;
+        {
+            let _scope = limits::LimitScope::enter(limit, "tiny workbook".into());
+            assert_eq!(XlsxDepthDecoder::decode(workbook(xml)).unwrap().len(), 1);
+        }
+        limit.workbook_xml_bytes -= 1;
+        {
+            let _scope = limits::LimitScope::enter(limit, "tiny workbook".into());
+            assert!(
+                matches!(XlsxDepthDecoder::decode(workbook(xml)), Err(MarketForgeError::ResourceLimit(ref e)) if e.stage == "worksheet XML")
+            );
+        }
+        limit = limits::NormalizationLimits::default();
+        limit.workbook_rows = 1;
+        let _scope = limits::LimitScope::enter(limit, "rows synthetic".into());
+        let rows = br#"<worksheet><row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>2</v></c><c r="C1"><v>3</v></c></row><row r="2"><c r="A2"><v>1</v></c><c r="B2"><v>2</v></c><c r="C2"><v>3</v></c></row></worksheet>"#;
+        // The cells themselves share the item limit; no oversized structure grows.
+        assert!(matches!(
+            parse_worksheet(rows, &[]),
+            Err(MarketForgeError::ResourceLimit(_))
+        ));
+    }
+}
+
+#[cfg(test)]
+mod observation_resource_tests {
+    use super::*;
+    use std::io::Write;
+    #[test]
+    fn resource_failure_never_becomes_malformed_row_observation() {
+        let mut limit = limits::NormalizationLimits::default();
+        limit.depth_levels = 1;
+        let _scope = limits::LimitScope::enter(limit, "task=9, source=tiny workbook".into());
+        let xml = br#"<worksheet><row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>[[2,1],[3,1]]</v></c><c r="C1"><v>[[1,1]]</v></c></row></worksheet>"#;
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "xl/worksheets/sheet1.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        writer.write_all(xml).unwrap();
+        let mut observations = 0;
+        let result = XlsxDepthDecoder::decode_observed(writer.finish().unwrap(), |_, _, _| {
+            observations += 1;
+            Ok(())
+        });
+        assert!(
+            matches!(result, Err(MarketForgeError::ResourceLimit(ref e)) if e.stage == "workbook level normalization" && e.scope.contains("task=9"))
+        );
+        assert_eq!(observations, 0);
     }
 }

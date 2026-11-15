@@ -7,8 +7,15 @@ use crate::live::config::general::RecordingConfig;
 use super::writer::RecordingEvent;
 
 pub(crate) struct RecordingReservation(pub Arc<crate::live::metrics::RecordingMetrics>);
-impl Drop for RecordingReservation {fn drop(&mut self){self.0.pending_remove();}}
-pub(crate) struct QueuedRecordingEvent {pub event:RecordingEvent,pub reservation:RecordingReservation}
+impl Drop for RecordingReservation {
+    fn drop(&mut self) {
+        self.0.pending_remove();
+    }
+}
+pub(crate) struct QueuedRecordingEvent {
+    pub event: RecordingEvent,
+    pub reservation: RecordingReservation,
+}
 pub(crate) enum RecordingCommand {
     Event(QueuedRecordingEvent),
     Shutdown(oneshot::Sender<()>),
@@ -93,7 +100,10 @@ impl RecordingControl {
         }
 
         self.metrics.pending_add();
-        permit.send(RecordingCommand::Event(QueuedRecordingEvent{event,reservation:RecordingReservation(self.metrics.clone())}));
+        permit.send(RecordingCommand::Event(QueuedRecordingEvent {
+            event,
+            reservation: RecordingReservation(self.metrics.clone()),
+        }));
 
         Ok(())
     }
@@ -115,7 +125,9 @@ impl RecordingControl {
         Ok(())
     }
 
-    pub fn metrics(&self)->Arc<crate::live::metrics::RecordingMetrics>{self.metrics.clone()}
+    pub fn metrics(&self) -> Arc<crate::live::metrics::RecordingMetrics> {
+        self.metrics.clone()
+    }
     pub fn config(&self) -> RecordingConfig {
         self.config_sender.borrow().clone()
     }

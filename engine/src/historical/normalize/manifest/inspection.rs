@@ -100,13 +100,13 @@ pub(super) fn inspect_parquet_file(dataset_root: &Path, path: &Path) -> Result<D
         )));
     }
 
-    if let (Some(start), Some(end)) = (start_timestamp_ns, end_timestamp_ns) {
-        if start > end {
-            return Err(MarketForgeError::InvalidConfiguration(format!(
-                "Parquet file {} has invalid timestamp boundaries",
-                path.display(),
-            )));
-        }
+    if let (Some(start), Some(end)) = (start_timestamp_ns, end_timestamp_ns)
+        && start > end
+    {
+        return Err(MarketForgeError::InvalidConfiguration(format!(
+            "Parquet file {} has invalid timestamp boundaries",
+            path.display(),
+        )));
     }
 
     // -------------------------------------------------------------------------

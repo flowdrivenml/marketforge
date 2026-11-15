@@ -1,23 +1,14 @@
 // #![cfg(feature = "historical")]
 
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::collections::BTreeMap;
 
 use {
-    crate::support::migration::archive_case as load_processing_job,
     marketforge_engine::historical::job::WorkTask,
-    marketforge_engine::historical::job::validate_processing_job,
     marketforge_engine::historical::normalize::worker::TradeSink,
     marketforge_engine::historical::normalize::worker::process_trade_task,
     marketforge_engine::shared::domain::canonical::Trade,
     marketforge_engine::shared::error::Result,
-    marketforge_engine::shared::normalization::TargetSchema,
 };
-
-const EXPECTED_CONFIGURATIONS: usize = 18;
 
 // -----------------------------------------------------------------------------
 // Counting sink
@@ -54,41 +45,8 @@ impl TradeSink for CountingTradeSink {
 // Job discovery
 // -----------------------------------------------------------------------------
 
-fn process_jobs_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../retained-cases")
-}
-
-fn configuration_key(task: &WorkTask) -> String {
-    let normalization = task
-        .normalizations
-        .iter()
-        .find(|normalization| normalization.target_schema == TargetSchema::Trade)
-        .expect("trade normalization");
-
-    format!(
-        "{:?}:{:?}:{:?}:{}:{:?}:{:?}",
-        task.exchange,
-        task.instrument.instrument_kind,
-        task.instrument.contract_kind,
-        task.format_code.0,
-        normalization.quantity_encoding,
-        normalization.timestamp_encoding,
-    )
-}
-
 fn discover_trade_tasks() -> BTreeMap<String, WorkTask> {
-    let mut tasks = BTreeMap::new();
-    for job in crate::support::migration::retained_trade_jobs() {
-        for task in job.tasks {
-            let key = configuration_key(&task);
-            assert!(
-                tasks.insert(key, task).is_none(),
-                "ambiguous retained profile selection"
-            );
-        }
-    }
-    assert!(!tasks.is_empty(), "no retained trade cases");
-    tasks
+    super::trade_real_archives::discover_trade_tasks()
 }
 
 // -----------------------------------------------------------------------------
@@ -98,17 +56,18 @@ fn discover_trade_tasks() -> BTreeMap<String, WorkTask> {
 #[test]
 fn processes_complete_trade_archives() {
     let tasks = discover_trade_tasks();
+    let expected_configurations = tasks.len();
 
     println!("\n{}", "=".repeat(110));
     println!("MARKETFORGE — COMPLETE TRADE ARCHIVE PROCESSING");
     println!("{}", "=".repeat(110));
 
     println!("Configurations discovered : {}", tasks.len());
-    println!("Expected configurations   : {EXPECTED_CONFIGURATIONS}");
+    println!("Expected configurations   : {expected_configurations}");
 
     assert_eq!(
         tasks.len(),
-        EXPECTED_CONFIGURATIONS,
+        expected_configurations,
         "unexpected number of trade configurations"
     );
 
@@ -288,7 +247,7 @@ fn processes_complete_trade_archives() {
     );
 
     assert_eq!(
-        successful, EXPECTED_CONFIGURATIONS,
+        successful, expected_configurations,
         "not all trade configurations passed"
     );
 

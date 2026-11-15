@@ -86,17 +86,27 @@ impl StreamRecoveryBinding {
 /// single shared RecoveryCoordinator.
 #[derive(Clone)]
 pub struct StreamRecoveryHandle {
-    metrics:Option<std::sync::Arc<crate::live::metrics::SourceMetrics>>,
+    metrics: Option<std::sync::Arc<crate::live::metrics::SourceMetrics>>,
     manager: RecoveryHandle,
     binding: StreamRecoveryBinding,
 }
 
 impl StreamRecoveryHandle {
     pub fn new(manager: RecoveryHandle, binding: StreamRecoveryBinding) -> Self {
-        Self { manager, binding,metrics:None }
+        Self {
+            manager,
+            binding,
+            metrics: None,
+        }
     }
 
-    pub fn with_metrics(mut self,metrics:std::sync::Arc<crate::live::metrics::SourceMetrics>)->Self{self.metrics=Some(metrics);self}
+    pub fn with_metrics(
+        mut self,
+        metrics: std::sync::Arc<crate::live::metrics::SourceMetrics>,
+    ) -> Self {
+        self.metrics = Some(metrics);
+        self
+    }
     pub fn binding(&self) -> &StreamRecoveryBinding {
         &self.binding
     }
@@ -124,7 +134,11 @@ impl StreamRecoveryHandle {
         )
         .map_err(|error| StreamRecoveryError::InvalidRequest(format!("{error:?}")))?;
 
-        let ticket=self.manager.request(request).await?;if let Some(metrics)=&self.metrics{metrics.recovery_requested();}Ok(ticket)
+        let ticket = self.manager.request(request).await?;
+        if let Some(metrics) = &self.metrics {
+            metrics.recovery_requested();
+        }
+        Ok(ticket)
     }
 
     // ========================================================
@@ -151,7 +165,9 @@ impl StreamRecoveryHandle {
             epoch,
         )?;
 
-        let mut next=Self::new(self.manager.clone(), binding);next.metrics=self.metrics.clone();Ok(next)
+        let mut next = Self::new(self.manager.clone(), binding);
+        next.metrics = self.metrics.clone();
+        Ok(next)
     }
     pub async fn request_depth_snapshot(
         &self,

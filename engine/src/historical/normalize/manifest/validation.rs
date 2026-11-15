@@ -4,9 +4,22 @@ use crate::{
     shared::error::{MarketForgeError, Result},
 };
 use std::collections::HashSet;
-impl DatasetManifest {
+impl<M: std::borrow::Borrow<crate::historical::normalize::metrics::ProcessingMetricsReport>>
+    DatasetManifest<M>
+{
     /// Validate authoritative source spans before readers join stream metadata paths.
     pub fn validate_streams(&self) -> Result<()> {
+        let processing_metrics = self.processing_metrics.borrow();
+        let reports: std::collections::HashMap<_, _> = processing_metrics
+            .tasks
+            .iter()
+            .map(|task| (task.task_id, task))
+            .collect();
+        if reports.len() != processing_metrics.tasks.len() {
+            return Err(MarketForgeError::InvalidConfiguration(
+                "duplicate source metrics".into(),
+            ));
+        }
         let invalid = |s: &str| MarketForgeError::InvalidConfiguration(s.into());
         if self.streams.is_empty() {
             if self.files.iter().any(|f| f.path.starts_with("streams/")) {
@@ -14,7 +27,7 @@ impl DatasetManifest {
             }
             return Ok(());
         }
-        if self.protocol_version != 3 {
+        if !matches!(self.protocol_version, 3 | 4) {
             return Err(invalid("stream ownership requires manifest3"));
         }
         let kind = match self.content_type {
@@ -38,22 +51,50 @@ impl DatasetManifest {
             {
                 return Err(invalid("unsafe or duplicate stream directory"));
             }
-            let mut offset = 0u64;
+            let mut row_ranges = Vec::new();
             for source in &stream.sources {
-                let metrics = self
-                    .processing_metrics
-                    .tasks
-                    .iter()
-                    .find(|t| t.task_id == source.task_id)
+                let metrics = reports
+                    .get(&source.task_id)
                     .ok_or_else(|| invalid("missing source metrics"))?;
                 if !tasks.insert(source.task_id)
-                    || source.start_row != offset
-                    || source.end_row.checked_sub(offset) != Some(metrics.counters.events_written)
+                    || source.row_count()? != metrics.counters.events_written
                     || metrics.stream_id != stream.stream_id
+                    || (self.protocol_version == 3 && !source.ranges.is_empty())
                 {
                     return Err(invalid("invalid stream source attribution"));
                 }
-                offset = source.end_row;
+                if source.ranges.is_empty() {
+                    if source.start_row < source.end_row {
+                        row_ranges.push((source.start_row, source.end_row));
+                    }
+                } else {
+                    if source.ranges.first().map(|r| r.start_row) != Some(source.start_row)
+                        || source.ranges.last().map(|r| r.end_row) != Some(source.end_row)
+                    {
+                        return Err(invalid("source bounding range disagrees with row ranges"));
+                    }
+                    for pair in source.ranges.windows(2) {
+                        if pair[0].end_row >= pair[1].start_row {
+                            return Err(invalid(
+                                "source row ranges must be disjoint and coalesced",
+                            ));
+                        }
+                    }
+                    for range in &source.ranges {
+                        if range.start_row >= range.end_row {
+                            return Err(invalid("empty/inverted source row range"));
+                        }
+                        row_ranges.push((range.start_row, range.end_row));
+                    }
+                }
+            }
+            row_ranges.sort_unstable();
+            let mut offset = 0u64;
+            for (start, end) in row_ranges {
+                if start != offset {
+                    return Err(invalid("source row ownership overlaps or leaves gaps"));
+                }
+                offset = end;
             }
             let prefix = format!("{}/", stream.directory);
             let mut rows = 0u64;
@@ -74,12 +115,191 @@ impl DatasetManifest {
                 return Err(invalid("stream source/physical row mismatch"));
             }
         }
-        if tasks != self.source_tasks.iter().copied().collect()
-            || tasks.len() != self.source_tasks.len()
+        let mut accounted = tasks.clone();
+        if self.protocol_version == 4 {
+            for task in &processing_metrics.tasks {
+                if task.counters.events_written == 0
+                    && task.source.as_ref().is_some_and(|source| {
+                        source.family_candidate && source.observed_selected_records == 0
+                    })
+                {
+                    accounted.insert(task.task_id);
+                }
+            }
+        }
+        if accounted != self.source_tasks.iter().copied().collect()
+            || accounted.len() != self.source_tasks.len()
             || owned.len() != self.files.len()
         {
             return Err(invalid("incomplete stream ownership"));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod reconciliation_tests {
+    use super::*;
+    use crate::historical::normalize::{
+        metrics::*,
+        streams::{RowRange, SourceSpan, StreamOutput},
+    };
+    fn manifest() -> DatasetManifest {
+        let directory = format!("streams/{}/trades", "0".repeat(64));
+        let mut report = ProcessingMetricsReport::default();
+        for (task_id, rows) in [(11, 2), (12, 1)] {
+            report
+                .add_task(TaskMetricsReport {
+                    source: None,
+                    accepted_depth_events: None,
+                    task_id,
+                    stream_id: "synthetic".into(),
+                    counters: ProcessingCounters {
+                        records_read: rows,
+                        records_matched: rows,
+                        records_processed: rows,
+                        events_normalized: rows,
+                        events_written: rows,
+                        ..Default::default()
+                    },
+                    integrity: Default::default(),
+                    scoped_integrity: Default::default(),
+                    start_timestamp_ns: Some(0),
+                    end_timestamp_ns: Some(2),
+                })
+                .unwrap();
+        }
+        DatasetManifest {
+            protocol_version: 4,
+            job_id: 1,
+            dataset_id: 1,
+            content_type: ContentType::Trades,
+            events_written: 3,
+            files_written: 1,
+            start_timestamp_ns: Some(0),
+            end_timestamp_ns: Some(2),
+            source_tasks: vec![11, 12],
+            streams: vec![StreamOutput {
+                stream_id: "synthetic".into(),
+                directory: directory.clone(),
+                sources: vec![
+                    SourceSpan {
+                        task_id: 11,
+                        start_row: 0,
+                        end_row: 3,
+                        ranges: vec![
+                            RowRange {
+                                start_row: 0,
+                                end_row: 1,
+                            },
+                            RowRange {
+                                start_row: 2,
+                                end_row: 3,
+                            },
+                        ],
+                    },
+                    SourceSpan {
+                        task_id: 12,
+                        start_row: 1,
+                        end_row: 2,
+                        ranges: vec![RowRange {
+                            start_row: 1,
+                            end_row: 2,
+                        }],
+                    },
+                ],
+            }],
+            files: vec![crate::historical::normalize::manifest::DatasetFile {
+                path: format!("{directory}/part-000000.parquet"),
+                rows: 3,
+                size_bytes: 1,
+                start_timestamp_ns: Some(0),
+                end_timestamp_ns: Some(2),
+            }],
+            auxiliary_files: vec![],
+            integrity_status: IntegrityStatus::Clean,
+            integrity_evaluation: IntegrityEvaluation {
+                status: IntegrityStatus::Clean,
+                violations: vec![],
+                total_policy_violations: 0,
+            },
+            processing_metrics: report,
+        }
+    }
+    #[test]
+    fn interleaved_ownership_requires_version_four_and_complete_disjoint_coverage() {
+        let mut manifest = manifest();
+        manifest.validate_streams().unwrap();
+        manifest.protocol_version = 3;
+        assert!(manifest.validate_streams().is_err());
+        manifest.protocol_version = 4;
+        manifest.streams[0].sources[1].ranges[0].start_row = 0;
+        assert!(manifest.validate_streams().is_err());
+    }
+    #[test]
+    fn legacy_contiguous_spans_still_validate_without_new_fields() {
+        let mut manifest = manifest();
+        manifest.protocol_version = 3;
+        manifest.streams[0].sources[0] = SourceSpan {
+            task_id: 11,
+            start_row: 0,
+            end_row: 2,
+            ranges: vec![],
+        };
+        manifest.streams[0].sources[1] = SourceSpan {
+            task_id: 12,
+            start_row: 2,
+            end_row: 3,
+            ranges: vec![],
+        };
+        let value = serde_json::to_value(&manifest).unwrap();
+        assert!(value["streams"][0]["sources"][0].get("ranges").is_none());
+        serde_json::from_value::<DatasetManifest>(value)
+            .unwrap()
+            .validate_streams()
+            .unwrap();
+    }
+    #[test]
+    fn unobserved_family_candidates_need_no_empty_output_stream() {
+        let mut manifest = manifest();
+        let mut absent = manifest.processing_metrics.tasks[0].clone();
+        absent.task_id = 13;
+        absent.counters = Default::default();
+        absent.start_timestamp_ns = None;
+        absent.end_timestamp_ns = None;
+        absent.source = Some(SourceObservation {
+            family_candidate: true,
+            ..Default::default()
+        });
+        manifest.processing_metrics.add_task(absent).unwrap();
+        manifest.source_tasks.push(13);
+        manifest.validate_streams().unwrap();
+        manifest
+            .processing_metrics
+            .tasks
+            .last_mut()
+            .unwrap()
+            .source
+            .as_mut()
+            .unwrap()
+            .observed_selected_records = 1;
+        assert!(manifest.validate_streams().is_err());
+    }
+    #[test]
+    fn suppression_and_unprocessed_rows_are_not_parse_failures() {
+        let counters = ProcessingCounters {
+            records_read: 3,
+            records_matched: 3,
+            records_processed: 2,
+            records_unprocessed: 1,
+            events_normalized: 2,
+            events_written: 1,
+            rows_suppressed: 1,
+            ..Default::default()
+        };
+        counters.validate().unwrap();
+        assert_eq!(counters.records_rejected, 0);
+        serde_json::from_value::<ProcessingCounters>(serde_json::to_value(counters).unwrap())
+            .unwrap();
     }
 }

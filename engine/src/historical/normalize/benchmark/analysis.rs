@@ -92,7 +92,7 @@ pub fn load_run(path: &Path) -> Result<LoadedRun> {
     let workload: WorkloadMetadata = read(&path.join("workload.json"))?;
     if environment.schema_version != 1
         || workload.schema_version != 1
-        || workload.prepared_batch.schema_version != 3
+        || workload.prepared_batch.schema_version != 4
     {
         return Err("unsupported environment/workload schema".into());
     }

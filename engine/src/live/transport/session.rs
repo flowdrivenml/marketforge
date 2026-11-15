@@ -16,9 +16,16 @@ use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore, mpsc},
     task::{JoinHandle, JoinSet},
 };
-struct Worker(JoinHandle<()>,Arc<crate::live::metrics::PublicationMetrics>);
+struct Worker(
+    JoinHandle<()>,
+    Arc<crate::live::metrics::PublicationMetrics>,
+);
 struct ConnectionMetrics(Arc<crate::live::metrics::PublicationMetrics>);
-impl Drop for ConnectionMetrics {fn drop(&mut self){self.0.connection_closed();}}
+impl Drop for ConnectionMetrics {
+    fn drop(&mut self) {
+        self.0.connection_closed();
+    }
+}
 impl Drop for Worker {
     fn drop(&mut self) {
         self.0.abort();
@@ -32,10 +39,25 @@ struct Frame {
     terminal: bool,
     _permit: OwnedSemaphorePermit,
 }
-impl Drop for Frame {fn drop(&mut self){self.metrics.queue_removed(self.bytes.len() as u64);}}
-async fn send<W: tokio::io::AsyncWrite + Unpin>(w:&mut W,e:&Envelope,c:&PublicationConfig)->Result<usize,ProtocolError>{
-    let bytes=encode(e,c.streaming.max_frame_bytes)?;let length=bytes.len()+4;
-    tokio::time::timeout(Duration::from_millis(c.streaming.write_timeout_ms),async{w.write_all(&(bytes.len() as u32).to_be_bytes()).await?;w.write_all(&bytes).await}).await.map_err(|_|std::io::Error::new(std::io::ErrorKind::TimedOut,"socket write deadline"))??;Ok(length)
+impl Drop for Frame {
+    fn drop(&mut self) {
+        self.metrics.queue_removed(self.bytes.len() as u64);
+    }
+}
+async fn send<W: tokio::io::AsyncWrite + Unpin>(
+    w: &mut W,
+    e: &Envelope,
+    c: &PublicationConfig,
+) -> Result<usize, ProtocolError> {
+    let bytes = encode(e, c.streaming.max_frame_bytes)?;
+    let length = bytes.len() + 4;
+    tokio::time::timeout(Duration::from_millis(c.streaming.write_timeout_ms), async {
+        w.write_all(&(bytes.len() as u32).to_be_bytes()).await?;
+        w.write_all(&bytes).await
+    })
+    .await
+    .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "socket write deadline"))??;
+    Ok(length)
 }
 fn error(id: u64, code: &str) -> Envelope {
     Envelope::control(
@@ -57,11 +79,22 @@ pub(super) async fn serve<R, W>(
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
     W: tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
-    let metrics=router.publication_metrics();metrics.connection_opened();let _connection_metrics=ConnectionMetrics(metrics.clone());
-    macro_rules! send {($writer:expr,$envelope:expr,$cfg:expr $(,)?)=>{async {
-        let result=send($writer,$envelope,$cfg).await;
-        match &result {Ok(bytes)=>metrics.written(*bytes as u64),Err(ProtocolError::Oversized)=>metrics.frame_capacity_failed(),Err(_)=>metrics.write_failed()};result
-    }}}
+    let metrics = router.publication_metrics();
+    metrics.connection_opened();
+    let _connection_metrics = ConnectionMetrics(metrics.clone());
+    macro_rules! send {
+        ($writer:expr,$envelope:expr,$cfg:expr $(,)?) => {
+            async {
+                let result = send($writer, $envelope, $cfg).await;
+                match &result {
+                    Ok(bytes) => metrics.written(*bytes as u64),
+                    Err(ProtocolError::Oversized) => metrics.frame_capacity_failed(),
+                    Err(_) => metrics.write_failed(),
+                };
+                result
+            }
+        };
+    }
     let max = config.streaming.max_frame_bytes;
     let hello = tokio::select! {_=shutdown.changed()=>return,result=tokio::time::timeout(Duration::from_millis(config.streaming.handshake_timeout_ms),read_frame(&mut r,max))=>result};
     let hello = match hello {

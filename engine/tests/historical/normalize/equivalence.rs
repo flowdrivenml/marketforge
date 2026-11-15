@@ -7,37 +7,32 @@ use marketforge_engine::{
             boundary::DepthBoundaryManifest,
             metrics::{ScopedIntegrityMetrics, TaskMetrics},
             sequence_policy::resolve_sequence_policy,
-            worker::{
-                DepthSink, TradeSink, process_depth_task_with_metrics,
-                process_trade_task_with_metrics,
-            },
+            worker::{DepthSink, process_depth_task_with_metrics},
         },
     },
     shared::{
         domain::canonical::{
             DepthEventBoundary, DepthSourceEventMetadata, DepthSourceOperation, L2LevelUpdate,
-            Trade,
         },
         error::Result,
         formats::depth::DepthProcessingOutcome,
-        io::{decode::CsvDecoder, source::with_source_reader},
     },
 };
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     fs::{self, File},
-    io::{Read, Write},
+    io::Write,
 };
 
 fn representatives() -> BTreeMap<String, serde_json::Value> {
     [
         (
             "gateio.spot.spot.gate-b1.v1",
-            "gateio-spot-spot-BTC_USDT-l2-20260901-20260904-d1.json",
+            "gateio.spot.spot.depth:BTC_USDT",
         ),
         (
             "bybit.spot.spot.bybit-t1.v1",
-            "bybit-spot-spot-BTCUSDT-trade-20260901-20260904-d1.json",
+            "bybit.spot.spot.trades:BTCUSDT",
         ),
     ]
     .into_iter()
@@ -89,17 +84,6 @@ fn archive(task: &mut WorkTask, directory: &Temp, bytes: &[u8]) {
         }
     }
     task.input_path = path;
-}
-#[derive(Default)]
-struct Trades(Vec<Trade>);
-impl TradeSink for Trades {
-    fn write_trade(&mut self, t: Trade) -> Result<()> {
-        self.0.push(t);
-        Ok(())
-    }
-    fn finish(&mut self) -> Result<()> {
-        Ok(())
-    }
 }
 #[derive(Default)]
 struct Depth {
@@ -173,8 +157,7 @@ fn observed_gateio_spot_snapshot_keeps_bid_and_ask_orientation() {
 #[test]
 fn committed_configuration_preserves_effective_runtime_settings_and_checksum() {
     use marketforge_engine::historical::normalize::{
-        ProcessingConfig, ProcessingStatus, execute_processing_job,
-        session::execute_processing_session,
+        ProcessingStatus, execute_processing_job, session::execute_processing_session,
     };
     use sha2::{Digest, Sha256};
     let catalog = formats();
@@ -193,10 +176,12 @@ fn committed_configuration_preserves_effective_runtime_settings_and_checksum() {
         job.tasks.truncate(1);
         job.output.staging_path = temp.0.join("staging");
         job.output.dataset_path = temp.0.join("dataset");
-        let mut config = ProcessingConfig {
-            resources: job.resources.clone(),
-            integrity_policy: job.integrity_policy.clone(),
-        };
+        let mut config = marketforge_engine::shared::historical::load_processing_config(
+            "data/.config/historical/general.toml",
+            root(),
+        )
+        .unwrap();
+        config.merge_fan_in = 8;
         config.resources.workers = 1;
         config.resources.parquet.row_group_target_bytes = 4096;
         config.resources.parquet.file_target_bytes = 16384;

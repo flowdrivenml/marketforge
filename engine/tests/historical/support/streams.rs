@@ -10,7 +10,7 @@ use marketforge_engine::{
 use serde_json::json;
 fn job(run: &TestRun) -> (ProcessingJob, ProcessingConfig) {
     let config = run.runtime(Default::default()).unwrap();
-    let mut job = template("binance-spot-spot-BTCUSDT-trade-synthetic.json").unwrap();
+    let mut job = template("binance.spot.spot.trades:BTCUSDT").unwrap();
     job.output.staging_path = run.path.join("staging");
     job.output.dataset_path = run.path.join("dataset");
     for (i, task) in job.tasks.iter_mut().enumerate() {
@@ -22,8 +22,6 @@ fn job(run: &TestRun) -> (ProcessingJob, ProcessingConfig) {
         )
         .unwrap();
         task.source_compression = SourceContainer::Plain;
-        task.raw_schema["marketforge_source"]["source_time_bounds"] =
-            json!({"start_timestamp_ns":timestamp*1000,"end_timestamp_ns":(timestamp+9)*1000});
     }
     // The prepared list is deliberately reverse chronological.
     job.tasks.reverse();
@@ -122,17 +120,14 @@ fn trade_rotation_and_worker_determinism() {
     }
 }
 #[test]
-fn observed_overlap_cannot_commit_and_other_job_survives() {
+fn observed_chronology_retains_unique_sources_and_other_job_survives() {
     let run = TestRun::new("trades/stream_failure").unwrap();
-    let (mut bad, config) = job(&run);
+    let (bad, config) = job(&run);
     let mut good = bad.clone();
     good.job_id = JobId(9002);
     good.dataset_id = DatasetId(9002);
     good.output.staging_path = run.path.join("good-staging");
     good.output.dataset_path = run.path.join("good-dataset");
-    for task in &mut bad.tasks {
-        task.raw_schema["marketforge_source"]["source_time_bounds"] = json!({"start_timestamp_ns":0,"end_timestamp_ns":2_000_000_000i64,"partition":task.task_id.0});
-    }
     std::fs::write(
         &bad.tasks[1].input_path,
         "2,100.5,0.2,20.1,999999,false,true\n",
@@ -141,10 +136,10 @@ fn observed_overlap_cannot_commit_and_other_job_survives() {
     // Good job uses independent sources.
     good.tasks.truncate(1);
     let result = execute_processing_session(&[bad.clone(), good.clone()], &config).unwrap();
-    assert_eq!(result.jobs[0].status, ProcessingStatus::Failed);
+    assert_eq!(result.jobs[0].status, ProcessingStatus::Complete);
     assert_eq!(result.jobs[1].status, ProcessingStatus::Complete);
-    assert!(!bad.output.dataset_path.exists());
-    assert!(result.jobs[0].failure_report_path.is_some());
+    assert!(bad.output.dataset_path.exists());
+    assert!(result.jobs[0].failure_report_path.is_none());
 }
 #[test]
 fn resource_admission_rejects_stream_without_deadlock() {
@@ -170,20 +165,13 @@ fn unsafe_logical_ids_are_preserved_but_paths_are_encoded() {
     assert!(m.files.iter().all(|f| !f.path.contains("..")));
 }
 #[test]
-fn declared_overlap_and_missing_order_fail_without_commit() {
-    for missing in [false, true] {
-        let run = TestRun::new("trades/declared_overlap").unwrap();
-        let (mut job, config) = job(&run);
-        for t in &mut job.tasks {
-            t.raw_schema["marketforge_source"]["source_time_bounds"] = if missing {
-                serde_json::Value::Null
-            } else {
-                json!({"start_timestamp_ns":0,"end_timestamp_ns":2_000_000_000i64})
-            };
+fn prepared_fixture_omits_external_coverage() {
+    let value: serde_json::Value =
+        serde_json::from_str(include_str!("../fixtures/normalize.json")).unwrap();
+    for job in value["jobs"].as_array().unwrap() {
+        for task in job["tasks"].as_array().unwrap() {
+            assert!(task.get("source_time_bounds").is_none());
         }
-        let r = execute_processing_job(&job, &config).unwrap();
-        assert_eq!(r.status, ProcessingStatus::Failed);
-        assert!(!job.output.dataset_path.exists());
     }
 }
 #[test]
@@ -192,8 +180,6 @@ fn production_trade_execution_preserves_degraded_task_local_order() {
     let (mut job, mut config) = job(&run);
     job.tasks.truncate(1);
     let task = &mut job.tasks[0];
-    task.raw_schema["marketforge_source"]["source_time_bounds"] =
-        json!({"start_timestamp_ns":0,"end_timestamp_ns":2_000_000_000i64});
     std::fs::write(&task.input_path,"1,100,1,100,1000000,false,true\n2,100,1,100,999999,false,true\n3,100,1,100,1000001,false,true\n").unwrap();
     config.integrity_policy.timestamp_regression.action = IntegrityAction::Degrade;
     config.integrity_policy.timestamp_regression.max_count = Some(10);
@@ -237,11 +223,10 @@ fn resource_preflight_isolates_unadmittable_job() {
     good.dataset_id = DatasetId(9003);
     good.output.staging_path = run.path.join("good-stage");
     good.output.dataset_path = run.path.join("good-data");
-    config.resources.memory_budget_bytes =
-        resources::estimate_task_resources(&good.tasks[0], &config.resources.parquet)
-            .unwrap()
-            .memory_bytes
-            + 512;
+    // Multi-source reconciliation needs its workspace in addition to retained
+    // reports. One direct source fits; the full-budget workspace cannot fit.
+    config.resources.normalization_limits.reconciliation_bytes =
+        config.resources.memory_budget_bytes;
     let r = execute_processing_session(&[bad.clone(), good.clone()], &config).unwrap();
     assert_eq!(r.jobs[0].status, ProcessingStatus::Failed);
     assert_eq!(r.jobs[1].status, ProcessingStatus::Complete);
@@ -330,7 +315,7 @@ fn physical_reader_resolves_source_rows_inside_shared_trade_part() {
     let m = manifest(&job);
     let input = merge::ResolvedMergeInput {
         dataset_id: job.dataset_id.0,
-        dataset_path: job.output.dataset_path.clone(),
+        dataset_path: job.output.dataset_path,
         manifest: m,
         canonical_files: vec![],
         auxiliary_files: vec![],
@@ -383,16 +368,15 @@ fn physical_reader_resolves_source_rows_inside_shared_trade_part() {
     );
 }
 #[test]
-fn explicit_partitions_preserve_equal_timestamp_order_over_task_ids() {
+fn captured_request_priority_preserves_equal_timestamp_order() {
     let run = TestRun::new("trades/equal_partition_order").unwrap();
     let (mut job, config) = job(&run);
-    for (index, task) in job.tasks.iter_mut().enumerate() {
+    for task in &mut job.tasks {
         std::fs::write(
             &task.input_path,
             format!("{},100,1,100,1000000,false,true\n", task.task_id.0),
         )
         .unwrap();
-        task.raw_schema["marketforge_source"]["source_time_bounds"] = json!({"start_timestamp_ns":1_000_000_000i64,"end_timestamp_ns":1_000_000_000i64,"partition":index+1});
     }
     assert_eq!(
         execute_processing_job(&job, &config).unwrap().status,
@@ -405,7 +389,7 @@ fn explicit_partitions_preserve_equal_timestamp_order_over_task_ids() {
             .iter()
             .map(|s| s.task_id)
             .collect::<Vec<_>>(),
-        vec![3, 2, 1]
+        vec![1, 2, 3]
     );
     use marketforge_engine::historical::merge;
     let input = merge::ResolvedMergeInput {
@@ -421,5 +405,5 @@ fn explicit_partitions_preserve_equal_timestamp_order_over_task_ids() {
     while let Some(e) = stream.next_event().unwrap() {
         ids.push(e.task_id);
     }
-    assert_eq!(ids, vec![3, 2, 1]);
+    assert_eq!(ids, vec![1, 2, 3]);
 }

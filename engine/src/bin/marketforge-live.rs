@@ -5,13 +5,9 @@ mod unix_application {
         live::{application::*, config::*, stream::persistence::*},
         shared::persistence::postgres,
     };
-    use std::{
-        collections::BTreeMap,
-        path::PathBuf,
-        sync::Arc,
-    };
-    #[cfg(not(feature="management-api"))]
+    #[cfg(not(feature = "management-api"))]
     use std::collections::BTreeSet;
+    use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
     #[derive(Parser)]
     #[command(about = "Headless MarketForge Live; management API with management-api feature")]
     struct Arguments {
@@ -20,7 +16,7 @@ mod unix_application {
         /// Validate static configuration without database access, sockets or exchange I/O.
         #[arg(long)]
         validate_only: bool,
-        #[arg(long,alias="config")]
+        #[arg(long, alias = "config")]
         general: Option<PathBuf>,
         /// Explicit empty resolved graph for service diagnostics; no database definitions restored.
         #[arg(long)]
@@ -58,8 +54,11 @@ mod unix_application {
         code
     }
     async fn execute(args: Arguments) -> Result<(), String> {
-        let general_path=args.general.clone().unwrap_or_else(|| args.config_dir.join("general.toml"));
-        let config=general::GeneralConfig::load(&general_path).map_err(|e|e.to_string())?;
+        let general_path = args
+            .general
+            .clone()
+            .unwrap_or_else(|| args.config_dir.join("general.toml"));
+        let config = general::GeneralConfig::load(&general_path).map_err(|e| e.to_string())?;
         let level = match config.logging.level {
             general::LogLevel::Trace => tracing::Level::TRACE,
             general::LogLevel::Debug => tracing::Level::DEBUG,
@@ -148,7 +147,7 @@ mod unix_application {
         } else {
             (vec![], vec![])
         };
-        #[cfg(not(feature="management-api"))]
+        #[cfg(not(feature = "management-api"))]
         let profiles: BTreeSet<_> = definitions
             .iter()
             .filter(|d| d.desired.enabled)
@@ -161,9 +160,13 @@ mod unix_application {
                 _ => None,
             })
             .collect();
-        #[cfg(feature="management-api")]
-        let exchanges=Arc::new(if args.profiles.is_empty(){exchanges}else{exchanges.selected(&args.profiles.into_iter().collect())?});
-        #[cfg(not(feature="management-api"))]
+        #[cfg(feature = "management-api")]
+        let exchanges = Arc::new(if args.profiles.is_empty() {
+            exchanges
+        } else {
+            exchanges.selected(&args.profiles.into_iter().collect())?
+        });
+        #[cfg(not(feature = "management-api"))]
         let exchanges = Arc::new(if profiles.is_empty() {
             if args.profiles.is_empty() {
                 exchanges
@@ -180,22 +183,48 @@ mod unix_application {
             &config.defaults.recovery,
             &BTreeMap::new(),
         )?;
-        #[cfg(feature="management-api")]
-        let credentials=marketforge_engine::live::management::Credentials::load(&config.control.management).map_err(|e|e.to_string())?;
+        #[cfg(feature = "management-api")]
+        let credentials =
+            marketforge_engine::live::management::Credentials::load(&config.control.management)
+                .map_err(|e| e.to_string())?;
         // Install both handlers before advertising readiness. A controller may
         // send a signal immediately after observing the serving notification.
-        let mut terminate=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).map_err(|_|"cannot install SIGTERM handler")?;
-        let mut interrupt=tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).map_err(|_|"cannot install SIGINT handler")?;
-        let options=LiveApplicationOptions {config,definitions,dependencies,exchanges,formats,limiters,websocket};
-        #[cfg(feature="management-api")]
-        let mut application={
-            use marketforge_engine::live::management::*;
-            let store:Arc<dyn DefinitionStore>=if let Some(pool)=&pool{Arc::new(PostgresDefinitionStore(StreamDefinitionRepository::new(pool.clone())))}else{Arc::new(UnavailableDefinitionStore)};
-            let application=ManagedLiveApplication::start(options,store,credentials,Some(general_path)).await.map_err(|e|e.to_string())?;
-            tracing::info!(event="management_serving",address=%application.management_address(),"authenticated loopback management API");application
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .map_err(|_| "cannot install SIGTERM handler")?;
+        let mut interrupt =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+                .map_err(|_| "cannot install SIGINT handler")?;
+        let options = LiveApplicationOptions {
+            config,
+            definitions,
+            dependencies,
+            exchanges,
+            formats,
+            limiters,
+            websocket,
         };
-        #[cfg(not(feature="management-api"))]
-        let mut application=LiveApplication::start(options).await.map_err(|e|e.to_string())?;
+        #[cfg(feature = "management-api")]
+        let mut application = {
+            use marketforge_engine::live::management::*;
+            let store: Arc<dyn DefinitionStore> = if let Some(pool) = &pool {
+                Arc::new(PostgresDefinitionStore(StreamDefinitionRepository::new(
+                    pool.clone(),
+                )))
+            } else {
+                Arc::new(UnavailableDefinitionStore)
+            };
+            let application =
+                ManagedLiveApplication::start(options, store, credentials, Some(general_path))
+                    .await
+                    .map_err(|e| e.to_string())?;
+            tracing::info!(event="management_serving",address=%application.management_address(),"authenticated loopback management API");
+            application
+        };
+        #[cfg(not(feature = "management-api"))]
+        let mut application = LiveApplication::start(options)
+            .await
+            .map_err(|e| e.to_string())?;
         tracing::info!(event="application_serving",prometheus=?application.handle().status().prometheus_address,"stream readiness is reported separately");
         #[cfg(unix)]
         {
@@ -211,7 +240,7 @@ mod unix_application {
         while !report.complete && report.cleanup_continues {
             tracing::warn!(event="shutdown_incomplete",errors=?report.errors,"cleanup remains owned; management observations remain available");
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            report=application.shutdown().await;
+            report = application.shutdown().await;
         }
 
         if let Some(pool) = pool {

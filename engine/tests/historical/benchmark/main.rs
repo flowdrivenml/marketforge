@@ -18,22 +18,15 @@ use std::{fs, path::Path, process::Command};
 fn fixture() -> (tempfile::TempDir, std::path::PathBuf) {
     let temp = tempfile::tempdir().unwrap();
     let b = support::fixtures::workload().unwrap();
-    let b = support::fixtures::select(
+    let mut b = support::fixtures::concrete_stream(
         &b,
-        "benchmark-plan",
-        &support::fixtures::Selection {
-            exchange: Exchange::Bybit,
-            instrument_type: InstrumentKind::Spot,
-            market_category: "spot",
-            content_type: ContentType::Trades,
-            symbol: Some("BTCUSDT"),
-            family: None,
-            feed: None,
-            filename: Some("BTCUSDT_2026-10-27.csv.gz"),
-        },
+        Exchange::Bybit,
+        InstrumentKind::Spot,
+        ContentType::Trades,
         1,
     )
     .unwrap();
+    b.jobs[0].tasks.truncate(1);
     let path = temp.path().join("input.json");
     fs::write(&path, serde_json::to_vec(&b).unwrap()).unwrap();
     (temp, path)

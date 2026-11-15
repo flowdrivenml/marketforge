@@ -1,0 +1,62 @@
+[project]
+site_name = "MarketForge"
+site_description = "Data infrastructure and financial engineering — documentation draft"
+docs_dir = "content"
+site_dir = "site"
+extra_css = ["assets/stylesheets/extra.css"]
+nav = [
+  { "Overview" = "index.md" },
+  { "Getting Started" = [
+    { "Start here" = "getting-started/index.md" },
+    { "Installation" = "getting-started/installation.md" },
+    { "Quick Start" = "getting-started/quickstart.md" },
+  ] },
+  { "Workflows" = [
+    { "Overview" = "workflows/index.md" },
+    { "Acquisition" = [
+      { "Overview and prerequisites" = "workflows/acquisition/index.md" },
+      { "Historical data" = "workflows/acquisition/historical-data.md" },
+      { "External data" = "workflows/acquisition/external-data.md" },
+      { "Managing acquisitions" = "workflows/acquisition/managing-acquisitions.md" },
+    ] },
+    { "Markets" = [
+      { "Overview" = "workflows/markets/index.md" },
+      { "Instrument discovery" = "workflows/markets/instrument-discovery.md" },
+      { "Market statistics" = "workflows/markets/market-statistics.md" },
+      { "Rankings" = "workflows/markets/rankings.md" },
+    ] },
+  ] },
+  { "Configuration" = [
+    { "Overview" = "configuration/index.md" },
+    { "Acquisition and imports" = "configuration/acquisition.md" },
+    { "Markets and rankings" = "configuration/markets.md" },
+  ] },
+  { "Reference" = [
+    { "Overview" = "reference/index.md" },
+    { "Acquisition CLI" = "reference/cli/acquisition.md" },
+    { "Markets CLI" = "reference/cli/markets.md" },
+  ] },
+  { "Development" = [
+    { "Contributing" = "development/index.md" },
+    { "Architecture" = "development/architecture.md" },
+    { "Extending MarketForge" = "development/extending.md" },
+  ] },
+]
+
+[project.theme]
+logo = "assets/branding/logo_small.png"
+favicon = "assets/branding/logo_small.png"
+font = false
+features = ["navigation.tabs", "navigation.sections", "navigation.indexes", "content.code.copy"]
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "custom"
+accent = "custom"
+toggle = { icon = "lucide/sun", name = "Switch to light mode" }
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "custom"
+accent = "custom"
+toggle = { icon = "lucide/moon", name = "Switch to dark mode" }

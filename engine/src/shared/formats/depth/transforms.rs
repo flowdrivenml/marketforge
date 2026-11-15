@@ -97,6 +97,7 @@ pub fn extract_level_array(
         .as_array()
         .ok_or_else(|| invalid_error("depth levels must be a JSON array"))?;
 
+    crate::shared::historical::limits::depth(levels.len(), "level extraction")?;
     let mut extracted = Vec::with_capacity(levels.len());
 
     for level in levels {

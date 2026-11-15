@@ -165,8 +165,18 @@ impl ProcessingOutput {
             integrity_sink: Arc::new(Mutex::new(None)),
         })
     }
-    pub(crate) fn attach_metrics(&self,metrics:Option<Arc<crate::live::metrics::DerivedMetrics>>){*self.metrics.lock().unwrap_or_else(|p|p.into_inner())=metrics;}
-    pub(crate) fn metrics(&self)->Option<Arc<crate::live::metrics::DerivedMetrics>>{self.metrics.lock().unwrap_or_else(|p|p.into_inner()).clone()}
+    pub(crate) fn attach_metrics(
+        &self,
+        metrics: Option<Arc<crate::live::metrics::DerivedMetrics>>,
+    ) {
+        *self.metrics.lock().unwrap_or_else(|p| p.into_inner()) = metrics;
+    }
+    pub(crate) fn metrics(&self) -> Option<Arc<crate::live::metrics::DerivedMetrics>> {
+        self.metrics
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
     pub(crate) fn attach_integrity_sink(&self, sink: DataDiscontinuitySink) {
         *self
             .integrity_sink
@@ -210,7 +220,7 @@ impl ProcessingOutput {
                 kind: OutputRejectionKind::AccountingOverflow,
             });
         };
-        let events=publication.market_event_count();
+        let events = publication.market_event_count();
         if let Err(error) = self.mailbox.push_fenced(&fence, publication, bytes) {
             self.fail_output(&mut fence, "bounded output capacity exhausted");
             return Err(OutputRejection {
@@ -219,7 +229,9 @@ impl ProcessingOutput {
                 kind: OutputRejectionKind::Capacity,
             });
         }
-        if let Some(m)=self.metrics(){m.record_output_events_admitted_total(events);}
+        if let Some(m) = self.metrics() {
+            m.record_output_events_admitted_total(events);
+        }
         self.wake.notify_one();
         Ok(())
     }

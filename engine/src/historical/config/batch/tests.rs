@@ -146,13 +146,35 @@ fn resolution_rejects_conflicts_missing_profiles_and_unmapped_family() {
             .to_string()
             .contains("expected profile")
     );
-    let mut j = b.jobs[0].clone();
+    // Construct an unmapped family independently of the
+    // authoritative fixture's current metadata coverage.
+    let (mut missing, mut j) = (b.clone(), b.jobs[0].clone());
+
     j.tasks.retain(|t| t.scope.is_some());
+    j.tasks.truncate(1);
+
+    assert_eq!(j.tasks.len(), 1);
+
+    let task = &j.tasks[0];
+    let family = task.scope.as_ref().unwrap().identifier.clone();
+
+    missing.instruments.retain(|instrument| {
+        !(instrument.exchange == task.exchange
+            && instrument.instrument_type == task.instrument_type
+            && instrument.market_category == task.market_category
+            && family_of(
+                instrument.exchange,
+                instrument.instrument_type,
+                &instrument.symbol,
+            ) == Some(family.as_str()))
+    });
+
     assert!(
-        b.resolve_job(&j, &catalog(), &runtime(), &root())
+        missing
+            .resolve_job(&j, &catalog(), &runtime(), &root())
             .unwrap_err()
             .to_string()
-            .contains("authoritative concrete")
+            .contains("authoritative concrete metadata")
     );
 }
 #[test]
@@ -165,6 +187,20 @@ fn family_expansion_uses_each_concrete_metadata_and_preserves_source_identity() 
             .is_some_and(|s| s.identifier == "BTC-USD_UM")
     });
     j.tasks.truncate(1);
+
+    // The synthetic metadata test must not inherit concrete
+    // members from the shared authoritative fixture.
+    b.instruments.retain(|instrument| {
+        !(instrument.exchange == Exchange::Okx
+            && instrument.instrument_type == InstrumentKind::Future
+            && instrument.market_category == MarketCategory::Linear
+            && family_of(
+                instrument.exchange,
+                instrument.instrument_type,
+                &instrument.symbol,
+            ) == Some("BTC-USD_UM"))
+    });
+
     for (id, symbol, tick, value) in [
         (1001, "BTC-USD_UM-261030", "0.1", "0.01"),
         (1002, "BTC-USD_UM-261225", "0.5", "0.02"),
@@ -193,6 +229,11 @@ fn family_expansion_uses_each_concrete_metadata_and_preserves_source_identity() 
                 archive_member: None,
             });
     }
+    // This test supplies an explicit finite member mapping, so select those
+    // exact synthetic members rather than claiming an unenumerated population.
+    j.tasks[0].instrument_selection = Some(InstrumentSelection::Include {
+        symbols: vec!["BTC-USD_UM-261030".into(), "BTC-USD_UM-261225".into()],
+    });
     let r = b.resolve_job(&j, &catalog(), &runtime(), &root()).unwrap();
     assert_eq!(r.tasks.len(), 2);
     assert_ne!(r.tasks[0].task_id, r.tasks[1].task_id);

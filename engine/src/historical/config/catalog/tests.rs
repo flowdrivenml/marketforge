@@ -181,3 +181,60 @@ fn catalog_symlinks_are_rejected() {
             .contains("symlinks")
     );
 }
+
+#[test]
+fn native_trade_identity_contract_is_strict_and_fingerprinted() {
+    let base = load(PROFILE).unwrap();
+    let id = "binance.perpetual.linear.trades";
+    for scope in ["global", "source_local", "unreliable"] {
+        let text = PROFILE.replace(
+            "[source]",
+            &format!("[source]\ntrade_id_scope = \"{scope}\""),
+        );
+        let catalog = load(&text).unwrap();
+        assert_eq!(
+            catalog.get(id).unwrap().physical.raw_schema["marketforge_trade_identity"]["scope"],
+            scope
+        );
+        assert_ne!(
+            catalog.get(id).unwrap().fingerprint,
+            base.get(id).unwrap().fingerprint
+        );
+    }
+    assert!(
+        load(&PROFILE.replace(
+            "[source]",
+            "[source]\ntrade_id_scope = \"instrument_scoped\""
+        ))
+        .is_err()
+    );
+    assert!(load(&PROFILE.replace("[source]", "[source]\ntrade_id_scope = \"guess\"")).is_err());
+    assert!(
+        load(&PROFILE.replace(
+            "[source]",
+            "[source]\ntrade_id_scope = \"source_local\"\ntrade_id_reset_domain = \"date\""
+        ))
+        .is_err()
+    );
+    let text=PROFILE.replace("[source]","[source]\ntrade_id_scope = \"instrument_scoped\"\ntrade_id_reset_domain = \"instrument_lifetime\"");
+    assert!(load(&text).is_ok());
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../data/.config/historical");
+    let catalog = FormatCatalog::load(root).unwrap();
+    assert_eq!(
+        catalog
+            .get("bybit.spot.spot.trades")
+            .unwrap()
+            .physical
+            .raw_schema["marketforge_trade_identity"]["scope"],
+        "source_local"
+    );
+    assert!(
+        catalog
+            .get("bybit.perpetual.linear.trades")
+            .unwrap()
+            .physical
+            .raw_schema
+            .get("marketforge_trade_identity")
+            .is_none()
+    );
+}

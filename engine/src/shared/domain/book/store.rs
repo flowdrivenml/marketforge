@@ -56,6 +56,31 @@ impl BookStore {
             return invalid("cannot apply level update before book initialization");
         }
 
+        if crate::shared::historical::limits::current().is_some() {
+            let total = self
+                .bids
+                .len()
+                .checked_add(self.asks.len())
+                .ok_or_else(|| {
+                    crate::shared::error::MarketForgeError::InvalidConfiguration(
+                        "book size overflow".into(),
+                    )
+                })?;
+            let present = match side {
+                BookSide::Bid => self.bids.contains_key(&price),
+                BookSide::Ask => self.asks.contains_key(&price),
+            };
+            if !level.is_zero() && !present {
+                crate::shared::historical::limits::depth(
+                    total.checked_add(1).ok_or_else(|| {
+                        crate::shared::error::MarketForgeError::InvalidConfiguration(
+                            "book size overflow".into(),
+                        )
+                    })?,
+                    "book insertion",
+                )?;
+            }
+        }
         let book = match side {
             BookSide::Bid => &mut self.bids,
             BookSide::Ask => &mut self.asks,

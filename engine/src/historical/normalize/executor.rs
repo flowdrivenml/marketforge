@@ -7,7 +7,7 @@ use super::{
     manifest::{DATASET_MANIFEST_FILENAME, DatasetManifest},
     metrics::{IntegrityEvaluation, ProcessingMetricsReport, evaluate_integrity_policy},
 };
-use super::{resources::estimate_task_resources, task::TaskExecution};
+use super::{resources::estimate_task_resources_with_limits, task::TaskExecution};
 use crate::{
     historical::job::{
         ContentType, ProcessingJob, ProcessingOperation, validate_processing_job_structure,
@@ -26,6 +26,10 @@ pub(crate) struct ExecutionContext {
     pub(crate) report: ProcessingMetricsReport,
     pub(crate) failed_task_id: Option<u64>,
     pub(crate) integrity_evaluation: Option<IntegrityEvaluation>,
+    // A direct job may return a processing error before failure.json is written.
+    // Keep both retained observations and its drain workspace admitted through
+    // that final consumer, rather than releasing them with process_tasks.
+    _report_reservations: Option<super::session::ReportReservations>,
 }
 
 pub fn execute_processing_job(
@@ -40,6 +44,13 @@ pub fn execute_processing_job_with_progress(
     config: &ProcessingConfig,
     reporter: &ProgressReporter,
 ) -> Result<ProcessingResult> {
+    let diagnostics = super::progress::diagnostics::Diagnostics::start(
+        config,
+        job.output.staging_path.parent().unwrap_or(Path::new(".")),
+        reporter,
+    );
+    reporter.stream_phase(job.job_id.0, "", "planning/admission");
+    reporter.record_workload(job);
     validate_processing_job_structure(job)?;
     validate_processing_config(config)?;
 
@@ -47,13 +58,27 @@ pub fn execute_processing_job_with_progress(
         ProcessingOperation::Process => execute_process(job, config, reporter),
     };
 
+    reporter.emit(super::progress::ProgressEvent::JobFinished {
+        job_id: job.job_id.0,
+        success: result
+            .as_ref()
+            .is_ok_and(|r| r.status == ProcessingStatus::Complete),
+    });
     match &result {
         Ok(processing_result) => {
+            reporter.job_outcome(processing_result);
             reporter.finished(processing_result.status == ProcessingStatus::Complete);
         }
         Err(_) => reporter.finished(false),
     }
 
+    if let Some(diagnostics) = diagnostics {
+        diagnostics.finish(
+            result
+                .as_ref()
+                .is_ok_and(|r| r.status == ProcessingStatus::Complete),
+        );
+    }
     result
 }
 
@@ -158,7 +183,22 @@ pub(crate) fn persist_processing_failure(
     context: ExecutionContext,
     error: MarketForgeError,
 ) -> Result<ProcessingResult> {
-    let error_code = match &error {
+    fn scratch_limit(error: &MarketForgeError) -> bool {
+        match error {
+            MarketForgeError::ResourceLimit(e) => e.resource == "scratch bytes",
+            MarketForgeError::StreamFailure { source, .. } => scratch_limit(source),
+            MarketForgeError::ReportPersistence { processing, .. } => scratch_limit(processing),
+            _ => false,
+        }
+    }
+    fn primary(error: &MarketForgeError) -> &MarketForgeError {
+        match error {
+            MarketForgeError::ReportPersistence { processing, .. } => primary(processing),
+            other => other,
+        }
+    }
+    let error_code = match primary(&error) {
+        error if scratch_limit(error) => ProcessingErrorCode::ScratchBudgetExceeded,
         MarketForgeError::SourceOpen { source, .. }
             if source.kind() == std::io::ErrorKind::NotFound =>
         {
@@ -197,10 +237,10 @@ pub(crate) fn persist_processing_failure(
             }
         }
     }
-    eprintln!(
+    crate::historical::normalize::progress::log::diagnostic(format_args!(
         "Processing failed: job={}, task={:?}, report={:?}",
         job.job_id.0, context.failed_task_id, result.failure_report_path
-    );
+    ));
     Ok(result)
 }
 
@@ -221,7 +261,11 @@ fn process_tasks(
     // Validate source accessibility before resource estimation.
     // Preserve the responsible task ID if preparation fails.
     for task in &job.tasks {
-        if let Err(error) = estimate_task_resources(task, &config.resources.parquet) {
+        if let Err(error) = estimate_task_resources_with_limits(
+            task,
+            &config.resources.parquet,
+            &config.resources.normalization_limits,
+        ) {
             context.failed_task_id = Some(task.task_id.0);
             return Err(error);
         }
@@ -232,23 +276,44 @@ fn process_tasks(
         config,
         reporter,
     )?;
-    let executions = session.jobs.into_iter().next().unwrap().executions;
+    reporter.stream_phase(job.job_id.0, "", "finalization resource admission");
+    let finalization = session.reserve_finalization()?;
+    let (mut jobs, guards) = session.into_report_ownership(finalization);
+    context._report_reservations = Some(guards);
+    let executions = jobs.remove(0).executions;
 
     reporter.finalizing();
 
-    finalize_processing_job(job, config, executions, context)
+    finalize_processing_job_with_progress(job, config, executions, context, reporter)
 }
 
 // -----------------------------------------------------------------------------
 // Generic job finalization
 // -----------------------------------------------------------------------------
 
+#[cfg(test)]
 pub(crate) fn finalize_processing_job(
     job: &ProcessingJob,
     config: &ProcessingConfig,
     executions: Vec<TaskExecution>,
     context: &mut ExecutionContext,
 ) -> Result<ProcessingResult> {
+    finalize_processing_job_with_progress(
+        job,
+        config,
+        executions,
+        context,
+        &ProgressReporter::disabled(),
+    )
+}
+pub(crate) fn finalize_processing_job_with_progress(
+    job: &ProcessingJob,
+    config: &ProcessingConfig,
+    executions: Vec<TaskExecution>,
+    context: &mut ExecutionContext,
+    reporter: &ProgressReporter,
+) -> Result<ProcessingResult> {
+    reporter.stream_phase(job.job_id.0, "", "finalization and integrity evaluation");
     let staging = &job.output.staging_path;
 
     // -------------------------------------------------------------------------
@@ -269,6 +334,7 @@ pub(crate) fn finalize_processing_job(
     // -------------------------------------------------------------------------
 
     let mut first_error = None;
+    let mut first_skipped = None;
 
     for (task, execution) in job.tasks.iter().zip(executions) {
         let task_id = task.task_id.0;
@@ -283,8 +349,16 @@ pub(crate) fn finalize_processing_job(
         }
 
         // Preserve the first failed task ID before metrics aggregation.
-        if execution.error.is_some() && first_error.is_none() {
-            context.failed_task_id = Some(task_id);
+        if execution
+            .error
+            .as_ref()
+            .is_some_and(|e| !matches!(e, MarketForgeError::NotAttempted { .. }))
+            && first_error.is_none()
+        {
+            context.failed_task_id = match execution.error.as_ref() {
+                Some(MarketForgeError::StreamFailure { .. }) => None,
+                _ => Some(task_id),
+            };
         }
 
         // Preserve the authoritative metrics for every attempted task.
@@ -293,8 +367,12 @@ pub(crate) fn finalize_processing_job(
             .add_task(execution.metrics.into_report(task))?;
 
         if let Some(error) = execution.error {
-            if first_error.is_none() {
-                first_error = Some((task_id, error));
+            if matches!(error, MarketForgeError::NotAttempted { .. }) {
+                if first_skipped.is_none() {
+                    first_skipped = Some(error);
+                }
+            } else if first_error.is_none() {
+                first_error = Some((context.failed_task_id, error));
             }
         }
     }
@@ -304,11 +382,23 @@ pub(crate) fn finalize_processing_job(
     // -------------------------------------------------------------------------
 
     if let Some((task_id, error)) = first_error {
-        context.failed_task_id = Some(task_id);
+        context.failed_task_id = task_id;
         return Err(error);
     }
 
     context.failed_task_id = None;
+    if let Some(error) = first_skipped {
+        return Err(error);
+    }
+    if context.report.counters.rows_unpublished > 0
+        || context.report.counters.records_unprocessed > 0
+        || context.report.counters.records_unrouted > 0
+    {
+        return Err(MarketForgeError::InvalidConfiguration(
+            "cannot publish incomplete canonical submission or unresolved source records".into(),
+        ));
+    }
+    super::family::validate_selection(job, &context.report)?;
 
     // -------------------------------------------------------------------------
     // Validate completed-task accounting
@@ -336,8 +426,15 @@ pub(crate) fn finalize_processing_job(
     // Construct dataset manifest
     // -------------------------------------------------------------------------
 
-    let manifest =
-        DatasetManifest::from_processing_job(job, staging, context.report.clone(), integrity)?;
+    let phase_id = super::progress::ProgressTaskId::new(job.job_id.0, 0);
+    reporter.stream_phase(phase_id.job_id, "", "manifest validation");
+    let manifest = DatasetManifest::from_processing_job_ref(
+        job,
+        staging,
+        &context.report,
+        integrity,
+        config.resources.normalization_limits,
+    )?;
 
     // -------------------------------------------------------------------------
     // Verify parallel output layout
@@ -370,7 +467,13 @@ pub(crate) fn finalize_processing_job(
     // Transactional dataset commit
     // -------------------------------------------------------------------------
 
+    reporter.stream_phase(phase_id.job_id, "", "dataset publication");
     commit_dataset(staging, &job.output.dataset_path)?;
+    reporter.stream_phase(phase_id.job_id, "", "committed dataset complete");
+    reporter.resource_snapshot(
+        &format!("job={}:commit", job.job_id.0),
+        serde_json::json!({"committed":true,"staged_output_rows":manifest.events_written}),
+    );
 
     let committed_manifest = job.output.dataset_path.join(DATASET_MANIFEST_FILENAME);
 
@@ -388,7 +491,7 @@ pub(crate) fn finalize_processing_job(
     result.start_timestamp_ns = manifest.start_timestamp_ns;
     result.end_timestamp_ns = manifest.end_timestamp_ns;
 
-    eprintln!(
+    crate::historical::normalize::progress::log::diagnostic(format_args!(
         "Processing committed: records_read={}, matched={}, skipped={}, rejected={}, written={}, files={}, integrity={:?}, dataset={}",
         manifest.processing_metrics.counters.records_read,
         manifest.processing_metrics.counters.records_matched,
@@ -401,7 +504,7 @@ pub(crate) fn finalize_processing_job(
         result.files_written,
         manifest.integrity_status,
         job.output.dataset_path.display(),
-    );
+    ));
 
     Ok(result)
 }
@@ -494,10 +597,7 @@ pub(crate) fn prepare_staging(job: &ProcessingJob, config: &ProcessingConfig) ->
         .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
     use sha2::{Digest, Sha256};
     use std::io::Write;
-    let hash: String = Sha256::digest(&bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
+    let hash: String = super::hex_digest(Sha256::digest(&bytes));
     let mut file = file;
     file.write_all(&bytes)
         .map_err(|e| MarketForgeError::InvalidConfiguration(format!("{}: {e}", path.display())))?;
@@ -506,6 +606,22 @@ pub(crate) fn prepare_staging(job: &ProcessingJob, config: &ProcessingConfig) ->
         format!("{hash}  processing-job.json\n"),
     )
     .map_err(|e| MarketForgeError::InvalidConfiguration(format!("provenance checksum: {e}")))?;
+    // Execution-only tuning belongs to runtime provenance, never job JSON.
+    let runtime = serde_json::to_vec_pretty(config)
+        .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
+    let runtime_hash: String = super::hex_digest(Sha256::digest(&runtime));
+    fs::write(
+        job.output.staging_path.join("processing-runtime.json"),
+        runtime,
+    )
+    .map_err(|e| MarketForgeError::InvalidConfiguration(format!("runtime provenance: {e}")))?;
+    fs::write(
+        job.output.staging_path.join("processing-runtime.sha256"),
+        format!("{runtime_hash}  processing-runtime.json\n"),
+    )
+    .map_err(|e| {
+        MarketForgeError::InvalidConfiguration(format!("runtime provenance checksum: {e}"))
+    })?;
     Ok(())
 }
 

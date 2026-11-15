@@ -34,7 +34,7 @@ use marketforge_engine::tui::processing::{
         .args(["batch", "job", "jobs_dir"])
 ))]
 struct Args {
-    /// Execute a schema-version-3 prepared normalization batch.
+    /// Execute a schema-version-4 prepared normalization batch.
     #[arg(long)]
     batch: Option<PathBuf>,
     /// Execute one processing job.

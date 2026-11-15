@@ -3,7 +3,6 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
     time::Instant,
 };
 
@@ -12,15 +11,12 @@ use marketforge_engine::historical::normalize::boundary::{
     BoundaryBookState, DepthBoundaryManifest, fingerprint_book,
 };
 use {
-    crate::support::migration::archive_case as load_processing_job,
-    crate::support::migration::configuration as load_processing_config,
     marketforge_engine::historical::normalize::metrics::ScopedIntegrityMetrics,
     marketforge_engine::historical::normalize::metrics::TaskMetrics,
     marketforge_engine::historical::normalize::worker::DepthSink,
     marketforge_engine::historical::normalize::worker::process_depth_task_with_metrics,
     marketforge_engine::shared::domain::book::BookLevel,
     marketforge_engine::shared::domain::book::BookStore,
-    marketforge_engine::shared::domain::book::SequencePolicy,
     marketforge_engine::shared::domain::canonical::BookSide,
     marketforge_engine::shared::domain::canonical::L2LevelUpdate,
     marketforge_engine::shared::error::Result,
@@ -36,38 +32,6 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 // -----------------------------------------------------------------------------
 // Temporary directory
 // -----------------------------------------------------------------------------
-
-static NEXT_ID: AtomicU64 = AtomicU64::new(0);
-
-struct TestDirectory {
-    path: PathBuf,
-}
-
-impl TestDirectory {
-    fn new() -> Self {
-        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-
-        let path = crate::support::migration::persistent_path(format!(
-            "marketforge-depth-replay-{}-{id}",
-            std::process::id()
-        ));
-
-        fs::create_dir_all(&path).unwrap();
-
-        Self { path }
-    }
-}
-
-impl Drop for TestDirectory {
-    fn drop(&mut self) {}
-}
-
-fn project_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
 
 // -----------------------------------------------------------------------------
 // Canonical level conversion
@@ -465,14 +429,62 @@ fn verify_boundary_replay(directory: &Path, replayed_book: &BookStore, reference
 
 #[test]
 fn parquet_replay_matches_reference_book() {
-    let root = project_root();
+    use crate::support::{fixtures::workload, runtime::TestRun};
+    use marketforge_engine::{
+        historical::{
+            job::{ContentType, InstrumentKind},
+            normalize::resolve_sequence_policy,
+        },
+        shared::{domain::canonical::Exchange, historical::limits::LimitScope},
+    };
 
-    let job = load_processing_job(
-        root.join("retained-cases/bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json"),
-    )
-    .expect("load Bybit depth job");
+    let mut batch = workload().expect("load authoritative normalization batch");
 
-    let task = &job.tasks[0];
+    batch
+        .jobs
+        .retain(|job| job.output.content_type == ContentType::Depth);
+
+    assert_eq!(batch.jobs.len(), 1);
+
+    let job = &mut batch.jobs[0];
+
+    // Select a deterministic Bybit Spot depth source.
+    // No instrument, symbol, date, or task ID is hardcoded.
+    job.tasks.retain(|task| {
+        task.exchange == Exchange::Bybit
+            && task.instrument_type == InstrumentKind::Spot
+            && task.scope.is_none()
+            && task.symbol.is_some()
+    });
+
+    job.tasks.sort_by(|a, b| {
+        a.stream_id
+            .0
+            .cmp(&b.stream_id.0)
+            .then(a.input_path.cmp(&b.input_path))
+    });
+
+    assert!(
+        !job.tasks.is_empty(),
+        "authoritative batch has no Bybit Spot depth source"
+    );
+
+    job.tasks.truncate(1);
+
+    let mut run = TestRun::new("depth/parquet_replay").expect("create isolated depth replay run");
+
+    let config = run
+        .runtime_from_general()
+        .expect("load production normalization configuration");
+
+    let resolved = run
+        .prepare(&batch, &config)
+        .expect("resolve selected depth source");
+
+    assert_eq!(resolved.jobs.len(), 1);
+    assert_eq!(resolved.jobs[0].tasks.len(), 1);
+
+    let task = &resolved.jobs[0].tasks[0];
 
     assert!(
         task.input_path.is_file(),
@@ -480,12 +492,23 @@ fn parquet_replay_matches_reference_book() {
         task.input_path.display()
     );
 
-    let config = load_processing_config(root.join("data/.config/historical/general.toml"), &root)
-        .expect("load processing configuration");
+    let sequence_policy = resolve_sequence_policy(task).expect("resolve depth sequence policy");
 
-    let directory = TestDirectory::new();
+    let _limits = LimitScope::enter(
+        config.resources.normalization_limits,
+        format!(
+            "depth replay: task={}, source={}",
+            task.task_id.0,
+            task.input_path.display()
+        ),
+    );
 
-    let writer = ParquetDepthWriter::new(&directory.path, config.resources.parquet.clone())
+    let output_path = run.path.join("depth-parquet");
+
+    run.owned(&output_path)
+        .expect("validate isolated output path");
+
+    let writer = ParquetDepthWriter::new(&output_path, config.resources.parquet.clone())
         .expect("create Parquet depth writer");
 
     let mut sink = ReferenceSink::new(writer);
@@ -499,7 +522,7 @@ fn parquet_replay_matches_reference_book() {
     println!("{}", "=".repeat(90));
 
     println!("Archive : {}", task.input_path.display());
-    println!("Output  : {}", directory.path.display());
+    println!("Output  : {}", output_path.display());
 
     // -------------------------------------------------------------------------
     // Process archive
@@ -513,9 +536,9 @@ fn parquet_replay_matches_reference_book() {
         &mut metrics,
         &config.integrity_policy,
         &previous,
-        SequencePolicy::Consecutive,
+        sequence_policy,
     )
-    .expect("process Bybit depth archive");
+    .expect("process selected depth archive");
 
     sink.finish().expect("finalize Parquet writer");
 
@@ -546,7 +569,7 @@ fn parquet_replay_matches_reference_book() {
 
     let replay_start = Instant::now();
 
-    let (replayed, replayed_rows) = replay_parquet(&directory.path);
+    let (replayed, replayed_rows) = replay_parquet(&output_path);
 
     let replay_elapsed = replay_start.elapsed().as_secs_f64();
 
@@ -568,7 +591,7 @@ fn parquet_replay_matches_reference_book() {
         "replayed asks differ from reference"
     );
 
-    verify_boundary_replay(&directory.path, &replayed, &sink.book);
+    verify_boundary_replay(&output_path, &replayed, &sink.book);
 
     // -------------------------------------------------------------------------
     // Results

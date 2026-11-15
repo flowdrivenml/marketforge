@@ -46,6 +46,16 @@ impl DepthSnapshotAssembler {
         side: BookSide,
         level: ExtractedLevel,
     ) -> Result<()> {
+        let count = self
+            .pending
+            .as_ref()
+            .map_or(0, |s| s.bids.len() + s.asks.len());
+        crate::shared::historical::limits::depth(
+            count.checked_add(1).ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration("snapshot size overflow".into())
+            })?,
+            "snapshot assembly",
+        )?;
         match self.pending.as_mut() {
             Some(snapshot) => {
                 if snapshot.timestamp_ns != timestamp_ns {

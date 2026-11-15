@@ -5,7 +5,6 @@ use marketforge_engine::historical::normalize::metrics::{IntegrityCategory, Inte
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
 };
 use {
     crate::support::migration::configuration as load_processing_config,
@@ -23,7 +22,7 @@ use {
     marketforge_engine::shared::io::container::SourceContainer,
 };
 
-const JOB_FILE: &str = "okx-future-linear-BTC-USD_UM-261225-trade-20260901-20260904-d120.json";
+const JOB_FILE: &str = "okx.future.linear.trades:BTC-USD_UM-261225";
 
 // -----------------------------------------------------------------------------
 // Test environment
@@ -55,8 +54,7 @@ fn project_root() -> PathBuf {
 }
 
 fn load_job() -> ProcessingJob {
-    crate::support::migration::template(project_root().join("retained-cases").join(JOB_FILE))
-        .expect("load processing job")
+    crate::support::migration::template(JOB_FILE).expect("load processing job")
 }
 
 fn load_policy() -> IntegrityPolicy {

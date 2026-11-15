@@ -135,8 +135,23 @@ impl Default for SourceMetrics {
 }
 
 impl SourceMetrics {
-    pub(crate) fn attach_runtime(&self,runtime:std::sync::Arc<super::RuntimeMetrics>){let _=self.runtime.set(runtime);}
-    pub(crate) fn recovery_requested(&self){if let Some(r)=self.runtime.get(){r.record_source_recovery_requests_total();}self.recovery_requests_total.fetch_add(1,Ordering::Relaxed);}    pub(crate) fn record_shape(&self,trades:u64,depth:u64,levels:u64){self.trades_accepted_total.fetch_add(trades,Ordering::Relaxed);self.depth_events_accepted_total.fetch_add(depth,Ordering::Relaxed);self.depth_levels_accepted_total.fetch_add(levels,Ordering::Relaxed);}
+    pub(crate) fn attach_runtime(&self, runtime: std::sync::Arc<super::RuntimeMetrics>) {
+        let _ = self.runtime.set(runtime);
+    }
+    pub(crate) fn recovery_requested(&self) {
+        if let Some(r) = self.runtime.get() {
+            r.record_source_recovery_requests_total();
+        }
+        self.recovery_requests_total.fetch_add(1, Ordering::Relaxed);
+    }
+    pub(crate) fn record_shape(&self, trades: u64, depth: u64, levels: u64) {
+        self.trades_accepted_total
+            .fetch_add(trades, Ordering::Relaxed);
+        self.depth_events_accepted_total
+            .fetch_add(depth, Ordering::Relaxed);
+        self.depth_levels_accepted_total
+            .fetch_add(levels, Ordering::Relaxed);
+    }
 
     /// Create empty operational metrics for a source stream.
     ///
@@ -144,7 +159,9 @@ impl SourceMetrics {
     /// Timestamp measurements begin as unavailable.
     pub fn new() -> Self {
         Self {
-            runtime: std::sync::OnceLock::new(),            recovery_requests_total: AtomicU64::new(0),            trades_accepted_total: AtomicU64::new(0),
+            runtime: std::sync::OnceLock::new(),
+            recovery_requests_total: AtomicU64::new(0),
+            trades_accepted_total: AtomicU64::new(0),
             depth_events_accepted_total: AtomicU64::new(0),
             depth_levels_accepted_total: AtomicU64::new(0),
             messages_received_total: AtomicU64::new(0),
@@ -181,15 +198,22 @@ impl SourceMetrics {
     /// captured at Source processing entry, not original socket receipt.
     ///
     /// This counts native messages, not canonical records.
-    pub fn record_message_received(&self, received_at_ns: i64) { self.record_message_observed(Some(received_at_ns)); }
+    pub fn record_message_received(&self, received_at_ns: i64) {
+        self.record_message_observed(Some(received_at_ns));
+    }
 
     /// Processing-entry observation; an unavailable clock does not suppress counts.
     pub(crate) fn record_message_observed(&self, received_at_ns: Option<i64>) {
-        if let Some(r)=self.runtime.get(){r.record_source_messages_total();}
+        if let Some(r) = self.runtime.get() {
+            r.record_source_messages_total();
+        }
         self.messages_received_total.fetch_add(1, Ordering::Relaxed);
 
-        if let Some(at) = received_at_ns { self.last_message_at_ns.store(at, Ordering::Relaxed); }
-        self.has_last_message.store(received_at_ns.is_some(), Ordering::Relaxed);
+        if let Some(at) = received_at_ns {
+            self.last_message_at_ns.store(at, Ordering::Relaxed);
+        }
+        self.has_last_message
+            .store(received_at_ns.is_some(), Ordering::Relaxed);
     }
 
     // ========================================================
@@ -205,7 +229,9 @@ impl SourceMetrics {
     /// when the canonical events became available.
     ///
     /// A count of zero is a no-op.
-    pub fn record_events_produced(&self, count: u64, produced_at_ns: i64) { self.record_output_accepted(count, Some(produced_at_ns)); }
+    pub fn record_events_produced(&self, count: u64, produced_at_ns: i64) {
+        self.record_output_accepted(count, Some(produced_at_ns));
+    }
 
     pub(crate) fn record_output_accepted(&self, count: u64, produced_at_ns: Option<i64>) {
         if count == 0 {
@@ -215,8 +241,11 @@ impl SourceMetrics {
         self.events_produced_total
             .fetch_add(count, Ordering::Relaxed);
 
-        if let Some(at) = produced_at_ns { self.last_event_at_ns.store(at, Ordering::Relaxed); }
-        self.has_last_event.store(produced_at_ns.is_some(), Ordering::Relaxed);
+        if let Some(at) = produced_at_ns {
+            self.last_event_at_ns.store(at, Ordering::Relaxed);
+        }
+        self.has_last_event
+            .store(produced_at_ns.is_some(), Ordering::Relaxed);
     }
 
     // ========================================================
@@ -228,7 +257,9 @@ impl SourceMetrics {
     /// This should represent an actual processing failure,
     /// not a legitimate source message containing no events.
     pub fn record_normalization_error(&self) {
-        if let Some(r)=self.runtime.get(){r.record_source_normalization_errors_total();}
+        if let Some(r) = self.runtime.get() {
+            r.record_source_normalization_errors_total();
+        }
         self.normalization_errors_total
             .fetch_add(1, Ordering::Relaxed);
     }
@@ -241,7 +272,9 @@ impl SourceMetrics {
     ///
     /// The initial acquisition is not a reacquisition. Attempts are owned by the transport.
     pub fn record_reconnection(&self) {
-        if let Some(r)=self.runtime.get(){r.record_source_reacquisitions_total();}
+        if let Some(r) = self.runtime.get() {
+            r.record_source_reacquisitions_total();
+        }
         self.reconnections_total.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -567,9 +600,15 @@ mod tests {
 #[cfg(test)]
 mod unavailable_clock_tests {
     use super::*;
-    #[test] fn unavailable_clock_preserves_counts_and_optional_timestamps() {
+    #[test]
+    fn unavailable_clock_preserves_counts_and_optional_timestamps() {
         let m = SourceMetrics::new();
-        m.record_message_observed(None); m.record_output_accepted(10, None);
-        let s=m.take_snapshot();assert_eq!(s.messages_received_total,1);assert_eq!(s.events_produced_total,10);assert_eq!(s.last_message_at_ns,None);assert_eq!(s.last_event_at_ns,None);
+        m.record_message_observed(None);
+        m.record_output_accepted(10, None);
+        let s = m.take_snapshot();
+        assert_eq!(s.messages_received_total, 1);
+        assert_eq!(s.events_produced_total, 10);
+        assert_eq!(s.last_message_at_ns, None);
+        assert_eq!(s.last_event_at_ns, None);
     }
 }

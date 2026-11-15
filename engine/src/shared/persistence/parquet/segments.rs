@@ -164,30 +164,11 @@ pub struct DepthStreamBoundaries {
     pub continuity: String,
     pub sources: Vec<DepthSourceBoundary>,
 }
+/// Bounded compatibility collector. Large production validation uses the visitor.
 pub fn read_depth_stream_boundaries(directory: &Path) -> Result<DepthStreamBoundaries> {
-    let value: DepthStreamBoundaries = serde_json::from_slice(
-        &fs::read(directory.join("boundary.json"))
-            .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?,
+    let limits = crate::shared::historical::limits::current().unwrap_or_default();
+    super::collect_depth_stream_boundaries(
+        directory,
+        super::BoundaryReadLimits::for_sources(limits.metric_entries as usize, limits)?,
     )
-    .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
-    if value.version != 2 || value.continuity != "independent_sources" {
-        return invalid("unsupported stream boundary contract");
-    }
-    let mut rows = 0;
-    let mut events = 0;
-    let mut ids = std::collections::HashSet::new();
-    for source in &value.sources {
-        if source.start_row != rows
-            || source.start_event != events
-            || source.end_row < rows
-            || source.end_event < events
-            || !ids.insert(source.task_id)
-            || source.boundary.version != 1
-        {
-            return invalid("invalid depth source boundary ranges/identity");
-        }
-        rows = source.end_row;
-        events = source.end_event;
-    }
-    Ok(value)
 }

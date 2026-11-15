@@ -11,25 +11,30 @@ fn selection(kind: ContentType) -> Selection<'static> {
         instrument_type: InstrumentKind::Spot,
         market_category: "spot",
         content_type: kind,
-        symbol: Some("BTCUSDT"),
+        symbol: None,
         family: None,
         feed: None,
-        filename: Some(if kind == ContentType::Trades {
-            "BTCUSDT_2026-10-27.csv.gz"
-        } else {
-            "2026-10-27_BTCUSDT_ob200.data.zip"
-        }),
+        filename: None,
     }
 }
 #[test]
 fn selection_requires_exact_nonempty_matches() {
     let b = workload().unwrap();
     let mut s = selection(ContentType::Trades);
+    let stream = concrete_stream(
+        &b,
+        Exchange::Bybit,
+        InstrumentKind::Spot,
+        ContentType::Trades,
+        1,
+    )
+    .unwrap();
+    s.symbol = stream.jobs[0].tasks[0].symbol.as_deref();
     s.filename = None;
     assert!(
-        select(&b, "ambiguous", &s, 1)
+        select(&b, "ambiguous", &s, stream.jobs[0].tasks.len() + 1)
             .unwrap_err()
-            .contains("found 3")
+            .contains(&format!("found {}", stream.jobs[0].tasks.len()))
     );
     s.symbol = Some("ABSENT");
     assert!(
@@ -59,8 +64,18 @@ fn persistent_runs_are_unique_safe_and_record_failures() {
 fn subsets_use_production_resolution_and_isolate_every_job() {
     let b = workload().unwrap();
     let mut s = selection(ContentType::Trades);
+    let stream = concrete_stream(
+        &b,
+        Exchange::Bybit,
+        InstrumentKind::Spot,
+        ContentType::Trades,
+        1,
+    )
+    .unwrap();
+    s.symbol = stream.jobs[0].tasks[0].symbol.as_deref();
     s.filename = None;
-    let subset = select(&b, "subset", &s, 3).unwrap();
+    let count = stream.jobs[0].tasks.len();
+    let subset = select(&b, "subset", &s, count).unwrap();
     let mut run = TestRun::new("support_subset").unwrap();
     let c = run
         .runtime(Overrides {
@@ -70,7 +85,7 @@ fn subsets_use_production_resolution_and_isolate_every_job() {
         .unwrap();
     let resolved = run.prepare(&subset, &c).unwrap();
     assert_eq!(resolved.jobs.len(), 1);
-    assert_eq!(resolved.jobs[0].tasks.len(), 3);
+    assert_eq!(resolved.jobs[0].tasks.len(), count);
     assert_eq!(resolved.jobs[0].resources.workers, 2);
     assert_eq!(
         resolved.jobs[0].tasks[0].raw_schema["marketforge_profile"]["id"],
@@ -97,15 +112,21 @@ fn subsets_use_production_resolution_and_isolate_every_job() {
 }
 #[test]
 fn multi_job_redirection_retains_distinct_identities() {
-    let mut b = workload().unwrap();
-    for j in &mut b.jobs {
-        j.tasks.retain(|t| {
-            t.exchange == Exchange::Bybit
-                && t.instrument_type == InstrumentKind::Spot
-                && t.symbol.as_deref() == Some("BTCUSDT")
-        });
-        j.tasks.truncate(1);
-    }
+    let source = workload().unwrap();
+    let mut b = concrete_stream(
+        &source,
+        Exchange::Bybit,
+        InstrumentKind::Spot,
+        ContentType::Trades,
+        1,
+    )
+    .unwrap();
+    b.jobs[0].tasks.truncate(1);
+    let mut second = b.jobs[0].clone();
+    second.job_id.0 += 1;
+    second.dataset_id.0 += 1;
+    second.tasks[0].task_id.0 += 1;
+    b.jobs.push(second);
     let mut r = TestRun::new("support_multi").unwrap();
     let c = r.runtime(Default::default()).unwrap();
     let jobs = r.prepare(&b, &c).unwrap().jobs;
@@ -116,8 +137,8 @@ fn multi_job_redirection_retains_distinct_identities() {
 #[cfg(feature = "historical-real-tests")]
 fn representative(kind: ContentType) -> TestResult<()> {
     let b = workload()?;
-    let s = selection(kind);
-    let mut b = select(&b, "representative", &s, 1)?;
+    let mut b = concrete_stream(&b, Exchange::Bybit, InstrumentKind::Spot, kind, 1)?;
+    b.jobs[0].tasks.truncate(1);
     let mut run = TestRun::new(if kind == ContentType::Trades {
         "bybit_spot_trade_prefix"
     } else {
@@ -129,7 +150,56 @@ fn representative(kind: ContentType) -> TestResult<()> {
             &mut b,
             if kind == ContentType::Trades { 3 } else { 2 },
         )?;
-        let results = run.execute(&b, Default::default())?;
+        let config = run.runtime_from_general()?;
+        let resolved = run.prepare(&b, &config)?;
+        let task = &resolved.jobs[0].tasks[0];
+        let raw = support::runtime::sample_bytes(task)?;
+        let (expected_price, expected_quantity): (rust_decimal::Decimal, rust_decimal::Decimal) =
+            if kind == ContentType::Trades {
+                let mut csv = csv::Reader::from_reader(raw.as_slice());
+                let headers = csv.headers().map_err(|e| e.to_string())?.clone();
+                let row = csv
+                    .records()
+                    .next()
+                    .ok_or("missing sampled trade")?
+                    .map_err(|e| e.to_string())?;
+                let field = |name| {
+                    row.get(headers.iter().position(|h| h == name).unwrap())
+                        .unwrap()
+                };
+                (
+                    field("price").parse().map_err(|e| format!("{e}"))?,
+                    field("volume").parse().map_err(|e| format!("{e}"))?,
+                )
+            } else {
+                let first = raw
+                    .split(|b| *b == b'\n')
+                    .next()
+                    .ok_or("missing snapshot")?;
+                let snapshot: serde_json::Value =
+                    serde_json::from_slice(first).map_err(|e| e.to_string())?;
+                let bid = &snapshot["data"]["b"][0];
+                (
+                    bid[0]
+                        .as_str()
+                        .ok_or("missing bid price")?
+                        .parse()
+                        .map_err(|e| format!("{e}"))?,
+                    bid[1]
+                        .as_str()
+                        .ok_or("missing bid size")?
+                        .parse()
+                        .map_err(|e| format!("{e}"))?,
+                )
+            };
+        let results = resolved
+            .jobs
+            .iter()
+            .map(|j| {
+                marketforge_engine::historical::normalize::execute_processing_job(j, &config)
+                    .map_err(|e| e.to_string())
+            })
+            .collect::<TestResult<Vec<_>>>()?;
         for (j, r) in b.jobs.iter().zip(&results) {
             let manifest = support::assertions::committed(&run, j, r)?;
             if manifest.events_written == 0 {
@@ -141,20 +211,6 @@ fn representative(kind: ContentType) -> TestResult<()> {
             if kind == ContentType::Trades && manifest.events_written != 2 {
                 return Err("expected two sampled trades".into());
             }
-            let expected_price: rust_decimal::Decimal = if kind == ContentType::Trades {
-                "80143.4"
-            } else {
-                "80143.3"
-            }
-            .parse()
-            .unwrap();
-            let expected_quantity: rust_decimal::Decimal = if kind == ContentType::Trades {
-                "0.00016"
-            } else {
-                "0.744607"
-            }
-            .parse()
-            .unwrap();
             let mut found = false;
             for file in &manifest.files {
                 let reader =
@@ -237,8 +293,17 @@ fn concurrent_run_creation_is_exclusive() {
 fn missing_source_is_an_actionable_failure_with_retained_metadata() {
     let b = workload().unwrap();
     let mut s = selection(ContentType::Trades);
+    let stream = concrete_stream(
+        &b,
+        Exchange::Bybit,
+        InstrumentKind::Spot,
+        ContentType::Trades,
+        1,
+    )
+    .unwrap();
+    s.symbol = stream.jobs[0].tasks[0].symbol.as_deref();
     s.filename = None;
-    let mut b = select(&b, "missing_source", &s, 3).unwrap();
+    let mut b = select(&b, "missing_source", &s, stream.jobs[0].tasks.len()).unwrap();
     b.jobs[0].tasks.truncate(1);
     let mut run = TestRun::new("support_missing_source").unwrap();
     b.jobs[0].tasks[0].input_path = run.path.join("absent.archive");

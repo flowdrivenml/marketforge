@@ -1,81 +1,156 @@
 <div align="center">
 
-  <img src="docs/content/assets/branding/logo.png" alt="MarketForge" width="95%">
+<img src="docs/content/assets/branding/logo.png" alt="MarketForge — From Data to Financial Engineering" width="95%">
 
-  <br><br>
+<br>
 
-  <strong>High-performance market data infrastructure powered by Python & Rust.</strong>
+**High-performance data infrastructure for quantitative research and financial engineering.**
 
-  <br><br>
+*Spend less time engineering data. More time engineering strategies.*
 
-  <img src="https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/Rust-DEA584?logo=rust&logoColor=black" alt="Rust">
-  <img src="https://img.shields.io/badge/Status-Active_Development-blue" alt="Development Status">
+<br>
 
-  <br><br>
+[![Python](https://img.shields.io/badge/Python-3.12%2B-7aa2f7?logo=python&logoColor=white)](forge/pyproject.toml)
+[![Rust](https://img.shields.io/badge/Rust-2024-7aa2f7?logo=rust&logoColor=white)](engine/Cargo.toml)
+![Linux](https://img.shields.io/badge/Linux-9ece6a?logo=linux&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS-9ece6a?logo=apple&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-7aa2f7?logo=postgresql&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus-e0af68?logo=prometheus&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-e0af68?logo=grafana&logoColor=white)
 
-  <em>From historical archives to real-time market data — one unified pipeline.</em>
+<br>
+
+**[Documentation](docs/content/index.md)** · **[Installation](docs/content/getting-started/installation.md)** · **[Quick Start](docs/content/getting-started/quickstart.md)** · **[Roadmap](ROADMAP.md)** · **Discord (Coming Soon)**
 
 </div>
 
 ---
 
-MarketForge simplifies the acquisition, processing, and merging of cryptocurrency market microstructure data across multiple exchanges.
+> [!IMPORTANT]
+> **MarketForge is under active development.** Historical data acquisition is the primary ready-to-use workflow. Processing and live infrastructure have existing implementations, but their end-to-end integration is ongoing. Advanced research and algorithmic capabilities are planned. Follow the [Roadmap](ROADMAP.md) for development progress.
 
-Discover instruments, download decades of historical tick data, and transform trades and order books into analysis-ready datasets — all through a simple CLI.
+## Overview
 
-## Supported Exchanges
+**MarketForge** is an open-source, configuration-driven platform designed to remove the repetitive data-engineering work behind quantitative research and algorithmic trading.
 
-**Binance · Bybit · OKX · Bitget · Gate.io**
+Before a strategy can be tested, researchers often spend countless hours finding historical data, handling inconsistent formats, synchronizing records, and building custom pipelines. High-quality financial datasets can also be expensive, despite substantial amounts of useful market data being freely available.
 
-- **Markets:** Spot, perpetuals, linear & inverse futures
-- **Data:** Tick trades & L2 order books
-- **Storage:** Parquet, PostgreSQL & shared memory
-- **Scale:** Thousands of instruments across multiple exchanges
+**MarketForge aims to make that infrastructure reusable, accessible, and automated—so the focus stays on research, not data plumbing.**
 
-## Installation
+Built with **Rust and Python**, the platform combines high-performance processing with CLI commands and TOML configuration. It is designed for a **single computer**, from a laptop to a powerful workstation, without requiring cloud services or distributed infrastructure.
 
-```bash
-git clone https://github.com/flowdrivenml/MarketForge.git
-cd MarketForge
-python -m pip install -e .
-```
+## From Raw Data to Research-Ready Datasets
 
-```bash
-marketforge --help
-```
+### Acquire Market Data
 
-## Quick Start
+**Five exchanges. 10,000+ instruments. One CLI.**
 
-Explore the available commands:
+MarketForge automates the discovery and downloading of freely available historical trade ticks and order-book data across five cryptocurrency exchanges.
 
-```bash
-marketforge instruments --help
-marketforge availability --help
-marketforge plan --help
-marketforge download --help
-```
+Define what you need and let MarketForge locate and acquire the available archives—without manually searching providers, tracking URLs, or maintaining separate downloaders.
 
-## Development Status
+*Historical coverage varies by source, instrument, data type, and period. Catalog coverage does not guarantee complete data availability.*
 
-🚧 **Active development**
+### Bring Your Own Data
 
-| Component | Status |
-|-----------|--------|
-| Multi-exchange downloads | ✅ Complete |
-| Acquisition planning & discovery | ✅ Complete |
-| Data processing & normalization | ✅ Complete |
-| High-performance Rust merging | ✅ Complete |
-| Cross-instrument quantity conversion | 🔨 In progress |
-| Algorithm bootstrapping | 📋 Planned |
-| Real-time market streaming | 📋 Planned |
+Research shouldn't be restricted to built-in providers.
 
-### What's Next?
+MarketForge is developing configuration-driven imports and registration, allowing compatible external datasets to become part of the same processing environment. For supported formats, users define how their data should be interpreted through configuration rather than writing new integration code.
 
-Seamlessly bridge historical and live market data, enabling trading algorithms to bootstrap from historical records and transition into real-time streaming.
+### Normalize, Merge, and Convert
 
-**The goal:** From raw exchange data to research-ready and live-ready infrastructure in just a few commands.
+Financial data arrives in different formats, timestamp conventions, and instrument representations.
+
+MarketForge's Rust Engine provides components for normalization, merging, and conversion, with configurable interpretation and processing rules. Their integration into a complete CLI-driven workflow is ongoing.
+
+**The objective: turn heterogeneous inputs into consistent, reusable datasets without rebuilding the pipeline for every experiment.**
 
 ---
 
-<sub>MarketForge is an independent open-source project and is not affiliated with the supported exchanges.</sub>
+## Research Beyond a Single Market
+
+**What if the information driving BTC isn't contained in BTC trades on a single exchange?**
+
+Perhaps another venue leads price discovery. Perhaps perpetual futures influence spot markets. Perhaps liquidity changes or activity in related instruments reveal information that conventional price analysis misses.
+
+Meaningful quantitative research often requires combining **multiple exchanges, instruments, market structures, data types, and time horizons**.
+
+MarketForge is being built to streamline that preparation, making it easier to investigate cross-market relationships, lead-lag effects, liquidity dynamics, and market microstructure.
+
+### From Price Charts to Market Microstructure
+
+Understanding financial markets requires more than drawing trendlines or calculating indicators.
+
+Trade ticks and order-book events provide a foundation for studying actual market activity: aggressive execution, resting liquidity, order cancellations, absorption, imbalances, and volume distribution.
+
+MarketForge's planned financial engineering capabilities will extend this foundation into:
+
+- **Order flow and liquidity analysis** — Trading pressure, depth, imbalances, and execution dynamics.
+- **Volume-based market structure** — Price regions supported by observed volume and liquidity.
+- **Cross-market analysis** — Relationships between instruments, exchanges, spot, and derivatives.
+- **Financial feature engineering** — Event-driven sampling, information-based bars, and quantitative features.
+- **Research and modeling** — Optimization, machine learning, evaluation, and backtesting.
+
+These analyses support hypothesis testing; observed patterns do not automatically establish participant intent or predictive relationships.
+
+**The goal is not to tell researchers what the market is doing, but to give them the tools and data to investigate it.**
+
+These advanced research capabilities remain part of the development roadmap.
+
+---
+
+## From Research to Live Systems
+
+Research is only one part of developing an algorithmic system. Operating it on live data introduces additional challenges: continuous connectivity, synchronization, recovery, state management, and monitoring.
+
+MarketForge is developing a live processing infrastructure intended to share data representations and processing components with historical research.
+
+The longer-term goal is to let algorithms **bootstrap from historical datasets, transition into live streams, and reuse compatible research computations** without rebuilding the entire data infrastructure.
+
+The Rust Engine already contains substantial live streaming, integrity, and recovery components. Complete research-to-live integration and production readiness remain under development.
+
+MarketForge provides infrastructure for user-defined algorithms—not ready-made trading strategies or guaranteed trading performance.
+
+---
+
+## Architecture & Extensibility
+
+**Rust processes the data. Python orchestrates the workflows.**
+
+MarketForge follows a modular architecture designed to accommodate new data sources, processing methods, and research requirements.
+
+### Engine — Rust
+
+High-performance historical and live processing, including normalization, merging, conversion, integrity validation, streaming, and recovery.
+
+### Forge — Python
+
+The user-facing application layer responsible for CLI commands, TOML configuration, data acquisition, orchestration, storage management, and PostgreSQL registry integration.
+
+### Extending MarketForge
+
+Supported operations can be customized through configuration and source profiles, often without changing application code.
+
+More substantial extensions—such as adding new live providers, data types, or processing operations—require code changes. The architecture separates these responsibilities, with developer documentation describing extension points and implementation guidance as it matures.
+
+Explore the [Architecture](docs/content/development/architecture.md) and [Extension Guide](docs/content/development/extending.md).
+
+---
+
+## Development & Community
+
+MarketForge is an evolving open-source project. Current development focuses on integrating its existing infrastructure, expanding research capabilities, and connecting historical workflows with live systems.
+
+The [Development Roadmap](ROADMAP.md) tracks implementation progress, current priorities, and planned functionality.
+
+Feedback, technical discussions, feature proposals, and contributions are welcome through [GitHub Issues](https://github.com/flowdrivenml/marketforge/issues).
+
+A dedicated Discord community is planned.
+
+---
+
+## License
+
+MarketForge is licensed under the [Apache License, Version 2.0](LICENSE).
+
+See [NOTICE](NOTICE) for original authorship and attribution.

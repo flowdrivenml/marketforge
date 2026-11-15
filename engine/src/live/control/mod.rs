@@ -5,5 +5,5 @@ pub use model::{
     UpdateLoggingRequest, UpdatePublicationRequest, UpdateRecordingRequest,
 };
 
-#[cfg(all(feature="management-api",unix))]
+#[cfg(all(feature = "management-api", unix))]
 pub mod http;
