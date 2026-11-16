@@ -240,6 +240,10 @@ fn dashboard_uses_internal_unit_phases_and_separate_routing_counts() {
     live.stream_phase(1001, "internal-unit-hash", "reconciliation");
     d.update_snapshots(&live.state());
     assert!(d.selected_phase.contains("reconciliation"));
+    live.phase(id(0), "concrete-output-unit", "output preparation");
+    live.stream_phase(1001, "concrete-output-unit", "depth replay");
+    d.update_snapshots(&live.state());
+    assert!(d.selected_phase.contains("depth replay"));
     live.stream_phase(1001, "", "publication");
     d.update_snapshots(&live.state());
     assert!(d.selected_phase.contains("publication"));
@@ -300,6 +304,7 @@ fn coalesced_telemetry_is_bounded_and_terminal_outcomes_survive_a_burst() {
     reporter.emit(start(0)); // Delayed start cannot replace the terminal outcome.
     reporter.emit(ProgressEvent::JobOutcome {
         job_id: 1001,
+        events_written: 0,
         success: false,
         message: Some("stream reconciliation rejected ambiguous identity".into()),
         manifest_path: None,
@@ -445,6 +450,11 @@ fn production_replay_can_pause_without_record_updates_and_matches_non_tui_output
     }
     d.update_snapshots(&state);
     assert_eq!(d.total_records_read(), 48);
+    assert_eq!(
+        d.total_records_written(),
+        0,
+        "canonical spool rows are not Parquet submissions"
+    );
     assert!(d.selected_phase.contains("append into Parquet"));
     let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap();
     d.started = Instant::now() - Duration::from_secs(65);
@@ -465,6 +475,7 @@ fn production_replay_can_pause_without_record_updates_and_matches_non_tui_output
         live.failure
     );
     d.reconcile_results(std::slice::from_ref(&live));
+    assert_eq!(d.committed_rows[&live.job_id.0], 48);
     job.output.staging_path = path.join("plain-staging");
     job.output.dataset_path = path.join("plain");
     let plain = execute_processing_job(&job, &config).unwrap();
@@ -502,6 +513,7 @@ fn stream_failure_settles_sources_without_fabricating_failed_inputs() {
     assert_eq!(d.stream_failures.len(), 1);
     d.handle_event(ProgressEvent::JobOutcome {
         job_id: 1001,
+        events_written: 0,
         success: false,
         message: Some("ambiguous trade overlap".into()),
         manifest_path: None,
@@ -706,6 +718,14 @@ fn concurrent_report_quota_failure_drains_without_deadlock_and_keeps_metrics() {
 
 #[test]
 fn real_stream_rejection_preserves_spilled_failure_reports_without_failed_inputs() {
+    stream_rejection_evidence(false);
+}
+#[cfg(feature = "normalization-test-hooks")]
+#[test]
+fn failed_failure_json_preserves_existing_observation_evidence_and_original_error() {
+    stream_rejection_evidence(true);
+}
+fn stream_rejection_evidence(block_failure_report: bool) {
     let _diagnostics = DIAGNOSTIC_TEST_LOCK.lock().unwrap();
     use crate::historical::config::{FormatCatalog, load_normalization_job};
     use crate::historical::normalize::failure::ProcessingFailureReport;
@@ -755,6 +775,16 @@ fn real_stream_rejection_preserves_spilled_failure_reports_without_failed_inputs
     job.output.staging_path = path.join("staging");
     job.output.dataset_path = path.join("dataset");
     let reporter = ProgressReporter::coalesced();
+    #[cfg(feature = "normalization-test-hooks")]
+    if block_failure_report {
+        let staging = job.output.staging_path.clone();
+        let moved = path.join("retained-staging");
+        reporter.set_phase_hook(move |_, _, _, phase| {
+            if phase == "reconciliation failed" {
+                std::fs::rename(&staging, &moved).unwrap();
+            }
+        });
+    }
     let mut d = ProcessingDashboard::new(&job, &config);
     let result = execute_processing_job_with_progress(&job, &config, &reporter).unwrap();
     assert_eq!(result.status, ProcessingStatus::Failed);
@@ -778,8 +808,31 @@ fn real_stream_rejection_preserves_spilled_failure_reports_without_failed_inputs
     assert_eq!(d.failed_tasks(), 0);
     assert_eq!(d.stream_failures.len(), 1);
     assert_eq!(d.total_records_read(), 2);
+    assert_eq!(
+        d.total_records_written(),
+        0,
+        "rejected canonical spools did not reach Parquet"
+    );
     assert!(d.published.is_empty());
     assert_eq!(d.active_tasks(), 0);
+    if block_failure_report {
+        assert!(result.failure_report_path.is_none());
+        let message = &result.failure.as_ref().unwrap().message;
+        assert!(message.contains("ambiguous trade overlap"));
+        assert!(message.contains("additionally failed to persist failure report"));
+        assert_eq!(
+            std::fs::read_dir(&config.resources.scratch_path)
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|e| e
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("normalize-report-"))
+                .count(),
+            2
+        );
+        return;
+    }
     let report: ProcessingFailureReport =
         serde_json::from_reader(std::fs::File::open(result.failure_report_path.unwrap()).unwrap())
             .unwrap();

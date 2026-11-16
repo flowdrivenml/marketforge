@@ -127,11 +127,11 @@ pub(super) fn render(frame: &mut ratatui::Frame, d: &mut ProcessingDashboard) {
         frame.render_widget(block, lower[0]);
         frame.render_widget(
             Paragraph::new(format!(
-                "Read {}  Staged events {}\nRejected {}  Failed {}\nAvg proc {}/s · Routed {}",
+                "Read {}  Staged rows {}\nRejected {}  Committed rows {}\nAvg proc {}/s · Routed {}",
                 compact(d.total_records_read()),
                 compact(d.total_records_written()),
                 compact(d.total_records_rejected()),
-                d.failed_tasks(),
+                d.committed_rows.values().fold(0u64,|n,rows|n.saturating_add(*rows)),
                 if !d.rate_ready {
                     "—".into()
                 } else {
@@ -290,8 +290,9 @@ fn render_detail(frame: &mut ratatui::Frame, area: Rect, d: &ProcessingDashboard
          {} / {} / {}\n\
          Stream: {}\n\
          Input: {}\n\
-         Read: {}   Processed: {}\n\
-         Events written (staged): {}   Rejected: {}\n\
+         Source records read: {}   Processed: {}\n\
+         Normalized canonical rows: {}\n\
+         Staged canonical rows: {}   Rejected records: {}\n\
          Routing rows: {}\n\
          Stage: {}\n\
          Source progress: unknown (no input total)\n\
@@ -308,6 +309,7 @@ fn render_detail(frame: &mut ratatui::Frame, area: Rect, d: &ProcessingDashboard
         t.source,
         t.records_read,
         t.records_processed,
+        t.normalized_rows,
         t.records_written,
         t.records_rejected,
         t.routing_records,

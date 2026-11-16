@@ -48,9 +48,14 @@ pub fn enforce_integrity(
     category: IntegrityCategory,
     message: &str,
 ) -> Result<()> {
-    let mut combined = previous_job_integrity.clone();
-
-    combined.merge(&metrics.scoped_integrity)?;
+    // Immediate rules consume global observations only. Preserve the existing
+    // merge validation, but do not clone a task's detailed observation maps.
+    previous_job_integrity.validate_merge(&metrics.scoped_integrity)?;
+    let mut combined = ScopedIntegrityMetrics {
+        global: previous_job_integrity.global.clone(),
+        ..Default::default()
+    };
+    combined.global.merge(&metrics.scoped_integrity.global)?;
 
     let evaluation = enforce_immediate_integrity(policy, &combined, category)?;
 

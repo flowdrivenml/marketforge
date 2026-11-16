@@ -230,6 +230,7 @@ pub(crate) fn persist_processing_failure(
         }
         Ok(_) => {}
         Err(error) => {
+            failure.processing_metrics.preserve_detail_evidence();
             if let Some(failure) = &mut result.failure {
                 failure.message.push_str(&format!(
                     "; additionally failed to persist failure report: {error}"

@@ -93,6 +93,11 @@ impl ScopedIntegrityMetrics {
         self.daily.clear();
         Ok(())
     }
+    pub(crate) fn preserve_evidence(&self) {
+        for ((job, task), details) in &self.retained {
+            details.spool.preserve_evidence(*job, *task);
+        }
+    }
     pub(crate) fn entry_count(&self) -> usize {
         self.files.len()
             + self.hourly.len()

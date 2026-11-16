@@ -18,7 +18,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc, Mutex, OnceLock, Weak,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 const MAGIC: &[u8; 8] = b"MFSP0002";
@@ -100,6 +100,10 @@ impl Drop for DiskReservation {
     }
 }
 static POOLS: OnceLock<Mutex<BTreeMap<PathBuf, Weak<Pool>>>> = OnceLock::new();
+// One small pool owner per scratch root, not a report queue. If failure.json
+// cannot be persisted, existing sealed evidence stays charged for this process
+// even after its last report reference has gone away.
+static EVIDENCE_POOLS: OnceLock<Mutex<BTreeMap<PathBuf, Arc<Pool>>>> = OnceLock::new();
 static NEXT: AtomicU64 = AtomicU64::new(0);
 #[derive(Clone, Copy, Default, Serialize)]
 struct Counters {
@@ -1499,6 +1503,7 @@ struct RetainedDisk {
     bytes: u64,
     count: u64,
     buffer_bytes: u64,
+    preserve: AtomicBool,
 }
 impl std::fmt::Debug for RetainedSpool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1509,6 +1514,9 @@ impl std::fmt::Debug for RetainedSpool {
 }
 impl Drop for RetainedDisk {
     fn drop(&mut self) {
+        if self.preserve.load(Ordering::Relaxed) {
+            return;
+        }
         match fs::remove_file(&self.path) {
             Ok(()) => *self.pool.used.lock().unwrap() -= self.bytes,
             Err(e) => crate::historical::normalize::progress::log::diagnostic(format_args!(
@@ -1521,29 +1529,71 @@ impl Drop for RetainedDisk {
 impl Spool {
     pub fn retain(self) -> Result<RetainedSpool> {
         let w = &self.0.workspace.0;
-        let path = w.root.parent().unwrap().join(format!(
-            "normalize-report-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::rename(&self.0.path, &path).map_err(io_error)?;
+        if w.handles.get() != 0 || Rc::strong_count(&self.0) != 1 {
+            return Err(invalid(
+                "report transfer requires exclusive closed spool ownership",
+            ));
+        }
         let bytes = self.0.bytes.get();
-        w.bytes.set(
-            w.bytes
-                .get()
-                .checked_sub(bytes)
-                .ok_or_else(|| invalid("report transfer accounting underflow"))?,
-        );
+        let remaining = w
+            .bytes
+            .get()
+            .checked_sub(bytes)
+            .ok_or_else(|| invalid("report transfer accounting underflow"))?;
+        // Claim a destination before rename: PID reuse or an orphan from a
+        // previous process must never cause replacement of an existing report.
+        let handle = self.0.workspace.handle()?;
+        let path = loop {
+            let path = w.root.parent().unwrap().join(format!(
+                "normalize-report-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            match OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(file) => {
+                    drop(file);
+                    break path;
+                }
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(io_error(e)),
+            }
+        };
+        drop(handle);
+        if let Err(error) = fs::rename(&self.0.path, &path) {
+            if let Err(cleanup) = fs::remove_file(&path) {
+                crate::historical::normalize::progress::log::diagnostic(format_args!(
+                    "report handoff placeholder cleanup failed {}: {cleanup}",
+                    path.display()
+                ));
+            }
+            return Err(io_error(error));
+        }
+        w.bytes.set(remaining);
         Ok(RetainedSpool(Arc::new(RetainedDisk {
             path,
             pool: w.pool.clone(),
             bytes,
             count: self.0.count.get(),
             buffer_bytes: w.quota.maximum(),
+            preserve: AtomicBool::new(false),
         })))
     }
 }
 impl RetainedSpool {
+    pub fn preserve_evidence(&self, job: u64, task: u64) {
+        if !self.0.preserve.swap(true, Ordering::Relaxed) {
+            EVIDENCE_POOLS
+                .get_or_init(Default::default)
+                .lock()
+                .unwrap()
+                .entry(self.0.path.parent().unwrap().to_owned())
+                .or_insert_with(|| self.0.pool.clone());
+            crate::historical::normalize::progress::log::diagnostic(format_args!(
+                "Retained framed observation evidence: job={job} task={task} path={}",
+                self.0.path.display()
+            ));
+        }
+    }
     pub fn same_storage(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }

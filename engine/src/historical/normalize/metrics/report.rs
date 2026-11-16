@@ -98,6 +98,13 @@ pub struct ProcessingMetricsReport {
 }
 
 impl ProcessingMetricsReport {
+    pub(crate) fn preserve_detail_evidence(&self) {
+        self.scoped_integrity.preserve_evidence();
+        for task in &self.tasks {
+            task.scoped_integrity.preserve_evidence();
+        }
+    }
+
     pub fn add_task(&mut self, task: TaskMetricsReport) -> Result<()> {
         if self
             .tasks

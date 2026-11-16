@@ -232,9 +232,13 @@ fn execute_processing_session_inner_impl(
                     }
                 }
 
-                reporter.emit(super::progress::ProgressEvent::JobFinished {
+                reporter.emit(super::progress::ProgressEvent::JobOutcome {
                     job_id: job.job_id.0,
+                    events_written: 0,
                     success: false,
+                    message: Some(failure.error.to_string()),
+                    manifest_path: None,
+                    failure_report_path: None,
                 });
                 preflight_failures.insert(job_index, failure);
             }
@@ -509,6 +513,7 @@ pub fn execute_session_tasks_with_progress(
             }
             for (_, execution) in &results {
                 let id = ProgressTaskId::new(unit.job.job_id.0, execution.task_id);
+                reporter.final_source_counters(id, &execution.metrics.counters);
                 match &execution.error {
                     None if execution
                         .metrics

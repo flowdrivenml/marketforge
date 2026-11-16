@@ -478,6 +478,9 @@ pub(crate) fn execute(
             task.input_path.display().to_string(),
         );
         let input = routed.as_mut().and_then(|r| r.inputs.remove(index));
+        // The worker's events_written counter is canonical spool submission,
+        // not Parquet output. Declare that ownership before its first snapshot.
+        reporter.source_spooled(progress, 0);
         let mut worker_progress = super::progress::WorkerProgress::new(reporter, progress);
         reporter.phase(
             progress,
@@ -729,6 +732,16 @@ pub(crate) fn execute(
                 remaining.push(execution);
             }
         }
+        // A family-routing unit can produce several concrete streams. Rebind
+        // each source before concrete sort/replay telemetry starts, otherwise
+        // the dashboard continues following the parent routing key.
+        for (_, task) in &concrete.tasks {
+            reporter.phase(
+                ProgressTaskId::new(unit.job.job_id.0, task.task_id.0),
+                &concrete.key,
+                "source reconciliation and output preparation",
+            );
+        }
         let result = if concrete.tasks[0].1.normalizations[0].target_schema == TargetSchema::Trade {
             publish_trades(
                 &concrete,
@@ -751,7 +764,7 @@ pub(crate) fn execute(
                 .collect();
             reporter.stream_phase(
                 unit.job.job_id.0,
-                &unit.key,
+                &concrete.key,
                 "depth replay and Parquet writing/finalization",
             );
             publish_depth(
@@ -763,6 +776,15 @@ pub(crate) fn execute(
                 reporter,
             )
         };
+        reporter.stream_phase(
+            unit.job.job_id.0,
+            &concrete.key,
+            if result.is_ok() {
+                "staged stream output ready"
+            } else {
+                "concrete stream output failed"
+            },
+        );
         let stopped = if let Err(error) = result {
             fail(
                 &mut selected,
@@ -997,6 +1019,12 @@ fn publish_trades(
                 .checked_add(1)
                 .ok_or_else(|| invalid("canonical row overflow"))?;
             if row.is_multiple_of(8192) {
+                for (_, execution) in executions.iter() {
+                    reporter.source_staged(
+                        ProgressTaskId::new(unit.job.job_id.0, execution.task_id),
+                        execution.metrics.counters.events_written,
+                    );
+                }
                 reporter.stage_count(unit.job.job_id.0, &unit.key, row, "staged canonical rows");
                 reporter.resource_snapshot(
                     &format!("job={}:stream={}:staged", unit.job.job_id.0, unit.key),
@@ -1103,6 +1131,10 @@ fn publish_depth(
                         .checked_add(1)
                         .ok_or_else(|| invalid("depth replay counter overflow"))?;
                     if replayed.is_multiple_of(1024) {
+                        reporter.source_staged(
+                            ProgressTaskId::new(unit.job.job_id.0, execution.task_id),
+                            execution.metrics.counters.events_written,
+                        );
                         reporter.stage_count(
                             unit.job.job_id.0,
                             &unit.key,

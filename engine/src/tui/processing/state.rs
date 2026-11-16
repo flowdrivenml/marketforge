@@ -41,6 +41,7 @@ pub(super) struct TaskState {
     pub records_read: u64,
     pub records_processed: u64,
     pub records_written: u64,
+    pub normalized_rows: u64,
     pub records_rejected: u64,
     pub speed: f64,
     pub last_meaningful_age: Option<Duration>,
@@ -55,12 +56,15 @@ impl TaskState {
         self.last_meaningful_age = snapshot.last_meaningful_age;
         self.routing_records = snapshot.routing_records;
         self.records_processed = self.records_processed.max(snapshot.records_processed);
+        self.normalized_rows = self.normalized_rows.max(snapshot.events_normalized);
         // Completed event counters are final. Delayed snapshots cannot replace them.
         if self.status == TaskStatus::Completed {
             return;
         }
         self.records_read = self.records_read.max(snapshot.records_read);
-        self.records_written = self.records_written.max(snapshot.records_written);
+        self.records_written = self
+            .records_written
+            .max(snapshot.staged_rows.unwrap_or(snapshot.records_written));
         self.records_rejected = self.records_rejected.max(snapshot.records_rejected);
         let seconds = now.duration_since(self.sample.0).as_secs_f64();
         if seconds >= 1.0 && self.has_metrics {
@@ -86,6 +90,7 @@ pub(super) struct ProcessingDashboard {
     pub jobs: BTreeMap<u64, bool>,
     pub outputs: BTreeMap<u64, String>,
     pub published: BTreeMap<u64, String>,
+    pub committed_rows: BTreeMap<u64, u64>,
     pub stream_failures: BTreeMap<(u64, String), String>,
     pub throughput_history: VecDeque<u64>,
     pub activity: VecDeque<String>,
@@ -130,6 +135,7 @@ impl ProcessingDashboard {
                             records_read: 0,
                             records_processed: 0,
                             records_written: 0,
+                            normalized_rows: 0,
                             records_rejected: 0,
                             speed: 0.0,
                             last_meaningful_age: None,
@@ -153,6 +159,7 @@ impl ProcessingDashboard {
             success: false,
             jobs: BTreeMap::new(),
             published: BTreeMap::new(),
+            committed_rows: BTreeMap::new(),
             stream_failures: BTreeMap::new(),
             outputs: jobs
                 .iter()
@@ -179,6 +186,7 @@ impl ProcessingDashboard {
         for result in results {
             self.handle_event(ProgressEvent::JobOutcome {
                 job_id: result.job_id.0,
+                events_written: result.events_written,
                 success: result.status == ProcessingStatus::Complete,
                 message: result.failure.as_ref().map(|f| f.message.clone()),
                 manifest_path: result.manifest_path.clone(),
@@ -301,6 +309,7 @@ impl ProcessingDashboard {
             }
             ProgressEvent::JobOutcome {
                 job_id,
+                events_written,
                 success,
                 message,
                 manifest_path,
@@ -313,9 +322,11 @@ impl ProcessingDashboard {
                 self.jobs.insert(job_id, success);
                 if success && let Some(path) = manifest_path {
                     self.published.insert(job_id, path);
+                    self.committed_rows.insert(job_id, events_written);
                 }
                 if !success {
                     self.published.remove(&job_id);
+                    self.committed_rows.remove(&job_id);
                 }
                 for (id, task) in &mut self.tasks {
                     if id.job_id == job_id {

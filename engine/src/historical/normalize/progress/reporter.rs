@@ -59,6 +59,7 @@ pub enum ProgressEvent {
     },
     JobOutcome {
         job_id: u64,
+        events_written: u64,
         success: bool,
         message: Option<String>,
         manifest_path: Option<String>,
@@ -88,6 +89,7 @@ pub struct TaskProgressCounters {
     events_normalized: AtomicU64,
     spooled_records: AtomicU64,
     has_spool: AtomicBool,
+    staged_rows: AtomicU64,
     pub records_rejected: AtomicU64,
     pub last_progress_unix_ms: AtomicU64,
     meaningful: Mutex<Option<Instant>>,
@@ -117,7 +119,7 @@ impl TaskProgressCounters {
             .store(counters.records_read, Ordering::Relaxed);
 
         self.records_written
-            .store(counters.events_written, Ordering::Relaxed);
+            .store(counters.events_written, Ordering::Release);
 
         self.records_rejected
             .store(counters.records_rejected, Ordering::Relaxed);
@@ -127,8 +129,18 @@ impl TaskProgressCounters {
         // Consumers already have a regular cadence. Request one publication on
         // the worker's next callback without a clock read on every input row.
         self.publication_requested.store(true, Ordering::Relaxed);
+        // A deferred source declares its spool before publishing sink rows.
+        // Read the publication first so a racing snapshot cannot classify new
+        // spool counters using an older, pre-declaration ownership flag.
+        let records_written = self.records_written.load(Ordering::Acquire);
+        let staged_rows = if self.has_spool.load(Ordering::Acquire) {
+            self.staged_rows.load(Ordering::Relaxed)
+        } else {
+            records_written
+        };
         ProcessingProgress {
             last_meaningful_age: self.meaningful.lock().unwrap().map(|t| t.elapsed()),
+            staged_rows: Some(staged_rows),
             routing_records: self.routing_records.load(Ordering::Relaxed),
             records_processed: self.records_processed.load(Ordering::Relaxed),
             events_normalized: self.events_normalized.load(Ordering::Relaxed),
@@ -138,7 +150,7 @@ impl TaskProgressCounters {
                 .then(|| self.spooled_records.load(Ordering::Relaxed)),
             last_progress_unix_ms: self.last_progress_unix_ms.load(Ordering::Relaxed),
             records_read: self.records_read.load(Ordering::Relaxed),
-            records_written: self.records_written.load(Ordering::Relaxed),
+            records_written,
             records_rejected: self.records_rejected.load(Ordering::Relaxed),
         }
     }
@@ -150,6 +162,8 @@ impl TaskProgressCounters {
 
 #[derive(Debug, Clone, Default)]
 pub struct ProcessingProgress {
+    /// Output-writer submissions, separate from canonical sink/spool counters.
+    pub staged_rows: Option<u64>,
     pub last_meaningful_age: Option<Duration>,
     /// Physical rows examined during family routing; separate from worker counters.
     pub routing_records: u64,
@@ -166,6 +180,7 @@ impl From<&ProcessingCounters> for ProcessingProgress {
     fn from(counters: &ProcessingCounters) -> Self {
         Self {
             last_meaningful_age: None,
+            staged_rows: Some(counters.events_written),
             routing_records: 0,
             records_processed: counters.records_processed,
             events_normalized: counters.events_normalized,
@@ -431,7 +446,15 @@ impl ProgressReporter {
             if task.spooled_records.swap(records, Ordering::Relaxed) != records {
                 *task.meaningful.lock().unwrap() = Some(Instant::now());
             }
-            task.has_spool.store(true, Ordering::Relaxed);
+            task.has_spool.store(true, Ordering::Release);
+        }
+    }
+    pub(crate) fn source_staged(&self, id: ProgressTaskId, rows: u64) {
+        if self.is_enabled() {
+            let counters = self.state.register_task(id);
+            if counters.staged_rows.swap(rows, Ordering::Relaxed) != rows {
+                *counters.meaningful.lock().unwrap() = Some(Instant::now());
+            }
         }
     }
     pub(crate) fn record_workload(&self, job: &crate::historical::job::ProcessingJob) {
@@ -493,6 +516,7 @@ impl ProgressReporter {
     pub(crate) fn job_outcome(&self, result: &super::super::ProcessingResult) {
         self.emit(ProgressEvent::JobOutcome {
             job_id: result.job_id.0,
+            events_written: result.events_written,
             success: result.status == super::super::ProcessingStatus::Complete,
             message: result.failure.as_ref().map(|f| f.message.clone()),
             manifest_path: result.manifest_path.clone(),
@@ -558,12 +582,14 @@ impl ProgressReporter {
         });
     }
 
-    pub fn task_completed(&self, id: ProgressTaskId, counters: &ProcessingCounters) {
+    pub(crate) fn final_source_counters(&self, id: ProgressTaskId, counters: &ProcessingCounters) {
+        self.source_staged(id, counters.events_written);
         if self.is_enabled() {
-            let task = self.state.register_task(id);
-            task.update(counters);
+            self.state.register_task(id).update(counters);
         }
-
+    }
+    pub fn task_completed(&self, id: ProgressTaskId, counters: &ProcessingCounters) {
+        self.final_source_counters(id, counters);
         self.emit(ProgressEvent::TaskCompleted {
             id,
             records_read: counters.records_read,

@@ -370,7 +370,7 @@ impl ScopedIntegrityMetrics {
     }
     /// Validate all arithmetic before mutating any scope. Temporary state is one
     /// CategoryStatistics value, independent of the retained map cardinality.
-    pub(super) fn validate_merge(&self, other: &Self) -> Result<()> {
+    pub(crate) fn validate_merge(&self, other: &Self) -> Result<()> {
         let mut global = self.global.clone();
         global.merge(&other.global)?;
         let mut unattributed = self.unattributed.clone();

@@ -30,6 +30,7 @@ nav = [
     { "Overview" = "configuration/index.md" },
     { "Acquisition and imports" = "configuration/acquisition.md" },
     { "Markets and rankings" = "configuration/markets.md" },
+    { "Normalization Parameters" = "configuration/normalization.md" },
   ] },
   { "Reference" = [
     { "Overview" = "reference/index.md" },
