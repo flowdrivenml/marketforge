@@ -1,6 +1,6 @@
 # Current processing-policy integration
 
-This document also records older scoped measurements below; those measurements do not describe the new policy paths. The current runtime contract is in [Processing policies](../content/configuration/normalization.md#processing-policies). Trade policies reuse bounded external sorting and retained-observation spills. Depth ownership uses a bounded coverage sweep and at most two books; returning to a source scans its scratch prefix, without decompressing the archive again. No performance improvement for this extra I/O is claimed. New metadata/range state is bounded and charged; retained admission includes bounded decision samples and structured errors. The configured scratch-frame cap remains `reconciliation_bytes / 128` unchanged.
+This document retains older scoped measurements below; they do not describe current execution paths. Current trade continuation/merge, depth invariant/checkpointing, metadata accounting, optional typed depth scratch and shared preparation are documented in [execution and performance](normalization-performance-diagnostics.md). The current policy contract is in [Processing policies](../content/configuration/normalization.md#processing-policies). Retained-observation spills, strict defaults and the configured scratch-frame cap `reconciliation_bytes / 128` remain unchanged.
 
 Canonical-changing duplicate boundary snapshots, native-order preservation, lossless overlap recovery and bounded earlier/later preference are implemented by replay against independently reconstructed source state, with complete-book validation. Activated policies publish manifest 5; downstream timestamp-first merge rejects unsupported formats. The former narrow zero-change seam and strict-only runtime descriptions below describe earlier implementation stages, not the current policy contract.
 
@@ -139,8 +139,7 @@ before constructing a codec: installed miniz/flate2 buffers are fixed capacities
 including dictionary/hash/LZ/Huffman/output buffers; readers add an 8 KiB input
 buffer. At most three scratch handles are open in one workspace (two merge inputs
 and one output). Admission's eight-handle envelope includes source/Parquet and
-auxiliary writer headroom. Sources/writers are sequential; more sources or runs
-add merge passes rather than simultaneous handles.
+auxiliary writer headroom. This paragraph describes the older sequential path. Current source preparation adds admitted bounded pipelines; effective merge fan-in can exceed two. See the current ownership reference above.
 
 Encoded frame length is bounded by `reconciliation_bytes / 128` (524,288 bytes at
 the default). This is an additional explicit per-spooled-record/event constraint,

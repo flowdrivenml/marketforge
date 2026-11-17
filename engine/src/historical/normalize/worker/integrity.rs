@@ -80,12 +80,11 @@ pub(super) fn record_trace(
         Some(MarketForgeError::RecordIntegrity { category, .. }) => Some(*category),
         _ => None,
     };
-    for category in trace.successful(failed) {
-        metrics
-            .scoped_integrity
-            .record(scope, category, false, trace.event_timestamp_ns)?;
-    }
-    Ok(())
+    metrics.scoped_integrity.record_successes(
+        scope,
+        trace.successful(failed),
+        trace.event_timestamp_ns,
+    )
 }
 
 pub(crate) fn csv_source_error(

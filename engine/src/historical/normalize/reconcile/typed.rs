@@ -11,13 +11,13 @@ use std::io::{self, Write};
 fn bad() -> MarketForgeError {
     MarketForgeError::InvalidConfiguration("corrupt typed scratch trade".into())
 }
-fn string(w: &mut impl Write, value: &str) -> io::Result<()> {
+pub(super) fn string(w: &mut impl Write, value: &str) -> io::Result<()> {
     let length = u32::try_from(value.len())
         .map_err(|_| io::Error::other("typed scratch string too long"))?;
     w.write_all(&length.to_le_bytes())?;
     w.write_all(value.as_bytes())
 }
-fn optional<T>(
+pub(super) fn optional<T>(
     w: &mut impl Write,
     value: Option<T>,
     encode: impl FnOnce(&mut dyn Write, T) -> io::Result<()>,
@@ -28,7 +28,7 @@ fn optional<T>(
     }
     Ok(())
 }
-fn decimal(w: &mut dyn Write, value: Decimal) -> io::Result<()> {
+pub(super) fn decimal(w: &mut dyn Write, value: Decimal) -> io::Result<()> {
     w.write_all(&value.mantissa().to_le_bytes())?;
     w.write_all(&value.scale().to_le_bytes())?;
     w.write_all(&[u8::from(value.is_sign_negative())])
@@ -73,39 +73,44 @@ pub(super) fn encode(w: &mut impl Write, entry: &TradeEntry) -> io::Result<()> {
     optional(w, t.index_price, decimal)?;
     optional(w, t.mark_price, decimal)
 }
-struct Input<'a>(&'a [u8]);
-impl Input<'_> {
-    fn take<const N: usize>(&mut self) -> Result<[u8; N]> {
+pub(super) struct Input<'a>(pub(super) &'a [u8]);
+impl<'a> Input<'a> {
+    pub(super) fn take<const N: usize>(&mut self) -> Result<[u8; N]> {
         let head = self.0.get(..N).ok_or_else(bad)?;
         let value = head.try_into().map_err(|_| bad())?;
         self.0 = &self.0[N..];
         Ok(value)
     }
-    fn byte(&mut self) -> Result<u8> {
+    pub(super) fn byte(&mut self) -> Result<u8> {
         Ok(self.take::<1>()?[0])
     }
-    fn u64(&mut self) -> Result<u64> {
+    pub(super) fn u64(&mut self) -> Result<u64> {
         Ok(u64::from_le_bytes(self.take()?))
     }
-    fn i64(&mut self) -> Result<i64> {
+    pub(super) fn i64(&mut self) -> Result<i64> {
         Ok(i64::from_le_bytes(self.take()?))
     }
-    fn string(&mut self) -> Result<String> {
+    pub(super) fn string_ref(&mut self) -> Result<&'a str> {
         let length = u32::from_le_bytes(self.take()?) as usize;
-        // Check against the already bounded complete frame before allocating.
         let bytes = self.0.get(..length).ok_or_else(bad)?;
-        let value = std::str::from_utf8(bytes).map_err(|_| bad())?.to_owned();
+        let value = std::str::from_utf8(bytes).map_err(|_| bad())?;
         self.0 = &self.0[length..];
         Ok(value)
     }
-    fn optional<T>(&mut self, decode: impl FnOnce(&mut Self) -> Result<T>) -> Result<Option<T>> {
+    pub(super) fn string(&mut self) -> Result<String> {
+        Ok(self.string_ref()?.to_owned())
+    }
+    pub(super) fn optional<T>(
+        &mut self,
+        decode: impl FnOnce(&mut Self) -> Result<T>,
+    ) -> Result<Option<T>> {
         match self.byte()? {
             0 => Ok(None),
             1 => Ok(Some(decode(self)?)),
             _ => Err(bad()),
         }
     }
-    fn decimal(&mut self) -> Result<Decimal> {
+    pub(super) fn decimal(&mut self) -> Result<Decimal> {
         let mantissa = i128::from_le_bytes(self.take()?);
         let scale = u32::from_le_bytes(self.take()?);
         let negative = match self.byte()? {

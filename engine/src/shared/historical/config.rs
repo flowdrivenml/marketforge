@@ -55,6 +55,8 @@ pub enum ScratchFormat {
     #[default]
     Json,
     TypedTrades,
+    /// Typed trades and shared-envelope depth payloads; JSON for other records.
+    TypedEvents,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]

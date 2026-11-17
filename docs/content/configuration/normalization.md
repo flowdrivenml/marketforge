@@ -57,6 +57,8 @@ The current schema-v4 reader also accepts `families` and minimal `family_id` tas
 
 Runtime remains schema 1 with defaulted, validated `[reconciliation.*]` and `[timestamp_regression.*]` extensions. Old configurations retain strict behavior. Unknown fields/values are rejected. Existing configured budgets are preserved. See [Processing policies](#processing-policies).
 
+Execution-only scratch settings now accept `scratch_format = "typed_events"` in addition to unchanged `json` (default) and `typed_trades`. It enables typed trades and versioned, shared-envelope depth outcomes; other records remain JSON. `scratch_codec = "zlib"` (default) and `uncompressed` remain independent. No production setting is enabled automatically. [Execution eligibility, concurrency admission, exact depth invariants, format bounds and diagnostics](../../historical/normalization-performance-diagnostics.md) describe the current implementation.
+
 Verified evaluator semantics: enabled `action = "fail"` fails on the first violation, regardless of `max_count`, `max_rate` or sample floors. `degrade` marks observed violations degraded and fails when an absolute count is exceeded (`>`). Immediate worker checks enforce action/count; final evaluation additionally checks global/file/stream rates and independent UTC hourly/daily rate windows. Rate equality is permitted, and rate checks defer below their applicable sample floor. Missing trustworthy timestamps fail configured window verification even when the observed category has no violations. Disabled integrity evaluation bypasses these policy decisions, not archive/resource/reconstruction/publication checks.
 
 ---

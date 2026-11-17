@@ -76,6 +76,12 @@ pub struct SourceObservation {
     pub maximum_source_ordinal: u64,
     #[serde(default)]
     pub native_identity_order_validated: bool,
+    #[serde(default)]
+    pub native_source_order_validated: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_native_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_native_id: Option<String>,
     pub filtered_records: u64,
     pub outside_scope_records: u64,
     pub selection_filtered_records: u64,
@@ -95,6 +101,28 @@ pub struct SourceObservation {
     pub skipped_stage: Option<String>,
 }
 impl SourceObservation {
+    pub fn observe_native(&mut self, id: Option<&str>) {
+        if self.native_source_order_validated == Some(false) {
+            return;
+        }
+        let Some(id) =
+            id.filter(|s| s.len() <= 128 && super::policies::numeric_id_cmp(s, s).is_some())
+        else {
+            self.native_source_order_validated = Some(false);
+            return;
+        };
+        if self.last_native_id.as_deref().is_some_and(|last| {
+            super::policies::numeric_id_cmp(last, id) != Some(std::cmp::Ordering::Less)
+        }) {
+            self.native_source_order_validated = Some(false);
+            return;
+        }
+        self.first_native_id.get_or_insert_with(|| id.to_owned());
+        let last = self.last_native_id.get_or_insert_with(String::new);
+        last.clear();
+        last.push_str(id);
+        self.native_source_order_validated = Some(true);
+    }
     pub fn observe(&mut self, timestamp: i64) {
         let ordered = self
             .last_accepted_timestamp_ns
@@ -456,3 +484,5 @@ pub(crate) mod diagnostics;
 
 #[cfg(test)]
 mod bitget_tests;
+
+mod typed_depth;

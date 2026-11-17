@@ -47,15 +47,18 @@ impl TradeSink for Trades {
         self.observation.maximum_source_ordinal =
             self.observation.maximum_source_ordinal.max(source_ordinal);
         let timestamp = trade.envelope.event_timestamp_ns;
+        let entry = TradeEntry {
+            source: self.source,
+            priority: self.priority,
+            ordinal: self.ordinal,
+            trade,
+        };
         self.writer
             .as_mut()
             .ok_or_else(|| invalid("trade spool closed"))?
-            .push_trade(&TradeEntry {
-                source: self.source,
-                priority: self.priority,
-                ordinal: self.ordinal,
-                trade,
-            })?;
+            .push_trade(&entry)?;
+        self.observation
+            .observe_native(entry.trade.trade_id.as_deref());
         if self.spool.count().is_multiple_of(1024) {
             self.reporter
                 .source_spooled(self.progress, self.spool.count());
@@ -77,8 +80,23 @@ struct DepthProof {
     boundary: crate::shared::domain::canonical::DepthEventBoundary,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct DepthMeta {
+    index: u64,
+    source: crate::shared::domain::canonical::DepthSourceEventMetadata,
+    operation: crate::shared::domain::canonical::DepthSourceOperation,
+    boundary: crate::shared::domain::canonical::DepthEventBoundary,
+    rows: u64,
+    payload_hash: u64,
+}
+fn chain(hash: u64, value: u64) -> u64 {
+    hash.rotate_left(7) ^ value.wrapping_mul(0x9e3779b185ebca87)
+}
 struct Depth {
     pending_fingerprint: Option<[u8; 32]>,
+    metadata: Spool,
+    metadata_writer: Option<SpoolWriter>,
+    metadata_chain: u64,
     first_proof: Option<DepthProof>,
     last_proof: Option<DepthProof>,
     reporter: ProgressReporter,
@@ -89,24 +107,27 @@ struct Depth {
     workspace: Workspace,
     observation: SourceObservation,
 }
+pub(super) fn fingerprint(record: &serde_json::Value) -> Result<[u8; 32]> {
+    use sha2::{Digest, Sha256};
+    struct HashWriter(Sha256);
+    impl std::io::Write for HashWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.update(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    // Value object keys use the repository's canonical sorted-map serde
+    // representation. Stream into the digest without allocating another JSON frame.
+    let mut writer = HashWriter(Sha256::new());
+    serde_json::to_writer(&mut writer, record).map_err(|e| invalid(e.to_string()))?;
+    Ok(writer.0.finalize().into())
+}
 impl DepthSink for Depth {
     fn observe_source_record(&mut self, record: &serde_json::Value) -> Result<()> {
-        use sha2::{Digest, Sha256};
-        struct HashWriter(Sha256);
-        impl std::io::Write for HashWriter {
-            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-                self.0.update(bytes);
-                Ok(bytes.len())
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
-        // Value object keys use the repository's canonical sorted-map serde
-        // representation. Stream into the digest without allocating another JSON frame.
-        let mut writer = HashWriter(Sha256::new());
-        serde_json::to_writer(&mut writer, record).map_err(|e| invalid(e.to_string()))?;
-        self.pending_fingerprint = Some(writer.0.finalize().into());
+        self.pending_fingerprint = Some(fingerprint(record)?);
         Ok(())
     }
     fn write_outcome(&mut self, outcome: DepthProcessingOutcome) -> Result<()> {
@@ -126,7 +147,22 @@ impl DepthSink for Depth {
         self.writer
             .as_mut()
             .ok_or_else(|| invalid("depth spool closed"))?
-            .push(&outcome)?;
+            .push_depth(&outcome)?;
+        let payload_hash = self.writer.as_ref().unwrap().last_checksum();
+        let metadata = DepthMeta {
+            index: self.entries.count(),
+            source: outcome.source.clone(),
+            operation: outcome.operation,
+            boundary: outcome.boundary,
+            rows: outcome.events.len() as u64,
+            payload_hash,
+        };
+        let writer = self
+            .metadata_writer
+            .as_mut()
+            .ok_or_else(|| invalid("depth metadata closed"))?;
+        writer.push(&metadata)?;
+        self.metadata_chain = chain(self.metadata_chain, writer.last_checksum());
         if self.entries.count().is_multiple_of(1024) {
             self.reporter
                 .source_spooled(self.progress, self.entries.count());
@@ -271,6 +307,37 @@ fn fail(executions: &mut [(usize, TaskExecution)], error: MarketForgeError) {
         execution.metrics.counters.tasks_failed = 1;
     }
 }
+fn cancel_before_sink(
+    preparation: &mut super::preparation::Preparations,
+    index: usize,
+    metrics: &mut TaskMetrics,
+    observed: &mut SourceObservation,
+    config: &ProcessingConfig,
+    ids: (u64, u64),
+    error: MarketForgeError,
+) -> MarketForgeError {
+    // Read-ahead may already have observed input even when parent setup fails.
+    // Preserve those observations and the primary setup error.
+    let _ = preparation.cancel(index, metrics);
+    pending(metrics);
+    metrics.counters.tasks_completed = 0;
+    metrics.counters.tasks_failed = 1;
+    observed.physical_records_read = metrics.counters.records_read;
+    observed.processing = metrics
+        .source
+        .as_ref()
+        .map(|s| s.processing.clone())
+        .unwrap_or_default();
+    observed.processing.logical_source_events = metrics
+        .accepted_depth_events
+        .max(metrics.counters.records_processed);
+    observed.processing.original_canonical_rows = metrics.counters.events_normalized;
+    observed.processing.published_logical_events = 0;
+    match metrics.scoped_integrity.spill(ids.0, ids.1, config) {
+        Ok(()) => error,
+        Err(spill) => super::failure::report_persistence_error(error, spill),
+    }
+}
 pub(crate) fn execute(
     unit: &StreamUnit<'_>,
     config: &ProcessingConfig,
@@ -316,8 +383,13 @@ pub(crate) fn execute(
     workspace.configure_raw(
         config.scratch_codec == crate::shared::historical::config::ScratchCodec::Uncompressed,
     );
-    workspace.configure_typed_trades(
-        config.scratch_format == crate::shared::historical::config::ScratchFormat::TypedTrades,
+    workspace.configure_typed_trades(matches!(
+        config.scratch_format,
+        crate::shared::historical::config::ScratchFormat::TypedTrades
+            | crate::shared::historical::config::ScratchFormat::TypedEvents
+    ));
+    workspace.configure_typed_depth(
+        config.scratch_format == crate::shared::historical::config::ScratchFormat::TypedEvents,
     );
     workspace.configure_merge(
         config
@@ -410,6 +482,9 @@ pub(crate) fn execute(
         return Ok(executions);
     }
 
+    let capacity = super::streams::preparation_capacity(unit, config);
+    reporter.resource_snapshot(&format!("job={}:stream={}:preparation",unit.job.job_id.0,unit.key),serde_json::json!({"admitted_source_preparations":capacity,"reason":if capacity>0 {"independent sources; bounded queues and source footprints admitted; spare compute permits only"}else{"serial fallback: shared physical/family source, worker count, memory or handle admission"}}));
+    let mut preparation = super::preparation::Preparations::new(capacity);
     for (index, task) in &unit.tasks {
         let progress = ProgressTaskId::new(unit.job.job_id.0, task.task_id.0);
         if super::streams::stopped(&executions) {
@@ -418,7 +493,25 @@ pub(crate) fn execute(
                 "Source reconciliation stopped after fatal failure".into(),
             );
             let mut metrics = TaskMetrics::default();
+            let cancelled = preparation.cancel(*index, &mut metrics);
+            // Already admitted source work is unpublished, rather than unread.
+            pending(&mut metrics);
+            metrics.counters.tasks_completed = 0;
+            metrics.counters.tasks_failed = 0;
+            let persistence_error = metrics
+                .scoped_integrity
+                .spill(unit.job.job_id.0, task.task_id.0, config)
+                .err();
             let mut source = observation(*index, task)?;
+            source.physical_records_read = metrics.counters.records_read;
+            source.processing.logical_source_events = metrics
+                .accepted_depth_events
+                .max(metrics.counters.records_processed);
+            source.processing.original_canonical_rows = metrics.counters.events_normalized;
+            let cancellation_error = match cancelled {
+                Err(MarketForgeError::NotAttempted { .. }) | Ok(()) => None,
+                Err(error) => Some(error),
+            };
             if let Some(stats) = routed.as_ref().and_then(|r| r.stats.get(index)) {
                 metrics.counters.records_read =
                     stats.selected + stats.filtered + stats.parse_rejected;
@@ -443,9 +536,10 @@ pub(crate) fn execute(
                     task_id: task.task_id.0,
                     output_paths: vec![],
                     metrics,
-                    error: Some(MarketForgeError::NotAttempted {
-                        reason: "normalization not attempted: preceding reconciliation failure"
-                            .into(),
+                    error: cancellation_error.or(persistence_error).or_else(|| {
+                        Some(MarketForgeError::NotAttempted {
+                            reason: "source stopped after preceding reconciliation failure".into(),
+                        })
                     }),
                 },
             ));
@@ -476,6 +570,15 @@ pub(crate) fn execute(
         let key = match equivalent_source(task) {
             Ok(key) => key,
             Err(error) => {
+                let error = cancel_before_sink(
+                    &mut preparation,
+                    *index,
+                    &mut metrics,
+                    &mut observed,
+                    config,
+                    (unit.job.job_id.0, task.task_id.0),
+                    error,
+                );
                 metrics.source = Some(observed);
                 executions.push((
                     *index,
@@ -512,10 +615,19 @@ pub(crate) fn execute(
         if let Err(error) = quota.charge(
             (key.capacity() as u64)
                 .checked_mul(2)
-                .and_then(|v| v.checked_add(128))
-                .ok_or_else(|| invalid("source key overflow"))?,
+                .and_then(|v| v.checked_add(2176))
+                .ok_or_else(|| invalid("source key/evidence overflow"))?,
             "source equivalence inventory",
         ) {
+            let error = cancel_before_sink(
+                &mut preparation,
+                *index,
+                &mut metrics,
+                &mut observed,
+                config,
+                (unit.job.job_id.0, task.task_id.0),
+                error,
+            );
             metrics.source = Some(observed);
             executions.push((
                 *index,
@@ -546,6 +658,12 @@ pub(crate) fn execute(
             &unit.key,
             "source read/decode/normalize and canonical spool writing",
         );
+        let mut prepared = if !is_family {
+            preparation.take(*index, &unit.tasks, config, reporter, unit.job.job_id.0)
+        } else {
+            None
+        };
+        let source_started = std::time::Instant::now();
         let mut run = || {
             if task.normalizations[0].target_schema == TargetSchema::Trade {
                 let spool = workspace.create()?;
@@ -559,14 +677,23 @@ pub(crate) fn execute(
                     ordinal: 0,
                     observation: observed.clone(),
                 };
-                let result = super::worker::process_trade_task_with_metrics_and_progress(
-                    task,
-                    &mut sink,
-                    &mut metrics,
-                    &policy,
-                    &ScopedIntegrityMetrics::default(),
-                    &mut worker_progress,
-                );
+                let result = if let Some(prepared) = prepared.take() {
+                    prepared.consume(&mut metrics, |event| match event {
+                        super::preparation::Event::Trade(trade, ordinal) => {
+                            sink.write_trade_at(trade, ordinal)
+                        }
+                        _ => Err(invalid("parallel source changed content type")),
+                    })
+                } else {
+                    super::worker::process_trade_task_with_metrics_and_progress(
+                        task,
+                        &mut sink,
+                        &mut metrics,
+                        &policy,
+                        &ScopedIntegrityMetrics::default(),
+                        &mut worker_progress,
+                    )
+                };
                 observed = sink.observation;
                 let finished = sink.writer.take().unwrap().finish();
                 reporter.source_spooled(progress, sink.spool.count());
@@ -578,7 +705,11 @@ pub(crate) fn execute(
                     (std::mem::size_of::<Depth>() * 2) as u64,
                     "depth source boundary equivalence evidence",
                 )?;
+                let metadata = workspace.create()?;
                 let mut sink = Depth {
+                    metadata_writer: Some(metadata.writer()?),
+                    metadata,
+                    metadata_chain: 0,
                     pending_fingerprint: None,
                     first_proof: None,
                     last_proof: None,
@@ -590,19 +721,37 @@ pub(crate) fn execute(
                     workspace: workspace.clone(),
                     observation: observed.clone(),
                 };
-                let result = super::resolve_sequence_policy(task).and_then(|sequence| {
-                    super::worker::process_depth_task_with_metrics_and_progress(
-                        task,
-                        &mut sink,
-                        &mut metrics,
-                        &policy,
-                        &ScopedIntegrityMetrics::default(),
-                        sequence,
-                        &mut worker_progress,
-                    )
-                });
+                let result = if let Some(prepared) = prepared.take() {
+                    prepared.consume(&mut metrics, |event| match event {
+                        super::preparation::Event::Depth(outcome, fingerprint) => {
+                            sink.pending_fingerprint = fingerprint;
+                            sink.write_outcome(outcome)
+                        }
+                        super::preparation::Event::Boundary(boundary) => {
+                            sink.write_boundary(boundary)
+                        }
+                        _ => Err(invalid("parallel source changed content type")),
+                    })
+                } else {
+                    super::resolve_sequence_policy(task).and_then(|sequence| {
+                        super::worker::process_depth_task_with_metrics_and_progress(
+                            task,
+                            &mut sink,
+                            &mut metrics,
+                            &policy,
+                            &ScopedIntegrityMetrics::default(),
+                            sequence,
+                            &mut worker_progress,
+                        )
+                    })
+                };
                 observed = sink.observation.clone();
-                let finished = sink.writer.take().unwrap().finish();
+                let finished = sink
+                    .writer
+                    .take()
+                    .unwrap()
+                    .finish()
+                    .and_then(|()| sink.metadata_writer.take().unwrap().finish());
                 reporter.source_spooled(progress, sink.entries.count());
                 depths.insert(*index, sink);
                 result.and(finished)
@@ -613,6 +762,20 @@ pub(crate) fn execute(
         } else {
             run()
         };
+        if let Some(unconsumed) = prepared.take() {
+            // Setup can fail before a sink exists. Still stop/join admitted work
+            // and retain its observations without replacing the setup failure.
+            let cancelled = unconsumed.cancel(&mut metrics);
+            result = result.and(cancelled);
+        }
+        crate::historical::normalize::progress::log::diagnostic(format_args!(
+            "source_local task={} records={} logical_depth_events={} elapsed_seconds={:.6} success={}",
+            task.task_id.0,
+            metrics.counters.records_read,
+            metrics.accepted_depth_events,
+            source_started.elapsed().as_secs_f64(),
+            result.is_ok()
+        ));
         worker_progress.finish(&metrics.counters);
         reporter.phase(
             progress,
@@ -769,6 +932,7 @@ pub(crate) fn execute(
         }
         return Ok(executions);
     }
+    drop(preparation);
     // Concrete streams retain independent identity, ordering and book state.
     // Writers are opened and finalized one at a time, never one per symbol at once.
     let mut groups = BTreeMap::<String, Vec<(usize, &WorkTask)>>::new();
@@ -973,8 +1137,68 @@ fn publish_trades(
     } else {
         None
     };
+    let mut checked = None;
+    if order.is_none()
+        && config.timestamp_regression.trades.policy
+            == crate::shared::historical::policies::TradeTimestamp::Strict
+        && executions
+            .iter()
+            .all(|(_, e)| e.metrics.counters.records_rejected == 0)
+        && observations.values().all(|o| {
+            o.ordering_validated == Some(true)
+                && o.native_source_order_validated == Some(true)
+                && o.trade_identity.as_ref().is_some_and(|c| {
+                    c.scope == crate::shared::formats::trades::TradeIdScope::OrderedRun
+                })
+        })
+    {
+        let mut sources = observations.values().collect::<Vec<_>>();
+        sources.sort_by(|a, b| {
+            a.minimum_accepted_timestamp_ns
+                .cmp(&b.minimum_accepted_timestamp_ns)
+                .then_with(|| {
+                    super::policies::native_id_order(
+                        a.first_native_id.as_deref(),
+                        b.first_native_id.as_deref(),
+                    )
+                })
+        });
+        let append = sources.windows(2).all(|p| {
+            p[0].maximum_accepted_timestamp_ns <= p[1].minimum_accepted_timestamp_ns
+                && super::policies::numeric_id_cmp(
+                    p[0].last_native_id.as_deref().unwrap(),
+                    p[1].first_native_id.as_deref().unwrap(),
+                ) == Some(std::cmp::Ordering::Less)
+        });
+        if append
+            || inputs.len()
+                <= workspace.fan_in(
+                    config
+                        .resources
+                        .normalization_limits
+                        .record_bytes
+                        .saturating_mul(64),
+                )
+        {
+            checked = Some(append);
+        }
+    }
+    let path = if order.is_some() {
+        "chronological_append"
+    } else if checked == Some(true) {
+        "ordered_run_append"
+    } else if checked == Some(false) {
+        "ordered_run_merge"
+    } else {
+        "identity_reconciliation"
+    };
+    for o in observations.values_mut() {
+        o.processing.execution_path = path.into();
+    }
     let fast = order.is_some();
-    let reason = if fast {
+    let reason = if checked.is_some() {
+        "complete ingress native-ID/time ordering; compatible checked domain; admitted ordered cursors"
+    } else if fast {
         "explicit source-local identities and validated strictly disjoint accepted intervals"
     } else {
         if observations
@@ -993,17 +1217,21 @@ fn publish_trades(
     };
     crate::historical::normalize::progress::log::diagnostic(format_args!(
         "trade_execution_path={} reason={reason} sources={}",
-        if fast {
-            "chronological_append"
-        } else {
-            "identity_reconciliation"
-        },
+        path,
         inputs.len()
     ));
     let boundaries:Vec<_>=observations.iter().map(|(source,o)|serde_json::json!({"source_index":source,"source_task":o.original_task_id,"minimum_timestamp_ns":o.minimum_accepted_timestamp_ns,"maximum_timestamp_ns":o.maximum_accepted_timestamp_ns,"ordering_validated":o.ordering_validated,"identity_contract":o.trade_identity})).collect();
-    reporter.resource_snapshot(&format!("job={}:stream={}:trade_execution",unit.job.job_id.0,unit.key),serde_json::json!({"trade_execution_path":if fast {"chronological_append"} else {"identity_reconciliation"},"reason":reason,"source_count":inputs.len(),"boundaries":boundaries,"source_order":order,"committed":false}));
+    reporter.resource_snapshot(&format!("job={}:stream={}:trade_execution",unit.job.job_id.0,unit.key),serde_json::json!({"trade_execution_path":path,"reason":reason,"source_count":inputs.len(),"boundaries":boundaries,"source_order":order,"committed":false}));
     let id = ProgressTaskId::new(unit.job.job_id.0, 0);
-    let merged = if let Some(order) = order {
+    let merged = if let Some(append) = checked {
+        reconcile::external::checked_ordered(
+            workspace,
+            inputs,
+            observations,
+            append,
+            config.reconciliation.trades.prefer_source.selection,
+        )?
+    } else if let Some(order) = order {
         let mut by_source: BTreeMap<_, _> = inputs.into_iter().collect();
         let mut ordered = Vec::with_capacity(by_source.len());
         for source in order {
@@ -1214,7 +1442,7 @@ fn publish_trades(
         .sum::<u64>();
     let (memory, scratch, _) = workspace.peaks();
     let (scratch_read, scratch_written) = workspace.scratch_io();
-    reporter.resource_snapshot(&format!("job={}:stream={}:trade_performance",unit.job.job_id.0,unit.key),serde_json::json!({"trade_execution_path":if fast {"chronological_append"} else {"identity_reconciliation"},"source_records":source_records,"records_processed":records_processed,"elapsed_scope":"stream normalization through Parquet finalization; excludes admission, manifest validation and commit","canonical_rows_written":total,"rows_rejected":rejected,"rows_suppressed":suppressed,"scratch_workspace_peak_bytes":scratch,"scratch_bytes_read":scratch_read,"scratch_bytes_written":scratch_written,"peak_accounted_memory_bytes":memory,"elapsed_seconds":normalization_started.elapsed().as_secs_f64(),"processing_records_per_second":records_processed as f64/normalization_started.elapsed().as_secs_f64(),"publication_elapsed_seconds":started.elapsed().as_secs_f64(),"publication_rows_per_second":total as f64/started.elapsed().as_secs_f64(),"parquet_files":writer.metrics().files_written,"parquet_row_groups":writer.metrics().row_groups_written,"committed":false}));
+    reporter.resource_snapshot(&format!("job={}:stream={}:trade_performance",unit.job.job_id.0,unit.key),serde_json::json!({"trade_execution_path":path,"source_records":source_records,"records_processed":records_processed,"elapsed_scope":"stream normalization through Parquet finalization; excludes admission, manifest validation and commit","canonical_rows_written":total,"rows_rejected":rejected,"rows_suppressed":suppressed,"scratch_workspace_peak_bytes":scratch,"scratch_bytes_read":scratch_read,"scratch_bytes_written":scratch_written,"peak_accounted_memory_bytes":memory,"elapsed_seconds":normalization_started.elapsed().as_secs_f64(),"processing_records_per_second":records_processed as f64/normalization_started.elapsed().as_secs_f64(),"publication_elapsed_seconds":started.elapsed().as_secs_f64(),"publication_rows_per_second":total as f64/started.elapsed().as_secs_f64(),"parquet_files":writer.metrics().files_written,"parquet_row_groups":writer.metrics().row_groups_written,"committed":false}));
     super::streams::write_output(
         &path,
         &StreamOutput {
@@ -1305,7 +1533,11 @@ mod tests {
         let quota = Quota::new(4 << 20);
         let workspace = Workspace::new(temp.path(), 1 << 20, quota.clone()).unwrap();
         let entries = workspace.create().unwrap();
+        let metadata = workspace.create().unwrap();
         let mut sink = Depth {
+            metadata_writer: Some(metadata.writer().unwrap()),
+            metadata,
+            metadata_chain: 0,
             pending_fingerprint: None,
             first_proof: None,
             last_proof: None,

@@ -1166,3 +1166,184 @@ fn native_order_dataset_requires_a_segment_aware_consumer() {
         "{error}"
     );
 }
+
+#[test]
+fn performance_depth_delta_work_is_independent_of_book_size_and_metadata_is_compact() {
+    use crate::shared::historical::config::ScratchFormat;
+    for size in [256usize, 4096, 50840] {
+        let (_root, job, mut config) = case(true, 2);
+        config.resources.workers = 3;
+        config.resources.normalization_limits.depth_levels = 100000;
+        config.resources.normalization_limits.record_bytes = 1 << 20;
+        config.resources.normalization_limits.reconciliation_bytes = 8 << 30;
+        config.resources.memory_budget_bytes = 64 << 30;
+        config.resources.parquet.row_group_target_bytes = 4 << 20;
+        config.resources.parquet.file_target_bytes = 64 << 20;
+        config.scratch_format = ScratchFormat::TypedEvents;
+        config.reconciliation.depth.overlap_policy = DepthOverlap::SnapshotRecovery;
+        config.timestamp_regression.depth = Default::default();
+        let bids: Vec<_> = (1..size).map(|p| json!([p.to_string(), "1"])).collect();
+        for source in 0..2 {
+            let start = 1000 + source as i64 * 100;
+            let mut initial = snapshot(start, 1, "1");
+            initial["data"]["b"] = json!(bids);
+            initial["data"]["a"] = json!([["60000", "5"]]);
+            let mut rows = vec![initial];
+            for n in 0..16 {
+                rows.push(delta(start + n + 1, n as u64 + 2, &(n + 2).to_string()));
+            }
+            depth(&job, source, &rows);
+        }
+        complete(&job, &run(&job, &config));
+        let m = manifest(&job);
+        for task in &m.processing_metrics.tasks {
+            let p = &task.source.as_ref().unwrap().processing;
+            assert_eq!(p.execution_path, "independent_depth_continuation");
+            assert_eq!(p.depth_payload_events, 17);
+            assert_eq!(p.depth_metadata_events, 17);
+            assert_eq!(
+                p.depth_full_comparisons, 1,
+                "ordinary deltas must not scan books"
+            );
+            assert_eq!(p.depth_levels_compared, (size * 2) as u64);
+            assert_eq!(p.depth_changed_level_checks, 16);
+        }
+        let _limits = crate::shared::historical::limits::LimitScope::enter(
+            config.resources.normalization_limits,
+            "performance test independent replay".into(),
+        );
+        let boundaries = crate::shared::persistence::parquet::read_depth_stream_boundaries(
+            &job.output.dataset_path.join(&m.streams[0].directory),
+        )
+        .unwrap();
+        for source in boundaries.sources {
+            let state = source.boundary.final_state.unwrap().state;
+            assert_eq!(state.bids.len(), size - 1);
+            assert_eq!(state.asks.len(), 1);
+            for level in state.bids {
+                assert_eq!(
+                    level.quantity_base,
+                    Some(if level.price == 99.into() {
+                        17.into()
+                    } else {
+                        1.into()
+                    })
+                );
+            }
+            assert_eq!(state.asks[0].quantity_base, Some(5.into()));
+        }
+    }
+}
+
+#[test]
+fn performance_depth_json_and_typed_events_preserve_zero_events_deletions_and_recovery() {
+    use crate::shared::historical::config::{ScratchCodec, ScratchFormat};
+    let mut reference = None;
+    for format in [ScratchFormat::Json, ScratchFormat::TypedEvents] {
+        for codec in [ScratchCodec::Zlib, ScratchCodec::Uncompressed] {
+            let (_root, job, mut config) = case(true, 2);
+            config.scratch_format = format;
+            config.scratch_codec = codec;
+            config.reconciliation.depth.overlap_policy = DepthOverlap::SnapshotRecovery;
+            depth(
+                &job,
+                0,
+                &[
+                    snapshot(1000, 1, "1"),
+                    delta(1001, 2, "1"),
+                    delta(1002, 3, "2"),
+                ],
+            );
+            depth(
+                &job,
+                1,
+                &[
+                    snapshot(1003, 1, "3"),
+                    delta(1004, 2, "0"),
+                    snapshot(1005, 3, "4"),
+                ],
+            );
+            complete(&job, &run(&job, &config));
+            let m = manifest(&job);
+            let rows = (
+                m.events_written,
+                times(&job),
+                m.streams,
+                m.processing_quality,
+            );
+            if let Some(expected) = &reference {
+                assert_eq!(&rows, expected);
+            } else {
+                reference = Some(rows);
+            }
+        }
+    }
+}
+
+#[test]
+fn performance_fragmented_depth_ownership_uses_one_partition_pass_and_exact_checkpoints() {
+    for format in [
+        crate::shared::historical::config::ScratchFormat::Json,
+        crate::shared::historical::config::ScratchFormat::TypedEvents,
+    ] {
+        let (_root, job, mut config) = case(true, 3);
+        config.scratch_format = format;
+        config.reconciliation.depth.overlap_policy = DepthOverlap::PreferSource;
+        config.reconciliation.depth.prefer_source = DepthPreferSource {
+            selection: Selection::Later,
+            on_unique_data_loss: LossAction::MarkDegraded,
+            max_excluded_events: 4,
+            ..Default::default()
+        };
+        depth(
+            &job,
+            0,
+            &[
+                snapshot(1000, 1, "1"),
+                delta(1001, 2, "2"),
+                snapshot(1002, 3, "3"),
+                delta(1003, 4, "4"),
+                snapshot(1004, 5, "5"),
+                delta(1005, 6, "6"),
+                snapshot(1006, 7, "7"),
+                delta(1007, 8, "8"),
+                snapshot(1008, 9, "9"),
+            ],
+        );
+        depth(&job, 1, &[snapshot(1002, 1, "20"), delta(1003, 2, "21")]);
+        depth(&job, 2, &[snapshot(1006, 1, "30"), delta(1007, 2, "31")]);
+        complete(&job, &run(&job, &config));
+        assert_eq!(
+            replay_bids(&job),
+            vec![
+                1.into(),
+                2.into(),
+                20.into(),
+                21.into(),
+                5.into(),
+                6.into(),
+                30.into(),
+                31.into(),
+                9.into()
+            ]
+        );
+        let m = manifest(&job);
+        let source = m
+            .processing_metrics
+            .tasks
+            .iter()
+            .find(|t| t.task_id == job.tasks[0].task_id.0)
+            .unwrap()
+            .source
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            source.processing.execution_path,
+            "checkpointed_depth_selection"
+        );
+        assert_eq!(source.processing.depth_payload_events, 18);
+        assert_eq!(source.processing.depth_metadata_events, 9);
+        assert_eq!(source.processing.depth_checkpoint_restores, 3);
+        assert_eq!(source.processing.overlap_exclusions, 4);
+    }
+}

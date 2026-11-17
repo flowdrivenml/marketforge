@@ -13,6 +13,28 @@ use super::{
 };
 
 impl BookStore {
+    /// Replay/restore a complete authoritative state without allocating a diff
+    /// that the caller would discard. Validation remains atomic and identical.
+    pub fn replace_snapshot(
+        &mut self,
+        bids: Vec<(Price, BookLevel)>,
+        asks: Vec<(Price, BookLevel)>,
+    ) -> Result<()> {
+        crate::shared::historical::limits::depth(
+            bids.len().checked_add(asks.len()).ok_or_else(|| {
+                crate::shared::error::MarketForgeError::InvalidConfiguration(
+                    "snapshot level count overflow".into(),
+                )
+            })?,
+            "book snapshot",
+        )?;
+        let bids = build_side(bids)?;
+        let asks = build_side(asks)?;
+        self.bids = bids;
+        self.asks = asks;
+        self.initialized = true;
+        Ok(())
+    }
     /// Replace the book with an authoritative snapshot.
     ///
     /// Emits only changed levels.

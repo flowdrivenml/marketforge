@@ -32,7 +32,7 @@ fn path_report(report: &Value) -> &Value {
         .as_object()
         .unwrap()
         .values()
-        .find(|v| v.get("reason").is_some())
+        .find(|v| v.get("reason").is_some() && v.get("trade_execution_path").is_some())
         .unwrap()
 }
 fn assert_failed(job: &ProcessingJob, result: &ProcessingResult) {
@@ -516,4 +516,131 @@ fn contradictory_source_contracts_cannot_split_a_compatible_stream_to_bypass_rec
             .message
             .contains("inconsistent native trade identity contracts")
     );
+}
+
+#[test]
+fn performance_checked_ordered_sources_match_complete_trade_oracle_and_general_path() {
+    use crate::shared::historical::policies::{TradeOverlap, TradeTimestamp};
+    for scenario in 0..3 {
+        let overlap = scenario > 0;
+        let equal_start = scenario == 2;
+        for format in [
+            ScratchFormat::Json,
+            ScratchFormat::TypedTrades,
+            ScratchFormat::TypedEvents,
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let (mut job, mut config) = setup(false, root.path());
+            for task in &mut job.tasks {
+                task.raw_schema["marketforge_trade_identity"] =
+                    json!({"scope":"ordered_run","reset_domain":"performance-checked-domain"});
+            }
+            if equal_start {
+                write(
+                    &job,
+                    0,
+                    "9007199254740994,1000,102,3,buy,0\n9007199254740995,1002,103,3,buy,0\n",
+                );
+                write(
+                    &job,
+                    1,
+                    "9007199254740993,1000,101,3,buy,0\n9007199254740995,1002,103,3,buy,0\n9007199254740996,1002,104,3,buy,0\n",
+                );
+            } else if overlap {
+                write(
+                    &job,
+                    0,
+                    "9007199254740993,1000,101,3,buy,0\n9007199254740995,1002,103,3,buy,0\n",
+                );
+                write(
+                    &job,
+                    1,
+                    "9007199254740994,1001,102,3,buy,0\n9007199254740995,1002,103,3,buy,0\n9007199254740996,1002,104,3,buy,0\n",
+                );
+            } else {
+                write(
+                    &job,
+                    0,
+                    "9007199254740993,1000,101,3,buy,0\n9007199254740994,1001,102,3,buy,0\n",
+                );
+                write(
+                    &job,
+                    1,
+                    "9007199254740995,1001,103,3,buy,0\n9007199254740996,1001,104,3,buy,0\n",
+                );
+            }
+            config.scratch_format = format;
+            config.diagnostics.mode = DiagnosticsMode::Basic;
+            config.reconciliation.trades.overlap_policy = TradeOverlap::Strict;
+            let expected_rows = || {
+                [
+                    (1000, "9007199254740993", 101),
+                    (
+                        if equal_start { 1000 } else { 1001 },
+                        "9007199254740994",
+                        102,
+                    ),
+                    (if overlap { 1002 } else { 1001 }, "9007199254740995", 103),
+                    (if overlap { 1002 } else { 1001 }, "9007199254740996", 104),
+                ]
+                .into_iter()
+                .map(|(t, id, p)| expected(&job, t, id, p))
+                .collect()
+            };
+            let result = execute_processing_job(&job, &config).unwrap();
+            assert_eq!(result.status, ProcessingStatus::Complete, "{result:?}");
+            assert_rows(&job, expected_rows());
+            let first = manifest(&job);
+            let report = diagnostic_report(root.path());
+            assert_eq!(
+                path_report(&report)["trade_execution_path"],
+                if overlap {
+                    "ordered_run_merge"
+                } else {
+                    "ordered_run_append"
+                }
+            );
+            let scratch = report["resources"]
+                .as_object()
+                .unwrap()
+                .values()
+                .find(|v| v.get("counters").is_some())
+                .unwrap();
+            assert_eq!(scratch["counters"]["runs_generated"], 0);
+            assert_eq!(scratch["counters"]["merge_passes"], 0);
+            assert_eq!(
+                scratch["counters"]["frames_written"],
+                if overlap { 9 } else { 4 }
+            );
+            // Reorder forces the established general path;
+            // no timestamp changes/loss occur. Compare full canonical fields.
+            job.tasks.reverse();
+            job.output.dataset_path.set_file_name("general");
+            job.output.staging_path.set_file_name("general-stage");
+            config.timestamp_regression.trades.policy = TradeTimestamp::Reorder;
+            config.timestamp_regression.trades.max_regression_ms = 1;
+            config.timestamp_regression.trades.max_reorder_window_ms = 1;
+            let result = execute_processing_job(&job, &config).unwrap();
+            assert_eq!(result.status, ProcessingStatus::Complete, "{result:?}");
+            let rows = [
+                (1000, "9007199254740993", 101),
+                (
+                    if equal_start { 1000 } else { 1001 },
+                    "9007199254740994",
+                    102,
+                ),
+                (if overlap { 1002 } else { 1001 }, "9007199254740995", 103),
+                (if overlap { 1002 } else { 1001 }, "9007199254740996", 104),
+            ]
+            .into_iter()
+            .map(|(t, id, p)| expected(&job, t, id, p))
+            .collect();
+            assert_rows(&job, rows);
+            assert_eq!(manifest(&job).streams, first.streams);
+            assert_eq!(
+                manifest(&job).processing_metrics.counters.rows_suppressed,
+                u64::from(overlap)
+            );
+        }
+    }
 }

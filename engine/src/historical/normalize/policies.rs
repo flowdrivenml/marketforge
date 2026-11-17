@@ -50,6 +50,13 @@ pub struct DecisionSample {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Outcomes {
+    pub execution_path: String,
+    pub depth_full_comparisons: u64,
+    pub depth_levels_compared: u64,
+    pub depth_changed_level_checks: u64,
+    pub depth_payload_events: u64,
+    pub depth_metadata_events: u64,
+    pub depth_checkpoint_restores: u64,
     pub decision_samples: Vec<DecisionSample>,
     pub logical_source_events: u64,
     pub raw_timestamp_regressions: u64,

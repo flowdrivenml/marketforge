@@ -1,6 +1,6 @@
 //! Selected histories are replayed from their own independent source books.
 //! At most a source book and the selected book are live. Returning to a source
-//! rescans its bounded scratch prefix, never re-decompresses the raw archive.
+//! restores a bounded exact checkpoint and consumes a sealed forward partition.
 use super::*;
 use crate::historical::normalize::boundary::{BoundaryBookState, DepthBoundaryTracker};
 use crate::shared::{
@@ -13,7 +13,7 @@ use crate::shared::{
     historical::policies::{DepthOverlap, DepthTimestamp, Selection, SwitchBoundary, milliseconds},
 };
 #[derive(Clone, Copy)]
-struct Interval {
+pub(super) struct Interval {
     source: usize,
     start: i128,
     end: i128,
@@ -77,7 +77,7 @@ fn apply(book: &mut BookStore, outcome: &DepthProcessingOutcome) -> Result<()> {
                 BookSide::Ask => asks.push((e.price, level(e))),
             }
         }
-        book.apply_snapshot(bids, asks)?;
+        book.replace_snapshot(bids, asks)?;
     } else {
         for e in &outcome.events {
             book.set_level(e.side, e.price, level(e))?;
@@ -116,6 +116,12 @@ fn full(
 fn same(a: &BookStore, b: &BookStore) -> bool {
     a.is_initialized() && b.is_initialized() && a.bids() == b.bids() && a.asks() == b.asks()
 }
+fn exact(a: &BookStore, b: &BookStore, metrics: &mut super::super::policies::Outcomes) -> bool {
+    metrics.depth_full_comparisons += 1;
+    metrics.depth_levels_compared +=
+        (a.bids().len() + a.asks().len() + b.bids().len() + b.asks().len()) as u64;
+    same(a, b)
+}
 fn proof(a: &Depth, b: &Depth) -> bool {
     match (&a.last_proof, &b.first_proof) {
         (Some(a), Some(b)) => {
@@ -151,7 +157,7 @@ fn intervals(
         .collect::<Vec<_>>();
     quota.charge(
         (ranges.len() as u64)
-            .checked_mul(512)
+            .checked_mul(2048)
             .ok_or_else(|| invalid("depth interval inventory overflow"))?,
         "depth ownership interval inventory",
     )?;
@@ -169,54 +175,46 @@ fn intervals(
         });
         return Ok(ranges);
     }
-    let mut points = ranges
-        .iter()
-        .flat_map(|r| [r.start, r.end])
-        .collect::<Vec<_>>();
-    points.sort_unstable();
-    points.dedup();
-    let mut result: Vec<Interval> = Vec::new();
-    for pair in points.windows(2) {
-        let owner = ranges
+    let mut sources = ranges.iter().collect::<Vec<_>>();
+    sources.sort_by(|a, b| {
+        let order = a.start.cmp(&b.start);
+        (if config.reconciliation.depth.prefer_source.selection == Selection::Later {
+            order.reverse()
+        } else {
+            order
+        })
+        .then_with(|| {
+            observations[&a.source]
+                .stable_source_identity
+                .cmp(&observations[&b.source].stable_source_identity)
+        })
+        .then(a.source.cmp(&b.source))
+    });
+    let ranks = sources
+        .into_iter()
+        .enumerate()
+        .map(|(rank, r)| (r.source, rank as u64))
+        .collect();
+    let result = super::super::coverage::ownership(
+        &ranges
             .iter()
-            .filter(|r| r.start <= pair[0] && pair[0] < r.end)
-            .min_by(|a, b| {
-                let starts = a.start.cmp(&b.start);
-                let starts =
-                    if config.reconciliation.depth.prefer_source.selection == Selection::Later {
-                        starts.reverse()
-                    } else {
-                        starts
-                    };
-                starts
-                    .then_with(|| {
-                        observations[&a.source]
-                            .stable_source_identity
-                            .cmp(&observations[&b.source].stable_source_identity)
-                    })
-                    .then(a.source.cmp(&b.source))
-            });
-        if let Some(owner) = owner {
-            if let Some(last) = result.last_mut()
-                && last.source == owner.source
-                && last.end == pair[0]
-            {
-                last.end = pair[1];
-                continue;
-            }
-            crate::shared::historical::limits::check(
-                "depth ownership intervals",
-                config.resources.normalization_limits.metric_entries,
-                result.len() as u64 + 1,
-                "depth ownership sweep",
-            )?;
-            result.push(Interval {
-                source: owner.source,
-                start: pair[0],
-                end: pair[1],
-            });
-        }
-    }
+            .map(|r| (r.source, r.start, r.end))
+            .collect::<Vec<_>>(),
+        &ranks,
+    )
+    .into_iter()
+    .map(|r| Interval {
+        source: r.source,
+        start: r.start,
+        end: r.end,
+    })
+    .collect::<Vec<_>>();
+    crate::shared::historical::limits::check(
+        "depth ownership intervals",
+        config.resources.normalization_limits.metric_entries,
+        result.len() as u64,
+        "depth ownership sweep",
+    )?;
     Ok(result)
 }
 fn reset(sequence: Option<u64>, previous: Option<u64>, snapshot: bool) -> bool {
@@ -250,6 +248,8 @@ fn adjusted(metrics: &mut TaskMetrics, old: u64, new: u64) -> Result<()> {
     }
     Ok(())
 }
+#[path = "depth_partitions.rs"]
+mod partitions;
 pub(super) fn publish(
     unit: &StreamUnit<'_>,
     config: &ProcessingConfig,
@@ -338,6 +338,29 @@ pub(super) fn publish(
             }
         }
     }
+    let prepared = partitions::prepare(&plan, &depths, config, observations, &quota)?;
+    let mut segment_counts = BTreeMap::<usize, usize>::new();
+    for interval in &plan {
+        *segment_counts.entry(interval.source).or_default() += 1;
+    }
+    let continuation = segment_counts.values().all(|count| *count == 1);
+    for o in observations.values_mut() {
+        o.processing.execution_path = if continuation {
+            "independent_depth_continuation"
+        } else {
+            "checkpointed_depth_selection"
+        }
+        .into();
+    }
+    crate::historical::normalize::progress::log::diagnostic(format_args!(
+        "depth_execution_path={} source_segments={} prefix_replay=none",
+        if continuation {
+            "independent_depth_continuation"
+        } else {
+            "checkpointed_depth_selection"
+        },
+        plan.len()
+    ));
     let directory = format!("streams/{}/depth", unit.key);
     let path = unit.job.output.staging_path.join(&directory);
     let mut writer = ParquetDepthWriter::new(&path, config.resources.parquet.clone())?;
@@ -354,7 +377,16 @@ pub(super) fn publish(
     let mut selected = BTreeMap::<usize, Ordinals>::new();
     let mut spans = Vec::new();
     let mut output_sources = std::collections::BTreeSet::new();
+    let positions = executions
+        .iter()
+        .enumerate()
+        .map(|(p, (i, _))| (*i, p))
+        .collect::<BTreeMap<_, _>>();
+    let mut range_count = 0u64;
     for (segment, interval) in plan.iter().enumerate() {
+        if segment_counts[&interval.source] > 1 && !prepared.contains_key(&segment) {
+            continue;
+        }
         reporter.stage_count(
             unit.job.job_id.0,
             &unit.key,
@@ -375,16 +407,58 @@ pub(super) fn publish(
         let mut high = None;
         let mut previous_time = None;
         let mut recovering = false;
-        let mut reader = depth.entries.reader::<DepthProcessingOutcome>()?;
+        let part = prepared.get(&segment);
+        let mut expected_first = None;
+        if let Some(part) = part {
+            let (seq, h, t, r, ordinal) =
+                partitions::restore(part, interval.source, segment, &mut source_book)?;
+            source_sequence = seq;
+            high = h;
+            previous_time = t;
+            recovering = r;
+            expected_first = Some(ordinal);
+            observations
+                .get_mut(&interval.source)
+                .unwrap()
+                .processing
+                .depth_checkpoint_restores += 1;
+        }
+        let mut reader = part.map_or(&depth.entries, |p| &p.entries).depth_reader()?;
         let mut tracker = None;
         let start = writer.metrics().levels_written;
         let mut events = 0u64;
+        let mut equivalent = false;
+        let mut meta_reader = part
+            .map_or(&depth.metadata, |p| &p.metadata)
+            .reader::<DepthMeta>()?;
+        let execution = &mut executions[positions[&interval.source]].1;
         while let Some(row) = reader.next()? {
+            let meta = meta_reader
+                .next()?
+                .ok_or_else(|| invalid("missing depth metadata frame"))?;
+            if meta.value.payload_hash != row.checksum()
+                || meta.value.source != row.value.source
+                || meta.value.boundary != row.value.boundary
+                || meta.value.operation != row.value.operation
+                || meta.value.rows != row.value.events.len() as u64
+            {
+                return Err(invalid("depth metadata/payload mismatch"));
+            }
+            observations
+                .get_mut(&interval.source)
+                .unwrap()
+                .processing
+                .depth_payload_events += 1;
             let mut outcome = row.value;
             let ordinal = outcome
                 .source
                 .source_event_ordinal
                 .ok_or_else(|| invalid("depth event missing ordinal"))?;
+            if let Some(expected) = expected_first.take()
+                && ordinal != expected
+            {
+                return Err(invalid("depth checkpoint source position mismatch"));
+            }
             let timestamp = outcome.source.event_timestamp_ns;
             let snapshot = outcome.operation == DepthSourceOperation::Snapshot;
             if reset(outcome.source.sequence_end, source_sequence, snapshot) {
@@ -412,10 +486,21 @@ pub(super) fn publish(
             }
             high = Some(high.map_or(timestamp, |v: i64| v.max(timestamp)));
             previous_time = Some(timestamp);
-            let proven_before = same(&global, &source_book)
+            let need_proof = tracker.is_none()
+                && global.is_initialized()
+                && (config.reconciliation.depth.overlap_policy == DepthOverlap::SnapshotRecovery
+                    || config.reconciliation.depth.overlap_policy == DepthOverlap::PreferSource
+                        && config.reconciliation.depth.prefer_source.switch_boundary
+                            == SwitchBoundary::SourceBoundary);
+            let proven_before = need_proof
                 && previous_sequence
                     .zip(global_sequence)
-                    .is_some_and(|(a, b)| a == b);
+                    .is_some_and(|(a, b)| a == b)
+                && exact(
+                    &global,
+                    &source_book,
+                    &mut observations.get_mut(&interval.source).unwrap().processing,
+                );
             apply(&mut source_book, &outcome)?;
             source_sequence = outcome.source.sequence_end;
             if i128::from(timestamp) < interval.start
@@ -423,6 +508,11 @@ pub(super) fn publish(
                 || duplicate.get(&interval.source) == Some(&ordinal)
                 || recovering
             {
+                if !outcome.events.is_empty()
+                    || outcome.boundary == DepthEventBoundary::Initialization
+                {
+                    equivalent = false;
+                }
                 continue;
             }
             if config.timestamp_regression.depth.policy == DepthTimestamp::SnapshotRecovery
@@ -438,12 +528,20 @@ pub(super) fn publish(
                     match config.reconciliation.depth.prefer_source.switch_boundary {
                         SwitchBoundary::Snapshot if !snapshot => continue,
                         SwitchBoundary::SourceBoundary => {
-                            let checkpoint = snapshot
-                                && same(&global, &source_book)
-                                && source_sequence
-                                    .zip(global_sequence)
-                                    .is_some_and(|(a, b)| a == b);
-                            if !proven_before && !checkpoint {
+                            let checkpoint = proven_before
+                                || (snapshot
+                                    && source_sequence
+                                        .zip(global_sequence)
+                                        .is_some_and(|(a, b)| a == b)
+                                    && exact(
+                                        &global,
+                                        &source_book,
+                                        &mut observations
+                                            .get_mut(&interval.source)
+                                            .unwrap()
+                                            .processing,
+                                    ));
+                            if !checkpoint {
                                 return Err(invalid(
                                     "depth source_boundary switch lacks matching reconstruction state and native sequence evidence",
                                 ));
@@ -475,10 +573,6 @@ pub(super) fn publish(
                 outcome.boundary = DepthEventBoundary::Initialization;
                 outcome.events = full(&source_book, task, &outcome.source);
             }
-            let (_, execution) = executions
-                .iter_mut()
-                .find(|(i, _)| *i == interval.source)
-                .unwrap();
             adjusted(&mut execution.metrics, old, outcome.events.len() as u64)?;
             let o = observations.get_mut(&interval.source).unwrap();
             if last_timestamp.is_some_and(|last| timestamp < last) {
@@ -495,25 +589,51 @@ pub(super) fn publish(
             if new_source && previous_source.is_some_and(|p| p != interval.source) {
                 o.processing.source_switches += 1;
             }
-            selected.entry(interval.source).or_default().add(
+            let selection = selected.entry(interval.source).or_default();
+            let before = selection.ranges.len();
+            selection.add(
                 ordinal,
                 &quota,
                 config.resources.normalization_limits.metric_entries,
             )?;
+            range_count += (selection.ranges.len() - before) as u64;
             crate::shared::historical::limits::check(
                 "depth ownership ranges",
                 config.resources.normalization_limits.metric_entries,
-                selected.values().map(|s| s.ranges.len() as u64).sum(),
+                range_count,
                 "depth ownership aggregate inventory",
             )?;
             let metadata = outcome.source.clone();
             let boundary = outcome.boundary;
             let count = outcome.events.len() as u64;
             apply(&mut global, &outcome)?;
-            if !same(&global, &source_book) {
-                return Err(invalid(
-                    "selected depth diffs do not replay to the source reconstruction state",
-                ));
+            // Induction: equal states + identical controlled updates change only
+            // declared keys. Exclusions/switches invalidate it; exact transitions
+            // re-establish it. No probabilistic state fingerprints.
+            if !equivalent || boundary == DepthEventBoundary::Initialization {
+                if !exact(&global, &source_book, &mut o.processing) {
+                    return Err(invalid(
+                        "selected depth diffs do not replay to the source reconstruction state",
+                    ));
+                }
+                equivalent = true;
+            } else {
+                for event in &outcome.events {
+                    o.processing.depth_changed_level_checks += 1;
+                    let (a, b) = match event.side {
+                        BookSide::Bid => (
+                            global.bids().get(&event.price),
+                            source_book.bids().get(&event.price),
+                        ),
+                        BookSide::Ask => (
+                            global.asks().get(&event.price),
+                            source_book.asks().get(&event.price),
+                        ),
+                    };
+                    if a != b {
+                        return Err(invalid("selected depth changed-level mismatch"));
+                    }
+                }
             }
             let initial = if boundary == DepthEventBoundary::Initialization {
                 BoundaryBookState::from_book(&global)
@@ -539,6 +659,9 @@ pub(super) fn publish(
             global_sequence = metadata.sequence_end;
             previous_source = Some(interval.source);
         }
+        if meta_reader.next()?.is_some() {
+            return Err(invalid("extra depth metadata frames"));
+        }
         if let Some(mut tracker) = tracker {
             tracker.set_final_state(BoundaryBookState::from_book(&global));
             writer.write_boundary(tracker.finish())?;
@@ -552,20 +675,44 @@ pub(super) fn publish(
         }
         let _ = events;
     }
-    // Second forward scratch scan accounts every logical observation exactly
-    // once in native source order, including contiguous excluded spans.
+    // Compact metadata traversal accounts each logical observation once in native
+    // order. Never decode full snapshot levels just to count/classify them.
     for (index, depth) in &depths {
         let task = unit.tasks.iter().find(|(i, _)| i == index).unwrap().1;
         let (_, execution) = executions.iter_mut().find(|(i, _)| i == index).unwrap();
         let o = observations.get_mut(index).unwrap();
-        let mut reader = depth.entries.reader::<DepthProcessingOutcome>()?;
+        let mut unselected_frames = if !segment_counts.contains_key(index) {
+            Some(depth.entries.frame_reader()?)
+        } else {
+            None
+        };
+        let mut reader = depth.metadata.reader::<DepthMeta>()?;
         let mut high = None;
         let mut previous_time = None;
         let mut sequence = None;
         let mut recovering = false;
+        let mut metadata_hash = 0;
+        let mut metadata_count = 0;
         while let Some(row) = reader.next()? {
+            if let Some(frames) = unselected_frames.as_mut() {
+                let payload = frames
+                    .next()?
+                    .ok_or_else(|| invalid("unselected depth payload missing frame"))?;
+                if payload.checksum() != row.value.payload_hash {
+                    return Err(invalid("unselected depth payload/metadata mismatch"));
+                }
+            }
+            metadata_count += 1;
+            metadata_hash = chain(metadata_hash, row.checksum());
+            if row.value.index != metadata_count {
+                return Err(invalid("depth metadata index/order mismatch"));
+            }
+            o.processing.depth_metadata_events += 1;
             let outcome = row.value;
-            let ordinal = outcome.source.source_event_ordinal.unwrap();
+            let ordinal = outcome
+                .source
+                .source_event_ordinal
+                .ok_or_else(|| invalid("depth accounting metadata missing source ordinal"))?;
             let timestamp = outcome.source.event_timestamp_ns;
             let snapshot = outcome.operation == DepthSourceOperation::Snapshot;
             if reset(outcome.source.sequence_end, sequence, snapshot) {
@@ -589,7 +736,7 @@ pub(super) fn publish(
                 o.processing.retain();
                 continue;
             }
-            let rows = outcome.events.len() as u64;
+            let rows = outcome.rows;
             if duplicate.get(index) != Some(&ordinal) {
                 if config.reconciliation.depth.overlap_policy != DepthOverlap::PreferSource
                     && !recovering
@@ -601,8 +748,10 @@ pub(super) fn publish(
                 let chosen = if recovering {
                     None
                 } else {
-                    plan.iter()
-                        .find(|p| p.start <= i128::from(timestamp) && i128::from(timestamp) < p.end)
+                    plan.get(plan.partition_point(|p| p.end <= i128::from(timestamp)))
+                        .filter(|p| {
+                            p.start <= i128::from(timestamp) && i128::from(timestamp) < p.end
+                        })
                         .and_then(|p| unit.tasks.iter().find(|(id, _)| *id == p.source))
                         .map(|(_, task)| task.task_id.0)
                 };
@@ -633,6 +782,14 @@ pub(super) fn publish(
                 .rows_unpublished
                 .checked_sub(rows)
                 .ok_or_else(|| invalid("depth suppression pending underflow"))?;
+        }
+        if let Some(frames) = unselected_frames.as_mut()
+            && frames.next()?.is_some()
+        {
+            return Err(invalid("unselected depth payload has extra frames"));
+        }
+        if metadata_count != depth.entries.count() || metadata_hash != depth.metadata_chain {
+            return Err(invalid("depth metadata sealed digest/count mismatch"));
         }
         if recovering {
             return Err(invalid(

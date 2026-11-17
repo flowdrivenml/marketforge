@@ -319,4 +319,6 @@ fn performance_settings_default_validate_and_roundtrip() {
     assert_eq!(decoded.merge_fan_in, 3);
     assert_eq!(decoded.scratch_codec, ScratchCodec::Uncompressed);
     assert_eq!(decoded.diagnostics.mode, DiagnosticsMode::Detailed);
+    let typed_events = load(&text.replace("typed_trades", "typed_events")).unwrap();
+    assert_eq!(typed_events.scratch_format, ScratchFormat::TypedEvents);
 }

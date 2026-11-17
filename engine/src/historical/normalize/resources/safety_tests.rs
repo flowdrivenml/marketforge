@@ -276,6 +276,40 @@ fn sequential_sources_share_writer_memory_in_stream_estimate() {
             + std::mem::size_of::<(usize, TaskExecution)>()) as u64
             + config.resources.normalization_limits.reconciliation_bytes
     );
+    let other = tempfile::NamedTempFile::new().unwrap();
+    let mut parallel_job = job.clone();
+    let mut next = parallel_job.tasks[0].clone();
+    next.task_id.0 = 2;
+    next.input_path = other.path().into();
+    parallel_job.tasks.push(next);
+    let unit = crate::historical::normalize::streams::StreamUnit {
+        job: &parallel_job,
+        tasks: parallel_job.tasks.iter().enumerate().collect(),
+        key: "parallel-admission".into(),
+    };
+    let mut parallel_config = config.clone();
+    parallel_config.resources.workers = 1;
+    let serial = crate::historical::normalize::streams::estimate(&unit, &parallel_config).unwrap();
+    parallel_config.resources.workers = 3;
+    parallel_config.resources.memory_budget_bytes = serial.memory_bytes + 1;
+    assert_eq!(
+        crate::historical::normalize::streams::preparation_capacity(&unit, &parallel_config),
+        0
+    );
+    assert_eq!(
+        crate::historical::normalize::streams::estimate(&unit, &parallel_config).unwrap(),
+        serial
+    );
+    parallel_config.resources.memory_budget_bytes = serial.memory_bytes + (4 << 30);
+    parallel_config.resources.normalization_limits.open_files = 64;
+    assert_eq!(
+        crate::historical::normalize::streams::preparation_capacity(&unit, &parallel_config),
+        2
+    );
+    let parallel =
+        crate::historical::normalize::streams::estimate(&unit, &parallel_config).unwrap();
+    assert!(parallel.memory_bytes > serial.memory_bytes);
+    assert_eq!(parallel.open_files, serial.open_files + 4);
 }
 
 #[test]

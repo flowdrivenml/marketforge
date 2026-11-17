@@ -1,114 +1,65 @@
-# Normalization performance diagnostics and implementation report
+# Historical normalization execution and performance
 
-The implementation reduces repeated spool work and adds timer-driven diagnostics to job execution, session/CLI execution, the multi-archive fixture test, and benchmark output verification. No completed real-archive baseline or speedup was measured during implementation. No resource or integrity limits were raised.
+Normalization selects a capability-based stream path after source-local processing. Exchange names and archive dates do not select fast paths. Canonical Parquet schemas, identity namespaces, original timestamps, policy decisions and transactional publication remain unchanged. The [November 17 measurements](normalization-performance-20261117.md) use exactly two trade and two depth archives.
 
-## Runtime controls
+## Execution paths
 
-`data/.config/historical/general.toml` remains authoritative. Existing schema-version-1 files remain valid. The new execution-only fields never enter normalization job JSON:
+| Diagnostic path | Eligibility and work |
+| --- | --- |
+| `chronological_append` | Existing explicit source-local trade identity contract, strict policies and validated strictly disjoint source time intervals. One sealed source-spool write/read; stream directly to the long-lived Parquet writer. |
+| `ordered_run_append` | Compatible checked `ordered_run` domain, strict timestamp processing, no rejected observations, every source's timestamps nondecreasing and decimal IDs strictly increasing, and ordered source ID ranges strictly disjoint. Time boundaries may be equal. One spool write/read; no sort or priority rewrite. |
+| `ordered_run_merge` | Same complete ingress ordering evidence, overlapping ranges and enough admitted cursors. A bounded chronological heap merge verifies the entire unique native-ID union, checks complete duplicate contents and rejects resets/conflicts. One survivor spool seals duplicate accounting before publication; no full sort. |
+| `identity_reconciliation` | General external fallback for other contracts, repeated/missing/unbounded evidence IDs, timestamp policies, unordered sources or insufficient cursors. Frozen source ranks attach during initial identity-run decoding, avoiding a standalone spool rewrite. Existing identity, chronological-union, native-order/loss and output-order validations remain. Final admitted merge cursors feed Parquet directly. |
+| `independent_depth_continuation` | Each source owns one native-order interval. Each initializes from its own authoritative snapshot; applicable continuity/recovery requirements still run. Full payload replay occurs once per source. Independent histories can record unproven continuity. |
+| `checkpointed_depth_selection` | A source owns multiple intervals. One complete native-order traversal creates sealed forward partitions with exact pre-event checkpoints. Replay restores each checkpoint and consumes its partition instead of reopening the original prefix for every return. |
+
+Ingress native-ID evidence retains at most 128 bytes each for first/last IDs. This is an evidence-cache bound: larger IDs retain their exact canonical values and take the general path. All source records validate the ordering claim; min/max alone never authorizes continuation. Cross-source domain/profile/instrument compatibility is checked first. Numeric comparison never uses floating point or lexical number ordering. Scoped/global identities still require conflict checking across disjoint time ranges. Timestamp discard cannot remove evidence before identity validation.
+
+Duplicate ownership in checked merge and general reconciliation uses the same actual coverage-start order and stable source/member tie-break. Native IDs order executions; they do not rank source quality. The shared admitted coverage sweep builds source-sized ownership intervals in O(S log S); event ownership queries use binary lookup. No event-sized global identity map is introduced.
+
+## Exact depth invariant
+
+Replay maintains a source book and a selected book. An exact full-state comparison establishes equivalence at initialization or a required transition. Applying the same absolute changes to equal states changes only the declared keys; ordinary uninterrupted events validate those keys in O(changed levels × log book size). Untouched keys remain equal by induction. Zero-row events preserve this invariant.
+
+Excluded state-changing observations, recovery and source switches invalidate equivalence. Validated initialization or an independently proved transition must re-establish it. Full snapshots and genuine boundary proofs may process the complete book. `BookStore::replace_snapshot` validates and installs a full state atomically without allocating an unused diff. Replay never sorts stateful deltas by timestamp and never substitutes a probabilistic book fingerprint for exact equality.
+
+Fragmented ownership partitions retain intervening native events, including events outside an interval's timestamp bounds. Regressing timestamps therefore cannot make a timestamp-based early stop skip a later source ordinal. A return that would reorder native source segments still fails. One original payload traversal plus forward partition replay bounds payload decoding by twice the source event count; checkpoints cost O(book levels × switches) and remain subject to existing frame, scratch, memory and inventory limits. This does not promise constant work for arbitrarily many switches.
+
+Depth accounting reads a compact sidecar containing original index, source metadata, operation, boundary, expanded row count and payload-frame checksum. Sealed counts, monotone indexes, frame checksums, completion footers and a writer-held metadata-chain value bind it to its payload. Used payloads are paired with metadata; wholly unselected payloads receive checksum/footer validation without level decoding. Accounting retains native-order contiguous loss spans and never decodes full snapshot levels solely to count them.
+
+## Shared preparation and ownership
+
+Independent concrete sources can use up to two preparation pipelines per stream, limited by `resources.workers - 1`, memory/file admission and **spare** permits from the existing session compute budget. A parent never waits for a permit needed by a child. Source parsing, normalization, sequence/book validation and decompression run on their owning source worker; canonical publication remains deterministic on the stream worker.
+
+Each pipeline has a one-event bounded queue. Admission includes the additional source workspace, cloned prepared task, observation maps, queued/blocked atomic outcomes, boundary data and handle headroom. Memory/file pressure falls back to serial preparation; it does not raise budgets. Queues are disconnected before joins on cancellation. Owned canonical events and unsealed metric maps cross threads; `Rc` scratch/retained handles and books do not. Observation spills remain on the consuming worker. No separate scratch budget or unsafe `Send` implementation is added.
+
+Family or shared-physical-path groups retain the existing bounded archive-routing path instead of reopening one physical archive in independent pipelines. Multi-member and mixed-instrument synthetic tests cover this contract. Discovery and routing remain separate validated phases; combined discovery/routing caching is not implemented.
+
+Successful integrity categories from an event share common scope/window resolution and checked statistics copies. Immediate fatal observations remain immediate. Old/unattributed windows use the checked fallback. Provenance validation reuses its frame buffer and indexes borrowed source spans by task, then binary-searches their existing sorted row ranges. It does not clone a report-wide range inventory.
+
+## Scratch options and bounds
 
 ```toml
 schema_version = 1
-merge_fan_in = 8                # 2..64; requested upper bound
-scratch_format = "json"        # json | typed_trades
-scratch_codec = "zlib"         # zlib | uncompressed
+merge_fan_in = 8                 # 2..64, admitted upper bound
+scratch_format = "json"         # json | typed_trades | typed_events
+scratch_codec = "zlib"          # zlib | uncompressed
 
 [diagnostics]
-mode = "disabled"              # disabled | basic | detailed
-interval_ms = 1000              # 100..60000
+mode = "disabled"               # disabled | basic | detailed
+interval_ms = 1000               # 100..60000
 ```
 
-Keep these top-level fields above TOML table headers. Existing resource and integrity sections remain unchanged. Typed trade payloads and uncompressed scratch are opt-in; they have correctness coverage but no completed representative performance comparison. Family blocks use at most `min(reconciliation_bytes / 16, 256 KiB)` across all symbols, plus one bounded serialization buffer and fixed metadata accounted against the same parent quota. Oversized individual records bypass block accumulation within the enforced frame limit.
+Defaults and existing user configuration are unchanged. `typed_trades` retains its existing meaning. Opt-in `typed_events` adds shared-envelope typed depth payloads and also enables typed trades; dynamic routing, boundaries and reports remain JSON. Depth tag/version `[0,2]` is distinct from trade `[0,1]` inside the existing `MFSP0002` framed container. Options, integer widths, exact decimal mantissa/scale/sign, original source positions and zero-row outcomes round-trip. Mixed event envelopes use exact JSON fallback. Unknown tags, bad lengths/options, trailing data, corrupt frames and incomplete footers fail.
 
-Effective fan-in is reduced for file admission and for the memory remaining after output/codec headroom. Run generation observes the maximum generic decoded-record reservation and uses that conservative bound for merge cursors. Two-way merging remains the fallback. Resource estimates reserve cursor, output and source/Parquet handle headroom together. Parallel sorting borrows at most one spare session compute permit, coordinated with `resources.workers`; sources and stateful depth replay remain sequential within each stream.
+Encoding and compression are independent. Typed decoded-memory admission includes the level vector and repeated envelope strings before allocation; encoded buffers retain separate leases. JSON's conservative reservation remains. The configured frame cap remains `reconciliation_bytes / 128`. No chunking, truncation, frame-size switch or budget reduction is introduced. Source spools remain disk-backed, including small workloads: a bounded in-memory/spill representation is future work, not a completed optimization.
 
-## Retained artifacts and interpretation
+## Diagnostics and interpretation
 
-Enabled diagnostics create a unique `performance-*` directory beside a job's staging path. The fixture test instead owns this directory directly under its isolated test run. The directory contains:
+Enabled diagnostics retain `effective-config.json`, coalesced `live.jsonl` and final `performance.json` in a unique `performance-*` directory beside staging. Source preparation, routing, replay and finalization use existing worker-side phases. Source snapshots expose active preparation, records and validated completion; stream snapshots explain execution eligibility/fallback. Manifest source processing summaries add path, full-book comparisons/levels visited, changed-level checks, payload/metadata event reads and checkpoint restores.
 
-- `effective-config.json`: resolved runtime settings.
-- `live.jsonl`: versioned, coalesced snapshots during execution, including timer heartbeats when no records arrive.
-- `performance.json`: the final snapshot, marked committed or incomplete/failed.
+Existing scratch counters expose frames, serialization/codec calls, encoded/decoded bytes, runs, merge passes, opens and workspace peaks. Normalized, spooled, staged and committed counts remain separate, including for prefetched sources. Optional diagnostic I/O remains on the reporting thread, never the renderer. No per-record clock/process probe or event backlog is added.
 
-The stream records workload job fingerprints and source identifiers, software version/build metadata, task counters and last-progress timestamps, active job/stream/task phases, phase start timestamps, completed inclusive phase durations, process CPU and logical/physical I/O, process peak RSS, scheduler queue occupancy, admission wait wall time, and reconciliation memory/scratch/handle and work counters. Detailed mode additionally probes current Linux RSS once per snapshot; unsupported measurements stay null. Basic mode avoids that probe. Snapshots and progress counters are batched; no per-trade process probes, directory scans, output flushes, or event queues are introduced.
+CPU is process CPU, not elapsed time. Phase wall times overlap and must not be summed. Accounted workspace memory is not RSS or whole-stream admission. Logical process I/O includes source, scratch, output and reports; physical device I/O is separate. Disabled diagnostics do not retrospectively provide scratch traffic or exact phase timing. Raw archive-pass counts and fine-grained parse/normalize/encoding CPU attribution are not comprehensively instrumented; source-local read-once structure and operation tests supply structural evidence, not measured phase percentages.
 
-Source normalization completion, reconciliation completion, staged output and dataset commit have separate labels. Source counters do not represent committed output. Spool frame counters include intermediate sort traffic; they are not source record counts. `uncompressed_bytes_*` count frame payloads; `codec_input_bytes` includes framing and stream markers. Disk-write counters measure calls and bytes accepted by file I/O, not physical device writes. Process I/O counters are separate and may include unrelated concurrent activity in that process.
-
-Memory quota usage is accounted retained allocation, not measured RSS. Scratch peaks are workspace peaks, not sums of the shared scratch pool's peak. Phase durations are inclusive wall times and can overlap. Do not sum them to manufacture CPU percentages. The fixture records engine wall time and output-verification wall time separately. Benchmark verification runs in its own diagnostic interval; existing benchmark execution/process measurements remain separate.
-
-Workers update shared snapshots and send only a nonblocking, one-slot wake notification. A stalled consumer coalesces transitions; phase totals retain completed phases. Diagnostic I/O stays on the reporting thread. Optional diagnostic-output errors issue bounded warnings and disable affected output; they do not change integrity decisions or replace mandatory processing/failure reports. Ordinary return failures and unwinding mark diagnostics incomplete. SIGKILL, abort, and other uncatchable terminations can leave only a running live stream. No library signal handlers are installed.
-
-Successful datasets also retain `processing-runtime.json` and its checksum as runtime provenance, separate from the job definition. Live diagnostic files are outside canonical data and scratch cleanup.
-
-## Implemented work reductions
-
-| Area | Change and deterministic evidence |
-| --- | --- |
-| JSON spool serialization | Two serializer traversals become one; a counting serializer test asserts one invocation. The reusable buffer reserves before growth and retains an independent capacity lease. |
-| Codec calls | Serializer fragments no longer enter the codec individually. A frame uses a combined metadata header and its existing payload bytes. |
-| Reader allocation | Readers reuse an independently charged payload buffer while decoded record leases remain owned by returned records. |
-| Scratch locking | RAII reservations include in-flight bytes, release the mutex during file I/O, and release unused capacity on short writes, errors and unwinding. |
-| Family routing | Selection is prepared once per group; admitted symbols use binary lookup; immutable filtered-observation scope is cached. Shared blocks batch interleaved symbols before opening a compressor. |
-| Family deterministic test | 1,000 alternating rows in two symbols use two data members and two seal members, rather than one data member per row. Five cycling symbols in 100 rows use five data compressors, not 100. |
-| Metrics | Existing last-window entries update without allocating identical scope/path keys; regressions and older windows retain the existing checked fallback. Overflow updates remain atomic. |
-| Source attribution | Publication looks up a precomputed source index instead of scanning executions per trade. |
-| External merges | Both logical sorts use deterministic heap-based k-way merging with bounded, disk-backed inventories. Odd runs rename without any scratch writes. |
-| Final chronological merge | When the last run group fits, checked cursors feed Parquet directly, avoiding a complete final-spool write and reread. Late errors prevent commit. |
-| Typed trade scratch | Explicit version/type tags, little-endian widths, bounded lengths, decimal mantissa/scale/sign, options and enum tags. The complete-field test asserts a smaller payload than JSON for its synthetic trade. |
-| Compute | Large run sorting can split canonical references across parent and one spare worker, then combine the sorted halves into one run. Quota leases and scratch handles stay on the parent. |
-
-Source precedence, native identity domains, physical source ordinals, repeated IDs in the preferred source, chronological validation, suppression accounting and source attribution remain covered by the reference oracle and independent expected-result tests. Ambiguous identities still fail. Depth events remain complete, including snapshots, zero-change events, sequences, recovery segments and fingerprints. Canonical schemas and transactional publication are unchanged.
-
-The typed implementation currently covers trades. Complete depth events and dynamic family-routing values deliberately retain bounded JSON frames; this is a remaining format optimization, not a generic binary-Serde assumption. No new dependencies, archive-date identity heuristics or independent thread pools were added.
-
-## Validation and commands
-
-Focused synthetic normalization tests (103), runtime configuration tests (9), and tiny synthetic CLI contract tests (9, including diagnostics with clean JSON stdout) passed. The release integration target was compiled with `historical-real-tests`, without executing it. Existing unrelated compiler warnings remain. The implementation report in the delivery message records the final test counts.
-
-From the repository root, compile without running archives:
-
-```sh
-cargo test --release --manifest-path engine/Cargo.toml --features historical-real-tests --test historical_normalize --no-run
-```
-
-Run exactly the fixture-driven multi-archive workload, with diagnostics and no TUI:
-
-```sh
-MARKETFORGE_TEST_DIAGNOSTICS=detailed cargo test --release --manifest-path engine/Cargo.toml --features historical-real-tests --test historical_normalize process_executor::processes_multiple_trade_tasks_into_staging -- --exact --nocapture
-```
-
-This environment variable is an explicit diagnostic-mode override in this test only. Resources still come from `general.toml`, with isolated scratch/output locations. The fixture supplies archive selection, priorities and task IDs. A native-identity rejection remains a failed run, with retained diagnostics; it is not a performance baseline.
-
-Find reports without deleting or modifying retained artifacts:
-
-```sh
-rg --files --hidden --no-ignore data/tests/historical/normalize/execution/real_multi_archive_trades -g performance.json -g live.jsonl -g effective-config.json
-jq '{status, resources, process_wide, phase_completed_inclusive_ms}' /absolute/path/from/above/performance.json
-tail -f /absolute/path/from/above/live.jsonl
-```
-
-Run bounded synthetic verification:
-
-```sh
-cargo test --manifest-path engine/Cargo.toml --features historical --lib historical::normalize
-cargo test --manifest-path engine/Cargo.toml --features historical --lib shared::historical::config
-```
-
-For before/after comparisons, use the same fixture and source fingerprints, release build profile, effective resource settings, diagnostic mode/interval, verification mode and declared cache policy. Keep each isolated run and record its build revision plus local patch state. Declare warm OS cache unless an independently controlled cold-cache setup is available; do not stop processes or clear user caches. Compare only successful, fully verified three-archive runs. Compare engine wall time separately from verification time and inspect merge passes, serialization calls, codec initializations, scratch traffic and accounted memory before interpreting throughput. No full workload or benchmark sweep was automatically launched here.
-
-Remaining performance questions require that controlled run: real source normalization versus reconciliation cost, typed/compressed versus typed/raw scratch, useful fan-in on the actual record distribution, and the benefit of spare-worker sorting relative to serialization/compression. Parallel source decoding, parallel compression and a typed depth format have not been enabled speculatively.
-
-## Files changed for this task
-
-The repository already contained substantial uncommitted normalization changes; the following identifies task edits, rather than attributing the entire working-tree diff to this work:
-
-- `engine/src/shared/historical/config.rs` and `config/tests.rs`: execution-only tuning, defaults, validation and serialization tests.
-- `data/.config/historical/general.toml`: documented controls; existing resource and integrity values/comments retained. This local data configuration is ignored by Git in this checkout.
-- `engine/src/historical/normalize/progress/{mod.rs,reporter.rs,diagnostics.rs}`: live coalesced phases/counters, optional reporting thread and retained artifacts.
-- `engine/src/historical/normalize/{executor.rs,session.rs,scheduler.rs}`: production wiring, admission waits/queue occupancy, finalization phases and runtime provenance.
-- `engine/src/historical/normalize/reconcile/{spool.rs,external.rs,typed.rs}` and `reconcile.rs`: reusable buffers, scratch reservations, family blocks, k-way/final streaming merge, typed trade payloads and quota accessors.
-- `engine/src/historical/normalize/{family.rs,reconciled.rs,streams.rs,streams_depth.rs}`: prepared routing, progress propagation, admission estimates, direct publication and bounded source lookup.
-- `engine/src/historical/normalize/metrics/windows.rs`: existing-window allocation fast path.
-- `engine/src/historical/normalize/resources/{mod.rs,compute.rs,safety_tests.rs}`: shared compute admission and updated file-reservation test.
-- `engine/src/historical/normalize/benchmark/runner.rs`: verification phase diagnostics.
-- `engine/tests/historical/normalize/{equivalence.rs,execution/process_executor.rs,cli_contract.rs}`: new runtime defaults and explicit test diagnostics with separate engine/verification timing. The tiny CLI fixture has explicit smaller safety bounds matching its synthetic data and existing 1 GiB budget; the real fixture-driven test retains production resource settings.
-- This document: usage, retained-report semantics, structural evidence and comparison protocol.
+Late identity/sequence, framing, footer, accounting, integrity and publication failures still prevent commit. An interrupted or timed-out job is incomplete, even if it has staged Parquet bytes. Immutable baseline/candidate binaries, exact configurations, four-source allowlists and independent output verification are required for comparisons. A timeout is censored evidence, not a throughput baseline. See the [bounded reproduction report](normalization-performance-20261117.md).

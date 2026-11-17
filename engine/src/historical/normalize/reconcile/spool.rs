@@ -142,6 +142,7 @@ struct Inner {
     handles: Cell<u64>,
     fan_in: Cell<usize>,
     typed_trades: Cell<bool>,
+    typed_depth: Cell<bool>,
     raw: Cell<bool>,
     peak_handles: Cell<u64>,
     peak_disk: Cell<u64>,
@@ -155,7 +156,7 @@ impl Inner {
                 "memory_scope":"shared parent quota; do not sum workspace values","accounted_memory_current":self.quota.used(),"accounted_memory_peak":self.quota.peak(),
                 "accounted_memory_limit":self.quota.maximum(),"scratch_current":self.bytes.get(),
                 "scratch_workspace_peak":self.peak_disk.get(),"shared_scratch_limit":self.pool.maximum,
-                "open_handles":self.handles.get(),"open_handles_peak":self.peak_handles.get(),"codec":if self.raw.get() { "uncompressed" } else { "zlib-fast" },"format":if self.typed_trades.get() { "MFSP0002-typed-trades-json-fallback" } else { "MFSP0002-json" }}));
+                "open_handles":self.handles.get(),"open_handles_peak":self.peak_handles.get(),"codec":if self.raw.get() { "uncompressed" } else { "zlib-fast" },"format":if self.typed_depth.get() {"MFSP0002-typed-events-json-fallback"} else if self.typed_trades.get() { "MFSP0002-typed-trades-json-fallback" } else { "MFSP0002-json" }}));
         }
     }
 }
@@ -225,6 +226,7 @@ impl Workspace {
             handles: Cell::new(0),
             fan_in: Cell::new(2),
             typed_trades: Cell::new(false),
+            typed_depth: Cell::new(false),
             raw: Cell::new(false),
             peak_handles: Cell::new(0),
             peak_disk: Cell::new(0),
@@ -309,6 +311,9 @@ impl Workspace {
     }
     pub fn configure_raw(&self, enabled: bool) {
         self.0.raw.set(enabled);
+    }
+    pub fn configure_typed_depth(&self, enabled: bool) {
+        self.0.typed_depth.set(enabled);
     }
     pub fn configure_typed_trades(&self, enabled: bool) {
         self.0.typed_trades.set(enabled);
@@ -468,6 +473,7 @@ impl Spool {
             spool: self.clone(),
             payload: Payload::new(self.0.workspace.quota().clone()),
             failed: false,
+            last_hash: 0,
         };
         if fresh {
             writer.codec.write_all(MAGIC).map_err(io_error)?;
@@ -529,6 +535,7 @@ impl Spool {
             spool: self.clone(),
             payload: Payload::new(self.0.workspace.quota().clone()),
             failed: false,
+            last_hash: 0,
         };
         writer.codec.write_all(MAGIC).map_err(io_error)?;
         Ok(writer)
@@ -539,6 +546,20 @@ impl Spool {
             reader: Some(reader),
             spool: Some(self),
         })
+    }
+    pub fn depth_reader(
+        &self,
+    ) -> Result<SpoolReader<crate::shared::domain::canonical::DepthProcessingOutcome>> {
+        let mut r = self.reader()?;
+        r.decode = super::typed_depth::decode;
+        r.allocation = super::typed_depth::allocation;
+        Ok(r)
+    }
+    pub fn frame_reader(&self) -> Result<SpoolReader<()>> {
+        let mut r = self.reader()?;
+        r.decode = |_| Ok(());
+        r.allocation = |_| Ok(0);
+        Ok(r)
     }
     pub fn trade_reader(&self) -> Result<SpoolReader<super::TradeEntry>> {
         let mut reader = self.reader()?;
@@ -562,6 +583,12 @@ impl Spool {
             payload: Payload::new(self.0.workspace.quota().clone()),
             count: 0,
             done: false,
+            allocation: |bytes| {
+                (bytes.len() as u64)
+                    .checked_mul(64)
+                    .and_then(|n| n.checked_add(1024))
+                    .ok_or_else(|| invalid("scratch allocation overflow"))
+            },
             decode: |bytes| {
                 serde_json::from_slice(bytes)
                     .map_err(|e| invalid(format!("corrupt scratch record: {e}")))
@@ -770,8 +797,12 @@ pub(crate) struct SpoolWriter {
     spool: Spool,
     payload: Payload,
     failed: bool,
+    last_hash: u64,
 }
 impl SpoolWriter {
+    pub fn last_checksum(&self) -> u64 {
+        self.last_hash
+    }
     pub fn push<T: Serialize>(&mut self, value: &T) -> Result<()> {
         if self.failed {
             return Err(invalid("scratch writer has a failed append"));
@@ -780,6 +811,24 @@ impl SpoolWriter {
         // Serialization failure leaves the file untouched and permits a retry.
         self.spool.0.workspace.count(|m| m.serialization_calls += 1);
         serialize(&mut self.payload, value)?;
+        self.write_frame()
+    }
+    pub fn push_depth(
+        &mut self,
+        value: &crate::shared::domain::canonical::DepthProcessingOutcome,
+    ) -> Result<()> {
+        if !self.spool.0.workspace.0.typed_depth.get() {
+            return self.push(value);
+        }
+        if self.failed {
+            return Err(invalid("scratch writer has a failed append"));
+        }
+        self.payload.bytes.clear();
+        self.spool
+            .0
+            .workspace
+            .count(|m| m.typed_encoding_calls += 1);
+        super::typed_depth::encode(&mut self.payload, value).map_err(io_error)?;
         self.write_frame()
     }
     pub fn push_trade(&mut self, value: &super::TradeEntry) -> Result<()> {
@@ -824,6 +873,7 @@ impl SpoolWriter {
                 .ok_or_else(|| invalid("spool count overflow"))?,
         );
         self.failed = false;
+        self.last_hash = fingerprint.hash;
         self.spool.0.workspace.count(|m| {
             m.frames_written += 1;
             m.codec_write_calls += 2;
@@ -872,8 +922,12 @@ fn serialize<T: Serialize>(writer: &mut impl Write, value: &T) -> Result<()> {
 pub(crate) struct Leased<T> {
     pub value: T,
     _memory: MemoryLease,
+    checksum: u64,
 }
 impl<T> Leased<T> {
+    pub fn checksum(&self) -> u64 {
+        self.checksum
+    }
     pub fn accounted_bytes(&self) -> u64 {
         self._memory.bytes()
     }
@@ -913,6 +967,7 @@ pub(crate) struct SpoolReader<T> {
     count: u64,
     done: bool,
     decode: fn(&[u8]) -> Result<T>,
+    allocation: fn(&[u8]) -> Result<u64>,
     _type: std::marker::PhantomData<T>,
 }
 impl<T: DeserializeOwned> SpoolReader<T> {
@@ -951,13 +1006,6 @@ impl<T: DeserializeOwned> SpoolReader<T> {
         )?;
         // Bounds JSON DOM/string allocations as well as the encoded frame. A
         // deliberately conservative capacity allowance, not allocator telemetry.
-        let memory = self.quota.reserve(
-            length
-                .checked_mul(64)
-                .and_then(|n| n.checked_add(1024))
-                .ok_or_else(|| invalid("scratch frame memory overflow"))?,
-            "scratch decoded record",
-        )?;
         let length_usize =
             usize::try_from(length).map_err(|_| invalid("scratch length not addressable"))?;
         self.payload
@@ -978,6 +1026,10 @@ impl<T: DeserializeOwned> SpoolReader<T> {
         if fingerprint.hash != hash {
             return Err(invalid("scratch record checksum mismatch"));
         }
+        let memory = self.quota.reserve(
+            (self.allocation)(&self.payload.bytes)?,
+            "scratch decoded record",
+        )?;
         let value = (self.decode)(&self.payload.bytes)?;
         self.count = self
             .count
@@ -993,6 +1045,7 @@ impl<T: DeserializeOwned> SpoolReader<T> {
         Ok(Some(Leased {
             value,
             _memory: memory,
+            checksum: hash,
         }))
     }
 }

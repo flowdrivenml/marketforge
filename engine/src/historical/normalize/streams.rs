@@ -137,9 +137,52 @@ pub(crate) fn needs_reconciliation(unit: &StreamUnit<'_>, config: &ProcessingCon
         || config.reconciliation.depth.overlap_policy != DepthOverlap::Strict
         || config.timestamp_regression.depth.policy != DepthTimestamp::Strict
 }
+/// Decoder pipelines are admitted separately; no book/report crosses threads.
+pub(crate) fn preparation_capacity(unit: &StreamUnit<'_>, config: &ProcessingConfig) -> usize {
+    if unit.tasks.iter().any(|(_, t)| is_family(t))
+        || unit
+            .tasks
+            .iter()
+            .map(|(_, t)| &t.input_path)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            != unit.tasks.len()
+    {
+        0
+    } else {
+        let desired = config
+            .resources
+            .workers
+            .saturating_sub(1)
+            .min(2)
+            .min(unit.tasks.len());
+        (1..=desired)
+            .rev()
+            .find(|capacity| {
+                estimate_with_preparations(unit, config, *capacity as u64).is_ok_and(|r| {
+                    r.memory_bytes <= config.resources.memory_budget_bytes
+                        && r.open_files
+                            <= config
+                                .resources
+                                .normalization_limits
+                                .open_files
+                                .saturating_sub(8)
+                })
+            })
+            .unwrap_or(0)
+    }
+}
+
 pub(crate) fn estimate(
     unit: &StreamUnit<'_>,
     config: &ProcessingConfig,
+) -> Result<ResourceRequirements> {
+    estimate_with_preparations(unit, config, preparation_capacity(unit, config) as u64)
+}
+fn estimate_with_preparations(
+    unit: &StreamUnit<'_>,
+    config: &ProcessingConfig,
+    preparations: u64,
 ) -> Result<ResourceRequirements> {
     let mut max = ResourceRequirements::default();
     for (_, task) in &unit.tasks {
@@ -151,6 +194,54 @@ pub(crate) fn estimate(
         max.memory_bytes = max.memory_bytes.max(r.memory_bytes);
         max.scratch_bytes = max.scratch_bytes.max(r.scratch_bytes);
         max.open_files = max.open_files.max(r.open_files);
+    }
+    if preparations > 0 && needs_reconciliation(unit, config) {
+        let mut active = 0u64;
+        for (_, task) in &unit.tasks {
+            let b = super::resources::estimate_breakdown(
+                task,
+                &config.resources.parquet,
+                &config.resources.normalization_limits,
+            )?;
+            active = active.max(
+                b.active_source_bytes
+                    .checked_add(super::resources::prepared_task_memory(task)?)
+                    .and_then(|n| n.checked_add(3 * 1024 * 1024))
+                    .and_then(|n| {
+                        n.checked_add(
+                            if task.normalizations[0].target_schema == TargetSchema::Depth {
+                                config
+                                    .resources
+                                    .normalization_limits
+                                    .depth_levels
+                                    .checked_mul(
+                                        3 * (std::mem::size_of::<
+                                            crate::shared::domain::canonical::L2LevelUpdate,
+                                        >() as u64
+                                            + task.symbol.len() as u64
+                                            + task.stream_id.0.len() as u64
+                                            + 256),
+                                    )?
+                            } else {
+                                config
+                                    .resources
+                                    .normalization_limits
+                                    .record_bytes
+                                    .checked_mul(128)?
+                            },
+                        )
+                    })
+                    .ok_or_else(|| invalid("preparation footprint overflow"))?,
+            );
+        }
+        max.memory_bytes = max
+            .memory_bytes
+            .checked_add(
+                active
+                    .checked_mul(preparations)
+                    .ok_or_else(|| invalid("preparation footprint overflow"))?,
+            )
+            .ok_or_else(|| invalid("preparation footprint overflow"))?;
     }
     if needs_reconciliation(unit, config) {
         max.open_files = max.open_files.max(
@@ -170,6 +261,12 @@ pub(crate) fn estimate(
             .memory_bytes
             .checked_add(config.resources.normalization_limits.reconciliation_bytes)
             .ok_or_else(|| invalid("reconciliation reservation overflow"))?;
+    }
+    if needs_reconciliation(unit, config) {
+        max.open_files = max
+            .open_files
+            .checked_add(preparations * 2)
+            .ok_or_else(|| invalid("preparation handle overflow"))?;
     }
     max.memory_bytes = max
         .memory_bytes

@@ -207,6 +207,77 @@ pub struct ScopedIntegrityMetrics {
 }
 
 impl ScopedIntegrityMetrics {
+    /// Resolve the common event scope/windows once. Fatal observations still
+    /// use `record` immediately; only already-successful categories are batched.
+    pub(crate) fn record_successes(
+        &mut self,
+        scope: &IntegrityScope,
+        categories: impl Iterator<Item = IntegrityCategory>,
+        timestamp: Option<i64>,
+    ) -> Result<()> {
+        let mut categories = categories.peekable();
+        if categories.peek().is_none() {
+            return Ok(());
+        }
+        let windows = timestamp.map(|t| {
+            (
+                WindowGranularity::Hourly.start_ns(t),
+                WindowGranularity::Daily.start_ns(t),
+            )
+        });
+        let ready = self.retained.is_empty()
+            && self.files.last_key_value().is_some_and(|(k, _)| k == scope)
+            && windows.is_none_or(|(h, d)| {
+                self.hourly
+                    .last_key_value()
+                    .is_some_and(|((k, t), _)| k == scope && *t == h)
+                    && self
+                        .daily
+                        .last_key_value()
+                        .is_some_and(|((k, t), _)| k == scope && *t == d)
+            });
+        if !ready {
+            for category in categories {
+                self.record(scope, category, false, timestamp)?;
+            }
+            return Ok(());
+        }
+        if let Some(limits) = crate::shared::historical::limits::current() {
+            crate::shared::historical::limits::check(
+                "task metric entries",
+                limits.metric_entries,
+                (self.files.len() + self.hourly.len() + self.daily.len()) as u64,
+                "integrity observation",
+            )?;
+        }
+        let mut global = self.global.clone();
+        let mut file = self.files.last_key_value().unwrap().1.clone();
+        let mut unattributed = self.unattributed.clone();
+        let mut windows = windows.map(|_| {
+            (
+                self.hourly.last_key_value().unwrap().1.clone(),
+                self.daily.last_key_value().unwrap().1.clone(),
+            )
+        });
+        for category in categories {
+            global.record(category, false)?;
+            file.record(category, false)?;
+            if let Some((hour, day)) = &mut windows {
+                hour.record(category, false)?;
+                day.record(category, false)?;
+            } else {
+                unattributed.record(category, false)?;
+            }
+        }
+        self.global = global;
+        self.unattributed = unattributed;
+        *self.files.last_entry().unwrap().get_mut() = file;
+        if let Some((hour, day)) = windows {
+            *self.hourly.last_entry().unwrap().get_mut() = hour;
+            *self.daily.last_entry().unwrap().get_mut() = day;
+        }
+        Ok(())
+    }
     pub fn record(
         &mut self,
         scope: &IntegrityScope,
@@ -518,6 +589,42 @@ mod tests {
             stream_id: "okx:BTC-USDT:trades".to_owned(),
             source_file: "BTC-USDT-trades-2026-09-01.zip".to_owned(),
         }
+    }
+
+    #[test]
+    fn batched_successes_match_individual_windows_and_rollback_on_overflow() {
+        let scope = scope();
+        let mut a = ScopedIntegrityMetrics::default();
+        let mut b = a.clone();
+        let categories = [
+            IntegrityCategory::InvalidRecord,
+            IntegrityCategory::TransformationFailure,
+            IntegrityCategory::SequenceGap,
+        ];
+        for time in [
+            Some(0),
+            Some(1),
+            Some(HOUR_NS),
+            Some(DAY_NS),
+            None,
+            Some(-1),
+            Some(-2),
+        ] {
+            for category in categories {
+                a.record(&scope, category, false, time).unwrap();
+            }
+            b.record_successes(&scope, categories.into_iter(), time)
+                .unwrap();
+            assert_eq!(a, b);
+        }
+        let category = IntegrityCategory::TransformationFailure;
+        b.global.get_mut(category).eligible = u64::MAX;
+        let previous = b.clone();
+        assert!(
+            b.record_successes(&scope, categories.into_iter(), Some(DAY_NS))
+                .is_err()
+        );
+        assert_eq!(b, previous);
     }
 
     #[test]

@@ -139,6 +139,11 @@ impl Ord for Cursor {
 /// materializes its checked result before chronological publication starts.
 pub(crate) enum SortedRows {
     Append(Vec<(usize, Spool)>),
+    OrderedAppend(Vec<(usize, Spool)>),
+    Inputs {
+        inputs: Vec<Spool>,
+        ranks: BTreeMap<usize, u64>,
+    },
     Spool(Spool),
     Merge {
         workspace: Workspace,
@@ -157,7 +162,28 @@ impl SortedRows {
     }
     pub fn rows(self) -> Result<Rows> {
         let mut append_sources = None;
+        let mut ordered = false;
+        let mut ranks = None;
         let (spools, compare) = match self {
+            Self::OrderedAppend(inputs) => {
+                ordered = true;
+                let (sources, spools): (Vec<_>, Vec<_>) = inputs.into_iter().unzip();
+                append_sources = Some(sources);
+                (
+                    spools,
+                    chronological as fn(&TradeEntry, &TradeEntry) -> Ordering,
+                )
+            }
+            Self::Inputs {
+                inputs,
+                ranks: table,
+            } => {
+                ranks = Some(table);
+                (
+                    inputs,
+                    chronological as fn(&TradeEntry, &TradeEntry) -> Ordering,
+                )
+            }
             Self::Append(inputs) => {
                 let (sources, spools): (Vec<_>, Vec<_>) = inputs.into_iter().unzip();
                 append_sources = Some(sources);
@@ -201,13 +227,19 @@ impl SortedRows {
             append_index: 0,
             append_first: true,
             previous_timestamp: None,
+            ordered,
+            previous_native: String::new(),
+            ranks,
         };
         if rows.append_sources.is_some() {
             return Ok(rows);
         }
         for input in 0..rows.spools.len() {
             let mut reader = rows.spools[input].trade_reader()?;
-            if let Some(row) = next(&mut reader)? {
+            if let Some(mut row) = next(&mut reader)? {
+                if let Some(ranks) = &rows.ranks {
+                    row.value.priority = ranks[&row.value.source];
+                }
                 rows.heap.push(Cursor {
                     row,
                     input,
@@ -229,6 +261,9 @@ pub(crate) struct Rows {
     append_index: usize,
     append_first: bool,
     previous_timestamp: Option<i64>,
+    ordered: bool,
+    previous_native: String,
+    ranks: Option<BTreeMap<usize, u64>>,
 }
 impl Rows {
     pub fn finish(mut self) -> Result<()> {
@@ -257,7 +292,7 @@ impl Rows {
                     let timestamp = row.value.trade.envelope.event_timestamp_ns;
                     if row.value.source != self.append_sources.as_ref().unwrap()[self.append_index]
                         || self.previous_timestamp.is_some_and(|last| {
-                            if self.append_first {
+                            if self.append_first && !self.ordered {
                                 timestamp <= last
                             } else {
                                 timestamp < last
@@ -267,6 +302,27 @@ impl Rows {
                         return Err(invalid(
                             "chronological append spool source/ordering mismatch",
                         ));
+                    }
+                    if self.ordered {
+                        let id = row
+                            .value
+                            .trade
+                            .trade_id
+                            .as_deref()
+                            .filter(|s| s.len() <= 128)
+                            .ok_or_else(|| {
+                                invalid("ordered append native identity evidence mismatch")
+                            })?;
+                        if !self.previous_native.is_empty()
+                            && crate::historical::normalize::policies::numeric_id_cmp(
+                                &self.previous_native,
+                                id,
+                            ) != Some(Ordering::Less)
+                        {
+                            return Err(invalid("ordered append native ID reset/conflict"));
+                        }
+                        self.previous_native.clear();
+                        self.previous_native.push_str(id);
                     }
                     self.previous_timestamp = Some(timestamp);
                     self.append_first = false;
@@ -297,11 +353,16 @@ impl Rows {
             return Ok(None);
         };
         match next(&mut self.readers[cursor.input]) {
-            Ok(Some(row)) => self.heap.push(Cursor {
-                row,
-                input: cursor.input,
-                compare: cursor.compare,
-            }),
+            Ok(Some(mut row)) => {
+                if let Some(ranks) = &self.ranks {
+                    row.value.priority = ranks[&row.value.source];
+                }
+                self.heap.push(Cursor {
+                    row,
+                    input: cursor.input,
+                    compare: cursor.compare,
+                });
+            }
             Ok(None) => {}
             Err(error) => {
                 self.done = true;
@@ -336,6 +397,36 @@ fn sort(
     stream: &str,
     chronological_sort: bool,
 ) -> Result<SortedRows> {
+    sort_ranked(
+        workspace,
+        inputs,
+        compare,
+        reporter,
+        id,
+        stream,
+        SortOptions {
+            chronological_sort,
+            ranks: None,
+        },
+    )
+}
+struct SortOptions<'a> {
+    chronological_sort: bool,
+    ranks: Option<&'a BTreeMap<usize, u64>>,
+}
+fn sort_ranked(
+    workspace: &Workspace,
+    inputs: Vec<Spool>,
+    compare: fn(&TradeEntry, &TradeEntry) -> Ordering,
+    reporter: &ProgressReporter,
+    id: ProgressTaskId,
+    stream: &str,
+    options: SortOptions<'_>,
+) -> Result<SortedRows> {
+    let SortOptions {
+        chronological_sort,
+        ranks,
+    } = options;
     reporter.stream_phase(
         id.job_id,
         stream,
@@ -425,6 +516,9 @@ fn sort(
             while let Some(mut entry) = reader.next()? {
                 record_memory = record_memory.max(entry.accounted_bytes());
                 entry.compact_accounting()?;
+                if let Some(ranks) = ranks {
+                    entry.value.priority = ranks[&entry.value.source];
+                }
                 chunk.push(entry);
                 if workspace.quota().used() > workspace.quota().maximum() / 3 {
                     flush(&mut chunk, &mut runs)?;
@@ -593,45 +687,39 @@ pub(crate) fn trades_with_progress(
         .enumerate()
         .map(|(rank, source)| (source, rank as u64))
         .collect::<BTreeMap<_, _>>();
-    let mut rewritten = Vec::new();
-    for input in inputs {
-        let output = workspace.create()?;
-        {
-            let mut reader = input.trade_reader()?;
-            let mut writer = output.writer()?;
-            while let Some(mut row) = next(&mut reader)? {
-                if ordered_run(&observations[&row.value.source])
-                    && row
-                        .value
-                        .trade
-                        .trade_id
-                        .as_deref()
-                        .and_then(|id| {
-                            crate::historical::normalize::policies::numeric_id_cmp(id, id)
-                        })
-                        .is_none()
-                {
-                    return Err(MarketForgeError::TradeIdentityViolation {
-                        source_index: row.value.source,
-                        previous_source_index: None,
-                        reason: format!(
-                            "ordered_run requires a nonempty decimal native trade ID: source={}, ordinal={}; missing IDs cannot enter source-preference loss",
-                            row.value.source, row.value.ordinal
-                        ),
-                    });
-                }
-                row.value.priority = ranks[&row.value.source];
-                writer.push_trade(&row.value)?;
-            }
-            writer.finish()?;
-        }
-        input.delete()?;
-        rewritten.push(output);
-    }
-    let inputs = rewritten;
+    let _ownership_memory = workspace.quota().reserve(
+        (observations.len() as u64)
+            .checked_mul(2048)
+            .ok_or_else(|| invalid("trade coverage index overflow"))?,
+        "trade coverage interval index",
+    )?;
+    let ranges = observations
+        .iter()
+        .filter_map(|(i, o)| {
+            Some((
+                *i,
+                i128::from(o.minimum_accepted_timestamp_ns?),
+                i128::from(o.maximum_accepted_timestamp_ns?) + 1,
+            ))
+        })
+        .collect::<Vec<_>>();
+    let overlaps = super::super::coverage::overlapping(&ranges);
+    let owners = super::super::coverage::ownership(&ranges, &ranks);
     let compare: fn(&TradeEntry, &TradeEntry) -> Ordering =
         |a, b| identity(a, b).then_with(|| precedence(a, b));
-    let sorted = sort(workspace, inputs, compare, reporter, id, stream, false)?.into_spool()?;
+    let sorted = sort_ranked(
+        workspace,
+        inputs,
+        compare,
+        reporter,
+        id,
+        stream,
+        SortOptions {
+            chronological_sort: false,
+            ranks: Some(&ranks),
+        },
+    )?
+    .into_spool()?;
     reporter.stream_phase(id.job_id, stream, "identity resolution");
     let winners = workspace.create()?;
     {
@@ -640,81 +728,64 @@ pub(crate) fn trades_with_progress(
         let mut first: Option<Leased<TradeEntry>> = None;
         while let Some(entry) = next(&mut reader)? {
             let e = &entry.value;
+            if ordered_run(&observations[&e.source])
+                && e.trade
+                    .trade_id
+                    .as_deref()
+                    .and_then(|id| crate::historical::normalize::policies::numeric_id_cmp(id, id))
+                    .is_none()
+            {
+                return Err(MarketForgeError::TradeIdentityViolation {
+                    source_index: e.source,
+                    previous_source_index: None,
+                    reason: format!(
+                        "ordered_run requires a nonempty decimal native trade ID: source={}, ordinal={}; missing IDs cannot enter source-preference loss",
+                        e.source, e.ordinal
+                    ),
+                });
+            }
             if !reliable_source_identity(
                 &e.trade,
                 observations
                     .get(&e.source)
                     .ok_or_else(|| invalid("missing source observation"))?,
-            ) {
-                let own = observations
-                    .get(&e.source)
-                    .ok_or_else(|| invalid("missing source observation"))?;
-                if let (Some(start), Some(end)) = (
-                    own.minimum_accepted_timestamp_ns,
-                    own.maximum_accepted_timestamp_ns,
-                ) && observations.iter().any(|(index, other)| {
-                    *index != e.source
-                        && other
-                            .minimum_accepted_timestamp_ns
-                            .zip(other.maximum_accepted_timestamp_ns)
-                            .is_some_and(|(a, b)| start <= b && a <= end)
-                }) {
-                    if !prefer {
-                        return Err(invalid(
-                            "ambiguous trade overlap: an overlapping source lacks an established native trade identity/reset domain (including missing IDs)",
-                        ));
-                    }
-                    let timestamp = e.trade.envelope.event_timestamp_ns;
-                    let owner = observations
-                        .iter()
-                        .filter(|(_, o)| {
-                            o.minimum_accepted_timestamp_ns
-                                .zip(o.maximum_accepted_timestamp_ns)
-                                .is_some_and(|(a, b)| a <= timestamp && timestamp <= b)
-                        })
-                        .min_by(|(a, oa), (b, ob)| {
-                            let starts = oa
-                                .minimum_accepted_timestamp_ns
-                                .cmp(&ob.minimum_accepted_timestamp_ns);
-                            let starts = if policy.reconciliation.trades.prefer_source.selection
-                                == Selection::Later
-                            {
-                                starts.reverse()
-                            } else {
-                                starts
-                            };
-                            starts
-                                .then_with(|| {
-                                    oa.stable_source_identity.cmp(&ob.stable_source_identity)
-                                })
-                                .then(a.cmp(b))
-                        })
-                        .map(|(i, _)| *i)
-                        .ok_or_else(|| invalid("no source owns conflict interval"))?;
-                    if owner != e.source {
-                        let chosen_task = observations[&owner].original_task_id;
-                        let o = observations.get_mut(&e.source).unwrap();
-                        o.processing.exclude(
-                            timestamp,
-                            1,
-                            false,
-                            false,
-                            e.ordinal,
-                            Some(chosen_task),
-                        )?;
-                        // Duration is evaluated below in native source order,
-                        // never in identity-sort order.
-                        o.processing.reset_spans();
-                        crate::historical::normalize::policies::enforce_source_overlap(
-                            &policy.reconciliation.trades.prefer_source,
-                            &o.processing,
-                        )?;
-                        marker(&mut writer, &entry, OVERLAP_EXCLUDED, workspace)?;
-                        continue;
-                    }
-                    writer.push_trade(e)?;
+            ) && overlaps.contains(&e.source)
+            {
+                if !prefer {
+                    return Err(invalid(
+                        "ambiguous trade overlap: an overlapping source lacks an established native trade identity/reset domain (including missing IDs)",
+                    ));
+                }
+                let timestamp = e.trade.envelope.event_timestamp_ns;
+                let slot = owners.partition_point(|s| s.end <= i128::from(timestamp));
+                let owner = owners
+                    .get(slot)
+                    .filter(|s| s.start <= i128::from(timestamp))
+                    .map(|s| s.source)
+                    .ok_or_else(|| invalid("no source owns conflict interval"))?;
+                if owner != e.source {
+                    let chosen_task = observations[&owner].original_task_id;
+                    let o = observations.get_mut(&e.source).unwrap();
+                    o.processing.exclude(
+                        timestamp,
+                        1,
+                        false,
+                        false,
+                        e.ordinal,
+                        Some(chosen_task),
+                    )?;
+                    // Duration is evaluated below in native source order,
+                    // never in identity-sort order.
+                    o.processing.reset_spans();
+                    crate::historical::normalize::policies::enforce_source_overlap(
+                        &policy.reconciliation.trades.prefer_source,
+                        &o.processing,
+                    )?;
+                    marker(&mut writer, &entry, OVERLAP_EXCLUDED, workspace)?;
                     continue;
                 }
+                writer.push_trade(e)?;
+                continue;
             }
             if prefer && !reliable_source_identity(&e.trade, &observations[&e.source]) {
                 writer.push_trade(e)?;
@@ -1312,4 +1383,109 @@ mod tests {
             2 << 20
         ));
     }
+}
+
+/// Source-local evidence is captured during normal ingress; no raw re-read.
+/// A sealed ordered merge proves the whole unique domain before loss processing.
+pub(crate) fn checked_ordered(
+    workspace: &Workspace,
+    inputs: Vec<(usize, Spool)>,
+    observations: &mut BTreeMap<usize, SourceObservation>,
+    append: bool,
+    selection: crate::shared::historical::policies::Selection,
+) -> Result<SortedRows> {
+    let mut order = inputs.iter().map(|(i, _)| *i).collect::<Vec<_>>();
+    order.sort_by(|a, b| {
+        observations[a]
+            .minimum_accepted_timestamp_ns
+            .cmp(&observations[b].minimum_accepted_timestamp_ns)
+            .then_with(|| {
+                crate::historical::normalize::policies::native_id_order(
+                    observations[a].first_native_id.as_deref(),
+                    observations[b].first_native_id.as_deref(),
+                )
+            })
+            .then_with(|| {
+                observations[a]
+                    .stable_source_identity
+                    .cmp(&observations[b].stable_source_identity)
+            })
+    });
+    if append {
+        let mut map = inputs.into_iter().collect::<BTreeMap<_, _>>();
+        for o in observations.values_mut() {
+            o.native_identity_order_validated = true;
+        }
+        return Ok(SortedRows::OrderedAppend(
+            order
+                .into_iter()
+                .map(|i| (i, map.remove(&i).unwrap()))
+                .collect(),
+        ));
+    }
+    // Duplicate ownership uses the same coverage/stable-identity rank as the
+    // general path. Native-ID ordering is only an append proof, never quality.
+    order.sort_by(|a, b| {
+        let starts = observations[a]
+            .minimum_accepted_timestamp_ns
+            .cmp(&observations[b].minimum_accepted_timestamp_ns);
+        (if selection == crate::shared::historical::policies::Selection::Later {
+            starts.reverse()
+        } else {
+            starts
+        })
+        .then_with(|| {
+            observations[a]
+                .stable_source_identity
+                .cmp(&observations[b].stable_source_identity)
+        })
+        .then(a.cmp(b))
+    });
+    let ranks = order
+        .into_iter()
+        .enumerate()
+        .map(|(rank, i)| (i, rank as u64))
+        .collect();
+    let mut rows = SortedRows::Inputs {
+        inputs: inputs.into_iter().map(|(_, s)| s).collect(),
+        ranks,
+    }
+    .rows()?;
+    let output = workspace.create()?;
+    let mut writer = output.writer()?;
+    let mut previous: Option<Leased<TradeEntry>> = None;
+    while let Some(entry) = rows.next()? {
+        let e = &entry.value;
+        if let Some(p) = &previous {
+            let cmp = crate::historical::normalize::policies::numeric_id_cmp(
+                p.value.trade.trade_id.as_deref().unwrap(),
+                e.trade.trade_id.as_deref().unwrap(),
+            );
+            if cmp == Some(Ordering::Equal) {
+                if super::trade_equivalence(
+                    &p.value.trade,
+                    &observations[&p.value.source],
+                    &e.trade,
+                    &observations[&e.source],
+                ) != Some(true)
+                {
+                    observations.get_mut(&e.source).unwrap().conflicts += 1;
+                    return Err(invalid(
+                        "conflicting contents under reliable trade identity in ordered merge",
+                    ));
+                }
+                observations.get_mut(&e.source).unwrap().duplicates += 1;
+                continue;
+            }
+            validate_run_order(&p.value, e, "streaming chronological source union")?;
+        }
+        writer.push_trade(e)?;
+        previous = Some(entry);
+    }
+    rows.finish()?;
+    writer.finish()?;
+    for o in observations.values_mut() {
+        o.native_identity_order_validated = true;
+    }
+    Ok(SortedRows::Spool(output))
 }
