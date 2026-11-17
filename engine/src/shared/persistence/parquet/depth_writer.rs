@@ -119,7 +119,13 @@ impl ParquetDepthWriter {
     }
 
     /// Enable consolidated source boundaries before accepting outcomes.
+    pub fn enable_segmented_sources(&mut self) -> Result<()> {
+        self.enable_sources_mode(true)
+    }
     pub fn enable_sources(&mut self) -> Result<()> {
+        self.enable_sources_mode(false)
+    }
+    fn enable_sources_mode(&mut self, segmented: bool) -> Result<()> {
         self.ensure_writable()?;
         if self.source_writer.is_some() || self.events_written != 0 {
             return Err(MarketForgeError::InvalidConfiguration(
@@ -133,7 +139,11 @@ impl ParquetDepthWriter {
             .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
         let mut writer = BufWriter::new(file);
         writer
-            .write_all(b"{\"version\":2,\"continuity\":\"independent_sources\",\"sources\":[")
+            .write_all(if segmented {
+                b"{\"version\":3,\"continuity\":\"segmented_sources\",\"sources\":["
+            } else {
+                b"{\"version\":2,\"continuity\":\"independent_sources\",\"sources\":["
+            })
             .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
         self.source_writer = Some(writer);
         Ok(())

@@ -23,7 +23,8 @@ use {
 
 #[cfg(feature = "monitor-tui")]
 use marketforge_engine::tui::processing::{
-    execute_processing_session_with_tui, execute_processing_with_tui,
+    execute_prepared_session_with_tui, execute_processing_session_with_tui,
+    execute_processing_with_tui,
 };
 
 #[derive(Debug, Parser)]
@@ -146,16 +147,46 @@ fn execute(
         .transpose()?;
     if let Some(batch) = &batch {
         *run_id = Some(batch.run_id.clone());
-        *total = batch.jobs.len();
+        *total = batch
+            .jobs
+            .iter()
+            .filter(|job| !job.tasks.is_empty())
+            .count();
     }
     let config = load_processing_config(resolve_path(&root, &args.config), &root)?;
     let catalog = FormatCatalog::load(root.join("data/.config/historical"))?;
+    #[cfg(feature = "monitor-tui")]
+    if args.tui
+        && let Some(batch) = batch.as_ref()
+    {
+        let prepared = batch.clone();
+        let preparation_config = config.clone();
+        let output_root = args
+            .output_root
+            .as_ref()
+            .map(|path| resolve_path(&root, path));
+        let result = execute_prepared_session_with_tui(batch, config, move |reporter| {
+            let mut jobs = prepared.resolve_jobs_with_progress(
+                &catalog,
+                &preparation_config,
+                &root,
+                reporter,
+            )?;
+            if let Some(path) = output_root {
+                redirect_outputs(&mut jobs, &path).map_err(|error| {
+                    marketforge_engine::shared::error::MarketForgeError::InvalidConfiguration(
+                        error.to_string(),
+                    )
+                })?;
+            }
+            Ok(jobs)
+        })?;
+        *total = result.jobs.len();
+        results.extend(result.jobs);
+        return Ok(());
+    }
     let mut jobs = if let Some(batch) = batch {
-        batch
-            .jobs
-            .iter()
-            .map(|job| batch.resolve_job(job, &catalog, &config, &root))
-            .collect::<marketforge_engine::shared::error::Result<Vec<_>>>()?
+        batch.resolve_jobs(&catalog, &config, &root)?
     } else if let Some(path) = &args.job {
         vec![load_normalization_job(
             resolve_path(&root, path),
@@ -202,10 +233,7 @@ fn main() -> std::process::ExitCode {
         .err()
         .map(|e| {
             eprintln!("Normalization failed: {e}");
-            NormalizationError {
-                code: "execution_error".into(),
-                message: e.to_string(),
-            }
+            NormalizationError::from_error(e.as_ref())
         });
     let response = NormalizationResponse::new(run_id, total, jobs, error);
     let success = response.status == ProcessingStatus::Complete;

@@ -6,6 +6,28 @@ use crate::shared::validation::IntegrityCategory;
 
 #[derive(Debug, Error)]
 pub enum MarketForgeError {
+    #[error("native trade identity: {reason}")]
+    TradeIdentityViolation {
+        source_index: usize,
+        previous_source_index: Option<usize>,
+        reason: String,
+    },
+    #[error("{source}; reconciliation context: {details}")]
+    ReconciliationFailure {
+        #[source]
+        source: Box<MarketForgeError>,
+        details: Box<serde_json::Value>,
+    },
+    #[error("preparation job={job_id}, task={task_id}, stream={stream}, source={}, member={member:?}: {source}",path.display())]
+    PreparationFailure {
+        job_id: u64,
+        task_id: u64,
+        stream: String,
+        path: PathBuf,
+        member: Option<String>,
+        #[source]
+        source: Box<MarketForgeError>,
+    },
     #[error("not attempted: {reason}")]
     NotAttempted { reason: String },
     #[error("stream {stream}, stage={stage}: {source}")]
@@ -109,4 +131,17 @@ pub struct ResourceLimitError {
     pub requested: u64,
     pub stage: &'static str,
     pub scope: String,
+}
+
+impl MarketForgeError {
+    /// Preserve typed causes underneath contextual execution/preparation wrappers.
+    pub fn processing_cause(&self) -> &Self {
+        match self {
+            Self::PreparationFailure { source, .. }
+            | Self::StreamFailure { source, .. }
+            | Self::ReconciliationFailure { source, .. } => source.processing_cause(),
+            Self::ReportPersistence { processing, .. } => processing.processing_cause(),
+            _ => self,
+        }
+    }
 }

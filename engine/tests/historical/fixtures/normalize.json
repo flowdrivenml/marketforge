@@ -74,56 +74,29 @@
         {
           "task_id": 4,
           "input_path": "/home/pasha/projects/marketforge/data/raw/6922/82cf9504b10c4cda909ee7f73edc7232/BTCUSDT_261225-trades-2026-10-27.zip",
-          "exchange": "binance",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "base_asset": "BTC",
-          "quote_asset": "USDT",
-          "symbol": "BTCUSDT_261225",
-          "instrument": {
-            "tick_size": "0.1",
-            "contract_value": null,
-            "contract_value_asset": null
-          },
-          "stream_id": "binance.linear.future.BTCUSDT_261225.trades",
           "stream_rank": 2,
-          "instrument_id": 1
+          "family_id": 8964546249776769756,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 5,
           "input_path": "/home/pasha/projects/marketforge/data/raw/6923/9e7f3606bf0e420da8df575ab5e9acfa/BTCUSDT_261225-trades-2026-10-28.zip",
-          "exchange": "binance",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "base_asset": "BTC",
-          "quote_asset": "USDT",
-          "symbol": "BTCUSDT_261225",
-          "instrument": {
-            "tick_size": "0.1",
-            "contract_value": null,
-            "contract_value_asset": null
-          },
-          "stream_id": "binance.linear.future.BTCUSDT_261225.trades",
           "stream_rank": 2,
-          "instrument_id": 1
+          "family_id": 8964546249776769756,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 6,
           "input_path": "/home/pasha/projects/marketforge/data/raw/6924/8733f23905e44f3f98f3bb00c7bcb405/BTCUSDT_261225-trades-2026-10-29.zip",
-          "exchange": "binance",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "base_asset": "BTC",
-          "quote_asset": "USDT",
-          "symbol": "BTCUSDT_261225",
-          "instrument": {
-            "tick_size": "0.1",
-            "contract_value": null,
-            "contract_value_asset": null
-          },
-          "stream_id": "binance.linear.future.BTCUSDT_261225.trades",
           "stream_rank": 2,
-          "instrument_id": 1
+          "family_id": 8964546249776769756,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 7,
@@ -1262,56 +1235,29 @@
         {
           "task_id": 70,
           "input_path": "/home/pasha/projects/marketforge/data/raw/6653/4b3b5fde046541bb83d2a734eb224eba/BTCUSDT-25DEC262026-10-28.csv.gz",
-          "exchange": "bybit",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "base_asset": "BTC",
-          "quote_asset": "USDT",
-          "symbol": "BTCUSDT-25DEC26",
-          "instrument": {
-            "tick_size": "0.10",
-            "contract_value": null,
-            "contract_value_asset": null
-          },
-          "stream_id": "bybit.linear.future.BTCUSDT-25DEC26.trades",
           "stream_rank": 8,
-          "instrument_id": 7
+          "family_id": 5442090881751539688,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 71,
           "input_path": "/home/pasha/projects/marketforge/data/raw/6652/122db8f4852b42da8318c2fa9a9d73a4/BTCUSDT-25DEC262026-10-27.csv.gz",
-          "exchange": "bybit",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "base_asset": "BTC",
-          "quote_asset": "USDT",
-          "symbol": "BTCUSDT-25DEC26",
-          "instrument": {
-            "tick_size": "0.10",
-            "contract_value": null,
-            "contract_value_asset": null
-          },
-          "stream_id": "bybit.linear.future.BTCUSDT-25DEC26.trades",
           "stream_rank": 8,
-          "instrument_id": 7
+          "family_id": 5442090881751539688,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 72,
           "input_path": "/home/pasha/projects/marketforge/data/raw/6654/64be2eae2fae40298a2c941118490d2c/BTCUSDT-25DEC262026-10-29.csv.gz",
-          "exchange": "bybit",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "base_asset": "BTC",
-          "quote_asset": "USDT",
-          "symbol": "BTCUSDT-25DEC26",
-          "instrument": {
-            "tick_size": "0.10",
-            "contract_value": null,
-            "contract_value_asset": null
-          },
-          "stream_id": "bybit.linear.future.BTCUSDT-25DEC26.trades",
           "stream_rank": 8,
-          "instrument_id": 7
+          "family_id": 5442090881751539688,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 73,
@@ -1666,82 +1612,38 @@
         {
           "task_id": 92,
           "input_path": "/home/pasha/projects/marketforge/data/raw/13449/0720d27d7a514dbfbd37ac970d9b2c81/BTC-USD_UM-futureschain-trades-2026-10-27.zip",
-          "exchange": "okx",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "scope": {
-            "kind": "family",
-            "identifier": "BTC-USD_UM"
-          },
-          "symbol": null,
-          "instrument": null,
-          "base_asset": "BTC",
-          "quote_asset": "USD",
-          "stream_id": "okx.linear.future.family:BTC-USD_UM.trades",
           "stream_rank": 17,
           "instrument_selection": {
             "mode": "all"
-          }
+          },
+          "family_id": 5134923400617818826
         },
         {
           "task_id": 93,
           "input_path": "/home/pasha/projects/marketforge/data/raw/13450/1796d43081b44d0cbf9acc09d1d3177e/BTC-USD_UM-futureschain-trades-2026-10-28.zip",
-          "exchange": "okx",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "scope": {
-            "kind": "family",
-            "identifier": "BTC-USD_UM"
-          },
-          "symbol": null,
-          "instrument": null,
-          "base_asset": "BTC",
-          "quote_asset": "USD",
-          "stream_id": "okx.linear.future.family:BTC-USD_UM.trades",
           "stream_rank": 17,
           "instrument_selection": {
             "mode": "all"
-          }
+          },
+          "family_id": 5134923400617818826
         },
         {
           "task_id": 94,
           "input_path": "/home/pasha/projects/marketforge/data/raw/13451/0f7735049e1a4f519f1a215b6fbe2eed/BTC-USD_UM-futureschain-trades-2026-10-29.zip",
-          "exchange": "okx",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "scope": {
-            "kind": "family",
-            "identifier": "BTC-USD_UM"
-          },
-          "symbol": null,
-          "instrument": null,
-          "base_asset": "BTC",
-          "quote_asset": "USD",
-          "stream_id": "okx.linear.future.family:BTC-USD_UM.trades",
           "stream_rank": 17,
           "instrument_selection": {
             "mode": "all"
-          }
+          },
+          "family_id": 5134923400617818826
         },
         {
           "task_id": 95,
           "input_path": "/home/pasha/projects/marketforge/data/raw/13452/e751e2b62e764ec9b8d70e5ed628e0ae/BTC-USD_UM-futureschain-trades-2026-10-30.zip",
-          "exchange": "okx",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "scope": {
-            "kind": "family",
-            "identifier": "BTC-USD_UM"
-          },
-          "symbol": null,
-          "instrument": null,
-          "base_asset": "BTC",
-          "quote_asset": "USD",
-          "stream_id": "okx.linear.future.family:BTC-USD_UM.trades",
           "stream_rank": 17,
           "instrument_selection": {
             "mode": "all"
-          }
+          },
+          "family_id": 5134923400617818826
         },
         {
           "task_id": 96,
@@ -2112,56 +2014,29 @@
         {
           "task_id": 12,
           "input_path": "/home/pasha/projects/marketforge/data/raw/6656/855fd104bc8a4454932f8db85b04c726/2026-10-28_BTCUSDT-25DEC26_ob200.data.zip",
-          "exchange": "bybit",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "base_asset": "BTC",
-          "quote_asset": "USDT",
-          "symbol": "BTCUSDT-25DEC26",
-          "instrument": {
-            "tick_size": "0.10",
-            "contract_value": null,
-            "contract_value_asset": null
-          },
-          "stream_id": "bybit.linear.future.BTCUSDT-25DEC26.depth",
           "stream_rank": 4,
-          "instrument_id": 7
+          "family_id": 5442090881751539688,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 13,
           "input_path": "/home/pasha/projects/marketforge/data/raw/6655/84a9ed32efdc4a9c9531ce4e3728dd54/2026-10-27_BTCUSDT-25DEC26_ob200.data.zip",
-          "exchange": "bybit",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "base_asset": "BTC",
-          "quote_asset": "USDT",
-          "symbol": "BTCUSDT-25DEC26",
-          "instrument": {
-            "tick_size": "0.10",
-            "contract_value": null,
-            "contract_value_asset": null
-          },
-          "stream_id": "bybit.linear.future.BTCUSDT-25DEC26.depth",
           "stream_rank": 4,
-          "instrument_id": 7
+          "family_id": 5442090881751539688,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 14,
           "input_path": "/home/pasha/projects/marketforge/data/raw/6657/fe4fcef1508247fd9b0ed0020393c6f7/2026-10-29_BTCUSDT-25DEC26_ob200.data.zip",
-          "exchange": "bybit",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "base_asset": "BTC",
-          "quote_asset": "USDT",
-          "symbol": "BTCUSDT-25DEC26",
-          "instrument": {
-            "tick_size": "0.10",
-            "contract_value": null,
-            "contract_value_asset": null
-          },
-          "stream_id": "bybit.linear.future.BTCUSDT-25DEC26.depth",
           "stream_rank": 4,
-          "instrument_id": 7
+          "family_id": 5442090881751539688,
+          "instrument_selection": {
+            "mode": "all"
+          }
         },
         {
           "task_id": 15,
@@ -6978,62 +6853,29 @@
         {
           "task_id": 246,
           "input_path": "/home/pasha/projects/marketforge/data/raw/13453/549f357f1cae4cd482a6dc272be456eb/BTC-USD_UM-futureschain-L2orderbook-5000lv-2026-10-27.tar.gz",
-          "exchange": "okx",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "scope": {
-            "kind": "family",
-            "identifier": "BTC-USD_UM"
-          },
-          "symbol": null,
-          "instrument": null,
-          "base_asset": "BTC",
-          "quote_asset": "USD",
-          "stream_id": "okx.linear.future.family:BTC-USD_UM.depth",
           "stream_rank": 13,
           "instrument_selection": {
             "mode": "all"
-          }
+          },
+          "family_id": 5134923400617818826
         },
         {
           "task_id": 247,
           "input_path": "/home/pasha/projects/marketforge/data/raw/13454/1ae17e0b267f48f08b4591107181a01e/BTC-USD_UM-futureschain-L2orderbook-5000lv-2026-10-28.tar.gz",
-          "exchange": "okx",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "scope": {
-            "kind": "family",
-            "identifier": "BTC-USD_UM"
-          },
-          "symbol": null,
-          "instrument": null,
-          "base_asset": "BTC",
-          "quote_asset": "USD",
-          "stream_id": "okx.linear.future.family:BTC-USD_UM.depth",
           "stream_rank": 13,
           "instrument_selection": {
             "mode": "all"
-          }
+          },
+          "family_id": 5134923400617818826
         },
         {
           "task_id": 248,
           "input_path": "/home/pasha/projects/marketforge/data/raw/13455/9ac1efba1b704e038870c019ff1b0813/BTC-USD_UM-futureschain-L2orderbook-5000lv-2026-10-29.tar.gz",
-          "exchange": "okx",
-          "instrument_type": "future",
-          "market_category": "linear",
-          "scope": {
-            "kind": "family",
-            "identifier": "BTC-USD_UM"
-          },
-          "symbol": null,
-          "instrument": null,
-          "base_asset": "BTC",
-          "quote_asset": "USD",
-          "stream_id": "okx.linear.future.family:BTC-USD_UM.depth",
           "stream_rank": 13,
           "instrument_selection": {
             "mode": "all"
-          }
+          },
+          "family_id": 5134923400617818826
         },
         {
           "task_id": 249,
@@ -7164,20 +7006,6 @@
   "instrument_namespace": "marketforge-historical-fixture-v1",
   "instruments": [
     {
-      "instrument_id": 1,
-      "exchange": "binance",
-      "instrument_type": "future",
-      "market_category": "linear",
-      "symbol": "BTCUSDT_261225",
-      "base_asset": "BTC",
-      "quote_asset": "USDT",
-      "instrument": {
-        "tick_size": "0.1",
-        "contract_value": null,
-        "contract_value_asset": null
-      }
-    },
-    {
       "instrument_id": 2,
       "exchange": "binance",
       "instrument_type": "perpetual",
@@ -7243,20 +7071,6 @@
       "quote_asset": "USDT",
       "instrument": {
         "tick_size": "0.01",
-        "contract_value": null,
-        "contract_value_asset": null
-      }
-    },
-    {
-      "instrument_id": 7,
-      "exchange": "bybit",
-      "instrument_type": "future",
-      "market_category": "linear",
-      "symbol": "BTCUSDT-25DEC26",
-      "base_asset": "BTC",
-      "quote_asset": "USDT",
-      "instrument": {
-        "tick_size": "0.10",
         "contract_value": null,
         "contract_value_asset": null
       }
@@ -7414,27 +7228,43 @@
         "contract_value": "0.01",
         "contract_value_asset": "BTC"
       }
-    },
+    }
+  ],
+  "families": [
     {
-      "instrument_id": 161049,
-      "exchange": "okx",
+      "family_id": 8964546249776769756,
+      "exchange": "binance",
       "instrument_type": "future",
       "market_category": "linear",
-      "symbol": "BTC-USD_UM-261127",
+      "identifier": "BTCUSDT",
       "base_asset": "BTC",
-      "quote_asset": "USD",
+      "quote_asset": "USDT",
       "instrument": {
         "tick_size": "0.1",
-        "contract_value": "0.01",
-        "contract_value_asset": "BTC"
+        "contract_value": null,
+        "contract_value_asset": null
       }
     },
     {
-      "instrument_id": 161050,
+      "family_id": 5442090881751539688,
+      "exchange": "bybit",
+      "instrument_type": "future",
+      "market_category": "linear",
+      "identifier": "BTCUSDT",
+      "base_asset": "BTC",
+      "quote_asset": "USDT",
+      "instrument": {
+        "tick_size": "0.10",
+        "contract_value": null,
+        "contract_value_asset": null
+      }
+    },
+    {
+      "family_id": 5134923400617818826,
       "exchange": "okx",
       "instrument_type": "future",
       "market_category": "linear",
-      "symbol": "BTC-USD_UM-261225",
+      "identifier": "BTC-USD_UM",
       "base_asset": "BTC",
       "quote_asset": "USD",
       "instrument": {

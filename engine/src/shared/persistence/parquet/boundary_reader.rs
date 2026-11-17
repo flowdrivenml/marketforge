@@ -89,6 +89,7 @@ impl BoundaryReadLimits {
 }
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct BoundaryReadSummary {
+    pub version: u32,
     pub sources: usize,
     pub total_rows: u64,
     pub total_events: u64,
@@ -104,6 +105,7 @@ struct Control {
     consumed: Cell<u64>,
     error: RefCell<Option<ResourceLimitError>>,
     bounds: BoundaryReadLimits,
+    repeated_ids: Cell<bool>,
 }
 impl Control {
     fn reset(&self, count: u64) {
@@ -388,11 +390,13 @@ impl<'de, F: FnMut(DepthSourceBoundary) -> Result<()>> Visitor<'de> for Sources<
                 || source.start_event != self.summary.total_events
                 || source.end_row < source.start_row
                 || source.end_event < source.start_event
-                || !ids.insert(source.task_id)
             {
                 return Err(de::Error::custom(
                     "invalid depth source boundary ranges/identity",
                 ));
+            }
+            if !ids.insert(source.task_id) {
+                self.control.repeated_ids.set(true);
             }
             self.summary.sources += 1;
             self.summary.total_rows = source.end_row;
@@ -439,20 +443,14 @@ impl<'de, F: FnMut(DepthSourceBoundary) -> Result<()>> Visitor<'de> for Document
         f.write_str("a V2 independent source boundary document")
     }
     fn visit_map<A: MapAccess<'de>>(self, mut a: A) -> std::result::Result<(), A::Error> {
-        let (mut version, mut continuity, mut sources) = (false, false, false);
+        let (mut version, mut continuity, mut sources) = (None, None, false);
         while let Some(key) = a.next_key::<String>()? {
             match key.as_str() {
-                "version" if !version => {
-                    version = true;
-                    if a.next_value::<u32>()? != 2 {
-                        return Err(de::Error::custom("unsupported stream boundary version"));
-                    }
+                "version" if version.is_none() => {
+                    version = Some(a.next_value::<u32>()?);
                 }
-                "continuity" if !continuity => {
-                    continuity = true;
-                    if a.next_value::<String>()? != "independent_sources" {
-                        return Err(de::Error::custom("unsupported stream continuity"));
-                    }
+                "continuity" if continuity.is_none() => {
+                    continuity = Some(a.next_value::<String>()?);
                 }
                 "sources" if !sources => {
                     sources = true;
@@ -470,9 +468,19 @@ impl<'de, F: FnMut(DepthSourceBoundary) -> Result<()>> Visitor<'de> for Document
                 }
             }
         }
-        if !(version && continuity && sources) {
+        if !sources {
             return Err(de::Error::custom("missing stream boundary field"));
         }
+        match (version, continuity.as_deref()) {
+            (Some(2), Some("independent_sources")) if !self.control.repeated_ids.get() => {}
+            (Some(3), Some("segmented_sources")) => {}
+            _ => {
+                return Err(de::Error::custom(
+                    "unsupported stream boundary envelope or duplicate independent source identity",
+                ));
+            }
+        }
+        self.summary.version = version.unwrap();
         Ok(())
     }
 }
@@ -499,6 +507,7 @@ pub fn visit_depth_stream_boundaries<F: FnMut(DepthSourceBoundary) -> Result<()>
         consumed: Cell::new(0),
         error: RefCell::new(None),
         bounds,
+        repeated_ids: Cell::new(false),
     });
     let file = File::open(directory.join("boundary.json"))
         .map_err(|e| invalid(format!("boundary open: {e}")))?;
@@ -536,13 +545,18 @@ pub fn collect_depth_stream_boundaries(
     bounds: BoundaryReadLimits,
 ) -> Result<DepthStreamBoundaries> {
     let mut sources = Vec::new();
-    visit_depth_stream_boundaries(directory, bounds, |s| {
+    let summary = visit_depth_stream_boundaries(directory, bounds, |s| {
         sources.push(s);
         Ok(())
     })?;
     Ok(DepthStreamBoundaries {
-        version: 2,
-        continuity: "independent_sources".into(),
+        version: summary.version,
+        continuity: if summary.version == 3 {
+            "segmented_sources"
+        } else {
+            "independent_sources"
+        }
+        .into(),
         sources,
     })
 }

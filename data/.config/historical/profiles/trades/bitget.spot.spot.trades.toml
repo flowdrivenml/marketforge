@@ -14,6 +14,13 @@ header = true
 ordering = "chronological"
 granularity = "daily"
 daily_packaging = "numbered_zip_chunks"
+# Public native trade IDs, checked over the supplied non-reset run. IDs must
+# survive decoding, increase in source order after deduplication, and agree
+# with the chronological union. Missing IDs, reuse/conflicts and resets fail.
+# This does not assert uniqueness outside that validated run. Spot/perpetual
+# domains intentionally differ. See docs/historical/bitget-trade-reconciliation.md.
+trade_id_scope = "ordered_run"
+trade_id_reset_domain = "bitget.spot.spot.public-fills.ordered-run.v1"
 archive_day_boundary = "UTC+8"
 
 # Field keys are literal source column names or JSON paths.

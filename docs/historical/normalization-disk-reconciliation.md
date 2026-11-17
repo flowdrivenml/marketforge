@@ -1,3 +1,9 @@
+# Current processing-policy integration
+
+This document also records older scoped measurements below; those measurements do not describe the new policy paths. The current runtime contract is in [Processing policies](../content/configuration/normalization.md#processing-policies). Trade policies reuse bounded external sorting and retained-observation spills. Depth ownership uses a bounded coverage sweep and at most two books; returning to a source scans its scratch prefix, without decompressing the archive again. No performance improvement for this extra I/O is claimed. New metadata/range state is bounded and charged; retained admission includes bounded decision samples and structured errors. The configured scratch-frame cap remains `reconciliation_bytes / 128` unchanged.
+
+Canonical-changing duplicate boundary snapshots, native-order preservation, lossless overlap recovery and bounded earlier/later preference are implemented by replay against independently reconstructed source state, with complete-book validation. Activated policies publish manifest 5; downstream timestamp-first merge rejects unsupported formats. The former narrow zero-change seam and strict-only runtime descriptions below describe earlier implementation stages, not the current policy contract.
+
 # Disk-backed historical source reconciliation
 
 > Current behavior: the explicit BYBIT-T1 source-local contract now enables verified chronological append for strictly disjoint accepted intervals. The unsupported numeric-ID rejection discussed below describes the earlier implementation. See [source-local trade append](source-local-trade-append.md).
@@ -27,9 +33,10 @@ Trades use `reconcile/external.rs::trades`:
    retain exchange, concrete stream, instrument and native ID scope, followed by
    original priority, source index and source ordinal.
 3. One authoritative first record is retained for the current identity group.
-   Repeated records from that source are retained, including different payloads,
-   exactly as in the reference. Lower-priority sources are suppressed and compared
-   against that first record for duplicate/conflict counters. Missing IDs are not
+   Records with comparable reliable identities and equal complete contents are
+   verified duplicates, including repeats within one source. Different contents
+   under that identity fail strict reconciliation. Unverified same-source repeats
+   retain their source-local interpretation; task priority does not authorize loss. Missing IDs are not
    identities. Existing Binance/OKX and validated Bybit-UUID reliability rules are
    unchanged. Unsupported cross-source collisions fail even outside overlapping
    timestamp windows; unreliable/missing IDs in overlapping sources fail.
@@ -46,8 +53,8 @@ per original source plus an external ordinal-suppression index. It adds scratch
 I/O but keeps the resident algorithm and handle count small. Chronological merges
 operate on sorted runs, not an unbounded fan-in over all archives. Sources with
 regressions are rejected before either sort can conceal malformed chronology.
-Identity winners are complete before any canonical trade publication, including
-conflicts whose losing record has an earlier timestamp.
+Identity decisions are complete before any canonical trade publication. Conflicting
+reliable identities fail even when their timestamps are disjoint.
 
 `reconcile_trades()` remains available under `cfg(test)` as the small-data
 reference oracle; its existing behavioral tests remain. Production does not call
@@ -56,7 +63,11 @@ that archive-sized reference implementation.
 Depth uses the same spool infrastructure for complete `DepthProcessingOutcome`
 values and separate bounded source boundary records. After all sources normalize,
 `depth_source_order()` and `validate_depth_recovery()` retain their conservative
-checks. Overlapping independent books are not made reconcilable by disk storage.
+checks. Overlapping independent books are not made reconcilable by disk storage. The
+verified equal-boundary snapshot case is described in the current
+[source-selection reference](normalization-source-selection.md): only a complete
+matching sequenced zero-change terminal checkpoint is suppressed; the next source
+keeps its initialization and independent reconstruction state.
 Validated, disjoint source histories replay one event at a time through existing
 `begin_source`, `write_outcome`, `write_boundary` and `finish` calls. Snapshots,
 zero-change events, operations, sequence metadata, ordinals, initialization

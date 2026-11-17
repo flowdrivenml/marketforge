@@ -54,8 +54,12 @@ impl Quota {
 }
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceObservation {
+    #[serde(default)]
+    pub processing: super::policies::Outcomes,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trade_identity: Option<crate::shared::formats::trades::TradeIdentityContract>,
+    #[serde(default)]
+    pub stable_source_identity: String,
     pub original_task_id: u64,
     pub family_candidate: bool,
     pub source_priority: u64,
@@ -68,12 +72,24 @@ pub struct SourceObservation {
     pub ordering_validated: Option<bool>,
     pub observed_selected_records: u64,
     pub physical_records_read: u64,
+    #[serde(default)]
+    pub maximum_source_ordinal: u64,
+    #[serde(default)]
+    pub native_identity_order_validated: bool,
     pub filtered_records: u64,
     pub outside_scope_records: u64,
     pub selection_filtered_records: u64,
     pub missing_metadata: u64,
     pub unsupported_instruments: u64,
     pub duplicates: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boundary_duplicate_of_task: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suppressed_depth_event_ordinal: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boundary_duplicate_source_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boundary_duplicate_sequence: Option<u64>,
     pub conflicts: u64,
     pub redundant_of_task: Option<u64>,
     pub skipped_stage: Option<String>,
@@ -135,10 +151,37 @@ pub(super) fn reliable_source_identity(trade: &Trade, observation: &SourceObserv
         return false;
     }
     match observation.trade_identity.as_ref().map(|c| c.scope) {
-        Some(TradeIdScope::Global | TradeIdScope::InstrumentScoped) => true,
+        Some(TradeIdScope::Global | TradeIdScope::InstrumentScoped | TradeIdScope::OrderedRun) => {
+            true
+        }
         Some(TradeIdScope::SourceLocal | TradeIdScope::Unreliable) => false,
         None => reliable_identity(trade),
     }
+}
+/// Shared proof gate. Representation or state equality without an established
+/// native event domain cannot establish duplicate-event identity.
+pub(crate) fn event_equivalence<T: PartialEq>(domain_proven: bool, a: &T, b: &T) -> Option<bool> {
+    domain_proven.then(|| a == b)
+}
+/// Event equivalence requires both a comparable identity domain and complete
+/// canonical event contents. Equal timestamps or prices are never identities.
+pub(crate) fn trade_equivalence(
+    a: &Trade,
+    a_source: &SourceObservation,
+    b: &Trade,
+    b_source: &SourceObservation,
+) -> Option<bool> {
+    if !reliable_source_identity(a, a_source)
+        || !reliable_source_identity(b, b_source)
+        || a_source.trade_identity != b_source.trade_identity
+        || a.envelope.exchange != b.envelope.exchange
+        || a.envelope.instrument_id != b.envelope.instrument_id
+        || a.envelope.stream_id != b.envelope.stream_id
+        || a.trade_id != b.trade_id
+    {
+        return None;
+    }
+    event_equivalence(true, a, b)
 }
 /// Only explicit source-local contracts permit skipping identity validation.
 /// Reliable cross-source IDs can conflict even when their timestamps are disjoint.
@@ -155,9 +198,7 @@ pub(crate) fn chronological_trade_order(
             continue;
         }
         if o.ordering_validated == Some(false) {
-            return Err(invalid(
-                "chronological append requires validated source ordering; timestamp regression",
-            ));
+            return Ok(None);
         }
         if o.trade_identity.as_ref().map(|c| c.scope) != Some(TradeIdScope::SourceLocal) {
             return Ok(None);
@@ -260,19 +301,31 @@ pub(crate) fn reconcile_trades(
             );
             if let Some(&index) = identities.get(&key) {
                 let winner = &kept[index];
-                if winner.source != entry.source {
+                if winner.source != entry.source
+                    || reliable_source_identity(&entry.trade, &observations[&entry.source])
+                {
                     if !reliable_source_identity(&entry.trade, &observations[&entry.source]) {
                         return Err(invalid(
                             "native trade identity/reset domain is not established for this profile; cannot choose an authoritative cross-source event safely",
                         ));
                     }
+                    let equivalent = trade_equivalence(
+                        &entry.trade,
+                        &observations[&entry.source],
+                        &winner.trade,
+                        &observations[&winner.source],
+                    )
+                    .ok_or_else(|| invalid("incomparable native trade identity/reset domains"))?;
                     let observation = observations
                         .get_mut(&entry.source)
                         .ok_or_else(|| invalid("missing reconciliation source"))?;
-                    if entry.trade == winner.trade {
+                    if equivalent {
                         observation.duplicates += 1;
                     } else {
                         observation.conflicts += 1;
+                        return Err(invalid(
+                            "conflicting contents under reliable trade identity; strict reconciliation cannot exclude a unique observation",
+                        ));
                     }
                     continue;
                 }
@@ -295,8 +348,16 @@ pub(crate) fn reconcile_trades(
 /// Depth is reconciled as independently reconstructable source event sequences,
 /// never as individual level rows. Partial overlap needs stronger recovery / event
 /// equivalence evidence than the currently supported profiles provide.
+#[cfg(test)]
 pub(crate) fn depth_source_order(
     observations: &BTreeMap<usize, SourceObservation>,
+) -> Result<Vec<usize>> {
+    depth_source_order_with_equivalence(observations, |_, _| false)
+}
+#[cfg(test)]
+pub(crate) fn depth_source_order_with_equivalence(
+    observations: &BTreeMap<usize, SourceObservation>,
+    equivalent: impl Fn(usize, usize) -> bool,
 ) -> Result<Vec<usize>> {
     let mut sources: Vec<_> = observations
         .iter()
@@ -314,7 +375,7 @@ pub(crate) fn depth_source_order(
     }
     sources.sort_by_key(|(index, first, _)| (*first, observations[index].source_priority, *index));
     for pair in sources.windows(2) {
-        if pair[0].2 >= pair[1].1 {
+        if pair[0].2 > pair[1].1 || (pair[0].2 == pair[1].1 && !equivalent(pair[0].0, pair[1].0)) {
             return Err(invalid(
                 "unsupported depth overlap: independent source books overlap without proven event equivalence and snapshot/sequence recovery; refusing to splice level diffs or discard recovery data",
             ));
@@ -329,6 +390,7 @@ pub(crate) fn depth_source_order(
     );
     Ok(order)
 }
+#[cfg(test)]
 fn order_contains(observations: &BTreeMap<usize, SourceObservation>, i: usize) -> bool {
     observations[&i].minimum_accepted_timestamp_ns.is_some()
 }
@@ -386,3 +448,11 @@ mod disk_tests;
 
 #[cfg(test)]
 mod append_tests;
+
+#[cfg(test)]
+mod policy_tests;
+
+pub(crate) mod diagnostics;
+
+#[cfg(test)]
+mod bitget_tests;

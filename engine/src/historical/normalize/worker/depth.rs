@@ -306,6 +306,7 @@ fn process_depth_task_with_metrics_impl<S: DepthSink>(
                         // Normalize and reconstruct depth
                         // -----------------------------------------------------
 
+                        sink.observe_source_record(&record)?;
                         let result = processor.process_record_with_boundary(&record);
                         let event_timestamp_ns = processor
                             .observations()
@@ -860,7 +861,12 @@ fn accept_outcome<S: DepthSink>(
 
     outcome.source.source_event_ordinal = Some(source_ordinal);
     let timestamp = outcome.source.event_timestamp_ns;
-    if let Err(error) = ordering.check(metrics, source_ordinal, timestamp) {
+    if let Err(error) = ordering.check_depth(
+        metrics,
+        source_ordinal,
+        &outcome.source,
+        outcome.operation == crate::shared::domain::canonical::DepthSourceOperation::Snapshot,
+    ) {
         processor.invalidate_synchronization();
         boundary_tracker.invalidate();
         reject_snapshot_rows(metrics, source_rows)?;
@@ -955,7 +961,7 @@ fn accept_outcome<S: DepthSink>(
         source.observe(timestamp);
     }
     metrics.accepted_depth_events = accepted;
-    ordering.accept(timestamp);
+    ordering.accept_depth(timestamp, source_metadata.sequence_end);
 
     boundary_tracker.record_accepted(&source_metadata, event_boundary, initial_state);
 

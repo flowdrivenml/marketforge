@@ -19,3 +19,5 @@ pub(crate) use batch::family_of;
 
 #[cfg(test)]
 pub(crate) use batch::selection_tests as selection_test_support;
+
+pub(crate) use batch::family_source_symbol;

@@ -29,22 +29,19 @@ pub(super) fn observations(entries: &[TradeEntry]) -> BTreeMap<usize, SourceObse
     map
 }
 #[test]
-fn priority_wins_before_emission_even_if_loser_has_an_earlier_timestamp() {
+fn strict_rejects_conflicting_identity_contents_even_with_disjoint_timestamps() {
     let entries = vec![
         event(900, 0, 30, Some("same"), 3),
         event(2, 1, 10, Some("same"), 2),
         event(2, 1, 40, Some("tail"), 4),
     ];
     let mut observed = observations(&entries);
-    let output = reconcile_trades(entries, &mut observed).unwrap();
-    assert_eq!(
-        output
-            .iter()
-            .map(|e| e.trade.envelope.event_timestamp_ns)
-            .collect::<Vec<_>>(),
-        [30, 40]
+    assert!(
+        reconcile_trades(entries, &mut observed)
+            .unwrap_err()
+            .to_string()
+            .contains("conflicting contents")
     );
-    assert_eq!(output[0].source, 900);
     assert_eq!(observed[&2].conflicts, 1);
 }
 #[test]
@@ -69,7 +66,7 @@ fn overlap_keeps_unique_records_equal_timestamp_ids_and_later_tail() {
     assert_eq!(observed[&1].duplicates, 1);
 }
 #[test]
-fn identities_are_instrument_exchange_and_stream_scoped_and_within_source_is_unchanged() {
+fn identities_are_instrument_exchange_and_stream_scoped_and_verified_repeats_are_suppressed() {
     let mut a = event(0, 0, 1, Some("00000000-0000-0000-0000-000000000001"), 1);
     a.ordinal = 1;
     let mut b = event(0, 0, 1, Some("00000000-0000-0000-0000-000000000001"), 1);
@@ -82,7 +79,8 @@ fn identities_are_instrument_exchange_and_stream_scoped_and_within_source_is_unc
     e.trade.envelope.stream_id = "other-feed".into();
     let entries = vec![a, b, c, d, e];
     let mut observed = observations(&entries);
-    assert_eq!(reconcile_trades(entries, &mut observed).unwrap().len(), 5);
+    assert_eq!(reconcile_trades(entries, &mut observed).unwrap().len(), 4);
+    assert_eq!(observed[&0].duplicates, 1);
 }
 #[test]
 fn missing_id_overlap_and_unknown_reset_domains_fail_explicitly() {
@@ -175,15 +173,7 @@ fn scheduling_and_completion_order_do_not_change_winners() {
         let groups = crate::historical::normalize::scheduler::execute_parallel(
             vec![0, 1],
             workers,
-            |source| {
-                Ok(vec![event(
-                    source,
-                    source as u64,
-                    if source == 0 { 30 } else { 10 },
-                    Some("id"),
-                    source as i64 + 1,
-                )])
-            },
+            |source| Ok(vec![event(source, source as u64, 30, Some("id"), 1)]),
         )
         .unwrap();
         let entries = groups

@@ -96,7 +96,7 @@ pub fn resolve_merge_inputs(
             && manifest.protocol_version != DATASET_MANIFEST_VERSION
         {
             return invalid(format!(
-                "dataset {dataset_id}: unsupported manifest version {}",
+                "dataset {dataset_id}: unsupported manifest version {}; this timestamp-first merger cannot consume segmented/native-order policy output; use an event-index/segment-aware reader",
                 manifest.protocol_version
             ));
         }

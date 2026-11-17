@@ -44,6 +44,8 @@ impl TradeSink for Trades {
     }
     fn write_trade_at(&mut self, trade: Trade, source_ordinal: u64) -> Result<()> {
         self.ordinal = source_ordinal;
+        self.observation.maximum_source_ordinal =
+            self.observation.maximum_source_ordinal.max(source_ordinal);
         let timestamp = trade.envelope.event_timestamp_ns;
         self.writer
             .as_mut()
@@ -67,7 +69,18 @@ impl TradeSink for Trades {
         Ok(())
     }
 }
+#[derive(Clone)]
+struct DepthProof {
+    fingerprint: [u8; 32],
+    source: crate::shared::domain::canonical::DepthSourceEventMetadata,
+    operation: crate::shared::domain::canonical::DepthSourceOperation,
+    boundary: crate::shared::domain::canonical::DepthEventBoundary,
+}
+
 struct Depth {
+    pending_fingerprint: Option<[u8; 32]>,
+    first_proof: Option<DepthProof>,
+    last_proof: Option<DepthProof>,
     reporter: ProgressReporter,
     progress: ProgressTaskId,
     entries: Spool,
@@ -77,6 +90,25 @@ struct Depth {
     observation: SourceObservation,
 }
 impl DepthSink for Depth {
+    fn observe_source_record(&mut self, record: &serde_json::Value) -> Result<()> {
+        use sha2::{Digest, Sha256};
+        struct HashWriter(Sha256);
+        impl std::io::Write for HashWriter {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.update(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        // Value object keys use the repository's canonical sorted-map serde
+        // representation. Stream into the digest without allocating another JSON frame.
+        let mut writer = HashWriter(Sha256::new());
+        serde_json::to_writer(&mut writer, record).map_err(|e| invalid(e.to_string()))?;
+        self.pending_fingerprint = Some(writer.0.finalize().into());
+        Ok(())
+    }
     fn write_outcome(&mut self, outcome: DepthProcessingOutcome) -> Result<()> {
         let bytes = outcome
             .events
@@ -99,6 +131,24 @@ impl DepthSink for Depth {
             self.reporter
                 .source_spooled(self.progress, self.entries.count());
         }
+        if let Some(fingerprint) = self.pending_fingerprint.take() {
+            let proof = DepthProof {
+                fingerprint,
+                source: outcome.source.clone(),
+                operation: outcome.operation,
+                boundary: outcome.boundary,
+            };
+            if self.entries.count() == 1 {
+                self.first_proof = Some(proof.clone());
+            }
+            self.last_proof = Some(proof);
+        } else {
+            self.last_proof = None;
+        }
+        self.observation.maximum_source_ordinal = self
+            .observation
+            .maximum_source_ordinal
+            .max(outcome.source.source_event_ordinal.unwrap_or(0));
         self.observation.observe(outcome.source.event_timestamp_ns);
         Ok(())
     }
@@ -127,6 +177,11 @@ fn observation(index: usize, task: &WorkTask) -> Result<SourceObservation> {
             })
             .transpose()?,
         family_candidate: super::streams::is_family(task),
+        stable_source_identity: serde_json::to_string(&(
+            std::fs::canonicalize(&task.input_path).unwrap_or_else(|_| task.input_path.clone()),
+            &task.archive_member,
+        ))
+        .map_err(|e| invalid(e.to_string()))?,
         original_task_id: task.raw_schema["marketforge_source"]["task_id"]
             .as_u64()
             .unwrap_or(task.task_id.0),
@@ -183,7 +238,10 @@ fn physical_identity(path: &std::path::Path) -> serde_json::Value {
     serde_json::json!({"canonical_path":path})
 }
 fn pending(metrics: &mut TaskMetrics) {
-    metrics.counters.rows_unpublished = metrics.counters.events_normalized;
+    metrics.counters.rows_unpublished = metrics
+        .counters
+        .events_normalized
+        .saturating_sub(metrics.counters.rows_suppressed);
     metrics.counters.events_written = 0;
     metrics.start_timestamp_ns = None;
     metrics.end_timestamp_ns = None;
@@ -218,6 +276,7 @@ pub(crate) fn execute(
     config: &ProcessingConfig,
     reporter: &ProgressReporter,
 ) -> Result<Vec<(usize, TaskExecution)>> {
+    let _processing = super::policies::Scope::enter(config, true);
     let normalization_started = std::time::Instant::now();
     let reference_key = super::streams::stream_key(unit.tasks[0].1)?;
     for (_, task) in &unit.tasks {
@@ -515,7 +574,14 @@ pub(crate) fn execute(
                 result.and(finished)
             } else {
                 let entries = workspace.create()?;
+                quota.charge(
+                    (std::mem::size_of::<Depth>() * 2) as u64,
+                    "depth source boundary equivalence evidence",
+                )?;
                 let mut sink = Depth {
+                    pending_fingerprint: None,
+                    first_proof: None,
+                    last_proof: None,
                     reporter: reporter.clone(),
                     progress,
                     writer: Some(entries.writer()?),
@@ -557,6 +623,31 @@ pub(crate) fn execute(
                 "source normalization failed"
             },
         );
+        observed.processing = metrics
+            .source
+            .as_ref()
+            .map(|s| s.processing.clone())
+            .unwrap_or_default();
+        observed.processing.logical_source_events =
+            if task.normalizations[0].target_schema == TargetSchema::Trade {
+                metrics.counters.records_processed
+            } else {
+                metrics.accepted_depth_events
+            };
+        observed.processing.original_canonical_rows = metrics.counters.events_normalized;
+        observed.processing.published_logical_events = 0;
+        observed.processing.policy_extension =
+            if task.normalizations[0].target_schema == TargetSchema::Trade {
+                config.timestamp_regression.trades.policy
+                    != crate::shared::historical::policies::TradeTimestamp::Strict
+                    || config.reconciliation.trades.overlap_policy
+                        != crate::shared::historical::policies::TradeOverlap::Strict
+            } else {
+                config.timestamp_regression.depth.policy
+                    != crate::shared::historical::policies::DepthTimestamp::Strict
+                    || config.reconciliation.depth.overlap_policy
+                        != crate::shared::historical::policies::DepthOverlap::Strict
+            };
         observed.physical_records_read = metrics.counters.records_read;
         observed.observed_selected_records = metrics.counters.records_matched;
         observed.filtered_records = metrics.counters.records_skipped_instrument;
@@ -757,6 +848,7 @@ pub(crate) fn execute(
                 reporter,
                 normalization_started,
             )
+            .map_err(|error| reconcile::diagnostics::failure(&concrete, config, &observed, error))
         } else {
             let sources = indices
                 .iter()
@@ -771,7 +863,7 @@ pub(crate) fn execute(
                 &concrete,
                 config,
                 sources,
-                &observed,
+                &mut observed,
                 &mut selected,
                 reporter,
             )
@@ -819,6 +911,11 @@ pub(crate) fn execute(
                 source.skipped_stage = Some("remaining canonical submission".into());
             }
         }
+        if let Some(source) = observations.get_mut(index)
+            && (!failed || published.contains(index))
+        {
+            source.processing.staged_canonical_rows = execution.metrics.counters.events_written;
+        }
         execution.metrics.source = observations.remove(index);
     }
     let (memory, scratch, handles) = workspace.peaks();
@@ -830,7 +927,7 @@ pub(crate) fn execute(
     reporter.resource_snapshot(&format!("job={}:stream={}:outcome",unit.job.job_id.0,unit.key),serde_json::json!({
         "source_normalization_finished":true,"reconciliation_finished":!failed,"committed":false,
         "staged_output_rows":executions.iter().map(|(_,e)|e.metrics.counters.events_written).sum::<u64>(),
-        "suppressed_rows":executions.iter().filter_map(|(_,e)|e.metrics.source.as_ref()).map(|s|s.duplicates+s.conflicts).sum::<u64>()}));
+        "suppressed_rows":executions.iter().map(|(_,e)|e.metrics.counters.rows_suppressed).sum::<u64>(),"verified_duplicate_logical_events":executions.iter().filter_map(|(_,e)|e.metrics.source.as_ref()).map(|s|s.duplicates).sum::<u64>(),"conflicting_observations":executions.iter().filter_map(|(_,e)|e.metrics.source.as_ref()).map(|s|s.conflicts).sum::<u64>()}));
     reporter.stream_phase(unit.job.job_id.0, &unit.key, "scratch cleanup");
     drop(trades);
     drop(depths);
@@ -867,7 +964,15 @@ fn publish_trades(
     let started = std::time::Instant::now();
     // All source workers and spool completion markers succeeded before this point.
     // A profile contract, not the shape of an ID, authorizes source-local append.
-    let order = reconcile::chronological_trade_order(observations)?;
+    let order = if config.timestamp_regression.trades.policy
+        == crate::shared::historical::policies::TradeTimestamp::Strict
+        && config.reconciliation.trades.overlap_policy
+            == crate::shared::historical::policies::TradeOverlap::Strict
+    {
+        reconcile::chronological_trade_order(observations)?
+    } else {
+        None
+    };
     let fast = order.is_some();
     let reason = if fast {
         "explicit source-local identities and validated strictly disjoint accepted intervals"
@@ -958,10 +1063,10 @@ fn publish_trades(
         let observed = observations
             .get(index)
             .ok_or_else(|| invalid("missing source observation"))?;
-        let suppressed = observed
-            .duplicates
-            .checked_add(observed.conflicts)
-            .ok_or_else(|| invalid("suppression counter overflow"))?;
+        let suppressed = observed.duplicates;
+        let suppressed = suppressed
+            .checked_add(observed.processing.exclusions()?)
+            .ok_or_else(|| invalid("loss/suppression overflow"))?;
         execution.metrics.counters.rows_suppressed = suppressed;
         execution.metrics.counters.rows_unpublished = execution
             .metrics
@@ -980,9 +1085,33 @@ fn publish_trades(
     let mut ranges_count = 0u64;
     let directory = format!("streams/{}/trades", unit.key);
     let path = unit.job.output.staging_path.join(&directory);
+    // Own the finalized spool inventory through the reader cleanup guard before
+    // opening Parquet: a writer-open failure must release every sorted run.
+    let mut reader = merged.rows()?;
     let mut writer = ParquetTradeWriter::new(&path, config.resources.parquet.clone())?;
+    let provenance_enabled = config.timestamp_regression.trades.policy
+        != crate::shared::historical::policies::TradeTimestamp::Strict
+        || config.reconciliation.trades.overlap_policy
+            != crate::shared::historical::policies::TradeOverlap::Strict;
+    let _provenance_memory = if provenance_enabled {
+        Some(quota.reserve(64 * 1024, "trade source-position output buffer")?)
+    } else {
+        None
+    };
+    let mut provenance = if provenance_enabled {
+        std::fs::create_dir_all(&path).map_err(|e| invalid(e.to_string()))?;
+        Some(std::io::BufWriter::with_capacity(
+            64 * 1024,
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path.join("sources.jsonl"))
+                .map_err(|e| invalid(e.to_string()))?,
+        ))
+    } else {
+        None
+    };
     {
-        let mut reader = merged.rows()?;
         let mut row = 0u64;
         while let Some(entry) = reader.next()? {
             let end = row
@@ -1012,6 +1141,13 @@ fn publish_trades(
                 .ok_or_else(|| invalid("missing source execution"))?;
             let (_, execution) = &mut executions[position];
             let timestamp = entry.value.trade.envelope.event_timestamp_ns;
+            if let Some(provenance) = provenance.as_mut() {
+                use std::io::Write;
+                serde_json::to_writer(&mut *provenance,&serde_json::json!({"canonical_row":row,"task_id":execution.task_id,"source_record":entry.value.ordinal})).map_err(|e|invalid(e.to_string()))?;
+                provenance
+                    .write_all(b"\n")
+                    .map_err(|e| invalid(e.to_string()))?;
+            }
             writer.write_trade(entry.value.trade)?;
             write_row(&mut execution.metrics, 1)?;
             execution.metrics.record_timestamp(timestamp);
@@ -1033,6 +1169,10 @@ fn publish_trades(
             }
         }
         reader.finish()?;
+    }
+    if let Some(provenance) = provenance.as_mut() {
+        use std::io::Write;
+        provenance.flush().map_err(|e| invalid(e.to_string()))?;
     }
     let interleaved = ranges.values().any(|v| v.len() > 1);
     let mut sources = Vec::new();
@@ -1087,112 +1227,15 @@ fn publish_trades(
 fn publish_depth(
     unit: &StreamUnit<'_>,
     config: &ProcessingConfig,
-    mut depths: BTreeMap<usize, Depth>,
-    observations: &BTreeMap<usize, SourceObservation>,
+    depths: BTreeMap<usize, Depth>,
+    observations: &mut BTreeMap<usize, SourceObservation>,
     executions: &mut [(usize, TaskExecution)],
     reporter: &ProgressReporter,
 ) -> Result<()> {
-    let order = reconcile::depth_source_order(observations)?;
-    let mut replayed = 0u64;
-    for source in depths.values() {
-        if let Some(spool) = &source.boundary {
-            let mut reader = spool.reader::<DepthBoundaryManifest>()?;
-            let boundary = reader
-                .next()?
-                .ok_or_else(|| invalid("source boundary missing"))?;
-            reconcile::validate_depth_recovery(&boundary.value)?;
-            if reader.next()?.is_some() {
-                return Err(invalid("multiple source boundaries"));
-            }
-        }
-    }
-    let directory = format!("streams/{}/depth", unit.key);
-    let path = unit.job.output.staging_path.join(&directory);
-    let mut writer = ParquetDepthWriter::new(&path, config.resources.parquet.clone())?;
-    writer.enable_sources()?;
-    let mut sources = Vec::new();
-    for index in order {
-        let (_, execution) = executions
-            .iter_mut()
-            .find(|(i, _)| *i == index)
-            .ok_or_else(|| invalid("missing depth source"))?;
-        let start = writer.metrics().levels_written;
-        // Redundant selections have no source state; record an empty boundary.
-        if let Some(mut source) = depths.remove(&index) {
-            writer.begin_source(execution.task_id)?;
-            {
-                let mut reader = source.entries.reader::<DepthProcessingOutcome>()?;
-                while let Some(outcome) = reader.next()? {
-                    let count = outcome.value.events.len() as u64;
-                    let timestamp = outcome.value.source.event_timestamp_ns;
-                    writer.write_outcome(outcome.value)?;
-                    write_row(&mut execution.metrics, count)?;
-                    replayed = replayed
-                        .checked_add(1)
-                        .ok_or_else(|| invalid("depth replay counter overflow"))?;
-                    if replayed.is_multiple_of(1024) {
-                        reporter.source_staged(
-                            ProgressTaskId::new(unit.job.job_id.0, execution.task_id),
-                            execution.metrics.counters.events_written,
-                        );
-                        reporter.stage_count(
-                            unit.job.job_id.0,
-                            &unit.key,
-                            replayed,
-                            "depth source messages replayed",
-                        );
-                    }
-                    if count > 0 {
-                        execution.metrics.record_timestamp(timestamp);
-                    }
-                }
-            }
-            source.entries.delete()?;
-            let boundary = source
-                .boundary
-                .take()
-                .ok_or_else(|| invalid("source reconstruction boundary missing"))?;
-            {
-                let mut reader = boundary.reader::<DepthBoundaryManifest>()?;
-                let record = reader
-                    .next()?
-                    .ok_or_else(|| invalid("source reconstruction boundary missing"))?;
-                writer.write_boundary(record.value)?;
-                if reader.next()?.is_some() {
-                    return Err(invalid("multiple source boundaries"));
-                }
-            }
-            boundary.delete()?;
-        } else {
-            // Keep existing boundary/cardinality requirements for redundant tasks.
-            let task = unit.tasks.iter().find(|(i, _)| *i == index).unwrap().1;
-            writer.begin_source(execution.task_id)?;
-            writer.write_boundary(DepthBoundaryManifest::new(
-                task.exchange,
-                task.instrument_id,
-                task.symbol.clone(),
-                task.stream_id.0.clone(),
-            ))?;
-        }
-        sources.push(SourceSpan {
-            task_id: execution.task_id,
-            start_row: start,
-            end_row: writer.metrics().levels_written,
-            ranges: vec![],
-        });
-        execution.output_paths.push(path.clone());
-        execution.metrics.counters.validate()?;
-    }
-    writer.finish()?;
-    super::streams::write_output(
-        &path,
-        &StreamOutput {
-            stream_id: unit.tasks[0].1.stream_id.0.clone(),
-            directory,
-            sources,
-        },
-    )
+    depth_policy::publish(unit, config, depths, observations, executions, reporter)
 }
+#[path = "reconciled_depth.rs"]
+mod depth_policy;
 
 #[cfg(test)]
 mod tests {
@@ -1263,6 +1306,9 @@ mod tests {
         let workspace = Workspace::new(temp.path(), 1 << 20, quota.clone()).unwrap();
         let entries = workspace.create().unwrap();
         let mut sink = Depth {
+            pending_fingerprint: None,
+            first_proof: None,
+            last_proof: None,
             reporter: ProgressReporter::disabled(),
             progress: ProgressTaskId::new(0, 0),
             writer: Some(entries.writer().unwrap()),

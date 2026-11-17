@@ -50,6 +50,13 @@ pub(super) fn begin_observation(
 }
 pub(super) fn finish_observation(metrics: &mut crate::historical::normalize::metrics::TaskMetrics) {
     if let Some(source) = metrics.source.as_mut() {
+        source.processing.logical_source_events = if metrics.accepted_depth_events > 0 {
+            metrics.accepted_depth_events
+        } else {
+            metrics.counters.records_processed
+        };
+        source.processing.original_canonical_rows = metrics.counters.events_normalized;
+        source.processing.published_logical_events = source.processing.logical_source_events;
         source.physical_records_read = metrics.counters.records_read;
         source.observed_selected_records = metrics.counters.records_matched;
         source.filtered_records = metrics.counters.records_skipped_instrument;

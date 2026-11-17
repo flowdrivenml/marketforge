@@ -517,6 +517,134 @@ mod tests {
     use super::*;
 
     #[test]
+    fn action_count_rate_sample_and_window_truth_table() {
+        use crate::historical::config::selection_test_support;
+        use crate::historical::job::IntegrityWindowRule;
+        let scope = IntegrityScope {
+            task_id: 1,
+            stream_id: "synthetic".into(),
+            source_file: "synthetic.csv".into(),
+        };
+        let category = IntegrityCategory::TimestampRegression;
+        for (action, count, rate, floor, window, immediate_failed, final_failed) in [
+            (
+                IntegrityAction::Fail,
+                Some(1000),
+                None,
+                0,
+                false,
+                true,
+                true,
+            ),
+            (
+                IntegrityAction::Degrade,
+                Some(0),
+                None,
+                0,
+                false,
+                true,
+                true,
+            ),
+            (
+                IntegrityAction::Degrade,
+                Some(1),
+                None,
+                0,
+                false,
+                false,
+                false,
+            ),
+            (
+                IntegrityAction::Degrade,
+                None,
+                Some(0.25),
+                4,
+                false,
+                false,
+                false,
+            ),
+            (
+                IntegrityAction::Degrade,
+                None,
+                Some(0.24),
+                4,
+                false,
+                false,
+                true,
+            ),
+            (
+                IntegrityAction::Degrade,
+                None,
+                Some(0.01),
+                1000,
+                false,
+                false,
+                false,
+            ),
+            (IntegrityAction::Degrade, None, None, 0, true, false, true),
+        ] {
+            let mut policy = selection_test_support::runtime().integrity_policy;
+            let rule = &mut policy.timestamp_regression;
+            rule.action = action;
+            rule.max_count = count;
+            rule.max_rate = rate;
+            rule.minimum_samples = floor;
+            if window {
+                rule.windows.hourly = Some(IntegrityWindowRule {
+                    max_rate: 0.24,
+                    minimum_samples: 4,
+                });
+                rule.windows.daily = rule.windows.hourly.clone();
+            }
+            let mut metrics = ScopedIntegrityMetrics::default();
+            for i in 0..4 {
+                metrics.record(&scope, category, i == 0, Some(i)).unwrap();
+            }
+            let immediate = enforce_immediate_integrity(&policy, &metrics, category).unwrap();
+            let final_result = evaluate_integrity_policy(&policy, &metrics).unwrap();
+            assert_eq!(
+                immediate.is_failed(),
+                immediate_failed,
+                "{action:?} {count:?} {rate:?} floor={floor} window={window}"
+            );
+            assert_eq!(
+                final_result.is_failed(),
+                final_failed,
+                "{action:?} {count:?} {rate:?} floor={floor} window={window}"
+            );
+            policy.enabled = false;
+            assert!(
+                !enforce_immediate_integrity(&policy, &metrics, category)
+                    .unwrap()
+                    .is_failed()
+            );
+            assert!(
+                !evaluate_integrity_policy(&policy, &metrics)
+                    .unwrap()
+                    .is_failed()
+            );
+        }
+        let mut policy = selection_test_support::runtime().integrity_policy;
+        policy.timestamp_regression.action = IntegrityAction::Degrade;
+        policy.timestamp_regression.windows.hourly = Some(IntegrityWindowRule {
+            max_rate: 1.0,
+            minimum_samples: 1000,
+        });
+        let mut metrics = ScopedIntegrityMetrics::default();
+        metrics.record(&scope, category, false, None).unwrap();
+        assert!(
+            !enforce_immediate_integrity(&policy, &metrics, category)
+                .unwrap()
+                .is_failed()
+        );
+        assert!(
+            evaluate_integrity_policy(&policy, &metrics)
+                .unwrap()
+                .is_failed()
+        );
+    }
+
+    #[test]
     fn rate_equal_to_threshold_is_allowed() {
         let observation = CategoryObservation {
             eligible: 1_000,

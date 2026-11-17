@@ -303,6 +303,7 @@ fn report_add_task_prevalidates_every_component_without_cloning_retained_scopes(
         ..Default::default()
     };
     let task = |id| TaskMetricsReport {
+        failure: None,
         task_id: id,
         stream_id: "synthetic".into(),
         source: None,
@@ -333,11 +334,14 @@ fn borrowed_manifest_json_matches_the_owned_persisted_contract() {
         job_id: 1,
         dataset_id: 2,
         content_type: marketforge_engine::historical::job::ContentType::Trades,
+        processing_quality: None,
         events_written: 0,
         files_written: 0,
         start_timestamp_ns: None,
         end_timestamp_ns: None,
         source_tasks: vec![],
+        instrument_namespace: None,
+        resolved_instruments: vec![],
         streams: vec![],
         files: vec![],
         auxiliary_files: vec![],
@@ -661,6 +665,7 @@ fn completed_sources_keep_only_summaries_and_stream_exact_details() {
         metrics.counters.rows_unpublished = 1;
         aggregate
             .add_task(TaskMetricsReport {
+                failure: None,
                 task_id,
                 stream_id: scope.stream_id,
                 counters: metrics.counters,

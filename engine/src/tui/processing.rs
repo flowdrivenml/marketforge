@@ -115,6 +115,35 @@ pub fn execute_processing_session_with_tui(
     jobs: Vec<ProcessingJob>,
     config: ProcessingConfig,
 ) -> Result<ProcessingSessionResult, Box<dyn std::error::Error>> {
+    let dashboard = ProcessingDashboard::new_session(&jobs, &config);
+    execute_session_dashboard(dashboard, config, move |_| Ok(jobs))
+}
+
+/// Resolve physical sources on the worker after the dashboard owns the terminal.
+pub fn execute_prepared_session_with_tui<F>(
+    batch: &crate::historical::config::PreparedBatch,
+    config: ProcessingConfig,
+    prepare: F,
+) -> Result<ProcessingSessionResult, Box<dyn std::error::Error>>
+where
+    F: FnOnce(&ProgressReporter) -> crate::shared::error::Result<Vec<ProcessingJob>>
+        + Send
+        + 'static,
+{
+    let dashboard = ProcessingDashboard::new_prepared(batch, &config);
+    execute_session_dashboard(dashboard, config, prepare)
+}
+
+fn execute_session_dashboard<F>(
+    mut dashboard: ProcessingDashboard,
+    config: ProcessingConfig,
+    prepare: F,
+) -> Result<ProcessingSessionResult, Box<dyn std::error::Error>>
+where
+    F: FnOnce(&ProgressReporter) -> crate::shared::error::Result<Vec<ProcessingJob>>
+        + Send
+        + 'static,
+{
     if !io::stdout().is_terminal() {
         return Err("processing TUI requires an interactive terminal".into());
     }
@@ -138,15 +167,20 @@ pub fn execute_processing_session_with_tui(
     let progress_state = reporter.state();
 
     // Initialize dashboard with every job and task.
-    let mut dashboard = ProcessingDashboard::new_session(&jobs, &config);
     dashboard.log_path = Some(log.path.display().to_string());
     dashboard
         .activity
         .push_back(format!("Diagnostics: {}", log.path.display()));
 
     // Execute the existing global processing session.
-    let worker =
-        thread::spawn(move || execute_processing_session_with_progress(&jobs, &config, &reporter));
+    let worker = thread::spawn(move || {
+        let result = prepare(&reporter)
+            .and_then(|jobs| execute_processing_session_with_progress(&jobs, &config, &reporter));
+        if result.is_err() {
+            reporter.finished(false);
+        }
+        result
+    });
 
     // Display live processing statistics.
     let dashboard_result = run_dashboard(&mut terminal, &mut dashboard, &progress_state, &worker);

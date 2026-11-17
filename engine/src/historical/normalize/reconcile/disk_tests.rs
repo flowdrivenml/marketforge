@@ -66,7 +66,7 @@ pub(super) fn manifest(job: &crate::historical::job::ProcessingJob) -> manifest:
         .unwrap()
 }
 #[test]
-fn trades_priority_before_chronology_publish_exact_rows_and_suppression() {
+fn trades_verified_duplicates_publish_exact_rows_and_suppression() {
     let root = tempfile::tempdir().unwrap();
     let (mut job, config) = setup(false, root.path());
     // Synthetic global identities exercise strict precedence, not BYBIT-T1 local IDs.
@@ -83,7 +83,7 @@ fn trades_priority_before_chronology_publish_exact_rows_and_suppression() {
     std::fs::write(
         &job.tasks[1].input_path,
         format!(
-            "id,timestamp,price,volume,side,rpi\n{same},1000,199,3,buy,0\n{tail},4000,201,3,buy,0\n"
+            "id,timestamp,price,volume,side,rpi\n{same},3000,200,3,buy,0\n{tail},4000,201,3,buy,0\n"
         ),
     )
     .unwrap();
@@ -103,7 +103,7 @@ fn trades_priority_before_chronology_publish_exact_rows_and_suppression() {
         m.processing_metrics
             .tasks
             .iter()
-            .map(|t| t.source.as_ref().unwrap().conflicts)
+            .map(|t| t.source.as_ref().unwrap().duplicates)
             .sum::<u64>(),
         1
     );
@@ -343,6 +343,7 @@ fn writer_failure_keeps_definitive_suppression_and_unpublished_survivors() {
     );
     counters.validate().unwrap();
     assert!(!job.output.dataset_path.exists());
+    drop(context);
     assert_eq!(
         std::fs::read_dir(&config.resources.scratch_path)
             .unwrap()
@@ -405,8 +406,8 @@ fn depth_missing_initial_snapshot_and_ambiguous_overlap_never_publish() {
     for missing_snapshot in [false, true] {
         let root = tempfile::tempdir().unwrap();
         let (job, config) = setup(true, root.path());
-        for task in &job.tasks {
-            let msg = json!({"type":if missing_snapshot{"delta"}else{"snapshot"},"ts":1000,"cts":1000,"data":{"s":"BTCUSDT","u":10,"seq":10,"b":[["99","2"]],"a":[["101","5"]]}});
+        for (index, task) in job.tasks.iter().enumerate() {
+            let msg = json!({"type":if missing_snapshot{"delta"}else{"snapshot"},"ts":1000,"cts":1000,"data":{"s":"BTCUSDT","u":10,"seq":10,"b":[["99",if index==0 {"2"} else {"3"}]],"a":[["101","5"]]}});
             std::fs::write(&task.input_path, format!("{msg}\n")).unwrap();
         }
         let result = execute_processing_job(&job, &config).unwrap();
@@ -464,4 +465,198 @@ fn bybit_profile_source_local_ids_survive_disjoint_sources() {
             .count(),
         0
     );
+}
+
+#[test]
+fn identical_sequenced_boundary_snapshots_suppress_zero_change_checkpoint_and_replay_books() {
+    use crate::shared::persistence::parquet::i256_to_decimal;
+    use ::parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+    use arrow_array::{Decimal256Array, StringArray};
+    use rust_decimal::Decimal;
+    use std::collections::BTreeMap;
+    let artifact =
+        support::root().join("data/tests/historical/normalize/completion/bybit-boundary-unit");
+    std::fs::create_dir_all(&artifact).unwrap();
+    let root = tempfile::tempdir_in(artifact).unwrap();
+    let (job, config) = setup(true, root.path());
+    let record = |kind: &str, timestamp, u, bid: &str, ask: &str| json!({"type":kind,"ts":timestamp,"cts":timestamp,"data":{"s":"BTCUSDT","u":u,"seq":u,"b":[["99",bid]],"a":[["101",ask]]}});
+    let first = record("snapshot", 1000, 10, "1", "1");
+    let delta = record("delta", 2000, 11, "2", "1");
+    let snapshot = record("snapshot", 2000, 11, "2", "1");
+    let next = record("delta", 3000, 12, "2", "2");
+    std::fs::write(
+        &job.tasks[0].input_path,
+        format!("{first}\n{delta}\n{snapshot}\n"),
+    )
+    .unwrap();
+    // Same decoded JSON, deliberately different object field order.
+    let reordered = "{\"ts\":2000,\"type\":\"snapshot\",\"data\":{\"u\":11,\"b\":[[\"99\",\"2\"]],\"seq\":11,\"s\":\"BTCUSDT\",\"a\":[[\"101\",\"1\"]]},\"cts\":2000}";
+    std::fs::write(&job.tasks[1].input_path, format!("{reordered}\n{next}\n")).unwrap();
+    let result = execute_processing_job(&job, &config).unwrap();
+    assert_eq!(
+        result.status,
+        ProcessingStatus::Complete,
+        "{:?}",
+        result.failure
+    );
+    let m = manifest(&job);
+    assert_eq!(m.processing_metrics.counters.records_processed, 5);
+    assert_eq!(
+        m.processing_metrics
+            .tasks
+            .iter()
+            .filter_map(|t| t.accepted_depth_events)
+            .sum::<u64>(),
+        5
+    );
+    assert_eq!(
+        m.processing_metrics
+            .tasks
+            .iter()
+            .filter_map(|t| t.source.as_ref())
+            .map(|s| s.duplicates)
+            .sum::<u64>(),
+        1
+    );
+    let decision = m
+        .processing_metrics
+        .tasks
+        .iter()
+        .find(|t| t.task_id == job.tasks[0].task_id.0)
+        .unwrap()
+        .source
+        .as_ref()
+        .unwrap();
+    assert_eq!(
+        decision.boundary_duplicate_of_task,
+        Some(job.tasks[1].task_id.0)
+    );
+    assert_eq!(decision.boundary_duplicate_sequence, Some(11));
+    assert_eq!(
+        decision
+            .boundary_duplicate_source_sha256
+            .as_ref()
+            .unwrap()
+            .len(),
+        64
+    );
+    let directory = job.output.dataset_path.join(&m.streams[0].directory);
+    let boundaries = read_depth_stream_boundaries(&directory).unwrap();
+    assert_eq!(
+        boundaries
+            .sources
+            .iter()
+            .map(|s| s.end_event - s.start_event)
+            .collect::<Vec<_>>(),
+        [2, 2]
+    );
+    assert_eq!(
+        boundaries.sources[0]
+            .boundary
+            .final_state
+            .as_ref()
+            .unwrap()
+            .state,
+        boundaries.sources[1]
+            .boundary
+            .initial
+            .as_ref()
+            .unwrap()
+            .state
+    );
+    assert_eq!(m.events_written, 6);
+    let segments = read_depth_segments(&directory).unwrap();
+    let starts = segments
+        .segments
+        .iter()
+        .map(|s| s.initial_event_offset)
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut offset = 0u64;
+    let mut book = BTreeMap::<(String, Decimal), Decimal>::new();
+    for file in &m.files {
+        let reader = ParquetRecordBatchReaderBuilder::try_new(
+            std::fs::File::open(job.output.dataset_path.join(&file.path)).unwrap(),
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+        for batch in reader {
+            let batch = batch.unwrap();
+            let side = batch
+                .column_by_name("side")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let prices = batch
+                .column_by_name("price")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Decimal256Array>()
+                .unwrap();
+            let quantities = batch
+                .column_by_name("quantity_base")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Decimal256Array>()
+                .unwrap();
+            for row in 0..batch.num_rows() {
+                if starts.contains(&offset) {
+                    book.clear();
+                }
+                let key = (
+                    side.value(row).to_owned(),
+                    i256_to_decimal(prices.value(row)).unwrap(),
+                );
+                let quantity = i256_to_decimal(quantities.value(row)).unwrap();
+                if quantity.is_zero() {
+                    book.remove(&key);
+                } else {
+                    book.insert(key, quantity);
+                }
+                offset += 1;
+            }
+        }
+    }
+    assert_eq!(book.len(), 2);
+    assert_eq!(
+        book.values().copied().collect::<Vec<_>>(),
+        [Decimal::from(2), Decimal::from(2)]
+    );
+    assert_eq!(
+        boundaries.sources[1]
+            .boundary
+            .final_state
+            .as_ref()
+            .unwrap()
+            .state
+            .bids[0]
+            .quantity_base,
+        Some(Decimal::from(2))
+    );
+    assert_eq!(
+        boundaries.sources[1]
+            .boundary
+            .final_state
+            .as_ref()
+            .unwrap()
+            .state
+            .asks[0]
+            .quantity_base,
+        Some(Decimal::from(2))
+    );
+}
+
+#[test]
+fn equal_depth_sequence_ids_do_not_deduplicate_delta_against_snapshot() {
+    let root = tempfile::tempdir().unwrap();
+    let (job, config) = setup(true, root.path());
+    let snapshot = json!({"type":"snapshot","ts":1000,"cts":1000,"data":{"s":"BTCUSDT","u":10,"seq":10,"b":[["99","1"]],"a":[["101","1"]]}});
+    let delta = json!({"type":"delta","ts":2000,"cts":2000,"data":{"s":"BTCUSDT","u":11,"seq":11,"b":[["99","2"]],"a":[]}});
+    let other = json!({"type":"snapshot","ts":2000,"cts":2000,"data":{"s":"BTCUSDT","u":11,"seq":11,"b":[["99","2"]],"a":[["101","1"]]}});
+    std::fs::write(&job.tasks[0].input_path, format!("{snapshot}\n{delta}\n")).unwrap();
+    std::fs::write(&job.tasks[1].input_path, format!("{other}\n")).unwrap();
+    let result = execute_processing_job(&job, &config).unwrap();
+    assert_eq!(result.status, ProcessingStatus::Failed);
+    assert!(!job.output.dataset_path.exists());
 }

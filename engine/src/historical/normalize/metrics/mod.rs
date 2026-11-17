@@ -41,3 +41,6 @@ pub use policy::{
 };
 
 pub use crate::historical::normalize::reconcile::SourceObservation;
+
+mod task_failure;
+pub use task_failure::TaskFailure;

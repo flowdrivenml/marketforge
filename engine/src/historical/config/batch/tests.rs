@@ -155,6 +155,8 @@ fn resolution_rejects_conflicts_missing_profiles_and_unmapped_family() {
 
     assert_eq!(j.tasks.len(), 1);
 
+    // Exercise the legacy concrete-catalog family path without opening inputs.
+    j.tasks[0].scope.as_mut().unwrap().family_id = None;
     let task = &j.tasks[0];
     let family = task.scope.as_ref().unwrap().identifier.clone();
 
@@ -187,6 +189,7 @@ fn family_expansion_uses_each_concrete_metadata_and_preserves_source_identity() 
             .is_some_and(|s| s.identifier == "BTC-USD_UM")
     });
     j.tasks.truncate(1);
+    j.tasks[0].scope.as_mut().unwrap().family_id = None;
 
     // The synthetic metadata test must not inherit concrete
     // members from the shared authoritative fixture.

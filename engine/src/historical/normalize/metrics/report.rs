@@ -39,6 +39,7 @@ impl TaskMetrics {
 impl TaskMetrics {
     pub fn into_report(self, task: &WorkTask) -> TaskMetricsReport {
         TaskMetricsReport {
+            failure: None,
             source: self.source,
             accepted_depth_events: if task.normalizations[0].target_schema
                 == crate::shared::normalization::TargetSchema::Depth
@@ -66,6 +67,8 @@ impl TaskMetrics {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskMetricsReport {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure: Option<super::TaskFailure>,
     #[serde(default)]
     pub source: Option<crate::historical::normalize::reconcile::SourceObservation>,
     #[serde(default)]

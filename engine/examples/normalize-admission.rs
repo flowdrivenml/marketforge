@@ -1,5 +1,6 @@
 //! Usage: cargo run --example normalize-admission --features historical -- [project-root [batch [runtime]]]
-//! Never executes normalization or opens source archive payloads.
+//! Does not execute normalization. Referenced-family preparation may scan source
+//! archive payloads to discover concrete instruments before estimating admission.
 use marketforge_engine::historical::{
     config::{FormatCatalog, read_prepared_batch},
     normalize::{load_processing_config, resources::inspect_admission},

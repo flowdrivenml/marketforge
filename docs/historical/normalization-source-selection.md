@@ -14,8 +14,7 @@ The active **prepared-batch schema is 4**, `kind = "normalization_batch"`,
 catalog, job/order/output and task classification fields retain their placement.
 `PreparedBatch`, `PreparedTask`, `OfflineInstrument` and `FamilyMember` remain the
 production models. See `config/batch.rs` and `normalize-batch-v4.example.json`.
-The example deliberately does not invent the absent historical futures authority;
-its family source needs that authority before resolution can succeed.
+Schema 4 also accepts top-level `families` and minimal `family_id` tasks; see the family-reference extension below.
 
 Prepared-task `source_time_bounds` is removed, including its `partition`.
 Supplying it, even as null, is an unknown-field error. Prepared schema 3 is no
@@ -61,14 +60,13 @@ for a changing population.
 `all` covers every eligible instrument **encountered in the source**, not just
 catalog entries. `include` filters before contract-metadata lookup. An unselected
 unknown contract does not require fabricated metadata. An encountered selected
-symbol missing authority or unsupported required specifications fails explicitly.
+symbol missing authority or unsupported required specifications fails explicitly on the legacy catalog-only family path. A referenced family supplies the explicit specification assertion for newly discovered dated futures.
 Known family candidates can remain unencountered without their deferred contract
-requirements failing the job. No placeholder IDs, tick sizes or contract values
-are generated. Duplicate/ambiguous offline instrument identities still fail;
+requirements failing the job. No tick sizes or contract multipliers are guessed. Family-derived IDs follow the versioned allocation described below. Duplicate/ambiguous offline instrument identities still fail;
 the catalog does not silently pick among historical specification versions.
 
-Native family routing currently supports the existing OKX futures naming grammar
-and OKX perpetual `-SWAP` family identity, with exact exchange, instrument kind,
+Native family routing supports Binance dated symbols with `_YYMMDD`, Bybit `-DDMMMYY`, the existing OKX futures naming grammar,
+and legacy OKX perpetual `-SWAP` family identity, with exact exchange, instrument kind,
 market category, namespace and feed/profile separation. Futures membership reuses
 the existing matcher parser rather than prefix selection. Other family identity
 schemes are unsupported and require authoritative routing support, not guesses.
@@ -83,8 +81,8 @@ populations are processed against the full supplied authority on every source.
 
 ## Priority, chronology and safe emission
 
-Original zero-based task-array position supplies conflict priority. It is captured
-before selection/grouping/family expansion and carried in resolved provenance.
+Original zero-based task-array position remains legacy ordering/provenance metadata. It is captured
+before selection/grouping/family expansion. It does not authorize conflicting-event exclusion under strict reconciliation.
 Task IDs, stream ranks, filenames, traversal, hashes, arrival order and worker
 completion do not supply priority. Derived IDs/ranks are deterministic; supplied
 concrete ranks remain reserved. Colliding derived identities fail.
@@ -109,11 +107,7 @@ domain, fail. OKX documents native trade-ID uniqueness per instrument in its
 must refer to the correct historical instrument instance; no timestamp-based
 identity expiration is introduced.
 
-Equivalent cross-source identity/payload emits once; conflicting payloads retain
-the higher-priority source. Timestamp changes in a conflict cannot make a
-lower-priority record authoritative early: winner selection precedes output
-sorting. Different IDs with equal timestamps survive. Within-source duplicate
-handling is retained. Ties use priority, concrete source/member and physical
+Equivalent cross-source identity/payload emits once; conflicting payloads under a reliable identity fail before publication. Timestamp differences do not exempt a collision from this check. Identity resolution precedes chronological output sorting. Different IDs with equal timestamps survive. Verified repeats within a grouped reliable identity domain are also suppressed. Unverified source-local observations retain their existing interpretation. Ties use priority, concrete source/member and physical
 decoder-record ordinals. No price/quantity/side tuple is used as a universal ID.
 Unique events inside an overlap and its tail survive for supported domains.
 
@@ -140,8 +134,11 @@ existing independent snapshot initialization and sequence/recovery evidence.
 Complete outcomes and their event ordinals are retained atomically. Unrecovered
 boundary gaps fail. Incremental and snapshot feeds are not combined.
 
-Apart from equivalent physical-source suppression, partial/equal-time depth
-source overlap currently fails with an explicit explanation: independent book
+An equal-time boundary can suppress an identical terminal snapshot when complete decoded JSON, validated native sequence, event/system timestamps and snapshot operations match the next source's initialization. Key ordering is irrelevant. The following source retains full initialization; replay checks complete books and represents canonical-changing snapshots correctly. A delta and snapshot sharing an ID are distinct. Applicable native resets remain validated. See [processing policies](../content/configuration/normalization.md#processing-policies) for overlap recovery and preference.
+
+
+Other partial/equal-time depth
+source overlap fails with an explicit explanation: independent book
 level diffs and a timestamp or sequence alone do not establish event equivalence
 or a safe recovery splice. The implementation does not discard a lower-priority
 tail, deduplicate individual levels, bridge a gap or manufacture synchronization.
@@ -155,11 +152,7 @@ archive for each symbol. Each instrument has independent timestamp validation,
 identity tracking, depth processor, sequence state, book, metrics and writer route.
 Interleaved instruments do not share a global timestamp domain.
 
-Authoritative explicit member mappings remain usable for include requests.
-`all` cannot claim complete population by silently scanning only a finite member
-map: it requires a native-symbol mixed data member (or one data member).
-Arbitrary multi-member archive enumeration is not implemented. Ambiguous member
-selection fails through the existing reader checks. XLSX mixed-symbol routing is
+Authoritative explicit member mappings remain usable for legacy include requests. New `family_id` sources enumerate all regular TAR/GZIP or ZIP members in a bounded forward traversal. Each selected concrete/member binding is an independent logical source. Duplicate names, unsafe paths, unsupported entry types, compression errors and filename/record identity conflicts fail. Unselected member payloads still pass container and identity validation. Legacy catalog-only `all` retains its former finite-map restriction. XLSX mixed-symbol routing is
 unsupported because those profiles do not expose the required native identity.
 Distinct requests with different filters/profiles can still decode the same
 physical archive separately; the per-symbol repeated-decoding default is removed.
@@ -237,7 +230,7 @@ whole stream's ownership must cover physical rows exactly once. Old manifest-3
 spans still deserialize/validate without the field.
 
 The current merge resolver explicitly admits only manifest 2/3. It therefore
-rejects new manifest-4 datasets rather than treating bounding envelopes as
+rejects manifest-4/5 datasets rather than treating bounding envelopes as
 contiguous ownership. No merge/conversion algorithm was changed. Supporting
 manifest-4 merge consumption is a separate compatibility follow-up; do not feed
 it through old readers that assume one contiguous range per source.
@@ -256,28 +249,37 @@ stdout and public failure codes remain unchanged.
 1. Emit prepared schema 4; keep standalone job protocol 3 separate.
 2. Remove task `source_time_bounds` entirely, not as null; send no replacement
    event range or external pointer index.
-3. Keep archive task order intentional: first array entry wins supported genuine
-   conflicts. Do not sort the request merely to imitate chronological output.
+3. Preserve prepared task IDs and declared ranks. Task order remains legacy provenance; strict identity conflicts fail. Do not depend on it to discard data.
 4. Add explicit `all` or exact `include.symbols` to every family request. Concrete
    symbol tasks retain omitted selection, or include that one exact symbol.
-5. Supply the existing offline namespace/catalog with authoritative historical
-   IDs, tick sizes and required contract specifications. Do not fabricate futures
-   entries to make `all` pass. Keep member mappings where required by supported
-   include routing.
+5. Supply the namespace and existing authoritative concrete mappings. For dated futures, emit one top-level family assertion per semantic family, then tasks containing `family_id`, `task_id`, `input_path`, explicit selection, `stream_rank`, and supported source options. Keep the original physical archive; Python need not enumerate expired symbols or extract members. Shared specifications are explicit historical assertions, not live-exchange metadata.
 6. Treat unsupported overlap/domain/member cases and unsatisfied selections as
    failures. Honor manifest 4 explicitly in downstream consumers.
 
-## Fixture and remaining authority blocker
+## Family-reference extension (schema 4)
 
-The 357-source fixture now has schema 4, removes all 103 formerly present task
-bounds fields, and adds `all` to 21 family tasks. A comparison against the checkout
-at task start confirms source paths, task/job/dataset IDs, source-array order,
-requested interval, outputs, namespace and complete instrument catalog are
-otherwise identical. No workload member or historical specification was replaced.
-The supplied catalog has no concrete authority for three requested OKX family
-scopes: inverse perpetual `BTC-USD`, linear future `BTC-USD_UM`, and linear
-perpetual `BTC-USDT` (seven source tasks each, 21 total). Its only OKX catalog
-entry is spot `BTC-USDT`, which cannot substitute for those contracts. Actual
-eligible contracts in those files cannot be determined without reading them,
-which was not done. Resolution reports
-that missing authority; no illustrative contract specs were added to the fixture.
+A family definition contains `family_id` (positive i64), `exchange`, `instrument_type` (`future`), `market_category` (`linear` or `inverse`), `identifier`, `base_asset`, `quote_asset`, and `instrument` (`tick_size`, nullable `contract_value`, nullable `contract_value_asset`). IDs and semantic family identities must be unique. Null contract values preserve profile-specific quantity interpretation.
+
+```json
+{
+  "task_id": 246,
+  "input_path": "/path/to/futureschain.tar.gz",
+  "family_id": 5134923400617818826,
+  "instrument_selection": {"mode": "all"},
+  "stream_rank": 13
+}
+```
+
+The ID above illustrates the migrated OKX fixture reference; its definition must be supplied. Family-reference tasks reject even null copies of removed concrete identity fields. Content type comes from the job. Legacy concrete and catalog-only family tasks remain supported. Empty jobs in exchange-specific fixture projections are validated as declarations and omitted from execution.
+
+Discovery uses supported filename conventions when records lack native symbols (Binance trades), native CSV symbols (Bybit/OKX), or JSON profile identity fields. All available supported identity hints must agree. Mixed members require a native symbol. Include selection is exact; absence from one member/source is permitted, but absence from all applicable supplied sources fails fulfillment. Preparation performs a bounded discovery pass; routing performs a second forward decode, once per physical archive rather than once per contract. This extra pass is a performance limitation, not a single-pass acquisition claim.
+
+Exact concrete catalog mappings take precedence. A differing family specification/assets assertion fails rather than silently overriding exact metadata. Without an exact mapping, `marketforge-concrete-id-sha256-62-v1` hashes the JSON tuple `[strategy, namespace, exchange.type.market.symbol]` using SHA-256, interprets its first 8 bytes as big-endian u64, keeps the low 62 bits and sets bit 62. Collisions with supplied/generated concrete mappings fail; no probing or encounter-order renumbering occurs. The family ID is never used as a shared concrete instrument ID. Task/member traversal, worker counts, trades versus depth and adding another symbol do not change the hash.
+
+This deterministic allocation **cannot reconstruct removed arbitrary legacy numeric IDs**. Existing numeric authority must be supplied in every batch that needs those legacy IDs. Producers must reconcile/reuse the persisted concrete catalog within a namespace; an offline batch cannot detect an omitted conflicting mapping in a different historical batch. This compatibility limitation remains explicit.
+
+Committed manifests add optional `instrument_namespace` and bounded `resolved_instruments`, including exact concrete specifications, metadata origin, family assertion/fingerprint and identity strategy. `processing-job.json` retains task/member details and original IDs/ranks. Family inheritance proves which batch assertion was used; it does not establish timeless historical specification correctness or complete market coverage.
+
+## Remaining combined-integration work
+
+The family-reference foundation is preserved while configurable overlap and timestamp processing now execute through publication. Activated policies use manifest 5 with explicit quality statements and effective configuration. Strict defaults remain unchanged. Bitget historical profiles now use separate checked native `ordered_run` domains, validating source and union ordering without an exchange-wide lifetime claim; missing IDs, conflicts or resets fail safely. See [Bitget reconciliation](bitget-trade-reconciliation.md). Synthetic success does not establish real-fixture success.

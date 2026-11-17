@@ -26,6 +26,14 @@ impl ProgressTaskId {
 }
 #[derive(Debug, Clone)]
 pub enum ProgressEvent {
+    TaskRegistered {
+        id: ProgressTaskId,
+        exchange: String,
+        instrument: String,
+        content_type: String,
+        source: String,
+        stream: String,
+    },
     TaskStarted {
         id: ProgressTaskId,
         exchange: String,
@@ -199,6 +207,7 @@ impl From<&ProcessingCounters> for ProcessingProgress {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum EventKey {
+    Registration(ProgressTaskId),
     Task(ProgressTaskId),
     Job(u64),
     Stream(u64, String),
@@ -530,6 +539,7 @@ impl ProgressReporter {
     pub fn emit(&self, event: ProgressEvent) {
         if self.state.coalesced.load(Ordering::Relaxed) {
             let key = match &event {
+                ProgressEvent::TaskRegistered { id, .. } => EventKey::Registration(*id),
                 ProgressEvent::TaskStarted { id, .. }
                 | ProgressEvent::TaskCompleted { id, .. }
                 | ProgressEvent::TaskFailed { id, .. }
@@ -560,6 +570,27 @@ impl ProgressReporter {
     }
     pub fn task_skipped(&self, id: ProgressTaskId, reason: String) {
         self.emit(ProgressEvent::TaskSkipped { id, reason });
+    }
+    pub fn register_source(
+        &self,
+        id: ProgressTaskId,
+        exchange: String,
+        instrument: String,
+        content_type: String,
+        source: String,
+        stream: String,
+    ) {
+        if self.is_enabled() {
+            self.state.register_task(id);
+            self.emit(ProgressEvent::TaskRegistered {
+                id,
+                exchange,
+                instrument,
+                content_type,
+                source,
+                stream,
+            });
+        }
     }
     pub fn task_started(
         &self,

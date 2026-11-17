@@ -290,6 +290,6 @@ fn family_expansion_cannot_allocate_an_unadmitted_fanout() {
         )
         .unwrap_err();
     assert!(
-        matches!(error,crate::shared::error::MarketForgeError::ResourceLimit(ref e) if e.resource=="prepared expansion bytes" && e.scope.contains("job=41") && e.scope.contains("source task=900"))
+        matches!(error.processing_cause(),crate::shared::error::MarketForgeError::ResourceLimit(e) if e.resource=="prepared expansion bytes" && e.scope.contains("job=41") && e.scope.contains("source task=900"))
     );
 }

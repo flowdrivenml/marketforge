@@ -159,6 +159,7 @@ pub fn child(request: &Path) -> Result<bool> {
         trial.jobs.len(),
         results,
         error.map(|message| NormalizationError {
+            context: None,
             code: "execution_error".into(),
             message,
         }),

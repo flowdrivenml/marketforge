@@ -16,3 +16,6 @@ pub use zip::{open_zip_buffered, with_zip_reader};
 
 mod reader;
 pub use reader::{with_source_reader, with_validated_source_reader};
+
+mod members;
+pub use members::{with_validated_source_members, with_validated_source_members_accounted};

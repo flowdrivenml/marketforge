@@ -157,8 +157,10 @@ pub fn retained_task_memory(task: &WorkTask, _limits: &NormalizationLimits) -> R
         .checked_mul(3)
         .and_then(|v| v.checked_add(diagnostics))
         .and_then(|v| v.checked_add(std::mem::size_of::<TaskMetrics>() as u64))
-        // Task/source summaries, two reference indexes and ownership-map nodes.
-        .and_then(|v| v.checked_add(4096))
+        // Summaries, bounded policy/error samples and indexes. Reconciliation errors
+        // can retain four sampled sources plus the primary error while reporting;
+        // reserve their bounded context and serialized/typed copies explicitly.
+        .and_then(|v| v.checked_add(8192 + 256 * 1024))
         .and_then(|v| v.checked_add((task.stream_id.0.len() as u64).checked_mul(8)?))
         .and_then(|v| v.checked_add((task.input_path.as_os_str().len() as u64).checked_mul(4)?))
         .ok_or_else(overflow)
@@ -296,38 +298,40 @@ pub(crate) fn reserve_compatibility_trade(
     Ok(Some((scope, reservation)))
 }
 
-pub(crate) fn prepared_task_memory(task: &WorkTask) -> Result<u64> {
-    fn json(value: &serde_json::Value) -> Result<u64> {
-        let base = std::mem::size_of::<serde_json::Value>() as u64;
-        match value {
-            serde_json::Value::String(s) => {
-                base.checked_add(s.capacity() as u64).ok_or_else(overflow)
-            }
-            serde_json::Value::Array(items) => items.iter().try_fold(
-                base.checked_add(
-                    (items.capacity() as u64)
-                        .checked_mul(base)
-                        .ok_or_else(overflow)?,
-                )
-                .ok_or_else(overflow)?,
-                |sum, item| sum.checked_add(json(item)?).ok_or_else(overflow),
-            ),
-            serde_json::Value::Object(items) => items.iter().try_fold(base, |sum, (key, item)| {
-                let item = json(item)?;
-                sum.checked_add(key.capacity() as u64)
-                    .and_then(|n| n.checked_add(96))
-                    .and_then(|n| n.checked_add(item))
+pub(crate) fn prepared_json_memory(value: &serde_json::Value) -> Result<u64> {
+    let base = std::mem::size_of::<serde_json::Value>() as u64;
+    match value {
+        serde_json::Value::String(s) => base.checked_add(s.capacity() as u64).ok_or_else(overflow),
+        serde_json::Value::Array(items) => items.iter().try_fold(
+            base.checked_add(
+                (items.capacity() as u64)
+                    .checked_mul(base)
+                    .ok_or_else(overflow)?,
+            )
+            .ok_or_else(overflow)?,
+            |sum, item| {
+                sum.checked_add(prepared_json_memory(item)?)
                     .ok_or_else(overflow)
-            }),
-            _ => base.checked_add(128).ok_or_else(overflow),
-        }
+            },
+        ),
+        serde_json::Value::Object(items) => items.iter().try_fold(base, |sum, (key, item)| {
+            let item = prepared_json_memory(item)?;
+            sum.checked_add(key.capacity() as u64)
+                .and_then(|n| n.checked_add(96))
+                .and_then(|n| n.checked_add(item))
+                .ok_or_else(overflow)
+        }),
+        _ => base.checked_add(128).ok_or_else(overflow),
     }
+}
+
+pub(crate) fn prepared_task_memory(task: &WorkTask) -> Result<u64> {
     let mut bytes = (std::mem::size_of::<WorkTask>() as u64)
-        .checked_add(json(&task.raw_schema)?)
+        .checked_add(prepared_json_memory(&task.raw_schema)?)
         .ok_or_else(overflow)?;
     for config in &task.normalizations {
         bytes = bytes
-            .checked_add(json(&config.rules)?)
+            .checked_add(prepared_json_memory(&config.rules)?)
             .ok_or_else(overflow)?;
     }
     for text in [&task.symbol, &task.stream_id.0, &task.format_code.0] {

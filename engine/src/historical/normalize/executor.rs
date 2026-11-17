@@ -180,13 +180,14 @@ fn execute_process(
 
 pub(crate) fn persist_processing_failure(
     job: &ProcessingJob,
-    context: ExecutionContext,
+    mut context: ExecutionContext,
     error: MarketForgeError,
 ) -> Result<ProcessingResult> {
     fn scratch_limit(error: &MarketForgeError) -> bool {
         match error {
             MarketForgeError::ResourceLimit(e) => e.resource == "scratch bytes",
-            MarketForgeError::StreamFailure { source, .. } => scratch_limit(source),
+            MarketForgeError::StreamFailure { source, .. }
+            | MarketForgeError::ReconciliationFailure { source, .. } => scratch_limit(source),
             MarketForgeError::ReportPersistence { processing, .. } => scratch_limit(processing),
             _ => false,
         }
@@ -212,7 +213,46 @@ pub(crate) fn persist_processing_failure(
         _ => ProcessingErrorCode::ProcessingFailure,
     };
     let error_message = error.to_string();
+    if let Some(task) = context
+        .failed_task_id
+        .and_then(|id| job.tasks.iter().find(|t| t.task_id.0 == id))
+        && !context
+            .report
+            .tasks
+            .iter()
+            .any(|t| t.task_id == task.task_id.0)
+    {
+        let mut report = super::metrics::TaskMetrics::default().into_report(task);
+        report.failure = Some(super::metrics::TaskFailure::new(job, task, &error));
+        context.report.add_task(report)?;
+    }
 
+    // Staged writer submissions are unpublished on every failed job. Preserve
+    // finalized staging counts separately; no failed report claims committed rows.
+    for task in &mut context.report.tasks {
+        if let Some(source) = task.source.as_mut() {
+            source.processing.published_logical_events = 0;
+        }
+        task.counters.rows_unpublished = task
+            .counters
+            .rows_unpublished
+            .checked_add(task.counters.events_written)
+            .ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration(
+                    "failed publication row count overflow".into(),
+                )
+            })?;
+        task.counters.events_written = 0;
+    }
+    context.report.counters.rows_unpublished = context
+        .report
+        .counters
+        .rows_unpublished
+        .checked_add(context.report.counters.events_written)
+        .ok_or_else(|| {
+            MarketForgeError::InvalidConfiguration("failed publication row count overflow".into())
+        })?;
+    context.report.counters.events_written = 0;
     let failure = ProcessingFailureReport::new(
         job,
         context.failed_task_id,
@@ -337,7 +377,7 @@ pub(crate) fn finalize_processing_job_with_progress(
     let mut first_error = None;
     let mut first_skipped = None;
 
-    for (task, execution) in job.tasks.iter().zip(executions) {
+    for (task, mut execution) in job.tasks.iter().zip(executions) {
         let task_id = task.task_id.0;
 
         if execution.task_id != task_id {
@@ -362,10 +402,20 @@ pub(crate) fn finalize_processing_job_with_progress(
             };
         }
 
-        // Preserve the authoritative metrics for every attempted task.
-        context
-            .report
-            .add_task(execution.metrics.into_report(task))?;
+        if let Some(source) = execution.metrics.source.as_mut() {
+            source.processing.staged_canonical_rows = execution.metrics.counters.events_written;
+            if job.output.content_type == crate::historical::job::ContentType::Trades {
+                source.processing.published_logical_events =
+                    execution.metrics.counters.events_written;
+            }
+            source.processing.staged_logical_events = source.processing.published_logical_events;
+        }
+        let mut task_report = execution.metrics.into_report(task);
+        task_report.failure = execution
+            .error
+            .as_ref()
+            .map(|e| super::metrics::TaskFailure::new(job, task, e));
+        context.report.add_task(task_report)?;
 
         if let Some(error) = execution.error {
             if matches!(error, MarketForgeError::NotAttempted { .. }) {
@@ -411,9 +461,17 @@ pub(crate) fn finalize_processing_job_with_progress(
     // Final integrity evaluation
     // -------------------------------------------------------------------------
 
-    let integrity =
+    let processing_degraded = super::policies::evaluate(
+        config,
+        job.output.content_type == ContentType::Depth,
+        &context.report,
+    )?;
+    let mut integrity =
         evaluate_integrity_policy(&config.integrity_policy, &context.report.scoped_integrity)?;
 
+    if processing_degraded && integrity.status == super::metrics::IntegrityStatus::Clean {
+        integrity.status = super::metrics::IntegrityStatus::Degraded;
+    }
     context.integrity_evaluation = Some(integrity.clone());
 
     if integrity.is_failed() {
@@ -435,6 +493,7 @@ pub(crate) fn finalize_processing_job_with_progress(
         &context.report,
         integrity,
         config.resources.normalization_limits,
+        serde_json::json!({"reconciliation":config.reconciliation,"timestamp_regression":config.timestamp_regression}),
     )?;
 
     // -------------------------------------------------------------------------

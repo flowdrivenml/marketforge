@@ -11,6 +11,47 @@ use std::{
 fn invalid(message: impl Into<String>) -> MarketForgeError {
     MarketForgeError::InvalidConfiguration(message.into())
 }
+fn ordered_run(observation: &SourceObservation) -> bool {
+    observation
+        .trade_identity
+        .as_ref()
+        .is_some_and(|c| c.scope == crate::shared::formats::trades::TradeIdScope::OrderedRun)
+}
+fn validate_run_order(previous: &TradeEntry, current: &TradeEntry, stage: &str) -> Result<()> {
+    let increasing = previous
+        .trade
+        .trade_id
+        .as_deref()
+        .zip(current.trade.trade_id.as_deref())
+        .and_then(|(a, b)| crate::historical::normalize::policies::numeric_id_cmp(a, b))
+        == Some(Ordering::Less);
+    if !increasing {
+        return Err(MarketForgeError::TradeIdentityViolation {
+            source_index: current.source,
+            previous_source_index: Some(previous.source),
+            reason: format!(
+                "ordered_run native trade ID reset/order conflict at {stage}: previous_source={} previous_ordinal={} previous_id={:?} previous_timestamp={} source={} ordinal={} native_id={:?} timestamp={}; no cross-reset identity inference or preference fallback is permitted",
+                previous.source,
+                previous.ordinal,
+                previous
+                    .trade
+                    .trade_id
+                    .as_deref()
+                    .map(|s| s.chars().take(64).collect::<String>()),
+                previous.trade.envelope.event_timestamp_ns,
+                current.source,
+                current.ordinal,
+                current
+                    .trade
+                    .trade_id
+                    .as_deref()
+                    .map(|s| s.chars().take(64).collect::<String>()),
+                current.trade.envelope.event_timestamp_ns
+            ),
+        });
+    }
+    Ok(())
+}
 fn identity(a: &TradeEntry, b: &TradeEntry) -> Ordering {
     // Enum declaration order is internal only; equality/scope exactly match the
     // reference key. No business interpretation depends on exchange ordering.
@@ -30,12 +71,41 @@ fn identity(a: &TradeEntry, b: &TradeEntry) -> Ordering {
 fn precedence(a: &TradeEntry, b: &TradeEntry) -> Ordering {
     (a.priority, a.source, a.ordinal).cmp(&(b.priority, b.source, b.ordinal))
 }
+// Scratch-only markers carry suppressed observations through the native-order
+// loss-span pass. They can never reach canonical publication.
+const VERIFIED_DUPLICATE: u64 = u64::MAX;
+const OVERLAP_EXCLUDED: u64 = u64::MAX - 1;
+fn marker(
+    writer: &mut super::spool::SpoolWriter,
+    entry: &Leased<TradeEntry>,
+    priority: u64,
+    workspace: &Workspace,
+) -> Result<()> {
+    let _memory = workspace
+        .quota()
+        .reserve(entry.accounted_bytes(), "trade decision marker")?;
+    let mut value = entry.value.clone();
+    value.priority = priority;
+    writer.push_trade(&value)
+}
 fn chronological(a: &TradeEntry, b: &TradeEntry) -> Ordering {
     a.trade
         .envelope
         .event_timestamp_ns
         .cmp(&b.trade.envelope.event_timestamp_ns)
+        .then_with(|| {
+            crate::historical::normalize::policies::native_id_order(
+                a.trade.trade_id.as_deref(),
+                b.trade.trade_id.as_deref(),
+            )
+        })
         .then_with(|| precedence(a, b))
+}
+fn native(a: &TradeEntry, b: &TradeEntry) -> Ordering {
+    (a.source, a.ordinal).cmp(&(b.source, b.ordinal))
+}
+fn preserved(a: &TradeEntry, b: &TradeEntry) -> Ordering {
+    (a.priority, a.source, a.ordinal).cmp(&(b.priority, b.source, b.ordinal))
 }
 fn next(reader: &mut SpoolReader<TradeEntry>) -> Result<Option<Leased<TradeEntry>>> {
     let mut row = reader.next()?;
@@ -493,22 +563,75 @@ pub(crate) fn trades_with_progress(
         if let Some(contract) = &o.trade_identity {
             contract.validate().map_err(invalid)?;
         }
-        if o.ordering_validated == Some(false) {
-            return Err(invalid(
-                "source reconciliation requires validated chronological sources; timestamp regressions cannot be repaired by reordering source-ordered records",
-            ));
-        }
     }
-    let sorted = sort(
-        workspace,
-        inputs,
-        |a, b| identity(a, b).then_with(|| precedence(a, b)),
-        reporter,
-        id,
-        stream,
-        false,
-    )?
-    .into_spool()?;
+    use crate::shared::historical::policies::{
+        Selection, TradeOverlap, TradeTimestamp, milliseconds,
+    };
+    let policy = crate::historical::normalize::policies::active();
+    let prefer = policy.reconciliation.trades.overlap_policy == TradeOverlap::PreferSource;
+    let mut sources = observations.keys().copied().collect::<Vec<_>>();
+    sources.sort_by(|a, b| {
+        let starts = observations[a]
+            .minimum_accepted_timestamp_ns
+            .cmp(&observations[b].minimum_accepted_timestamp_ns);
+        let starts =
+            if prefer && policy.reconciliation.trades.prefer_source.selection == Selection::Later {
+                starts.reverse()
+            } else {
+                starts
+            };
+        starts
+            .then_with(|| {
+                observations[a]
+                    .stable_source_identity
+                    .cmp(&observations[b].stable_source_identity)
+            })
+            .then(a.cmp(b))
+    });
+    let ranks = sources
+        .into_iter()
+        .enumerate()
+        .map(|(rank, source)| (source, rank as u64))
+        .collect::<BTreeMap<_, _>>();
+    let mut rewritten = Vec::new();
+    for input in inputs {
+        let output = workspace.create()?;
+        {
+            let mut reader = input.trade_reader()?;
+            let mut writer = output.writer()?;
+            while let Some(mut row) = next(&mut reader)? {
+                if ordered_run(&observations[&row.value.source])
+                    && row
+                        .value
+                        .trade
+                        .trade_id
+                        .as_deref()
+                        .and_then(|id| {
+                            crate::historical::normalize::policies::numeric_id_cmp(id, id)
+                        })
+                        .is_none()
+                {
+                    return Err(MarketForgeError::TradeIdentityViolation {
+                        source_index: row.value.source,
+                        previous_source_index: None,
+                        reason: format!(
+                            "ordered_run requires a nonempty decimal native trade ID: source={}, ordinal={}; missing IDs cannot enter source-preference loss",
+                            row.value.source, row.value.ordinal
+                        ),
+                    });
+                }
+                row.value.priority = ranks[&row.value.source];
+                writer.push_trade(&row.value)?;
+            }
+            writer.finish()?;
+        }
+        input.delete()?;
+        rewritten.push(output);
+    }
+    let inputs = rewritten;
+    let compare: fn(&TradeEntry, &TradeEntry) -> Ordering =
+        |a, b| identity(a, b).then_with(|| precedence(a, b));
+    let sorted = sort(workspace, inputs, compare, reporter, id, stream, false)?.into_spool()?;
     reporter.stream_phase(id.job_id, stream, "identity resolution");
     let winners = workspace.create()?;
     {
@@ -536,10 +659,66 @@ pub(crate) fn trades_with_progress(
                             .zip(other.maximum_accepted_timestamp_ns)
                             .is_some_and(|(a, b)| start <= b && a <= end)
                 }) {
-                    return Err(invalid(
-                        "ambiguous trade overlap: an overlapping source lacks an established native trade identity/reset domain (including missing IDs)",
-                    ));
+                    if !prefer {
+                        return Err(invalid(
+                            "ambiguous trade overlap: an overlapping source lacks an established native trade identity/reset domain (including missing IDs)",
+                        ));
+                    }
+                    let timestamp = e.trade.envelope.event_timestamp_ns;
+                    let owner = observations
+                        .iter()
+                        .filter(|(_, o)| {
+                            o.minimum_accepted_timestamp_ns
+                                .zip(o.maximum_accepted_timestamp_ns)
+                                .is_some_and(|(a, b)| a <= timestamp && timestamp <= b)
+                        })
+                        .min_by(|(a, oa), (b, ob)| {
+                            let starts = oa
+                                .minimum_accepted_timestamp_ns
+                                .cmp(&ob.minimum_accepted_timestamp_ns);
+                            let starts = if policy.reconciliation.trades.prefer_source.selection
+                                == Selection::Later
+                            {
+                                starts.reverse()
+                            } else {
+                                starts
+                            };
+                            starts
+                                .then_with(|| {
+                                    oa.stable_source_identity.cmp(&ob.stable_source_identity)
+                                })
+                                .then(a.cmp(b))
+                        })
+                        .map(|(i, _)| *i)
+                        .ok_or_else(|| invalid("no source owns conflict interval"))?;
+                    if owner != e.source {
+                        let chosen_task = observations[&owner].original_task_id;
+                        let o = observations.get_mut(&e.source).unwrap();
+                        o.processing.exclude(
+                            timestamp,
+                            1,
+                            false,
+                            false,
+                            e.ordinal,
+                            Some(chosen_task),
+                        )?;
+                        // Duration is evaluated below in native source order,
+                        // never in identity-sort order.
+                        o.processing.reset_spans();
+                        crate::historical::normalize::policies::enforce_source_overlap(
+                            &policy.reconciliation.trades.prefer_source,
+                            &o.processing,
+                        )?;
+                        marker(&mut writer, &entry, OVERLAP_EXCLUDED, workspace)?;
+                        continue;
+                    }
+                    writer.push_trade(e)?;
+                    continue;
                 }
+            }
+            if prefer && !reliable_source_identity(&e.trade, &observations[&e.source]) {
+                writer.push_trade(e)?;
+                continue;
             }
             if observations[&e.source]
                 .trade_identity
@@ -560,7 +739,9 @@ pub(crate) fn trades_with_progress(
                 continue;
             }
             let authoritative = &first.as_ref().unwrap().value;
-            if authoritative.source == e.source {
+            if authoritative.source == e.source
+                && !reliable_source_identity(&e.trade, &observations[&e.source])
+            {
                 writer.push_trade(e)?;
                 continue;
             }
@@ -596,10 +777,18 @@ pub(crate) fn trades_with_progress(
                     e.trade.envelope.event_timestamp_ns
                 )));
             }
+            let equivalent = super::trade_equivalence(
+                &e.trade,
+                &observations[&e.source],
+                &authoritative.trade,
+                &observations[&authoritative.source],
+            )
+            .ok_or_else(|| invalid("incomparable native trade identity/reset domains"))?;
+            let preferred_task = observations[&authoritative.source].original_task_id;
             let o = observations
                 .get_mut(&e.source)
                 .ok_or_else(|| invalid("missing source observation"))?;
-            let count = if e.trade == authoritative.trade {
+            let count = if equivalent {
                 &mut o.duplicates
             } else {
                 &mut o.conflicts
@@ -607,16 +796,191 @@ pub(crate) fn trades_with_progress(
             *count = count
                 .checked_add(1)
                 .ok_or_else(|| invalid("reconciliation counter overflow"))?;
+            if !equivalent {
+                if !prefer || ordered_run(o) {
+                    return Err(invalid(
+                        "conflicting contents under reliable trade identity; strict/ordered-run reconciliation cannot exclude a conflicting observation",
+                    ));
+                }
+                o.processing.exclude(
+                    e.trade.envelope.event_timestamp_ns,
+                    1,
+                    false,
+                    false,
+                    e.ordinal,
+                    Some(preferred_task),
+                )?;
+                o.processing.reset_spans();
+                crate::historical::normalize::policies::enforce_source_overlap(
+                    &policy.reconciliation.trades.prefer_source,
+                    &o.processing,
+                )?;
+            }
+            marker(
+                &mut writer,
+                &entry,
+                if equivalent {
+                    VERIFIED_DUPLICATE
+                } else {
+                    OVERLAP_EXCLUDED
+                },
+                workspace,
+            )?;
         }
         writer.finish()?;
     }
     sorted.delete()?;
-    // This second external sort produces chronological runs; fixed two-way
-    // multipass merging handles arbitrarily many runs without opening all sources.
-    sort(
+    // Prove the identity domain on the complete unique union BEFORE timestamp
+    // discard could exclude evidence. Verified-duplicate markers do not count
+    // as new executions; keep them for the native-order accounting pass.
+    let winners = if observations.values().any(ordered_run) {
+        let chronological_rows = sort(
+            workspace,
+            vec![winners],
+            chronological,
+            reporter,
+            id,
+            stream,
+            false,
+        )?
+        .into_spool()?;
+        {
+            let mut reader = chronological_rows.trade_reader()?;
+            let mut previous: Option<Leased<TradeEntry>> = None;
+            while let Some(entry) = next(&mut reader)? {
+                if matches!(entry.value.priority, VERIFIED_DUPLICATE | OVERLAP_EXCLUDED) {
+                    continue;
+                }
+                if let Some(previous) = &previous {
+                    validate_run_order(
+                        &previous.value,
+                        &entry.value,
+                        "chronological source union",
+                    )?;
+                }
+                previous = Some(entry);
+            }
+        }
+        chronological_rows
+    } else {
+        winners
+    };
+    // Validate/repair surviving logical events in original concrete source order.
+    // Verified duplicates have already been removed; raw anomaly evidence is kept.
+    reporter.stream_phase(
+        id.job_id,
+        stream,
+        "timestamp processing in native event order",
+    );
+    let native_rows = sort(
         workspace,
         vec![winners],
-        chronological,
+        native,
+        reporter,
+        id,
+        stream,
+        false,
+    )?
+    .into_spool()?;
+    let survivors = workspace.create()?;
+    {
+        let mut reader = native_rows.trade_reader()?;
+        let mut writer = survivors.writer()?;
+        let mut source = None;
+        let mut high = None;
+        let mut previous_native: Option<Leased<TradeEntry>> = None;
+        while let Some(entry) = next(&mut reader)? {
+            let e = &entry.value;
+            if source != Some(e.source) {
+                source = Some(e.source);
+                high = None;
+            }
+            let timestamp = e.trade.envelope.event_timestamp_ns;
+            if e.priority == VERIFIED_DUPLICATE {
+                continue;
+            }
+            if e.priority == OVERLAP_EXCLUDED {
+                let o = observations.get_mut(&e.source).unwrap();
+                o.processing.track_exclusion_span(timestamp, false)?;
+                crate::historical::normalize::policies::enforce_source_overlap(
+                    &policy.reconciliation.trades.prefer_source,
+                    &o.processing,
+                )?;
+                continue;
+            }
+            if ordered_run(&observations[&e.source])
+                && let Some(previous) = previous_native
+                    .as_ref()
+                    .filter(|p| p.value.source == e.source)
+            {
+                validate_run_order(&previous.value, e, "native source order")?;
+            }
+            let regression = high
+                .filter(|p| timestamp < *p)
+                .map(|p: i64| {
+                    p.checked_sub(timestamp)
+                        .ok_or_else(|| invalid("trade timestamp regression arithmetic overflow"))
+                })
+                .transpose()?
+                .unwrap_or(0);
+            let o = observations.get_mut(&e.source).unwrap();
+            if regression > 0 {
+                o.processing.unresolved_timestamp_regressions += 1;
+                let bound = milliseconds(policy.timestamp.trades.max_regression_ms)?;
+                if policy.timestamp.trades.policy == TradeTimestamp::Strict || regression > bound {
+                    return Err(invalid(format!(
+                        "unresolved trade timestamp regression: source={}, ordinal={}, high_water={high:?}, timestamp={timestamp}, regression_ns={regression}, permitted_ns={bound}",
+                        e.source, e.ordinal
+                    )));
+                }
+                if policy.timestamp.trades.policy == TradeTimestamp::Discard {
+                    let known = super::reliable_source_identity(&e.trade, o);
+                    o.processing
+                        .exclude(timestamp, 1, true, known, e.ordinal, None)?;
+                    if o.processing.timestamp_exclusions
+                        > policy.timestamp.trades.max_discarded_events
+                    {
+                        return Err(invalid("trade timestamp discard event limit exceeded"));
+                    }
+                    continue;
+                }
+                if policy.timestamp.trades.policy == TradeTimestamp::Reorder
+                    && regression > milliseconds(policy.timestamp.trades.max_reorder_window_ms)?
+                {
+                    return Err(invalid("trade reorder high-water window exceeded"));
+                }
+            }
+            o.processing.retain();
+            o.processing.published_native_order =
+                policy.timestamp.trades.policy == TradeTimestamp::Preserve;
+            o.processing.reordered = policy.timestamp.trades.policy == TradeTimestamp::Reorder
+                && o.processing.unresolved_timestamp_regressions > 0;
+            if o.processing.logical_source_events > 0 {
+                o.processing.published_logical_events += 1;
+            }
+            high = Some(high.map_or(timestamp, |p: i64| p.max(timestamp)));
+            writer.push_trade(e)?;
+            if ordered_run(o) {
+                previous_native = Some(entry);
+            }
+        }
+        writer.finish()?;
+    }
+    native_rows.delete()?;
+    if observations.values().any(ordered_run) {
+        for o in observations.values_mut() {
+            o.native_identity_order_validated = true;
+        }
+    }
+    // Bounded external merge handles arbitrarily many runs/sources.
+    sort(
+        workspace,
+        vec![survivors],
+        if policy.timestamp.trades.policy == TradeTimestamp::Preserve {
+            preserved
+        } else {
+            chronological
+        },
         reporter,
         id,
         stream,
@@ -697,13 +1061,7 @@ mod tests {
         for source in 0..2 {
             for i in 0..5000 {
                 let id = format!("id-{i}");
-                let mut entry = event(
-                    source,
-                    source as u64,
-                    i * 2 + if source == 0 { 1 } else { 0 },
-                    Some(&id),
-                    source as i64 + 1,
-                );
+                let mut entry = event(source, source as u64, i * 2, Some(&id), 1);
                 entry.ordinal = i as u64 + 1;
                 input.push(entry);
             }
@@ -747,7 +1105,7 @@ mod tests {
         }
     }
     #[test]
-    fn precedence_conflicts_equal_times_and_same_source_duplicates_match_oracle() {
+    fn verified_duplicates_equal_times_and_same_source_observations_match_oracle() {
         let mut repeat = event(0, 0, 300, Some("ABC"), 3);
         repeat.ordinal = 2;
         let mut tail = event(1, 1, 400, Some("DEF"), 4);
@@ -757,7 +1115,7 @@ mod tests {
         let input = vec![
             event(0, 0, 300, Some("ABC"), 3),
             repeat,
-            event(1, 1, 100, Some("ABC"), 1),
+            event(1, 1, 300, Some("ABC"), 3),
             tail,
             equal,
         ];
@@ -769,14 +1127,14 @@ mod tests {
             out.iter()
                 .map(|e| (e.source, e.ordinal, e.trade.envelope.event_timestamp_ns))
                 .collect::<Vec<_>>(),
-            [(0, 1, 300), (0, 2, 300), (1, 2, 400), (1, 3, 400)]
+            [(0, 1, 300), (1, 2, 400), (1, 3, 400)]
         );
         assert_eq!(
             serde_json::to_value(out).unwrap(),
             serde_json::to_value(expected).unwrap()
         );
         assert_eq!(observed, reference);
-        assert_eq!(observed[&1].conflicts, 1);
+        assert_eq!(observed[&1].duplicates, 1);
         assert!(peaks.2 <= 3);
         let reversed = input.into_iter().rev().collect::<Vec<_>>();
         // Observation comes from source decode, not external sort arrival order.
@@ -789,10 +1147,32 @@ mod tests {
         }
         writer.finish().unwrap();
         let mut observed = reference;
-        observed.get_mut(&1).unwrap().conflicts = 0;
+        observed.get_mut(&1).unwrap().duplicates = 0;
         let out = trades(&w, vec![file], &mut observed).unwrap();
         let mut r = out.trade_reader().unwrap();
         assert_eq!(r.next().unwrap().unwrap().value.source, 0);
+    }
+    #[test]
+    fn strict_conflicting_identity_contents_fail_before_publication() {
+        let input = vec![
+            event(0, 0, 100, Some("100"), 1),
+            event(1, 1, 100, Some("100"), 2),
+        ];
+        let mut reference = observations(&input);
+        assert!(
+            reconcile_trades(input.clone(), &mut reference)
+                .unwrap_err()
+                .to_string()
+                .contains("conflicting contents")
+        );
+        let (result, observed, _) = run(input, 4 << 20);
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("conflicting contents")
+        );
+        assert_eq!(observed[&1].conflicts, 1);
     }
     #[test]
     fn identity_domain_and_missing_id_failures_match_reference() {
@@ -916,7 +1296,8 @@ mod tests {
                 .collect::<Vec<_>>();
             let (out, observed, peaks) = run(input, 2 << 20);
             let out = out.unwrap();
-            assert_eq!(out.len(), count / 2);
+            assert_eq!(out.len(), 1);
+            assert_eq!(observed[&0].duplicates, (count / 2 - 1) as u64);
             assert!(out.iter().all(|e| e.source == 0));
             assert_eq!(observed[&1].duplicates, (count / 2) as u64);
             assert!(peaks.0 <= 2 << 20);

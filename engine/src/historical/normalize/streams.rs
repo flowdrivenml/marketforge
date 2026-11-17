@@ -129,6 +129,14 @@ pub(crate) fn plan(job: &ProcessingJob) -> Result<Vec<StreamUnit<'_>>> {
     Ok(units)
 }
 
+pub(crate) fn needs_reconciliation(unit: &StreamUnit<'_>, config: &ProcessingConfig) -> bool {
+    use crate::shared::historical::policies::{DepthOverlap, DepthTimestamp};
+    unit.tasks.len() > 1
+        || unit.tasks.iter().any(|(_, t)| is_family(t))
+        || unit.tasks[0].1.normalizations[0].target_schema == TargetSchema::Trade
+        || config.reconciliation.depth.overlap_policy != DepthOverlap::Strict
+        || config.timestamp_regression.depth.policy != DepthTimestamp::Strict
+}
 pub(crate) fn estimate(
     unit: &StreamUnit<'_>,
     config: &ProcessingConfig,
@@ -144,7 +152,7 @@ pub(crate) fn estimate(
         max.scratch_bytes = max.scratch_bytes.max(r.scratch_bytes);
         max.open_files = max.open_files.max(r.open_files);
     }
-    if unit.tasks.len() > 1 || unit.tasks.iter().any(|(_, t)| is_family(t)) {
+    if needs_reconciliation(unit, config) {
         max.open_files = max.open_files.max(
             config
                 .merge_fan_in
@@ -213,7 +221,7 @@ pub(crate) fn execute(
         config.resources.normalization_limits,
         format!("job={}, stream={}", unit.job.job_id.0, unit.key),
     );
-    if unit.tasks.len() > 1 || unit.tasks.iter().any(|(_, t)| is_family(t)) {
+    if needs_reconciliation(unit, config) {
         let mut results = super::reconciled::execute(unit, config, reporter)?;
         spill_results(unit, config, &mut results, reporter)?;
         return Ok(results);

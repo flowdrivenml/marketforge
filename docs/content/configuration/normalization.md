@@ -3,7 +3,7 @@
 
 **Document:** `normalization-parameters-and-variations.md`  
 **Scope:** Historical data normalization engine  
-**Source:** MarketForge Rust code snapshot, November 16, 2026  
+**Source:** MarketForge Rust code snapshot, November 17, 2026<br>
 **Purpose:** Reference for configuration, testing, debugging, performance tuning, and data-integrity investigations.
 
 ---
@@ -53,7 +53,11 @@ engine/tests/historical/fixtures/
 
 Exchange profiles reside within the historical configuration catalog.
 
-**Important source limitation:** The supplied Repomix snapshot contains the Rust normalization subsystem but not the complete shared configuration definitions, CLI binary, or exchange-profile TOML files. Consequently, this document distinguishes verified parameters from values whose complete definitions must be checked in those files.
+The current schema-v4 reader also accepts `families` and minimal `family_id` tasks for dated futures. See [prepared source selection](../../historical/normalization-source-selection.md) for exact fields, discovery, inherited specification provenance and namespace/legacy-ID limits.
+
+Runtime remains schema 1 with defaulted, validated `[reconciliation.*]` and `[timestamp_regression.*]` extensions. Old configurations retain strict behavior. Unknown fields/values are rejected. Existing configured budgets are preserved. See [Processing policies](#processing-policies).
+
+Verified evaluator semantics: enabled `action = "fail"` fails on the first violation, regardless of `max_count`, `max_rate` or sample floors. `degrade` marks observed violations degraded and fails when an absolute count is exceeded (`>`). Immediate worker checks enforce action/count; final evaluation additionally checks global/file/stream rates and independent UTC hourly/daily rate windows. Rate equality is permitted, and rate checks defer below their applicable sample floor. Missing trustworthy timestamps fail configured window verification even when the observed category has no violations. Disabled integrity evaluation bypasses these policy decisions, not archive/resource/reconstruction/publication checks.
 
 ---
 
@@ -654,6 +658,7 @@ marketforge_trade_identity
 |---|---|
 | `global` | IDs can be interpreted in a globally defined identity domain |
 | `instrument_scoped` | IDs are interpreted within an established instrument identity domain |
+| `ordered_run` | Native decimal transaction keys in a checked, non-reset concrete-stream run; source and complete unique-union ordering must validate before loss processing/publication |
 | `source_local` | IDs are local to their source |
 | `unreliable` | IDs cannot be trusted for cross-source reconciliation |
 
@@ -674,7 +679,7 @@ These are demonstrated by the reconciliation code and tests.
 }
 ```
 
-The snapshot demonstrates `instrument_lifetime` as a reset-domain example. The complete reset-domain contract is defined in the shared trade-format module, which is not included.
+`instrument_lifetime` requires independent evidence; the label itself is not proof. `ordered_run` also requires an explicit domain label, but validates only the supplied non-reset run, not an instrument lifetime. Bitget spot/perpetual profiles use different labels. Older consumers that do not recognize this native identity-contract value must upgrade; canonical Parquet row schemas and instrument IDs are unchanged.
 
 ### Reconciliation rules
 
@@ -929,7 +934,7 @@ The engine distinguishes several kinds of ordering.
 
 ### Source priority
 
-Source priority influences reconciliation decisions.
+Source priority remains deterministic provenance and tie ordering. Under current strict reconciliation it does not authorize conflicting-event exclusion; reliable identity conflicts fail before publication.
 
 For the current prepared-batch protocol, it may be provided through:
 
@@ -1664,3 +1669,70 @@ benchmark/verification.rs
 ```
 
 **Document status:** Source-grounded parameter inventory. Exact shared-config defaults, complete CLI variants, and full exchange-profile rule vocabularies remain to be verified from their authoritative source files.
+## Processing policies
+
+These schema-1 runtime extensions default to strict; old configurations need no migration. Tables do not activate permissive processing. Positive tolerances and loss allowances must be explicit. Processing, integrity acceptance, reconstruction and publication are separate checks: enabled integrity `action="fail"` rejects any occurrence even with a nonzero count threshold. `degrade` degrades on occurrence and fails above any applicable overall/file/count/rate/hourly/daily threshold. Sample floors defer rate checks, not finite count checks. Disabling integrity evaluation bypasses its policy decisions, never archive validation, processing bounds, reconstruction, resource limits or publication checks.
+
+### Reconciliation settings
+
+| Table/key | Default | Meaning |
+|---|---|---|
+| `reconciliation.trades.overlap_policy` | `strict` | `strict` or `prefer_source` |
+| `reconciliation.depth.overlap_policy` | `strict` | `strict`, `snapshot_recovery` or `prefer_source` |
+| `reconciliation.{trades,depth}.prefer_source.selection` | `earlier` | Only `earlier` or `later`; compare actual accepted source coverage starts |
+| `reconciliation.depth.prefer_source.switch_boundary` | `snapshot` | `snapshot` or independently proven `source_boundary` |
+| `reconciliation.{trades,depth}.prefer_source.on_unique_data_loss` | `fail` | `fail` rejects any exclusion; `mark_degraded` explicitly authorizes bounded exclusion |
+| `reconciliation.{trades,depth}.prefer_source.max_excluded_events` | `0` | Job-wide logical event allowance for the relevant content type |
+| `reconciliation.{trades,depth}.prefer_source.max_excluded_rate` | absent | Optional finite fraction in [0,1], enforced job-wide |
+| `reconciliation.{trades,depth}.prefer_source.minimum_samples` | `0` | Rate-check sample floor; count allowance still applies below it |
+| `reconciliation.{trades,depth}.prefer_source.max_excluded_interval_ms` | absent | Maximum contiguous excluded span within each source/stream |
+
+`mark_degraded` requires a positive finite `max_excluded_events`; rate/sample-floor settings alone never authorize unbounded losses. Milliseconds must fit checked signed canonical nanoseconds. Invalid rates, enums, unsupported combinations, unknown keys and overflow fail configuration loading. The default preference table has no effect under strict policy.
+
+Verified equivalence runs before loss decisions. A reliable trade identity plus matching complete contents proves a duplicate; equal timestamps/price/size/side do not. Conflicting contents under a reliable identity fail strict processing. Preference can resolve the conflict only with loss authorization, counting the losing observation conservatively as unverified. Distinct reliable IDs survive overlapping/equal-time boundaries, including nonconsecutive arbitrary-length numeric IDs. Missing or reset-ambiguous identities do not acquire global scope from their shape. Native-domain ambiguity under strict processing fails with the required identity evidence described in the diagnostic.
+
+Preference ranks actual validated coverage starts. Equal starts use canonical physical path plus member identity as a stable reproducibility tie-break, with no quality claim. The ownership sweep covers nested, chained and three-or-more sources; legacy task priorities are not preference authority. Reliable nonconflicting trades are unioned. Unknown identities use explicit conflict-interval ownership and conservative exclusion accounting. Task/worker completion order does not choose a winner.
+
+Depth events are atomic messages/grouped snapshots. Independent level-diff vectors are never spliced without a matching reconstruction state. Source prefixes are reconstructed from scratch spools; selected histories are applied to a separate book and complete state is checked after every event. Identical sequenced boundary snapshots compare decoded evidence, including complete snapshot contents and timestamps; JSON object key order is irrelevant. Canonical-changing terminal snapshots can be represented by the next full initialization. Deltas sharing snapshot IDs remain distinct.
+
+Overlap `snapshot_recovery` retains unique supplied observations in independently initialized source histories and records unproven continuity. It does not exclude unique events or claim one continuous market history. `prefer_source` can exclude observations within explicit limits. Snapshot switches wait for actual authoritative snapshots. `source_boundary` requires matching complete book state and compatible native sequence; unsequenced feeds cannot invent that evidence. Returning to an earlier source requires another valid transition. Unsafe transitions, missing initialization or failed source reconstruction prevent publication even with generous loss settings.
+
+### Timestamp settings
+
+| Table/key | Default | Meaning |
+|---|---|---|
+| `timestamp_regression.trades.policy` | `strict` | `strict`, `preserve`, `reorder`, `discard` |
+| `timestamp_regression.trades.max_regression_ms` | `0` | High-water regression bound for permissive handling; strict never accepts because of tolerance |
+| `timestamp_regression.trades.max_reorder_window_ms` | `0` | Positive reorder bound, at least `max_regression_ms` |
+| `timestamp_regression.trades.max_discarded_events` | `0` | Job-wide discard allowance |
+| `timestamp_regression.trades.max_discarded_rate` | absent | Optional finite [0,1] job-wide discard rate |
+| `timestamp_regression.trades.minimum_samples` | `0` | Rate floor, independent of the finite count allowance |
+| `timestamp_regression.depth.policy` | `strict` | `strict`, `preserve`, `snapshot_recovery` |
+| `timestamp_regression.depth.max_regression_ms` | `0` | Checked high-water bound |
+| `timestamp_regression.depth.require_sequence_continuity` | `true` | Applicable native validation remains mandatory; false is unsupported |
+| `timestamp_regression.depth.require_recovery_snapshot` | `true` | Authoritative initialization remains mandatory; false is unsupported |
+| `timestamp_regression.depth.max_discarded_events` | `0` | Positive allowance required for lossy recovery; enforced job-wide |
+
+Equal timestamps are never regressions. Raw-source evidence compares adjacent accepted observations within a concrete source/native reset domain. Processing uses the relevant high-water timestamp so cumulative backward steps cannot evade a bound. Validated native snapshot resets start a new domain; independent sources are not accidentally compared as one native sequence. Raw anomalies survive deduplication; logical survivor ordering violations are reported separately. Arithmetic is checked at nanosecond precision. Original event/system timestamps are never clamped, shifted or rewritten.
+
+Trade `preserve` retains original native source order, timestamps and original record ordinals. `reorder` chronologically sorts independent executions deterministically, after identity reconciliation, using exact numeric IDs for equal-time ties and source positions as final ties. It uses admitted bounded external runs/scratch, not an unbounded time-window buffer; resource exhaustion fails. Both regression and reorder bounds must be positive. `discard` needs positive regression/count allowances, excludes only eligible regressing survivors, and cannot mask parsing/identity/overlap failures. Duplicate-related raw regressions can resolve after verified deduplication, while a fatal raw integrity rule still fails the job.
+
+Depth `preserve` applies valid native order and checks the book without timestamp sorting. Snapshot-only profiles (including Gate.io inverse perpetual snapshot) use independent authoritative snapshots, without invented sequence fields. `snapshot_recovery` invalidates publication of affected dependent deltas and resumes at an actual validated snapshot with full initialization. Every omitted logical observation is charged conservatively. A regressing authoritative snapshot can recover immediately with zero omission; incremental streams without a subsequent snapshot fail. A snapshot restores state, not omitted history. Native sequence and book validation always remain mandatory where applicable.
+
+### Accounting, quality and output compatibility
+
+The rate denominator is accepted logical source observations minus verified duplicate observations; it includes excluded/unverified observations. It excludes parse/normalization rejections and never counts expanded level rows as separate events. Count/rate bounds apply job-wide per content type; stream/source totals remain in task metrics. Contiguous loss spans continue across reasons and duplicates until an observation is actually retained. Unknown uniqueness is reported as unverified exclusion and charged in full. Known-unique and unverified exclusions both degrade completeness; verified duplicate suppression does not. Exceeding any applicable bound prevents manifest publication.
+
+`source.processing` reports raw/logical regressions, logical input/published events, original/expanded/staged rows, known/unverified exclusions by reason, maximum contiguous spans, recovery/source-switch counts and up to eight bounded decision samples with original source ordinal and selected task when available. Task/source/member/identity contracts remain in the same report; no per-event report inventory is retained. Physical source reads, integrity-rejected rows, normalized rows, suppression, unpublished survivors and committed output remain distinct. On failure committed counters become zero; staged rows and unpublished output remain evidence. Cleanup/report failures append context without replacing the primary failure.
+
+Activated policies use **manifest 5**, preserving canonical Parquet row schemas. Its `processing_quality` records effective policies, actual physical timestamp ordering, reconstruction validity, supplied-observation preservation, continuity, inherited-metadata assertion provenance and unknown external historical coverage. Native-order depth uses event indexes and initialization segments; never replay its price-level rows through timestamp sorting. Depth boundary envelope 3 (`segmented_sources`) permits repeated source IDs for ownership returns; envelope 2 remains unique-source only. Streaming boundary readers validate the full envelope, including suffixes, with bounded decoded state. Trades additionally stream `sources.jsonl`, mapping every canonical row to task/original record ordinal, validated against row ownership before publication.
+
+The current timestamp-first historical merger supports manifest 2/3 only and explicitly rejects 4/5 with an actionable reader-compatibility error. Event-index/segment-aware Parquet readers can consume the new representation; the normalizer does not claim existing timestamp-first consumers can replay native-order output. A committed dataset does not establish complete exchange history.
+
+### Bitget evidence boundary
+
+Bitget historical spot and linear-perpetual feeds now use separate `ordered_run` native-ID contracts. Each job validates nonempty decimal IDs, matching identity contents, increasing native survivor order and increasing IDs in the chronological union before publication. Missing IDs, conflicts and resets fail; no lifetime/global uniqueness is inferred. The native `trade_id` mapping was already correct. This permits lossless equal-time archive continuations and verified overlapping-ID reconciliation. See [Bitget trade reconciliation](../../historical/bitget-trade-reconciliation.md) for the primary documentation boundary, runtime checks and full-corpus evidence.
+
+### Offline family handoff
+
+Python should emit schema-4 family definitions and minimal `family_id` tasks, retaining prepared IDs, ranks, selections and physical paths. Rust discovers expired contracts offline and publishes exact resolved catalogs. The existing deterministic namespace strategy and exact-mapping precedence remain unchanged; a hash cannot reproduce removed arbitrary legacy IDs. Future batches needing legacy IDs must carry/reuse those exact mappings. Family inheritance is a reproducible batch assertion, not independent proof of identical historical specifications. No Python implementation or acquisition/database redesign is included here.

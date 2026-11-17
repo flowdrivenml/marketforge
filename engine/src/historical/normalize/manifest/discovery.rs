@@ -60,6 +60,20 @@ pub fn inspect_auxiliary_files(dataset_root: &Path) -> Result<Vec<AuxiliaryFile>
         }
     }
     for task_dir in directories {
+        let provenance = task_dir.join("trades/sources.jsonl");
+        if provenance.is_file() {
+            files.push(AuxiliaryFile {
+                path: provenance
+                    .strip_prefix(dataset_root)
+                    .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?
+                    .to_string_lossy()
+                    .replace('\\', "/"),
+                kind: AuxiliaryFileKind::TradeSourcePositions,
+                size_bytes: std::fs::metadata(&provenance)
+                    .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?
+                    .len(),
+            });
+        }
         let depth_dir = task_dir.join("depth");
 
         if !depth_dir.is_dir() {

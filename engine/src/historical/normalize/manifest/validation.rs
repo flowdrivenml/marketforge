@@ -27,7 +27,7 @@ impl<M: std::borrow::Borrow<crate::historical::normalize::metrics::ProcessingMet
             }
             return Ok(());
         }
-        if !matches!(self.protocol_version, 3 | 4) {
+        if !matches!(self.protocol_version, 3..=5) {
             return Err(invalid("stream ownership requires manifest3"));
         }
         let kind = match self.content_type {
@@ -38,6 +38,8 @@ impl<M: std::borrow::Borrow<crate::historical::normalize::metrics::ProcessingMet
         let mut directories = HashSet::new();
         let mut tasks = HashSet::new();
         let mut owned = HashSet::new();
+        let mut contributions = std::collections::HashMap::<u64, u64>::new();
+        let mut task_directories = std::collections::HashMap::new();
         for stream in &self.streams {
             let parts = stream.directory.split('/').collect::<Vec<_>>();
             if parts.len() != 3
@@ -56,8 +58,21 @@ impl<M: std::borrow::Borrow<crate::historical::normalize::metrics::ProcessingMet
                 let metrics = reports
                     .get(&source.task_id)
                     .ok_or_else(|| invalid("missing source metrics"))?;
-                if !tasks.insert(source.task_id)
-                    || source.row_count()? != metrics.counters.events_written
+                let first = tasks.insert(source.task_id);
+                if task_directories
+                    .insert(source.task_id, &stream.directory)
+                    .is_some_and(|old| old != &stream.directory)
+                {
+                    return Err(invalid(
+                        "one source task cannot own different concrete stream directories",
+                    ));
+                }
+                let contribution = contributions.entry(source.task_id).or_default();
+                *contribution = contribution
+                    .checked_add(source.row_count()?)
+                    .ok_or_else(|| invalid("source contribution overflow"))?;
+                if (!first && self.protocol_version < 5)
+                    || *contribution > metrics.counters.events_written
                     || metrics.stream_id != stream.stream_id
                     || (self.protocol_version == 3 && !source.ranges.is_empty())
                 {
@@ -115,8 +130,13 @@ impl<M: std::borrow::Borrow<crate::historical::normalize::metrics::ProcessingMet
                 return Err(invalid("stream source/physical row mismatch"));
             }
         }
+        for (id, rows) in contributions {
+            if rows != reports[&id].counters.events_written {
+                return Err(invalid("source row contributions do not match staged rows"));
+            }
+        }
         let mut accounted = tasks.clone();
-        if self.protocol_version == 4 {
+        if self.protocol_version >= 4 {
             for task in &processing_metrics.tasks {
                 if task.counters.events_written == 0
                     && task.source.as_ref().is_some_and(|source| {
@@ -150,6 +170,7 @@ mod reconciliation_tests {
         for (task_id, rows) in [(11, 2), (12, 1)] {
             report
                 .add_task(TaskMetricsReport {
+                    failure: None,
                     source: None,
                     accepted_depth_events: None,
                     task_id,
@@ -174,11 +195,14 @@ mod reconciliation_tests {
             job_id: 1,
             dataset_id: 1,
             content_type: ContentType::Trades,
+            processing_quality: None,
             events_written: 3,
             files_written: 1,
             start_timestamp_ns: Some(0),
             end_timestamp_ns: Some(2),
             source_tasks: vec![11, 12],
+            instrument_namespace: None,
+            resolved_instruments: vec![],
             streams: vec![StreamOutput {
                 stream_id: "synthetic".into(),
                 directory: directory.clone(),

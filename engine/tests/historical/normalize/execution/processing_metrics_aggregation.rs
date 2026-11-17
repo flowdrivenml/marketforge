@@ -60,6 +60,7 @@ fn task_report(
     }
 
     TaskMetricsReport {
+        failure: None,
         source: None,
         accepted_depth_events: None,
         task_id,

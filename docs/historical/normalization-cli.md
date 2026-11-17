@@ -1,7 +1,7 @@
 # Normalization CLI contract
 
 Use exactly one of `--batch`, `--job`, or `--jobs-dir` with
-`marketforge-normalize`. `--batch` consumes the production prepared schema 3
+`marketforge-normalize`. `--batch` consumes the production prepared schema 4
 contract, including its persisted offline instrument authority. `--job` keeps
 legacy resolved/profile job compatibility; directory jobs are sorted by path.
 All execution uses shared runtime configuration and production profile resolution.
@@ -36,8 +36,7 @@ path is populated only if persistence succeeded. Report persistence failure is
 included in the failure message. Early initialization failures can have no job
 results/reports. Earlier definitive session results survive later fatal errors.
 
-New production output uses manifest version 3; merge readers retain version 2
-compatibility. Failure reports remain version 1. Canonical Parquet inventories
+Strict production output uses manifest 3/4; activated processing policies use manifest 5. The timestamp-first merge reader admits only manifest 2/3 and rejects newer ownership/native-order formats explicitly. Failure reports remain version 1. Canonical Parquet inventories
 report relative paths, finalized footer row counts, actual file sizes and
 timestamp statistics. Discovery rejects symlinks. Depth requires one event
 index, segment inventory and boundary2 source inventory per stream. Persisted
@@ -64,3 +63,7 @@ Forge must parse the envelope, inspect process status and every job status,
 register only committed manifests, and retain failure diagnostics. PostgreSQL
 registration remains exclusively Python's responsibility. Rust does not require
 Python or PostgreSQL. Actual benchmark execution remains separately authorized.
+
+Preparation discovery is reported in the TUI before normalization begins. Discovery, decoding, finalization and joins run on its worker. Final stdout remains the version-1 machine response after terminal restoration. Failure reports retain one bounded structured failure per affected task; committed counters are zero for failed jobs even if staging contains rows.
+
+Preparation failures can additionally carry optional structured `error.context` in the existing version-1 CLI response (job/task, source/member where known, stream, stage, typed cause and relevant limits). This does not fabricate definitive processing-job results for jobs that never reached execution. Per-task execution errors remain in the streamed failure report.

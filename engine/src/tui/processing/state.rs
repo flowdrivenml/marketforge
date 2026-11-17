@@ -182,6 +182,34 @@ impl ProcessingDashboard {
             sample: (now, 0),
         }
     }
+    pub fn new_prepared(
+        batch: &crate::historical::config::PreparedBatch,
+        config: &ProcessingConfig,
+    ) -> Self {
+        let mut dashboard = Self::new_session(&[], config);
+        dashboard.total_jobs = batch.jobs.iter().filter(|j| !j.tasks.is_empty()).count();
+        for job in &batch.jobs {
+            dashboard
+                .outputs
+                .insert(job.job_id.0, job.output.dataset_path.display().to_string());
+            for task in &job.tasks {
+                dashboard.handle_event(ProgressEvent::TaskRegistered {
+                    id: ProgressTaskId::new(job.job_id.0, task.task_id.0),
+                    exchange: format!("{:?}", task.exchange),
+                    instrument: task.symbol.clone().unwrap_or_else(|| {
+                        format!(
+                            "family:{}",
+                            task.scope.as_ref().map_or("", |s| s.identifier.as_str())
+                        )
+                    }),
+                    content_type: format!("{:?}", job.output.content_type),
+                    source: task.input_path.display().to_string(),
+                    stream: task.stream_id.0.clone(),
+                });
+            }
+        }
+        dashboard
+    }
     pub fn reconcile_results(&mut self, results: &[ProcessingResult]) {
         for result in results {
             self.handle_event(ProgressEvent::JobOutcome {
@@ -204,6 +232,43 @@ impl ProcessingDashboard {
     }
     pub fn handle_event(&mut self, event: ProgressEvent) {
         let message = match event {
+            ProgressEvent::TaskRegistered {
+                id,
+                exchange,
+                instrument,
+                content_type,
+                source,
+                stream,
+            } => {
+                let now = Instant::now();
+                let task = self.tasks.entry(id).or_insert_with(|| TaskState {
+                    exchange: String::new(),
+                    instrument: String::new(),
+                    content_type: String::new(),
+                    source: String::new(),
+                    stream: String::new(),
+                    status: TaskStatus::Pending,
+                    routing_records: 0,
+                    records_read: 0,
+                    records_processed: 0,
+                    records_written: 0,
+                    normalized_rows: 0,
+                    records_rejected: 0,
+                    speed: 0.0,
+                    last_meaningful_age: None,
+                    rate_ready: false,
+                    has_metrics: false,
+                    message: String::new(),
+                    sample: (now, 0),
+                });
+                task.exchange = exchange;
+                task.instrument = instrument;
+                task.content_type = content_type;
+                task.source = source;
+                task.stream = stream;
+                self.total_tasks = self.tasks.len();
+                return;
+            }
             ProgressEvent::TaskStarted {
                 id,
                 exchange,

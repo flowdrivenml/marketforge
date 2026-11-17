@@ -18,6 +18,10 @@ pub struct ProcessingConfig {
     pub scratch_format: ScratchFormat,
     #[serde(default)]
     pub scratch_codec: ScratchCodec,
+    #[serde(default)]
+    pub reconciliation: super::policies::Reconciliation,
+    #[serde(default)]
+    pub timestamp_regression: super::policies::TimestampRegression,
     pub resources: ResourceConfig,
     pub integrity_policy: IntegrityPolicy,
 }
@@ -79,6 +83,10 @@ struct RuntimeDocument {
     scratch_format: ScratchFormat,
     #[serde(default)]
     scratch_codec: ScratchCodec,
+    #[serde(default)]
+    reconciliation: super::policies::Reconciliation,
+    #[serde(default)]
+    timestamp_regression: super::policies::TimestampRegression,
     resources: ResourceConfig,
     integrity_policy: IntegrityPolicy,
 }
@@ -131,6 +139,8 @@ pub fn load_processing_config(
             merge_fan_in: document.merge_fan_in,
             scratch_format: document.scratch_format,
             scratch_codec: document.scratch_codec,
+            reconciliation: document.reconciliation,
+            timestamp_regression: document.timestamp_regression,
             resources: document.resources,
             integrity_policy: document.integrity_policy,
         };
@@ -156,6 +166,7 @@ pub fn validate_processing_config(config: &ProcessingConfig) -> Result<()> {
     if !(2..=64).contains(&config.merge_fan_in) {
         return invalid("merge_fan_in: must be between 2 and 64");
     }
+    super::policies::validate(&config.reconciliation, &config.timestamp_regression)?;
     validate_resources(&config.resources)?;
     validate_integrity_policy(&config.integrity_policy)
 }

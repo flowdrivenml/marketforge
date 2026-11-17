@@ -226,8 +226,7 @@ fn local_equal_partial_and_complete_overlap_and_unreliable_ids_fail_with_strict_
     }
 }
 #[test]
-fn global_ids_still_reconcile_even_across_disjoint_timestamps_and_scoped_contract_requires_domain()
-{
+fn global_ids_reject_conflicting_contents_even_across_disjoint_timestamps() {
     for contract in [
         json!({"scope":"global"}),
         json!({"scope":"instrument_scoped","reset_domain":"instrument_lifetime"}),
@@ -241,16 +240,14 @@ fn global_ids_still_reconcile_even_across_disjoint_timestamps_and_scoped_contrac
         write(&job, 0, "1,3000,200,3,buy,0\n");
         write(&job, 1, "1,1000,199,3,buy,0\n");
         let result = execute_processing_job(&job, &config).unwrap();
-        assert_eq!(
-            result.status,
-            ProcessingStatus::Complete,
-            "{:?}",
-            result.failure
-        );
-        assert_rows(&job, vec![expected(&job, 3000, "1", 200)]);
-        assert_eq!(
-            manifest(&job).processing_metrics.counters.rows_suppressed,
-            1
+        assert_failed(&job, &result);
+        assert!(
+            result
+                .failure
+                .as_ref()
+                .unwrap()
+                .message
+                .contains("conflicting contents")
         );
         assert_eq!(
             path_report(&diagnostic_report(root.path()))["trade_execution_path"],
@@ -447,6 +444,7 @@ fn chronological_append_writer_failure_retains_all_unsuppressed_rows_and_cleans_
     assert_eq!(context.report.counters.rows_suppressed, 0);
     assert_eq!(context.report.counters.rows_unpublished, 2);
     assert_eq!(context.report.counters.events_written, 0);
+    drop(context);
     assert_eq!(
         fs::read_dir(&config.resources.scratch_path)
             .unwrap()

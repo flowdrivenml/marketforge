@@ -239,6 +239,7 @@ fn response_accounts_for_unreported_jobs_and_exact_failures() {
         3,
         vec![failed],
         Some(NormalizationError {
+            context: None,
             code: "execution_error".into(),
             message: "session stopped".into(),
         }),

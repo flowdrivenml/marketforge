@@ -135,12 +135,11 @@ pub fn inspect_admission(
             let (base, b) = selected.ok_or_else(|| {
                 MarketForgeError::InvalidConfiguration("empty execution unit".into())
             })?;
-            let reconciliation =
-                if unit.tasks.len() > 1 || unit.tasks.iter().any(|(_, t)| streams::is_family(t)) {
-                    limits.reconciliation_bytes
-                } else {
-                    0
-                };
+            let reconciliation = if streams::needs_reconciliation(&unit, config) {
+                limits.reconciliation_bytes
+            } else {
+                0
+            };
             let descriptors = required
                 .memory_bytes
                 .checked_sub(base)

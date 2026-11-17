@@ -63,6 +63,15 @@ fn identify(
             "family record has an empty native symbol; cannot route corrupted identity",
         ));
     }
+    if first.raw_schema["marketforge_source"]["source_symbol_hint"]
+        .as_str()
+        .is_some_and(|hint| hint != symbol)
+    {
+        return Err(invalid(format!(
+            "filename/record identity conflict: expected {}, observed {symbol}",
+            first.raw_schema["marketforge_source"]["source_symbol_hint"]
+        )));
+    }
     let actual =
         family_of(first.exchange, first.instrument.instrument_kind, symbol).ok_or_else(|| {
             invalid(format!(
@@ -89,6 +98,170 @@ fn identify(
         )));
     }
     Ok(Some(*index))
+}
+fn with_family_readers(
+    first: &WorkTask,
+    tasks: &[(usize, &WorkTask)],
+    quota: &Quota,
+    mut callback: impl FnMut(Option<&str>, &[(usize, &WorkTask)], &mut dyn std::io::Read) -> Result<()>,
+) -> Result<()> {
+    if !first.raw_schema["marketforge_source"]["scope"]["family_id"].is_i64() {
+        return with_validated_source_reader(
+            &first.input_path,
+            first.source_compression,
+            first.archive_member.as_deref(),
+            |reader| callback(first.archive_member.as_deref(), tasks, reader),
+        );
+    }
+    let mut inventory_lease = None;
+    crate::shared::io::source::with_validated_source_members_accounted(
+        &first.input_path,
+        first.source_compression,
+        |bytes| {
+            drop(inventory_lease.take());
+            inventory_lease = Some(quota.reserve(bytes, "archive member inventory")?);
+            Ok(())
+        },
+        |member, reader| {
+            let selected = tasks
+                .iter()
+                .copied()
+                .filter(|(_, t)| t.archive_member.as_deref() == member)
+                .collect::<Vec<_>>();
+            callback(member, &selected, reader)
+        },
+    )
+}
+fn filtered_member(
+    first: &WorkTask,
+    member: Option<&str>,
+    reader: &mut dyn std::io::Read,
+    stats: &mut RoutingStats,
+) -> Result<()> {
+    let source = &first.raw_schema["marketforge_source"];
+    let family = source["scope"]["identifier"]
+        .as_str()
+        .ok_or_else(|| invalid("missing family scope"))?;
+    let selection = selection(first)?;
+    let hint =
+        member.and_then(|m| crate::historical::config::family_source_symbol(first.exchange, m));
+    let scope = super::metrics::IntegrityScope {
+        task_id: first.task_id.0,
+        stream_id: String::new(),
+        source_file: first.input_path.to_string_lossy().into_owned(),
+    };
+    let mut observe = |symbol: &str, timestamp: Option<i64>| -> Result<()> {
+        if hint.as_deref().is_some_and(|h| h != symbol) {
+            return Err(invalid(
+                "filename/record identity conflict in unselected archive member",
+            ));
+        }
+        let actual = family_of(first.exchange, first.instrument.instrument_kind, symbol)
+            .ok_or_else(|| invalid("unrecognized native symbol in unselected archive member"))?;
+        if actual == family && selection.selects(symbol) {
+            return Err(invalid(format!(
+                "selected symbol {symbol} appeared in an undiscovered archive member; source changed after preparation"
+            )));
+        }
+        stats.physical = stats
+            .physical
+            .checked_add(1)
+            .ok_or_else(|| invalid("filtered member count overflow"))?;
+        stats.filtered = stats
+            .filtered
+            .checked_add(1)
+            .ok_or_else(|| invalid("filtered member count overflow"))?;
+        stats.outside_scope += u64::from(actual != family);
+        filtered_observation(stats, &scope, timestamp)
+    };
+    match source_format(first)? {
+        SourceFormat::Jsonl => {
+            let native = first
+                .normalizations
+                .iter()
+                .find_map(|n| n.rules["instrument"]["source"].as_str())
+                .ok_or_else(|| invalid("family profile lacks native identity"))?;
+            let mut decoder = JsonlDecoder::new(reader);
+            loop {
+                let value = match decoder.next_json() {
+                    Ok(Some(v)) => v,
+                    Ok(None) => break,
+                    Err(JsonlError::Source(e)) => {
+                        return Err(crate::shared::historical::limits::source_error(
+                            first.input_path.clone(),
+                            e,
+                        ));
+                    }
+                    Err(JsonlError::Record(e)) => {
+                        return Err(invalid(format!(
+                            "invalid unselected archive member JSON: {e}"
+                        )));
+                    }
+                };
+                let symbol = crate::shared::formats::depth::resolve_json_path(&value, native)
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| invalid("unselected archive record lacks native identity"))?;
+                let timestamp = first.normalizations[0].rules["event_timestamp"]["source"]
+                    .as_str()
+                    .and_then(|path| {
+                        crate::shared::formats::depth::extract_timestamp_ns(
+                            &value,
+                            path,
+                            first.normalizations[0].timestamp_encoding,
+                        )
+                        .ok()
+                    });
+                observe(symbol, timestamp)?;
+            }
+        }
+        SourceFormat::Csv => {
+            let headers = first.raw_schema["header"].as_bool() == Some(true);
+            let mut decoder = CsvDecoder::with_headers(reader, headers);
+            let actual = if headers {
+                Some(
+                    decoder
+                        .headers()
+                        .map_err(|e| super::worker::integrity::csv_source_error(first, e))?,
+                )
+            } else {
+                None
+            };
+            let headers = crate::shared::formats::trades::resolve_trade_headers(
+                &first.raw_schema,
+                actual.as_ref(),
+            )?;
+            let identity = crate::shared::formats::trades::resolve_identity_column(&headers).ok();
+            let timestamp = first.normalizations[0].rules["event_timestamp"]["source"]
+                .as_str()
+                .and_then(|name| headers.iter().position(|h| h == name.as_bytes()));
+            for row in decoder.records() {
+                let row = row.map_err(|e| super::worker::integrity::csv_source_error(first, e))?;
+                let symbol = if let Some(i) = identity {
+                    std::str::from_utf8(
+                        row.get(i)
+                            .ok_or_else(|| invalid("missing native identity"))?,
+                    )
+                    .map_err(|e| invalid(e.to_string()))?
+                } else {
+                    hint.as_deref().ok_or_else(|| {
+                        invalid("unselected archive member lacks supported identity")
+                    })?
+                };
+                observe(
+                    symbol,
+                    timestamp.and_then(|i| row.get(i)).and_then(|raw| {
+                        crate::shared::normalization::parse_timestamp_ns(
+                            raw,
+                            first.normalizations[0].timestamp_encoding,
+                        )
+                        .ok()
+                    }),
+                )?;
+            }
+        }
+        SourceFormat::Xlsx => return Err(invalid("unsupported family archive member format")),
+    }
+    Ok(())
 }
 fn filtered_observation(
     stats: &mut RoutingStats,
@@ -158,25 +331,17 @@ pub(crate) fn route_with_progress(
         sources
             .entry((
                 super::streams::priority(index, task),
-                task.archive_member.clone(),
+                if task.raw_schema["marketforge_source"]["scope"]["family_id"].is_i64() {
+                    None
+                } else {
+                    task.archive_member.clone()
+                },
             ))
             .or_insert_with(Vec::new)
             .push((index, task));
     }
     let mut seen = BTreeMap::new();
-    let mut previous_priority = None;
-    let mut member_ordinal = 0u64;
-    for ((priority, _), mut tasks) in sources {
-        if previous_priority == Some(priority) {
-            let Some(next) = member_ordinal.checked_add(1) else {
-                routed.failure = Some((tasks[0].0, invalid("archive member ordinal overflow")));
-                break;
-            };
-            member_ordinal = next;
-        } else {
-            member_ordinal = 0;
-            previous_priority = Some(priority);
-        }
+    for ((_, _), mut tasks) in sources {
         tasks.sort_by(|a, b| a.1.symbol.cmp(&b.1.symbol));
         let (owner, first) = tasks[0];
         let routing_id = super::progress::ProgressTaskId::new(unit.job.job_id.0, first.task_id.0);
@@ -196,7 +361,15 @@ pub(crate) fn route_with_progress(
                 );
             }
         }
-        for (index, _) in &tasks {
+        let members = tasks
+            .iter()
+            .map(|(_, t)| t.archive_member.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        for (index, task) in &tasks {
+            let member_ordinal = members
+                .iter()
+                .position(|m| m == &task.archive_member)
+                .unwrap() as u64;
             routed.stats.insert(
                 *index,
                 RoutingStats {
@@ -228,11 +401,6 @@ pub(crate) fn route_with_progress(
                     .unwrap_or(first.task_id.0),
             );
             let prepared_selection = selection(first)?;
-            let filtered_scope = super::metrics::IntegrityScope {
-                task_id: first.task_id.0,
-                stream_id: String::new(),
-                source_file: first.input_path.to_string_lossy().into_owned(),
-            };
             let format = source_format(first)?;
             if format == SourceFormat::Xlsx {
                 return Err(invalid(
@@ -240,176 +408,66 @@ pub(crate) fn route_with_progress(
                 ));
             }
             let mut writers = super::reconcile::spool::AppendCache::new();
-            with_validated_source_reader(
-                &first.input_path,
-                first.source_compression,
-                first.archive_member.as_deref(),
-                |reader| {
-                    match format {
-                        SourceFormat::Csv => {
-                            let has_headers = first.normalizations[0].target_schema
-                                == TargetSchema::Trade
-                                && first.raw_schema["header"].as_bool() == Some(true);
-                            let mut decoder = CsvDecoder::with_headers(reader, has_headers);
-                            let actual = if has_headers {
-                                Some(decoder.headers().map_err(|e| {
-                                    super::worker::integrity::csv_source_error(first, e)
-                                })?)
-                            } else {
-                                None
-                            };
-                            let headers = crate::shared::formats::trades::resolve_trade_headers(
-                                &first.raw_schema,
-                                actual.as_ref(),
-                            )?;
-                            let identity = if first.normalizations[0].target_schema
-                                == TargetSchema::Trade
-                            {
-                                crate::shared::formats::trades::resolve_identity_column(&headers)?
-                            } else {
-                                first.normalizations[0].rules["instrument"]["source"].as_str().and_then(|name|headers.iter().position(|h|h==name.as_bytes())).ok_or_else(||invalid("family CSV depth profile has no supported native instrument identity column"))?
-                            };
-                            for (index, _) in &tasks {
-                                quota.charge(
-                                    headers.as_slice().len() as u64 + 256,
-                                    "family headers",
-                                )?;
-                                routed.inputs.insert(
-                                    *index,
-                                    DecodedSource::DiskCsv {
-                                        headers: actual.clone(),
-                                        spool: workspace.create()?,
-                                    },
-                                );
-                            }
-                            let timestamp_column = first.normalizations[0].rules["event_timestamp"]
-                                ["source"]
+            with_family_readers(first, &tasks, quota, |member, member_tasks, reader| {
+                let tasks = member_tasks.to_vec();
+                if tasks.is_empty() {
+                    return filtered_member(
+                        first,
+                        member,
+                        reader,
+                        routed.stats.get_mut(&owner).unwrap(),
+                    );
+                }
+                let (owner, first) = tasks[0];
+                let filtered_scope = super::metrics::IntegrityScope {
+                    task_id: first.task_id.0,
+                    stream_id: String::new(),
+                    source_file: first.input_path.to_string_lossy().into_owned(),
+                };
+                match format {
+                    SourceFormat::Csv => {
+                        let has_headers = first.normalizations[0].target_schema
+                            == TargetSchema::Trade
+                            && first.raw_schema["header"].as_bool() == Some(true);
+                        let mut decoder = CsvDecoder::with_headers(reader, has_headers);
+                        let actual = if has_headers {
+                            Some(decoder.headers().map_err(|e| {
+                                super::worker::integrity::csv_source_error(first, e)
+                            })?)
+                        } else {
+                            None
+                        };
+                        let headers = crate::shared::formats::trades::resolve_trade_headers(
+                            &first.raw_schema,
+                            actual.as_ref(),
+                        )?;
+                        let identity = if first.normalizations[0].target_schema
+                            == TargetSchema::Trade
+                        {
+                            crate::shared::formats::trades::resolve_identity_column(&headers).ok()
+                        } else {
+                            Some(first.normalizations[0].rules["instrument"]["source"].as_str().and_then(|name|headers.iter().position(|h|h==name.as_bytes())).ok_or_else(||invalid("family CSV depth profile has no supported native instrument identity column"))?)
+                        };
+                        for (index, _) in &tasks {
+                            quota
+                                .charge(headers.as_slice().len() as u64 + 256, "family headers")?;
+                            routed.inputs.insert(
+                                *index,
+                                DecodedSource::DiskCsv {
+                                    headers: actual.clone(),
+                                    spool: workspace.create()?,
+                                },
+                            );
+                        }
+                        let timestamp_column =
+                            first.normalizations[0].rules["event_timestamp"]["source"]
                                 .as_str()
                                 .and_then(|name| headers.iter().position(|h| h == name.as_bytes()));
-                            for (record, row) in decoder.records().enumerate() {
-                                let row = match row {
-                                    Ok(row) => row,
-                                    Err(error) => {
-                                        if !error.is_io_error() {
-                                            let stats = routed.stats.get_mut(&owner).unwrap();
-                                            stats.physical += 1;
-                                            stats.parse_rejected += 1;
-                                            stats.filtered_integrity.record(
-                                                &super::metrics::IntegrityScope {
-                                                    task_id: first.task_id.0,
-                                                    stream_id: String::new(),
-                                                    source_file: first
-                                                        .input_path
-                                                        .to_string_lossy()
-                                                        .into_owned(),
-                                                },
-                                                super::metrics::IntegrityCategory::ParseFailure,
-                                                true,
-                                                None,
-                                            )?;
-                                            stats
-                                                .diagnostics
-                                                .record(super::metrics::IntegrityDiagnostic {
-                                                category:
-                                                    super::metrics::IntegrityCategory::ParseFailure,
-                                                task_id: first.task_id.0,
-                                                source_record: Some(record as u64 + 1),
-                                                event_timestamp_ns: None,
-                                                message: error.to_string(),
-                                            })?;
-                                            let policy = super::task::worker_integrity_policy(
-                                                &config.integrity_policy,
-                                            );
-                                            if first.normalizations[0].target_schema
-                                                == TargetSchema::Trade
-                                                && !super::metrics::enforce_immediate_integrity(
-                                                    &policy,
-                                                    &stats.filtered_integrity,
-                                                    super::metrics::IntegrityCategory::ParseFailure,
-                                                )?
-                                                .is_failed()
-                                            {
-                                                continue;
-                                            }
-                                        }
-                                        return Err(super::worker::integrity::csv_source_error(
-                                            first, error,
-                                        ));
-                                    }
-                                };
-                                let physical = &mut routed.stats.get_mut(&owner).unwrap().physical;
-                                *physical += 1;
-                                if (*physical).is_multiple_of(8192) {
-                                    reporter.routing_records(routing_id, *physical);
-                                }
-                                let symbol =
-                                    std::str::from_utf8(row.get(identity).ok_or_else(|| {
-                                        invalid("family record lacks its symbol field")
-                                    })?)
-                                    .map_err(|e| {
-                                        invalid(format!("invalid native symbol encoding: {e}"))
-                                    })?;
-                                if let Some(index) = identify(
-                                    symbol,
-                                    &tasks,
-                                    &mut routed.stats,
-                                    &prepared_selection,
-                                )? {
-                                    let Some(DecodedSource::DiskCsv { spool, .. }) =
-                                        routed.inputs.get(&index)
-                                    else {
-                                        return Err(invalid("CSV route disappeared"));
-                                    };
-                                    // One bounded row; byte fields are lossless (including non-UTF8).
-                                    let bytes = (row.as_slice().len() as u64)
-                                        .checked_mul(2)
-                                        .and_then(|n| {
-                                            n.checked_add((row.len() as u64).checked_mul(64)?)
-                                        })
-                                        .ok_or_else(|| invalid("routing row footprint overflow"))?;
-                                    let _row_memory = quota.reserve(bytes, "family routing row")?;
-                                    let fields = row.iter().map(|f| f.to_vec()).collect::<Vec<_>>();
-                                    writers.push(spool, &(record as u64 + 1, fields))?;
-                                } else {
-                                    let timestamp =
-                                        timestamp_column.and_then(|i| row.get(i)).and_then(|raw| {
-                                            crate::shared::normalization::parse_timestamp_ns(
-                                                raw,
-                                                first.normalizations[0].timestamp_encoding,
-                                            )
-                                            .ok()
-                                        });
-                                    filtered_observation(
-                                        routed.stats.get_mut(&owner).unwrap(),
-                                        &filtered_scope,
-                                        timestamp,
-                                    )?;
-                                }
-                            }
-                        }
-                        SourceFormat::Jsonl => {
-                            let native=first.normalizations.iter().find_map(|n|n.rules.get("instrument").and_then(|i|i.get("source")).and_then(|v|v.as_str())).ok_or_else(||invalid("family JSONL profile does not declare native instrument identity"))?;
-                            for (index, _) in &tasks {
-                                quota.charge(128, "family JSON queues")?;
-                                routed
-                                    .inputs
-                                    .insert(*index, DecodedSource::DiskJson(workspace.create()?));
-                            }
-                            let mut decoder = JsonlDecoder::new(reader);
-                            let mut ordinal = 0u64;
-                            loop {
-                                let value = match decoder.next_json() {
-                                    Ok(Some(value)) => value,
-                                    Ok(None) => break,
-                                    Err(JsonlError::Source(e)) => {
-                                        return Err(
-                                            crate::shared::historical::limits::source_error(
-                                                first.input_path.clone(),
-                                                e,
-                                            ),
-                                        );
-                                    }
-                                    Err(JsonlError::Record(e)) => {
+                        for (record, row) in decoder.records().enumerate() {
+                            let row = match row {
+                                Ok(row) => row,
+                                Err(error) => {
+                                    if !error.is_io_error() {
                                         let stats = routed.stats.get_mut(&owner).unwrap();
                                         stats.physical += 1;
                                         stats.parse_rejected += 1;
@@ -431,60 +489,181 @@ pub(crate) fn route_with_progress(
                                                 category:
                                                     super::metrics::IntegrityCategory::ParseFailure,
                                                 task_id: first.task_id.0,
-                                                source_record: Some(ordinal + 1),
+                                                source_record: Some(record as u64 + 1),
                                                 event_timestamp_ns: None,
-                                                message: e.to_string(),
+                                                message: error.to_string(),
                                             },
                                         )?;
-                                        return Err(MarketForgeError::RecordIntegrity{category:crate::shared::validation::IntegrityCategory::ParseFailure,message:format!("malformed family JSONL record cannot be attributed to an instrument for safe depth recovery: {e}")});
+                                        let policy = super::task::worker_integrity_policy(
+                                            &config.integrity_policy,
+                                        );
+                                        if first.normalizations[0].target_schema
+                                            == TargetSchema::Trade
+                                            && !super::metrics::enforce_immediate_integrity(
+                                                &policy,
+                                                &stats.filtered_integrity,
+                                                super::metrics::IntegrityCategory::ParseFailure,
+                                            )?
+                                            .is_failed()
+                                        {
+                                            continue;
+                                        }
                                     }
+                                    return Err(super::worker::integrity::csv_source_error(
+                                        first, error,
+                                    ));
+                                }
+                            };
+                            let physical = &mut routed.stats.get_mut(&owner).unwrap().physical;
+                            *physical += 1;
+                            if (*physical).is_multiple_of(8192) {
+                                reporter.routing_records(routing_id, *physical);
+                            }
+                            let symbol = if let Some(identity) = identity {
+                                std::str::from_utf8(row.get(identity).ok_or_else(|| {
+                                    invalid("family record lacks its symbol field")
+                                })?)
+                                .map_err(|e| {
+                                    invalid(format!("invalid native symbol encoding: {e}"))
+                                })?
+                            } else if tasks.len() == 1 {
+                                first.raw_schema["marketforge_source"]["source_symbol_hint"]
+                                    .as_str()
+                                    .ok_or_else(|| {
+                                        invalid("family CSV lacks a validated source identity")
+                                    })?
+                            } else {
+                                return Err(invalid(
+                                    "family CSV lacks an unambiguous native identity",
+                                ));
+                            };
+                            if let Some(index) =
+                                identify(symbol, &tasks, &mut routed.stats, &prepared_selection)?
+                            {
+                                let Some(DecodedSource::DiskCsv { spool, .. }) =
+                                    routed.inputs.get(&index)
+                                else {
+                                    return Err(invalid("CSV route disappeared"));
                                 };
-                                ordinal = ordinal
-                                    .checked_add(1)
-                                    .ok_or_else(|| invalid("family record ordinal overflow"))?;
-                                let physical = &mut routed.stats.get_mut(&owner).unwrap().physical;
-                                *physical += 1;
-                                if (*physical).is_multiple_of(8192) {
-                                    reporter.routing_records(routing_id, *physical);
-                                }
-                                let symbol=crate::shared::formats::depth::resolve_json_path(&value,native).and_then(|v|v.as_str()).ok_or_else(||invalid("family JSONL record lacks a valid native instrument symbol; safe per-instrument recovery is unproven"))?;
-                                if let Some(index) = identify(
-                                    symbol,
-                                    &tasks,
-                                    &mut routed.stats,
-                                    &prepared_selection,
-                                )? {
-                                    let Some(DecodedSource::DiskJson(spool)) =
-                                        routed.inputs.get(&index)
-                                    else {
-                                        return Err(invalid("JSON route disappeared"));
-                                    };
-                                    writers.push(spool, &(ordinal, value))?;
-                                } else {
-                                    let timestamp =
-                                        first.normalizations[0].rules["event_timestamp"]["source"]
-                                            .as_str()
-                                            .and_then(|path| {
-                                                crate::shared::formats::depth::extract_timestamp_ns(
-                                                    &value,
-                                                    path,
-                                                    first.normalizations[0].timestamp_encoding,
-                                                )
-                                                .ok()
-                                            });
-                                    filtered_observation(
-                                        routed.stats.get_mut(&owner).unwrap(),
-                                        &filtered_scope,
-                                        timestamp,
-                                    )?;
-                                }
+                                // One bounded row; byte fields are lossless (including non-UTF8).
+                                let bytes = (row.as_slice().len() as u64)
+                                    .checked_mul(2)
+                                    .and_then(|n| {
+                                        n.checked_add((row.len() as u64).checked_mul(64)?)
+                                    })
+                                    .ok_or_else(|| invalid("routing row footprint overflow"))?;
+                                let _row_memory = quota.reserve(bytes, "family routing row")?;
+                                let fields = row.iter().map(|f| f.to_vec()).collect::<Vec<_>>();
+                                writers.push(spool, &(record as u64 + 1, fields))?;
+                            } else {
+                                let timestamp =
+                                    timestamp_column.and_then(|i| row.get(i)).and_then(|raw| {
+                                        crate::shared::normalization::parse_timestamp_ns(
+                                            raw,
+                                            first.normalizations[0].timestamp_encoding,
+                                        )
+                                        .ok()
+                                    });
+                                filtered_observation(
+                                    routed.stats.get_mut(&owner).unwrap(),
+                                    &filtered_scope,
+                                    timestamp,
+                                )?;
                             }
                         }
-                        SourceFormat::Xlsx => unreachable!(),
                     }
-                    Ok(())
-                },
-            )?;
+                    SourceFormat::Jsonl => {
+                        let native=first.normalizations.iter().find_map(|n|n.rules.get("instrument").and_then(|i|i.get("source")).and_then(|v|v.as_str())).ok_or_else(||invalid("family JSONL profile does not declare native instrument identity"))?;
+                        for (index, _) in &tasks {
+                            quota.charge(128, "family JSON queues")?;
+                            routed
+                                .inputs
+                                .insert(*index, DecodedSource::DiskJson(workspace.create()?));
+                        }
+                        let mut decoder = JsonlDecoder::new(reader);
+                        let mut ordinal = 0u64;
+                        loop {
+                            let value = match decoder.next_json() {
+                                Ok(Some(value)) => value,
+                                Ok(None) => break,
+                                Err(JsonlError::Source(e)) => {
+                                    return Err(crate::shared::historical::limits::source_error(
+                                        first.input_path.clone(),
+                                        e,
+                                    ));
+                                }
+                                Err(JsonlError::Record(e)) => {
+                                    let stats = routed.stats.get_mut(&owner).unwrap();
+                                    stats.physical += 1;
+                                    stats.parse_rejected += 1;
+                                    stats.filtered_integrity.record(
+                                        &super::metrics::IntegrityScope {
+                                            task_id: first.task_id.0,
+                                            stream_id: String::new(),
+                                            source_file: first
+                                                .input_path
+                                                .to_string_lossy()
+                                                .into_owned(),
+                                        },
+                                        super::metrics::IntegrityCategory::ParseFailure,
+                                        true,
+                                        None,
+                                    )?;
+                                    stats.diagnostics.record(
+                                        super::metrics::IntegrityDiagnostic {
+                                            category:
+                                                super::metrics::IntegrityCategory::ParseFailure,
+                                            task_id: first.task_id.0,
+                                            source_record: Some(ordinal + 1),
+                                            event_timestamp_ns: None,
+                                            message: e.to_string(),
+                                        },
+                                    )?;
+                                    return Err(MarketForgeError::RecordIntegrity{category:crate::shared::validation::IntegrityCategory::ParseFailure,message:format!("malformed family JSONL record cannot be attributed to an instrument for safe depth recovery: {e}")});
+                                }
+                            };
+                            ordinal = ordinal
+                                .checked_add(1)
+                                .ok_or_else(|| invalid("family record ordinal overflow"))?;
+                            let physical = &mut routed.stats.get_mut(&owner).unwrap().physical;
+                            *physical += 1;
+                            if (*physical).is_multiple_of(8192) {
+                                reporter.routing_records(routing_id, *physical);
+                            }
+                            let symbol=crate::shared::formats::depth::resolve_json_path(&value,native).and_then(|v|v.as_str()).ok_or_else(||invalid("family JSONL record lacks a valid native instrument symbol; safe per-instrument recovery is unproven"))?;
+                            if let Some(index) =
+                                identify(symbol, &tasks, &mut routed.stats, &prepared_selection)?
+                            {
+                                let Some(DecodedSource::DiskJson(spool)) =
+                                    routed.inputs.get(&index)
+                                else {
+                                    return Err(invalid("JSON route disappeared"));
+                                };
+                                writers.push(spool, &(ordinal, value))?;
+                            } else {
+                                let timestamp =
+                                    first.normalizations[0].rules["event_timestamp"]["source"]
+                                        .as_str()
+                                        .and_then(|path| {
+                                            crate::shared::formats::depth::extract_timestamp_ns(
+                                                &value,
+                                                path,
+                                                first.normalizations[0].timestamp_encoding,
+                                            )
+                                            .ok()
+                                        });
+                                filtered_observation(
+                                    routed.stats.get_mut(&owner).unwrap(),
+                                    &filtered_scope,
+                                    timestamp,
+                                )?;
+                            }
+                        }
+                    }
+                    SourceFormat::Xlsx => unreachable!(),
+                }
+                Ok(())
+            })?;
             writers.finish()?;
             for (index, _) in &tasks {
                 match routed.inputs.get(index) {

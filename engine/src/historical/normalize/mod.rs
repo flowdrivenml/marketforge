@@ -33,7 +33,7 @@ mod streams_depth;
 pub(crate) mod reconcile;
 mod reconciled;
 
-mod family;
+pub(crate) mod family;
 
 /// Render digest bytes without allocating a temporary String for each byte.
 fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
@@ -46,3 +46,5 @@ fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
     }
     encoded
 }
+
+pub(crate) mod policies;

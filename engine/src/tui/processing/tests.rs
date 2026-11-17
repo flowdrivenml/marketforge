@@ -738,6 +738,10 @@ fn stream_rejection_evidence(block_failure_report: bool) {
         root,
     )
     .unwrap();
+    // This is a strict rejection/lifecycle fixture. Do not inherit a user's
+    // experimental source-preference setting from the deployment configuration.
+    config.reconciliation.trades.overlap_policy =
+        crate::shared::historical::policies::TradeOverlap::Strict;
     let catalog = FormatCatalog::load(root.join("data/.config/historical")).unwrap();
     let mut job = load_normalization_job(
         root.join("docs/historical/normalize-job-v3.example.json"),
@@ -751,7 +755,7 @@ fn stream_rejection_evidence(block_failure_report: bool) {
         .unwrap()
         .as_nanos();
     let path = root.join(format!(
-        "data/tests/historical/normalize/stabilization/overlap-{stamp}"
+        "data/tests/historical/normalize/completion/bitget-reconciliation/dashboard-overlap-{stamp}"
     ));
     std::fs::create_dir_all(&path).unwrap();
     config.resources.scratch_path = path.join("scratch");

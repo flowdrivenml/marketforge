@@ -14,6 +14,11 @@ pub trait TradeSink {
 }
 
 pub trait DepthSink {
+    /// Bounded evidence hook; output sinks need not retain decoded source data.
+    fn observe_source_record(&mut self, _record: &serde_json::Value) -> Result<()> {
+        Ok(())
+    }
+
     /// Accept one complete source-event outcome.
     fn write_outcome(&mut self, outcome: DepthProcessingOutcome) -> Result<()>;
 
