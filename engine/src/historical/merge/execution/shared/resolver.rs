@@ -92,8 +92,24 @@ pub fn resolve_merge_inputs(
         // Manifest identity
         // ---------------------------------------------------------------------
 
+        let selected_timestamp_trades = job.primary_files.contains_key(&dataset_id)
+            && matches!(manifest.protocol_version, 4 | 5)
+            && manifest.content_type == crate::historical::job::ContentType::Trades
+            && manifest
+                .processing_quality
+                .as_ref()
+                .is_some_and(|quality| quality.timestamp_ordering == "event_timestamp_ns")
+            && manifest.streams.iter().all(|stream| {
+                let mut tasks = HashSet::new();
+                stream
+                    .sources
+                    .iter()
+                    .all(|source| source.ranges.is_empty() && tasks.insert(source.task_id))
+            });
+
         if !matches!(manifest.protocol_version, 2)
             && manifest.protocol_version != DATASET_MANIFEST_VERSION
+            && !selected_timestamp_trades
         {
             return invalid(format!(
                 "dataset {dataset_id}: unsupported manifest version {}; this timestamp-first merger cannot consume segmented/native-order policy output; use an event-index/segment-aware reader",
@@ -158,6 +174,45 @@ pub fn resolve_merge_inputs(
             validate_canonical_file(dataset_id, entry, &path)?;
 
             canonical_files.push(path);
+        }
+
+        if let Some(selection) = job.primary_files.get(&dataset_id) {
+            if manifest.content_type == crate::historical::job::ContentType::Depth
+                && selection.len() != manifest.files.len()
+            {
+                return invalid(format!(
+                    "depth publication {dataset_id} requires all primary files for reconstruction; select the missing files explicitly"
+                ));
+            }
+            let manifest_sha = crate::historical::normalize::manifest::file_sha256(&manifest_path)
+                .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
+            let mut selected_paths = Vec::with_capacity(selection.len());
+            for item in selection {
+                if manifest_sha != item.manifest_sha256 {
+                    return invalid(format!(
+                        "publication {dataset_id}: manifest fingerprint changed"
+                    ));
+                }
+                let Some((index, _)) = manifest
+                    .files
+                    .iter()
+                    .enumerate()
+                    .find(|(_, entry)| entry.path == item.path)
+                else {
+                    return invalid(format!(
+                        "publication {dataset_id}: {} is not a primary manifest member",
+                        item.path
+                    ));
+                };
+                let sha =
+                    crate::historical::normalize::manifest::file_sha256(&canonical_files[index])
+                        .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
+                if sha != item.sha256 {
+                    return invalid(format!("selected primary file {} changed", item.path));
+                }
+                selected_paths.push(canonical_files[index].clone());
+            }
+            canonical_files = selected_paths;
         }
 
         // ---------------------------------------------------------------------

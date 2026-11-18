@@ -77,7 +77,12 @@ impl PhysicalDepthBatchBuilder {
                 return invalid("missing depth event metadata");
             }
 
-            if reference.event_boundary.unwrap() > 1 || reference.source_operation.unwrap() > 2 {
+            if reference.event_boundary.unwrap() > 1
+                || reference
+                    .source_operation
+                    .and_then(crate::shared::domain::canonical::DepthSourceOperation::from_code)
+                    .is_none()
+            {
                 return invalid("invalid depth boundary or source operation");
             }
 

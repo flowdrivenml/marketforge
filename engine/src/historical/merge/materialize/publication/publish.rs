@@ -65,3 +65,43 @@ fn invalid_error(message: impl Into<String>) -> MarketForgeError {
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(invalid_error(message))
 }
+
+/// Re-read the physical Parquet with the same validation used during publication.
+pub fn validate_committed_merge(root: &Path) -> Result<()> {
+    use crate::historical::merge::{MaterializationPartitionResult, validate_physical_dataset};
+
+    let load = |name: &str| {
+        fs::read(root.join(name)).map_err(|error| invalid_error(format!("{name}: {error}")))
+    };
+    let manifest: PhysicalMergeManifest = serde_json::from_slice(&load("manifest.json")?)
+        .map_err(|error| invalid_error(error.to_string()))?;
+    manifest.validate()?;
+    let job = crate::historical::job::load_merge_job(root.join("merge-job.json"))?;
+    if job.output.dataset_path != root
+        || job.job_id != manifest.job_id
+        || job.time_range != manifest.time_range
+        || job
+            .inputs
+            .iter()
+            .copied()
+            .ne(manifest.input_datasets.iter().map(|input| input.dataset_id))
+    {
+        return invalid("committed merge path, job, interval or input identity mismatch");
+    }
+    let partitions: Vec<MaterializationPartitionResult> =
+        serde_json::from_slice(&load("merge-partitions.json")?)
+            .map_err(|error| invalid_error(error.to_string()))?;
+    let resolved = validate_physical_dataset(root, manifest.mode, &partitions)?;
+    if resolved.files != manifest.files
+        || resolved.events != manifest.events_written
+        || resolved.trade_events != manifest.trade_events
+        || resolved.depth_events != manifest.depth_events
+        || resolved.canonical_rows != manifest.canonical_rows
+        || resolved.row_groups != manifest.row_groups
+        || resolved.first_timestamp_ns != manifest.start_timestamp_ns
+        || resolved.last_timestamp_ns != manifest.end_timestamp_ns
+    {
+        return invalid("committed merge inventory or decoded metrics differ from manifest");
+    }
+    Ok(())
+}

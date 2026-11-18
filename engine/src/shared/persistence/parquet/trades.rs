@@ -85,7 +85,7 @@ impl TradeBatchBuilder {
         let exchange = StringArray::from(
             trades
                 .iter()
-                .map(|trade| exchange_name(trade.envelope.exchange))
+                .map(|trade| exchange_name(&trade.envelope.exchange))
                 .collect::<Vec<_>>(),
         );
 
@@ -198,19 +198,14 @@ where
         })
 }
 
-fn exchange_name(exchange: Exchange) -> &'static str {
-    match exchange {
-        Exchange::Bybit => "bybit",
-        Exchange::Binance => "binance",
-        Exchange::Okx => "okx",
-        Exchange::Bitget => "bitget",
-        Exchange::GateIo => "gateio",
-    }
+fn exchange_name(exchange: &Exchange) -> &str {
+    exchange.as_str()
 }
 
 fn side_name(side: TradeSide) -> &'static str {
     match side {
         TradeSide::Buy => "buy",
         TradeSide::Sell => "sell",
+        TradeSide::Unknown => "unknown",
     }
 }

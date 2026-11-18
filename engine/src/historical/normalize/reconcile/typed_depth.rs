@@ -1,6 +1,6 @@
 //! Depth payload [0,2], v1. One envelope per atomic event; source metadata is
 //! independent and exact. Compression/framing/checksums remain spool concerns.
-use super::typed::{Input, decimal, optional, string};
+use super::typed::{Input, decimal, optional, string, write_exchange};
 use crate::shared::{
     domain::canonical::*,
     error::{MarketForgeError, Result},
@@ -14,13 +14,7 @@ fn envelope(w: &mut impl Write, e: &EventEnvelope) -> io::Result<()> {
     optional(w, e.system_timestamp_ns, |w, v| {
         w.write_all(&v.to_le_bytes())
     })?;
-    w.write_all(&[match e.exchange {
-        Exchange::Bybit => 1,
-        Exchange::Binance => 2,
-        Exchange::Okx => 3,
-        Exchange::Bitget => 4,
-        Exchange::GateIo => 5,
-    }])?;
+    write_exchange(w, e.exchange)?;
     w.write_all(&e.instrument_id.to_le_bytes())?;
     string(w, &e.symbol)?;
     string(w, &e.stream_id)
@@ -39,11 +33,7 @@ pub(super) fn encode(w: &mut impl Write, o: &DepthProcessingOutcome) -> io::Resu
             DepthEventBoundary::Initialization => 0,
             DepthEventBoundary::Changes => 1,
         },
-        match o.operation {
-            DepthSourceOperation::Snapshot => 0,
-            DepthSourceOperation::AbsoluteUpdate => 1,
-            DepthSourceOperation::RelativeUpdate => 2,
-        },
+        o.operation.code(),
     ])?;
     let s = &o.source;
     optional(w, s.source_event_ordinal, |w, v| {
@@ -88,12 +78,7 @@ fn header(
         1 => DepthEventBoundary::Changes,
         _ => return Err(bad()),
     };
-    let operation = match r.byte()? {
-        0 => DepthSourceOperation::Snapshot,
-        1 => DepthSourceOperation::AbsoluteUpdate,
-        2 => DepthSourceOperation::RelativeUpdate,
-        _ => return Err(bad()),
-    };
+    let operation = DepthSourceOperation::from_code(r.byte()?).ok_or_else(bad)?;
     let source = DepthSourceEventMetadata {
         source_event_ordinal: r.optional(Input::u64)?,
         event_timestamp_ns: r.i64()?,
@@ -110,14 +95,7 @@ fn header(
 fn read_envelope(r: &mut Input<'_>) -> Result<EventEnvelope> {
     let event_timestamp_ns = r.i64()?;
     let system_timestamp_ns = r.optional(Input::i64)?;
-    let exchange = match r.byte()? {
-        1 => Exchange::Bybit,
-        2 => Exchange::Binance,
-        3 => Exchange::Okx,
-        4 => Exchange::Bitget,
-        5 => Exchange::GateIo,
-        _ => return Err(bad()),
-    };
+    let exchange = r.exchange()?;
     let instrument_id = r.i64()?;
     Ok(EventEnvelope {
         event_timestamp_ns,
@@ -140,7 +118,7 @@ pub(super) fn allocation(bytes: &[u8]) -> Result<u64> {
     let strings = if count > 0 {
         r.i64()?;
         r.optional(Input::i64)?;
-        r.byte()?;
+        r.exchange()?;
         r.i64()?;
         r.string_ref()?
             .len()

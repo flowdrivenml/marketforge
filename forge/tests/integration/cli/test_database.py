@@ -40,7 +40,8 @@ def test_reports_migration_result_as_plain_json(
 ) -> None:
     calls: list[str] = []
 
-    def fake_migrate() -> MigrationResult:
+    def fake_migrate(*, project_root: Path | None = None) -> MigrationResult:
+        assert project_root == workspace
         calls.append("migrate")
         return MigrationResult(
             database="marketforge_test",
@@ -81,7 +82,8 @@ def test_reports_migration_failure(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    def fake_migrate() -> MigrationResult:
+    def fake_migrate(*, project_root: Path | None = None) -> MigrationResult:
+        assert project_root == workspace
         raise MigrationError("Migration history mismatch.")
 
     monkeypatch.setattr(

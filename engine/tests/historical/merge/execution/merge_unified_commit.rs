@@ -75,6 +75,7 @@ fn test_job(dataset_ids: &[u64], output: &Path, input_paths: HashMap<u64, PathBu
         operation: MergeOperation::Merge,
 
         inputs: dataset_ids.to_vec(),
+        primary_files: Default::default(),
         input_paths,
 
         time_range: MergeTimeRange {

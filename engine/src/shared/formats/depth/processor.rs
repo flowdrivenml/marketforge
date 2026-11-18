@@ -45,6 +45,7 @@ pub struct DepthProcessor {
     sequence: SequenceTracker,
     sequence_policy: SequencePolicy,
     observations: crate::shared::validation::IntegrityObservationTrace,
+    last_observed_sequence: Option<u64>,
 }
 
 impl DepthProcessor {
@@ -72,6 +73,7 @@ impl DepthProcessor {
             sequence: SequenceTracker::new(sequence_policy),
             sequence_policy,
             observations: Default::default(),
+            last_observed_sequence: None,
         })
     }
 
@@ -182,15 +184,37 @@ impl DepthProcessor {
         let asks = extract_level_array(record, asks_spec)?;
         self.observations.passed(IntegrityCategory::InvalidRecord);
 
-        if matches!(spec.operation, DepthOperation::Snapshot(_)) {
-            return self.apply_snapshot_event(
+        if let DepthOperation::Snapshot(snapshot) = &spec.operation {
+            let bounded = snapshot.levels_per_side;
+            let ordered_sequence = snapshot.sequence_order.is_some();
+            if let Some(limit) = bounded {
+                if bids.len() > limit as usize || asks.len() > limit as usize {
+                    return invalid("bounded observation exceeds its declared depth");
+                }
+                if ordered_sequence
+                    && self
+                        .last_observed_sequence
+                        .zip(source_sequence)
+                        .is_some_and(|(previous, current)| current < previous)
+                {
+                    return invalid("native depth sequence strictly decreased");
+                }
+            }
+            let mut result = self.apply_snapshot_event(
                 bids,
                 asks,
                 spec.quantity_encoding,
                 event_timestamp_ns,
                 system_timestamp_ns,
                 source_sequence,
-            );
+            )?;
+            if bounded.is_some() {
+                result.operation = DepthSourceOperation::BoundedObservation;
+                if ordered_sequence {
+                    self.last_observed_sequence = source_sequence;
+                }
+            }
+            return Ok(result);
         }
 
         let requires_initialization = !self.book.is_initialized();

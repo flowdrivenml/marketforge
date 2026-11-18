@@ -27,7 +27,11 @@ pub fn transform_side(raw: &[u8], spec: &SideSpec) -> Result<TradeSide> {
                         message: format!("side mapping does not contain value: {key}"),
                     })?;
 
-            parse_buy_sell(mapped.as_bytes())
+            if mapped.eq_ignore_ascii_case("unknown") {
+                Ok(TradeSide::Unknown)
+            } else {
+                parse_buy_sell(mapped.as_bytes())
+            }
         }
 
         SideTransform::SignToSide => {
@@ -171,6 +175,19 @@ mod tests {
 
         assert_eq!(transform_side(b"1", &spec).unwrap(), TradeSide::Sell);
         assert_eq!(transform_side(b"2", &spec).unwrap(), TradeSide::Buy);
+    }
+
+    #[test]
+    fn explicit_unknown_is_distinct_from_missing_or_unmapped_side() {
+        let mut spec = side_spec(SideTransform::Map);
+        spec.values.insert("n".into(), "unknown".into());
+
+        let side = transform_side(b"N", &spec).unwrap();
+        assert_eq!(side, TradeSide::Unknown);
+        let encoded = serde_json::to_string(&side).unwrap();
+        assert_eq!(serde_json::from_str::<TradeSide>(&encoded).unwrap(), side);
+        assert!(transform_side(b"", &spec).is_err());
+        assert!(transform_side(b"unmapped", &spec).is_err());
     }
 
     #[test]

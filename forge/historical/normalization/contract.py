@@ -1,4 +1,4 @@
-"""Forge preparation serialization, explicitly separate from Rust wire protocols."""
+"""Serialize prepared jobs using the production Rust schema-v4 batch contract."""
 
 from pathlib import Path
 
@@ -11,7 +11,7 @@ def preparation_document(
     staging: Path,
     dataset: Path,
 ) -> dict[str, object]:
-    """Forge batch-v3 job; deliberately carries no Rust protocol version."""
+    """One prepared job; the enclosing batch owns its schema version."""
     return {
         "operation": "normalize",
         "job_id": job_id,

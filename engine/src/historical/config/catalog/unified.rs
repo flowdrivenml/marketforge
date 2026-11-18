@@ -9,7 +9,7 @@ struct Unified {
     kind: String,
     id: String,
     format_code: String,
-    exchange: Exchange,
+    exchange: String,
     instrument_type: InstrumentKind,
     market_category: MarketCategory,
     source: Source,
@@ -94,7 +94,7 @@ fn compile_wire(wire: Unified, path: &Path, data_type: &str) -> Result<(Profile,
     }
     let mut compiled_feeds = serde_json::Map::new();
     for (feed, definition) in &wire.feeds {
-        if wire.exchange != Exchange::GateIo
+        if wire.exchange != "gateio"
             || data_type != "depth"
             || !matches!(feed.as_str(), "snapshot" | "incremental")
         {
@@ -106,7 +106,7 @@ fn compile_wire(wire: Unified, path: &Path, data_type: &str) -> Result<(Profile,
                 kind: "profile".into(),
                 id: wire.id.clone(),
                 format_code: wire.format_code.clone(),
-                exchange: wire.exchange,
+                exchange: wire.exchange.clone(),
                 instrument_type: wire.instrument_type,
                 market_category: wire.market_category,
                 source: definition.source.clone(),
@@ -175,6 +175,19 @@ fn compile_wire(wire: Unified, path: &Path, data_type: &str) -> Result<(Profile,
     }
     fields.sort_by_key(|v| v["position"].as_u64().unwrap_or(u64::MAX));
     let mut raw = json!({"fields":fields});
+    if data_type == "trades" && matches!(wire.source.format, PhysicalRecord::Jsonl) {
+        if wire.source.header.is_some()
+            || fields.iter().any(|field| field.get("position").is_some())
+        {
+            return Err(invalid(
+                "JSONL trades use named JSON paths without CSV headers or positions",
+            ));
+        }
+        raw["marketforge_trade_jsonl"] = true.into();
+        raw["header"] = false.into();
+    } else if data_type == "trades" && !matches!(wire.source.format, PhysicalRecord::Csv) {
+        return Err(invalid("trades require CSV or JSONL"));
+    }
     if let Some(scope) = wire.source.trade_id_scope {
         let contract = crate::shared::formats::trades::TradeIdentityContract {
             scope,
@@ -232,6 +245,19 @@ fn compile_wire(wire: Unified, path: &Path, data_type: &str) -> Result<(Profile,
     )
     .map_err(|e| invalid(e.to_string()))?;
     let target = common.remove("target");
+    if data_type == "trades" {
+        if let Some(instrument) = common.remove("instrument") {
+            let field = instrument["field"]
+                .as_str()
+                .ok_or_else(|| invalid("trade instrument requires field"))?;
+            if instrument != json!({"lookup":"catalog","field":field})
+                || !wire.fields.contains_key(field)
+            {
+                return Err(invalid("invalid trade instrument field or lookup"));
+            }
+            raw["marketforge_trade_instrument"] = field.into();
+        }
+    }
     let variants = common.remove("rules");
     let book = common.remove("book");
     validate_book(book.as_ref(), &common)?;
@@ -270,8 +296,48 @@ fn compile_wire(wire: Unified, path: &Path, data_type: &str) -> Result<(Profile,
             Some("unix_milliseconds") => TimestampEncoding::Milliseconds,
             Some("unix_microseconds") => TimestampEncoding::Microseconds,
             Some("unix_nanoseconds") => TimestampEncoding::Nanoseconds,
+            Some("iso8601_nanoseconds") if wire.fields[timestamp]["type"] == "string" => {
+                TimestampEncoding::Iso8601Nanoseconds
+            }
             _ => return Err(invalid("unsupported or missing timestamp field encoding")),
         };
+        if let Some(field) = effective
+            .get("system_timestamp")
+            .and_then(|value| value["field"].as_str())
+        {
+            let system = wire.fields.get(field);
+            let system_is_iso =
+                system.is_some_and(|definition| definition["encoding"] == "iso8601_nanoseconds");
+            let event_is_iso = encoding == TimestampEncoding::Iso8601Nanoseconds;
+            if event_is_iso != system_is_iso
+                || (system_is_iso
+                    && system.is_some_and(|definition| definition["type"] != "string"))
+            {
+                return Err(invalid(
+                    "event_timestamp and system_timestamp must both declare ISO 8601 string encoding when either uses it",
+                ));
+            }
+        }
+        if effective
+            .get("snapshot")
+            .is_some_and(|value| value["type"] == "bounded_observation")
+        {
+            if !matches!(wire.source.format, PhysicalRecord::Jsonl)
+                || !matches!(ordering, SourceOrdering::SourceOrdered)
+                || wire.source.maximum_depth_per_side.is_none()
+                || effective["snapshot"]["levels_per_side"].as_u64()
+                    != wire.source.maximum_depth_per_side
+                || wire.normalization.get("rules").is_some()
+            {
+                return Err(invalid(
+                    "bounded observations require one chronological JSONL snapshot rule and matching source depth",
+                ));
+            }
+            raw["order_book"] = json!({
+                "event_model":"bounded_observation",
+                "snapshot_depth":{"bids":wire.source.maximum_depth_per_side,"asks":wire.source.maximum_depth_per_side}
+            });
+        }
         let mut effective = Value::Object(effective);
         translate(&mut effective, &wire.fields)?;
         rules.push(Rule {
@@ -331,8 +397,25 @@ fn translate(value: &mut Value, fields: &BTreeMap<String, Value>) -> Result<()> 
                         map.insert("order_count_index".into(), json!(i));
                     }
                 }
-                if let Some(object) = definition["level_fields"].as_object() {
-                    if object.len() != 2 {
+                let explicit = map.remove("level_fields");
+                if explicit.is_some()
+                    && (definition.get("level_fields").is_some()
+                        || definition.get("level_format").is_some())
+                {
+                    return Err(invalid("conflicting level mapping definitions"));
+                }
+                let level_fields = explicit.as_ref().or_else(|| definition.get("level_fields"));
+                if let Some(level_fields) = level_fields {
+                    let object = level_fields
+                        .as_object()
+                        .ok_or_else(|| invalid("level_fields must be a table"))?;
+                    if object
+                        .keys()
+                        .any(|key| !matches!(key.as_str(), "price" | "quantity" | "order_count"))
+                        || object
+                            .values()
+                            .any(|value| value.as_str().is_none_or(str::is_empty))
+                    {
                         return Err(invalid("level_fields requires price and quantity"));
                     }
                     map.insert(
@@ -349,6 +432,10 @@ fn translate(value: &mut Value, fields: &BTreeMap<String, Value>) -> Result<()> 
                             .cloned()
                             .ok_or_else(|| invalid("missing object quantity field"))?,
                     );
+                }
+                if let Some(order_count) = level_fields.and_then(|fields| fields.get("order_count"))
+                {
+                    map.insert("order_count_field".into(), order_count.clone());
                 }
                 map.insert("source".into(), field);
                 // XLSX decoder already decodes JSON cells; JSON/CSV processors handle arrays.

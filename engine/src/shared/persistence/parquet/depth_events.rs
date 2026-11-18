@@ -155,11 +155,7 @@ impl DepthEventBatchBuilder {
             Arc::new(UInt8Array::from(
                 events
                     .iter()
-                    .map(|e| match e.source_operation {
-                        DepthSourceOperation::Snapshot => 0,
-                        DepthSourceOperation::AbsoluteUpdate => 1,
-                        DepthSourceOperation::RelativeUpdate => 2,
-                    })
+                    .map(|e| e.source_operation.code())
                     .collect::<Vec<_>>(),
             )),
         ];

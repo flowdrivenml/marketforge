@@ -528,6 +528,31 @@ pub(crate) fn finalize_processing_job_with_progress(
     // -------------------------------------------------------------------------
 
     reporter.stream_phase(phase_id.job_id, "", "dataset publication");
+    super::manifest::write_publication_checksums(
+        staging,
+        [
+            "manifest.json",
+            "processing-job.json",
+            "processing-runtime.json",
+        ]
+        .into_iter()
+        .map(std::path::PathBuf::from)
+        .chain(
+            manifest
+                .files
+                .iter()
+                .map(|file| std::path::PathBuf::from(&file.path)),
+        )
+        .chain(
+            manifest
+                .auxiliary_files
+                .iter()
+                .map(|file| std::path::PathBuf::from(&file.path)),
+        ),
+    )
+    .map_err(|error| {
+        MarketForgeError::InvalidConfiguration(format!("publication checksums: {error}"))
+    })?;
     commit_dataset(staging, &job.output.dataset_path)?;
     reporter.stream_phase(phase_id.job_id, "", "committed dataset complete");
     reporter.resource_snapshot(
@@ -581,7 +606,7 @@ pub(crate) fn commit_dataset(staging: &Path, dataset_path: &Path) -> Result<()> 
         )));
     }
 
-    if dataset_path.exists() {
+    if dataset_path.symlink_metadata().is_ok() {
         return Err(MarketForgeError::InvalidConfiguration(format!(
             "final dataset path already exists: {}",
             dataset_path.display(),
@@ -606,7 +631,8 @@ pub(crate) fn commit_dataset(staging: &Path, dataset_path: &Path) -> Result<()> 
     // This must remain a same-filesystem operation.
     // Do not fall back to copying files.
 
-    fs::rename(staging, dataset_path).map_err(|error| {
+    use rustix::fs::{CWD, RenameFlags, renameat_with};
+    renameat_with(CWD, staging, CWD, dataset_path, RenameFlags::NOREPLACE).map_err(|error| {
         MarketForgeError::InvalidConfiguration(format!(
             "failed to commit dataset {} -> {}: {error}",
             staging.display(),
@@ -614,20 +640,27 @@ pub(crate) fn commit_dataset(staging: &Path, dataset_path: &Path) -> Result<()> 
         ))
     })?;
 
+    fs::File::open(parent)
+        .and_then(|dir| dir.sync_all())
+        .map_err(|error| {
+            MarketForgeError::InvalidConfiguration(format!("cannot sync dataset parent: {error}"))
+        })?;
+
     Ok(())
 }
 
 pub(crate) fn prepare_staging_path(path: &Path) -> Result<()> {
-    if path.exists() {
-        return Err(MarketForgeError::InvalidConfiguration(format!(
-            "staging path already exists: {}",
-            path.display(),
-        )));
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            MarketForgeError::InvalidConfiguration(format!(
+                "failed to create staging parent {}: {error}",
+                parent.display(),
+            ))
+        })?;
     }
-
-    fs::create_dir_all(path).map_err(|error| {
+    fs::create_dir(path).map_err(|error| {
         MarketForgeError::InvalidConfiguration(format!(
-            "failed to create staging path {}: {error}",
+            "failed to create fresh staging directory {}: {error}",
             path.display(),
         ))
     })?;

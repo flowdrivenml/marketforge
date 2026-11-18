@@ -53,11 +53,11 @@ engine/tests/historical/fixtures/
 
 Exchange profiles reside within the historical configuration catalog.
 
-The current schema-v4 reader also accepts `families` and minimal `family_id` tasks for dated futures. See [prepared source selection](../../historical/normalization-source-selection.md) for exact fields, discovery, inherited specification provenance and namespace/legacy-ID limits.
+The current schema-v4 reader also accepts `families` and minimal `family_id` tasks for dated futures. See prepared source selection (repository source: `docs/historical/normalization-source-selection.md`) for exact fields, discovery, inherited specification provenance and namespace/legacy-ID limits.
 
 Runtime remains schema 1 with defaulted, validated `[reconciliation.*]` and `[timestamp_regression.*]` extensions. Old configurations retain strict behavior. Unknown fields/values are rejected. Existing configured budgets are preserved. See [Processing policies](#processing-policies).
 
-Execution-only scratch settings now accept `scratch_format = "typed_events"` in addition to unchanged `json` (default) and `typed_trades`. It enables typed trades and versioned, shared-envelope depth outcomes; other records remain JSON. `scratch_codec = "zlib"` (default) and `uncompressed` remain independent. No production setting is enabled automatically. [Execution eligibility, concurrency admission, exact depth invariants, format bounds and diagnostics](../../historical/normalization-performance-diagnostics.md) describe the current implementation.
+Execution-only scratch settings now accept `scratch_format = "typed_events"` in addition to unchanged `json` (default) and `typed_trades`. It enables typed trades and versioned, shared-envelope depth outcomes; other records remain JSON. `scratch_codec = "zlib"` (default) and `uncompressed` remain independent. No production setting is enabled automatically. Execution eligibility, concurrency admission, exact depth invariants, format bounds and diagnostics (repository source: `docs/historical/normalization-performance-diagnostics.md`) describe the current implementation.
 
 Verified evaluator semantics: enabled `action = "fail"` fails on the first violation, regardless of `max_count`, `max_rate` or sample floors. `degrade` marks observed violations degraded and fails when an absolute count is exceeded (`>`). Immediate worker checks enforce action/count; final evaluation additionally checks global/file/stream rates and independent UTC hourly/daily rate windows. Rate equality is permitted, and rate checks defer below their applicable sample floor. Missing trustworthy timestamps fail configured window verification even when the observed category has no violations. Disabled integrity evaluation bypasses these policy decisions, not archive/resource/reconstruction/publication checks.
 
@@ -1733,8 +1733,41 @@ The current timestamp-first historical merger supports manifest 2/3 only and exp
 
 ### Bitget evidence boundary
 
-Bitget historical spot and linear-perpetual feeds now use separate `ordered_run` native-ID contracts. Each job validates nonempty decimal IDs, matching identity contents, increasing native survivor order and increasing IDs in the chronological union before publication. Missing IDs, conflicts and resets fail; no lifetime/global uniqueness is inferred. The native `trade_id` mapping was already correct. This permits lossless equal-time archive continuations and verified overlapping-ID reconciliation. See [Bitget trade reconciliation](../../historical/bitget-trade-reconciliation.md) for the primary documentation boundary, runtime checks and full-corpus evidence.
+Bitget historical spot and linear-perpetual feeds now use separate `ordered_run` native-ID contracts. Each job validates nonempty decimal IDs, matching identity contents, increasing native survivor order and increasing IDs in the chronological union before publication. Missing IDs, conflicts and resets fail; no lifetime/global uniqueness is inferred. The native `trade_id` mapping was already correct. This permits lossless equal-time archive continuations and verified overlapping-ID reconciliation. See Bitget trade reconciliation (repository source: `docs/historical/bitget-trade-reconciliation.md`) for the primary documentation boundary, runtime checks and full-corpus evidence.
 
 ### Offline family handoff
 
-Python should emit schema-4 family definitions and minimal `family_id` tasks, retaining prepared IDs, ranks, selections and physical paths. Rust discovers expired contracts offline and publishes exact resolved catalogs. The existing deterministic namespace strategy and exact-mapping precedence remain unchanged; a hash cannot reproduce removed arbitrary legacy IDs. Future batches needing legacy IDs must carry/reuse those exact mappings. Family inheritance is a reproducible batch assertion, not independent proof of identical historical specifications. No Python implementation or acquisition/database redesign is included here.
+Forge uses the schema-v4 `OfflineFamily`/`family_id` contract for bounded dated-futures identity discovery. Final managed preparation freezes canonical concrete identities and member-specific specifications with explicit family scope and member selections. Perpetual families retain their separate scope representation. Independently authored Rust family references remain supported without recipe reconstruction. Family inheritance is an explicit operational assertion, not independently verified historical validity. See the [Forge reference](../reference/cli/forge.md).
+
+
+## Automatically enriched historical inputs
+
+Run `mf init --testing` before preparing existing exchange downloads. Explicit
+historical evidence takes precedence over the approved catalogue/BTC-reference
+inference policy described in [market configuration](markets.md#historical-metadata-inference).
+The preparation report retains each selected specification revision and inference
+provenance; no inference-only fields are added to strict Rust task definitions.
+
+```bash
+mf init --testing
+mf database status --testing
+mf normalize validate engine_test
+mf normalize prepare engine_test --testing --dry-run
+mf normalize prepare engine_test --testing
+```
+
+Preparation remains separate from execution. Dated-family and perpetual tasks
+retain family scopes with explicit native member selections and a frozen offline
+concrete catalogue. Concrete Binance/Bybit dated-futures requests remain exact
+contracts. Perpetual scopes never become dated-futures `OfflineFamily` records.
+The engine's `family_id`/`OfflineFamily` discovery contract is used for bounded
+identity discovery; final batches use explicit populations so differing exact
+member specifications are preserved. No population is advertised as a complete
+historical family without supporting evidence.
+
+A saved batch passes the production nonprocessing validator. The normalizer also
+provides `--resolve-batch PATH --project-root ROOT` for nonprocessing resolution
+checks; this can inspect family sources through production parsers, but never
+publishes a dataset. Neither validation mode establishes successful normalization.
+Unknown acquisition feed labels remain separate from profile snapshot/update
+semantics and do not become inferred feed options.

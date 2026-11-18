@@ -19,8 +19,11 @@ from forge.cli.commands.acquisition import (
     new_acquisition,
     validate_acquisition,
 )
+from forge.cli.commands.catalog import configure as configure_catalog
 from forge.cli.commands.config import show_config
 from forge.cli.commands.database import migrate_database, show_database_status
+from forge.cli.commands.datasets import configure as configure_datasets
+from forge.cli.commands.engine import configure as configure_engine
 from forge.cli.commands.imports import configure as configure_imports
 from forge.cli.commands.initialization import configure as configure_initialization
 from forge.cli.commands.maintenance import (
@@ -31,7 +34,10 @@ from forge.cli.commands.maintenance import (
     configure_storage,
 )
 from forge.cli.commands.markets import configure as configure_markets
+from forge.cli.commands.merge import configure as configure_merge
 from forge.cli.commands.normalization import configure as configure_normalization
+from forge.cli.commands.profiles import configure as configure_profiles
+from forge.cli.commands.registration import configure as configure_registration
 from forge.shared.config.library import resolve_config_file
 from forge.shared.errors import MarketForgeError
 from forge.shared.ownership import WorkspaceOwnership
@@ -103,10 +109,24 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
 
+    configure_engine(
+        commands.add_parser("engine", help="Build and inspect approved managed engines.")
+    )
+
     configure_normalization(
         commands.add_parser(
-            "normalize", help="Prepare historical normalization JSON without execution."
+            "normalize", help="Prepare, execute and register historical normalization."
         )
+    )
+
+    configure_datasets(commands.add_parser("datasets", help="Inspect registered primary data files."))
+
+    configure_merge(
+        commands.add_parser("merge", help="Prepare, execute and register historical merges.")
+    )
+
+    configure_catalog(
+        commands.add_parser("catalog", help="Register and inspect manual catalogue metadata.")
     )
 
     configure_markets(
@@ -150,6 +170,14 @@ def build_parser() -> argparse.ArgumentParser:
     acquisition_commands = acquisition_parser.add_subparsers(
         dest="acquisition_command",
         required=True,
+    )
+    configure_registration(
+        acquisition_commands.add_parser(
+            "register", help="Register local raw data in managed storage."
+        )
+    )
+    configure_profiles(
+        acquisition_commands.add_parser("profiles", help="Manage manually authored Rust profiles.")
     )
     configure_imports(
         acquisition_commands.add_parser(
@@ -372,6 +400,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             with WorkspaceOwnership(context.paths):
                 migrate_database(
                     testing=arguments.testing,
+                    project_root=context.paths.root,
                     presentation=context.settings.presentation,
                     as_json=arguments.as_json,
                 )
@@ -380,6 +409,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.command == "database" and arguments.database_command == "status":
             show_database_status(
                 testing=arguments.testing,
+                project_root=context.paths.root,
                 presentation=context.settings.presentation,
                 as_json=arguments.as_json,
             )
@@ -388,13 +418,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("Unsupported command.")
     except KeyboardInterrupt:
         _emit_error(
-            "Acquisition cancelled; inspect the run report and rerun to recover.",
+            "Command interrupted. Inspect the retained run receipt for recovery.",
             as_json=arguments.as_json,
         )
         return 130
     except tomllib.TOMLDecodeError:
         _emit_error(
             "Invalid TOML configuration; inspect the named file.", as_json=arguments.as_json
+        )
+        return 2
+    except json.JSONDecodeError:
+        _emit_error(
+            "Invalid JSON document; inspect the submitted batch, receipt or authoritative manifest.",
+            as_json=arguments.as_json,
         )
         return 2
     except ValidationError as exc:

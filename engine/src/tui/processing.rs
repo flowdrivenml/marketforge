@@ -32,7 +32,7 @@ use {
 };
 
 use crate::shared::terminal::widgets::panel;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 #[path = "processing/state.rs"]
 mod state;
 use state::*;
@@ -80,6 +80,11 @@ pub fn execute_processing_with_tui(
     drop(terminal);
     drop(guard);
     if let Err(error) = dashboard_result {
+        if error.kind() == io::ErrorKind::Interrupted {
+            // The foreground CLI exits immediately, stopping its worker without
+            // removing staging or published outputs.
+            return Err(Box::new(error));
+        }
         eprintln!("Dashboard stopped: {error}; waiting for processing to finish");
     }
     let processing_result = worker.join();
@@ -188,6 +193,11 @@ where
     drop(terminal);
     drop(guard);
     if let Err(error) = dashboard_result {
+        if error.kind() == io::ErrorKind::Interrupted {
+            // The foreground CLI exits immediately, stopping its worker without
+            // removing staging or published outputs.
+            return Err(Box::new(error));
+        }
         eprintln!("Dashboard stopped: {error}; waiting for processing to finish");
     }
     let processing_result = worker.join();
@@ -360,6 +370,12 @@ fn run_dashboard<T: Send>(
             && let Event::Key(key) = event::read()?
             && key.kind == KeyEventKind::Press
         {
+            if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                return Err(io::Error::new(
+                    io::ErrorKind::Interrupted,
+                    "normalization cancelled",
+                ));
+            }
             match key.code {
                 KeyCode::Char('?') => d.help = !d.help,
                 KeyCode::Char('a') => d.next_active(),

@@ -100,3 +100,52 @@ Both `volume_unit` and `group_by` are required explicitly. Do not include `compa
 ## Standard presets
 
 `markets rank update` only reads `turnover.toml` and/or `volume.toml` in this directory. It does not create them; `rank new` always creates a turnover template regardless of filename. To establish a volume policy, write and validate the appropriate volume TOML intentionally. Custom names use `rank build`, not `rank update`. The generated turnover template is strict (`allow_partial_universe = false`), unlike the permissive examples on this page.
+
+See the [unified Forge workflow](../workflows/acquisition/forge.md) for managed builds, manually authored profiles, historical registration declarations, namespace mappings and dataset-registration recovery.
+
+
+## Historical metadata inference
+
+`mf init --testing` enriches registered exchange downloads after catalogue collection
+and before rankings. It verifies the testing database identity, applies migrations,
+preserves API observations, establishes canonical identities, and appends immutable
+specification and family evidence. It neither copies nor re-registers raw files.
+A failed exchange scope retains its previous observations; initialization reports
+partial coverage independently of historical readiness.
+
+Policy `catalogue-btc-reference-v1` resolves, in order: historically verified
+specifications, immutable historical declarations, exact retained catalogue
+specifications, then a compatible BTC futures/options reference. References must
+share exchange, product type, market category, base/quote, settlement, and any
+known quantity/contract denomination. Only missing shared specification fields
+are inherited. Exact values and instrument-specific expiration, option strike,
+call/put and underlying remain attached to the target identity.
+
+`catalogue_inferred` and `reference_contract_inferred` evidence is operationally
+accepted under this project policy. Its assumed applicability interval covers the
+registered inventory; its observation timestamp records when the source was
+actually retrieved. It is **not historically verified**. Evidence retains source
+catalogue/API IDs, source snapshot hash, inherited fields, policy version, and a
+deterministic fingerprint. Unchanged recollections reuse immutable revisions;
+changed source evidence or applicability creates an appended revision. Conflicting
+explicit declarations block preparation rather than falling back to inference.
+
+Families retain catalogue and archive-derived membership separately, with no
+claim of historical completeness. OKX perpetual archive identities use their
+native source identity; dated-futures bundles use bounded production Rust identity
+discovery (256 MiB per managed copy, 180 seconds). Results are cached by copy
+checksum, compiled profile fingerprint, and policy. Changed inputs or profiles
+require rediscovery. Current inactive/expired catalogue rows are retained, and
+archive-discovered expired native identities receive stable authority mappings.
+Discovery never publishes normalized datasets.
+
+Options specification inference preserves option identity fields, but current
+market acquisition adapters omit options and the Rust offline catalogue/installed
+profiles do not support options normalization. Missing option identity or engine
+support remains an explicit blocker; initialization does not fabricate it.
+
+Initialization reports concrete evidence methods, family/member counts, cached
+archive discovery, eligible archives, and blocked inputs. These are metadata
+readiness counts; preparation separately verifies managed bytes and the Rust
+contract. The tables added by migration 0014 are immutable evidence stores, not a
+second raw-data registry or a replacement for catalogue observations.

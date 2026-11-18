@@ -3,7 +3,7 @@
 import tomllib
 from pathlib import Path
 
-from forge.historical.archives.config import AcquisitionConfig, load_acquisition
+from forge.historical.archives.config import load_acquisition
 from forge.historical.archives.templates import ACQUISITION_TEMPLATE
 from forge.historical.normalization.config import NormalizationRecipe, PreparationRequest
 from forge.shared.config.library import resolve_config_file
@@ -11,12 +11,15 @@ from forge.shared.paths import ProjectPaths
 
 
 def recipe_path(paths: ProjectPaths, name: str, *, existing: bool = True) -> Path:
+    supplied = Path(name).expanduser()
+    if supplied.is_absolute() or len(supplied.parts) > 1:
+        return supplied.resolve()
     destination = resolve_config_file(paths.normalization_recipe_dir, name)
     legacy = resolve_config_file(paths.normalization_config_dir, name)
     return legacy if existing and not destination.exists() and legacy.exists() else destination
 
 
-def load_configuration(source: Path) -> AcquisitionConfig | PreparationRequest:
+def load_configuration(source: Path) -> NormalizationRecipe | PreparationRequest:
     with source.open("rb") as stream:
         document = tomllib.load(stream)
     if "inputs" in document or "job_id" in document:

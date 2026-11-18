@@ -22,6 +22,7 @@ impl SourcePlanCompatibility {
             Exchange::Bitget => ExchangeId::Bitget,
             Exchange::GateIo => ExchangeId::Gateio,
             Exchange::Okx => ExchangeId::Okx,
+            Exchange::Manual(_) => return Err(SourcePlanCompatibilityError::UnsupportedMarket),
         };
 
         let market = match market {

@@ -346,7 +346,15 @@ impl<M: std::borrow::Borrow<ProcessingMetricsReport>> DatasetManifest<M> {
         let mut unverified = 0u64;
         let mut native = false;
         let mut extension = false;
-        let mut continuity = true;
+        // Bounded observations and passive trade sequences provide no continuity
+        // contract. Both may legitimately omit values from the native sequence.
+        let mut continuity = !job.tasks.iter().any(|task| {
+            task.raw_schema["order_book"]["event_model"] == "bounded_observation"
+                || task.normalizations.iter().any(|rule| {
+                    rule.target_schema == crate::shared::normalization::TargetSchema::Trade
+                        && rule.rules.get("sequence").is_some()
+                })
+        });
         for task in &processing_metrics.tasks {
             if let Some(source) = &task.source {
                 let o = &source.processing;

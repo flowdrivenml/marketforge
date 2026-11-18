@@ -83,7 +83,7 @@ Import recipes resolve in `data/.config/acquisition/import/`. No import command 
 All five accept `--silent`; final results remain. They support global JSON. Failed per-file import results produce a failed run with individual outcomes; sources remain unchanged. Source changes during hashing/copying fail rather than being treated as a stable import.
 
 ```text
-marketforge acquisition import format new IMPORT --profile PROFILE --input REFERENCE [--member MEMBER] [--header | --no-header] [--overwrite]
+# Legacy automatic format drafting is retired; use acquisition profiles validate/add.
 ```
 
 `--profile` and `--input` are required. Profile names use lowercase letters, digits and hyphens (must begin with a letter, at most 101 characters). `REFERENCE` is an exact selected root-relative input, not a filesystem path outside the selection. `--member` chooses a ZIP member. Header defaults to unresolved. `--overwrite` explicitly allows replacing the draft directory's generated files, not source bytes.
@@ -154,3 +154,5 @@ No database/network or `--testing`. Default limit 100; list/log bounds 1–1000.
 | 130 | Interruption handled by the CLI; a hard kill cannot promise a final report. |
 
 Global JSON setup errors go to stderr with an error message; operation reports can describe individual failures in stdout results. Human editor commands retain their editor/human output contract. Use command `--help` for parser-level inspection without triggering operational work.
+
+See the [unified Forge workflow](forge.md) for managed builds, manually authored profiles, historical registration declarations, namespace mappings and dataset-registration recovery.

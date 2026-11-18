@@ -85,6 +85,12 @@ fn execute_unified_merge_job_inner(
     })?;
     reporter.phase_completed(MergePhase::InputResolution);
     let streams = resolve_unified_merge_streams(&resolved, project_root)?;
+    use crate::historical::normalize::manifest::{file_sha256, write_publication_checksums};
+    let input_hashes = resolved
+        .iter()
+        .map(|input| file_sha256(&input.dataset_path.join("manifest.json")))
+        .collect::<std::io::Result<Vec<_>>>()
+        .map_err(|error| invalid_error(error.to_string()))?;
 
     let mut trade_inputs = Vec::new();
     let mut depth_inputs = Vec::new();
@@ -114,8 +120,32 @@ fn execute_unified_merge_job_inner(
     // Build source inventories
     // -------------------------------------------------------------------------
     reporter.phase_started(MergePhase::Inventory);
-    let trade_inventory =
+    let mut trade_inventory =
         profile_stage("trade_inventory", || build_trade_inventory(&trade_inputs))?;
+
+    // Retain original task row ordinals while excluding unselected event data.
+    for task in &mut trade_inventory {
+        if let Some(files) = job.primary_files.get(&task.dataset_id) {
+            let root = &resolved
+                .iter()
+                .find(|input| input.dataset_id == task.dataset_id)
+                .expect("resolved trade publication")
+                .dataset_path;
+            task.files.retain(|file| {
+                files
+                    .iter()
+                    .any(|selected| file.path == root.join(&selected.path))
+            });
+            if let (Some(start), Some(end)) = (
+                task.files.iter().map(|file| file.start_timestamp_ns).min(),
+                task.files.iter().map(|file| file.end_timestamp_ns).max(),
+            ) {
+                task.start_timestamp_ns = start;
+                task.end_timestamp_ns = end;
+            }
+        }
+    }
+    trade_inventory.retain(|task| !task.files.is_empty());
 
     let depth_inventory =
         profile_stage("depth_inventory", || build_depth_inventory(&depth_inputs))?;
@@ -407,6 +437,38 @@ fn execute_unified_merge_job_inner(
         prepare_physical_publication(&commit.staging_path, &physical_manifest)
     })?;
 
+    let provenance = (|| -> std::io::Result<()> {
+        use std::io::Write;
+        let mut file = std::fs::File::create(commit.staging_path.join("merge-job.json"))?;
+        serde_json::to_writer_pretty(&mut file, job)?;
+        file.sync_all()?;
+        let mut file =
+            std::fs::File::create(commit.staging_path.join("merge-input-checksums.json"))?;
+        serde_json::to_writer(&mut file, &input_hashes)?;
+        file.flush()?;
+        file.sync_all()?;
+        let mut file = std::fs::File::create(commit.staging_path.join("merge-partitions.json"))?;
+        serde_json::to_writer(&mut file, &physical_results)?;
+        file.sync_all()?;
+        write_publication_checksums(
+            &commit.staging_path,
+            [
+                "manifest.json",
+                "merge-job.json",
+                "merge-input-checksums.json",
+                "merge-partitions.json",
+            ]
+            .into_iter()
+            .map(PathBuf::from)
+            .chain(
+                physical_manifest
+                    .files
+                    .iter()
+                    .map(|file| PathBuf::from(&file.path)),
+            ),
+        )
+    })();
+    provenance.map_err(|error| invalid_error(format!("merge publication provenance: {error}")))?;
     reporter.phase_completed(MergePhase::PublicationPreparation);
 
     // -------------------------------------------------------------------------

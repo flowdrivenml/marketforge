@@ -89,8 +89,71 @@ struct RuntimeDocument {
     reconciliation: super::policies::Reconciliation,
     #[serde(default)]
     timestamp_regression: super::policies::TimestampRegression,
+    #[serde(default)]
+    merge: MergeRuntime,
     resources: ResourceConfig,
     integrity_policy: IntegrityPolicy,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct MergeRuntime {
+    partitions_per_worker: usize,
+    compression_level: i32,
+}
+
+impl Default for MergeRuntime {
+    fn default() -> Self {
+        Self {
+            partitions_per_worker: 4,
+            compression_level: 3,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct MergeRuntimeSettings {
+    resources: crate::historical::job::MergeResources,
+    partitioning: crate::historical::job::MergePartitioning,
+    parquet: crate::historical::job::MergeParquetConfig,
+}
+
+pub fn load_merge_runtime_settings(path: &Path, root: &Path) -> Result<MergeRuntimeSettings> {
+    use crate::historical::job::{MergeParquetConfig, MergePartitioning, MergeResources};
+    let (config, merge) = load_runtime(path, root)?;
+    let resources = config.resources;
+    let mb = |bytes: u64, field: &str| -> Result<u64> {
+        const MIB: u64 = 1024 * 1024;
+        if bytes % MIB != 0 {
+            return invalid(&format!(
+                "merge requires {field} to be a whole number of MiB"
+            ));
+        }
+        Ok(bytes / MIB)
+    };
+    if merge.partitions_per_worker == 0 || !(1..=22).contains(&merge.compression_level) {
+        return invalid("invalid merge partition count or ZSTD compression level");
+    }
+    Ok(MergeRuntimeSettings {
+        resources: MergeResources {
+            workers: resources.workers,
+            memory_limit_mb: mb(resources.memory_budget_bytes, "memory_budget_bytes")?,
+            max_open_files: usize::try_from(resources.normalization_limits.open_files).map_err(
+                |_| MarketForgeError::InvalidConfiguration("merge open-file limit overflow".into()),
+            )?,
+        },
+        partitioning: MergePartitioning {
+            partitions_per_worker: merge.partitions_per_worker,
+        },
+        parquet: MergeParquetConfig {
+            row_group_target_mb: mb(
+                resources.parquet.row_group_target_bytes,
+                "row_group_target_bytes",
+            )?,
+            file_target_mb: mb(resources.parquet.file_target_bytes, "file_target_bytes")?,
+            compression_level: merge.compression_level,
+        },
+    })
 }
 
 /// Canonicalize a real project directory, without changing the process CWD.
@@ -123,9 +186,13 @@ pub fn load_processing_config(
     path: impl AsRef<Path>,
     root: impl AsRef<Path>,
 ) -> Result<ProcessingConfig> {
+    load_runtime(path.as_ref(), root.as_ref()).map(|(processing, _merge)| processing)
+}
+
+fn load_runtime(path: &Path, root: &Path) -> Result<(ProcessingConfig, MergeRuntime)> {
     let root = project_root(root)?;
-    let path = resolve_path(&root, path.as_ref());
-    let result = (|| -> Result<ProcessingConfig> {
+    let path = resolve_path(&root, path);
+    let result = (|| -> Result<(ProcessingConfig, MergeRuntime)> {
         let contents = fs::read_to_string(&path)
             .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
         let document: RuntimeDocument = toml::from_str(&contents)
@@ -151,7 +218,7 @@ pub fn load_processing_config(
         if config.resources.scratch_path.exists() && !config.resources.scratch_path.is_dir() {
             return invalid("resources.scratch_path: existing path must be a directory");
         }
-        Ok(config)
+        Ok((config, document.merge))
     })();
     result.map_err(|e| {
         MarketForgeError::InvalidConfiguration(format!(

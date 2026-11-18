@@ -59,6 +59,7 @@ arrow-select = [
 ]
 
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 csv-core = { version = "0.1.13", optional = true }
 axum = {
   version = "0.8",

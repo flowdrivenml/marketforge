@@ -10,9 +10,13 @@ impl crate::shared::formats::trades::InstrumentMatcher {
         headers: &csv::ByteRecord,
         task: &WorkTask,
     ) -> crate::shared::error::Result<Self> {
-        let policy = identity_policy(task);
-
-        let matcher = Self::new(headers, task.symbol.clone(), policy)?;
+        let column = task.raw_schema["marketforge_trade_instrument"].as_str();
+        let policy = if column.is_some() {
+            IdentityPolicy::Strict
+        } else {
+            identity_policy(task)
+        };
+        let matcher = Self::with_column(headers, task.symbol.clone(), policy, column)?;
         if let Some(symbols) = task.raw_schema["marketforge_source"]["family_symbols"].as_array() {
             let symbols = symbols
                 .iter()

@@ -29,7 +29,7 @@ use {
 // Metrics
 // -----------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PhysicalWriterMetrics {
     pub events_written: u64,
     pub trade_events: u64,

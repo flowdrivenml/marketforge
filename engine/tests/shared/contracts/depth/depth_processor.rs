@@ -211,3 +211,79 @@ fn invalidation_requires_new_snapshot() {
     assert!(processor.book().is_initialized());
     assert!(processor.sequence().is_synchronized());
 }
+
+#[test]
+fn bounded_observations_preserve_repeated_and_sparse_sequences() {
+    use marketforge_engine::shared::{
+        domain::{
+            book::SequencePolicy,
+            canonical::DepthSourceOperation,
+            instrument::{InstrumentKind, InstrumentSpec},
+        },
+        normalization::{NormalizationConfig, QuantityEncoding, TargetSchema, TimestampEncoding},
+    };
+
+    let config = NormalizationConfig {
+        timestamp_encoding: TimestampEncoding::Nanoseconds,
+        quantity_encoding: QuantityEncoding::Base,
+        target_schema: TargetSchema::Depth,
+        rules: json!({
+            "event_timestamp": {"source": "ts"},
+            "sequence_start": {"source": "seq"},
+            "bids": {"source": "levels", "price_field": "bp", "quantity_field": "bq"},
+            "asks": {"source": "levels", "price_field": "ap", "quantity_field": "aq"},
+            "snapshot": {
+                "type": "bounded_observation",
+                "levels_per_side": 1,
+                "sequence_order": "nondecreasing"
+            }
+        }),
+    };
+    let mut processor = DepthProcessor::new(
+        &[config],
+        InstrumentSpec {
+            instrument_kind: InstrumentKind::Equity,
+            contract_kind: None,
+            tick_size: Decimal::ONE,
+            contract_value: None,
+            contract_value_asset: None,
+        },
+        DepthContext {
+            exchange: Exchange::from_code("example").unwrap(),
+            instrument_id: 1,
+            symbol: "EXAMPLE".into(),
+            stream_id: "example.equity.equity.EXAMPLE.depth".into(),
+        },
+        SequencePolicy::Unsequenced,
+    )
+    .unwrap();
+
+    let mut observation = json!({
+        "ts": 1_730_125_800_000_054_842_i64,
+        "seq": 100,
+        "levels": [{"bp": 99, "bq": 2, "ap": 101, "aq": 4}]
+    });
+    for sequence in [100, 100, 150] {
+        observation["seq"] = json!(sequence);
+        let outcome = processor
+            .process_record_with_boundary(&observation)
+            .unwrap();
+        assert_eq!(outcome.operation, DepthSourceOperation::BoundedObservation);
+        assert_eq!(outcome.source.sequence_start, Some(sequence));
+    }
+
+    observation["seq"] = json!(149);
+    let error = processor
+        .process_record_with_boundary(&observation)
+        .unwrap_err();
+    assert!(error.to_string().contains("strictly decreased"));
+    observation["seq"] = json!(151);
+    observation["levels"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"bp": 98, "bq": 1, "ap": 102, "aq": 1}));
+    let error = processor
+        .process_record_with_boundary(&observation)
+        .unwrap_err();
+    assert!(error.to_string().contains("exceeds its declared depth"));
+}

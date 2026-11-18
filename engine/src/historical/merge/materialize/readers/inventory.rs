@@ -32,10 +32,28 @@ impl CanonicalRowIndex {
     }
     /// Register source spans in shared physical files (path, physical start, rows).
     pub fn from_slices(files: Vec<(PathBuf, u64, u64)>) -> Result<Self> {
+        let mut offset = 0u64;
+        Self::from_positioned(
+            files
+                .into_iter()
+                .map(|(path, physical, rows)| {
+                    let start = offset;
+                    offset = offset.saturating_add(rows);
+                    (path, physical, rows, Some(start))
+                })
+                .collect(),
+        )
+    }
+
+    pub fn from_positioned(files: Vec<(PathBuf, u64, u64, Option<u64>)>) -> Result<Self> {
         let mut indexed = Vec::with_capacity(files.len());
         let mut offset = 0_u64;
 
-        for (path, physical_offset, rows) in files {
+        for (path, physical_offset, rows, position) in files {
+            let start = position.unwrap_or(offset);
+            if start < offset {
+                return invalid("overlapping canonical slices");
+            }
             physical_offset
                 .checked_add(rows)
                 .ok_or_else(|| invalid_error("physical canonical slice overflow"))?;
@@ -43,13 +61,13 @@ impl CanonicalRowIndex {
                 return invalid(format!("canonical file has zero rows: {}", path.display()));
             }
 
-            let end = offset
+            let end = start
                 .checked_add(rows)
                 .ok_or_else(|| invalid_error("canonical row offset overflow"))?;
 
             indexed.push(CanonicalFileRange {
                 path,
-                row_start: offset,
+                row_start: start,
                 physical_offset,
                 row_end: end,
             });

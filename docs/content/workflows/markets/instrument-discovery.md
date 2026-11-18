@@ -44,3 +44,15 @@ Market category (`spot`, `linear`, `inverse`) and instrument type (`spot`, `perp
 `show` groups identity, native status, launch/expiry when supplied, assets/settlement, tick size, quantity step and constraints, quantity denomination, and contract value/unit. Missing specifications stay missing. Expiry is supplied for dated futures, not fabricated from perpetual placeholder timestamps. Retained inactive/expired entries can still appear in browsing; they are not a promise that refresh will collect them.
 
 Next, [retrieve current statistics](market-statistics.md) for the successfully synchronized selection. A symbol-filtered sync certifies that selection; it is not a full-scope sync for an unfiltered refresh.
+
+See the [unified Forge workflow](../acquisition/forge.md) for managed builds, manually authored profiles, historical registration declarations, namespace mappings and dataset-registration recovery.
+
+
+## Historical authority during initialization
+
+`mf init --testing` now appends historical specification and family evidence after
+catalogue synchronization, before ranking publication. Existing downloaded bytes
+remain in place. See [historical inference policy](../../configuration/markets.md#historical-metadata-inference)
+for evidence precedence, BTC reference constraints, provenance, incomplete family
+populations, cached archive discovery and options limitations. Initialization
+reports metadata readiness separately from exchange collection failures.

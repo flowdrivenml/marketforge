@@ -11,11 +11,11 @@ from forge.markets.filters import symbol_pattern
 from forge.storage.models import StorageFilters
 
 # Gate's canonical registry intentionally omits source_feed for incremental depth;
-# archive_scope_document adds it only for snapshot depth. External/other unknown
-# feeds remain NULL and never join a known feed identity.
+# archive_scope_document adds it only for snapshot depth. Bitget's canonical
+# depth product keys identify the snapshot-only workbooks used by BITGET-B1.
 REGISTRY: LiteralString = """
 WITH identities AS (
- SELECT l.*, CASE WHEN l.external_archive_id IS NULL THEN 'remote' ELSE 'external' END AS origin,
+ SELECT l.*, o.raw_source_id,o.acquisition_method,provider.source_key AS raw_source_key,provider.provider,provider.product,provider.provenance AS source_provenance, CASE WHEN l.external_archive_id IS NULL THEN 'remote' ELSE 'external' END AS origin,
    r.filename, a.source_object_key AS external_object, a.normalization_readiness,a.identity_json,
    r.scope_json,r.source_metadata,a.specifications_json,a.import_provenance,a.format_profile,
    a.external_source_id,s.source_key AS external_source_key,s.source_kind,s.root_uri AS external_source_root,
@@ -29,17 +29,37 @@ WITH identities AS (
    CASE WHEN r.id IS NOT NULL THEN r.start_at ELSE a.declared_start_at END AS start_at,
    CASE WHEN r.id IS NOT NULL THEN r.end_at ELSE a.declared_end_at END AS end_at,
    CASE WHEN r.scope_json ? 'source_feed' THEN r.scope_json->>'source_feed'
-        WHEN r.id IS NOT NULL AND e.code='gateio' AND r.data_type='order_book_l2' THEN 'incremental'
-        ELSE a.identity_json->>'source_feed' END AS feed,
+        ELSE COALESCE(native.feed, a.identity_json->>'source_feed') END AS feed,
    CASE WHEN r.scope_json ? 'source_feed' THEN 'registered_source_feed'
-        WHEN r.id IS NOT NULL AND e.code='gateio' AND r.data_type='order_book_l2' THEN 'canonical_gate_incremental_default'
+        WHEN native.feed IS NOT NULL THEN native.evidence
         WHEN a.identity_json ? 'source_feed' THEN 'external_identity' ELSE 'unknown_or_not_applicable' END AS feed_source,
    COALESCE(r.source_object_key,a.source_object_key) AS source_object_key,
    r.source_etag AS registered_source_etag,r.source_last_modified AS registered_source_last_modified
  FROM historical.local_archives l
+ LEFT JOIN historical.raw_objects o ON o.id=l.raw_object_id
+ LEFT JOIN historical.raw_sources provider ON provider.id=o.raw_source_id
  LEFT JOIN historical.remote_archives r ON r.id=l.remote_archive_id
  LEFT JOIN catalog.exchanges e ON e.id=r.exchange_id
- LEFT JOIN historical.external_archives a ON a.id=l.external_archive_id
+ LEFT JOIN LATERAL (
+   SELECT 'incremental' AS feed, 'canonical_gate_incremental_default' AS evidence
+   WHERE e.code='gateio' AND r.data_type='order_book_l2'
+   UNION ALL
+   SELECT 'snapshot', 'canonical_bitget_snapshot_product'
+   WHERE e.code='bitget' AND r.data_type='order_book_l2'
+     AND provider.source_key='marketforge.exchange.bitget'
+     AND ((r.scope_json->>'instrument_type'='spot'
+           AND r.source_object_key ~ '^history/order_book_l2/.+_1_[0-9]{8}[.]zip$')
+       OR (r.scope_json->>'instrument_type'='perpetual'
+           AND r.source_object_key ~ '^history/order_book_l2/.+_3_[0-9]{8}[.]zip$'))
+ ) native ON true
+ LEFT JOIN LATERAL (
+   SELECT b.interpretation_id FROM historical.raw_bindings b
+   JOIN historical.external_archives interpretation ON interpretation.id=b.interpretation_id
+   WHERE b.local_archive_id=l.id
+   ORDER BY (interpretation.import_provenance#>>'{binding,readiness,normalization_handoff}' IS NOT DISTINCT FROM 'ready') DESC, b.id DESC
+   LIMIT 1
+ ) binding ON true
+ LEFT JOIN historical.external_archives a ON a.id=COALESCE(binding.interpretation_id,l.external_archive_id)
  LEFT JOIN historical.external_sources s ON s.id=a.external_source_id
  WHERE l.storage_root_key=%(root)s
 ), enriched AS (
@@ -77,11 +97,13 @@ WITH identities AS (
    AND (%(data_type)s::text IS NULL OR data_type=%(data_type)s)
    AND (%(feed)s::text IS NULL OR feed=%(feed)s OR (%(feed)s='unknown' AND feed IS NULL))
    AND (%(origin)s::text IS NULL OR origin=%(origin)s)
+   AND (%(raw_source_key)s::text IS NULL OR raw_source_key=%(raw_source_key)s)
    AND (%(status)s::text IS NULL OR status=%(status)s)
    AND (%(archive_id)s::bigint IS NULL OR id=%(archive_id)s)
 ), matching AS (
  SELECT * FROM selected WHERE
    (%(start)s::timestamptz IS NULL AND %(end)s::timestamptz IS NULL)
+   OR (%(include_unusable)s AND (start_at IS NULL OR end_at IS NULL OR start_at>=end_at))
    OR (start_at IS NOT NULL AND end_at IS NOT NULL AND start_at<end_at
        AND (%(start)s::timestamptz IS NULL OR CASE WHEN %(containment)s THEN start_at>=%(start)s ELSE end_at>%(start)s END)
        AND (%(end)s::timestamptz IS NULL OR CASE WHEN %(containment)s THEN end_at<=%(end)s ELSE start_at<%(end)s END))
@@ -90,7 +112,11 @@ WITH identities AS (
 
 
 def parameters(
-    root: Path, filters: StorageFilters, archive_id: int | None = None
+    root: Path,
+    filters: StorageFilters,
+    archive_id: int | None = None,
+    *,
+    include_unusable: bool = False,
 ) -> dict[str, object]:
     return {
         **filters.model_dump(),
@@ -98,6 +124,7 @@ def parameters(
         "pattern": symbol_pattern(filters.match),
         "archive_id": archive_id,
         "containment": False,
+        "include_unusable": include_unusable,
     }
 
 

@@ -4,6 +4,7 @@ import argparse
 import asyncio
 from dataclasses import asdict
 
+from forge.historical.metadata.service import enrich_testing
 from forge.markets.ranking.coordination import ranking_lock
 from forge.markets.ranking.workflow import reason, refresh_and_publish
 from forge.markets.service import collect
@@ -31,6 +32,7 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
     )
 
     async def initialize(dsn: str) -> dict[str, object]:
+        nonlocal active_stage
         sync = await collect(dsn, context.settings.http, metadata=True, progress=display.update)
         stages.append({"stage": "catalogue", **sync})
         if sync.get("status") == "cancelled":
@@ -42,6 +44,13 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
                     for name in ("turnover", "volume")
                 ],
             }
+        active_stage = "historical_metadata"
+        try:
+            enrichment = await enrich_testing(dsn, context.paths)
+        except Exception as error:
+            enrichment = {"status": "failed", "error": reason(error)}
+        stages.append({"stage": "historical_metadata", **enrichment})
+        active_stage = "rankings"
         # Track scope completion independently for each collection phase.
         display.reported.clear()
         async with testing_connection(dsn) as ranking_owner:
@@ -52,7 +61,7 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
                     context.paths.config_dir / "markets/rankings",
                     progress=display.update,
                 )
-        if sync.get("status") != "complete":
+        if sync.get("status") != "complete" or enrichment.get("status") != "complete":
             value["status"] = "partial"
         return value
 

@@ -155,7 +155,7 @@ quantity_type = "base"
 | `source_kind` | `recording` (default), `purchased`, or `other`. |
 | `files`, `patterns` | At least one nonempty selection. Entries are root-relative; no absolute entries or parent traversal. Patterns support segment globs and recursive `**`; expansion is bounded. |
 | `max_files` | Default 1000; allowed 1–10000. Pattern traversal also stops after 100000 inspected entries. |
-| `identity` | Required `exchange`, `market_category`, `instrument_type`, `symbol`. Types currently spot/perpetual only; categories spot/linear/inverse must match. `UNSPECIFIED` is invalid. |
+| `identity` | Required `exchange`, `market_category`, `instrument_type`, `symbol`. Types include spot, perpetual, future, option and equity. Type and category must agree. `UNSPECIFIED` is invalid. |
 | `data_type` | Required `trades` or `order_book_l2`. |
 | `interval` | Optional declared half-open interval; it is not inferred or verified from file contents. |
 | `specifications` | Optional for known instrument raw registration; required for unknown instruments. Includes aware `as_of`, base/quote assets and `quantity_type` (`base`, `quote`, `contracts`). |
@@ -163,3 +163,5 @@ quantity_type = "base"
 | `format_profile` | Optional top-level reference. Does not validate/activate the profile or establish processing readiness. |
 
 A source selection is sorted and frozen for an import run; symlink resolution must remain within the source root. Full identity/specification declarations are the user's responsibility. There is no automatic filename-derived venue, unit, interval or contract interpretation. See [external workflow and readiness](../workflows/acquisition/external-data.md).
+
+See the [unified Forge workflow](../workflows/acquisition/forge.md) for managed builds, manually authored profiles, historical registration declarations, namespace mappings and dataset-registration recovery.

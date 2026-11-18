@@ -33,6 +33,20 @@ pub(super) fn decimal(w: &mut dyn Write, value: Decimal) -> io::Result<()> {
     w.write_all(&value.scale().to_le_bytes())?;
     w.write_all(&[u8::from(value.is_sign_negative())])
 }
+pub(super) fn write_exchange(w: &mut impl Write, exchange: Exchange) -> io::Result<()> {
+    w.write_all(&[match exchange {
+        Exchange::Bybit => 1,
+        Exchange::Binance => 2,
+        Exchange::Okx => 3,
+        Exchange::Bitget => 4,
+        Exchange::GateIo => 5,
+        Exchange::Manual(_) => 6,
+    }])?;
+    if matches!(exchange, Exchange::Manual(_)) {
+        string(w, exchange.as_str())?;
+    }
+    Ok(())
+}
 pub(super) fn encode(w: &mut impl Write, entry: &TradeEntry) -> io::Result<()> {
     w.write_all(&[0, 1])?; // typed trade tag, payload version
     w.write_all(&(entry.source as u64).to_le_bytes())?;
@@ -44,13 +58,7 @@ pub(super) fn encode(w: &mut impl Write, entry: &TradeEntry) -> io::Result<()> {
     optional(w, e.system_timestamp_ns, |w, v| {
         w.write_all(&v.to_le_bytes())
     })?;
-    w.write_all(&[match e.exchange {
-        Exchange::Bybit => 1,
-        Exchange::Binance => 2,
-        Exchange::Okx => 3,
-        Exchange::Bitget => 4,
-        Exchange::GateIo => 5,
-    }])?;
+    write_exchange(w, e.exchange)?;
     w.write_all(&e.instrument_id.to_le_bytes())?;
     string(w, &e.symbol)?;
     string(w, &e.stream_id)?;
@@ -62,6 +70,7 @@ pub(super) fn encode(w: &mut impl Write, entry: &TradeEntry) -> io::Result<()> {
     w.write_all(&[match t.side {
         TradeSide::Buy => 1,
         TradeSide::Sell => 2,
+        TradeSide::Unknown => 3,
     }])?;
     decimal(w, t.price)?;
     optional(w, t.quantity_base, decimal)?;
@@ -89,6 +98,20 @@ impl<'a> Input<'a> {
     }
     pub(super) fn i64(&mut self) -> Result<i64> {
         Ok(i64::from_le_bytes(self.take()?))
+    }
+    pub(super) fn exchange(&mut self) -> Result<Exchange> {
+        Ok(match self.byte()? {
+            1 => Exchange::Bybit,
+            2 => Exchange::Binance,
+            3 => Exchange::Okx,
+            4 => Exchange::Bitget,
+            5 => Exchange::GateIo,
+            6 => match Exchange::from_code(self.string_ref()?) {
+                Some(venue @ Exchange::Manual(_)) => venue,
+                _ => return Err(bad()),
+            },
+            _ => return Err(bad()),
+        })
     }
     pub(super) fn string_ref(&mut self) -> Result<&'a str> {
         let length = u32::from_le_bytes(self.take()?) as usize;
@@ -138,14 +161,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<TradeEntry> {
     let ordinal = r.u64()?;
     let event_timestamp_ns = r.i64()?;
     let system_timestamp_ns = r.optional(Input::i64)?;
-    let exchange = match r.byte()? {
-        1 => Exchange::Bybit,
-        2 => Exchange::Binance,
-        3 => Exchange::Okx,
-        4 => Exchange::Bitget,
-        5 => Exchange::GateIo,
-        _ => return Err(bad()),
-    };
+    let exchange = r.exchange()?;
     let instrument_id = r.i64()?;
     let symbol = r.string()?;
     let stream_id = r.string()?;
@@ -154,6 +170,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<TradeEntry> {
     let side = match r.byte()? {
         1 => TradeSide::Buy,
         2 => TradeSide::Sell,
+        3 => TradeSide::Unknown,
         _ => return Err(bad()),
     };
     let price = r.decimal()?;

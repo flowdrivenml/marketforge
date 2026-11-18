@@ -6,9 +6,7 @@ use crate::historical::normalize::boundary::{BoundaryBookState, DepthBoundaryTra
 use crate::shared::{
     domain::{
         book::{BookLevel, BookStore},
-        canonical::{
-            BookSide, DepthEventBoundary, DepthSourceOperation, EventEnvelope, L2LevelUpdate,
-        },
+        canonical::{BookSide, DepthEventBoundary, EventEnvelope, L2LevelUpdate},
     },
     historical::policies::{DepthOverlap, DepthTimestamp, Selection, SwitchBoundary, milliseconds},
 };
@@ -125,8 +123,8 @@ fn exact(a: &BookStore, b: &BookStore, metrics: &mut super::super::policies::Out
 fn proof(a: &Depth, b: &Depth) -> bool {
     match (&a.last_proof, &b.first_proof) {
         (Some(a), Some(b)) => {
-            a.operation == DepthSourceOperation::Snapshot
-                && b.operation == DepthSourceOperation::Snapshot
+            a.operation.is_snapshot()
+                && b.operation.is_snapshot()
                 && b.boundary == DepthEventBoundary::Initialization
                 && reconcile::event_equivalence(
                     a.source.sequence_end.is_some()
@@ -460,7 +458,7 @@ pub(super) fn publish(
                 return Err(invalid("depth checkpoint source position mismatch"));
             }
             let timestamp = outcome.source.event_timestamp_ns;
-            let snapshot = outcome.operation == DepthSourceOperation::Snapshot;
+            let snapshot = outcome.operation.is_snapshot();
             if reset(outcome.source.sequence_end, source_sequence, snapshot) {
                 high = None;
                 previous_time = None;
@@ -561,7 +559,13 @@ pub(super) fn publish(
                     task.symbol.clone(),
                     task.stream_id.0.clone(),
                     super::super::resolve_sequence_policy(task)?,
-                    None,
+                    task.raw_schema["order_book"]["snapshot_depth"]["bids"]
+                        .as_u64()
+                        .filter(|depth| {
+                            task.raw_schema["order_book"]["snapshot_depth"]["asks"].as_u64()
+                                == Some(*depth)
+                        })
+                        .and_then(|depth| u32::try_from(depth).ok()),
                 ));
             }
             let force_initial = new_source
@@ -714,7 +718,7 @@ pub(super) fn publish(
                 .source_event_ordinal
                 .ok_or_else(|| invalid("depth accounting metadata missing source ordinal"))?;
             let timestamp = outcome.source.event_timestamp_ns;
-            let snapshot = outcome.operation == DepthSourceOperation::Snapshot;
+            let snapshot = outcome.operation.is_snapshot();
             if reset(outcome.source.sequence_end, sequence, snapshot) {
                 high = None;
                 previous_time = None;

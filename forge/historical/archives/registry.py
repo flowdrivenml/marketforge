@@ -61,7 +61,7 @@ async def register_remote_archive(
     async with connection.cursor(row_factory=class_row(RegisteredArchive)) as cursor:
         await cursor.execute(
             """
-            INSERT INTO historical.remote_archives AS existing (
+            INSERT INTO historical.raw_objects AS existing (
                 exchange_id,
                 scope_key,
                 scope_json,

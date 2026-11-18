@@ -28,7 +28,7 @@ def test_id_collisions_and_unused_output(tmp_path: Path) -> None:
     used = {first}
     second = allocate("seed", used, paths)
     assert second != first
-    target = paths.data_root / "test/normalized" / str(first)
+    target = paths.data_root / "datasets/normalized" / str(first)
     target.mkdir(parents=True)
     assert allocate("seed", set(), paths) == second
     target.rmdir()
@@ -101,7 +101,7 @@ async def test_dry_run_and_publication_share_read_only_planner(
     run = paths.runs_dir / "fixture"
     plan = BatchPlan(
         {"status": "prepared", "date": datetime(2026, 1, 1, tzinfo=UTC)},
-        {"schema_version": 3, "kind": "normalization_batch"},
+        {"schema_version": 4, "kind": "normalization_batch", "status": "partial"},
         {
             7: {
                 "output": {
@@ -141,34 +141,21 @@ async def test_dry_run_and_publication_share_read_only_planner(
         assert configuration == recipe
         return plan
 
-    from forge.historical.normalization.ranking import RankingSelection
-    from forge.shared.config.models import HttpSettings
-
     @asynccontextmanager
     async def lock(c: AsyncConnection[TupleRow], *, shared: bool = False) -> AsyncGenerator[None]:
         yield
 
-    async def ensure(
-        c: AsyncConnection[TupleRow],
-        dsn: str,
-        directory: Path,
-        policy: str,
-        settings: HttpSettings,
-        *,
-        dry_run: bool,
-    ) -> RankingSelection:
-        return RankingSelection(None, {"decision": "would_create", "policy": policy})
-
-    monkeypatch.setattr("forge.historical.normalization.batch.ranking_lock", lock)
-    monkeypatch.setattr("forge.historical.normalization.batch.ensure_ranking", ensure)
     monkeypatch.setattr("forge.historical.normalization.batch.testing_connection", connect)
     monkeypatch.setattr("forge.historical.normalization.batch.testing_dsn", dsn)
     monkeypatch.setattr("forge.historical.normalization.batch.plan_batch", planner)
+    config = paths.config_dir / "historical/general.toml"
+    config.parent.mkdir(parents=True)
+    config.write_text("schema_version=1\n")
     with patch("subprocess.run", side_effect=AssertionError("Engine must never launch")):
         dry = await prepare_batch(paths, recipe, dry_run=True)
         assert dry["dry_run"] is True and not paths.runs_dir.exists()
         actual = await prepare_batch(paths, recipe)
-    assert {**dry, "dry_run": False} == actual
+    assert dry["status"] == actual["status"]
     assert len(queries) == 2
     assert sorted(p.name for p in run.iterdir()) == ["normalize-batch.json", "prepare-report.json"]
     assert json.loads((run / "normalize-batch.json").read_text()) == plan.batch

@@ -39,12 +39,10 @@ class ArchiveSourceOptions(SettingsModel, frozen=True):
     feed: Literal["incremental", "snapshot"] = "incremental"
 
 
-class ArchiveRequest(SettingsModel, frozen=True):
-    """One archive collection requested from a source."""
+class ArchiveSource(SettingsModel, frozen=True):
+    """Source identity and feed options shared by acquisition and normalization."""
 
     exchange: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
-    instrument_type: Literal["spot", "perpetual", "future", "option"]
-    market_category: Literal["spot", "linear", "inverse", "option"]
     data_type: Literal["trades", "order_book_l2"]
     scope: ArchiveScope
     source_options: ArchiveSourceOptions | None = None
@@ -56,6 +54,13 @@ class ArchiveRequest(SettingsModel, frozen=True):
         ):
             raise ValueError("source_options is supported only for Gate.io order_book_l2 requests")
         return self
+
+
+class ArchiveRequest(ArchiveSource, frozen=True):
+    """One archive collection requested from a native acquisition adapter."""
+
+    instrument_type: Literal["spot", "perpetual", "future", "option"]
+    market_category: Literal["spot", "linear", "inverse", "option"]
 
 
 class AcquisitionConfig(SettingsModel, frozen=True):

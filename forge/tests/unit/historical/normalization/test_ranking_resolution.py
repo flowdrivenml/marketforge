@@ -178,8 +178,10 @@ async def test_actual_collection_failure_is_retained(monkeypatch: pytest.MonkeyP
     build.assert_not_awaited()
 
 
-def test_missing_ranking_plan_is_provisional_and_does_not_publish(tmp_path: Path) -> None:
-    from forge.historical.normalization.batch import build_plan
+def test_missing_ranking_uses_identity_fallback_without_publishing(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    from forge.historical.normalization.batch import build_plan, source_order
     from forge.historical.normalization.mapping import ResolvedArchive
     from forge.shared.paths import ProjectPaths
 
@@ -194,8 +196,15 @@ def test_missing_ranking_plan_is_provisional_and_does_not_publish(tmp_path: Path
         None,
         {
             "trades": {
-                ("local:1", "stream"): ResolvedArchive(
-                    {"stream_id": "stream", "input_path": "/raw/archive"}, 42
+                (("remote", "local", "1"), "stream"): (
+                    source_order(
+                        {
+                            "start_at": datetime(2026, 10, 1, tzinfo=UTC),
+                            "end_at": datetime(2026, 10, 2, tzinfo=UTC),
+                        },
+                        "/raw/archive",
+                    ),
+                    ResolvedArchive({"stream_id": "stream", "input_path": "/raw/archive"}, 42),
                 )
             }
         },
@@ -209,6 +218,6 @@ def test_missing_ranking_plan_is_provisional_and_does_not_publish(tmp_path: Path
     details = obj(plan.report["ranking_resolution"])
     assert details["decision"] == "would_create" and details["order_final"] is False
     assert details["matched_stream_count"] == 0 and details["unmatched_stream_count"] == 1
-    assert plan.report["ranking_pending"] is True and plan.report["status"] == "partial"
+    assert plan.report["ranking_pending"] is True and plan.report["status"] == "prepared"
     assert plan.report["prepared_task_count"] == 1
-    assert not paths.runs_dir.exists() and not (paths.data_root / "test/normalized").exists()
+    assert not paths.runs_dir.exists() and not (paths.data_root / "datasets/normalized").exists()

@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict
 
 from forge.cli.commands.markets import emit
 from forge.cli.market_filters import configure_identity_filters
-from forge.markets.capabilities import EXCHANGES
 from forge.markets.models import array
 from forge.shared.database.testing import testing_connection, testing_dsn
 from forge.shared.errors import MarketForgeError
@@ -32,9 +31,11 @@ def filters(
     parser: argparse.ArgumentParser, *, cleanup: bool = False, containment: bool = False
 ) -> None:
     configure_identity_filters(parser)
-    parser.add_argument("--exchange", choices=EXCHANGES)
-    parser.add_argument("--market", choices=("spot", "linear", "inverse", "option"))
-    parser.add_argument("--instrument-type", choices=("spot", "perpetual", "future", "option"))
+    parser.add_argument("--exchange", help="Exact registered execution venue code.")
+    parser.add_argument("--market", choices=("spot", "linear", "inverse", "option", "equity"))
+    parser.add_argument(
+        "--instrument-type", choices=("spot", "perpetual", "future", "option", "equity")
+    )
     parser.add_argument(
         "--instrument", help="Exact registered native instrument/family/scope identifier."
     )

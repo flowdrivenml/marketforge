@@ -138,6 +138,7 @@ handoff.md
 
 # Maintained workload and persistent normalization test outputs.
 !engine/tests/historical/fixtures/normalize.json
+!engine/tests/historical/fixtures/merge.json
 /data/tests/historical/normalize/
 
 # Persistent historical benchmark metadata and generated datasets.
@@ -147,3 +148,14 @@ handoff.md
 /docs/.venv/
 /docs/site/
 /docs/.cache/
+
+# Forge-managed engine installation and persistent operation locks
+/.bin/marketforge-normalize
+/.bin/marketforge-merge
+/.bin/manifest.json
+/.marketforge-engine.lock
+/.marketforge-profiles.lock
+
+# Small documented input examples.
+!docs/content/examples/catalogue/synthetic-depth.jsonl
+!docs/content/examples/catalogue/synthetic-trades.csv

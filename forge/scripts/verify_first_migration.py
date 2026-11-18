@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -13,10 +12,11 @@ from forge.shared.database.migrations import (
     load_migrations,
     migrate_testing_database,
 )
+from forge.shared.database.testing import testing_dsn
 
 
 def main() -> None:
-    dsn = os.environ["MARKETFORGE_DATABASE_URL_TEST"]
+    dsn = testing_dsn()
     with psycopg.connect(dsn, autocommit=True) as connection:
         if connection.execute("SELECT current_database()").fetchone() != ("marketforge_test",):
             raise RuntimeError("This verification requires marketforge_test.")

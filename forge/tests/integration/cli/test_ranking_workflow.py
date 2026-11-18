@@ -20,6 +20,7 @@ from forge.markets.ranking import workflow
 from forge.markets.ranking.policy import RankingPolicy
 from forge.shared.config.models import HttpSettings
 from forge.shared.database.migrations import MigrationResult
+from forge.shared.paths import ProjectPaths
 
 ROOT = Path(__file__).resolve().parents[4]
 SNAPSHOT = UUID("00000000-0000-0000-0000-000000000001")
@@ -110,6 +111,14 @@ def test_one_refresh_independent_policy_outcomes_and_safe_repeat(
     monkeypatch.setattr(initialization, "testing_dsn", dsn)
     monkeypatch.setattr(rankings, "testing_dsn", dsn)
     monkeypatch.setattr(initialization, "migrate_testing_database", migrate)
+
+    async def enrich(dsn: str, paths: ProjectPaths) -> dict[str, object]:
+        return {
+            "status": "complete",
+            "normalization_readiness": {"eligible_archives": 0, "blocked_archives": 0},
+        }
+
+    monkeypatch.setattr(initialization, "enrich_testing", enrich)
     monkeypatch.setattr(initialization, "collect", collect)
     monkeypatch.setattr(workflow, "collect", collect)
     monkeypatch.setattr(workflow, "testing_connection", connection)

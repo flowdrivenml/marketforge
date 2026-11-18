@@ -38,7 +38,10 @@ pub fn resolve_sequence_policy(task: &WorkTask) -> Result<SequencePolicy> {
         let has_start = rules.contains_key("sequence_start");
         let has_count = rules.contains_key("sequence_count");
 
-        let policy = match (has_start, has_count) {
+        let bounded = rules
+            .get("snapshot")
+            .is_some_and(|s| s["type"] == "bounded_observation");
+        let policy = match (has_start && !bounded, has_count) {
             (false, false) => SequencePolicy::Unsequenced,
 
             (true, false) => SequencePolicy::Consecutive,

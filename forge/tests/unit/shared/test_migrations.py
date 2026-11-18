@@ -84,6 +84,7 @@ def test_rejects_history_missing_a_local_predecessor(tmp_path: Path) -> None:
 
 
 def test_requires_testing_connection_without_production_fallback(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("MARKETFORGE_DATABASE_URL_TEST", raising=False)
@@ -92,5 +93,8 @@ def test_requires_testing_connection_without_production_fallback(
         "postgresql://unused/marketforge",
     )
 
+    (tmp_path / "forge").mkdir()
+    (tmp_path / "forge/pyproject.toml").touch()
+    (tmp_path / "engine").mkdir()
     with pytest.raises(MigrationError, match="MARKETFORGE_DATABASE_URL_TEST"):
-        migrate_testing_database()
+        migrate_testing_database(project_root=tmp_path)

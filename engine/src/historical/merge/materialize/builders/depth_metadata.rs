@@ -3,7 +3,6 @@ use std::{collections::HashMap, path::Path};
 use {
     crate::shared::error::MarketForgeError, crate::shared::error::Result,
     crate::shared::formats::depth::DepthEventBoundary,
-    crate::shared::formats::depth::DepthSourceOperation,
     crate::shared::persistence::parquet::IndexedDepthEvent,
 };
 
@@ -278,11 +277,7 @@ fn validate_event(reference: &UnifiedTimelineRecord, event: &IndexedDepthEvent) 
         ));
     }
 
-    let operation = match event.source_operation {
-        DepthSourceOperation::Snapshot => 0,
-        DepthSourceOperation::AbsoluteUpdate => 1,
-        DepthSourceOperation::RelativeUpdate => 2,
-    };
+    let operation = event.source_operation.code();
 
     if reference.source_operation != Some(operation) {
         return invalid(format!(

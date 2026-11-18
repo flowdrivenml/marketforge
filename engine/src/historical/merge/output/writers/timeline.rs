@@ -5,7 +5,7 @@ use arrow_schema::{DataType, Field, Schema, SchemaRef};
 
 use crate::{
     shared::error::{MarketForgeError, Result},
-    shared::formats::depth::{DepthEventBoundary, DepthSourceOperation},
+    shared::formats::depth::DepthEventBoundary,
 };
 
 use crate::historical::merge::core::kway::MergedDepthEvent;
@@ -57,11 +57,7 @@ impl From<&MergedDepthEvent> for TimelineRecord {
             DepthEventBoundary::Initialization => 1,
         };
 
-        let source_operation = match event.source_operation {
-            DepthSourceOperation::Snapshot => 0,
-            DepthSourceOperation::AbsoluteUpdate => 1,
-            DepthSourceOperation::RelativeUpdate => 2,
-        };
+        let source_operation = event.source_operation.code();
 
         Self {
             event_timestamp_ns: event.event_timestamp_ns,

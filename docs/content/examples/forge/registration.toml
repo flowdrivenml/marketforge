@@ -1,0 +1,27 @@
+[registration]
+version = 1
+name = "synthetic-spot"
+
+[source]
+key = "synthetic-spot"
+provider = "fixture-recorder"
+product = "synthetic-trades-depth"
+root = "data/tests/historical/forge-example/source"
+provenance = "Synthetic example assertions only; not historical Binance specifications"
+kind = "recording"
+
+[[inputs]]
+instrument = "binance.spot.spot.BTCUSDT"
+profile = "binance.spot.spot.trades"
+content = "trades"
+files = ["trades.zip"]
+
+[[inputs]]
+instrument = "binance.spot.spot.BTCUSDT"
+profile = "binance.spot.spot.depth"
+content = "depth"
+files = ["depth.zip"]
+
+[coverage]
+start = 2026-01-01T00:00:00Z
+end = 2026-01-02T00:00:00Z

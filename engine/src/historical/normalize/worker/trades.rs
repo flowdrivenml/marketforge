@@ -6,7 +6,10 @@ use crate::{
     shared::formats::trades::{
         IdentityDecision, InstrumentMatcher, TradeContext, TradeProcessor, resolve_trade_headers,
     },
-    shared::io::decode::CsvDecoder,
+    shared::io::{
+        decode::CsvDecoder,
+        source::{JsonlDecoder, JsonlError},
+    },
 };
 use {
     crate::historical::job::IntegrityPolicy, crate::historical::job::WorkTask,
@@ -32,6 +35,120 @@ pub struct TradeWorkerMetrics {
     pub end_timestamp_ns: Option<i64>,
 }
 
+type TradeRows<'a> = Box<dyn Iterator<Item = (Option<u64>, Result<csv::ByteRecord>)> + 'a>;
+
+fn with_trade_rows<T>(
+    task: &WorkTask,
+    run: impl FnOnce(csv::ByteRecord, TradeRows<'_>) -> Result<T>,
+) -> Result<T> {
+    fn parse_error(error: impl std::fmt::Display) -> MarketForgeError {
+        MarketForgeError::RecordIntegrity {
+            category: IntegrityCategory::ParseFailure,
+            message: error.to_string(),
+        }
+    }
+    with_source_reader(
+        &task.input_path,
+        task.source_compression,
+        task.archive_member.as_deref(),
+        |reader| {
+            if task.raw_schema["marketforge_trade_jsonl"] == true {
+                let headers = resolve_trade_headers(&task.raw_schema, None)?;
+                let names = headers
+                    .iter()
+                    .map(|name| {
+                        std::str::from_utf8(name)
+                            .expect("schema field names are UTF-8")
+                            .to_owned()
+                    })
+                    .collect::<Vec<_>>();
+                let scalar_row = move |value: serde_json::Value| {
+                    if !value.is_object() {
+                        return Err(parse_error("JSONL trade must be an object"));
+                    }
+                    let mut row = csv::ByteRecord::new();
+                    for name in &names {
+                        match crate::shared::formats::depth::resolve_json_path(&value, name) {
+                            Some(serde_json::Value::String(text)) => {
+                                row.push_field(text.as_bytes())
+                            }
+                            Some(serde_json::Value::Number(number)) => {
+                                row.push_field(number.to_string().as_bytes())
+                            }
+                            Some(serde_json::Value::Bool(flag)) => {
+                                row.push_field(if *flag { b"true" } else { b"false" })
+                            }
+                            Some(serde_json::Value::Null) | None => row.push_field(b""),
+                            // Declared but unused arrays/objects need not be projected.
+                            Some(_) => row.push_field(b""),
+                        }
+                    }
+                    Ok(row)
+                };
+                if let Some(cached) = super::decoded::take_json() {
+                    return run(
+                        headers,
+                        Box::new(cached.map(move |result| match result {
+                            Ok((ordinal, record)) => (Some(ordinal), scalar_row(record)),
+                            Err(error) => (None, Err(error)),
+                        })),
+                    );
+                }
+                let mut decoder = JsonlDecoder::new(reader);
+                let rows = std::iter::from_fn(move || match decoder.next_json() {
+                    Ok(Some(value)) => Some((None, scalar_row(value))),
+                    Ok(None) => None,
+                    Err(JsonlError::Record(error)) => Some((None, Err(parse_error(error)))),
+                    Err(JsonlError::Source(error)) => Some((
+                        None,
+                        Err(crate::shared::historical::limits::source_error(
+                            task.input_path.clone(),
+                            error,
+                        )),
+                    )),
+                });
+                return run(headers, Box::new(rows));
+            }
+
+            let has_headers = task.raw_schema["header"].as_bool().ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration(
+                    "trade raw schema requires boolean header field".into(),
+                )
+            })?;
+            let mut decoder = CsvDecoder::with_headers(reader, has_headers);
+            let cached = super::decoded::take_csv();
+            let actual = if let Some((headers, _)) = &cached {
+                headers.clone()
+            } else if has_headers {
+                Some(
+                    decoder
+                        .headers()
+                        .map_err(|error| super::integrity::csv_source_error(task, error))?,
+                )
+            } else {
+                None
+            };
+            let headers = resolve_trade_headers(&task.raw_schema, actual.as_ref())?;
+            let error = |error: csv::Error| {
+                if error.is_io_error() {
+                    super::integrity::csv_source_error(task, error)
+                } else {
+                    parse_error(error)
+                }
+            };
+            let rows: TradeRows<'_> = if let Some((_, rows)) = cached {
+                Box::new(rows.map(|row| match row {
+                    Ok((ordinal, row)) => (Some(ordinal), Ok(row)),
+                    Err(e) => (None, Err(error(e))),
+                }))
+            } else {
+                Box::new(decoder.records().map(|row| (None, row.map_err(error))))
+            };
+            run(headers, rows)
+        },
+    )
+}
+
 pub fn process_trade_task<S: TradeSink>(
     task: &WorkTask,
     sink: &mut S,
@@ -49,16 +166,6 @@ pub fn process_trade_task<S: TradeSink>(
         })?
         .clone();
 
-    let has_headers = task
-        .raw_schema
-        .get("header")
-        .and_then(|value| value.as_bool())
-        .ok_or_else(|| {
-            MarketForgeError::InvalidConfiguration(
-                "trade raw schema requires boolean header field".to_owned(),
-            )
-        })?;
-
     let context = TradeContext {
         exchange: task.exchange,
         instrument_id: task.instrument_id,
@@ -66,88 +173,68 @@ pub fn process_trade_task<S: TradeSink>(
         stream_id: task.stream_id.0.clone(),
     };
 
-    let metrics = with_source_reader(
-        &task.input_path,
-        task.source_compression,
-        task.archive_member.as_deref(),
-        |reader| {
-            let mut decoder = CsvDecoder::with_headers(reader, has_headers);
+    let metrics = with_trade_rows(task, |headers, rows| {
+        let processor =
+            TradeProcessor::new(&headers, normalization, task.instrument.clone(), context)?;
 
-            let actual_headers = if has_headers {
-                Some(
-                    decoder
-                        .headers()
-                        .map_err(|error| super::integrity::csv_source_error(task, error))?,
-                )
-            } else {
-                None
-            };
+        let mut matcher = InstrumentMatcher::from_task(&headers, task)?;
+        super::ordering::supported(task)?;
+        let mut previous_timestamp = None;
 
-            let headers = resolve_trade_headers(&task.raw_schema, actual_headers.as_ref())?;
+        let mut metrics = TradeWorkerMetrics::default();
 
-            let processor =
-                TradeProcessor::new(&headers, normalization, task.instrument.clone(), context)?;
+        for (_, record) in rows {
+            let record = record?;
 
-            let mut matcher = InstrumentMatcher::from_task(&headers, task)?;
-            super::ordering::supported(task)?;
-            let mut previous_timestamp = None;
-
-            let mut metrics = TradeWorkerMetrics::default();
-
-            for record in decoder.records() {
-                let record =
-                    record.map_err(|error| super::integrity::csv_source_error(task, error))?;
-
-                match matcher.check(&record)? {
-                    IdentityDecision::Skip => continue,
-                    IdentityDecision::Match => {}
-                }
-
-                let trade = processor.process_record(&record)?;
-                let timestamp = trade.envelope.event_timestamp_ns;
-                if super::ordering::regresses(previous_timestamp, timestamp) {
-                    return Err(MarketForgeError::RecordIntegrity {
-                        category: IntegrityCategory::TimestampRegression,
-                        message: format!(
-                            "stream {} timestamp regressed at record {}",
-                            task.stream_id.0, metrics.records_read
-                        ),
-                    });
-                }
-
-                metrics.trades_normalized += 1;
-
-                let timestamp = trade.envelope.event_timestamp_ns;
-
-                metrics.start_timestamp_ns = Some(
-                    metrics
-                        .start_timestamp_ns
-                        .map_or(timestamp, |current| current.min(timestamp)),
-                );
-
-                metrics.end_timestamp_ns = Some(
-                    metrics
-                        .end_timestamp_ns
-                        .map_or(timestamp, |current| current.max(timestamp)),
-                );
-
-                sink.write_trade(trade)?;
-                previous_timestamp = Some(timestamp);
-
-                metrics.trades_written += 1;
+            match matcher.check(&record)? {
+                IdentityDecision::Skip => continue,
+                IdentityDecision::Match => {}
             }
 
-            matcher.finish()?;
+            let trade = processor.process_record(&record)?;
+            let timestamp = trade.envelope.event_timestamp_ns;
+            if super::ordering::regresses(previous_timestamp, timestamp) {
+                return Err(MarketForgeError::RecordIntegrity {
+                    category: IntegrityCategory::TimestampRegression,
+                    message: format!(
+                        "stream {} timestamp regressed at record {}",
+                        task.stream_id.0, metrics.records_read
+                    ),
+                });
+            }
 
-            let identity = matcher.metrics();
+            metrics.trades_normalized += 1;
 
-            metrics.records_read = identity.records_read;
-            metrics.records_matched = identity.records_matched;
-            metrics.records_skipped_instrument = identity.records_skipped_instrument;
+            let timestamp = trade.envelope.event_timestamp_ns;
 
-            Ok(metrics)
-        },
-    )?;
+            metrics.start_timestamp_ns = Some(
+                metrics
+                    .start_timestamp_ns
+                    .map_or(timestamp, |current| current.min(timestamp)),
+            );
+
+            metrics.end_timestamp_ns = Some(
+                metrics
+                    .end_timestamp_ns
+                    .map_or(timestamp, |current| current.max(timestamp)),
+            );
+
+            sink.write_trade(trade)?;
+            previous_timestamp = Some(timestamp);
+
+            metrics.trades_written += 1;
+        }
+
+        matcher.finish()?;
+
+        let identity = matcher.metrics();
+
+        metrics.records_read = identity.records_read;
+        metrics.records_matched = identity.records_matched;
+        metrics.records_skipped_instrument = identity.records_skipped_instrument;
+
+        Ok(metrics)
+    })?;
 
     Ok(metrics)
 }
@@ -204,16 +291,6 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
         })?
         .clone();
 
-    let has_headers = task
-        .raw_schema
-        .get("header")
-        .and_then(|value| value.as_bool())
-        .ok_or_else(|| {
-            MarketForgeError::InvalidConfiguration(
-                "trade raw schema requires boolean header field".to_owned(),
-            )
-        })?;
-
     let context = TradeContext {
         exchange: task.exchange,
         instrument_id: task.instrument_id,
@@ -227,209 +304,178 @@ fn process_trade_task_with_metrics_impl<S: TradeSink>(
         source_file: task.input_path.to_string_lossy().into_owned(),
     };
 
-    let result = with_source_reader(
-        &task.input_path,
-        task.source_compression,
-        task.archive_member.as_deref(),
-        |reader| {
-            let mut decoder = CsvDecoder::with_headers(reader, has_headers);
+    let result = with_trade_rows(task, |headers, rows| {
+        let processor =
+            TradeProcessor::new(&headers, normalization, task.instrument.clone(), context)?;
 
-            let cached = super::decoded::take_csv();
-            let actual_headers = if let Some((headers, _)) = &cached {
-                headers.clone()
-            } else if has_headers {
-                Some(
-                    decoder
-                        .headers()
-                        .map_err(|error| super::integrity::csv_source_error(task, error))?,
-                )
-            } else {
-                None
-            };
+        let mut matcher = InstrumentMatcher::from_task(&headers, task)?;
+        let mut ordering =
+            super::ordering::TimestampOrder::new(task, &scope, policy, previous_job_integrity)?;
 
-            let headers = resolve_trade_headers(&task.raw_schema, actual_headers.as_ref())?;
+        for (index, (physical_ordinal, record)) in rows.enumerate() {
+            if let Some(reporter) = progress.as_deref_mut() {
+                reporter.maybe_update(&metrics.counters);
+            }
+            let source_record = physical_ordinal.map(Ok).unwrap_or_else(|| {
+                u64::try_from(index)
+                    .ok()
+                    .and_then(|value| value.checked_add(1))
+                    .ok_or_else(|| {
+                        MarketForgeError::InvalidConfiguration(
+                            "source record index overflow".to_owned(),
+                        )
+                    })
+            })?;
 
-            let processor =
-                TradeProcessor::new(&headers, normalization, task.instrument.clone(), context)?;
+            // ---------------------------------------------------------
+            // Decode source record
+            // ---------------------------------------------------------
 
-            let mut matcher = InstrumentMatcher::from_task(&headers, task)?;
-            let mut ordering =
-                super::ordering::TimestampOrder::new(task, &scope, policy, previous_job_integrity)?;
+            let record = match record {
+                Ok(record) => record,
 
-            let rows: Box<
-                dyn Iterator<
-                        Item = (
-                            Option<u64>,
-                            std::result::Result<csv::ByteRecord, csv::Error>,
-                        ),
-                    > + '_,
-            > = if let Some((_, rows)) = cached {
-                Box::new(rows.map(|row| match row {
-                    Ok((ordinal, row)) => (Some(ordinal), Ok(row)),
-                    Err(e) => (None, Err(e)),
-                }))
-            } else {
-                Box::new(decoder.records().map(|row| (None, row)))
-            };
-            for (index, (physical_ordinal, record)) in rows.enumerate() {
-                if let Some(reporter) = progress.as_deref_mut() {
-                    reporter.maybe_update(&metrics.counters);
-                }
-                let source_record = physical_ordinal.map(Ok).unwrap_or_else(|| {
-                    u64::try_from(index)
-                        .ok()
-                        .and_then(|value| value.checked_add(1))
-                        .ok_or_else(|| {
-                            MarketForgeError::InvalidConfiguration(
-                                "source record index overflow".to_owned(),
-                            )
-                        })
-                })?;
-
-                // ---------------------------------------------------------
-                // Decode source record
-                // ---------------------------------------------------------
-
-                let record = match record {
-                    Ok(record) => record,
-
-                    Err(error) => {
-                        // Source I/O and decompression failures are always fatal.
-                        if error.is_io_error() {
-                            return Err(super::integrity::csv_source_error(task, error));
+                Err(error) => {
+                    // Source I/O and decompression failures are always fatal.
+                    if !matches!(
+                        error,
+                        MarketForgeError::RecordIntegrity {
+                            category: IntegrityCategory::ParseFailure,
+                            ..
                         }
-
-                        increment(&mut metrics.counters.records_read, "records_read")?;
-
-                        record_trade_integrity_error(
-                            task,
-                            &scope,
-                            metrics,
-                            IntegrityCategory::ParseFailure,
-                            source_record,
-                            None,
-                            error.to_string(),
-                        )?;
-
-                        increment(
-                            &mut metrics.counters.records_rejected_unmatched,
-                            "records_rejected_unmatched",
-                        )?;
-
-                        enforce_trade_integrity(
-                            policy,
-                            metrics,
-                            previous_job_integrity,
-                            IntegrityCategory::ParseFailure,
-                            &format!("CSV parse failure at record {source_record}: {error}"),
-                        )?;
-
-                        continue;
+                    ) {
+                        return Err(error);
                     }
-                };
 
-                increment(&mut metrics.counters.records_read, "records_read")?;
+                    increment(&mut metrics.counters.records_read, "records_read")?;
 
-                let mut trace = crate::shared::validation::IntegrityObservationTrace::default();
-                trace.passed(IntegrityCategory::ParseFailure);
+                    record_trade_integrity_error(
+                        task,
+                        &scope,
+                        metrics,
+                        IntegrityCategory::ParseFailure,
+                        source_record,
+                        None,
+                        error.to_string(),
+                    )?;
 
-                // ---------------------------------------------------------
-                // Instrument identity
-                // ---------------------------------------------------------
+                    increment(
+                        &mut metrics.counters.records_rejected_unmatched,
+                        "records_rejected_unmatched",
+                    )?;
 
-                let identity = matcher.check(&record);
-                if let Err(error) = identity.as_ref() {
+                    enforce_trade_integrity(
+                        policy,
+                        metrics,
+                        previous_job_integrity,
+                        IntegrityCategory::ParseFailure,
+                        &format!("Trade parse failure at record {source_record}: {error}"),
+                    )?;
+
+                    continue;
+                }
+            };
+
+            increment(&mut metrics.counters.records_read, "records_read")?;
+
+            let mut trace = crate::shared::validation::IntegrityObservationTrace::default();
+            trace.passed(IntegrityCategory::ParseFailure);
+
+            // ---------------------------------------------------------
+            // Instrument identity
+            // ---------------------------------------------------------
+
+            let identity = matcher.check(&record);
+            if let Err(error) = identity.as_ref() {
+                trace.event_timestamp_ns = processor.event_timestamp(&record).ok();
+                let mut file_scope = scope.clone();
+                file_scope.stream_id.clear();
+                super::integrity::record_trace(metrics, &file_scope, &trace, None)?;
+                return Err(MarketForgeError::InvalidConfiguration(error.to_string()));
+            }
+            match identity? {
+                IdentityDecision::Skip => {
                     trace.event_timestamp_ns = processor.event_timestamp(&record).ok();
                     let mut file_scope = scope.clone();
                     file_scope.stream_id.clear();
                     super::integrity::record_trace(metrics, &file_scope, &trace, None)?;
-                    return Err(MarketForgeError::InvalidConfiguration(error.to_string()));
-                }
-                match identity? {
-                    IdentityDecision::Skip => {
-                        trace.event_timestamp_ns = processor.event_timestamp(&record).ok();
-                        let mut file_scope = scope.clone();
-                        file_scope.stream_id.clear();
-                        super::integrity::record_trace(metrics, &file_scope, &trace, None)?;
-                        increment(
-                            &mut metrics.counters.records_skipped_instrument,
-                            "records_skipped_instrument",
-                        )?;
+                    increment(
+                        &mut metrics.counters.records_skipped_instrument,
+                        "records_skipped_instrument",
+                    )?;
 
-                        continue;
-                    }
-
-                    IdentityDecision::Match => {
-                        increment(&mut metrics.counters.records_matched, "records_matched")?;
-                    }
+                    continue;
                 }
 
-                // ---------------------------------------------------------
-                // Normalize trade
-                // ---------------------------------------------------------
-
-                let result = processor.process_record_observed(&record, &mut trace);
-                super::integrity::record_trace(metrics, &scope, &trace, result.as_ref().err())?;
-                let trade = match result {
-                    Ok(trade) => trade,
-
-                    Err(MarketForgeError::RecordIntegrity { category, message }) => {
-                        record_trade_integrity_error(
-                            task,
-                            &scope,
-                            metrics,
-                            category,
-                            source_record,
-                            trace.event_timestamp_ns,
-                            message.clone(),
-                        )?;
-
-                        enforce_trade_integrity(
-                            policy,
-                            metrics,
-                            previous_job_integrity,
-                            category,
-                            &format!("record {source_record}: {message}"),
-                        )?;
-
-                        // Degradable record: skip and continue.
-                        continue;
-                    }
-
-                    Err(error) => return Err(error),
-                };
-
-                let timestamp = trade.envelope.event_timestamp_ns;
-                if let Err(error) = ordering.check(metrics, source_record, timestamp) {
-                    increment(&mut metrics.counters.records_rejected, "records_rejected")?;
-                    return Err(error);
+                IdentityDecision::Match => {
+                    increment(&mut metrics.counters.records_matched, "records_matched")?;
                 }
-                increment(&mut metrics.counters.events_normalized, "events_normalized")?;
-
-                increment(&mut metrics.counters.records_processed, "records_processed")?;
-
-                let timestamp = trade.envelope.event_timestamp_ns;
-
-                metrics.record_timestamp(timestamp);
-
-                // ---------------------------------------------------------
-                // Write canonical trade
-                // ---------------------------------------------------------
-
-                sink.write_trade_at(trade, source_record)?;
-                if let Some(source) = metrics.source.as_mut() {
-                    source.observe(timestamp);
-                }
-                ordering.accept(timestamp);
-
-                increment(&mut metrics.counters.events_written, "events_written")?;
             }
 
-            matcher.finish()?;
+            // ---------------------------------------------------------
+            // Normalize trade
+            // ---------------------------------------------------------
 
-            Ok(())
-        },
-    );
+            let result = processor.process_record_observed(&record, &mut trace);
+            super::integrity::record_trace(metrics, &scope, &trace, result.as_ref().err())?;
+            let trade = match result {
+                Ok(trade) => trade,
+
+                Err(MarketForgeError::RecordIntegrity { category, message }) => {
+                    record_trade_integrity_error(
+                        task,
+                        &scope,
+                        metrics,
+                        category,
+                        source_record,
+                        trace.event_timestamp_ns,
+                        message.clone(),
+                    )?;
+
+                    enforce_trade_integrity(
+                        policy,
+                        metrics,
+                        previous_job_integrity,
+                        category,
+                        &format!("record {source_record}: {message}"),
+                    )?;
+
+                    // Degradable record: skip and continue.
+                    continue;
+                }
+
+                Err(error) => return Err(error),
+            };
+
+            let timestamp = trade.envelope.event_timestamp_ns;
+            if let Err(error) = ordering.check(metrics, source_record, timestamp) {
+                increment(&mut metrics.counters.records_rejected, "records_rejected")?;
+                return Err(error);
+            }
+            increment(&mut metrics.counters.events_normalized, "events_normalized")?;
+
+            increment(&mut metrics.counters.records_processed, "records_processed")?;
+
+            let timestamp = trade.envelope.event_timestamp_ns;
+
+            metrics.record_timestamp(timestamp);
+
+            // ---------------------------------------------------------
+            // Write canonical trade
+            // ---------------------------------------------------------
+
+            sink.write_trade_at(trade, source_record)?;
+            if let Some(source) = metrics.source.as_mut() {
+                source.observe(timestamp);
+            }
+            ordering.accept(timestamp);
+
+            increment(&mut metrics.counters.events_written, "events_written")?;
+        }
+
+        matcher.finish()?;
+
+        Ok(())
+    });
 
     let outcome = match result {
         Ok(()) => {

@@ -93,7 +93,7 @@ impl DepthBatchBuilder {
         let exchange = StringArray::from(
             levels
                 .iter()
-                .map(|level| exchange_name(level.envelope.exchange))
+                .map(|level| exchange_name(&level.envelope.exchange))
                 .collect::<Vec<_>>(),
         );
 
@@ -194,14 +194,8 @@ where
 // Enum serialization
 // -----------------------------------------------------------------------------
 
-fn exchange_name(exchange: Exchange) -> &'static str {
-    match exchange {
-        Exchange::Bybit => "bybit",
-        Exchange::Binance => "binance",
-        Exchange::Okx => "okx",
-        Exchange::Bitget => "bitget",
-        Exchange::GateIo => "gateio",
-    }
+fn exchange_name(exchange: &Exchange) -> &str {
+    exchange.as_str()
 }
 
 fn side_name(side: BookSide) -> &'static str {

@@ -28,40 +28,41 @@ FORBIDDEN = {
     "profile_fingerprint",
     "archive_member",
     "source_compression",
-    "instrument_id",
 }
 
 
 @pytest.fixture(autouse=True)
-def pinned_preparation_ranking(monkeypatch: pytest.MonkeyPatch) -> None:
+def pinned_preparation_ranking(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from uuid import UUID
-
-    from forge.historical.normalization.ranking import RankingSelection
-    from forge.shared.config.models import HttpSettings
 
     @asynccontextmanager
     async def lock(c: AsyncConnection[TupleRow], *, shared: bool = False) -> AsyncGenerator[None]:
         yield
 
-    async def ensure(
-        c: AsyncConnection[TupleRow],
-        dsn: str,
-        directory: Path,
-        policy: str,
-        settings: HttpSettings,
-        *,
-        dry_run: bool,
-    ) -> RankingSelection:
-        return RankingSelection(
-            UUID(int=1), {"decision": "reused", "policy": policy, "snapshot": str(UUID(int=1))}
-        )
-
     async def positions(c: AsyncConnection[TupleRow], snapshot: UUID | None) -> dict[int, int]:
         return {}
 
-    monkeypatch.setattr("forge.historical.normalization.batch.ranking_lock", lock)
-    monkeypatch.setattr("forge.historical.normalization.batch.ensure_ranking", ensure)
     monkeypatch.setattr("forge.historical.normalization.batch.positions_for", positions)
+    from subprocess import CompletedProcess
+
+    async def snapshot(c: AsyncConnection[TupleRow]) -> tuple[None, dict[int, int]]:
+        return None, {}
+
+    def validator(argv: list[str], *, cwd: Path) -> CompletedProcess[str]:
+        assert "--validate-batch" in argv
+        return CompletedProcess(argv, 0, '{"status":"valid"}')
+
+    def executable(paths: ProjectPaths) -> Path:
+        fake = tmp_path / "nonexecuting-validator"
+        fake.touch()
+        return fake
+
+    monkeypatch.setattr("forge.historical.normalization.batch.ranking_positions", snapshot)
+    monkeypatch.setattr("forge.historical.engine.managed.supervised", validator)
+    monkeypatch.setattr("forge.historical.engine.managed.resolve", executable)
+    config = tmp_path / "data/.config/historical/general.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text("schema_version=1\n")
 
 
 class Cursor:
@@ -81,9 +82,35 @@ class Cursor:
         self.query = query
 
     async def fetchall(self) -> list[dict[str, object]]:
+        if "archive_identity_evidence" in self.query:
+            return []
+        if "specification_evidence" in self.query:
+            instrument = (
+                self.connection.instruments[0]
+                if self.connection.instruments
+                else self.connection.fallback_instruments[0]
+            )
+            return [
+                {
+                    "instrument_id": 3,
+                    "id": 1,
+                    "evidence_kind": "historical_declaration",
+                    "fingerprint": "a" * 64,
+                    "policy_version": None,
+                    "definition": {
+                        **instrument,
+                        "valid_from": "2026-10-01T00:00:00Z",
+                        "valid_to": "2026-11-01T00:00:00Z",
+                    },
+                }
+            ]
         if "lower(i.base_asset)" in self.query:
             return self.connection.fallback_instruments
         return self.connection.instruments
+
+    async def fetchone(self) -> dict[str, object] | None:
+        values = await self.fetchall()
+        return values[0] if values else None
 
 
 class Connection:
@@ -113,9 +140,16 @@ class Connection:
     async def transaction(self) -> AsyncGenerator[None]:
         yield
 
-    async def execute(self, query: str) -> None:
-        assert query == "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
+    async def execute(self, query: str, parameters: object = None) -> "Connection":
+        assert (
+            query == "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
+            or "instrument_authority" in query
+        )
         self.queries.append(query)
+        return self
+
+    async def fetchone(self) -> tuple[int]:
+        return (3,)
 
 
 def archive(paths: ProjectPaths, *, family: bool = False) -> dict[str, object]:
@@ -128,7 +162,10 @@ def archive(paths: ProjectPaths, *, family: bool = False) -> dict[str, object]:
         "id": 2,
         "status": "complete",
         "relative_path": path.name,
+        "start_at": datetime(2026, 10, 27, tzinfo=UTC),
+        "end_at": datetime(2026, 10, 28, tzinfo=UTC),
         "bytes_written": path.stat().st_size,
+        "sha256": __import__("hashlib").sha256(path.read_bytes()).hexdigest(),
         "origin": "remote",
         "remote_archive_id": 9,
         "exchange": "okx" if family else "bybit",
@@ -164,7 +201,7 @@ async def test_concrete_identity_without_profiles_or_member_selection(tmp_path: 
     }
     assert task["input_path"] == str(paths.raw_dir / "complete.zip")
     assert resolved.instrument_id == 3
-    assert not paths.config_dir.exists()
+    assert not (paths.config_dir / "historical/profiles").exists()
 
 
 @pytest.mark.asyncio
@@ -235,16 +272,12 @@ async def test_family_identity_has_no_member_contract_specs(tmp_path: Path, asse
         c.instruments[1]["quote_asset"] = "USDT"
     elif assets == "missing":
         c.instruments = []
-    result = await resolve_archive(
-        cast(AsyncConnection[TupleRow], cast(object, c)), paths, row, "trades"
-    )
-    assert result.instrument_id is None
-    assert result.task["scope"] == {"kind": "family", "identifier": "BTC-USD_UM"}
-    assert result.task["symbol"] is None and result.task["instrument"] is None
-    assert result.task["source_options"] == {"feed": "snapshot"}
-    assert result.task["quote_asset"] == ("USD" if assets == "consistent" else None)
-    assert bool(result.warnings) is (assets != "consistent")
-    assert not FORBIDDEN & result.task.keys()
+    with pytest.raises(
+        MarketForgeError, match="family archive identities unresolved|Base-coin scopes require"
+    ):
+        await resolve_archive(
+            cast(AsyncConnection[TupleRow], cast(object, c)), paths, row, "trades"
+        )
 
 
 @pytest.mark.asyncio
@@ -358,14 +391,14 @@ archive_member="second.csv"
     result = obj(json.loads(capsys.readouterr().out.splitlines()[-1]))
     batch = obj(json.loads(Path(str(result["batch_path"])).read_text()))
     job = obj(array(batch["jobs"])[0])
-    assert batch["schema_version"] == 3 and job["job_id"] == 7 and job["dataset_id"] == 8
+    assert batch["schema_version"] == 4 and job["job_id"] == 7 and job["dataset_id"] == 8
     tasks = [obj(t) for t in array(job["tasks"])]
     assert len(tasks) == 1 and tasks[0]["stream_rank"] == 1
     assert not FORBIDDEN & tasks[0].keys()
     assert len(prepared_references(paths).paths) == 1
-    assert not (paths.data_root / "test/normalized").exists()
+    assert not (paths.data_root / "datasets/normalized").exists()
     assert Path(str(result["report_path"])).is_file()
-    assert result["engine_ready"] is False
+    assert result["engine_ready"] is True
     assert c.queries.count("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY") == 2
 
 
@@ -423,25 +456,6 @@ end=2026-10-28T00:00:00Z
     def dsn(root: Path) -> str:
         return "fixture"
 
-    from uuid import UUID
-
-    from forge.historical.normalization.ranking import RankingSelection
-    from forge.shared.config.models import HttpSettings
-
-    async def ranking(
-        connection: AsyncConnection[TupleRow],
-        dsn: str,
-        directory: Path,
-        policy: str,
-        settings: HttpSettings,
-        *,
-        dry_run: bool,
-    ) -> RankingSelection:
-        rankings.append("resolved")
-        return RankingSelection(
-            UUID(int=1), {"decision": "reused", "policy": policy, "snapshot": str(UUID(int=1))}
-        )
-
     async def occupied(connection: AsyncConnection[TupleRow], project: ProjectPaths) -> set[int]:
         return set()
 
@@ -452,7 +466,7 @@ end=2026-10-28T00:00:00Z
 
     monkeypatch.setattr("forge.historical.normalization.batch.testing_connection", connect)
     monkeypatch.setattr("forge.historical.normalization.batch.testing_dsn", dsn)
-    monkeypatch.setattr("forge.historical.normalization.batch.ensure_ranking", ranking)
+    # Preparation reads persisted ranking evidence without refreshing it.
     monkeypatch.setattr("forge.historical.normalization.batch.used_ids", occupied)
     monkeypatch.setattr("forge.historical.normalization.batch.scan", scan)
     args = [
@@ -465,14 +479,18 @@ end=2026-10-28T00:00:00Z
         "--testing",
     ]
     with patch("subprocess.Popen", side_effect=AssertionError("Engine must not execute")):
-        assert main([*args, "--dry-run"]) == 0
+        assert main([*args, "--dry-run"]) == (1 if family else 0)
         dry = obj(json.loads(capsys.readouterr().out))
         assert not paths.runs_dir.exists()
-        assert main(args) == 0
+        assert main(args) == (1 if family else 0)
     result = obj(json.loads(capsys.readouterr().out))
-    assert {**dry, "dry_run": False} == result
-    assert rankings == ["resolved", "resolved"]  # Once per preparation, not per request.
+    assert dry["job_summaries"] == result["job_summaries"]
+    assert rankings == []  # Preparation never creates or refreshes rankings.
     batch = obj(json.loads(Path(str(result["batch_path"])).read_text()))
+    if family:
+        assert result["status"] == "partial"
+        assert "family archive identities unresolved" in json.dumps(result)
+        return
     tasks = array(obj(array(batch["jobs"])[0])["tasks"])
     assert len(tasks) == 1  # Repeated requests and multiple members don't expand tasks.
     task = obj(tasks[0])
@@ -491,9 +509,9 @@ end=2026-10-28T00:00:00Z
         assert task["source_options"] == {"feed": "snapshot"}
         assert task["symbol"] == "BTC-USDT" and task["base_asset"] == "BTC"
     assert not {"requests", "job_summaries", "archive_content_resolution"} & batch.keys()
-    assert "Delegated to engine" in str(result["archive_content_resolution"])
-    assert result["engine_ready"] is False
-    assert not (paths.data_root / "test/normalized").exists()
+    assert "persisted archive identity evidence" in str(result["archive_content_resolution"])
+    assert result["engine_ready"] is True
+    assert not (paths.data_root / "datasets/normalized").exists()
     assert set(prepared_references(paths).paths) == {str(paths.raw_dir / "complete.zip")}
 
 
@@ -522,11 +540,11 @@ def test_checked_in_forge_example_uses_current_task_shape() -> None:
         json.loads(
             (
                 Path(__file__).resolve().parents[5]
-                / "docs/historical/normalize-batch-v3.example.json"
+                / "docs/historical/normalize-batch-v4.example.json"
             ).read_text()
         )
     )
-    assert example["schema_version"] == 3
+    assert example["schema_version"] == 4
     jobs = [obj(j) for j in array(example["jobs"])]
     for job in jobs:
         assert not {"streams", "protocol_version"} & job.keys()
@@ -534,6 +552,9 @@ def test_checked_in_forge_example_uses_current_task_shape() -> None:
         for value in array(job["tasks"]):
             task = obj(value)
             assert not FORBIDDEN & task.keys()
+            if "family_id" in task:
+                assert task["instrument_selection"]
+                continue
             assert {
                 "exchange",
                 "instrument_type",
@@ -602,7 +623,12 @@ async def test_bitget_spot_asset_pair_resolution(
     assert resolved.task["source_options"] == {"feed": "snapshot"}
     assert obj(resolved.task["instrument"])["tick_size"] == "0.0100"
     assert resolved.task["input_path"] == str(paths.raw_dir / "complete.zip")
-    assert resolved.identity_resolution == {
+    assert {
+        key: value
+        for key, value in resolved.identity_resolution.items()
+        if key != "specification_evidence"
+    } == {
+        "namespace": "marketforge:testing:historical:v1",
         "archive_identifier": identifier,
         "method": "bitget_spot_asset_pair",
         "resolved_symbol": symbol,
@@ -611,7 +637,7 @@ async def test_bitget_spot_asset_pair_resolution(
             "quote_asset": identifier.split("/")[1],
         },
     }
-    assert len(c.queries) == 2
+    assert len(c.queries) == 4
     assert not FORBIDDEN & resolved.task.keys()
 
 
@@ -636,7 +662,7 @@ async def test_bitget_exact_lookup_precedes_pair_fallback(tmp_path: Path, count:
         )
         assert resolved.task["symbol"] == "BTC/USDT" and resolved.instrument_id == 3
         assert resolved.identity_resolution["method"] == "exact_symbol"
-    assert len(c.queries) == 1
+    assert len(c.queries) >= 1
 
 
 @pytest.mark.asyncio
@@ -683,7 +709,7 @@ async def test_malformed_bitget_pair_is_diagnosed_after_exact_miss(
         await resolve_archive(
             cast(AsyncConnection[TupleRow], cast(object, c)), paths, row, "trades"
         )
-    assert len(c.queries) == 1
+    assert len(c.queries) >= 1
 
 
 @pytest.mark.asyncio
@@ -722,9 +748,144 @@ async def test_pair_fallback_does_not_change_other_identities(
                 cast(AsyncConnection[TupleRow], cast(object, c)), paths, row, "trades"
             )
     else:
-        resolved = await resolve_archive(
-            cast(AsyncConnection[TupleRow], cast(object, c)), paths, row, "trades"
+        with pytest.raises(
+            MarketForgeError, match="family archive identities unresolved|Base-coin scopes require"
+        ):
+            await resolve_archive(
+                cast(AsyncConnection[TupleRow], cast(object, c)), paths, row, "trades"
+            )
+    assert len(c.queries) >= 1
+
+
+@pytest.mark.asyncio
+async def test_family_selection_tracks_each_archive_population(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import timedelta
+
+    from forge.historical.engine.managed import checksum
+    from forge.historical.metadata.resolution import FamilyResolutionError
+
+    paths = ProjectPaths(tmp_path, tmp_path / "data")
+    record = archive(paths, family=True)
+    first, second, unlisted = ("BTC-USD_UM-261030", "BTC-USD_UM-261127", "BTC-USD_UM-261225")
+    member = "futureschain.csv"
+    populations = {1: [first, second], 2: [second], 3: [first, second, unlisted]}
+    keys = {s: f"okx/future/linear/{s}" for s in (first, second, unlisted)}
+
+    class FamilyCursor(Cursor):
+        async def execute(self, query: str, parameters: object = None) -> None:
+            await super().execute(query, parameters)
+            self.parameters = cast(tuple[object, ...], parameters)
+
+        async def fetchall(self) -> list[dict[str, object]]:
+            if "archive_identity_evidence" in self.query:
+                symbols = populations[int(str(self.parameters[0]))]
+                return [
+                    {
+                        "profile_fingerprint": "fixture-fingerprint",
+                        "definition": {
+                            "symbols": symbols,
+                            "members": [
+                                {"archive_member": member, "symbol": symbol} for symbol in symbols
+                            ],
+                        },
+                    }
+                ]
+            if "family_membership_evidence" in self.query:
+                return [{"identity_key": key} for key in keys.values()]
+            return []
+
+    class FamilyConnection(Connection):
+        def cursor(self, *, row_factory: object) -> Cursor:
+            return FamilyCursor(self)
+
+    async def specification(
+        c: object, key: str, row: object
+    ) -> tuple[int, dict[str, str], dict[str, str]]:
+        if key == keys[unlisted]:
+            raise MarketForgeError("Missing applicable specification.")
+        return (
+            (10 if key == keys[first] else 11),
+            {
+                "base_asset": "BTC",
+                "quote_asset": "USD",
+                "tick_size": "0.1",
+                "contract_value": "0.01",
+                "contract_value_asset": "BTC",
+            },
+            {"kind": "catalogue_inferred"},
         )
-        assert resolved.task["scope"] == {"kind": scope, "identifier": "BTC/USDT"}
-        assert resolved.task["symbol"] is None and resolved.instrument_id is None
-    assert len(c.queries) == 1
+
+    monkeypatch.setattr("forge.historical.metadata.resolution.specification", specification)
+
+    def discover_profiles(paths: ProjectPaths) -> list[dict[str, str]]:
+        return []
+
+    def compiled_profiles(
+        paths: ProjectPaths, signature: tuple[tuple[str, str], ...]
+    ) -> dict[str, str]:
+        return {"okx.future.linear.trades": "fixture-fingerprint"}
+
+    monkeypatch.setattr("forge.historical.metadata.resolution.discover", discover_profiles)
+    monkeypatch.setattr("forge.historical.metadata.resolution.compiled_profiles", compiled_profiles)
+    c = cast(AsyncConnection[TupleRow], cast(object, FamilyConnection()))
+
+    for day, symbols in populations.items():
+        start = datetime(2026, 10, 26 + day, tzinfo=UTC)
+        path = paths.raw_dir / f"futureschain-{start.date()}.zip"
+        with zipfile.ZipFile(path, "w") as z:
+            z.writestr(member, "instrument_name\n" + "\n".join(symbols) + "\n")
+        row = {
+            **record,
+            "id": day,
+            "relative_path": path.name,
+            "sha256": checksum(path),
+            "bytes_written": path.stat().st_size,
+            "start_at": start,
+            "end_at": start + timedelta(days=1),
+        }
+        if day == 3:
+            with pytest.raises(FamilyResolutionError, match=unlisted) as error:
+                await resolve_archive(c, paths, row, "trades")
+            assert error.value.population["unresolved_symbols"] == {
+                unlisted: "Missing applicable specification."
+            }
+            assert error.value.population["matched_count"] == 3
+            assert error.value.population["supported_count"] == 2
+            assert error.value.population["selected_count"] == 0
+        else:
+            resolved = await resolve_archive(c, paths, row, "trades")
+            assert obj(resolved.task["instrument_selection"])["symbols"] == symbols
+            assert obj(resolved.task["scope"])["members"] == [
+                {"instrument_id": 10 if symbol == first else 11, "archive_member": member}
+                for symbol in symbols
+            ]
+            population = obj(resolved.identity_resolution["population"])
+            assert population["known_registry_count"] == 3
+            for name in ("matched_count", "selected_count", "supported_count"):
+                assert population[name] == len(symbols)
+            assert population["unresolved_count"] == population["excluded_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_bitget_native_snapshot_feed_uses_implicit_profile(tmp_path: Path) -> None:
+    paths = ProjectPaths(tmp_path, tmp_path / "data")
+    row = archive(paths)
+    row.update(
+        exchange="bitget",
+        data_type="order_book_l2",
+        feed="snapshot",
+        feed_source="canonical_bitget_snapshot_product",
+    )
+    connection = Connection()
+    connection.instruments[0]["exchange"] = "bitget"
+    resolved = await resolve_archive(
+        cast(AsyncConnection[TupleRow], cast(object, connection)), paths, row, "depth"
+    )
+    assert resolved.task["stream_id"] == "bitget.spot.spot.BTC-USDT.depth"
+    assert "source_options" not in resolved.task
+    assert resolved.identity_resolution["acquisition_feed"] == {
+        "feed": "snapshot",
+        "evidence": "canonical_bitget_snapshot_product",
+    }

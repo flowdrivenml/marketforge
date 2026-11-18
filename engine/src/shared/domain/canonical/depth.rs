@@ -35,6 +35,33 @@ pub enum DepthSourceOperation {
     Snapshot,
     AbsoluteUpdate,
     RelativeUpdate,
+    /// Absolute observation of only the profile's declared price levels.
+    BoundedObservation,
+}
+
+impl DepthSourceOperation {
+    pub fn is_snapshot(self) -> bool {
+        matches!(self, Self::Snapshot | Self::BoundedObservation)
+    }
+
+    pub fn code(self) -> u8 {
+        match self {
+            Self::Snapshot => 0,
+            Self::AbsoluteUpdate => 1,
+            Self::RelativeUpdate => 2,
+            Self::BoundedObservation => 3,
+        }
+    }
+
+    pub fn from_code(code: u8) -> Option<Self> {
+        match code {
+            0 => Some(Self::Snapshot),
+            1 => Some(Self::AbsoluteUpdate),
+            2 => Some(Self::RelativeUpdate),
+            3 => Some(Self::BoundedObservation),
+            _ => None,
+        }
+    }
 }
 
 /// Result of processing one source depth message.

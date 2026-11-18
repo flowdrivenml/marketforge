@@ -58,7 +58,7 @@ async def test_content_jobs_ranks_feeds_diagnostics_and_single_file(
         if feed:
             request["source_options"] = {"feed": feed}
         requests.append(request)
-        for day in range(2 if symbol == "A" and content == "trades" else 1):
+        for day in range(2 if symbol == "A" else 1):
             identity = len(rows) + 1
             rows.append(
                 {
@@ -83,6 +83,11 @@ async def test_content_jobs_ranks_feeds_diagnostics_and_single_file(
             )
     # Repeated requests do not duplicate inputs, while an unresolved input remains diagnosed.
     requests.append(requests[0])
+    # Give the later source the lower ID in both trade and depth streams.
+    for content in ("trades", "order_book_l2"):
+        pair = [r for r in rows if r["scope_identifier"] == "A" and r["data_type"] == content]
+        if pair:
+            pair[0]["id"], pair[1]["id"] = pair[1]["id"], pair[0]["id"]
     rows.append({**rows[0], "id": 99, "remote_archive_id": 99})
     recipe = AcquisitionConfig.model_validate(
         {
@@ -125,6 +130,7 @@ async def test_content_jobs_ranks_feeds_diagnostics_and_single_file(
         if row["feed"]:
             stream += f".{row['feed']}"
         task: dict[str, object] = {
+            "instrument_id": row["instrument_id"],
             "task_id": 1,
             "stream_id": stream,
             "input_path": str(paths.raw_dir / str(row["id"])),
@@ -148,7 +154,28 @@ async def test_content_jobs_ranks_feeds_diagnostics_and_single_file(
     monkeypatch.setattr("forge.historical.normalization.batch.used_ids", occupied)
     monkeypatch.setattr("forge.historical.normalization.batch.scan", scan)
     monkeypatch.setattr("forge.historical.normalization.batch.resolve_archive", resolve)
+    rows[0].update(
+        raw_source_key="marketforge.exchange.bybit",
+        source_object_key="registered/object.csv",
+    )
+    rows.extend(
+        [
+            {**rows[0], "id": 100, "start_at": None},
+            {**rows[0], "id": 101, "end_at": base - timedelta(hours=1)},
+            {**rows[0], "id": 102, "end_at": base + timedelta(hours=12)},
+        ]
+    )
     plan = await plan_batch(connection, paths, recipe)
+    rows.reverse()
+    repeated = await plan_batch(connection, paths, recipe)
+    assert plan.batch == repeated.batch
+    assert plan.report == repeated.report
+    reasons = {
+        obj(b)["reason"] for r in array(plan.report["requests"]) for b in array(obj(r)["blockers"])
+    }
+    assert "Archive 100 has unknown interval: start or end is missing." in reasons
+    assert "Archive 101 has invalid interval: start must precede end." in reasons
+    assert any("Conflicting metadata for source" in str(reason) for reason in reasons)
     assert plan.report["status"] == "partial"
     assert plan.report["ranking_snapshot"] == ("fixture-snapshot" if has_snapshot else None)
     assert obj(plan.report["ranking_resolution"])["fallback"] is (not has_snapshot)
@@ -171,17 +198,39 @@ async def test_content_jobs_ranks_feeds_diagnostics_and_single_file(
         assert {t["stream_id"] for t in tasks} == defined
         assert [t["task_id"] for t in tasks] == list(range(1, len(tasks) + 1))
         assert [s["stream_rank"] for s in streams] == list(range(1, len(streams) + 1))
+        expected_order = [
+            str(paths.raw_dir / str(r["id"]))
+            for r in sorted(
+                (
+                    r
+                    for r in rows
+                    if r["scope_identifier"] == "A"
+                    and r["data_type"]
+                    == (
+                        "trades"
+                        if obj(job["output"])["content_type"] == "trades"
+                        else "order_book_l2"
+                    )
+                    and int(str(r["id"])) < 99
+                ),
+                key=lambda r: str(r["start_at"]),
+            )
+        ]
+        assert [t["input_path"] for t in tasks if ".A." in str(t["stream_id"])] == expected_order
         if obj(job["output"])["content_type"] == "trades":
             assert len(tasks) == 5
             assert [str(s["stream_id"]).split(".")[-2] for s in streams] == (
                 ["B", "C", "A", "D"] if has_snapshot else ["A", "B", "C", "D"]
             )
         else:
-            assert len(tasks) == 3 and len(defined) == 3
+            assert len(tasks) == 4 and len(defined) == 3
             assert {
                 "gateio.spot.spot.G.depth.snapshot",
                 "gateio.spot.spot.G.depth.incremental",
             } <= defined
+    config = paths.config_dir / "historical/general.toml"
+    config.parent.mkdir(parents=True)
+    config.write_text("schema_version=1\n")
     wrapper = obj(json.loads(json.dumps(plan.report, default=str)))
     publish_batch(paths, plan, wrapper)
     assert sorted(p.name for p in plan.run.iterdir()) == [
@@ -190,14 +239,14 @@ async def test_content_jobs_ranks_feeds_diagnostics_and_single_file(
     ]
     saved = obj(json.loads((plan.run / "normalize-batch.json").read_text()))
     assert saved == json.loads(json.dumps(plan.batch, default=str))
-    assert saved["schema_version"] == 3
+    assert saved["schema_version"] == 4
     assert not {"requests", "job_summaries", "prepared_job_count", "engine_ready"} & saved.keys()
     report = obj(json.loads((plan.run / "prepare-report.json").read_text()))
     assert report == wrapper
     assert "jobs" not in report
     assert report["engine_ready"] is False
     assert report["prepared_task_count"] == sum(len(array(j["tasks"])) for j in plan.jobs.values())
-    assert not (paths.data_root / "test/normalized").exists()
+    assert not (paths.data_root / "datasets/normalized").exists()
     assert len(array(saved["jobs"])) == (1 if trades_only else 2)
     assert any(array(obj(r)["blockers"]) for r in array(report["requests"]))
     assert any(obj(obj(r)["coverage"])["gap_count"] for r in array(report["requests"]))
@@ -263,4 +312,35 @@ def test_unresolved_scopes_follow_ranked_concrete_streams() -> None:
         {"stream_id": "concrete:z", "stream_rank": 1},
         {"stream_id": "family:a", "stream_rank": 2},
         {"stream_id": "unranked:b", "stream_rank": 3},
+    ]
+
+
+def test_coverage_order_uses_numeric_native_parts_only_for_ties() -> None:
+    from forge.historical.normalization.batch import SourceOrder, source_order
+
+    start = datetime(2026, 10, 27, tzinfo=UTC)
+
+    def archive(label: str, first: datetime, end: datetime, part: int) -> SourceOrder:
+        return source_order(
+            {
+                "id": label,
+                "start_at": first,
+                "end_at": end,
+                "raw_source_key": "marketforge.exchange.bitget",
+                "source_object_key": f"history/trades/BTCUSDT_20261027_{part}.zip",
+            },
+            label,
+        )
+
+    monthly = archive("monthly", start - timedelta(days=26), start + timedelta(days=5), 99)
+    hourly = archive("hourly", start, start + timedelta(hours=1), 99)
+    part_2 = archive("z", start, start + timedelta(days=1), 2)
+    part_10 = archive("a", start, start + timedelta(days=1), 10)
+    next_day = archive("next", start + timedelta(days=1), start + timedelta(days=2), 1)
+    assert sorted([part_10, hourly, next_day, part_2, monthly]) == [
+        monthly,
+        hourly,
+        part_2,
+        part_10,
+        next_day,
     ]

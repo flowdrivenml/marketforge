@@ -1,6 +1,5 @@
 """Explicit testing-only connections and non-executable environment loading."""
 
-import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,6 +9,7 @@ from psycopg import AsyncConnection
 from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import TupleRow
 
+from forge.shared.database.credentials import DatabaseCredentialsError, resolve_database_dsn
 from forge.shared.errors import MarketForgeError
 
 
@@ -17,22 +17,12 @@ class TestingDatabaseError(MarketForgeError):
     """Testing database selection or access failed (without disclosing secrets)."""
 
 
-def testing_dsn(root: Path) -> str:
-    """Read only the testing key as literal text; never evaluate shell syntax."""
-    value = os.environ.get("MARKETFORGE_DATABASE_URL_TEST")
-    if value is None:
-        source = root / ".secrets" / "postgres.env"
-        if source.is_file():
-            for line in source.read_text(encoding="utf-8").splitlines():
-                key, separator, candidate = line.strip().removeprefix("export ").partition("=")
-                if separator and key.strip() == "MARKETFORGE_DATABASE_URL_TEST":
-                    value = candidate.strip()
-                    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-                        value = value[1:-1]
-                    break
-    if not value or not value.strip():
-        raise TestingDatabaseError("Set MARKETFORGE_DATABASE_URL_TEST explicitly.")
-    return value
+def testing_dsn(root: Path | None = None) -> str:
+    """Resolve exclusively testing credentials through the shared loader."""
+    try:
+        return resolve_database_dsn(testing=True, project_root=root)
+    except DatabaseCredentialsError as error:
+        raise TestingDatabaseError(str(error)) from None
 
 
 @asynccontextmanager

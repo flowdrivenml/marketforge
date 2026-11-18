@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    import polars as pl
 
 from forge.shared.paths import ProjectPaths
 
@@ -15,10 +19,10 @@ from .discovery import open_dataset
 class DatasetCatalog:
     entries: tuple[Dataset, ...]
 
-    def summary(self):
+    def summary(self) -> pl.DataFrame:
         import polars as pl
 
-        rows = []
+        rows: list[dict[str, object]] = []
 
         for dataset in self.entries:
             streams = dataset.streams_by_key
@@ -28,7 +32,7 @@ class DatasetCatalog:
                     "path": str(dataset.path),
                     "status": dataset.status,
                     "streams": len(streams),
-                    "rows": sum(stream.info()["rows"] for stream in streams),
+                    "rows": sum(cast(int, stream.info()["rows"]) for stream in streams),
                 }
             )
 
@@ -80,8 +84,11 @@ class MarketData:
             locations.append(self.paths.datasets_dir)
 
         if scope in {"tests", "all"}:
-            locations.append(
-                self.paths.data_root / "tests" / "historical" / "normalize"
+            locations.extend(
+                (
+                    self.paths.data_root / "tests" / "historical" / "normalize",
+                    self.paths.data_root / "test" / "normalized",
+                )
             )
 
         entries: list[Dataset] = []
@@ -91,9 +98,7 @@ class MarketData:
             if not root.is_dir():
                 continue
 
-            candidate_roots = sorted(
-                path for path in root.rglob("streams") if path.is_dir()
-            )
+            candidate_roots = sorted(path for path in root.rglob("streams") if path.is_dir())
 
             for streams in candidate_roots:
                 parent = streams.parent
@@ -123,7 +128,7 @@ class MarketData:
         *,
         include_tests: bool = False,
         include_staging: bool = False,
-    ):
+    ) -> pl.DataFrame:
         scope = "all" if include_tests else "committed"
 
         return self.discover(

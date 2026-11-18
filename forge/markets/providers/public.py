@@ -27,7 +27,9 @@ class PublicProvider:
 
     async def get(self, url: str, params: dict[str, str] | None = None) -> object:
         try:
-            response = await self.http.get(url, params=params, max_response_bytes=32 * 1024 * 1024)
+            response = await self.http.get(
+                url, params=params, max_response_bytes=32 * 1024 * 1024
+            )
         except ResponseSizeLimitError as error:
             raise MarketDataError(
                 f"{self.exchange} market metadata/statistics exceeds the decoded response size limit ({error.limit:,} bytes). Narrow the scope where supported or review the bounded provider allowance."
@@ -63,9 +65,15 @@ class PublicProvider:
                 payload = await self.get(
                     base + path + ("exchangeInfo" if metadata else "ticker/24hr")
                 )
-                items = array(obj(payload).get("symbols")) if metadata else array(payload)
+                items = (
+                    array(obj(payload).get("symbols")) if metadata else array(payload)
+                )
             elif e == "bybit":
-                params = {"category": market, "limit": "1000"} if metadata else {"category": market}
+                params = (
+                    {"category": market, "limit": "1000"}
+                    if metadata
+                    else {"category": market}
+                )
                 if cursor:
                     params["cursor"] = cursor
                 payload = obj(
@@ -82,7 +90,9 @@ class PublicProvider:
                     raise MarketDataError("Bybit returned a different market category.")
                 items = array(result.get("list"))
                 cursor_value = (
-                    result.get("nextPageCursor") if metadata and market != "spot" else None
+                    result.get("nextPageCursor")
+                    if metadata and market != "spot"
+                    else None
                 )
                 cursor = string(cursor_value) if cursor_value else None
             elif e == "okx":
@@ -119,9 +129,7 @@ class PublicProvider:
                     + (
                         "currency_pairs"
                         if market == "spot" and metadata
-                        else "contracts"
-                        if metadata
-                        else "tickers"
+                        else "contracts" if metadata else "tickers"
                     ),
                     params=params,
                 )
@@ -190,7 +198,10 @@ class PublicProvider:
             symbol = string(r.get("symbol"))
             base = string(r.get("baseAsset"))
             quote = string(r.get("quoteAsset"))
-            filters = {string(obj(v).get("filterType")): obj(v) for v in array(r.get("filters"))}
+            filters = {
+                string(obj(v).get("filterType")): obj(v)
+                for v in array(r.get("filters"))
+            }
             extra.update(
                 {
                     "min_qty": positive(filters.get("LOT_SIZE", {}).get("minQty")),
@@ -207,7 +218,9 @@ class PublicProvider:
                         if extra.get("instrument_type") == "future"
                         else None
                     ),
-                    "tick_size": number(filters.get("PRICE_FILTER", {}).get("tickSize")),
+                    "tick_size": number(
+                        filters.get("PRICE_FILTER", {}).get("tickSize")
+                    ),
                     "qty_step": number(filters.get("LOT_SIZE", {}).get("stepSize")),
                 }
             )
@@ -219,7 +232,9 @@ class PublicProvider:
                 )
             settlement = r.get("marginAsset")
             active = (
-                string(r.get("contractStatus") if market == "inverse" else r.get("status"))
+                string(
+                    r.get("contractStatus") if market == "inverse" else r.get("status")
+                )
                 == "TRADING"
             )
         elif e == "bybit":
@@ -236,7 +251,9 @@ class PublicProvider:
                     raise MarketDataError("Unknown Bybit contract type.")
                 if contract not in {expected + "Perpetual", expected + "Futures"}:
                     return None  # baseCoin queries legitimately return both market categories.
-                extra["instrument_type"] = "future" if contract.endswith("Futures") else "perpetual"
+                extra["instrument_type"] = (
+                    "future" if contract.endswith("Futures") else "perpetual"
+                )
             symbol = string(r.get("symbol"))
             base = string(r.get("baseCoin"))
             quote = string(r.get("quoteCoin"))
@@ -252,10 +269,14 @@ class PublicProvider:
                     ),
                     "min_qty": positive(lot.get("minOrderQty")),
                     "max_qty": positive(lot.get("maxOrderQty")),
-                    "min_notional": positive(lot.get("minNotionalValue", lot.get("minOrderAmt"))),
+                    "min_notional": positive(
+                        lot.get("minNotionalValue", lot.get("minOrderAmt"))
+                    ),
                     "tick_size": number(price.get("tickSize")),
                     "qty_step": number(
-                        lot.get("basePrecision") if market == "spot" else lot.get("qtyStep")
+                        lot.get("basePrecision")
+                        if market == "spot"
+                        else lot.get("qtyStep")
                     ),
                 }
             )
@@ -266,29 +287,67 @@ class PublicProvider:
         elif e == "okx":
             if market != "spot" and string(r.get("ctType")) != market:
                 return None
+
+            # OKX can advertise preopen spot instruments before
+            # their base/quote currency metadata is populated.
+            if market == "spot" and r.get("state") == "preopen":
+                if not r.get("baseCcy") or not r.get("quoteCcy"):
+                    return None
+
+            required = (
+                ("instId", "baseCcy", "quoteCcy", "state")
+                if market == "spot"
+                else ("instId", "state")
+            )
+
+            missing = [
+                field
+                for field in required
+                if not isinstance(r.get(field), str) or not r[field].strip()
+            ]
+
+            if missing:
+                raise MarketDataError(
+                    f"OKX {market} instrument "
+                    f"{r.get('instId') or '<unknown>'!r} "
+                    f"is missing required fields: {', '.join(missing)}"
+                )
+
             symbol = string(r.get("instId"))
             kind = r.get("instType")
             if kind == "OPTION":
                 return None
-            if kind is None:  # Earlier saved SWAP fixtures supplied the endpoint type only.
+            if (
+                kind is None
+            ):  # Earlier saved SWAP fixtures supplied the endpoint type only.
                 kind = (
                     "SPOT"
                     if market == "spot"
-                    else ("FUTURES" if r.get("_collection_type") == "future" else "SWAP")
+                    else (
+                        "FUTURES" if r.get("_collection_type") == "future" else "SWAP"
+                    )
                 )
             endpoint_kind = {"perpetual": "SWAP", "future": "FUTURES"}.get(
                 str(r.get("_collection_type"))
             )
             if endpoint_kind is not None and kind != endpoint_kind:
-                raise MarketDataError("OKX response instrument type disagrees with its endpoint.")
+                raise MarketDataError(
+                    "OKX response instrument type disagrees with its endpoint."
+                )
             if kind not in ({"SPOT"} if market == "spot" else {"SWAP", "FUTURES"}):
-                raise MarketDataError("OKX instrument type disagrees with selected market.")
+                raise MarketDataError(
+                    "OKX instrument type disagrees with selected market."
+                )
             if kind == "SWAP" and not symbol.endswith("-SWAP"):
-                raise MarketDataError("OKX SWAP metadata has an inconsistent instrument ID.")
+                raise MarketDataError(
+                    "OKX SWAP metadata has an inconsistent instrument ID."
+                )
             if market != "spot" and (
                 symbol == r.get("instFamily") or "futureschain" in symbol.lower()
             ):
-                raise MarketDataError("An OKX archive family is not a concrete contract.")
+                raise MarketDataError(
+                    "An OKX archive family is not a concrete contract."
+                )
             extra.update(
                 instrument_type={
                     "SPOT": "spot",
@@ -299,8 +358,19 @@ class PublicProvider:
                 expiry_ns=epoch_ns(r.get("expTime")) if kind == "FUTURES" else None,
             )
             if market == "spot":
-                base = string(r.get("baseCcy"))
-                quote = string(r.get("quoteCcy"))
+                base_value = r.get("baseCcy")
+                quote_value = r.get("quoteCcy")
+
+                if r.get("state") == "preopen" and (
+                    not isinstance(base_value, str)
+                    or not base_value.strip()
+                    or not isinstance(quote_value, str)
+                    or not quote_value.strip()
+                ):
+                    return None
+
+                base = string(base_value)
+                quote = string(quote_value)
             else:
                 base, quote = string(r.get("instFamily")).rsplit("-", 1)
                 if "_" in quote:
@@ -334,16 +404,22 @@ class PublicProvider:
                 amount = number(r.get("amount_precision"))
                 extra = {
                     "tick_size": (
-                        Decimal(10) ** -int(precision) if precision is not None else None
+                        Decimal(10) ** -int(precision)
+                        if precision is not None
+                        else None
                     ),
-                    "qty_step": (Decimal(10) ** -int(amount) if amount is not None else None),
+                    "qty_step": (
+                        Decimal(10) ** -int(amount) if amount is not None else None
+                    ),
                 }
                 active = string(r.get("trade_status")) == "tradable"
                 settlement = None
             else:
                 symbol = string(r.get("name"))
                 underlying = (
-                    string(r.get("underlying")) if r.get("_collection_type") == "future" else symbol
+                    string(r.get("underlying"))
+                    if r.get("_collection_type") == "future"
+                    else symbol
                 )
                 base, quote = underlying.rsplit("_", 1)
                 if r.get("type") not in {"direct", "inverse"}:
@@ -352,7 +428,9 @@ class PublicProvider:
                     raise MarketDataError("Wrong Gate market returned.")
                 extra = {
                     "instrument_type": (
-                        "future" if r.get("_collection_type") == "future" else "perpetual"
+                        "future"
+                        if r.get("_collection_type") == "future"
+                        else "perpetual"
                     ),
                     "expiry_ns": (
                         epoch_ns(r.get("expire_time"), seconds=True)
@@ -364,7 +442,9 @@ class PublicProvider:
                     "max_qty": positive(r.get("order_size_max")),
                     "quantity_type": "contracts",
                     "contract_value": (
-                        Decimal(1) if market == "inverse" else number(r.get("quanto_multiplier"))
+                        Decimal(1)
+                        if market == "inverse"
+                        else number(r.get("quanto_multiplier"))
                     ),
                     "contract_unit": quote if market == "inverse" else base,
                     "tick_size": number(r.get("order_price_round")),
@@ -381,7 +461,9 @@ class PublicProvider:
                 contract_type = string(r.get("type"))
                 if contract_type not in {"perpetual", "delivery"}:
                     raise MarketDataError("Unknown Bitget contract semantics.")
-                extra["instrument_type"] = "future" if contract_type == "delivery" else "perpetual"
+                extra["instrument_type"] = (
+                    "future" if contract_type == "delivery" else "perpetual"
+                )
             symbol = string(r.get("symbol"))
             base = string(r.get("baseCoin"))
             quote = string(r.get("quoteCoin"))
@@ -403,9 +485,7 @@ class PublicProvider:
                     "qty_step": (
                         positive(r.get("quantityMultiplier", r.get("sizeMultiplier")))
                         if market != "spot"
-                        else Decimal(10) ** -int(q)
-                        if q is not None
-                        else None
+                        else Decimal(10) ** -int(q) if q is not None else None
                     ),
                 }
             )
@@ -498,9 +578,7 @@ class PublicProvider:
             turnover_field = (
                 "volCcy24h"
                 if m == "spot"
-                else "vol24h * contract_value"
-                if m == "inverse"
-                else "volCcy24h * last"
+                else "vol24h * contract_value" if m == "inverse" else "volCcy24h * last"
             )
             p = r.get("last")
             observed = r.get("ts")
@@ -512,7 +590,11 @@ class PublicProvider:
                 c = r.get("vol24h")
                 b = r.get("volCcy24h")
                 cv = number(c)
-                if m == "inverse" and cv is not None and instrument.contract_value is not None:
+                if (
+                    m == "inverse"
+                    and cv is not None
+                    and instrument.contract_value is not None
+                ):
                     if instrument.contract_unit == instrument.quote:
                         t = cv * instrument.contract_value
                 elif m == "linear" and number(b) is not None and number(p) is not None:
@@ -542,7 +624,9 @@ class PublicProvider:
             reality = instrument.raw.get("isReality")
             if m == "spot" and reality == "yes":
                 turnover_field = "platformTurnover24h"
-                evidence["base_volume_scope"] = "broader_source_not_platform_local; omitted"
+                evidence["base_volume_scope"] = (
+                    "broader_source_not_platform_local; omitted"
+                )
                 evidence["classification"] = "instrument.isReality=yes"
                 try:
                     t = number(r.get(turnover_field))
@@ -579,7 +663,9 @@ class PublicProvider:
         end = source_time or fetched
         start = end - timedelta(hours=24)
         interval_basis = (
-            "inferred_24h_from_source_timestamp" if source_time else "inferred_24h_from_fetch_time"
+            "inferred_24h_from_source_timestamp"
+            if source_time
+            else "inferred_24h_from_fetch_time"
         )
         if e == "binance" and r.get("openTime") not in (None, ""):
             if source_time is None:
@@ -591,24 +677,28 @@ class PublicProvider:
         evidence.update(
             {
                 "turnover_field": turnover_field,
-                "turnover_kind": "volume_derived_estimate"
-                if estimate
-                else "reported_or_contract_notional",
+                "turnover_kind": (
+                    "volume_derived_estimate"
+                    if estimate
+                    else "reported_or_contract_notional"
+                ),
                 "calculation": turnover_field,
                 "interval_basis": interval_basis,
-                "source_timestamp_field": "closeTime"
-                if e == "binance"
-                else "ts"
-                if e in {"okx", "bitget"}
-                else None,
-                "source_timestamp_meaning": "statistics_interval_end; last-price timestamp not separately supplied"
-                if e == "binance"
-                else "ticker_generation_time"
-                if source_time
-                else "not_supplied",
-                "price_timestamp_basis": "source ticker time proxy"
-                if source_time
-                else "fetch-time proxy; price timestamp not supplied",
+                "source_timestamp_field": (
+                    "closeTime"
+                    if e == "binance"
+                    else "ts" if e in {"okx", "bitget"} else None
+                ),
+                "source_timestamp_meaning": (
+                    "statistics_interval_end; last-price timestamp not separately supplied"
+                    if e == "binance"
+                    else "ticker_generation_time" if source_time else "not_supplied"
+                ),
+                "price_timestamp_basis": (
+                    "source ticker time proxy"
+                    if source_time
+                    else "fetch-time proxy; price timestamp not supplied"
+                ),
             }
         )
         open_value = number(oi)

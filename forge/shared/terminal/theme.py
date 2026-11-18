@@ -11,6 +11,9 @@ def build_theme() -> Theme:
         {
             "mf.body": palette.FG,
             "mf.heading": f"bold {palette.BLUE}",
+            "mf.section": f"bold {palette.PURPLE}",
+            "mf.dataset_id": palette.BLUE,
+            "mf.identifier_detail": palette.BLUE,
             "mf.identifier": palette.CYAN,
             "mf.secondary": palette.MUTED,
             "mf.success": palette.GREEN,

@@ -1,0 +1,1 @@
+"""Unified managed raw registration."""

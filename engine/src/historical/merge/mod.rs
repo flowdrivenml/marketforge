@@ -113,7 +113,9 @@ pub use materialize::publication::manifest::{
     PHYSICAL_MERGE_MANIFEST_VERSION, PHYSICAL_MERGE_SCHEMA_VERSION, PhysicalMergeManifest,
     write_physical_merge_manifest,
 };
-pub use materialize::publication::publish::prepare_physical_publication;
+pub use materialize::publication::publish::{
+    prepare_physical_publication, validate_committed_merge,
+};
 pub use materialize::readers::cache::{CanonicalCacheMetrics, CanonicalRowGroupCache};
 pub use materialize::readers::decoder::GroupedCanonicalDecoder;
 pub use materialize::readers::inventory::{

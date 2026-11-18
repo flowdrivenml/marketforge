@@ -9,8 +9,8 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validato
 class StorageFilters(BaseModel):
     model_config = ConfigDict(extra="ignore")
     exchange: str | None = None
-    market: Literal["spot", "linear", "inverse", "option"] | None = None
-    instrument_type: Literal["spot", "perpetual", "future", "option"] | None = None
+    market: Literal["spot", "linear", "inverse", "option", "equity"] | None = None
+    instrument_type: Literal["spot", "perpetual", "future", "option", "equity"] | None = None
     instrument: str | None = None
     scope_kind: Literal["instrument", "family", "base_coin"] | None = None
     match: str | None = None
@@ -18,6 +18,7 @@ class StorageFilters(BaseModel):
     quote_asset: str | None = None
     data_type: Literal["trades", "order_book_l2"] | None = None
     feed: Literal["snapshot", "incremental", "unknown"] | None = None
+    raw_source_key: str | None = None
     origin: Literal["remote", "external"] | None = None
     status: str | None = None
     start: AwareDatetime | None = None

@@ -17,6 +17,9 @@ def test_testing_selection_ignores_production_secret(
 ) -> None:
     monkeypatch.delenv("MARKETFORGE_DATABASE_URL_TEST", raising=False)
     monkeypatch.setenv("MARKETFORGE_DATABASE_URL", "postgresql://production/marketforge")
+    (tmp_path / "forge").mkdir()
+    (tmp_path / "forge/pyproject.toml").touch()
+    (tmp_path / "engine").mkdir()
     (tmp_path / ".secrets").mkdir()
     (tmp_path / ".secrets" / "postgres.env").write_text(
         "MARKETFORGE_DATABASE_URL=postgresql://production/marketforge\n"
@@ -29,6 +32,9 @@ def test_environment_file_is_literal_not_executable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("MARKETFORGE_DATABASE_URL_TEST", raising=False)
+    (tmp_path / "forge").mkdir()
+    (tmp_path / "forge/pyproject.toml").touch()
+    (tmp_path / "engine").mkdir()
     (tmp_path / ".secrets").mkdir()
     (tmp_path / ".secrets" / "postgres.env").write_text(
         "export MARKETFORGE_DATABASE_URL_TEST='$(touch should-not-exist)'\n"

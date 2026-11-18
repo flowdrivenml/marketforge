@@ -12,6 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -1131,15 +1132,19 @@ pub fn execute_merge_with_tui(
         &worker,
     );
 
-    // Always wait for the merge thread.
-    let merge_result = worker.join();
-
     // Restore terminal before displaying results.
     drop(terminal);
     drop(guard);
 
+    if dashboard_result
+        .as_ref()
+        .is_err_and(|e| e.kind() == io::ErrorKind::Interrupted)
+    {
+        // The foreground CLI exits immediately, leaving recovery artifacts.
+        return Err(Box::new(dashboard_result.unwrap_err()));
+    }
+    let merge_result = worker.join();
     dashboard_result?;
-
     let result = merge_result.map_err(|_| "merge worker thread panicked")??;
 
     print_merge_summary(&dashboard, &result);
@@ -1200,7 +1205,17 @@ where
             break;
         }
 
-        thread::sleep(REFRESH_INTERVAL);
+        if event::poll(REFRESH_INTERVAL)?
+            && let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+            && key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "merge cancelled",
+            ));
+        }
     }
 
     Ok(())

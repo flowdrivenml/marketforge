@@ -31,6 +31,7 @@ struct ResolvedField {
 #[derive(Debug, Clone)]
 struct ResolvedTradeSpec {
     timestamp: ResolvedField,
+    system_timestamp: Option<ResolvedField>,
     price: ResolvedField,
     quantity: ResolvedField,
     side: ResolvedField,
@@ -64,6 +65,7 @@ impl TradeProcessor {
 
         let resolved = ResolvedTradeSpec {
             timestamp: resolve_required(headers, &spec.event_timestamp)?,
+            system_timestamp: resolve_optional(headers, spec.system_timestamp.as_ref())?,
             price: resolve_required(headers, &spec.price)?,
             quantity: resolve_quantity(headers, &spec.quantity)?,
             side: resolve_side(headers, &spec.side)?,
@@ -145,7 +147,17 @@ impl TradeProcessor {
         let trade = Trade {
             envelope: EventEnvelope {
                 event_timestamp_ns,
-                system_timestamp_ns: None,
+                system_timestamp_ns: self
+                    .resolved
+                    .system_timestamp
+                    .map(|field| {
+                        parse_timestamp_ns(
+                            required(record, field, "system_timestamp")?,
+                            self.normalization.timestamp_encoding,
+                        )
+                        .map_err(timestamp_error)
+                    })
+                    .transpose()?,
                 exchange: self.context.exchange,
                 instrument_id: self.context.instrument_id,
                 symbol: self.context.symbol.clone(),

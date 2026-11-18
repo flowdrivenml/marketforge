@@ -1,11 +1,12 @@
 """Read-only inspection of the testing database migration state."""
 
-import os
 from dataclasses import dataclass
+from pathlib import Path
 
 import psycopg
 from psycopg.rows import class_row
 
+from forge.shared.database.credentials import DatabaseCredentialsError, resolve_database_dsn
 from forge.shared.database.migrations import (
     AppliedMigration,
     MigrationError,
@@ -26,12 +27,12 @@ class DatabaseStatus:
     pending: tuple[int, ...]
 
 
-def inspect_testing_database() -> DatabaseStatus:
+def inspect_testing_database(*, project_root: Path | None = None) -> DatabaseStatus:
     """Inspect the explicitly configured testing database without modifying it."""
-    dsn = os.environ.get("MARKETFORGE_DATABASE_URL_TEST")
-
-    if not dsn or not dsn.strip():
-        raise MigrationError("Set MARKETFORGE_DATABASE_URL_TEST explicitly.")
+    try:
+        dsn = resolve_database_dsn(testing=True, project_root=project_root)
+    except DatabaseCredentialsError as error:
+        raise MigrationError(str(error)) from None
 
     migrations = load_migrations()
 

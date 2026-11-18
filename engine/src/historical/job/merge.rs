@@ -18,6 +18,10 @@ pub struct MergeJob {
     #[serde(default)]
     pub input_paths: HashMap<u64, PathBuf>,
 
+    /// Manifest-relative primary files and their pinned SHA-256 digests.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub primary_files: HashMap<u64, Vec<MergePrimaryFile>>,
+
     pub time_range: MergeTimeRange,
 
     pub resources: MergeResources,
@@ -25,6 +29,14 @@ pub struct MergeJob {
     pub parquet: MergeParquetConfig,
 
     pub output: MergeOutput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MergePrimaryFile {
+    pub path: String,
+    pub sha256: String,
+    pub manifest_sha256: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,6 +132,34 @@ impl MergeJob {
 
             if path.as_os_str().is_empty() {
                 return invalid(format!("dataset {dataset_id}: empty input path"));
+            }
+        }
+
+        if !self.primary_files.is_empty() {
+            if self.primary_files.len() != self.inputs.len() {
+                return invalid("explicit file selection is required for every publication");
+            }
+            for (id, files) in &self.primary_files {
+                if !unique.contains(id) || !self.input_paths.contains_key(id) || files.is_empty() {
+                    return invalid(
+                        "selected primary files require a declared input publication and path",
+                    );
+                }
+                let mut paths = std::collections::HashSet::new();
+                for file in files {
+                    if !paths.insert(&file.path)
+                        || [&file.sha256, &file.manifest_sha256]
+                            .into_iter()
+                            .any(|hash| {
+                                hash.len() != 64
+                                    || !hash
+                                        .bytes()
+                                        .all(|x| x.is_ascii_digit() || (b'a'..=b'f').contains(&x))
+                            })
+                    {
+                        return invalid("duplicate selected path or invalid SHA-256");
+                    }
+                }
             }
         }
 

@@ -70,6 +70,7 @@ async fn insert_trade(
     let side: i16 = match trade.side {
         TradeSide::Buy => 1,
         TradeSide::Sell => 2,
+        TradeSide::Unknown => 3,
     };
 
     let epoch = record.log_epoch.to_string();

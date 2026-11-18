@@ -53,6 +53,16 @@ pub fn extract_timestamp_ns(
 ) -> Result<i64> {
     let value = required_json_field(record, path)?;
 
+    if encoding == TimestampEncoding::Iso8601Nanoseconds {
+        return crate::shared::normalization::parse_timestamp_ns(
+            value
+                .as_str()
+                .ok_or_else(|| invalid_error("ISO 8601 timestamp must be a string"))?
+                .as_bytes(),
+            encoding,
+        )
+        .map_err(|error| invalid_error(error.to_string()));
+    }
     let timestamp = extract_decimal(value)?;
 
     let multiplier = match encoding {
@@ -60,6 +70,7 @@ pub fn extract_timestamp_ns(
         TimestampEncoding::Milliseconds => Decimal::new(1_000_000, 0),
         TimestampEncoding::Microseconds => Decimal::new(1_000, 0),
         TimestampEncoding::Nanoseconds => Decimal::ONE,
+        TimestampEncoding::Iso8601Nanoseconds => unreachable!(),
     };
 
     let timestamp_ns = timestamp
@@ -132,16 +143,22 @@ pub fn extract_level_array(
             return invalid("depth quantity cannot be negative");
         }
 
-        let order_count = match spec.order_count_index {
-            Some(index) => {
-                let value = level
-                    .get(index)
-                    .ok_or_else(|| invalid_error("missing depth order count index"))?;
+        let order_count = if let Some(field) = &spec.order_count_field {
+            Some(extract_u64(level.get(field).ok_or_else(|| {
+                invalid_error("missing depth order count field")
+            })?)?)
+        } else {
+            match spec.order_count_index {
+                Some(index) => {
+                    let value = level
+                        .get(index)
+                        .ok_or_else(|| invalid_error("missing depth order count index"))?;
 
-                Some(extract_u64(value)?)
+                    Some(extract_u64(value)?)
+                }
+
+                None => None,
             }
-
-            None => None,
         };
 
         extracted.push(ExtractedLevel {

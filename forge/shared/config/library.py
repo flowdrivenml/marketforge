@@ -54,3 +54,21 @@ def list_config_names(directory: Path) -> tuple[str, ...]:
             names.append(entry.stem)
 
     return tuple(sorted(names))
+
+
+def run_reference(reference: str, recipe: Path | None) -> tuple[Path, bool]:
+    """Return the file and whether it is a submitted JSON object."""
+    supplied = Path(reference).expanduser()
+    explicit = supplied.is_absolute() or "/" in reference
+    if supplied.is_file():
+        if not explicit and recipe and recipe.is_file() and supplied.resolve() != recipe:
+            raise ConfigurationNameError(
+                f"Ambiguous reference {reference!r}. Use ./FILE for the local file "
+                f"or {recipe} for the managed recipe."
+            )
+        with supplied.open("rb") as stream:
+            is_json = stream.read(4096).lstrip().startswith(b"{")
+        return supplied.resolve(), is_json
+    if not explicit and recipe and recipe.is_file():
+        return recipe, False
+    raise ConfigurationNameError(f"Unknown recipe or prepared request: {reference}")

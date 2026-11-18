@@ -104,7 +104,7 @@ pub(super) fn prepare(
             }
             let outcome = row.value;
             let timestamp = outcome.source.event_timestamp_ns;
-            let snapshot = outcome.operation == DepthSourceOperation::Snapshot;
+            let snapshot = outcome.operation.is_snapshot();
             let pos = owned_intervals.partition_point(|(_, p)| p.end <= i128::from(timestamp));
             let owned = owned_intervals
                 .get(pos)

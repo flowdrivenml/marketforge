@@ -309,7 +309,9 @@ fn validate_reference(record: &UnifiedTimelineRecord) -> Result<()> {
                 return invalid("invalid depth event boundary");
             }
 
-            if operation > 2 {
+            if crate::shared::domain::canonical::DepthSourceOperation::from_code(operation)
+                .is_none()
+            {
                 return invalid("invalid depth source operation");
             }
         }

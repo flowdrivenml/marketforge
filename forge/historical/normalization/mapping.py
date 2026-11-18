@@ -7,9 +7,13 @@ from typing import LiteralString
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow, dict_row
 
-from forge.historical.archives.storage.files import contained
+from forge.historical.archives.storage.files import contained, disk
+from forge.historical.engine.managed import checksum
+from forge.historical.metadata.resolution import compiled_profiles, family, specification
 from forge.historical.normalization.resolution import positive_decimal, require
-from forge.markets.models import obj
+from forge.historical.normalization.selection import RegisteredInput
+from forge.historical.profiles.service import discover
+from forge.markets.models import array, obj
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
@@ -20,6 +24,10 @@ class ResolvedArchive:
     instrument_id: int | None
     warnings: list[str] = field(default_factory=lambda: list[str]())
     identity_resolution: dict[str, object] = field(default_factory=lambda: dict[str, object]())
+    selection: RegisteredInput | None = None
+    offline_instruments: list[dict[str, object]] = field(
+        default_factory=lambda: list[dict[str, object]]()
+    )
 
 
 def asset(value: object, name: str) -> str:
@@ -66,6 +74,63 @@ async def resolve_archive(
         row["instrument_type"] != "spot" or row["market_category"] == "spot",
         "Spot archive market_category must be spot.",
     )
+    require(await disk(checksum, path) == row["sha256"], f"Managed input checksum mismatch: {path}")
+    if row.get("external_archive_id") is not None or row.get("import_provenance"):
+        provenance = obj(row.get("import_provenance") or {})
+        binding = obj(provenance.get("binding")) if provenance.get("binding") else {}
+        require(
+            bool(binding),
+            "Local interpretation has no resolved canonical/historical binding; use acquisition register.",
+        )
+        readiness = obj(binding.get("readiness"))
+        require(
+            readiness.get("normalization_handoff") == "ready",
+            f"Local input processing blocked: {readiness.get('blockers')}",
+        )
+        specs = obj(row["specifications_json"])
+        identity = obj(row["identity_json"])
+        profile_id = (
+            ".".join(str(row[k]) for k in ("exchange", "instrument_type", "market_category"))
+            + "."
+            + content
+        )
+        require(
+            row.get("format_profile") == profile_id and binding.get("profile_id") == profile_id,
+            "Registered profile is incompatible with the normalization identity.",
+        )
+        signature = tuple((p["id"], p["sha256"]) for p in await disk(discover, paths))
+        fingerprints = await disk(compiled_profiles, paths, signature)
+        require(
+            fingerprints.get(profile_id) == binding["profile_fingerprint"],
+            "Registered profile fingerprint differs from the installed interpretation.",
+        )
+        task = {
+            "task_id": 1,
+            "input_path": str(path),
+            "exchange": row["exchange"],
+            "instrument_type": row["instrument_type"],
+            "market_category": row["market_category"],
+            "base_asset": specs["base_asset"],
+            "quote_asset": specs["quote_asset"],
+            "symbol": identity["symbol"],
+            "instrument_id": binding["instrument_id"],
+            "instrument": {
+                "tick_size": str(specs["tick_size"]),
+                "contract_value": specs.get("contract_value"),
+                "contract_value_asset": specs.get("contract_value_asset"),
+            },
+            "stream_id": f"{row['exchange']}.{row['market_category']}.{row['instrument_type']}.{identity['symbol']}.{content}",
+        }
+        return ResolvedArchive(
+            task,
+            None,
+            selection=RegisteredInput.from_row(row, path),
+            identity_resolution={
+                "method": "immutable_registration_binding",
+                "namespace": binding["namespace"],
+                "profile_fingerprint": binding["profile_fingerprint"],
+            },
+        )
     kind = str(row["scope_kind"])
     require(kind in {"instrument", "family", "base_coin"}, f"Unsupported requested scope: {kind}.")
     async with connection.cursor(row_factory=dict_row) as cursor:
@@ -147,6 +212,7 @@ async def resolve_archive(
         "instrument_type": row["instrument_type"],
         "market_category": row["market_category"],
     }
+    members: list[dict[str, object]] = []
     warnings: list[str] = []
     instrument_id: int | None = None
     if kind == "instrument":
@@ -154,8 +220,28 @@ async def resolve_archive(
             len(instruments) == 1,
             f"Expected one concrete catalogue instrument; found {len(instruments)}.",
         )
-        instrument = instruments[0]
+        instrument = dict(instruments[0])
         instrument_id = int(instrument["id"])
+        # Current catalogue specifications are retrieval observations, not proof
+        # of historical applicability. Resolve an immutable declaration covering
+        # the complete raw interval before serializing engine metadata.
+        identity_key = "/".join(
+            (
+                str(row["exchange"]),
+                str(row["instrument_type"]),
+                str(row["market_category"]),
+                str(instrument["symbol"]),
+            )
+        )
+        canonical, historical, provenance = await specification(connection, identity_key, row)
+        resolution["specification_evidence"] = provenance
+        task["instrument_id"] = canonical
+        for field in ("base_asset", "quote_asset", "quantity_type", "contract_value_asset"):
+            instrument[field] = historical.get(field)
+        for field in ("tick_size", "contract_value"):
+            instrument[field] = (
+                Decimal(str(historical[field])) if historical.get(field) is not None else None
+            )
         resolution["resolved_symbol"] = instrument["symbol"]
         # Explicit historical overrides cannot silently be replaced by current specs.
         overrides = obj(row["specifications_json"]) if row.get("specifications_json") else {}
@@ -214,30 +300,79 @@ async def resolve_archive(
         }
         source = str(instrument["symbol"])
     else:
+        require(
+            kind == "family",
+            "Base-coin scopes require an explicit supported concrete/family mapping.",
+        )
+        members, resolution = await family(connection, paths, row)
+        require(
+            row["instrument_type"] != "option",
+            "Rust schema-v4 currently has no supported option offline catalogue/profile contract.",
+        )
+        # An explicit population, not a claim that the historical family is complete.
         task.update(
-            scope={"kind": kind, "identifier": row["scope_identifier"]},
+            scope={"kind": "family", "identifier": row["scope_identifier"]},
+            instrument_selection={"mode": "include", "symbols": [m["symbol"] for m in members]},
             symbol=None,
             instrument=None,
         )
-        for key in ("base_asset", "quote_asset"):
-            values = {
-                str(i[key]) for i in instruments if i[key] is not None and str(i[key]).strip()
+        discovery = obj(resolution["discovery"])
+        bindings = (
+            [obj(m) for m in array(discovery.get("members", []))]
+            if isinstance(discovery.get("members"), list)
+            else []
+        )
+        scope = obj(task["scope"])
+        scope["members"] = [
+            {
+                "instrument_id": member["instrument_id"],
+                "archive_member": binding.get("archive_member"),
             }
-            complete = bool(instruments) and all(
-                i[key] is not None and str(i[key]).strip() for i in instruments
-            )
-            task[key] = next(iter(values)) if len(values) == 1 and complete else None
-            if task[key] is None:
-                warnings.append(
-                    f"{key} {'conflicts across' if len(values) > 1 else 'unavailable for'} requested {kind} metadata; left null."
-                )
-        source = f"{kind}:{row['scope_identifier']}"
+            for member in members
+            for binding in bindings
+            if binding.get("symbol") == member["symbol"]
+        ]
+        task["scope"] = scope
+        for key in ("base_asset", "quote_asset"):
+            values = {str(m[key]) for m in members}
+            require(len(values) == 1, f"Family {key} conflicts across resolved members.")
+            task[key] = next(iter(values))
+        source = f"family:{row['scope_identifier']}"
     task["stream_id"] = (
         ".".join(str(row[k]) for k in ("exchange", "market_category", "instrument_type"))
         + f".{source}.{content}"
     )
-    if row.get("feed") is not None:
+    if row.get("feed_source") == "canonical_bitget_snapshot_product":
+        # BITGET-B1 is intrinsically snapshot-only. Rust feed overrides select
+        # Gate.io profile variants and cannot be emitted for Bitget.
+        resolution["acquisition_feed"] = {"feed": row["feed"], "evidence": row["feed_source"]}
+    elif row.get("feed") is not None:
         asset(row["feed"], "source feed")
         task["source_options"] = {"feed": row["feed"]}
         task["stream_id"] = f"{task['stream_id']}.{row['feed']}"
-    return ResolvedArchive(task, instrument_id, warnings, resolution)
+    if instrument_id:
+        key = (
+            "/".join(str(row[k]) for k in ("exchange", "instrument_type", "market_category"))
+            + "/"
+            + str(task["symbol"])
+        )
+        cur = await connection.execute(
+            "SELECT instrument_id FROM historical.instrument_authority WHERE namespace=%s AND identity_key=%s",
+            ("marketforge:testing:historical:v1", key),
+        )
+        authority = await cur.fetchone()
+        require(
+            authority is not None,
+            "No persisted canonical namespace mapping for catalogue instrument.",
+        )
+        assert authority is not None
+        task["instrument_id"] = authority[0]
+        resolution["namespace"] = "marketforge:testing:historical:v1"
+    return ResolvedArchive(
+        task,
+        instrument_id,
+        warnings,
+        resolution,
+        RegisteredInput.from_row(row, path),
+        members if kind == "family" else [],
+    )

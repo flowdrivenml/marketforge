@@ -20,3 +20,10 @@ docs/.venv/bin/python -m pip install -r docs/requirements.txt
 Read the [architecture introduction](architecture.md) and [extension outline](extending.md). Select focused tests for the component being changed; some integration tests require databases, network access, or retained market-data fixtures. A documentation build does not test processing correctness. Never substitute a missing fixture with a claimed pass.
 
 > **Documentation draft.** A verified contributor environment, test-selection guide, and complete contribution policy remain to be written. Existing Engine and module-local engineering documents remain in place for later curation.
+
+## Build and preview the documentation
+
+```bash
+uvx zensical build -f docs/zensical.toml
+uvx zensical serve -f docs/zensical.toml --open
+```

@@ -1,0 +1,7 @@
+# Synthetic observation for demonstration.
+instrument = "example_exchange.equity.equity.AAPL"
+quantity_type = "base"
+tick_size = "0.01"
+qty_step = "1"
+fetched_at = 2024-10-28T00:00:00Z
+provenance = "Synthetic observation for the example"

@@ -18,6 +18,15 @@ impl InstrumentMatcher {
         expected_symbol: impl Into<String>,
         policy: IdentityPolicy,
     ) -> Result<Self> {
+        Self::with_column(headers, expected_symbol, policy, None)
+    }
+
+    pub fn with_column(
+        headers: &ByteRecord,
+        expected_symbol: impl Into<String>,
+        policy: IdentityPolicy,
+        column: Option<&str>,
+    ) -> Result<Self> {
         let expected_symbol = expected_symbol.into();
 
         if expected_symbol.trim().is_empty() {
@@ -29,9 +38,18 @@ impl InstrumentMatcher {
         let column_index = match policy {
             IdentityPolicy::TrustSource => None,
 
-            IdentityPolicy::Strict | IdentityPolicy::Filter => {
-                Some(resolve_identity_column(headers)?)
-            }
+            IdentityPolicy::Strict | IdentityPolicy::Filter => Some(if let Some(name) = column {
+                headers
+                    .iter()
+                    .position(|header| header == name.as_bytes())
+                    .ok_or_else(|| {
+                        MarketForgeError::InvalidConfiguration(format!(
+                            "missing trade identity field {name}"
+                        ))
+                    })?
+            } else {
+                resolve_identity_column(headers)?
+            }),
         };
 
         let expected_family = if policy == IdentityPolicy::Filter {

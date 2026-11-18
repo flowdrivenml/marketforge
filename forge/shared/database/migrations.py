@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 from dataclasses import dataclass
 from importlib.resources import files
@@ -13,9 +12,9 @@ from typing import Final
 import psycopg
 from psycopg.rows import class_row
 
+from forge.shared.database.credentials import DatabaseCredentialsError, resolve_database_dsn
 from forge.shared.errors import MarketForgeError
 
-_TEST_DATABASE_ENV: Final[str] = "MARKETFORGE_DATABASE_URL_TEST"
 _TEST_DATABASE_NAME: Final[str] = "marketforge_test"
 _MIGRATION_LOCK: Final[int] = 0x4D464F5247450001
 
@@ -123,6 +122,7 @@ def migrate_testing_database(
     directory: Path | None = None,
     *,
     dsn: str | None = None,
+    project_root: Path | None = None,
 ) -> MigrationResult:
     """Apply the pending core batch atomically to marketforge_test only.
 
@@ -130,10 +130,12 @@ def migrate_testing_database(
     No production-connection fallback or database creation is performed.
     """
     if dsn is None:
-        dsn = os.environ.get(_TEST_DATABASE_ENV)
-
-    if dsn is None or not dsn.strip():
-        raise MigrationError(f"Set {_TEST_DATABASE_ENV} explicitly.")
+        try:
+            dsn = resolve_database_dsn(testing=True, project_root=project_root)
+        except DatabaseCredentialsError as error:
+            raise MigrationError(str(error)) from None
+    if not dsn.strip():
+        raise MigrationError("An explicitly supplied testing DSN must not be empty.")
 
     migrations = load_migrations(directory)
     bootstrap = (

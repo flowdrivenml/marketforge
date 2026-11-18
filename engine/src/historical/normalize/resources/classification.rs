@@ -15,7 +15,11 @@ pub fn source_format(task: &WorkTask) -> Result<SourceFormat> {
         .iter()
         .all(|n| n.target_schema == crate::shared::normalization::TargetSchema::Trade)
     {
-        return Ok(SourceFormat::Csv);
+        return Ok(if task.raw_schema["marketforge_trade_jsonl"] == true {
+            SourceFormat::Jsonl
+        } else {
+            SourceFormat::Csv
+        });
     }
     let fields = task
         .raw_schema

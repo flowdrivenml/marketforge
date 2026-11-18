@@ -6,11 +6,30 @@ from typing import Literal, Self
 
 from pydantic import Field, model_validator
 
-from forge.historical.archives.config import AcquisitionConfig
+from forge.historical.archives.config import AcquisitionInterval, ArchiveSource
 from forge.shared.config.models import SettingsModel
 
 
-class NormalizationRecipe(AcquisitionConfig, frozen=True):
+class NormalizationSource(ArchiveSource, frozen=True):
+    instrument_type: Literal["spot", "perpetual", "future", "option", "equity"]
+    market_category: Literal["spot", "linear", "inverse", "option", "equity"]
+    source_key: str | None = Field(default=None, min_length=1, pattern=r"^\S+$")
+
+    @model_validator(mode="after")
+    def registered_source(self) -> Self:
+        if (self.instrument_type == "equity") != (self.market_category == "equity"):
+            raise ValueError("Equity instrument and market category must agree.")
+        if self.instrument_type == "equity" and not self.source_key:
+            raise ValueError("Equity normalization requires a registered source_key.")
+        if self.source_key and self.scope.kind != "instrument":
+            raise ValueError("Registered source selection requires a concrete instrument scope.")
+        return self
+
+
+class NormalizationRecipe(SettingsModel, frozen=True):
+    version: Literal[1] = 1
+    interval: AcquisitionInterval
+    requests: list[NormalizationSource] = Field(min_length=1)
     ranking_policy: str = Field(default="turnover", pattern=r"^[a-zA-Z0-9_-]+$")
 
 

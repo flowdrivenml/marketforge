@@ -87,6 +87,7 @@ fn test_job(root: &Path, output: &Path) -> MergeJob {
         operation: MergeOperation::Merge,
 
         inputs: vec![111, 109, 105, 112],
+        primary_files: Default::default(),
         input_paths,
 
         time_range: MergeTimeRange {

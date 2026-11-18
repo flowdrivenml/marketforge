@@ -1,0 +1,30 @@
+{
+  "job_id": 200,
+  "operation": "merge",
+  "inputs": [
+    105,
+    108,
+    112,
+    92
+  ],
+  "time_range": {
+    "start_ns": 1788220800000000000,
+    "end_ns": 1788307200000000000
+  },
+  "resources": {
+    "workers": 4,
+    "memory_limit_mb": 4096,
+    "max_open_files": 256
+  },
+  "partitioning": {
+    "partitions_per_worker": 2
+  },
+  "parquet": {
+    "row_group_target_mb": 64,
+    "file_target_mb": 256,
+    "compression_level": 3
+  },
+  "output": {
+    "dataset_path": "MERGE_FIXTURE_OUTPUT"
+  }
+}

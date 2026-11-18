@@ -5,7 +5,7 @@ use arrow_schema::{DataType, Field, Schema, SchemaRef};
 
 use crate::{
     shared::error::{MarketForgeError, Result},
-    shared::formats::depth::{DepthEventBoundary, DepthSourceOperation},
+    shared::formats::depth::DepthEventBoundary,
 };
 
 use {
@@ -67,11 +67,7 @@ impl From<&MergedEvent> for UnifiedTimelineRecord {
                     DepthEventBoundary::Initialization => 1,
                 };
 
-                let operation = match depth.event.source_operation {
-                    DepthSourceOperation::Snapshot => 0,
-                    DepthSourceOperation::AbsoluteUpdate => 1,
-                    DepthSourceOperation::RelativeUpdate => 2,
-                };
+                let operation = depth.event.source_operation.code();
 
                 (Some(boundary), Some(operation))
             }

@@ -1,0 +1,8 @@
+# Illustrative values. Replace with applicable historical evidence before registration.
+instrument = "xnas.equity.equity.AAPL"
+quantity_type = "base"
+tick_size = "0.01"
+qty_step = "1"
+valid_from = 2024-10-28T14:30:00Z
+valid_to = 2024-10-28T14:40:00Z
+provenance = "Illustrative economic parameters for recipe authoring. The recording alone does not establish historical venue restrictions."

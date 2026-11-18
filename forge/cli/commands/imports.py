@@ -7,7 +7,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 from forge.cli.commands.markets import emit
-from forge.historical.imports.formats import draft, sample
+from forge.historical.imports.formats import sample
 from forge.historical.imports.models import ImportError, freeze_inputs, load_import, plan
 from forge.historical.imports.service import run_import
 from forge.shared.config.library import resolve_config_file
@@ -48,7 +48,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
     formats = actions.add_parser("format").add_subparsers(dest="format_action", required=True)
     child = formats.add_parser(
         "new",
-        help="Create physical/profile TOML drafts outside the active Rust catalogue; mappings remain unapproved.",
+        help="Retired automatic drafting; use manually authored acquisition profiles.",
     )
     child.set_defaults(service_handler=run)
     child.add_argument("import_name")
@@ -83,7 +83,6 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
             "max_files": 1000,
             "data_type": "trades",
             "identity": {
-                "exchange": "external",
                 "market_category": "spot",
                 "instrument_type": "spot",
                 "symbol": "UNSPECIFIED",
@@ -112,16 +111,8 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
         return 0
     config = load_import(path)
     if o.import_action == "format":
-        if o.profile is None or o.input_reference is None:
-            raise ImportError("Select --profile and --input.")
-        result = draft(
-            context.paths.root,
-            config,
-            o.profile,
-            o.input_reference,
-            member=o.member,
-            header=o.header,
-            overwrite=o.overwrite,
+        raise ImportError(
+            "Automatic profile drafting is retired. Author a standalone schema-2 profile and use mf acquisition profiles validate/add; migrate declarations with mf acquisition register."
         )
     elif o.import_action == "validate":
         inputs = freeze_inputs(config)

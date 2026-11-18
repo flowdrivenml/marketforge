@@ -64,7 +64,7 @@ pub struct MergeInputDataset {
 // Timeline files
 // -----------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct MergeTimelineFile {
     pub path: String,

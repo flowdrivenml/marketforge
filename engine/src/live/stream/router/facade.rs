@@ -1261,7 +1261,7 @@ impl ProducerHandle {
                                 && t.envelope.stream_id == event.origin.stream_id
                                 && t.envelope.instrument_id == source.instrument_id
                                 && t.envelope.symbol == source.symbol
-                                && exchange_name(t.envelope.exchange)
+                                && exchange_name(&t.envelope.exchange)
                                     == source.exchange.as_str() => {}
                         NativeMarketEvent::Depth(depth)
                             if source.channel == SourceChannel::Depth =>
@@ -1682,7 +1682,7 @@ fn validate(
                 if trade.envelope.stream_id != stream
                     || trade.envelope.instrument_id != source.instrument_id
                     || trade.envelope.symbol != source.symbol
-                    || exchange_name(trade.envelope.exchange) != source.exchange.as_str()
+                    || exchange_name(&trade.envelope.exchange) != source.exchange.as_str()
                 {
                     return Err(invalid());
                 }
@@ -1732,15 +1732,8 @@ fn validate(
     }
     Ok((generation, book, highest))
 }
-fn exchange_name(exchange: crate::shared::domain::canonical::Exchange) -> &'static str {
-    use crate::shared::domain::canonical::Exchange::*;
-    match exchange {
-        Bybit => "bybit",
-        Binance => "binance",
-        Okx => "okx",
-        Bitget => "bitget",
-        GateIo => "gateio",
-    }
+fn exchange_name(exchange: &crate::shared::domain::canonical::Exchange) -> &str {
+    exchange.as_str()
 }
 async fn dispatch(shared: Arc<Shared>) {
     loop {

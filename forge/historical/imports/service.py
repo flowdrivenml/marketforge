@@ -22,7 +22,7 @@ from forge.shared.identity import new_run_id
 from forge.shared.paths import ProjectPaths
 
 
-async def _hash_source(item: FrozenInput) -> str:
+async def hash_source(item: FrozenInput) -> str:
     path = Path(item.path)
     if not item.matches(await disk(path.stat)):
         raise ImportError("Source changed after planning.")
@@ -48,8 +48,10 @@ async def import_file(
     item: FrozenInput,
     raw_root: Path,
     run_id: str,
+    *,
+    planned_relative: str | None = None,
 ) -> dict[str, object]:
-    checksum = await _hash_source(item)
+    checksum = await hash_source(item)
     normalized_root = str(await disk(Path(config.root).resolve))
     identity = config.identity
     async with c.transaction():
@@ -67,9 +69,9 @@ async def import_file(
         if instrument is None and config.specifications is None:
             raise ImportError("Unknown instrument requires explicit historical specifications.")
         cur = await c.execute(
-            """INSERT INTO historical.external_sources(source_key,source_kind,root_uri)
+            """INSERT INTO historical.raw_sources(source_key,source_kind,root_uri)
             VALUES(%s,%s,%s) ON CONFLICT(source_key) DO UPDATE SET source_key=EXCLUDED.source_key
-            WHERE external_sources.root_uri=EXCLUDED.root_uri AND external_sources.source_kind=EXCLUDED.source_kind RETURNING id""",
+            WHERE raw_sources.root_uri=EXCLUDED.root_uri AND raw_sources.source_kind=EXCLUDED.source_kind RETURNING id""",
             (config.source_key, config.source_kind, normalized_root),
         )
         row = await cur.fetchone()
@@ -84,18 +86,53 @@ async def import_file(
             else "pending_engine_validation"
         )
         declared = config.interval
+        object_cursor = await c.execute(
+            """INSERT INTO historical.raw_objects(acquisition_method,raw_source_id,venue_code,scope_key,scope_json,data_type,source_object_key,filename,start_at,end_at,remote_status)
+            VALUES('local_copy',%s,%s,%s,%s,%s,%s,%s,%s,%s,'unknown')
+            ON CONFLICT(raw_source_id,source_object_key) WHERE acquisition_method='local_copy'
+            DO UPDATE SET start_at=COALESCE(raw_objects.start_at,EXCLUDED.start_at),
+                end_at=COALESCE(raw_objects.end_at,EXCLUDED.end_at)
+            WHERE raw_objects.scope_json=EXCLUDED.scope_json AND raw_objects.data_type=EXCLUDED.data_type
+              AND raw_objects.venue_code=EXCLUDED.venue_code
+              AND (raw_objects.start_at IS NULL OR EXCLUDED.start_at IS NULL OR
+                (raw_objects.start_at,raw_objects.end_at)=(EXCLUDED.start_at,EXCLUDED.end_at))
+            RETURNING id""",
+            (
+                source_id,
+                identity.exchange,
+                f"local:{source_id}:{item.reference}",
+                json_value(
+                    {
+                        "instrument_type": identity.instrument_type,
+                        "market_category": identity.market_category,
+                        "scope_kind": "instrument",
+                        "scope_identifier": identity.symbol,
+                    }
+                ),
+                config.data_type,
+                item.reference,
+                item.reference,
+                declared.start if declared else None,
+                declared.end if declared else None,
+            ),
+        )
+        object_row = await object_cursor.fetchone()
+        if object_row is None:
+            raise ImportError("Source object conflicts with its registered identity/content.")
+        raw_object_id = object_row[0]
         cur = await c.execute(
-            """INSERT INTO historical.external_archives
-            (external_source_id,source_object_key,sha256,bytes_expected,instrument_id,identity_json,specifications_json,data_type,
-             declared_start_at,declared_end_at,format_profile,normalization_readiness,import_provenance)
-            VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT(external_source_id,source_object_key,sha256) DO UPDATE SET source_object_key=EXCLUDED.source_object_key
-            WHERE external_archives.identity_json=EXCLUDED.identity_json AND external_archives.data_type=EXCLUDED.data_type
-              AND external_archives.declared_start_at IS NOT DISTINCT FROM EXCLUDED.declared_start_at
-              AND external_archives.declared_end_at IS NOT DISTINCT FROM EXCLUDED.declared_end_at
-              AND external_archives.specifications_json IS NOT DISTINCT FROM EXCLUDED.specifications_json
+            """INSERT INTO historical.raw_interpretations
+            (raw_object_id,external_source_id,source_object_key,sha256,bytes_expected,instrument_id,identity_json,specifications_json,data_type,
+             declared_start_at,declared_end_at,format_profile,normalization_readiness,import_provenance,binding_fingerprint)
+            VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT(external_source_id,source_object_key,sha256,binding_fingerprint) DO UPDATE SET source_object_key=EXCLUDED.source_object_key
+            WHERE raw_interpretations.identity_json=EXCLUDED.identity_json AND raw_interpretations.data_type=EXCLUDED.data_type
+              AND raw_interpretations.declared_start_at IS NOT DISTINCT FROM EXCLUDED.declared_start_at
+              AND raw_interpretations.declared_end_at IS NOT DISTINCT FROM EXCLUDED.declared_end_at
+              AND raw_interpretations.specifications_json IS NOT DISTINCT FROM EXCLUDED.specifications_json
             RETURNING id,normalization_readiness""",
             (
+                raw_object_id,
                 source_id,
                 item.reference,
                 checksum,
@@ -113,10 +150,23 @@ async def import_file(
                 json_value(
                     {
                         "run_id": run_id,
+                        "binding": config.binding,
                         "source_stat": asdict(item),
                         "check": "size,device,inode,mtime_ns,ctime_ns before/after hashing and copying",
                     }
                 ),
+                hashlib.sha256(
+                    json.dumps(
+                        config.binding
+                        or {
+                            "profile": config.format_profile,
+                            "specifications": config.specifications.model_dump(mode="json")
+                            if config.specifications
+                            else None,
+                        },
+                        sort_keys=True,
+                    ).encode()
+                ).hexdigest(),
             ),
         )
         revision = await cur.fetchone()
@@ -126,14 +176,28 @@ async def import_file(
             )
         external_id: int = revision[0]
         readiness = revision[1]
-    existing = await reuse_registered(c, raw_root, external_archive_id=external_id)
+    # A new interpretation can reuse immutable verified physical bytes from the
+    # same source object. Bindings are appended; downstream evidence is untouched.
+    cur = await c.execute(
+        """SELECT external_archive_id FROM historical.local_archives
+        WHERE raw_object_id=%s AND sha256=%s AND storage_root_key=%s AND status='complete' ORDER BY id DESC LIMIT 1""",
+        (raw_object_id, checksum, root_key(raw_root)),
+    )
+    previous = await cur.fetchone()
+    reuse_id = previous[0] if previous and previous[0] is not None else external_id
+    existing = await reuse_registered(c, raw_root, external_archive_id=reuse_id)
     if existing is not None:
+        async with c.transaction():
+            await c.execute(
+                "INSERT INTO historical.raw_bindings(local_archive_id,interpretation_id) VALUES(%s,%s) ON CONFLICT DO NOTHING",
+                (existing.local_archive_id, external_id),
+            )
         return {**asdict(existing), "input": item.reference, "normalization_readiness": readiness}
     name = (
         "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in Path(item.path).name)[-160:]
         or "input"
     )
-    relative = f"external/{external_id}/{uuid4().hex}/{name}"
+    relative = planned_relative or f"external/{external_id}/{uuid4().hex}/{name}"
     final = raw_root / relative
     partial = final.with_name(final.name + ".part")
     await disk(final.parent.mkdir, parents=True, exist_ok=False)
@@ -147,6 +211,10 @@ async def import_file(
         if row is None:
             raise ImportError("Could not reserve managed copy.")
         local_id: int = row[0]
+        await c.execute(
+            "INSERT INTO historical.raw_bindings(local_archive_id,interpretation_id) VALUES(%s,%s) ON CONFLICT DO NOTHING",
+            (local_id, external_id),
+        )
     published = False
     try:
         original = Path(item.path)
@@ -200,6 +268,10 @@ async def import_file(
 async def run_import(
     paths: ProjectPaths, dsn: str, config: ImportConfig, source_file: Path
 ) -> dict[str, object]:
+    if config.binding is not None:
+        raise ImportError(
+            "Legacy import is raw-only. Use acquisition register for a verified binding."
+        )
     frozen = await disk(freeze_inputs, config)
     run_id = new_run_id()
     artifacts = RunArtifacts.for_run(paths, run_id)

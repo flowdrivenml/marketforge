@@ -1,5 +1,5 @@
 //! Router-to-portable schema projection. Does not normalize or calculate prices.
-use crate::shared::domain::canonical::{BookSide, Exchange, TradeSide};
+use crate::shared::domain::canonical::{BookSide, TradeSide};
 use crate::{
     live::stream::router::*,
     stream_protocol::{self as p, market as m},
@@ -14,14 +14,7 @@ fn trade(t: &crate::shared::domain::canonical::Trade) -> m::Trade {
     m::Trade {
         event_timestamp_ns: t.envelope.event_timestamp_ns,
         system_timestamp_ns: t.envelope.system_timestamp_ns,
-        exchange: match t.envelope.exchange {
-            Exchange::Bybit => "bybit",
-            Exchange::Binance => "binance",
-            Exchange::Okx => "okx",
-            Exchange::Bitget => "bitget",
-            Exchange::GateIo => "gateio",
-        }
-        .into(),
+        exchange: t.envelope.exchange.as_str().into(),
         instrument_id: t.envelope.instrument_id,
         symbol: t.envelope.symbol.clone(),
         stream_id: t.envelope.stream_id.clone(),
@@ -30,6 +23,7 @@ fn trade(t: &crate::shared::domain::canonical::Trade) -> m::Trade {
         side: match t.side {
             TradeSide::Buy => "buy",
             TradeSide::Sell => "sell",
+            TradeSide::Unknown => "unknown",
         }
         .into(),
         price: t.price.into(),

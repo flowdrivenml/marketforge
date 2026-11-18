@@ -52,17 +52,29 @@ fn validate_run_order(previous: &TradeEntry, current: &TradeEntry, stage: &str) 
     }
     Ok(())
 }
+fn exchange_order(exchange: &crate::shared::domain::canonical::Exchange) -> (u8, &str) {
+    use crate::shared::domain::canonical::Exchange::*;
+    match exchange {
+        Bybit => (0, ""),
+        Binance => (1, ""),
+        Okx => (2, ""),
+        Bitget => (3, ""),
+        GateIo => (4, ""),
+        Manual(_) => (5, exchange.as_str()),
+    }
+}
+
 fn identity(a: &TradeEntry, b: &TradeEntry) -> Ordering {
     // Enum declaration order is internal only; equality/scope exactly match the
     // reference key. No business interpretation depends on exchange ordering.
     (
-        a.trade.envelope.exchange as u8,
+        exchange_order(&a.trade.envelope.exchange),
         &a.trade.envelope.stream_id,
         a.trade.envelope.instrument_id,
         &a.trade.trade_id,
     )
         .cmp(&(
-            b.trade.envelope.exchange as u8,
+            exchange_order(&b.trade.envelope.exchange),
             &b.trade.envelope.stream_id,
             b.trade.envelope.instrument_id,
             &b.trade.trade_id,

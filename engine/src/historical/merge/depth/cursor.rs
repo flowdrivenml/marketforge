@@ -316,15 +316,9 @@ fn decode_event(batch: &RecordBatch, row: usize) -> Result<IndexedDepthEvent> {
         }
     };
 
-    let source_operation = match u8_column("source_operation")?.value(row) {
-        0 => DepthSourceOperation::Snapshot,
-        1 => DepthSourceOperation::AbsoluteUpdate,
-        2 => DepthSourceOperation::RelativeUpdate,
-
-        value => {
-            return invalid(format!("unknown depth source operation: {value}"));
-        }
-    };
+    let operation = u8_column("source_operation")?.value(row);
+    let source_operation = DepthSourceOperation::from_code(operation)
+        .ok_or_else(|| invalid_error(format!("unknown depth source operation: {operation}")))?;
 
     Ok(IndexedDepthEvent {
         event_ordinal: u64_column("event_ordinal")?.value(row),

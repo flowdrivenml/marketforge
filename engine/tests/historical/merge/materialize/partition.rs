@@ -338,6 +338,7 @@ fn depth_reference(event: &IndexedDepthEvent) -> UnifiedTimelineRecord {
             DepthSourceOperation::Snapshot => 0,
             DepthSourceOperation::AbsoluteUpdate => 1,
             DepthSourceOperation::RelativeUpdate => 2,
+            DepthSourceOperation::BoundedObservation => 3,
         }),
     }
 }
@@ -346,6 +347,7 @@ fn merge_job(workers: usize, memory_mb: u64, output_path: PathBuf) -> MergeJob {
         job_id: 999,
         operation: MergeOperation::Merge,
         inputs: vec![88],
+        primary_files: Default::default(),
         input_paths: Default::default(),
 
         time_range: MergeTimeRange {

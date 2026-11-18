@@ -100,36 +100,64 @@ pub fn resolve_unified_merge_streams(
         // Validate consistent instrument metadata
         // ---------------------------------------------------------------------
 
-        let first = &job.tasks[0];
+        let selected_stream = if input.manifest.content_type == ContentType::Trades
+            && !input.manifest.streams.is_empty()
+            && !input.canonical_files.is_empty()
+        {
+            let matching = input
+                .manifest
+                .streams
+                .iter()
+                .filter(|stream| {
+                    let directory = input.dataset_path.join(&stream.directory);
+                    input
+                        .canonical_files
+                        .iter()
+                        .any(|file| file.parent() == Some(directory.as_path()))
+                })
+                .collect::<Vec<_>>();
+            if matching.len() != 1 {
+                return invalid(format!(
+                    "publication {}: select files from a single concrete trade stream; multiple stream ranks per publication are unsupported",
+                    input.dataset_id
+                ));
+            }
+            Some(matching[0])
+        } else {
+            None
+        };
 
-        for task in &job.tasks[1..] {
-            if task.stream_id != first.stream_id
+        let mut tasks = job.tasks.iter().filter(|task| {
+            selected_stream.is_none_or(|stream| {
+                stream
+                    .sources
+                    .iter()
+                    .any(|source| source.task_id == task.task_id.0)
+            })
+        });
+        let first = tasks
+            .next()
+            .ok_or_else(|| invalid_error("selected stream has no source tasks"))?;
+        if tasks.any(|task| {
+            task.stream_id != first.stream_id
                 || task.exchange != first.exchange
                 || task.instrument_id != first.instrument_id
                 || task.symbol != first.symbol
                 || task.instrument != first.instrument
-            {
-                return invalid(format!(
-                    "dataset {}: inconsistent instrument metadata across tasks",
-                    input.dataset_id
-                ));
-            }
-        }
-
-        // ---------------------------------------------------------------------
-        // Validate stream configuration
-        // ---------------------------------------------------------------------
-
-        if job.streams.len() != 1 {
+        }) {
             return invalid(format!(
-                "dataset {}: expected exactly one processing stream",
+                "publication {}: incompatible selected task metadata",
                 input.dataset_id
             ));
         }
 
-        if job.streams[0].stream_id != first.stream_id {
+        if let Some(stream) = selected_stream {
+            if stream.stream_id != first.stream_id.0 {
+                return invalid("selected manifest stream differs from processing metadata");
+            }
+        } else if job.streams.len() != 1 || job.streams[0].stream_id != first.stream_id {
             return invalid(format!(
-                "dataset {}: processing stream identity mismatch",
+                "publication {}: expected exactly one compatible processing stream",
                 input.dataset_id
             ));
         }

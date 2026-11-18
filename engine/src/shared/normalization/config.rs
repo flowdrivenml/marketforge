@@ -8,6 +8,7 @@ pub enum TimestampEncoding {
     Milliseconds,
     Microseconds,
     Nanoseconds,
+    Iso8601Nanoseconds,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

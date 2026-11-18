@@ -17,8 +17,19 @@ nav = [
       { "Overview and prerequisites" = "workflows/acquisition/index.md" },
       { "Historical data" = "workflows/acquisition/historical-data.md" },
       { "External data" = "workflows/acquisition/external-data.md" },
+      { "Bring your own data" = "examples/bring-your-own-data/index.md" },
+      { "Databento AAPL example" = "examples/bring-your-own-data/databento/index.md" },
+      { "Unified Forge workflow" = "workflows/acquisition/forge.md" },
       { "Managing acquisitions" = "workflows/acquisition/managing-acquisitions.md" },
     ] },
+    { "Manual catalogue" = [
+      { "Overview" = "workflows/catalogue/index.md" },
+      { "Exchanges and instruments" = "workflows/catalogue/exchanges-and-instruments.md" },
+      { "Specifications" = "workflows/catalogue/specifications.md" },
+      { "Profiles" = "workflows/catalogue/profiles.md" },
+    ] },
+    { "Inspect datasets" = "workflows/datasets.md" },
+    { "Merge datasets" = "workflows/merge.md" },
     { "Markets" = [
       { "Overview" = "workflows/markets/index.md" },
       { "Instrument discovery" = "workflows/markets/instrument-discovery.md" },
@@ -35,6 +46,7 @@ nav = [
   { "Reference" = [
     { "Overview" = "reference/index.md" },
     { "Acquisition CLI" = "reference/cli/acquisition.md" },
+    { "Forge engine and processing" = "reference/cli/forge.md" },
     { "Markets CLI" = "reference/cli/markets.md" },
   ] },
   { "Development" = [

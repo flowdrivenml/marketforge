@@ -1,3 +1,5 @@
+mod checksums;
+pub use checksums::{file_sha256, write_publication_checksums};
 mod builder;
 mod discovery;
 mod inspection;

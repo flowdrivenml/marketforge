@@ -353,6 +353,7 @@ impl PreparedBatch {
             }
             match (i.instrument_type, i.market_category) {
                 (InstrumentKind::Spot, MarketCategory::Spot)
+                | (InstrumentKind::Equity, MarketCategory::Equity)
                 | (
                     InstrumentKind::Perpetual | InstrumentKind::Future,
                     MarketCategory::Linear | MarketCategory::Inverse,

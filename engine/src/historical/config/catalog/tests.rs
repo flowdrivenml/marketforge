@@ -238,3 +238,64 @@ fn native_trade_identity_contract_is_strict_and_fingerprinted() {
             .is_none()
     );
 }
+
+#[test]
+fn manual_equity_trade_and_depth_profiles_compile_under_their_venue() {
+    let directory = tempfile::tempdir().unwrap();
+    let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/content/examples/catalogue");
+    for kind in ["trades", "depth"] {
+        let id = format!("example_exchange.equity.equity.{kind}");
+        let target = directory.path().join("profiles").join(kind);
+        fs::create_dir_all(&target).unwrap();
+        fs::copy(
+            examples.join(format!("{id}.toml")),
+            target.join(format!("{id}.toml")),
+        )
+        .unwrap();
+    }
+    let catalogue = FormatCatalog::load(directory.path()).unwrap();
+    for kind in ["trades", "depth"] {
+        let profile = catalogue
+            .get(&format!("example_exchange.equity.equity.{kind}"))
+            .unwrap();
+        assert_eq!(profile.definition.exchange, "example_exchange");
+        assert_eq!(profile.definition.instrument_type, InstrumentKind::Equity);
+        assert_eq!(profile.definition.market_category, MarketCategory::Equity);
+        assert_eq!(profile.fingerprint.len(), 64);
+    }
+}
+
+#[test]
+fn byod_profile_contracts_fail_closed() {
+    let examples = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../docs/content/examples/bring-your-own-data/databento");
+    let trades_path = examples.join("xnas.equity.equity.trades.toml");
+    let trades = fs::read_to_string(&trades_path).unwrap();
+    assert!(unified::compile(&trades, &trades_path, "trades").is_ok());
+    for field in ["hd.ts_event", "ts_recv"] {
+        let header = if field.contains('.') {
+            format!("[fields.\"{field}\"]")
+        } else {
+            format!("[fields.{field}]")
+        };
+        let mismatched = trades.replace(
+            &format!("{header}\ntype = \"string\"\nencoding = \"iso8601_nanoseconds\""),
+            &format!("{header}\ntype = \"integer\"\nencoding = \"unix_nanoseconds\""),
+        );
+        assert_ne!(mismatched, trades);
+        assert!(unified::compile(&mismatched, &trades_path, "trades").is_err());
+    }
+
+    let depth_path = examples.join("xnas.equity.equity.depth.toml");
+    let depth = fs::read_to_string(&depth_path).unwrap();
+    assert!(unified::compile(&depth, &depth_path, "depth").is_ok());
+    for (old, new) in [
+        ("levels_per_side = 10", "levels_per_side = 9"),
+        (
+            "ordering = \"chronological\"",
+            "ordering = \"timestamp_sortable\"",
+        ),
+    ] {
+        assert!(unified::compile(&depth.replace(old, new), &depth_path, "depth").is_err());
+    }
+}

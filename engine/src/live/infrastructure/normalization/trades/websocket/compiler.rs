@@ -180,6 +180,11 @@ impl TradeNormalizationCompiler {
             let convention = match positive_side {
                 TradeSide::Buy => PositiveQuantitySide::Buy,
                 TradeSide::Sell => PositiveQuantitySide::Sell,
+                TradeSide::Unknown => {
+                    return Err(TradeCompileError::InvalidFormat(
+                        "signed quantity requires a known side".into(),
+                    ));
+                }
             };
 
             (AggressorSideNormalizer::signed_quantity(convention), None)

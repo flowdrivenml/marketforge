@@ -44,6 +44,8 @@ pub struct LevelArraySpec {
 
     #[serde(default)]
     pub order_count_index: Option<usize>,
+    #[serde(default)]
+    pub order_count_field: Option<String>,
 
     #[serde(default)]
     pub decode: Option<String>,
@@ -128,6 +130,10 @@ pub struct SnapshotSpec {
 
     #[serde(default)]
     pub group_by: Option<String>,
+    #[serde(default)]
+    pub levels_per_side: Option<u32>,
+    #[serde(default)]
+    pub sequence_order: Option<String>,
 }
 
 // -----------------------------------------------------------------------------
@@ -353,7 +359,18 @@ impl DepthSpec {
 
         if let DepthOperation::Snapshot(snapshot) = &operation {
             match snapshot.kind.as_str() {
-                "single_event" | "single_row" | "group_rows" => {}
+                "single_event" | "single_row" | "group_rows"
+                    if snapshot.levels_per_side.is_none() && snapshot.sequence_order.is_none() => {}
+                "bounded_observation"
+                    if has_arrays
+                        && snapshot.group_by.is_none()
+                        && snapshot.levels_per_side.is_some_and(|n| n > 0)
+                        && rules.sequence_count.is_none()
+                        && match snapshot.sequence_order.as_deref() {
+                            None => rules.sequence_start.is_none(),
+                            Some("nondecreasing") => rules.sequence_start.is_some(),
+                            _ => false,
+                        } => {}
 
                 other => {
                     return invalid(format!("unsupported depth snapshot type: {other}"));
@@ -440,6 +457,13 @@ fn validate_rules(r: &DepthRules) -> Result<()> {
             || a.quantity_field.as_ref().is_some_and(|s| s.is_empty())
         {
             return invalid("object levels require nonempty price_field and quantity_field");
+        }
+        if a.order_count_field
+            .as_ref()
+            .is_some_and(|f| f.is_empty() || a.price_field.is_none())
+            || (a.price_field.is_some() && a.order_count_index.is_some())
+        {
+            return invalid("depth order count must use the same mapping as price and quantity");
         }
         if a.price_field.is_none() && a.price_index == a.quantity_index {
             return invalid("depth price and quantity indices must differ");

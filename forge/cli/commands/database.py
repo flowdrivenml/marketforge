@@ -1,6 +1,7 @@
 """Database migration commands."""
 
 import json
+from pathlib import Path
 
 from forge.shared.config.models import PresentationSettings
 from forge.shared.database.migrations import MigrationError, migrate_testing_database
@@ -13,12 +14,13 @@ def migrate_database(
     testing: bool,
     presentation: PresentationSettings,
     as_json: bool = False,
+    project_root: Path | None = None,
 ) -> None:
     """Apply pending migrations to the explicitly selected testing database."""
     if not testing:
         raise MigrationError("Database migration currently requires --testing.")
 
-    result = migrate_testing_database()
+    result = migrate_testing_database(project_root=project_root)
 
     if as_json:
         print(
@@ -54,12 +56,13 @@ def show_database_status(
     testing: bool,
     presentation: PresentationSettings,
     as_json: bool = False,
+    project_root: Path | None = None,
 ) -> None:
     """Display the testing database identity and migration state."""
     if not testing:
         raise MigrationError("Database inspection currently requires --testing.")
 
-    status = inspect_testing_database()
+    status = inspect_testing_database(project_root=project_root)
 
     if as_json:
         print(

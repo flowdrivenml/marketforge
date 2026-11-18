@@ -458,7 +458,7 @@ fn validate_depth_metadata(boundary: u8, operation: u8) -> Result<()> {
         return invalid("invalid physical depth event boundary");
     }
 
-    if operation > 2 {
+    if crate::shared::domain::canonical::DepthSourceOperation::from_code(operation).is_none() {
         return invalid("invalid physical depth source operation");
     }
 

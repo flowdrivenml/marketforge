@@ -32,9 +32,24 @@ use marketforge_engine::tui::processing::{
 #[command(group(
     ArgGroup::new("input")
         .required(true)
-        .args(["batch", "job", "jobs_dir"])
+        .args(["batch", "job", "jobs_dir", "validate_profiles", "validate_batch", "validate_dataset", "resolve_batch", "protocol"])
 ))]
 struct Args {
+    /// Resolve profiles and bounded archive family identities without normalizing.
+    #[arg(long)]
+    resolve_batch: Option<PathBuf>,
+    /// Validate committed manifest and resolved-job semantics without processing.
+    #[arg(long)]
+    validate_dataset: Option<PathBuf>,
+    /// Report the nonexecuting orchestration protocol.
+    #[arg(long)]
+    protocol: bool,
+    /// Compile a historical configuration root's profile catalogue without processing.
+    #[arg(long)]
+    validate_profiles: Option<PathBuf>,
+    /// Validate a prepared batch with the production parser without opening archives.
+    #[arg(long)]
+    validate_batch: Option<PathBuf>,
     /// Execute a schema-version-4 prepared normalization batch.
     #[arg(long)]
     batch: Option<PathBuf>,
@@ -46,6 +61,10 @@ struct Args {
     #[arg(long, conflicts_with = "job")]
     jobs_dir: Option<PathBuf>,
 
+    /// Historical configuration root containing the effective profiles catalogue.
+    #[arg(long)]
+    profiles_root: Option<PathBuf>,
+
     /// Global processing configuration.
     #[arg(long, default_value = "data/.config/historical/general.toml")]
     config: PathBuf,
@@ -53,6 +72,10 @@ struct Args {
     /// Project root used to resolve processing configuration.
     #[arg(long, default_value = ".")]
     project_root: PathBuf,
+
+    /// Write the authoritative execution response to a fresh file.
+    #[arg(long, requires = "batch")]
+    result_file: Option<PathBuf>,
 
     /// Redirect dataset and staging outputs to a separate directory.
     #[arg(long)]
@@ -132,6 +155,12 @@ fn redirect_outputs(
 // CLI
 // -----------------------------------------------------------------------------
 
+fn bind_submission(jobs: &mut [ProcessingJob], fingerprint: &str) {
+    for task in jobs.iter_mut().flat_map(|job| &mut job.tasks) {
+        task.raw_schema["marketforge_submission_sha256"] = serde_json::json!(fingerprint);
+    }
+}
+
 fn execute(
     args: &Args,
     run_id: &mut Option<String>,
@@ -140,11 +169,27 @@ fn execute(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let root = project_root(&args.project_root)?;
     // Identify batch/run before configuration failure, without opening sources.
+    let submission_sha256 = args
+        .batch
+        .as_deref()
+        .map(|path| {
+            marketforge_engine::historical::normalize::manifest::file_sha256(&resolve_path(
+                &root, path,
+            ))
+        })
+        .transpose()?;
     let batch = args
         .batch
         .as_ref()
         .map(|p| read_prepared_batch(p, &root))
         .transpose()?;
+    if let (Some(path), Some(fingerprint)) = (&args.batch, &submission_sha256)
+        && marketforge_engine::historical::normalize::manifest::file_sha256(&resolve_path(
+            &root, path,
+        ))? != *fingerprint
+    {
+        return Err("prepared submission changed during parsing".into());
+    }
     if let Some(batch) = &batch {
         *run_id = Some(batch.run_id.clone());
         *total = batch
@@ -154,13 +199,20 @@ fn execute(
             .count();
     }
     let config = load_processing_config(resolve_path(&root, &args.config), &root)?;
-    let catalog = FormatCatalog::load(root.join("data/.config/historical"))?;
+    let catalog = FormatCatalog::load(
+        args.profiles_root
+            .clone()
+            .unwrap_or_else(|| root.join("data/.config/historical")),
+    )?;
     #[cfg(feature = "monitor-tui")]
     if args.tui
         && let Some(batch) = batch.as_ref()
     {
         let prepared = batch.clone();
         let preparation_config = config.clone();
+        let fingerprint = submission_sha256
+            .clone()
+            .expect("prepared batch fingerprint");
         let output_root = args
             .output_root
             .as_ref()
@@ -172,6 +224,7 @@ fn execute(
                 &root,
                 reporter,
             )?;
+            bind_submission(&mut jobs, &fingerprint);
             if let Some(path) = output_root {
                 redirect_outputs(&mut jobs, &path).map_err(|error| {
                     marketforge_engine::shared::error::MarketForgeError::InvalidConfiguration(
@@ -202,6 +255,9 @@ fn execute(
             &config,
         )?
     };
+    if let Some(fingerprint) = &submission_sha256 {
+        bind_submission(&mut jobs, fingerprint);
+    }
     *total = jobs.len();
     if let Some(path) = &args.output_root {
         redirect_outputs(&mut jobs, &resolve_path(&root, path))?;
@@ -226,20 +282,148 @@ fn execute(
 }
 fn main() -> std::process::ExitCode {
     let args = Args::parse();
+    if args.protocol
+        || args.validate_profiles.is_some()
+        || args.validate_batch.is_some()
+        || args.validate_dataset.is_some()
+        || args.resolve_batch.is_some()
+    {
+        let result = (|| -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+            if args.protocol {
+                return Ok(
+                    serde_json::json!({"schema_version":1,"kind":"forge_engine_protocol","batch_schema_versions":[4],"result_file":true,"profile_schema_versions":[2]}),
+                );
+            }
+            if let Some(path) = &args.validate_dataset {
+                use marketforge_engine::historical::normalize::manifest::DatasetManifest;
+                let manifest: DatasetManifest =
+                    serde_json::from_slice(&fs::read(path.join("manifest.json"))?)?;
+                manifest.validate_streams()?;
+                let files =
+                    marketforge_engine::historical::normalize::manifest::inspect_parquet_files(
+                        path,
+                    )?;
+                let auxiliary =
+                    marketforge_engine::historical::normalize::manifest::inspect_auxiliary_files(
+                        path,
+                    )?;
+                if files != manifest.files
+                    || auxiliary != manifest.auxiliary_files
+                    || manifest.integrity_status != manifest.integrity_evaluation.status
+                {
+                    return Err(
+                        "committed file inventory or integrity evidence differs from manifest"
+                            .into(),
+                    );
+                }
+                let job = marketforge_engine::historical::job::load_committed_processing_job(path)?;
+                if manifest.job_id != job.job_id.0
+                    || manifest.dataset_id != job.dataset_id.0
+                    || job.output.dataset_path != *path
+                {
+                    return Err("dataset publication identity/path mismatch".into());
+                }
+                return Ok(
+                    serde_json::json!({"schema_version":1,"kind":"dataset_validation","status":"valid"}),
+                );
+            }
+            if let Some(path) = &args.validate_profiles {
+                let catalog = FormatCatalog::load(path)?;
+                return Ok(
+                    serde_json::json!({"schema_version":1,"kind":"profile_validation","profiles":catalog.profiles().map(|p| serde_json::json!({"id":p.definition.id,"fingerprint":p.fingerprint,"unsupported_reason":p.definition.unsupported_reason,"format_code":p.definition.format_code})).collect::<Vec<_>>()}),
+                );
+            }
+            let root = project_root(&args.project_root)?;
+            let batch = read_prepared_batch(
+                args.validate_batch
+                    .as_ref()
+                    .or(args.resolve_batch.as_ref())
+                    .unwrap(),
+                &root,
+            )?;
+            let config = load_processing_config(resolve_path(&root, &args.config), &root)?;
+            let catalog = FormatCatalog::load(
+                args.profiles_root
+                    .clone()
+                    .unwrap_or_else(|| root.join("data/.config/historical")),
+            )?;
+            if args.resolve_batch.is_some() {
+                let jobs = batch.resolve_jobs(&catalog, &config, &root)?;
+                let mut instruments = std::collections::BTreeMap::new();
+                let mut members = Vec::new();
+                for task in jobs.iter().flat_map(|job| &job.tasks) {
+                    instruments.insert(
+                        task.instrument_id,
+                        task.raw_schema["marketforge_source"]["instrument"].clone(),
+                    );
+                    members.push(serde_json::json!({"symbol":task.symbol,"instrument_id":task.instrument_id,"archive_member":task.archive_member}));
+                }
+                return Ok(
+                    serde_json::json!({"schema_version":1,"kind":"normalization_resolution","instrument_namespace":batch.instrument_namespace,"instruments":instruments.into_values().collect::<Vec<_>>(),"members":members,"normalization_executed":false}),
+                );
+            }
+            // Concrete resolution uses the same compiler as execution and never
+            // opens archives. Family discovery is deferred to actual execution.
+            for job in &batch.jobs {
+                let mut concrete = job.clone();
+                concrete.tasks.retain(|task| task.scope.is_none());
+                if !concrete.tasks.is_empty() {
+                    batch.resolve_job(&concrete, &catalog, &config, &root)?;
+                }
+            }
+            Ok(
+                serde_json::json!({"schema_version":1,"kind":"batch_validation","status":"valid","run_id":batch.run_id,"level":"production parser and metadata; archives not opened"}),
+            )
+        })();
+        return match result {
+            Ok(value) => {
+                println!("{value}");
+                std::process::ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("Validation failed: {error}");
+                std::process::ExitCode::FAILURE
+            }
+        };
+    }
     let mut run_id = None;
     let mut total = 0;
     let mut jobs = vec![];
-    let error = execute(&args, &mut run_id, &mut total, &mut jobs)
+    let execution = execute(&args, &mut run_id, &mut total, &mut jobs);
+    let interrupted = execution
+        .as_ref()
         .err()
-        .map(|e| {
-            eprintln!("Normalization failed: {e}");
-            NormalizationError::from_error(e.as_ref())
-        });
+        .and_then(|error| error.downcast_ref::<std::io::Error>())
+        .is_some_and(|error| error.kind() == std::io::ErrorKind::Interrupted);
+    let error = execution.err().map(|e| {
+        eprintln!("Normalization failed: {e}");
+        NormalizationError::from_error(e.as_ref())
+    });
     let response = NormalizationResponse::new(run_id, total, jobs, error);
     let success = response.status == ProcessingStatus::Complete;
     match serde_json::to_string(&response) {
         Ok(json) => {
             use std::io::Write;
+            if let Some(path) = &args.result_file {
+                let result = (|| -> std::io::Result<()> {
+                    let mut file = fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .open(path)?;
+                    writeln!(file, "{json}")?;
+                    file.sync_all()?;
+                    fs::File::open(
+                        path.parent()
+                            .filter(|p| !p.as_os_str().is_empty())
+                            .unwrap_or(Path::new(".")),
+                    )?
+                    .sync_all()
+                })();
+                if let Err(error) = result {
+                    eprintln!("cannot persist normalization response: {error}");
+                    return std::process::ExitCode::FAILURE;
+                }
+            }
             if writeln!(std::io::stdout().lock(), "{json}").is_err() {
                 return std::process::ExitCode::FAILURE;
             }
@@ -249,7 +433,9 @@ fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     }
-    if success {
+    if interrupted {
+        std::process::ExitCode::from(130)
+    } else if success {
         std::process::ExitCode::SUCCESS
     } else {
         std::process::ExitCode::FAILURE
@@ -263,6 +449,24 @@ mod runtime_cli_tests {
 
     const EXAMPLE: &str = include_str!("../../../docs/historical/normalize-job-v3.example.json");
     const RUNTIME: &str = include_str!("../../../data/.config/historical/general.toml");
+
+    #[test]
+    fn family_resolution_is_an_exclusive_nonprocessing_input() {
+        let args = Args::try_parse_from(["marketforge-normalize", "--resolve-batch", "batch.json"])
+            .unwrap();
+        assert_eq!(args.resolve_batch, Some(PathBuf::from("batch.json")));
+        assert!(args.batch.is_none() && args.job.is_none());
+        assert!(
+            Args::try_parse_from([
+                "marketforge-normalize",
+                "--resolve-batch",
+                "batch.json",
+                "--job",
+                "job.json",
+            ])
+            .is_err()
+        );
+    }
 
     #[test]
     fn cli_defaults_and_job_directory_loading_are_configuration_only() {

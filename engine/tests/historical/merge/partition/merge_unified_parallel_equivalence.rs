@@ -90,6 +90,7 @@ fn test_job(dataset_ids: &[u64], output: &Path, start_ns: i64, end_ns: i64) -> M
         operation: MergeOperation::Merge,
 
         inputs: dataset_ids.to_vec(),
+        primary_files: Default::default(),
         input_paths: HashMap::new(),
 
         time_range: MergeTimeRange { start_ns, end_ns },

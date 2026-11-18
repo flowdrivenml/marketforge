@@ -1,0 +1,69 @@
+schema_version = 2
+kind = "profile"
+id = "xnas.equity.equity.trades"
+format_code = "XNAS-T1"
+exchange = "xnas"
+instrument_type = "equity"
+market_category = "equity"
+
+[source]
+container = "plain"
+format = "jsonl"
+record_format = "rows"
+ordering = "chronological"
+granularity = "daily"
+
+[fields."hd.ts_event"]
+type = "string"
+encoding = "iso8601_nanoseconds"
+
+[fields.ts_recv]
+type = "string"
+encoding = "iso8601_nanoseconds"
+
+[fields.symbol]
+type = "string"
+
+[fields.price]
+type = "decimal"
+
+[fields.size]
+type = "integer"
+
+[fields.side]
+type = "string"
+
+[fields.sequence]
+type = "integer"
+
+[normalization]
+target = "trade"
+quantity_encoding = "base"
+
+[normalization.instrument]
+lookup = "catalog"
+field = "symbol"
+
+[normalization.event_timestamp]
+field = "hd.ts_event"
+
+[normalization.system_timestamp]
+field = "ts_recv"
+
+[normalization.price]
+field = "price"
+
+[normalization.quantity]
+field = "size"
+
+[normalization.sequence]
+field = "sequence"
+
+[normalization.side]
+field = "side"
+transform = "map"
+
+[normalization.side.values]
+a = "sell"
+b = "buy"
+n = "unknown"

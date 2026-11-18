@@ -8,6 +8,7 @@ pub enum InstrumentKind {
     Perpetual,
     Future,
     Option,
+    Equity,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

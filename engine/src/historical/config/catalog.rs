@@ -1,10 +1,7 @@
 use crate::{
     historical::job::{SourceContainer, SourceOrdering, WorkTask},
     shared::{
-        domain::{
-            canonical::Exchange,
-            instrument::{ContractKind, InstrumentKind},
-        },
+        domain::instrument::{ContractKind, InstrumentKind},
         error::{MarketForgeError, Result},
         formats::{depth::DepthSpec, trades::TradeSpec},
         normalization::{NormalizationConfig, QuantityEncoding, TargetSchema, TimestampEncoding},
@@ -52,7 +49,7 @@ pub struct Profile {
     pub id: String,
     pub physical: String,
     pub format_code: String,
-    pub exchange: Exchange,
+    pub exchange: String,
     pub instrument_type: InstrumentKind,
     pub market_category: MarketCategory,
     pub source_ordering: Option<SourceOrdering>,
@@ -66,6 +63,7 @@ pub enum MarketCategory {
     Linear,
     Inverse,
     Option,
+    Equity,
 }
 impl MarketCategory {
     fn of(task: &WorkTask) -> Self {
@@ -73,6 +71,7 @@ impl MarketCategory {
             Some(ContractKind::Linear) => Self::Linear,
             Some(ContractKind::Inverse) => Self::Inverse,
             None if task.instrument.instrument_kind == InstrumentKind::Option => Self::Option,
+            None if task.instrument.instrument_kind == InstrumentKind::Equity => Self::Equity,
             None => Self::Spot,
         }
     }
@@ -112,7 +111,7 @@ impl CompiledProfile {
         let Some(feed) = feed else {
             return Ok(result);
         };
-        if self.definition.exchange != Exchange::GateIo || !self.definition.id.ends_with(".depth") {
+        if self.definition.exchange != "gateio" || !self.definition.id.ends_with(".depth") {
             return Err(invalid("source_options.feed requires Gate.io depth"));
         }
         let token = serde_json::to_value(feed).map_err(|e| invalid(e.to_string()))?;
@@ -181,9 +180,12 @@ impl FormatCatalog {
                 if !identity_token(&p.format_code.to_lowercase()) {
                     return Err(invalid("invalid format_code"));
                 }
+                if crate::shared::domain::canonical::Exchange::from_code(&p.exchange).is_none() {
+                    return Err(invalid("invalid execution venue code"));
+                }
                 let expected = format!(
                     "{}.{}.{}.{}",
-                    name(&p.exchange)?,
+                    p.exchange.clone(),
                     name(&p.instrument_type)?,
                     name(&p.market_category)?,
                     data_type
@@ -195,6 +197,7 @@ impl FormatCatalog {
                     (p.instrument_type, p.market_category),
                     (InstrumentKind::Spot, MarketCategory::Spot)
                         | (InstrumentKind::Option, MarketCategory::Option)
+                        | (InstrumentKind::Equity, MarketCategory::Equity)
                         | (
                             InstrumentKind::Perpetual | InstrumentKind::Future,
                             MarketCategory::Linear | MarketCategory::Inverse
@@ -206,7 +209,7 @@ impl FormatCatalog {
                     ));
                 }
                 let key = (
-                    name(&p.exchange)?,
+                    p.exchange.clone(),
                     p.format_code.clone(),
                     name(&p.instrument_type)?,
                     name(&p.market_category)?,
@@ -319,9 +322,10 @@ impl FormatCatalog {
         Ok(p)
     }
     pub fn for_task(&self, task: &WorkTask) -> Result<Option<&CompiledProfile>> {
+        let exchange = name(&task.exchange)?;
         let mut matches = self.profiles.values().filter(|p| {
             p.definition.format_code == task.format_code.0
-                && p.definition.exchange == task.exchange
+                && p.definition.exchange == exchange
                 && p.definition.instrument_type == task.instrument.instrument_kind
                 && p.definition.market_category == MarketCategory::of(task)
         });
@@ -336,7 +340,7 @@ impl FormatCatalog {
     }
     pub fn check_task(&self, task: &WorkTask, p: &CompiledProfile) -> Result<()> {
         if task.format_code.0 != p.definition.format_code
-            || task.exchange != p.definition.exchange
+            || name(&task.exchange)? != p.definition.exchange
             || task.instrument.instrument_kind != p.definition.instrument_type
             || MarketCategory::of(task) != p.definition.market_category
         {
@@ -549,11 +553,11 @@ fn validate_physical(p: &PhysicalFormat) -> Result<()> {
 /// Check only contradictions established by declared configuration metadata.
 /// Missing upstream facts are not inferred from market names or illustrative notes.
 fn validate_semantics(p: &Profile, raw: &PhysicalFormat) -> Result<()> {
-    let exchange = name(&p.exchange)?;
+    let exchange = &p.exchange;
     let prefix = if exchange == "gateio" {
         "GATE".to_owned()
     } else {
-        exchange.to_uppercase()
+        exchange.to_uppercase().replace('_', "-")
     };
     let suffix = p
         .format_code
@@ -582,9 +586,14 @@ fn validate_semantics(p: &Profile, raw: &PhysicalFormat) -> Result<()> {
     }
     for rule in &p.rules {
         if rule.quantity_encoding == Some(QuantityEncoding::Contracts)
-            && p.market_category == MarketCategory::Spot
+            && matches!(
+                p.market_category,
+                MarketCategory::Spot | MarketCategory::Equity
+            )
         {
-            return Err(invalid("spot profile cannot encode quantity as contracts"));
+            return Err(invalid(
+                "spot or equity profile cannot encode quantity as contracts",
+            ));
         }
         if schema["order_book"]["event_model"].as_str() == Some("standalone_snapshot")
             && rule.target == RuleTarget::L2Update

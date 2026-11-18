@@ -104,6 +104,7 @@ fn extracts_bybit_price_levels() {
         price_index: 0,
         quantity_index: 1,
         order_count_index: None,
+        order_count_field: None,
         decode: None,
     };
 
@@ -138,6 +139,7 @@ fn extracts_okx_levels_with_order_counts() {
         price_index: 0,
         quantity_index: 1,
         order_count_index: Some(2),
+        order_count_field: None,
         decode: None,
     };
 
@@ -205,6 +207,7 @@ fn rejects_negative_level_quantity() {
         price_index: 0,
         quantity_index: 1,
         order_count_index: None,
+        order_count_field: None,
         decode: None,
     };
 
@@ -224,6 +227,7 @@ fn rejects_zero_price() {
         price_index: 0,
         quantity_index: 1,
         order_count_index: None,
+        order_count_field: None,
         decode: None,
     };
 

@@ -1,0 +1,69 @@
+schema_version = 2
+kind = "profile"
+id = "binance.spot.spot.trades"
+format_code = "BINANCE-T1"
+exchange = "binance"
+instrument_type = "spot"
+market_category = "spot"
+
+[source]
+container = "zip"
+format = "csv"
+record_format = "rows"
+header = false
+ordering = "chronological"
+granularity = "daily"
+
+# Field keys are literal source column names or JSON paths.
+[fields.trade_id]
+type = "integer"
+position = 1
+
+[fields.price]
+type = "decimal"
+position = 2
+
+[fields.quantity]
+type = "decimal"
+position = 3
+
+[fields.quote_quantity]
+type = "decimal"
+position = 4
+
+[fields.timestamp]
+type = "integer"
+position = 5
+encoding = "unix_microseconds"
+
+[fields.is_buyer_maker]
+type = "boolean"
+position = 6
+
+[fields.is_best_match]
+type = "boolean"
+position = 7
+
+[normalization]
+target = "trade"
+quantity_encoding = "base"
+
+[normalization.event_timestamp]
+field = "timestamp"
+
+[normalization.trade_id]
+field = "trade_id"
+
+[normalization.quantity]
+field = "quantity"
+
+[normalization.price]
+field = "price"
+
+[normalization.side]
+transform = "map"
+field = "is_buyer_maker"
+
+[normalization.side.values]
+true = "sell"
+false = "buy"

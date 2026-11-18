@@ -23,8 +23,8 @@ pub use convert::{
 
 pub use convert_load::load_convert_job;
 pub use merge::{
-    MergeJob, MergeOperation, MergeOutput, MergeParquetConfig, MergePartitioning, MergeResources,
-    MergeTimeRange,
+    MergeJob, MergeOperation, MergeOutput, MergeParquetConfig, MergePartitioning, MergePrimaryFile,
+    MergeResources, MergeTimeRange,
 };
 
 pub use merge_load::load_merge_job;

@@ -72,6 +72,8 @@ fn test_job(root: &Path, output: &Path) -> MergeJob {
 
         inputs: vec![111],
 
+        primary_files: Default::default(),
+
         input_paths: HashMap::from([(111, input.dataset_path)]),
 
         time_range: MergeTimeRange {

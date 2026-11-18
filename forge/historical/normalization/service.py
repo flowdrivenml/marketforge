@@ -13,9 +13,9 @@ from forge.shared.paths import ProjectPaths
 
 
 def default_output_paths(paths: ProjectPaths, job_id: int, dataset_id: int) -> tuple[Path, Path]:
-    default = paths.data_root / "test" / "normalized"
-    staging = (default / f".{dataset_id}.staging.{job_id}").resolve()
-    dataset = (default / str(dataset_id)).resolve()
+    default = paths.data_root / "datasets" / "normalized"
+    staging = default / f".{dataset_id}.staging.{job_id}"
+    dataset = default / str(dataset_id)
     for path in (staging, dataset):
         require(not path.exists() and not path.is_symlink(), f"Output already exists: {path}")
     return staging, dataset
@@ -27,6 +27,8 @@ def output_paths(paths: ProjectPaths, request: PreparationRequest) -> tuple[Path
     else:
         staging = paths.root / request.output.staging_path
         dataset = paths.root / request.output.dataset_path
+    for path in (staging, dataset):
+        require(not path.is_symlink(), f"Output already exists: {path}")
     staging, dataset = staging.resolve(), dataset.resolve()
     require(staging != dataset, "Staging and dataset paths must be distinct.")
     require(staging.parent == dataset.parent, "Outputs must share a parent for atomic publication.")

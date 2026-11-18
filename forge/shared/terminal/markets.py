@@ -819,6 +819,16 @@ def render_workflow_result(console: Console, title: str, value: dict[str, object
         )
         if stage.get("error"):
             console.print(Text(str(stage["error"]), style="mf.failure"))
+        if stage.get("stage") == "historical_metadata":
+            for section in (
+                "concrete_instruments",
+                "instrument_families",
+                "normalization_readiness",
+            ):
+                if section in stage:
+                    console.print(Text("  " + section.replace("_", " ")))
+                    for label, count in obj(stage[section]).items():
+                        console.print(Text(f"    {label.replace('_', ' ')}: {count}"))
         for source in array(stage.get("sources", [])):
             scope = obj(source)
             if scope.get("status") != "complete":

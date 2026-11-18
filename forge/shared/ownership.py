@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import fcntl
+import os
+import stat
 from pathlib import Path
 from types import TracebackType
 from typing import Self, TextIO
@@ -19,10 +21,14 @@ class OwnershipConflictError(OwnershipError):
     """Raised when another owner holds a required lock."""
 
 
-def _acquire_file(path: Path) -> TextIO:
+def acquire_file_lock(path: Path) -> TextIO:
     """Open and exclusively lock a persistent lock file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    handle = path.open("a", encoding="utf-8")
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+    if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        raise OwnershipError(f"Lock must be a regular file: {path}")
+    handle = os.fdopen(descriptor, "a", encoding="utf-8")
 
     try:
         fcntl.flock(
@@ -68,7 +74,7 @@ class WorkspaceOwnership:
 
         try:
             for path in self._lock_paths:
-                self._handles.append(_acquire_file(path))
+                self._handles.append(acquire_file_lock(path))
         except BaseException:
             self.release()
             raise

@@ -865,7 +865,7 @@ fn accept_outcome<S: DepthSink>(
         metrics,
         source_ordinal,
         &outcome.source,
-        outcome.operation == crate::shared::domain::canonical::DepthSourceOperation::Snapshot,
+        outcome.operation.is_snapshot(),
     ) {
         processor.invalidate_synchronization();
         boundary_tracker.invalidate();

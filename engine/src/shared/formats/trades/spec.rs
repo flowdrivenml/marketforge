@@ -73,6 +73,7 @@ pub struct OptionalTradeFields {
 #[serde(deny_unknown_fields)]
 pub struct TradeSpec {
     pub event_timestamp: FieldSpec,
+    pub system_timestamp: Option<FieldSpec>,
     pub price: FieldSpec,
     pub quantity: QuantitySpec,
     pub side: SideSpec,
@@ -143,7 +144,10 @@ impl TradeSpec {
         }
         if self.side.values.iter().any(|(key, value)| {
             key != &key.to_ascii_lowercase()
-                || !matches!(value.to_ascii_lowercase().as_str(), "buy" | "sell")
+                || !matches!(
+                    value.to_ascii_lowercase().as_str(),
+                    "buy" | "sell" | "unknown"
+                )
         }) {
             return Err(MarketForgeError::InvalidConfiguration(
                 "invalid side mapping key or canonical target".into(),

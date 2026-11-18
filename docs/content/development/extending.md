@@ -11,3 +11,5 @@ A guide should cover source discovery and acquisition boundaries, explicit input
 A guide should establish the Engine interface, configuration contract, canonical input/output semantics, resource behavior, and focused correctness tests. Forge planning and registration changes should follow the relevant boundary rather than duplicate processing logic.
 
 **Implementation status not assessed:** general extension readiness and the full path for a new integration. **Planned documentation:** verified examples for adding a source and an operation. These documentation gaps do not imply existing integrations are unimplemented.
+
+See the [unified Forge workflow](../reference/cli/forge.md) for managed builds, manually authored profiles, historical registration declarations, namespace mappings and dataset-registration recovery.

@@ -71,3 +71,5 @@ Prune apply in an interactive terminal shows all targets and asks for confirmati
 | HTTP/rate failure | Read request outcomes; lower pacing if needed and respect server cooldowns. Do not repeatedly refresh to bypass a cooldown. |
 | Missing/corrupt file | Inspect one ID, then deliberately verify/reconcile or rerun download. Do not equate an old `complete` record with current byte validity. |
 | Interrupted run | Inspect report/events and reservation state; retries can recover a durable publication without HTTP. |
+
+See the [unified Forge workflow](forge.md) for managed builds, manually authored profiles, historical registration declarations, namespace mappings and dataset-registration recovery.

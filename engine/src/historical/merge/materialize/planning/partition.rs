@@ -57,7 +57,7 @@ pub struct MaterializationPartitionInput<'a> {
     pub staging: &'a Path,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MaterializationPartitionResult {
     pub partition_id: u32,
     pub start_ns: i64,
@@ -144,7 +144,14 @@ impl MaterializationPartitionWorker {
             let files = task
                 .files
                 .iter()
-                .map(|file| (file.path.clone(), file.file_start_row, file.rows))
+                .map(|file| {
+                    (
+                        file.path.clone(),
+                        file.file_start_row,
+                        file.rows,
+                        Some(file.row_offset),
+                    )
+                })
                 .collect::<Vec<_>>();
 
             self.register_canonical_task(
@@ -188,7 +195,10 @@ impl MaterializationPartitionWorker {
                     task_id: task.task_id,
                     event_kind: 1,
                 },
-                files,
+                files
+                    .into_iter()
+                    .map(|(path, start, rows)| (path, start, rows, None))
+                    .collect(),
             )?;
 
             self.depth_metadata
@@ -205,11 +215,11 @@ impl MaterializationPartitionWorker {
     fn register_canonical_task(
         &mut self,
         key: CanonicalTaskKey,
-        files: Vec<(PathBuf, u64, u64)>,
+        files: Vec<(PathBuf, u64, u64, Option<u64>)>,
     ) -> Result<()> {
         let mut registered = HashSet::new();
 
-        for (path, start, expected_rows) in &files {
+        for (path, start, expected_rows, _) in &files {
             if !registered.insert(path.clone()) {
                 return invalid(format!("duplicate canonical file: {}", path.display()));
             }
@@ -235,7 +245,7 @@ impl MaterializationPartitionWorker {
             }
         }
 
-        let task_index = CanonicalRowIndex::from_slices(files)?;
+        let task_index = CanonicalRowIndex::from_positioned(files)?;
 
         self.planner.register_task(key, task_index)?;
 
