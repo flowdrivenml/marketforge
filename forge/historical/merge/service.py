@@ -6,13 +6,16 @@ import asyncio
 import json
 import os
 import shutil
+from datetime import UTC
 from pathlib import Path
-from typing import Annotated, Any, Self
+from typing import Any, Self, cast
 from uuid import uuid4
 
 from pydantic import Field, model_validator
 
 from forge.historical.engine.managed import checksum, resolve, supervised
+from forge.historical.merge.config import DatabaseID, DerivedRecipe, Timestamp, normalization_source
+from forge.historical.merge.discovery import discover, layout_reason
 from forge.historical.normalization.datasets import (
     primary_reference,
     register_verified,
@@ -27,8 +30,6 @@ from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
 MERGE_NAMESPACE = "marketforge:historical:merge:v1"
-DatabaseID = Annotated[int, Field(strict=True, gt=0, lt=2**63)]
-Timestamp = Annotated[int, Field(strict=True, ge=-(2**63), lt=2**63)]
 
 TEMPLATE = """# Registry dataset IDs in precedence order.
 dataset_ids = [1, 2]
@@ -58,7 +59,7 @@ def read_json(path: Path) -> dict[str, Any]:
         raise MarketForgeError(f"Invalid JSON artifact {path}: {error}") from error
     if not isinstance(result, dict):
         raise MarketForgeError(f"Expected a JSON object in {path}.")
-    return result
+    return cast(dict[str, Any], result)
 
 
 def runtime_settings(paths: ProjectPaths, binary: Path, config: Path) -> dict[str, Any]:
@@ -74,6 +75,7 @@ async def select_inputs(
     ids: list[int] | None = None,
     job: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    references: list[tuple[str, dict[str, Any]]]
     if ids is None:
         if job is None or not job.get("primary_files"):
             raise MarketForgeError(
@@ -91,7 +93,9 @@ async def select_inputs(
                    d.start_timestamp_ns,d.end_timestamp_ns,p.storage_root,p.engine_dataset_id,
                    p.instrument_namespace,p.evidence->>'manifest_sha256'
                    FROM historical.datasets d JOIN historical.dataset_publications p ON p.id=d.publication_id
-                   WHERE d.operation='normalize' AND d.status='complete'"""
+                   WHERE d.operation='normalize' AND p.operation='normalize' AND d.status='complete'
+                   AND d.storage_format='parquet' AND d.primary_file IS NOT NULL"""
+        rows: list[tuple[Any, ...]]
         if ids is not None:
             cur = await c.execute(query + " AND d.id=ANY(%s)", (ids,))
             records = {r[0]: r for r in await cur.fetchall()}
@@ -114,9 +118,9 @@ async def select_inputs(
                     )
                 rows.append(found[0])
 
-    result = []
-    publications = {}
-    by_engine = {}
+    result: list[dict[str, Any]] = []
+    publications: dict[str, dict[str, Any]] = {}
+    by_engine: dict[str, str] = {}
     for (
         db_id,
         file,
@@ -153,7 +157,7 @@ async def select_inputs(
             entry["end_timestamp_ns"],
         ):
             raise MarketForgeError(f"Dataset {db_id} is not an exact primary manifest member.")
-        selected_streams = (
+        selected_streams: set[str] = (
             {
                 stream["stream_id"]
                 for stream in manifest["streams"]
@@ -162,23 +166,8 @@ async def select_inputs(
             if manifest["streams"] and "directory" in manifest["streams"][0]
             else set()
         )
-        trade_layout = (
-            manifest["content_type"] == "trades"
-            and (manifest.get("processing_quality") or {}).get("timestamp_ordering")
-            == "event_timestamp_ns"
-            and all(
-                all(not source.get("ranges") for source in stream["sources"])
-                and len({source["task_id"] for source in stream["sources"]})
-                == len(stream["sources"])
-                for stream in manifest["streams"]
-            )
-        )
-        if manifest["protocol_version"] != 3 and not (
-            manifest["protocol_version"] in {4, 5} and trade_layout
-        ):
-            raise MarketForgeError(
-                f"Dataset {db_id} uses manifest v{manifest['protocol_version']}; requires v3 or timestamp-first trade row ownership without interleaving."
-            )
+        if reason := layout_reason(manifest):
+            raise MarketForgeError(f"Dataset {db_id}: {reason}")
         streams = evidence["resolved_job"]["streams"]
         if len(selected_streams) == 1 and manifest["content_type"] == "trades":
             stream_id = next(iter(selected_streams))
@@ -238,6 +227,7 @@ def publication_selection(selected: list[dict[str, Any]]) -> list[dict[str, Any]
 def coverage(inputs: list[dict[str, Any]], start_ns: int, end_ns: int) -> dict[str, Any]:
     start, end = start_ns, end_ns
     observations: dict[str, list[tuple[int, int]]] = {}
+    envelopes: dict[str, set[tuple[int, int]]] = {}
     for item in inputs:
         lo, hi = max(start, item["start_ns"]), min(end, item["end_ns"] + 1)
         if lo >= hi:
@@ -245,10 +235,11 @@ def coverage(inputs: list[dict[str, Any]], start_ns: int, end_ns: int) -> dict[s
                 f"Registry input {item['database_id']} does not overlap the merge interval."
             )
         observations.setdefault(item["stream_id"], []).append((lo, hi))
+        envelopes.setdefault(item["stream_id"], set()).add((item["start_ns"], item["end_ns"]))
     gaps: dict[str, list[tuple[int, int]]] = {}
     for stream, intervals in sorted(observations.items()):
         cursor = start
-        missing = []
+        missing: list[tuple[int, int]] = []
         for left, right in sorted(intervals):
             if left > cursor:
                 missing.append((cursor, left))
@@ -260,6 +251,17 @@ def coverage(inputs: list[dict[str, Any]], start_ns: int, end_ns: int) -> dict[s
     return {
         "requested": {"start_ns": start, "end_ns": end},
         "observed_extent_gaps": gaps,
+        "observed_intervals_inclusive": {
+            stream: sorted(extents) for stream, extents in sorted(envelopes.items())
+        },
+        "files_extending_outside": sorted(
+            {
+                item["database_id"]
+                for item in inputs
+                if item["start_ns"] < start or item["end_ns"] >= end
+            }
+        ),
+        "continuity": "unresolved",
         "note": "Observed timestamp bounds cannot prove continuous source coverage.",
     }
 
@@ -273,16 +275,126 @@ def validate_job(paths: ProjectPaths, binary: Path, source: Path) -> None:
         raise MarketForgeError(f"Production merge validation failed: {response.stdout}")
 
 
-def prepare(paths: ProjectPaths, recipe: Recipe, name: str) -> dict[str, Any]:
+def source_selection(paths: ProjectPaths, recipe: DerivedRecipe) -> dict[str, Any]:
+    path, config, fingerprint = normalization_source(paths, recipe.selection.source)
+    result = asyncio.run(discover(paths, recipe, path, config))
+    selected = set(result["selected_dataset_ids"])
+    result["coverage"] = coverage(
+        [
+            {
+                "database_id": item["database_id"],
+                "stream_id": member["stream_id"],
+                "start_ns": member.get("start_timestamp_ns", item["start_ns"]),
+                "end_ns": member.get("end_timestamp_ns", item["end_ns"]),
+            }
+            for item in result["candidates"]
+            if item["database_id"] in selected
+            for member in item["memberships"]
+            if member["request_indexes"]
+        ],
+        recipe.start_ns,
+        recipe.end_ns,
+    )
+    result["coverage"]["missing_request_indexes"] = [
+        item["request_index"] for item in result["missing"]
+    ]
+    result["interval_display"] = (
+        f"{recipe.interval.start.astimezone(UTC).isoformat()} → {recipe.interval.end.astimezone(UTC).isoformat()}"
+    )
+    result["source"] = {
+        "reference": recipe.selection.source,
+        "path": str(path),
+        "sha256": fingerprint,
+    }
+    return result
+
+
+def prepare(paths: ProjectPaths, recipe: Recipe | DerivedRecipe, name: str) -> dict[str, Any]:
+    identity = uuid4().int & (2**63 - 1)
+    directory = paths.runs_dir / f"merge-prepare-{identity}"
+    result: dict[str, Any] = {}
+    if isinstance(recipe, DerivedRecipe):
+        result = source_selection(paths, recipe)
+        result.update(recipe=name, report_path=str(directory / "prepare-report.json"))
+        if result["blockers"]:
+            return blocked(directory, result)
+        ids = result["selected_dataset_ids"]
+    else:
+        ids = recipe.dataset_ids
+    try:
+        return prepare_job(paths, recipe, name, identity, directory, ids, result)
+    except (MarketForgeError, OSError, ValueError) as error:
+        if not isinstance(recipe, DerivedRecipe):
+            raise
+        result["blockers"].append(
+            {
+                "dataset_ids": ids,
+                "reason": str(error),
+                "suggestion": "Check the selected publications and narrow or correct the recipe before preparing again.",
+            }
+        )
+        return blocked(directory, result)
+
+
+def blocked(directory: Path, report: dict[str, Any]) -> dict[str, Any]:
+    report.update(status="blocked", compatibility="blocked")
+    directory.mkdir(parents=True, exist_ok=True)
+    write_job(directory / "prepare-report.json", report)
+    return report
+
+
+def prepare_job(
+    paths: ProjectPaths,
+    recipe: Recipe | DerivedRecipe,
+    name: str,
+    identity: int,
+    directory: Path,
+    ids: list[int],
+    discovery: dict[str, Any],
+) -> dict[str, Any]:
     binary = resolve(paths, "merge")
-    selected = asyncio.run(select_inputs(paths, ids=recipe.dataset_ids))
+    selected = asyncio.run(select_inputs(paths, ids=ids))
+    if discovery:
+        candidates = {item["database_id"]: item for item in discovery["candidates"]}
+        for item in selected:
+            candidate = candidates[item["database_id"]]
+            if (
+                any(
+                    item[key] != candidate[key]
+                    for key in (
+                        "namespace",
+                        "path",
+                        "primary_file",
+                        "start_ns",
+                        "end_ns",
+                        "file_sha256",
+                        "manifest_sha256",
+                    )
+                )
+                or str(item["engine_id"]) != candidate["engine_id"]
+                or str(Path(item["path"]) / item["primary_file"]) != candidate["registered_path"]
+                or item["memberships"]
+                != [
+                    {
+                        key: value
+                        for key, value in member.items()
+                        if key not in {"request_indexes", "overlaps"}
+                    }
+                    for member in candidate["memberships"]
+                ]
+            ):
+                raise MarketForgeError(
+                    f"Registry dataset {item['database_id']} changed during preparation."
+                )
+
+    selected_coverage = (
+        discovery["coverage"] if discovery else coverage(selected, recipe.start_ns, recipe.end_ns)
+    )
     runtime = paths.config_dir / "historical/general.toml"
     config_sha = checksum(runtime)
     settings = runtime_settings(paths, binary, runtime)
     if checksum(runtime) != config_sha:
         raise MarketForgeError("Historical runtime configuration changed during preparation.")
-    identity = uuid4().int & (2**63 - 1)
-    directory = paths.runs_dir / f"merge-prepare-{identity}"
     directory.mkdir(parents=True, exist_ok=False)
     source = directory / "merge-job.json"
     publications = publication_selection(selected)
@@ -295,7 +407,7 @@ def prepare(paths: ProjectPaths, recipe: Recipe, name: str) -> dict[str, Any]:
                 "manifest_sha256": item["manifest_sha256"],
             }
         )
-    job = {
+    job: dict[str, Any] = {
         "operation": "merge",
         "job_id": identity,
         "inputs": [item["engine_id"] for item in publications],
@@ -305,10 +417,17 @@ def prepare(paths: ProjectPaths, recipe: Recipe, name: str) -> dict[str, Any]:
         **settings,
         "output": {"dataset_path": str(paths.datasets_dir / "merged" / str(identity))},
     }
-    write_job(source, job)
-    validate_job(paths, binary, source)
-    report = {
+    candidate = directory / "candidate-job.json"
+    write_job(candidate, job)
+    try:
+        validate_job(paths, binary, candidate)
+        candidate.rename(source)
+    finally:
+        candidate.unlink(missing_ok=True)
+    report: dict[str, Any] = {
+        **discovery,
         "status": "prepared",
+        "compatibility": "validated",
         "recipe": name,
         "job_path": str(source),
         "executable_sha256": checksum(binary),
@@ -316,7 +435,7 @@ def prepare(paths: ProjectPaths, recipe: Recipe, name: str) -> dict[str, Any]:
         "submitted_sha256": checksum(source),
         "inputs": selected,
         "report_path": str(directory / "prepare-report.json"),
-        "coverage": coverage(selected, recipe.start_ns, recipe.end_ns),
+        "coverage": selected_coverage,
     }
     write_job(directory / "prepare-report.json", report)
     return report

@@ -34,11 +34,11 @@ class Selection(SettingsModel, frozen=True):
         default=None, min_length=1
     )
     instruments: list[str] | None = Field(default=None, min_length=1)
-    instrument_types: list[Literal["spot", "perpetual", "future", "option", "equity"]] | None = Field(
-        default=None, min_length=1
+    instrument_types: list[Literal["spot", "perpetual", "future", "option", "equity"]] | None = (
+        Field(default=None, min_length=1)
     )
-    market_categories: list[Literal["spot", "linear", "inverse", "option", "equity"]] | None = Field(
-        default=None, min_length=1
+    market_categories: list[Literal["spot", "linear", "inverse", "option", "equity"]] | None = (
+        Field(default=None, min_length=1)
     )
     publication_ids: list[DatabaseID] | None = Field(default=None, min_length=1)
 
@@ -78,10 +78,14 @@ class DerivedRecipe(SettingsModel, frozen=True):
         return self
 
 
-def normalization_source(
-    paths: ProjectPaths, source: str
-) -> tuple[Path, NormalizationRecipe, str]:
-    path = recipe_path(paths, source)
+def normalization_path(paths: ProjectPaths, source: str) -> Path:
+    if "/" in source:
+        return Path(source).expanduser().resolve()
+    return recipe_path(paths, source)
+
+
+def normalization_source(paths: ProjectPaths, source: str) -> tuple[Path, NormalizationRecipe, str]:
+    path = normalization_path(paths, source)
     if not path.is_file():
         raise MarketForgeError(f"Unknown normalization configuration {source!r}: {path}")
     data = path.read_bytes()

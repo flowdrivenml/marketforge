@@ -49,3 +49,7 @@ Tasks10–12 completed sequentially on the existing branch; Task10 `292b3f7`, Ta
 ## Normalization retained-state follow-up (partial)
 
 Implemented bounded V2 source-boundary consumption, phase-owned boundary admission, atomic scope aggregation without whole-map clones, and borrowed manifest reporting. Completed-report spilling and bounded end-to-end report aggregation remain outstanding; the full prepared batch still exceeds 64 GiB. Implementation and admission evidence: `.agents/reports/bounded-retained-state-implementation.md`.
+
+## Source-derived merge recipes
+
+Implemented and verified registry-backed merge recipe creation and preparation from a managed normalization source. The testing registry yielded an actionable blocked full `engine_test` report and a Rust-validated single-stream trade job. No workload ran. See `.agents/reports/merge-from-normalize.md`.

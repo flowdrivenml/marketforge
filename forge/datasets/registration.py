@@ -2,6 +2,7 @@
 
 import json
 from collections import defaultdict
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -13,13 +14,10 @@ from forge.historical.archives.storage.files import disk
 from forge.shared.errors import MarketForgeError
 
 
-def file_summaries(evidence: dict[str, Any]) -> list[dict[str, Any]]:
-    manifest = evidence["manifest"]
-    normalize = evidence["operation"] == "normalize"
-    tasks = {task["task_id"]: task for task in evidence["resolved_job"].get("tasks", [])}
+def file_task_ids(manifest: dict[str, Any], *, normalize: bool) -> Iterator[tuple[str, set[int]]]:
+    """Resolve primary file ownership using the registered manifest row spans."""
     streams = {s["directory"]: s for s in manifest.get("streams", []) if "directory" in s}
     offsets: dict[str, int] = defaultdict(int)
-    summaries = []
     for entry in sorted(manifest["files"], key=lambda item: item["path"]):
         name = entry["path"]
         directory = str(Path(name).parent)
@@ -27,7 +25,7 @@ def file_summaries(evidence: dict[str, Any]) -> list[dict[str, Any]]:
         start = offsets[directory]
         end = start + entry["rows"]
         offsets[directory] = end
-        ids = set()
+        ids: set[int] = set()
         if stream:
             for source in stream["sources"]:
                 ranges = source.get("ranges") or [source]
@@ -35,12 +33,29 @@ def file_summaries(evidence: dict[str, Any]) -> list[dict[str, Any]]:
                     ids.add(source["task_id"])
         elif normalize and Path(name).parts[0] == "tasks":
             ids.add(int(Path(name).parts[1]))
-        memberships = {}
+        yield name, ids
+
+
+def file_summaries(evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    manifest = evidence["manifest"]
+    normalize = evidence["operation"] == "normalize"
+    tasks = {task["task_id"]: task for task in evidence["resolved_job"].get("tasks", [])}
+    streams = {
+        stream["directory"]: stream
+        for stream in manifest.get("streams", [])
+        if "directory" in stream
+    }
+    entries = {entry["path"]: entry for entry in manifest["files"]}
+    summaries: list[dict[str, Any]] = []
+    for name, ids in file_task_ids(manifest, normalize=normalize):
+        entry = entries[name]
+        stream = streams.get(str(Path(name).parent))
+        memberships: dict[tuple[Any, ...], dict[str, Any]] = {}
         for task_id in sorted(ids):
             task = tasks.get(task_id)
             if task is None:
                 raise MarketForgeError(f"Unknown source task {task_id} in {name}.")
-            instrument = (
+            instrument: dict[str, Any] = (
                 task.get("raw_schema", {}).get("marketforge_source", {}).get("instrument") or {}
             )
             membership = {
