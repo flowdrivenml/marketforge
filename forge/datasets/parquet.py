@@ -1,57 +1,109 @@
-"""Arrow-native Parquet access with exact decimal preservation."""
+"""Read cached footers and explicitly request exact Arrow rows."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
+from typing import Any
+
+Predicate = tuple[str, str, int | str]
 
 
-def _arrow():
+def arrow_modules() -> tuple[Any, Any]:
     try:
-        import pyarrow as pa
-        import pyarrow.parquet as pq
+        pa = import_module("pyarrow")
+        pq = import_module("pyarrow.parquet")
     except ImportError as exc:
         raise ImportError(
-            "Install the research dependencies: " "uv sync --project forge --group lab"
+            "Install research dependencies with uv sync --project forge --group lab"
         ) from exc
-
     return pa, pq
 
 
-def metadata(
-    files: Sequence[Path],
-) -> dict[str, int]:
-    """Read lightweight Parquet footer metadata."""
+@dataclass(frozen=True)
+class Footer:
+    path: Path
+    schema: Any
+    metadata: Any
+    size: int
 
-    _, pq = _arrow()
+    def groups(self) -> Iterator[Any]:
+        for index in range(self.metadata.num_row_groups):
+            yield self.metadata.row_group(index)
 
-    summaries = [pq.ParquetFile(path).metadata for path in files]
+    def chunks(self, name: str) -> Iterator[Any]:
+        for group in self.groups():
+            yield next(
+                (
+                    column
+                    for index in range(group.num_columns)
+                    if (column := group.column(index)).path_in_schema == name
+                ),
+                None,
+            )
 
+    def extent(self, name: str) -> tuple[int | None, int | None]:
+        stat = [column.statistics if column is not None else None for column in self.chunks(name)]
+        if not stat or any(item is None or not item.has_min_max for item in stat):
+            return None, None
+        low, high = (
+            min(item.min_raw for item in stat if item is not None),
+            max(item.max_raw for item in stat if item is not None),
+        )
+        return (low, high) if type(low) is int and type(high) is int else (None, None)
+
+
+def footer(path: Path) -> Footer:
+    _, pq = arrow_modules()
+    with pq.ParquetFile(path) as file:
+        return Footer(path, file.schema_arrow, file.metadata, path.stat().st_size)
+
+
+def metadata(files: Sequence[Path]) -> dict[str, int]:
+    return totals(tuple(footer(path) for path in files))
+
+
+def totals(footers: Sequence[Footer]) -> dict[str, int]:
     return {
-        "files": len(files),
-        "rows": sum(item.num_rows for item in summaries),
-        "row_groups": sum(item.num_row_groups for item in summaries),
-        "bytes": sum(path.stat().st_size for path in files),
+        "files": len(footers),
+        "rows": sum(item.metadata.num_rows for item in footers),
+        "row_groups": sum(item.metadata.num_row_groups for item in footers),
+        "bytes": sum(item.size for item in footers),
     }
 
 
-def schema(files: Sequence[Path]):
-    """Return the Arrow schema, validating consistency across files."""
-
-    _, pq = _arrow()
-
-    if not files:
+def schema(files: Sequence[Path], *, footers: Sequence[Footer] = ()) -> Any:
+    inventory = footers or tuple(footer(path) for path in files)
+    if not inventory:
         raise ValueError("No Parquet files supplied.")
-
-    first = pq.ParquetFile(files[0]).schema_arrow
-
-    for path in files[1:]:
-        other = pq.ParquetFile(path).schema_arrow
-
-        if not first.equals(other, check_metadata=False):
-            raise ValueError(f"Incompatible Parquet schemas: {path}")
-
+    first = inventory[0].schema
+    for item in inventory[1:]:
+        if not first.equals(item.schema, check_metadata=False):
+            raise ValueError(f"Incompatible Parquet schemas: {item.path}")
     return first
+
+
+def _expression(predicates: Sequence[Predicate], table_schema: Any) -> Any:
+    ds: Any = import_module("pyarrow.dataset")
+
+    expression = None
+    for name, op, value in predicates:
+        if name not in table_schema.names:
+            raise ValueError(f"Predicate column {name!r} is unavailable.")
+        pa, _ = arrow_modules()
+        field_type = table_schema.field(name).type
+        if pa.types.is_timestamp(field_type):
+            if field_type.unit != "ns":
+                raise ValueError(
+                    "Time predicates require a nanosecond timestamp or integer ns field."
+                )
+            value = pa.scalar(value, type=pa.int64()).cast(field_type)
+        field = ds.field(name)
+        term = field == value if op == "=" else field >= value if op == ">=" else field < value
+        expression = term if expression is None else expression & term
+    return expression
 
 
 def batches(
@@ -59,21 +111,91 @@ def batches(
     *,
     columns: Sequence[str] | None = None,
     batch_size: int = 65_536,
-) -> Iterator:
-    """Yield Arrow record batches without materializing the dataset."""
-
-    if batch_size < 1:
-        raise ValueError("batch_size must be positive.")
-
-    _, pq = _arrow()
-
+    predicates: Sequence[Predicate] = (),
+    input_rows: int | None = None,
+) -> Iterator[Any]:
+    """Yield exact Arrow batches. A budget clips a physical prefix before filtering."""
+    if batch_size < 1 or (input_rows is not None and input_rows < 0):
+        raise ValueError("Require a positive batch size and nonnegative input-row budget.")
+    pa, pq = arrow_modules()
+    remaining = input_rows
     for path in files:
-        reader = pq.ParquetFile(path)
+        if remaining == 0:
+            return
+        if predicates and remaining is None:
+            ds: Any = import_module("pyarrow.dataset")
 
-        yield from reader.iter_batches(
-            columns=list(columns) if columns is not None else None,
-            batch_size=batch_size,
+            file = ds.dataset(str(path), format="parquet")
+            yield from file.to_batches(
+                columns=list(columns) if columns is not None else None,
+                filter=_expression(predicates, file.schema),
+                batch_size=batch_size,
+                batch_readahead=0,
+                fragment_readahead=0,
+                use_threads=False,
+            )
+            continue
+        with pq.ParquetFile(path) as file:
+            projected = (
+                list(dict.fromkeys([*columns, *(p[0] for p in predicates)]))
+                if columns is not None
+                else None
+            )
+            expression = _expression(predicates, file.schema_arrow)
+            for batch in file.iter_batches(
+                columns=projected,
+                batch_size=min(batch_size, remaining) if remaining is not None else batch_size,
+            ):
+                if remaining is not None:
+                    batch = batch.slice(0, remaining)
+                    remaining -= batch.num_rows
+                if expression is not None:
+                    filtered = pa.Table.from_batches([batch]).filter(expression)
+                    if columns is not None:
+                        filtered = filtered.select(columns)
+                    yield from filtered.to_batches()
+                else:
+                    yield batch
+                if remaining == 0:
+                    break
+
+
+def _display_type(dtype: Any, pa: Any) -> Any:
+    if pa.types.is_decimal256(dtype):
+        return pa.string()
+    if pa.types.is_struct(dtype):
+        return pa.struct([field.with_type(_display_type(field.type, pa)) for field in dtype])
+    if (
+        pa.types.is_list(dtype)
+        or pa.types.is_large_list(dtype)
+        or pa.types.is_fixed_size_list(dtype)
+    ):
+        child = dtype.value_field.with_type(_display_type(dtype.value_type, pa))
+        if pa.types.is_fixed_size_list(dtype):
+            return pa.list_(child, dtype.list_size)
+        return pa.large_list(child) if pa.types.is_large_list(dtype) else pa.list_(child)
+    return dtype
+
+
+def _display_array(array: Any, dtype: Any, target: Any, pa: Any) -> Any:
+    if dtype == target:
+        return array
+    if pa.types.is_decimal256(dtype):
+        return array.cast(target)
+    if pa.types.is_struct(dtype):
+        return pa.StructArray.from_arrays(
+            [
+                _display_array(array.field(index), field.type, target[index].type, pa)
+                for index, field in enumerate(dtype)
+            ],
+            fields=list(target),
+            mask=array.is_null(),
         )
+    values = _display_array(array.values, dtype.value_type, target.value_type, pa)
+    if pa.types.is_fixed_size_list(dtype):
+        return pa.FixedSizeListArray.from_arrays(values, type=target, mask=array.is_null())
+    cls = pa.LargeListArray if pa.types.is_large_list(dtype) else pa.ListArray
+    return cls.from_arrays(array.offsets, values, type=target, mask=array.is_null())
 
 
 def preview(
@@ -81,63 +203,40 @@ def preview(
     *,
     n: int = 10,
     columns: Sequence[str] | None = None,
-):
-    """
-    Return a small Polars DataFrame.
-
-    Decimal256 values are converted to exact strings for display.
-    The original Parquet files remain unchanged.
-    """
-
+    predicates: Sequence[Predicate] = (),
+    input_rows: int | None = None,
+    footers: Sequence[Footer] = (),
+) -> Any:
+    """Return a bounded physical-order Polars preview with exact Decimal256 strings."""
     if n < 0:
         raise ValueError("n must be nonnegative.")
+    pl: Any = import_module("polars")
 
-    pa, _ = _arrow()
-
-    import polars as pl
-
-    selected_schema = schema(files)
-
-    if columns is not None:
-        selected_schema = pa.schema([selected_schema.field(name) for name in columns])
-
-    if n == 0:
-        return pl.DataFrame({field.name: [] for field in selected_schema})
-
-    chunks = []
+    pa, _ = arrow_modules()
+    available = schema(files, footers=footers)
+    selected = (
+        pa.schema([available.field(name) for name in columns]) if columns is not None else available
+    )
+    chunks: list[Any] = []
     remaining = n
-
-    for batch in batches(
-        files,
-        columns=columns,
-        batch_size=min(65_536, n),
-    ):
-        if remaining <= 0:
-            break
-
-        chunks.append(batch.slice(0, remaining))
-
-        remaining -= min(
-            remaining,
-            batch.num_rows,
-        )
-
-        if remaining == 0:
-            break
-
-    if not chunks:
-        return pl.DataFrame({field.name: [] for field in selected_schema})
-
-    table = pa.Table.from_batches(chunks)
-
+    if remaining:
+        for batch in batches(
+            files,
+            columns=columns,
+            batch_size=min(n, 65_536),
+            predicates=predicates,
+            input_rows=input_rows,
+        ):
+            chunks.append(batch.slice(0, remaining))
+            remaining -= min(remaining, batch.num_rows)
+            if remaining == 0:
+                break
+    table = pa.Table.from_batches(chunks, schema=selected)
     for index, field in enumerate(table.schema):
-        if pa.types.is_decimal256(field.type):
-            table = table.set_column(
-                index,
-                field.name,
-                table.column(index).cast(pa.string()),
-            )
-
+        display = _display_type(field.type, pa)
+        if display != field.type:
+            array = _display_array(table.column(index).combine_chunks(), field.type, display, pa)
+            table = table.set_column(index, field.with_type(display), array)
     return pl.from_arrow(table)
 
 
@@ -145,37 +244,31 @@ def scan(
     files: Sequence[Path],
     *,
     columns: Sequence[str] | None = None,
-):
-    """
-    Return a lazy Polars query.
+    predicates: Sequence[Predicate] = (),
+    footers: Sequence[Footer] = (),
+) -> Any:
+    """Construct a lazy Polars query without reading records."""
+    pl: Any = import_module("polars")
 
-    Decimal256 columns are unsupported by Polars and must
-    be excluded from the projection.
-    """
-
-    import polars as pl
-
-    pa, _ = _arrow()
-
-    available_schema = schema(files)
-
-    if columns is None:
-        selected = list(available_schema)
-    else:
-        selected = [available_schema.field(name) for name in columns]
-
-    unsupported = [
-        field.name for field in selected if pa.types.is_decimal256(field.type)
-    ]
-
+    pa, _ = arrow_modules()
+    available = schema(files, footers=footers)
+    selected = list(available) if columns is None else [available.field(name) for name in columns]
+    unsupported = [field.name for field in selected if _display_type(field.type, pa) != field.type]
     if unsupported:
         raise ValueError(
-            "Polars cannot scan Decimal256 columns: "
+            "Polars cannot scan Decimal256 projections: "
             + ", ".join(unsupported)
-            + ". Use .batches() for exact values "
-            + "or .head() for display."
+            + ". Select other columns or use .batches() for exact Arrow values."
         )
-
-    return pl.scan_parquet([str(path) for path in files]).select(
-        [field.name for field in selected]
-    )
+    query = pl.scan_parquet([str(path) for path in files])
+    for name, op, value in predicates:
+        dtype = available.field(name).type
+        field = pl.col(name)
+        if pa.types.is_timestamp(dtype):
+            if dtype.unit != "ns":
+                raise ValueError("Time predicates require nanosecond timestamps.")
+            field = field.cast(pl.Int64)
+        query = query.filter(
+            field == value if op == "=" else field >= value if op == ">=" else field < value
+        )
+    return query.select([field.name for field in selected])

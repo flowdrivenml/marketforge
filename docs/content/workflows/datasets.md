@@ -1,5 +1,7 @@
 # Inspect registered datasets
 
+For local Python discovery, previews and schema inspection, see the [Jupyter workflow](notebooks.md).
+
 Each primary data file in a verified normalization or merge manifest has its own PostgreSQL dataset ID. An engine job can commit one publication containing several primary files. The publication retains its engine ID, namespace, root, shared manifest, provenance and inventory. Indexes, source maps, checkpoints and other auxiliary artifacts remain dependencies.
 
 The files stay in their original paths under the publication root. Normalization and merge register the files after the whole publication verifies. A failed integrity check blocks the publication. Normalization's partial-success policy applies to independently committed jobs.

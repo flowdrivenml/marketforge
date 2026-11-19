@@ -28,7 +28,7 @@ nav = [
       { "Specifications" = "workflows/catalogue/specifications.md" },
       { "Profiles" = "workflows/catalogue/profiles.md" },
     ] },
-    { "Inspect datasets" = "workflows/datasets.md" },
+    { "Inspect datasets" = ["workflows/datasets.md", "workflows/notebooks.md"] },
     { "Merge datasets" = "workflows/merge.md" },
     { "Markets" = [
       { "Overview" = "workflows/markets/index.md" },
@@ -48,6 +48,7 @@ nav = [
     { "Acquisition CLI" = "reference/cli/acquisition.md" },
     { "Forge engine and processing" = "reference/cli/forge.md" },
     { "Markets CLI" = "reference/cli/markets.md" },
+    { "Python datasets" = "reference/python-datasets.md" },
   ] },
   { "Development" = [
     { "Contributing" = "development/index.md" },

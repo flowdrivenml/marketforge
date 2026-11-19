@@ -53,3 +53,7 @@ Implemented bounded V2 source-boundary consumption, phase-owned boundary admissi
 ## Source-derived merge recipes
 
 Implemented and verified registry-backed merge recipe creation and preparation from a managed normalization source. The testing registry yielded an actionable blocked full `engine_test` report and a Rust-validated single-stream trade job. No workload ran. See `.agents/reports/merge-from-normalize.md`.
+
+## Python dataset notebook inspection
+
+Added file-level discovery, metadata filters, evidence-aware stream selection, and cached notebook inspection. Verified the portable notebook and the retained diagnostics on local committed metadata. See `.agents/reports/notebook-dataset-inspection.md`.
