@@ -1,13 +1,8 @@
 #![cfg(feature = "historical")]
 
-use std::{
-    fs,
-    path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::fs;
 
 use {
-    marketforge_engine::historical::job::load_merge_job,
     marketforge_engine::historical::merge::build_depth_inventory,
     marketforge_engine::historical::merge::execute_merge_partitions_parallel,
     marketforge_engine::historical::merge::plan_merge_partitions,
@@ -16,24 +11,15 @@ use {
     marketforge_engine::historical::merge::resolve_merge_inputs,
 };
 
-static NEXT_ID: AtomicU64 = AtomicU64::new(0);
-
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
 #[test]
 fn executes_parallel_merge_partitions() {
-    let root = project_root();
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
 
-    let mut job =
-        load_merge_job(root.join("data/.jobs/merge/merge-200.json")).expect("load merge job");
+    let mut job = crate::publication::depth_job(&root);
 
-    // Two-hour integration interval.
-    job.time_range.end_ns = job.time_range.start_ns + 7_200_000_000_000;
+    // Keep the requested interval inside the miniature publication.
+    job.time_range.end_ns = job.time_range.start_ns + 400;
 
     // Four workers, two partitions each.
     job.resources.workers = 4;
@@ -50,12 +36,7 @@ fn executes_parallel_merge_partitions() {
     let plans = plan_partition_inputs(&partition_plan.partitions, &inventory)
         .expect("plan partition inputs");
 
-    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-
-    let staging = std::env::temp_dir().join(format!(
-        "marketforge-parallel-test-{}-{id}",
-        std::process::id(),
-    ));
+    let staging = root.join("staging");
 
     fs::create_dir_all(&staging).expect("create staging");
 
@@ -68,8 +49,8 @@ fn executes_parallel_merge_partitions() {
 
     let total_files: u64 = results.iter().map(|result| result.files_written).sum();
 
-    // Previously validated two-hour sequential reference.
-    assert_eq!(total_events, 1_415_631);
+    // Two sources, each with four events.
+    assert_eq!(total_events, 8);
 
     assert!(total_files > 0);
 

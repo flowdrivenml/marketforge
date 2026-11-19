@@ -28,7 +28,7 @@ fn config() -> MergeParquetConfig {
     }
 }
 
-fn trade_batch(timestamps: &[i64]) -> RecordBatch {
+pub(super) fn trade_batch(timestamps: &[i64]) -> RecordBatch {
     let schema = physical_trade_schema();
     let n = timestamps.len();
 
@@ -350,7 +350,7 @@ fn depth_batch(timestamps: &[i64], level_counts: &[usize]) -> RecordBatch {
     RecordBatch::try_new(schema, columns).unwrap()
 }
 
-fn combined_batch(timestamps: &[i64], kinds: &[u8]) -> RecordBatch {
+pub(super) fn combined_batch(timestamps: &[i64], kinds: &[u8]) -> RecordBatch {
     assert_eq!(timestamps.len(), kinds.len());
 
     let schema = physical_combined_schema();

@@ -1,6 +1,7 @@
 use crate::shared::terminal::format::{compact, format_duration, format_speed};
 use crate::shared::terminal::guard::TerminalGuard;
 use crate::shared::terminal::palette::{BG, BLUE, CYAN, FG, GREEN, MUTED, RED, YELLOW};
+use crate::shared::terminal::widgets::panel;
 use std::{
     collections::{HashMap, VecDeque},
     io::{self, IsTerminal, Stdout, Write},
@@ -153,6 +154,11 @@ struct MergeDashboard {
 
     workers: usize,
     input_datasets: usize,
+    selected_files: usize,
+    verified_files: usize,
+    concrete_streams: Option<usize>,
+    requested: crate::historical::job::MergeTimeRange,
+    output: std::path::PathBuf,
 
     phase: Option<MergePhase>,
     completed_phases: Vec<MergePhase>,
@@ -179,6 +185,11 @@ impl MergeDashboard {
 
             workers: job.resources.workers,
             input_datasets: job.inputs.len(),
+            selected_files: job.submission.as_ref().map_or(0, |job| job.inputs.len()),
+            verified_files: 0,
+            concrete_streams: None,
+            requested: job.time_range,
+            output: job.output.dataset_path.clone(),
 
             phase: None,
             completed_phases: Vec::new(),
@@ -201,6 +212,13 @@ impl MergeDashboard {
     }
     fn current_progress(&self) -> (f64, String) {
         match self.phase {
+            Some(MergePhase::InputResolution) if self.selected_files > 0 => (
+                self.verified_files as f64 / self.selected_files as f64,
+                format!(
+                    "VERIFIED INPUT FILES  {} / {}",
+                    self.verified_files, self.selected_files
+                ),
+            ),
             Some(MergePhase::LogicalMerge) | Some(MergePhase::PhysicalMaterialization) => {
                 let planned = self.planned_partitions();
 
@@ -230,42 +248,9 @@ impl MergeDashboard {
                 )
             }
 
-            Some(phase) => {
-                let ratio = self.pipeline_progress();
-
-                (
-                    ratio,
-                    format!("PIPELINE  {:.1}%  —  {}", ratio * 100.0, phase.label(),),
-                )
-            }
-
+            Some(phase) => (0.0, format!("{} — IN PROGRESS", phase.label())),
             None => (0.0, "INITIALIZING".to_owned()),
         }
-    }
-    fn pipeline_progress(&self) -> f64 {
-        const PHASES: &[MergePhase] = &[
-            MergePhase::InputResolution,
-            MergePhase::Inventory,
-            MergePhase::LogicalMerge,
-            MergePhase::LogicalValidation,
-            MergePhase::PhysicalMaterialization,
-            MergePhase::PhysicalValidation,
-            MergePhase::Checkpoints,
-            MergePhase::Manifest,
-            MergePhase::PublicationPreparation,
-            MergePhase::Commit,
-        ];
-
-        if self.finished && self.success {
-            return 1.0;
-        }
-
-        let completed = PHASES
-            .iter()
-            .filter(|&&phase| self.phase_completed(phase))
-            .count();
-
-        completed as f64 / PHASES.len() as f64
     }
     // -------------------------------------------------------------------------
     // Progress events
@@ -282,6 +267,8 @@ impl MergeDashboard {
     }
     fn handle_event(&mut self, event: MergeProgressEvent) {
         match event {
+            MergeProgressEvent::InputsVerified { files } => self.verified_files = files,
+            MergeProgressEvent::InputsResolved { streams } => self.concrete_streams = Some(streams),
             MergeProgressEvent::PartitionsPlanned { phase, count } => {
                 self.planned.insert(phase, count);
 
@@ -369,8 +356,10 @@ impl MergeDashboard {
                     .entry(key)
                     .or_insert_with(PartitionState::new);
 
-                partition.status = PartitionStatus::Running;
-                partition.last_sample = Instant::now();
+                if partition.status == PartitionStatus::Pending {
+                    partition.status = PartitionStatus::Running;
+                    partition.last_sample = Instant::now();
+                }
             }
 
             MergeProgressEvent::PartitionCompleted { key, events } => {
@@ -408,15 +397,24 @@ impl MergeDashboard {
                 ));
             }
 
-            MergeProgressEvent::Finished { success } => {
+            MergeProgressEvent::Finished { error } => {
+                let success = error.is_none();
                 self.finished = true;
                 self.success = success;
+                if !success {
+                    for partition in self.partitions.values_mut() {
+                        if partition.status == PartitionStatus::Running {
+                            partition.status = PartitionStatus::Failed;
+                            partition.speed = 0.0;
+                        }
+                    }
+                }
 
-                self.log_activity(if success {
-                    "✓ Merge completed successfully".to_owned()
-                } else {
-                    "✗ Merge failed".to_owned()
-                });
+                let phase = self.phase.map_or("MERGE", MergePhase::label);
+                self.log_activity(error.map_or_else(
+                    || "✓ Merge committed".to_owned(),
+                    |error| format!("✗ {phase}: {error}"),
+                ));
             }
         }
     }
@@ -976,18 +974,19 @@ fn render_totals(frame: &mut ratatui::Frame, area: Rect, dashboard: &MergeDashbo
     let widget = Paragraph::new(format!(
         "Logical events      {}\n\
          Physical events     {}\n\
-         Input datasets     {}",
+         Validated events    {}\n\
+         Selected files {} · Publications {} · Streams {}",
         compact(logical_events),
         compact(physical_events),
+        compact(dashboard.validation.events_validated),
+        dashboard.selected_files,
         dashboard.input_datasets,
+        dashboard
+            .concrete_streams
+            .map_or_else(|| "pending".to_owned(), |count| count.to_string()),
     ))
     .style(Style::default().fg(FG))
-    .block(
-        Block::default()
-            .title(" MERGE OUTPUT ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(BLUE)),
-    );
+    .block(panel(" MERGE OUTPUT "));
 
     frame.render_widget(widget, area);
 }
@@ -1000,9 +999,54 @@ fn render(frame: &mut ratatui::Frame, dashboard: &MergeDashboard) {
 
     frame.render_widget(Block::default().style(Style::default().bg(BG).fg(FG)), area);
 
+    if area.width < 85 || area.height < 39 {
+        let (_, phase) = dashboard.current_progress();
+        let status = if dashboard.finished {
+            if dashboard.success {
+                "COMPLETE"
+            } else {
+                "FAILED"
+            }
+        } else {
+            "RUNNING"
+        };
+        let text = format!(
+            "MARKETFORGE / MERGE #{} · {}\n{}\n[{}, {}) ns\nOutput {}\n{} files · {} publications · {} streams\n{} queued · {} running · {} complete · {} failed
+{}",
+            dashboard.job_id,
+            status,
+            phase,
+            dashboard.requested.start_ns,
+            dashboard.requested.end_ns,
+            dashboard.output.display(),
+            dashboard.selected_files,
+            dashboard.input_datasets,
+            dashboard
+                .concrete_streams
+                .map_or_else(|| "pending".to_owned(), |count| count.to_string()),
+            dashboard.planned_partitions().saturating_sub(
+                dashboard.active_partitions()
+                    + dashboard.completed_partitions()
+                    + dashboard.failed_partitions()
+            ),
+            dashboard.active_partitions(),
+            dashboard.completed_partitions(),
+            dashboard.failed_partitions(),
+            dashboard.activity.back().map(String::as_str).unwrap_or(""),
+        );
+        frame.render_widget(
+            Paragraph::new(text).wrap(ratatui::widgets::Wrap { trim: false }),
+            area,
+        );
+        return;
+    }
+
     let active = dashboard.active_partitions();
 
-    let table_height = (active as u16).saturating_add(3).clamp(5, 20);
+    let table_height = u16::try_from(active)
+        .unwrap_or(u16::MAX)
+        .saturating_add(3)
+        .clamp(5, (area.height - 34).min(20));
 
     let sections = Layout::default()
         .direction(Direction::Vertical)
@@ -1035,6 +1079,16 @@ fn render(frame: &mut ratatui::Frame, dashboard: &MergeDashboard) {
 
     render_activity(frame, monitoring[1], dashboard);
 
+    frame.render_widget(
+        Paragraph::new(format!(
+            "[{}, {}) ns\nOutput {}",
+            dashboard.requested.start_ns,
+            dashboard.requested.end_ns,
+            dashboard.output.display()
+        ))
+        .wrap(ratatui::widgets::Wrap { trim: false }),
+        sections[4],
+    );
     render_totals(frame, sections[5], dashboard);
 }
 // -----------------------------------------------------------------------------
@@ -1048,8 +1102,11 @@ fn render_pipeline_status(frame: &mut ratatui::Frame, area: Rect, dashboard: &Me
     let phases = [
         MergePhase::InputResolution,
         MergePhase::Inventory,
+        MergePhase::BoundaryReconciliation,
+        MergePhase::PartitionPlanning,
         MergePhase::LogicalMerge,
         MergePhase::LogicalValidation,
+        MergePhase::MaterializationPlanning,
         MergePhase::PhysicalMaterialization,
         MergePhase::PhysicalValidation,
         MergePhase::Checkpoints,
@@ -1166,6 +1223,9 @@ where
     T: Send,
 {
     loop {
+        if TerminalGuard::interrupted_by_panic() {
+            return Err(io::Error::other("merge worker panicked"));
+        }
         // Consume all available lifecycle events.
         loop {
             match receiver.try_recv() {
@@ -1282,4 +1342,98 @@ fn print_merge_summary(dashboard: &MergeDashboard, result: &UnifiedMergeExecutio
 
     let _ = writeln!(stderr, "{}", "─".repeat(64));
     let _ = writeln!(stderr);
+}
+
+#[cfg(test)]
+mod merge_dashboard_tests {
+    use super::*;
+    use crate::historical::job::{
+        MergeOperation, MergeOutput, MergeParquetConfig, MergePartitioning, MergeResources,
+        MergeTimeRange,
+    };
+    use ratatui::backend::TestBackend;
+
+    #[test]
+    fn merge_dashboard_tracks_phase_qualified_partitions_and_renders_narrow() {
+        let job = MergeJob {
+            job_id: 10,
+            operation: MergeOperation::Merge,
+            inputs: vec![1],
+            input_paths: HashMap::new(),
+            primary_files: HashMap::new(),
+            submission: None,
+            time_range: MergeTimeRange {
+                start_ns: 50,
+                end_ns: 90,
+            },
+            resources: MergeResources {
+                workers: 2,
+                memory_limit_mb: 256,
+                max_open_files: 32,
+            },
+            partitioning: MergePartitioning {
+                partitions_per_worker: 1,
+            },
+            parquet: MergeParquetConfig {
+                row_group_target_mb: 1,
+                file_target_mb: 4,
+                compression_level: 3,
+            },
+            output: MergeOutput {
+                dataset_path: "/temporary/output".into(),
+            },
+        };
+        let mut dashboard = MergeDashboard::new(&job);
+        let logical = PartitionKey {
+            phase: MergePhase::LogicalMerge,
+            partition_id: 0,
+        };
+        let physical = PartitionKey {
+            phase: MergePhase::PhysicalMaterialization,
+            partition_id: 0,
+        };
+        dashboard.handle_event(MergeProgressEvent::PhaseStarted {
+            phase: logical.phase,
+        });
+        dashboard.handle_event(MergeProgressEvent::PartitionStarted { key: logical });
+        dashboard.handle_event(MergeProgressEvent::PartitionCompleted {
+            key: logical,
+            events: 10,
+        });
+        dashboard.handle_event(MergeProgressEvent::PartitionStarted { key: logical });
+        dashboard.handle_event(MergeProgressEvent::PhaseStarted {
+            phase: physical.phase,
+        });
+        dashboard.handle_event(MergeProgressEvent::PartitionStarted { key: physical });
+        let (sender, _receiver) = mpsc::channel();
+        let reporter = MergeProgressReporter::new(sender);
+        let progress_state = reporter.state();
+        let worker = crate::historical::merge::MergeWorkerProgress::new(&reporter, physical);
+        worker.finish(4);
+        dashboard.update_snapshots(&progress_state);
+        assert_eq!(dashboard.partitions[&physical].events, 4);
+        dashboard.handle_event(MergeProgressEvent::Finished {
+            error: Some("commit failed".to_owned()),
+        });
+        assert_eq!(
+            dashboard.partitions[&logical].status,
+            PartitionStatus::Completed
+        );
+        assert_eq!(
+            dashboard.partitions[&physical].status,
+            PartitionStatus::Failed
+        );
+        assert!(!dashboard.success);
+        let mut terminal = Terminal::new(TestBackend::new(64, 16)).unwrap();
+        terminal.draw(|frame| render(frame, &dashboard)).unwrap();
+        let cells = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(cells.contains("FAILED"));
+        assert!(cells.contains("/temporary/output"));
+    }
 }

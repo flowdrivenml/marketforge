@@ -92,7 +92,6 @@ def test_prepare_freezes_registry_inputs_and_routes_existing_references(
     historical = workspace / "data/.config/historical"
     binary = workspace / "binary"
     binary.write_bytes(b"fixture")
-    (historical / "general.toml").write_text("runtime fixture")
     directory = historical / "merge"
     directory.mkdir()
     (directory / "derived.toml").write_text(
@@ -101,35 +100,40 @@ def test_prepare_freezes_registry_inputs_and_routes_existing_references(
     files: list[dict[str, Any]] = [
         {
             "database_id": i,
-            "engine_id": 7400,
+            "engine_id": 7401 if i == 3 else 7400,
             "namespace": "ns",
-            "path": "/published/7400",
+            "path": "/published/7401" if i == 3 else "/published/7400",
             "primary_file": f"part-{i}.parquet",
             "file_sha256": str(i) * 64,
             "manifest_sha256": "b" * 64,
             "start_ns": 1793059200000000000 + i,
             "end_ns": 1793059200000000100 + i,
-            "stream_id": "stream",
-            "memberships": [{"stream_id": "stream"}],
+            "memberships": [{"stream_id": f"stream-{i}"}],
             "integrity_status": "clean",
         }
-        for i in (1, 2)
+        for i in (1, 2, 3)
     ]
+    for item in files:
+        item["registered_path"] = f"{item['path']}/{item['primary_file']}"
+        item["manifest_path"] = f"{item['path']}/manifest.json"
     chosen = [item["database_id"] for item in files]
     discovery: dict[str, Any] = {
         "selected_dataset_ids": chosen,
         "missing": [],
         "requested_count": 1,
         "blockers": [],
-        "matched_count": 2,
-        "selected_count": 2,
-        "publication_count": 1,
+        "matched_count": 3,
+        "selected_count": 3,
+        "publication_count": 2,
         "candidates": [
             {
                 **item,
-                "engine_id": "7400",
+                "engine_id": str(item["engine_id"]),
                 "registered_path": item["path"] + "/" + item["primary_file"],
-                "memberships": [{"stream_id": "stream", "overlaps": True, "request_indexes": [1]}],
+                "memberships": [
+                    {**member, "overlaps": True, "request_indexes": [1]}
+                    for member in item["memberships"]
+                ],
             }
             for item in files
         ],
@@ -146,7 +150,8 @@ def test_prepare_freezes_registry_inputs_and_routes_existing_references(
 
     def supervised(argv: list[str], **_: Any) -> Any:
         calls.append(argv[1])
-        assert argv[1] in {"--runtime-settings", "--validate-job"}
+        assert argv[1] == "--validate-job"
+        assert Path(argv[2]).name == "merge-job.json"
         return SimpleNamespace(returncode=0, stdout="{}")
 
     monkeypatch.setattr(service, "supervised", supervised)
@@ -154,35 +159,42 @@ def test_prepare_freezes_registry_inputs_and_routes_existing_references(
     result = json.loads(capsys.readouterr().out)
     path = Path(result["job_path"])
     job = json.loads(path.read_bytes())
-    assert job["inputs"] == [7400]
-    assert job["input_paths"] == {"7400": "/published/7400"}
-    assert job["primary_files"]["7400"] == [
+    assert set(job) == {"job_id", "operation", "inputs", "time_range", "output"}
+    assert job["operation"] == "merge"
+    output = Path(job["output"]["dataset_path"])
+    assert output == workspace / "data/datasets/merged" / str(job["job_id"])
+    assert not output.exists()
+    assert job["inputs"] == [
         {
-            "path": item["primary_file"],
+            "dataset_id": item["database_id"],
+            "path": item["registered_path"],
             "sha256": item["file_sha256"],
-            "manifest_sha256": item["manifest_sha256"],
+            "publication": {
+                "engine_dataset_id": str(item["engine_id"]),
+                "manifest_path": item["manifest_path"],
+                "manifest_sha256": item["manifest_sha256"],
+            },
         }
         for item in files
     ]
     assert job["time_range"] == {"start_ns": 1793059200000000000, "end_ns": 1793318400000000000}
     assert len(result["source"]["sha256"]) == 64
-    assert result["coverage"]["observed_extent_gaps"]["stream"][-1][-1] == 1793318400000000000
-    assert calls == ["--runtime-settings", "--validate-job"]
+    assert result["coverage"]["observed_extent_gaps"]["stream-1"][-1][-1] == 1793318400000000000
+    assert calls == ["--validate-job"]
 
     (directory / "manual.toml").write_text(
-        "dataset_ids = [2, 1]\nstart_ns = 1793059200000000000\nend_ns = 1793318400000000000\n"
+        "dataset_ids = [2, 3, 1]\nstart_ns = 1793059200000000001\nend_ns = 1793318400000000000\n"
     )
     assert main([*args, "prepare", "manual", "--testing"]) == 0
     manual = json.loads(capsys.readouterr().out)
     assert select_inputs.await_args is not None
-    assert select_inputs.await_args.kwargs["ids"] == [2, 1]
-    assert (
-        json.loads(Path(manual["job_path"]).read_bytes())["primary_files"]["7400"][0]["path"]
-        == "part-2.parquet"
-    )
+    assert select_inputs.await_args.kwargs["ids"] == [2, 3, 1]
+    manual_job = json.loads(Path(manual["job_path"]).read_bytes())
+    assert [item["dataset_id"] for item in manual_job["inputs"]] == [2, 3, 1]
+    assert manual_job["time_range"]["start_ns"] == 1793059200000000001
 
     original = path.read_bytes()
-    discovery["blockers"].append({"reason": "Unsupported layout"})
+    discovery["blockers"].append({"reason": "Ambiguous registry selection"})
     execution = Mock(return_value={"status": "complete"})
     monkeypatch.setattr(service, "execute", execution)
     assert main([*args, "run", "derived", "--testing"]) == 1
@@ -201,3 +213,61 @@ def test_prepare_freezes_registry_inputs_and_routes_existing_references(
     assert main([*args, "register", str(intent), "--testing"]) == 0
     assert recover.await_args is not None
     assert recover.await_args.args[1] == intent
+
+
+def test_validation_rejection_keeps_generated_job_and_blocks_processing(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    args = ["--project-root", str(workspace), "--json", "merge"]
+    binary = workspace / "binary"
+    binary.write_bytes(b"fixture")
+    item = {
+        "database_id": 19,
+        "engine_id": 8100,
+        "path": "/registered/normalized/8100",
+        "registered_path": "/registered/normalized/8100/part-2.parquet",
+        "manifest_path": "/registered/normalized/8100/manifest.json",
+        "primary_file": "part-2.parquet",
+        "file_sha256": "a" * 64,
+        "manifest_sha256": "b" * 64,
+        "start_ns": 10,
+        "end_ns": 20,
+        "memberships": [{"stream_id": "one"}, {"stream_id": "two"}],
+    }
+    monkeypatch.setattr(service, "select_inputs", AsyncMock(return_value=[item]))
+    monkeypatch.setattr(service, "resolve", Mock(return_value=binary))
+    validate = Mock(
+        return_value=SimpleNamespace(returncode=1, stdout="invalid type: map, expected u64")
+    )
+    monkeypatch.setattr(service, "supervised", validate)
+    processing = Mock(side_effect=AssertionError("Processing must not start"))
+    monkeypatch.setattr(service, "run_process", processing)
+    paths = ProjectPaths(workspace, workspace / "data")
+    recipe = service.Recipe(dataset_ids=[19], start_ns=10, end_ns=20)
+    folder = paths.config_dir / "historical/merge"
+    folder.mkdir()
+    (folder / "manual.toml").write_text("dataset_ids = [19]\nstart_ns = 10\nend_ns = 20\n")
+
+    assert main([*args, "prepare", "manual", "--testing"]) == 0
+    prepared = json.loads(capsys.readouterr().out)
+    job = Path(prepared["job_path"])
+    original = job.read_bytes()
+    assert prepared["status"] == "generated" and prepared["compatibility"] == "not_validated"
+    assert "invalid type: map, expected u64" in prepared["validation_error"]
+    assert Path(prepared["report_path"]).is_file()
+
+    assert main([*args, "run", "manual", "--testing"]) == 1
+    rejected = json.loads(capsys.readouterr().out)
+    assert Path(rejected["job_path"]).is_file()
+    assert main([*args, "run", str(job), "--testing"]) != 0
+    assert job.read_bytes() == original
+    assert all(call.args[0][1] == "--validate-job" for call in validate.call_args_list)
+    processing.assert_not_called()
+
+    reports = [
+        service.prepare_job(paths, recipe, "manual", 8101, workspace / name, [19], {})
+        for name in ("first", "second")
+    ]
+    assert Path(reports[0]["job_path"]).read_bytes() == Path(reports[1]["job_path"]).read_bytes()

@@ -1,33 +1,31 @@
-#![cfg(feature = "historical")]
-
-use std::path::PathBuf;
-
-use marketforge_engine::historical::merge::DepthEventCursor;
-
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
+use crate::publication::depth_publication;
+use marketforge_engine::historical::merge::{DepthEventCursor, build_depth_inventory};
+use marketforge_engine::shared::domain::canonical::DepthEventBoundary;
 
 #[test]
-fn reads_real_depth_event_index() {
-    let path = project_root().join("data/processed/105/tasks/task-000000/depth/events.parquet");
-
-    let mut cursor = DepthEventCursor::open(&path).expect("open depth event index");
-
-    let first = cursor
-        .next_event()
-        .expect("read first event")
-        .expect("missing first event");
-
-    assert_eq!(first.canonical_row_offset, 0);
-    assert_eq!(first.canonical_row_count, 400);
-
-    println!("\nMARKETFORGE — DEPTH EVENT CURSOR");
-    println!("First ordinal : {}", first.event_ordinal);
-    println!("Timestamp     : {}", first.event_timestamp_ns);
-    println!("Canonical rows: {}", first.canonical_row_count);
-    println!("RESULT        : PASS");
+fn reads_generated_depth_event_index() {
+    let root = tempfile::tempdir().unwrap();
+    let inventory = build_depth_inventory(&[depth_publication(root.path(), 12)]).unwrap();
+    let mut cursor =
+        DepthEventCursor::open_source(&inventory[1].events_path, 0, 2, 0, None).unwrap();
+    for (ordinal, (timestamp, boundary)) in [
+        (300, DepthEventBoundary::Initialization),
+        (400, DepthEventBoundary::Changes),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let event = cursor.next_event().unwrap().unwrap();
+        assert_eq!(
+            (
+                event.event_ordinal,
+                event.event_timestamp_ns,
+                event.canonical_row_offset,
+                event.canonical_row_count,
+                event.event_boundary
+            ),
+            (ordinal as u64, timestamp, ordinal as u64, 1, boundary)
+        );
+    }
+    assert!(cursor.next_event().unwrap().is_none());
 }

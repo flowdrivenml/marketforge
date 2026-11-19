@@ -221,26 +221,6 @@ async def registry(
     return files, publications, source_keys
 
 
-def layout_reason(manifest: dict[str, Any]) -> str | None:
-    version = manifest["protocol_version"]
-    if version == 3:
-        return None
-    if version not in {4, 5} or manifest["content_type"] != "trades":
-        return (
-            f"Manifest v{version} {manifest['content_type']} requires v3 or timestamp-first trades."
-        )
-    quality: dict[str, Any] = manifest.get("processing_quality") or {}
-    if quality.get("timestamp_ordering") != "event_timestamp_ns":
-        return f"Manifest v{version} with native or non-timestamp-first trade ordering requires v3 or a timestamp-first trade layout."
-    if any(
-        any(source.get("ranges") for source in stream["sources"])
-        or len({source["task_id"] for source in stream["sources"]}) != len(stream["sources"])
-        for stream in manifest["streams"]
-    ):
-        return "Trade publication has interleaved or repeated source spans."
-    return None
-
-
 async def discover(
     paths: ProjectPaths, recipe: DerivedRecipe, source: Path, config: NormalizationRecipe
 ) -> dict[str, Any]:
@@ -315,7 +295,6 @@ async def discover(
                     "status": status,
                     "integrity": manifest.get("integrity_status"),
                     "layout": quality.get("timestamp_ordering"),
-                    "layout_issue": layout_reason(manifest),
                     "memberships": memberships,
                     "request_indexes": sorted(matched),
                     "provenance": provenance.get(pub),
@@ -373,37 +352,10 @@ async def discover(
                 "suggestion": "Approve publications from one instrument namespace.",
             }
         )
-    for pub, group in groups.items():
-        manifest = publications[pub][-1]["manifest"]
-        streams = {m["stream_id"] for f in group for m in f["memberships"]}
-        reason = layout_reason(manifest)
-        if len(streams) != 1:
-            reason = (
-                f"Selected files contain {len(streams)} streams; current Rust merger requires one per publication."
-                + (f" {reason}" if reason else "")
-            )
-        elif manifest["content_type"] == "depth" and {item["primary_file"] for item in group} != {
-            entry["path"] for entry in manifest["files"]
-        }:
-            reason = (
-                reason or "Depth reconstruction requires all primary files from the publication."
-            )
-        if reason:
-            blockers.append(
-                {
-                    "publication_id": pub,
-                    "engine_id": group[0]["engine_id"],
-                    "manifest_version": manifest["protocol_version"],
-                    "stream_ids": sorted(streams),
-                    "dataset_ids": [f["database_id"] for f in group],
-                    "reason": reason,
-                    "suggestion": "Select one supported timestamp-first trade stream per publication, or a complete compatible v3 depth publication.",
-                }
-            )
     file_issues: dict[tuple[int, str], list[int]] = defaultdict(list)
     for item in ordered:
-        if item["status"] != "complete" or item["integrity"] != "clean":
-            reason = "Incomplete or degraded file/publication requires a clean complete input."
+        if item["status"] != "complete":
+            reason = "Selected file is not complete in the registry."
         elif any(m["overlaps"] and not m["request_indexes"] for m in item["memberships"]):
             reason = "File contains an overlapping stream outside the approved selection."
         else:
@@ -451,6 +403,7 @@ async def discover(
         "matched_count": len(candidates),
         "selected_count": len(ordered),
         "publication_count": len(groups),
+        "stream_count": len({m["stream_id"] for item in ordered for m in item["memberships"]}),
         "candidates": sorted(candidates, key=key),
         "selected_dataset_ids": [item["database_id"] for item in ordered],
         "missing": missing,

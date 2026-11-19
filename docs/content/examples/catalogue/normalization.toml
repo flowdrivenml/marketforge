@@ -1,0 +1,21 @@
+version = 1
+
+[interval]
+start = 2024-10-28T00:00:00Z
+end = 2024-10-29T00:00:00Z
+
+[[requests]]
+exchange = "example_exchange"
+instrument_type = "equity"
+market_category = "equity"
+data_type = "trades"
+source_key = "synthetic-equity"
+scope = { kind = "instrument", identifier = "AAPL" }
+
+[[requests]]
+exchange = "example_exchange"
+instrument_type = "equity"
+market_category = "equity"
+data_type = "order_book_l2"
+source_key = "synthetic-equity"
+scope = { kind = "instrument", identifier = "AAPL" }

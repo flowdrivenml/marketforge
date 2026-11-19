@@ -1,293 +1,130 @@
-#![cfg(feature = "historical")]
-
-use std::{
-    collections::HashMap,
-    fs,
-    path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
+use crate::{merge_test_job::small_runtime, publication::bounded_trade_job};
+use marketforge_engine::historical::{
+    job::MergeJobDocument,
+    merge::{MergeCommitPaths, execute_unified_merge_job},
+    normalize::manifest::file_sha256,
 };
+use std::{fs, path::Path};
 
-use {
-    marketforge_engine::historical::job::MergeJob,
-    marketforge_engine::historical::job::MergeOperation,
-    marketforge_engine::historical::job::MergeOutput,
-    marketforge_engine::historical::job::MergeParquetConfig,
-    marketforge_engine::historical::job::MergePartitioning,
-    marketforge_engine::historical::job::MergeResources,
-    marketforge_engine::historical::job::MergeTimeRange,
-    marketforge_engine::historical::merge::execute_unified_merge_job,
-};
-
-#[path = "../support/mod.rs"]
-mod support;
-
-use support::datasets::{project_root, resolve_trade_dataset};
-
-// -----------------------------------------------------------------------------
-// Temporary directory
-// -----------------------------------------------------------------------------
-
-struct TestDirectory(PathBuf);
-
-impl TestDirectory {
-    fn new() -> Self {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-
-        let path = std::env::temp_dir().join(format!(
-            "marketforge-unified-failure-{}-{timestamp}",
-            std::process::id()
-        ));
-
-        fs::create_dir_all(&path).unwrap();
-
-        Self(path)
-    }
-
-    fn path(&self) -> &Path {
-        &self.0
-    }
+fn test_job(root: &Path) -> MergeJobDocument {
+    bounded_trade_job(root.join("merged"))
 }
 
-impl Drop for TestDirectory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
+fn expect_failure(
+    workspace: &Path,
+    job: MergeJobDocument,
+    diagnostic: &str,
+    update_runtime: impl FnOnce(
+        &mut marketforge_engine::shared::historical::config::MergeRuntimeSettings,
+    ),
+) {
+    let mut runtime = small_runtime();
+    runtime.resources.memory_limit_mb = 2048;
+    update_runtime(&mut runtime);
+    let result = execute_unified_merge_job(&job.with_runtime(runtime).unwrap(), workspace);
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains(diagnostic), "{err}");
 }
 
-// -----------------------------------------------------------------------------
-// Job fixture
-// -----------------------------------------------------------------------------
-
-fn test_job(root: &Path, output: &Path) -> MergeJob {
-    let input = resolve_trade_dataset(root, 111);
-
-    let start_ns = 1_788_220_800_000_000_000_i64;
-
-    MergeJob {
-        job_id: 900_600,
-        operation: MergeOperation::Merge,
-
-        inputs: vec![111],
-
-        primary_files: Default::default(),
-
-        input_paths: HashMap::from([(111, input.dataset_path)]),
-
-        time_range: MergeTimeRange {
-            start_ns,
-            end_ns: start_ns + 60_000_000_000,
-        },
-
-        resources: MergeResources {
-            workers: 2,
-            memory_limit_mb: 2048,
-            max_open_files: 64,
-        },
-
-        partitioning: MergePartitioning {
-            partitions_per_worker: 1,
-        },
-
-        parquet: MergeParquetConfig {
-            row_group_target_mb: 1,
-            file_target_mb: 4,
-            compression_level: 3,
-        },
-
-        output: MergeOutput {
-            dataset_path: output.to_path_buf(),
-        },
-    }
+fn validated_job(root: &Path) -> MergeJobDocument {
+    let mut baseline = test_job(root);
+    baseline.output.dataset_path = root.join("baseline");
+    execute_unified_merge_job(
+        &crate::merge_test_job::bounded_runtime(baseline.clone()),
+        root,
+    )
+    .unwrap();
+    baseline.output.dataset_path = root.join("merged");
+    baseline
 }
-
-// -----------------------------------------------------------------------------
-// Assertions
-// -----------------------------------------------------------------------------
-
-fn staging_path(output: &Path, job_id: u64) -> PathBuf {
-    output.parent().unwrap().join(format!(
-        ".{}.staging-{job_id}",
-        output.file_name().unwrap().to_string_lossy()
-    ))
-}
-
-fn assert_not_published(output: &Path) {
-    assert!(
-        !output.exists(),
-        "failed merge published an output dataset: {}",
-        output.display()
-    );
-}
-
-// -----------------------------------------------------------------------------
-// Missing input dataset
-// -----------------------------------------------------------------------------
 
 #[test]
 fn rejects_missing_input_dataset() {
-    let root = project_root();
-    let temporary = TestDirectory::new();
-
-    let output = temporary.path().join("merged");
-
-    let mut job = test_job(&root, &output);
-
-    job.input_paths
-        .insert(111, temporary.path().join("nonexistent-dataset"));
-
-    assert!(execute_unified_merge_job(&job, &root).is_err());
-
-    assert_not_published(&output);
-
-    assert!(!staging_path(&output, job.job_id).exists());
+    let temporary = tempfile::tempdir().unwrap();
+    let job = validated_job(temporary.path());
+    let directory = job.inputs[0].publication.manifest_path.parent().unwrap();
+    fs::rename(directory, temporary.path().join("moved-input")).unwrap();
+    expect_failure(temporary.path(), job, "does not exist", |_| {});
+    assert!(!temporary.path().join("merged").exists());
 }
-
-// -----------------------------------------------------------------------------
-// Corrupted source manifest
-// -----------------------------------------------------------------------------
 
 #[test]
 fn rejects_corrupted_source_manifest() {
-    let root = project_root();
-    let temporary = TestDirectory::new();
-
-    let output = temporary.path().join("merged");
-
-    let mut job = test_job(&root, &output);
-
-    let corrupted = temporary.path().join("corrupted-input");
-
-    fs::create_dir_all(&corrupted).unwrap();
-
-    fs::write(corrupted.join("manifest.json"), b"{ invalid json").unwrap();
-
-    job.input_paths.insert(111, corrupted);
-
-    assert!(execute_unified_merge_job(&job, &root).is_err());
-
-    assert_not_published(&output);
+    let temporary = tempfile::tempdir().unwrap();
+    let mut job = validated_job(temporary.path());
+    let manifest = job.inputs[0].publication.manifest_path.clone();
+    fs::write(&manifest, b"{ invalid json").unwrap();
+    let fingerprint = file_sha256(&manifest).unwrap();
+    for input in &mut job.inputs {
+        input.publication.manifest_sha256.clone_from(&fingerprint);
+    }
+    expect_failure(temporary.path(), job, "invalid dataset manifest", |_| {});
+    assert!(!temporary.path().join("merged").exists());
 }
-
-// -----------------------------------------------------------------------------
-// Missing processing job
-// -----------------------------------------------------------------------------
 
 #[test]
 fn rejects_missing_processing_job() {
-    let root = project_root();
-    let temporary = TestDirectory::new();
-
-    let output = temporary.path().join("merged");
-
-    let job = test_job(&root, &output);
-
-    // The input dataset exists, but the temporary project root
-    // contains no processing job metadata.
-    let fake_root = temporary.path().join("fake-project");
-
-    fs::create_dir_all(&fake_root).unwrap();
-
-    assert!(execute_unified_merge_job(&job, &fake_root).is_err());
-
-    assert_not_published(&output);
+    let temporary = tempfile::tempdir().unwrap();
+    let job = validated_job(temporary.path());
+    let directory = job.inputs[0].publication.manifest_path.parent().unwrap();
+    fs::remove_file(directory.join("processing-job.json")).unwrap();
+    expect_failure(temporary.path(), job, "committed job: No such file", |_| {});
+    assert!(!temporary.path().join("merged").exists());
 }
-
-// -----------------------------------------------------------------------------
-// Existing committed output
-// -----------------------------------------------------------------------------
 
 #[test]
 fn rejects_existing_output_without_modification() {
-    let root = project_root();
-    let temporary = TestDirectory::new();
-
-    let output = temporary.path().join("merged");
-
-    fs::create_dir_all(&output).unwrap();
-
-    let marker = output.join("existing-data.txt");
-
-    fs::write(&marker, b"DO NOT MODIFY").unwrap();
-
-    let job = test_job(&root, &output);
-
-    assert!(execute_unified_merge_job(&job, &root).is_err());
-
-    assert_eq!(fs::read(&marker).unwrap(), b"DO NOT MODIFY");
+    let temporary = tempfile::tempdir().unwrap();
+    let job = validated_job(temporary.path());
+    fs::create_dir(&job.output.dataset_path).unwrap();
+    let marker = job.output.dataset_path.join("marker");
+    fs::write(&marker, b"keep").unwrap();
+    expect_failure(temporary.path(), job, "already exists", |_| {});
+    assert_eq!(fs::read(marker).unwrap(), b"keep");
 }
-
-// -----------------------------------------------------------------------------
-// Existing staging directory
-// -----------------------------------------------------------------------------
 
 #[test]
 fn rejects_existing_staging_directory() {
-    let root = project_root();
-    let temporary = TestDirectory::new();
-
-    let output = temporary.path().join("merged");
-
-    let job = test_job(&root, &output);
-
-    let staging = staging_path(&output, job.job_id);
-
-    fs::create_dir_all(&staging).unwrap();
-
-    let marker = staging.join("existing-staging.txt");
-
-    fs::write(&marker, b"DO NOT MODIFY").unwrap();
-
-    let result = execute_unified_merge_job(&job, &root);
-
-    assert!(
-        result.is_err(),
-        "existing staging directory should be rejected"
+    let temporary = tempfile::tempdir().unwrap();
+    let job = validated_job(temporary.path());
+    let commit = MergeCommitPaths::new(&job.output.dataset_path, job.job_id).unwrap();
+    fs::create_dir(&commit.staging_path).unwrap();
+    let marker = commit.staging_path.join("marker");
+    fs::write(&marker, b"keep").unwrap();
+    expect_failure(
+        temporary.path(),
+        job,
+        "failed to create fresh staging directory",
+        |_| {},
     );
-
-    assert_not_published(&output);
-
-    assert_eq!(fs::read(&marker).unwrap(), b"DO NOT MODIFY");
+    assert_eq!(fs::read(marker).unwrap(), b"keep");
+    assert!(!commit.dataset_path.exists());
 }
-
-// -----------------------------------------------------------------------------
-// Insufficient memory budget
-// -----------------------------------------------------------------------------
 
 #[test]
 fn rejects_insufficient_memory_budget() {
-    let root = project_root();
-    let temporary = TestDirectory::new();
-
-    let output = temporary.path().join("merged");
-
-    let mut job = test_job(&root, &output);
-
-    job.resources.memory_limit_mb = 1;
-
-    assert!(execute_unified_merge_job(&job, &root).is_err());
-
-    assert_not_published(&output);
+    let temporary = tempfile::tempdir().unwrap();
+    expect_failure(
+        temporary.path(),
+        validated_job(temporary.path()),
+        "memory",
+        |settings| {
+            settings.resources.memory_limit_mb = 1;
+        },
+    );
+    assert!(!temporary.path().join("merged").exists());
 }
-
-// -----------------------------------------------------------------------------
-// Insufficient open-file budget
-// -----------------------------------------------------------------------------
 
 #[test]
 fn rejects_insufficient_file_budget() {
-    let root = project_root();
-    let temporary = TestDirectory::new();
-
-    let output = temporary.path().join("merged");
-
-    let mut job = test_job(&root, &output);
-
-    job.resources.max_open_files = 1;
-
-    assert!(execute_unified_merge_job(&job, &root).is_err());
-
-    assert_not_published(&output);
+    let temporary = tempfile::tempdir().unwrap();
+    expect_failure(
+        temporary.path(),
+        validated_job(temporary.path()),
+        "file",
+        |settings| {
+            settings.resources.max_open_files = 1;
+        },
+    );
+    assert!(!temporary.path().join("merged").exists());
 }

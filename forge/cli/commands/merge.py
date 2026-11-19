@@ -128,7 +128,10 @@ def run(args: argparse.Namespace, context: ApplicationContext) -> int:
         context.console.print_json(data=result)
     if action == "register":
         return int(result["registration"] != "registered")
-    return int(result["status"] in {"failed", "interrupted", "blocked"})
+    return int(
+        result["status"] in {"failed", "interrupted", "blocked"}
+        or (action == "run" and result["status"] == "generated")
+    )
 
 
 def render_selection(context: ApplicationContext, result: dict[str, Any]) -> None:
@@ -149,8 +152,12 @@ def render_selection(context: ApplicationContext, result: dict[str, Any]) -> Non
         ("Matched files", result["matched_count"]),
         ("Selected files", result["selected_count"]),
         ("Publications", result["publication_count"]),
+        ("Logical streams", result.get("stream_count")),
         ("Configuration" if created else "Report", result.get("path", result.get("report_path"))),
-        ("Compatibility", result.get("compatibility", "discovery only").upper()),
+        (
+            "Rust validation",
+            result.get("compatibility", "discovery only").replace("_", " ").upper(),
+        ),
         ("Job", result.get("job_path")),
     ):
         if value is not None:
@@ -167,4 +174,9 @@ def render_selection(context: ApplicationContext, result: dict[str, Any]) -> Non
             f"{len(result['missing'])} requested selections have no approved files.",
             style="mf.warning",
         )
-    console.print("Recipe created." if created else "No merge executed.", style="mf.body")
+    if error := result.get("validation_error"):
+        console.print(error.rstrip(), style="mf.warning", markup=False)
+    if created:
+        console.print("Recipe created.", style="mf.body")
+    elif result.get("job_path"):
+        console.print("Job generated.", style="mf.body")

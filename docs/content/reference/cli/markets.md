@@ -54,7 +54,7 @@ marketforge markets list --testing --base-asset ETH --quote-asset USDT --match '
 marketforge --json markets show bybit.spot.BTCUSDT --testing
 ```
 
-No `--instrument-type` exists on `markets list`; asset/glob filters exist only on list, not show/sync/refresh. Show accepts hidden `--limit`/`--sort` due to shared parser registration; they are not a supported way to expand detail or narrow collection.
+No `--instrument-type` exists on `markets list`; asset/glob filters exist only on list, not show/sync/refresh. Show accepts hidden `--limit` and `--sort` through the shared parser. `--limit` is validated in the same 1–10000 range but detail uses an internal two-row lookup to detect ambiguity. `--sort` is forwarded to that lookup and does not bypass ambiguity checks.
 
 JSON returns `instruments`, `truncated`, and a semantics note. Rows expose reference/type/assets/status/specifications, available native quantities/prices, observation/source/fetch/window times, interpretation evidence and staleness. Human details group those fields. Decimal quantities serialize as strings; missing is null. The one-hour browse staleness rule is based on fetch time and does not certify ranking comparability. See [statistics semantics](../../workflows/markets/market-statistics.md).
 
@@ -71,7 +71,7 @@ Policies resolve under `data/.config/markets/rankings/NAME.toml`; names optional
 | `markets rank show ID_OR_NAME --testing` | Reads published snapshot by UUID, or latest published exact policy name ordered by creation time then UUID. Name lookup does not filter by age/partial coverage. |
 | `markets rank update [turnover|volume] --testing` | One global statistics refresh, then independent publication of named standard policy or both. Requires existing policy files and matching metadata syncs; writes and uses network. Custom names not accepted. |
 
-Every ranking subcommand accepts `--silent` and `--limit N` (50 default, 1–10000). Limit affects snapshot listing and human show; it is accepted but does not narrow build/update evaluation or file operations. File commands `new`/`validate` do not accept `--testing`; database commands require it.
+Every ranking subcommand accepts `--silent` and `--limit N` (50 default, 1–10000). Limit affects snapshot listing and human show; it is accepted but does not narrow build/update evaluation or file operations. On rankings, `--silent` suppresses progress for update; final results still print. File commands `new`/`validate` do not accept `--testing`; database commands require it.
 
 ```bash
 marketforge markets rank new activity

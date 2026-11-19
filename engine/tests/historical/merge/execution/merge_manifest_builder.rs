@@ -1,9 +1,8 @@
 #![cfg(feature = "historical")]
 
-use std::{fs, path::PathBuf};
+use std::fs;
 
 use {
-    marketforge_engine::historical::job::load_merge_job,
     marketforge_engine::historical::merge::MergeInputDataset,
     marketforge_engine::historical::merge::build_depth_inventory,
     marketforge_engine::historical::merge::build_merge_checkpoints,
@@ -18,22 +17,15 @@ use {
     marketforge_engine::historical::merge::validate_merge_output,
 };
 
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
 #[test]
-fn builds_real_parallel_merge_manifest() {
-    let root = project_root();
+fn builds_generated_parallel_merge_manifest() {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
 
-    let mut job =
-        load_merge_job(root.join("data/.jobs/merge/merge-200.json")).expect("load merge job");
+    let mut job = crate::publication::depth_job(&root);
 
-    // Two-hour integration interval.
-    job.time_range.end_ns = job.time_range.start_ns + 7_200_000_000_000;
+    // Keep the requested interval inside the miniature publication.
+    job.time_range.end_ns = job.time_range.start_ns + 400;
 
     job.resources.workers = 4;
     job.partitioning.partitions_per_worker = 2;
@@ -90,13 +82,7 @@ fn builds_real_parallel_merge_manifest() {
     // Temporary staging
     // -------------------------------------------------------------------------
 
-    let staging =
-        std::env::temp_dir().join(format!("marketforge-manifest-test-{}", std::process::id(),));
-
-    if staging.exists() {
-        fs::remove_dir_all(&staging).unwrap();
-    }
-
+    let staging = root.join("staging");
     fs::create_dir_all(&staging).unwrap();
 
     // -------------------------------------------------------------------------
@@ -134,16 +120,16 @@ fn builds_real_parallel_merge_manifest() {
     // -------------------------------------------------------------------------
 
     assert_eq!(manifest.job_id, job.job_id);
-    assert_eq!(manifest.events_written, 1_415_631);
-    assert_eq!(manifest.files_written, 8);
+    assert_eq!(manifest.events_written, 8);
+    assert_eq!(manifest.files_written, 4);
 
-    assert_eq!(manifest.input_datasets.len(), 4);
-    assert_eq!(manifest.streams.len(), 4);
+    assert_eq!(manifest.input_datasets.len(), 2);
+    assert_eq!(manifest.streams.len(), 2);
 
-    assert_eq!(manifest.checkpoints.len(), 81);
-    assert_eq!(manifest.initial_checkpoints.len(), 4);
+    assert_eq!(manifest.checkpoints.len(), 4);
+    assert_eq!(manifest.initial_checkpoints.len(), 2);
 
-    assert_eq!(manifest.files.len(), 8);
+    assert_eq!(manifest.files.len(), 4);
 
     for file in &manifest.files {
         assert!(file.partition_id.is_some());

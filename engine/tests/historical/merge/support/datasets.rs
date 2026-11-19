@@ -1,102 +1,109 @@
+//! Bounded selections from canonical descriptors and verified publication metadata.
+use super::merge_test_job::recorded_job;
+use marketforge_engine::historical::{
+    job::{ContentType, MergeFileInput, MergeJobDocument},
+    normalize::manifest::{DatasetFile, DatasetManifest, file_sha256},
+};
 use std::{
+    collections::HashMap,
     fs::File,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
-use {
-    marketforge_engine::historical::merge::ResolvedMergeInput,
-    marketforge_engine::historical::normalize::manifest::DatasetManifest,
-};
+pub fn recorded_manifest(input: &MergeFileInput) -> &'static DatasetManifest {
+    static MANIFESTS: OnceLock<HashMap<PathBuf, DatasetManifest>> = OnceLock::new();
+    &MANIFESTS.get_or_init(|| {
+        let mut manifests = HashMap::new();
+        for input in recorded_job().inputs {
+            let publication = input.publication;
+            manifests.entry(publication.manifest_path.clone()).or_insert_with(|| {
+                let path = &publication.manifest_path;
+                let size = path.metadata().unwrap_or_else(|error| {
+                    panic!("canonical manifest prerequisite missing at {}: {error}", path.display())
+                }).len();
+                assert!(size <= 16 * 1024 * 1024, "canonical manifest exceeds 16 MiB: {}", path.display());
 
-// -----------------------------------------------------------------------------
-// Project root
-// -----------------------------------------------------------------------------
-
-pub fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("project root")
-        .to_path_buf()
+                let sha = file_sha256(path).unwrap_or_else(|error| {
+                    panic!("cannot verify canonical manifest {}: {error}; configure fixture relocation", path.display())
+                });
+                assert_eq!(sha, publication.manifest_sha256, "manifest checksum {}", path.display());
+                let manifest: DatasetManifest = serde_json::from_reader(File::open(path).unwrap()).unwrap();
+                assert_eq!(manifest.dataset_id, publication.engine_dataset_id);
+                manifest.validate_streams().unwrap();
+                manifest
+            });
+        }
+        manifests
+    })[&input.publication.manifest_path]
 }
 
-// -----------------------------------------------------------------------------
-// Build resolved dataset
-// -----------------------------------------------------------------------------
+pub fn recorded_members(
+    job: &MergeJobDocument,
+    kind: ContentType,
+) -> Vec<(MergeFileInput, DatasetFile)> {
+    let mut matches = job
+        .inputs
+        .iter()
+        .filter_map(|input| {
+            let manifest = recorded_manifest(input);
+            if manifest.content_type != kind {
+                return None;
+            }
+            let relative = input
+                .path
+                .strip_prefix(input.publication.manifest_path.parent().unwrap())
+                .unwrap();
+            let member = manifest
+                .files
+                .iter()
+                .find(|file| Path::new(&file.path) == relative)
+                .expect("a canonical descriptor must select a primary file");
+            Some((input.clone(), member.clone()))
+        })
+        .collect::<Vec<_>>();
+    matches.sort_by_key(|(_, file)| (file.rows, file.path.clone()));
+    matches
+}
 
-fn build_resolved_input(dataset_path: PathBuf, dataset_id: u64) -> ResolvedMergeInput {
-    let manifest_path = dataset_path.join("manifest.json");
+pub fn recorded_stream(
+    input: &MergeFileInput,
+) -> &'static marketforge_engine::historical::normalize::streams::StreamOutput {
+    let directory = input.publication.manifest_path.parent().unwrap();
+    let mut owners = recorded_manifest(input)
+        .streams
+        .iter()
+        .filter(|stream| input.path.parent() == Some(directory.join(&stream.directory).as_path()));
+    let owner = owners.next().expect("canonical part belongs to a stream");
+    assert!(owners.next().is_none());
+    owner
+}
 
-    let manifest: DatasetManifest =
-        serde_json::from_reader(File::open(&manifest_path).unwrap_or_else(|error| {
-            panic!(
-                "failed to open manifest {}: {error}",
-                manifest_path.display()
-            )
-        }))
-        .expect("parse dataset manifest");
-
-    assert_eq!(manifest.dataset_id, dataset_id, "dataset identity mismatch");
-
-    let canonical_files = manifest
+pub fn stream_parts(
+    job: &MergeJobDocument,
+    input: &MergeFileInput,
+) -> Vec<(MergeFileInput, std::ops::Range<u64>)> {
+    let directory = input.publication.manifest_path.parent().unwrap();
+    let owner = recorded_stream(input);
+    let mut files = recorded_manifest(input)
         .files
         .iter()
-        .map(|file| dataset_path.join(&file.path))
-        .collect();
-
-    let auxiliary_files = manifest
-        .auxiliary_files
-        .iter()
-        .map(|file| dataset_path.join(&file.path))
-        .collect();
-
-    ResolvedMergeInput {
-        dataset_id,
-        dataset_path,
-        manifest,
-        canonical_files,
-        auxiliary_files,
-    }
-}
-
-// -----------------------------------------------------------------------------
-// Resolve depth dataset
-// -----------------------------------------------------------------------------
-
-pub fn resolve_depth_dataset(root: &Path, dataset_id: u64) -> ResolvedMergeInput {
-    let dataset_path = root.join(format!("data/processed/{dataset_id}"));
-
-    build_resolved_input(dataset_path, dataset_id)
-}
-
-// -----------------------------------------------------------------------------
-// Resolve trade dataset
-// -----------------------------------------------------------------------------
-
-pub fn resolve_trade_dataset(root: &Path, dataset_id: u64) -> ResolvedMergeInput {
-    let datasets = root.join("data/.work/full-trade-test/datasets");
-
-    let suffix = format!("-d{dataset_id}");
-
-    for entry in std::fs::read_dir(&datasets).expect("read trade datasets") {
-        let entry = entry.expect("read dataset entry");
-        let dataset_path = entry.path();
-
-        if !dataset_path.join("manifest.json").is_file() {
-            continue;
-        }
-
-        let matches_id = dataset_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.ends_with(&suffix));
-
-        if matches_id {
-            return build_resolved_input(dataset_path, dataset_id);
-        }
-    }
-
-    panic!(
-        "trade dataset {dataset_id} not found under {}",
-        datasets.display()
-    );
+        .filter(|file| Path::new(&file.path).parent() == Some(Path::new(&owner.directory)))
+        .collect::<Vec<_>>();
+    files.sort_by_key(|file| &file.path);
+    let mut offset = 0u64;
+    files
+        .into_iter()
+        .filter_map(|file| {
+            let start = offset;
+            offset = offset.checked_add(file.rows).unwrap();
+            job.inputs
+                .iter()
+                .find(|candidate| {
+                    candidate.publication == input.publication
+                        && candidate.path == directory.join(&file.path)
+                })
+                .map(|candidate| (candidate.clone(), start..offset))
+        })
+        .collect()
 }

@@ -1,13 +1,8 @@
 #![cfg(feature = "historical")]
 
-use std::{
-    fs,
-    path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::fs;
 
 use {
-    marketforge_engine::historical::job::load_merge_job,
     marketforge_engine::historical::merge::MergePartition,
     marketforge_engine::historical::merge::build_depth_inventory,
     marketforge_engine::historical::merge::execute_merge_partition,
@@ -16,20 +11,12 @@ use {
     marketforge_engine::historical::merge::resolve_merge_inputs,
 };
 
-static NEXT_ID: AtomicU64 = AtomicU64::new(0);
-
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
 #[test]
-fn executes_real_merge_partition() {
-    let root = project_root();
+fn executes_generated_merge_partition() {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
 
-    let job = load_merge_job(root.join("data/.jobs/merge/merge-200.json")).expect("load merge job");
+    let job = crate::publication::depth_job(&root);
 
     let inputs = resolve_merge_inputs(&job, &root).expect("resolve merge inputs");
 
@@ -37,22 +24,17 @@ fn executes_real_merge_partition() {
 
     let boundaries = reconcile_depth_boundaries(&inventory).expect("reconcile boundaries");
 
-    // One-minute test interval.
+    // Include both events of the first task in each source.
     let partition = MergePartition {
         partition_id: 0,
         start_ns: job.time_range.start_ns,
-        end_ns: job.time_range.start_ns + 60_000_000_000,
+        end_ns: job.time_range.start_ns + 200,
     };
 
     let plans = plan_partition_inputs(&[partition], &inventory).expect("plan partition inputs");
 
     // Temporary output directory.
-    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-
-    let staging = std::env::temp_dir().join(format!(
-        "marketforge-partition-test-{}-{id}",
-        std::process::id(),
-    ));
+    let staging = root.join("staging");
 
     fs::create_dir_all(&staging).unwrap();
 
@@ -67,7 +49,7 @@ fn executes_real_merge_partition() {
     .expect("execute merge partition");
 
     assert_eq!(result.partition_id, 0);
-    assert_eq!(result.events_written, 11_550);
+    assert_eq!(result.events_written, 4);
     assert_eq!(result.files_written, 1);
 
     assert_eq!(result.files.len(), 1);

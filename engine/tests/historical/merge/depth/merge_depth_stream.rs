@@ -1,27 +1,18 @@
 #![cfg(feature = "historical")]
 
-use std::path::PathBuf;
-
 use {
-    marketforge_engine::historical::job::load_merge_job,
     marketforge_engine::historical::merge::DepthStream,
     marketforge_engine::historical::merge::build_depth_inventory,
     marketforge_engine::historical::merge::reconcile_depth_boundaries,
     marketforge_engine::historical::merge::resolve_merge_inputs,
 };
 
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
 #[test]
-fn streams_real_depth_archives() {
-    let root = project_root();
+fn streams_generated_depth_archives() {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
 
-    let job = load_merge_job(root.join("data/.jobs/merge/merge-200.json")).expect("load merge job");
+    let job = crate::publication::depth_job(&root);
 
     let inputs = resolve_merge_inputs(&job, &root).expect("resolve merge inputs");
 
@@ -31,7 +22,7 @@ fn streams_real_depth_archives() {
 
     println!("\nMARKETFORGE — LOGICAL DEPTH STREAMS");
 
-    for dataset_id in [105, 108, 112, 92] {
+    for dataset_id in job.inputs {
         let tasks = inventory
             .iter()
             .filter(|task| task.dataset_id == dataset_id)
@@ -54,6 +45,11 @@ fn streams_real_depth_archives() {
             }
         }
 
+        assert_eq!(
+            (events, initializations, stream.initializations_skipped()),
+            (4, 2, 0)
+        );
+        assert_eq!((events, initializations), (4, 2));
         println!(
             "dataset={} | events={} | initializations={} | skipped={}",
             dataset_id,

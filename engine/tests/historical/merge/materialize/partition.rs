@@ -95,7 +95,7 @@ fn decimal(values: &[i64]) -> ArrayRef {
     )
 }
 
-fn canonical_trades(timestamps: &[i64]) -> RecordBatch {
+pub(super) fn canonical_trades(timestamps: &[i64]) -> RecordBatch {
     let schema = trade_schema();
     let n = timestamps.len();
 
@@ -137,7 +137,7 @@ fn canonical_trades(timestamps: &[i64]) -> RecordBatch {
     RecordBatch::try_new(schema, columns).unwrap()
 }
 
-fn write_parquet(path: &Path, batch: &RecordBatch) {
+pub(super) fn write_parquet(path: &Path, batch: &RecordBatch) {
     let file = File::create(path).unwrap();
 
     let mut writer = ArrowWriter::try_new(file, batch.schema(), None).unwrap();
@@ -248,7 +248,7 @@ fn depth_stream() -> UnifiedMergeStream {
     }
 }
 
-fn canonical_depth(timestamps: &[i64]) -> RecordBatch {
+pub(super) fn canonical_depth(timestamps: &[i64]) -> RecordBatch {
     let schema = depth_schema();
     let n = timestamps.len();
 
@@ -308,7 +308,7 @@ fn depth_event(
     }
 }
 
-fn write_depth_events(path: &Path, events: &[IndexedDepthEvent]) {
+pub(super) fn write_depth_events(path: &Path, events: &[IndexedDepthEvent]) {
     let mut builder = DepthEventBatchBuilder::new();
 
     for event in events {
@@ -348,6 +348,7 @@ fn merge_job(workers: usize, memory_mb: u64, output_path: PathBuf) -> MergeJob {
         operation: MergeOperation::Merge,
         inputs: vec![88],
         primary_files: Default::default(),
+        submission: None,
         input_paths: Default::default(),
 
         time_range: MergeTimeRange {

@@ -1,4 +1,5 @@
 # Merge registered normalized files
+Check [supported layouts](#supported-layouts) before choosing inputs. Use dataset inspection to confirm one compatible stream, its publication identity and the required primary parts.
 
 Install the managed merge binary with `mf engine build merge`. Use the [configured testing PostgreSQL registry](../getting-started/installation.md#postgresql-credentials) for discovery and preparation.
 
@@ -48,7 +49,7 @@ Forge discovers eligible files in `historical.datasets` and their shared evidenc
 
 The interval is half-open and must fit the engine’s signed 64-bit nanosecond range. Forge converts the recipe's timezone-aware datetime values to integer Unix nanoseconds. The observed maximum timestamp of a file is inclusive, so a file with a maximum equal to the merge start is eligible, while a file starting at the merge end is outside the range. The report lists observed envelopes, uncovered parts of the requested interval and files extending beyond it. Observed envelopes provide no proof of continuity inside the interval. Use explicit nanosecond bounds for precision finer than the datetime parser's microsecond resolution.
 
-Missing requests, incomplete or degraded inputs, incompatible layouts and unresolved publication choices block preparation. A blocked preparation returns exit 1 and retains the report under `data/runs/merge-prepare-*/prepare-report.json`. Global `--json` includes the candidate file IDs, stream memberships, engine publication identities and reasons. Narrow the recipe explicitly to pursue a compatible subset. For example, a source containing mixed v5 trades and depth may support a recipe for one timestamp-first trade stream. The full recipe remains blocked.
+Missing requests, incomplete inputs and unresolved publication choices can block registry preparation. A blocked preparation returns exit 1 and retains `prepare-report.json`. If registry preparation can resolve the selection but the engine rejects it, the job and report are retained with status `generated` and compatibility `not_validated`. Execution requires validation of the exact submitted job.
 
 ## Select file dataset IDs explicitly
 
@@ -75,9 +76,9 @@ Choose one run command. Both modes prepare one `MergeJob`, submit it, verify the
 
 ## Selection and runtime
 
-Files from each publication must appear consecutively in an explicit recipe, and the listed order defines precedence. Source-derived selection groups publications by the earliest member in canonical venue, instrument type, category, symbol, content type, observed start, registry publication ID and primary path order. Within each publication, the same key orders the files. Forge verifies each owning publication and records the ordered manifest-relative files, their checksums and the shared manifest checksum in `primary_files`. Rust verifies membership and consumes events from the selected files. Publication precedence follows the recipe. Within a publication, canonical source order resolves ties across selected parts. Forge reports gaps in the observed extents of selected streams.
+Explicit recipes preserve their listed file order. Source-derived recipes use a stable market-identity ordering. The public JSON contains `job_id`, `operation`, `inputs`, `time_range` and `output`. Each entry in `inputs` has the PostgreSQL file `dataset_id`, its absolute `path` and `sha256`, and a `publication` object with `engine_dataset_id` (a decimal string), `manifest_path` and `manifest_sha256`. The manifest describes source ownership and auxiliary artifacts. Its presence does not guarantee that a single selected depth file has enough reconstruction state.
 
-Both operations read `data/.config/historical/general.toml`. Managed merge preparation uses the shared Rust runtime loader for worker count, memory budget, open-file limit and Parquet sizes. The byte budgets sent to the current merge engine must be whole MiB. Optional merge settings have these defaults.
+Set execution options in `data/.config/historical/general.toml`. The Rust CLI uses `--config PATH` to override that location. The shared configuration supplies worker count, memory budget, open-file limit, and Parquet sizes. Merge requires whole-MiB byte budgets. The optional merge settings default to the values below.
 
 ```toml
 [merge]
@@ -85,13 +86,46 @@ partitions_per_worker = 4
 compression_level = 3
 ```
 
-These settings are resolved into the current Rust JSON contract as `resources`, `partitioning` and `parquet`. A managed preparation freezes the ordered file dataset IDs, engine IDs, absolute registered paths, manifest-relative primary files, file checksums, manifest fingerprints, namespaces, selected streams and requested range. A source-derived report also retains the source recipe fingerprint and discovery evidence. Later registry additions do not change the prepared job's input selection. Execution rechecks the registered inputs and fingerprints. To replay exactly that job, use `mf merge run data/runs/PREPARE_ID/merge-job.json --testing`. A standalone `MergeJob` JSON supplies its own embedded execution settings and must include `primary_files`, absolute publication paths, and matching registered fingerprints. Prepare a new job if you have an old whole-publication request.
+Rust verifies the selected files and their owning manifests. Forge retains registry and source-recipe evidence in the preparation report. To submit the same job later, use `mf merge run data/runs/PREPARE_ID/merge-job.json --testing`, replacing `PREPARE_ID` with the preparation directory. The job JSON carries no runtime overrides.
 
 ## Supported layouts
 
 Managed merge accepts v3 single-stream inputs and can select one concrete trade stream from a timestamp-first v4/v5 publication with contiguous source ownership and no repeated source spans. Supported trade selections may contain one part, several parts of the same stream, or parts from different publications. The current engine accepts one selected stream per publication. Native-order or interleaved trade layouts and already-combined inputs are unsupported.
 
 Depth currently requires a compatible single-stream v3 publication and explicit selection of all its primary files for reconstruction. Rust reads the shared auxiliary state from the publication. Requests missing required primary parts are rejected before processing.
+
+### Merge tests
+
+The ordinary `historical_merge` target runs under the `historical` feature using source-controlled and generated fixtures. It requires no local datasets, PostgreSQL, or prior normalization.
+
+```bash
+cargo test --manifest-path engine/Cargo.toml --features historical --test historical_merge -- --list
+cargo test --manifest-path engine/Cargo.toml --features historical --test historical_merge -- --nocapture
+```
+
+Reference bounds, event kinds, duplicate identities and zero-change events use typed inventories. Stream metadata, provenance, partitioning, checkpoint reconstruction, publication and corruption cases use test-owned fixtures. Their primary files use production Arrow schemas and their processing-job checksums are local to each temporary directory. The production combined rotation case uses four primary files and 16,390 total events to cross one materialization window and rotate at the minimum configured 1 MiB file target.
+
+### Optional recording compatibility
+
+Opt-in tests derive their selections from `engine/tests/historical/fixtures/merge.json`. They require the pinned normalized manifests, selected Parquet files, and applicable processing provenance and sidecars. To use an identical relocated copy, set `MARKETFORGE_MERGE_FIXTURE_FROM` and `MARKETFORGE_MERGE_FIXTURE_TO` to absolute path prefixes. Both primary and manifest paths relocate together. The tests verify the existing checksums and require no PostgreSQL connection.
+
+```bash
+cargo test --manifest-path engine/Cargo.toml --features historical --test historical_merge bounded_recorded:: -- --ignored --nocapture
+cargo test --manifest-path engine/Cargo.toml --features historical --test historical_merge validates_real_ -- --ignored --nocapture
+cargo test --manifest-path engine/Cargo.toml --features historical --test historical_merge merges_two_bounded_recorded_trade_streams -- --ignored --nocapture
+```
+
+Explicit requests fail with the missing prerequisite when a pinned artifact is absent. The checks select their inputs before opening primary Parquet or resolving the runtime job.
+
+The workload guard caps runtime resolution at four selected files. Trade compatibility reads primaries of up to 256 rows and 1 MiB each. The K-way case compares trades from two concrete streams. The v5 trade commit case compares physical values with the selected source Parquet using one and two workers. The depth reference check compares 16 index events starting at an initialization. It caps the selected primary at 8 MiB and also caps sidecar bytes, row-group size and snapshot levels. The miniature fixtures exercise depth reconstruction and combined publication.
+
+Separate bounded probes verify the guards for missing depth reconstruction dependencies and replay of multiple concrete ranks from one publication. The cursor performance comparison remains ignored in the ordinary target. Bounded partition comparisons and publication tests replace the former full-day equivalence and full canonical execution cases.
+
+Launch a **validated** prepared job with the TUI by substituting its path for `PATH_TO_VALIDATED_JOB`. The direct Rust command publishes files. Forge is responsible for PostgreSQL registration.
+
+```bash
+cargo run --manifest-path engine/Cargo.toml --locked --features historical,monitor-tui --bin marketforge-merge -- --job PATH_TO_VALIDATED_JOB --project-root . --tui
+```
 
 ## Publication and recovery
 
@@ -107,3 +141,7 @@ mf merge register data/datasets/merged/ENGINE_JOB_ID --testing
 ```
 
 Registration-only recovery checks the output and required input lineage again. Identical retries reuse the database ID.
+
+### Empty processing partitions
+
+A job can pass preparation and still fail with `merge stream resource estimation requires at least one active stream` when the requested interval is much wider than the selected observations. This occurred in the one-trade synthetic example with a full-day interval. The same input successfully merged over its one-nanosecond observed interval. Inspect the preparation report's observed bounds and narrow the interval when that matches your intent.

@@ -6,6 +6,10 @@ This recording covers AAPL on Nasdaq (`xnas`) from 14:30 to 14:40 UTC on October
 - `AAPL_orderbook_L2.jsonl` contains 39,605 MBP-10 messages. The [depth profile](xnas.equity.equity.depth.toml) maps both sides and order counts from `levels[]`. Each message describes the supplied top ten levels per side. `flags & 128` marks the last record of an event for the instrument. Preserve intermediate observations in source order. The raw action and flags remain available in the managed source file. [Databento MBP-10](https://databento.com/docs/schemas/mbp-10) · [Databento flags and sides](https://databento.com/docs/conventions/common-fields-enums-types)
 - The two `.dbn.zst` files contain the original Zstandard-compressed DBN binary records. Use the supplied JSONL exports for this workflow. Native DBN decoding is unsupported. [Databento Binary Encoding](https://databento.com/docs/conventions/databento-binary-encoding)
 
+## Obtain the exports
+
+Use existing exports or request `trades` and `mbp-10` for `AAPL` from `XNAS.ITCH`, with start `2024-10-28T14:30:00Z` and exclusive end `2024-10-28T14:40:00Z`. The checkout's `research/marketforge_databento_equities.ipynb` estimates cost, calls the Historical API, and exports the records with the Databento SDK's `to_json` method. Review the estimate before running the download cell. Place the resulting `AAPL_trades.jsonl` and `AAPL_orderbook_L2.jsonl` under `.recordings/` in the checkout. The site does not distribute the licensed recordings.
+
 ## Inspect and register
 
 Run from the project root with Forge installed and a [configured testing database](../../../getting-started/installation.md#postgresql-credentials). The registration recipe selects the original JSONL filenames under `.recordings`. The [specification](specs.toml) illustrates the declaration schema. Replace its illustrative economic parameters and provenance with evidence applicable to the full recording interval before registration. The observed price grid alone does not establish historical venue rules.

@@ -1,4 +1,6 @@
 #![cfg(feature = "historical")]
+use crate::publication::depth_publication;
+use crate::publication::trade_publication;
 
 use std::{
     collections::HashMap,
@@ -29,11 +31,6 @@ use {
     marketforge_engine::historical::merge::reconcile_depth_boundaries,
     marketforge_engine::historical::merge::trade_task_intervals,
 };
-
-#[path = "../support/mod.rs"]
-mod support;
-
-use support::datasets::{project_root, resolve_depth_dataset, resolve_trade_dataset};
 
 // -----------------------------------------------------------------------------
 // Temporary staging directory
@@ -79,6 +76,7 @@ fn test_job(dataset_ids: &[u64], output: &Path, start_ns: i64, end_ns: i64) -> M
         operation: MergeOperation::Merge,
         inputs: dataset_ids.to_vec(),
         primary_files: Default::default(),
+        submission: None,
         input_paths: HashMap::new(),
 
         time_range: MergeTimeRange { start_ns, end_ns },
@@ -132,11 +130,12 @@ fn test_stream(rank: usize, dataset_id: u64, kind: UnifiedMergeStreamKind) -> Un
 // -----------------------------------------------------------------------------
 
 fn run_manifest_test(trade_ids: &[u64], depth_ids: &[u64]) {
-    let root = project_root();
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
     let staging = TestDirectory::new();
 
-    let start_ns = 1_788_220_800_000_000_000_i64;
-    let end_ns = start_ns + 240_000_000_000;
+    let start_ns = crate::publication::START;
+    let end_ns = start_ns + 400;
 
     let dataset_order = trade_ids
         .iter()
@@ -152,12 +151,12 @@ fn run_manifest_test(trade_ids: &[u64], depth_ids: &[u64]) {
 
     let trade_inputs = trade_ids
         .iter()
-        .map(|&id| resolve_trade_dataset(&root, id))
+        .map(|&id| trade_publication(&root, id))
         .collect::<Vec<_>>();
 
     let depth_inputs = depth_ids
         .iter()
-        .map(|&id| resolve_depth_dataset(&root, id))
+        .map(|&id| depth_publication(&root, id))
         .collect::<Vec<_>>();
 
     let trade_inventory = build_trade_inventory(&trade_inputs).unwrap();
@@ -177,15 +176,15 @@ fn run_manifest_test(trade_ids: &[u64], depth_ids: &[u64]) {
     let partitions = (0..4)
         .map(|index| MergePartition {
             partition_id: index,
-            start_ns: start_ns + i64::from(index) * 60_000_000_000,
-            end_ns: start_ns + (i64::from(index) + 1) * 60_000_000_000,
+            start_ns: start_ns + i64::from(index) * 100,
+            end_ns: start_ns + (i64::from(index) + 1) * 100,
         })
         .collect::<Vec<_>>();
 
     let plans = plan_unified_partition_inputs(&partitions, &intervals).unwrap();
 
     // -------------------------------------------------------------------------
-    // Execute real parallel merge
+    // Execute generated parallel merge
     // -------------------------------------------------------------------------
 
     let results = execute_unified_partitions_parallel(
@@ -331,11 +330,11 @@ fn run_manifest_test(trade_ids: &[u64], depth_ids: &[u64]) {
 // -----------------------------------------------------------------------------
 
 #[test]
-fn builds_real_trade_manifest() {
+fn builds_generated_trade_manifest() {
     run_manifest_test(&[111, 109, 115], &[]);
 }
 
 #[test]
-fn builds_real_combined_manifest() {
+fn builds_generated_combined_manifest() {
     run_manifest_test(&[111, 109], &[105, 112]);
 }

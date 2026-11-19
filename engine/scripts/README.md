@@ -27,5 +27,5 @@ Historical format/profile jobs and test grouping are documented in
 [Historical modernization](../../docs/historical/modernization.md).
 Use `scripts/verify-historical.sh normal` from the repository root for normal
 per-case bounded execution, or `compile` for compilation-only verification.
-Historical slow targets require `historical-slow-tests`; the verifier only compiles
+Recorded conversion tests require `historical-real-tests`; the verifier only compiles
 them and never runs them. Keep a fresh output directory for selective bounded runs.

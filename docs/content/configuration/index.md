@@ -11,8 +11,4 @@ TOML is central to the user experience: application settings establish the works
 | Format definitions and profiles | Describe supported physical layouts and normalization semantics. |
 | Live configuration | Configures live operation; a repository example exists at `engine/examples/live/general.toml`. |
 
-Detailed user contracts are now available for [acquisition and external imports](acquisition.md) and [markets/ranking policies](markets.md), including complete TOML examples, defaults, and constraints.
-
-> **Documentation draft.** Other configuration categories remain introductions. Existing examples are not interchangeable contracts.
-
-The CLI accepts `--project-root` and `--config` for workspace and application configuration selection. Avoid publishing local connection values. See [Reference](../reference/index.md) for the small command sample and future contract coverage.
+Use [effective application settings](../reference/cli/maintenance.md#application-configuration) to verify workspace and invocation precedence. See the [reference index](../reference/index.md#file-and-interface-contracts) for each recipe and generated contract.

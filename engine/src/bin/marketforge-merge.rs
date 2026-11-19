@@ -7,7 +7,6 @@ use std::{
     time::Instant,
 };
 use {
-    marketforge_engine::historical::job::ContentType,
     marketforge_engine::historical::job::load_merge_job,
     marketforge_engine::historical::merge::execute_unified_merge_job,
     marketforge_engine::historical::merge::resolve_merge_inputs,
@@ -22,6 +21,7 @@ struct CliArgs {
     validate: bool,
     result_file: Option<PathBuf>,
     project_root: PathBuf,
+    config: PathBuf,
 
     #[cfg(feature = "monitor-tui")]
     tui: bool,
@@ -34,6 +34,7 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut validate = false;
     let mut result_file = None;
     let mut project_root = None;
+    let mut config = PathBuf::from("data/.config/historical/general.toml");
     #[cfg(feature = "monitor-tui")]
     let mut tui = false;
 
@@ -89,6 +90,9 @@ fn parse_args() -> Result<CliArgs, String> {
                     args.next().ok_or("missing value for --result-file")?,
                 ));
             }
+            "--config" => {
+                config = PathBuf::from(args.next().ok_or("missing value for --config")?);
+            }
             "--project-root" => {
                 project_root = Some(PathBuf::from(
                     args.next().ok_or("missing value for --project-root")?,
@@ -99,7 +103,7 @@ fn parse_args() -> Result<CliArgs, String> {
                 println!(
                     "Usage: marketforge-merge [--validate-job <PATH> | --validate-dataset <DIR>] or \
                      --job <PATH> \
-                     [--project-root <PATH>] [--result-file <PATH>] [--tui]"
+                     [--project-root <PATH>] [--config <PATH>] [--result-file <PATH>] [--tui]"
                 );
 
                 std::process::exit(0);
@@ -123,6 +127,7 @@ fn parse_args() -> Result<CliArgs, String> {
         validate,
         result_file,
         project_root,
+        config,
 
         #[cfg(feature = "monitor-tui")]
         tui,
@@ -188,7 +193,16 @@ fn run(args: CliArgs) -> Result<serde_json::Value, String> {
         project_root.join(args.job)
     };
 
-    let job = load_merge_job(&job_path).map_err(|error| error.to_string())?;
+    use marketforge_engine::shared::historical::config::{
+        load_merge_runtime_settings, resolve_path,
+    };
+    let document = load_merge_job(&job_path).map_err(|error| error.to_string())?;
+    let runtime =
+        load_merge_runtime_settings(&resolve_path(&project_root, &args.config), &project_root)
+            .map_err(|error| error.to_string())?;
+    let job = document
+        .with_runtime(runtime)
+        .map_err(|error| error.to_string())?;
     if args.validate {
         use marketforge_engine::historical::merge::{
             MergeCommitPaths, resolve_unified_merge_streams,
@@ -235,7 +249,11 @@ fn run(args: CliArgs) -> Result<serde_json::Value, String> {
     println!("{}", "=".repeat(80));
 
     println!("Job ID          : {}", job.job_id);
-    println!("Input datasets  : {:?}", job.inputs);
+    println!(
+        "Selected files  : {}",
+        job.submission.as_ref().map_or(0, |job| job.inputs.len())
+    );
+    println!("Publications    : {}", job.inputs.len());
     println!("Workers         : {}", job.resources.workers);
 
     println!(
@@ -263,62 +281,24 @@ fn run(args: CliArgs) -> Result<serde_json::Value, String> {
     let start = Instant::now();
 
     // -------------------------------------------------------------------------
-    // Detect merge mode
-    // -------------------------------------------------------------------------
-
-    let inputs = resolve_merge_inputs(&job, &project_root).map_err(|error| error.to_string())?;
-
-    let has_trades = inputs
-        .iter()
-        .any(|input| input.manifest.content_type == ContentType::Trades);
-
-    let has_depth = inputs
-        .iter()
-        .any(|input| input.manifest.content_type == ContentType::Depth);
-
-    if inputs
-        .iter()
-        .any(|input| input.manifest.content_type == ContentType::Combined)
-    {
-        return Err("combined canonical datasets are not supported as merge inputs".to_owned());
-    }
-
-    // -------------------------------------------------------------------------
-    // Dispatch to the appropriate executor
-    // -------------------------------------------------------------------------
-
-    let result = match (has_trades, has_depth) {
-        (false, false) => {
-            return Err("merge contains no supported input datasets".to_owned());
-        }
-
-        _ => {
-            let result = execute_unified_merge_job(&job, &project_root)
-                .map_err(|error| error.to_string())?;
-
-            MergeCliResult {
-                job_id: result.job_id,
-
-                mode: match (has_trades, has_depth) {
-                    (true, false) => "trades",
-                    (false, true) => "depth",
-                    (true, true) => "combined",
-                    (false, false) => unreachable!(),
-                },
-
-                dataset_path: result.dataset_path,
-                manifest_path: result.manifest_path,
-
-                partitions_completed: result.partitions_completed,
-
-                events_written: result.events_written,
-                trade_events: Some(result.trade_events),
-                depth_events: Some(result.depth_events),
-
-                files_written: result.files_written,
-                skipped_initializations: result.skipped_initializations,
-            }
-        }
+    let merged =
+        execute_unified_merge_job(&job, &project_root).map_err(|error| error.to_string())?;
+    use marketforge_engine::historical::merge::UnifiedMergeMode;
+    let result = MergeCliResult {
+        job_id: merged.job_id,
+        mode: match merged.mode {
+            UnifiedMergeMode::Trades => "trades",
+            UnifiedMergeMode::Depth => "depth",
+            UnifiedMergeMode::Combined => "combined",
+        },
+        dataset_path: merged.dataset_path,
+        manifest_path: merged.manifest_path,
+        partitions_completed: merged.partitions_completed,
+        events_written: merged.events_written,
+        trade_events: Some(merged.trade_events),
+        depth_events: Some(merged.depth_events),
+        files_written: merged.files_written,
+        skipped_initializations: merged.skipped_initializations,
     };
 
     let elapsed = start.elapsed().as_secs_f64();

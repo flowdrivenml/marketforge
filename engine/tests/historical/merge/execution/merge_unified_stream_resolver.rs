@@ -1,301 +1,151 @@
-#![cfg(feature = "historical")]
-
-use std::{
-    collections::HashSet,
-    fs,
-    path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
+use crate::publication::{
+    DEPTH_STREAM, TRADE_STREAM, make_job, resolve_fixture, trade_publication, write_job,
 };
-
-use marketforge_engine::historical::merge::{
-    ResolvedMergeInput, UnifiedMergeStreamKind, resolve_unified_merge_streams,
+use marketforge_engine::historical::{
+    job::load_committed_processing_job,
+    merge::{UnifiedMergeStreamKind, resolve_unified_merge_streams},
 };
+use std::{fs, path::Path};
 
-#[path = "../support/mod.rs"]
-mod support;
-
-use support::datasets::{project_root, resolve_depth_dataset, resolve_trade_dataset};
-
-// -----------------------------------------------------------------------------
-// Temporary project root
-// -----------------------------------------------------------------------------
-
-struct TestDirectory(PathBuf);
-
-impl TestDirectory {
-    fn new() -> Self {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-
-        let path = std::env::temp_dir().join(format!(
-            "marketforge-stream-resolver-{}-{timestamp}",
-            std::process::id()
-        ));
-
-        fs::create_dir_all(&path).unwrap();
-
-        Self(path)
-    }
-
-    fn path(&self) -> &Path {
-        &self.0
-    }
+fn rewrite_provenance(path: &Path, job: &marketforge_engine::historical::job::ProcessingJob) {
+    use marketforge_engine::historical::normalize::manifest::write_publication_checksums;
+    let checksums: std::collections::BTreeMap<std::path::PathBuf, String> =
+        serde_json::from_slice(&fs::read(path.join("publication-checksums.json")).unwrap())
+            .unwrap();
+    write_job(path, job);
+    write_publication_checksums(path, checksums.into_keys()).unwrap();
 }
-
-impl Drop for TestDirectory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
-// -----------------------------------------------------------------------------
-// Resolve test datasets
-// -----------------------------------------------------------------------------
-
-fn resolve_inputs(root: &Path, trade_ids: &[u64], depth_ids: &[u64]) -> Vec<ResolvedMergeInput> {
-    trade_ids
-        .iter()
-        .map(|&id| resolve_trade_dataset(root, id))
-        .chain(depth_ids.iter().map(|&id| resolve_depth_dataset(root, id)))
-        .collect()
-}
-
-// -----------------------------------------------------------------------------
-// Real trade metadata
-// -----------------------------------------------------------------------------
 
 #[test]
-fn resolves_real_trade_streams() {
-    let root = project_root();
-
-    let dataset_ids = [111_u64, 109, 115, 100, 97, 99];
-
-    let inputs = resolve_inputs(&root, &dataset_ids, &[]);
-
-    let streams =
-        resolve_unified_merge_streams(&inputs, &root).expect("resolve trade stream metadata");
-
-    assert_eq!(streams.len(), dataset_ids.len());
-
-    let mut seen_stream_ids = HashSet::new();
-
-    for (rank, stream) in streams.iter().enumerate() {
-        assert_eq!(stream.stream_rank as usize, rank);
-        assert_eq!(stream.dataset_id, dataset_ids[rank]);
-
-        assert_eq!(stream.kind, UnifiedMergeStreamKind::Trade);
-
-        assert!(!stream.exchange.is_empty());
-        assert!(!stream.symbol.is_empty());
-        assert!(!stream.stream_id.is_empty());
-
-        assert!(seen_stream_ids.insert(&stream.stream_id));
-
-        // Currency metadata is not currently available
-        // in the canonical processing protocol.
-        assert!(stream.base_currency.is_none());
-        assert!(stream.quote_currency.is_none());
-
-        println!(
-            "dataset={} | exchange={} | symbol={} | stream={} | MATCH",
-            stream.dataset_id, stream.exchange, stream.symbol, stream.stream_id
+fn preserves_mixed_stream_order_and_groups_distinct_files_in_one_publication() {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path();
+    let mut job = make_job(root, &[11], &[12]);
+    job.inputs.rotate_left(2);
+    assert_eq!(job.inputs.len(), 4);
+    assert!(
+        job.inputs
+            .iter()
+            .all(|input| input.dataset_id != input.publication.engine_dataset_id)
+    );
+    let resolved = resolve_fixture(root, job);
+    assert_eq!(resolved.len(), 2);
+    assert!(
+        resolved
+            .iter()
+            .all(|input| input.canonical_files.len() == 2)
+    );
+    let streams = resolve_unified_merge_streams(&resolved, root).unwrap();
+    assert_eq!(streams.len(), 2);
+    for (stream, (rank, id, kind, stream_id)) in streams.iter().zip([
+        (0, 12, UnifiedMergeStreamKind::Depth, DEPTH_STREAM),
+        (1, 11, UnifiedMergeStreamKind::Trade, TRADE_STREAM),
+    ]) {
+        assert_eq!(
+            (stream.stream_rank, stream.dataset_id, stream.kind),
+            (rank, id, kind)
+        );
+        assert_eq!(
+            (
+                stream.exchange.as_str(),
+                stream.instrument_id,
+                stream.symbol.as_str(),
+                stream.stream_id.as_str()
+            ),
+            ("bybit", 688, "BTCUSDT", stream_id)
         );
     }
-
-    println!("\nTRADE STREAM METADATA: PASS");
 }
-
-// -----------------------------------------------------------------------------
-// Real depth metadata
-// -----------------------------------------------------------------------------
 
 #[test]
-fn resolves_real_depth_streams() {
-    let root = project_root();
-
-    let dataset_ids = [105_u64, 108, 112, 92];
-
-    let inputs = resolve_inputs(&root, &[], &dataset_ids);
-
-    let streams =
-        resolve_unified_merge_streams(&inputs, &root).expect("resolve depth stream metadata");
-
-    assert_eq!(streams.len(), dataset_ids.len());
-
-    for (rank, stream) in streams.iter().enumerate() {
-        assert_eq!(stream.stream_rank as usize, rank);
-        assert_eq!(stream.dataset_id, dataset_ids[rank]);
-
-        assert_eq!(stream.kind, UnifiedMergeStreamKind::Depth);
-
-        assert!(!stream.exchange.is_empty());
-        assert!(!stream.symbol.is_empty());
-        assert!(!stream.stream_id.is_empty());
-
-        println!(
-            "dataset={} | exchange={} | symbol={} | MATCH",
-            stream.dataset_id, stream.exchange, stream.symbol
-        );
-    }
-
-    println!("\nDEPTH STREAM METADATA: PASS");
+fn rejects_duplicate_registered_file() {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path();
+    let mut job = make_job(root, &[11], &[]);
+    resolve_fixture(root, job.clone());
+    let mut duplicate = job.inputs[0].clone();
+    duplicate.dataset_id += 50;
+    job.inputs.push(duplicate);
+    let error = job.validate().unwrap_err();
+    assert!(
+        error.to_string().contains("duplicate registered file"),
+        "{error}"
+    );
 }
 
-// -----------------------------------------------------------------------------
-// Mixed stream ordering
-// -----------------------------------------------------------------------------
-
-#[test]
-fn preserves_mixed_dataset_order() {
-    let root = project_root();
-
-    let dataset_order = [111_u64, 105, 109, 112];
-
-    let inputs = vec![
-        resolve_trade_dataset(&root, 111),
-        resolve_depth_dataset(&root, 105),
-        resolve_trade_dataset(&root, 109),
-        resolve_depth_dataset(&root, 112),
-    ];
-
-    let streams =
-        resolve_unified_merge_streams(&inputs, &root).expect("resolve mixed stream metadata");
-
-    for (rank, stream) in streams.iter().enumerate() {
-        assert_eq!(stream.stream_rank as usize, rank);
-        assert_eq!(stream.dataset_id, dataset_order[rank]);
-    }
-
-    assert_eq!(streams[0].kind, UnifiedMergeStreamKind::Trade);
-    assert_eq!(streams[1].kind, UnifiedMergeStreamKind::Depth);
-    assert_eq!(streams[2].kind, UnifiedMergeStreamKind::Trade);
-    assert_eq!(streams[3].kind, UnifiedMergeStreamKind::Depth);
-
-    println!("\nMIXED STREAM ORDERING: PASS");
+fn with_trade_fixture(change: impl FnOnce(&Path), diagnostic: &str) {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path();
+    let inputs = resolve_fixture(root, make_job(root, &[11], &[]));
+    resolve_unified_merge_streams(&inputs, root).unwrap();
+    change(&inputs[0].dataset_path);
+    let error = resolve_unified_merge_streams(&inputs, root).unwrap_err();
+    assert!(error.to_string().contains(diagnostic), "{error}");
 }
-
-// -----------------------------------------------------------------------------
-// Duplicate dataset rejection
-// -----------------------------------------------------------------------------
-
-#[test]
-fn rejects_duplicate_dataset_ids() {
-    let root = project_root();
-
-    let input = resolve_trade_dataset(&root, 111);
-
-    let inputs = vec![input.clone(), input];
-
-    assert!(resolve_unified_merge_streams(&inputs, &root).is_err());
-}
-
-// -----------------------------------------------------------------------------
-// Missing processing job
-// -----------------------------------------------------------------------------
 
 #[test]
 fn rejects_missing_processing_job() {
-    let root = project_root();
-    let temporary = TestDirectory::new();
-
-    fs::create_dir_all(temporary.path().join("data/.jobs/process")).unwrap();
-
-    let input = resolve_trade_dataset(&root, 111);
-
-    assert!(resolve_unified_merge_streams(&[input], temporary.path(),).is_err());
+    with_trade_fixture(
+        |path| fs::remove_file(path.join("processing-job.json")).unwrap(),
+        "committed job: No such file",
+    );
 }
 
-// -----------------------------------------------------------------------------
-// Processing job task mismatch
-// -----------------------------------------------------------------------------
+#[test]
+fn rejects_processing_job_checksum_mismatch() {
+    with_trade_fixture(
+        |path| fs::write(path.join("processing-job.sha256"), "stale").unwrap(),
+        "processing job checksum mismatch",
+    );
+}
 
 #[test]
 fn rejects_processing_job_task_mismatch() {
-    let root = project_root();
-    let temporary = TestDirectory::new();
-
-    let jobs = temporary.path().join("data/.jobs/process");
-
-    fs::create_dir_all(&jobs).unwrap();
-
-    let original =
-        root.join("data/.jobs/process/gateio-spot-spot-BTC_USDT-trade-20260901-20261001-d111.json");
-
-    let destination = jobs.join("test-d111.json");
-
-    let mut job: serde_json::Value = serde_json::from_slice(&fs::read(original).unwrap()).unwrap();
-
-    // Replace the real task ID with an incorrect one.
-    job["tasks"][0]["task_id"] = serde_json::json!(999_999);
-
-    fs::write(&destination, serde_json::to_vec_pretty(&job).unwrap()).unwrap();
-
-    let input = resolve_trade_dataset(&root, 111);
-
-    assert!(resolve_unified_merge_streams(&[input], temporary.path(),).is_err());
+    with_trade_fixture(
+        |path| {
+            let mut job = load_committed_processing_job(path).unwrap();
+            job.tasks[1].task_id.0 += 5;
+            rewrite_provenance(path, &job);
+        },
+        "processing job task mismatch",
+    );
 }
-
-// -----------------------------------------------------------------------------
-// Inconsistent instrument metadata
-// -----------------------------------------------------------------------------
 
 #[test]
-fn rejects_inconsistent_instrument_metadata() {
-    let root = project_root();
-    let temporary = TestDirectory::new();
-
-    let jobs = temporary.path().join("data/.jobs/process");
-
-    fs::create_dir_all(&jobs).unwrap();
-
-    let original =
-        root.join("data/.jobs/process/bitget-spot-spot-BTCUSDT-trade-20260901-20260904-d109.json");
-
-    let destination = jobs.join("test-d109.json");
-
-    let mut job: serde_json::Value = serde_json::from_slice(&fs::read(original).unwrap()).unwrap();
-
-    assert!(
-        job["tasks"].as_array().unwrap().len() > 1,
-        "test requires a multi-task processing job"
+fn rejects_inconsistent_instrument_metadata_within_stream() {
+    with_trade_fixture(
+        |path| {
+            let mut job = load_committed_processing_job(path).unwrap();
+            job.tasks[1].instrument_id += 1;
+            rewrite_provenance(path, &job);
+        },
+        "incompatible selected task metadata",
     );
-
-    job["tasks"][1]["symbol"] = serde_json::json!("INCORRECT_SYMBOL");
-
-    fs::write(&destination, serde_json::to_vec_pretty(&job).unwrap()).unwrap();
-
-    let input = resolve_trade_dataset(&root, 109);
-
-    assert!(resolve_unified_merge_streams(&[input], temporary.path(),).is_err());
 }
-
-// -----------------------------------------------------------------------------
-// Dataset identity mismatch
-// -----------------------------------------------------------------------------
 
 #[test]
 fn rejects_processing_job_dataset_mismatch() {
-    let root = project_root();
-    let temporary = TestDirectory::new();
+    with_trade_fixture(
+        |path| {
+            let mut job = load_committed_processing_job(path).unwrap();
+            job.dataset_id.0 += 1;
+            rewrite_provenance(path, &job);
+        },
+        "processing job identity mismatch",
+    );
+}
 
-    let jobs = temporary.path().join("data/.jobs/process");
-
-    fs::create_dir_all(&jobs).unwrap();
-
-    let original =
-        root.join("data/.jobs/process/gateio-spot-spot-BTC_USDT-trade-20260901-20261001-d111.json");
-
-    let destination = jobs.join("test-d111.json");
-
-    let mut job: serde_json::Value = serde_json::from_slice(&fs::read(original).unwrap()).unwrap();
-
-    job["dataset_id"] = serde_json::json!(999_999);
-
-    fs::write(&destination, serde_json::to_vec_pretty(&job).unwrap()).unwrap();
-
-    let input = resolve_trade_dataset(&root, 111);
-
-    assert!(resolve_unified_merge_streams(&[input], temporary.path(),).is_err());
+#[test]
+fn rejects_duplicate_resolved_publication() {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path();
+    let input = trade_publication(root, 11);
+    resolve_unified_merge_streams(std::slice::from_ref(&input), root).unwrap();
+    let error = resolve_unified_merge_streams(&[input.clone(), input], root).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("duplicate unified input dataset"),
+        "{error}"
+    );
 }

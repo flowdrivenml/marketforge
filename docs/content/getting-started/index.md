@@ -1,9 +1,9 @@
-# Getting Started
+# Start here
 
-Start with [Installation](installation.md), then the [Quick Start](quickstart.md). This draft assumes a local repository checkout; it does not establish a standalone packaged deployment.
+MarketForge turns historical venue archives and supported external recordings into inspectable market-data publications. Forge manages the source files and PostgreSQL catalogue. Engine decodes the files and publishes canonical data and evidence on disk.
 
-## A few core concepts
+1. [Install Forge and Engine and configure PostgreSQL](installation.md).
+2. [Acquire and normalize Bybit BTCUSDT perpetual trades and L2 depth](quickstart.md).
+3. [Inspect registered datasets](../workflows/datasets.md), [register your own data](../workflows/acquisition/external-data.md) or [explore markets](../workflows/markets/index.md).
 
-A **source or import** identifies where inputs come from. A **recipe** describes a requested selection using TOML. A **format profile** supplies interpretation rules; it does not make arbitrary external data compatible automatically. A **prepared job or batch** is a processing artifact, distinct from the recipe and the runtime settings.
-
-Forge owns acquisition, planning, and registry concerns. Engine owns data-intensive processing. Their current handoff needs verification before an end-to-end walkthrough can be presented as runnable.
+Use the [reference](../reference/index.md) for exact options and compatibility.

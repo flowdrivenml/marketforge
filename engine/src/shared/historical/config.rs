@@ -113,9 +113,9 @@ impl Default for MergeRuntime {
 
 #[derive(Serialize)]
 pub struct MergeRuntimeSettings {
-    resources: crate::historical::job::MergeResources,
-    partitioning: crate::historical::job::MergePartitioning,
-    parquet: crate::historical::job::MergeParquetConfig,
+    pub resources: crate::historical::job::MergeResources,
+    pub partitioning: crate::historical::job::MergePartitioning,
+    pub parquet: crate::historical::job::MergeParquetConfig,
 }
 
 pub fn load_merge_runtime_settings(path: &Path, root: &Path) -> Result<MergeRuntimeSettings> {
@@ -133,6 +133,13 @@ pub fn load_merge_runtime_settings(path: &Path, root: &Path) -> Result<MergeRunt
     };
     if merge.partitions_per_worker == 0 || !(1..=22).contains(&merge.compression_level) {
         return invalid("invalid merge partition count or ZSTD compression level");
+    }
+    if resources
+        .workers
+        .checked_mul(merge.partitions_per_worker)
+        .is_none()
+    {
+        return invalid("merge partition count overflow");
     }
     Ok(MergeRuntimeSettings {
         resources: MergeResources {

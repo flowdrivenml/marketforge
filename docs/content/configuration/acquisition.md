@@ -95,28 +95,7 @@ Archive calendars differ. OKX trades use UTC+8 calendar days and books UTC; Bitg
 
 ## Application HTTP/storage settings
 
-The following is a complete optional application-settings example, **not** a recipe. Put reviewed settings in the application configuration chosen by global `--config`:
-
-```toml
-version = 1
-
-[storage]
-data_root = "data"
-
-[presentation]
-mode = "progress"
-color = "auto"
-
-[http]
-requests_per_second = 2.0
-max_concurrent = 4
-timeout_seconds = 30.0
-max_attempts = 3
-```
-
-These values are the model defaults. `max_concurrent` is 1–64; attempts 1–10; rate and timeout must be positive and finite. Acquisition's `--requests-per-second` overrides pacing but is capped per provider: Binance 2, Bybit 1, OKX 2.5, Bitget 0.5, Gate.io 1 requests/second. Retries and redirects consume the shared upstream budget; server cooldowns can stop further admission. Lower settings can reduce request pressure, not bypass throttling.
-
-Raw/runs paths follow the configured data root. Editor selection uses `presentation.editor`, then `VISUAL`, `EDITOR`, or `vi`; see [CLI effects](../reference/cli/acquisition.md). This settings file does not contain the guarded testing database URL; that is supplied separately through the testing key.
+Use the [application configuration reference](../reference/cli/maintenance.md#application-configuration) for the `http`, `storage` and `presentation` settings. Acquisition's `--requests-per-second` overrides pacing within provider limits: Binance 2, Bybit 1, OKX 2.5, Bitget 0.5, Gate.io 1 request per second. Retries and redirects consume the upstream budget. Provider cooldown can delay new requests.
 
 ## External import configuration
 
@@ -158,7 +137,7 @@ quantity_type = "base"
 | `identity` | Required `exchange`, `market_category`, `instrument_type`, `symbol`. Types include spot, perpetual, future, option and equity. Type and category must agree. `UNSPECIFIED` is invalid. |
 | `data_type` | Required `trades` or `order_book_l2`. |
 | `interval` | Optional declared half-open interval; it is not inferred or verified from file contents. |
-| `specifications` | Optional for known instrument raw registration; required for unknown instruments. Includes aware `as_of`, base/quote assets and `quantity_type` (`base`, `quote`, `contracts`). |
+| `specifications` | Optional during local TOML validation. Raw-only `import run` requires an explicit declaration when the instrument is absent from the catalogue. When supplied, both asset fields are required. Includes aware `as_of`, base/quote assets and `quantity_type` (`base`, `quote`, `contracts`). |
 | `contract_value`, `contract_value_asset` | In `specifications`; required for contracts. Value is a positive finite decimal **string**. |
 | `format_profile` | Optional top-level reference. Does not validate/activate the profile or establish processing readiness. |
 

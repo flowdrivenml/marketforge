@@ -7,6 +7,171 @@ use crate::shared::error::{MarketForgeError, Result};
 // Merge job
 // -----------------------------------------------------------------------------
 
+/// Public Forge submission. Execution settings are supplied by the engine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MergeJobDocument {
+    pub job_id: u64,
+    pub operation: MergeOperation,
+    pub inputs: Vec<MergeFileInput>,
+    pub time_range: MergeTimeRange,
+    pub output: MergeOutput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MergeFileInput {
+    pub dataset_id: u64,
+    pub path: PathBuf,
+    pub sha256: String,
+    pub publication: MergePublication,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MergePublication {
+    #[serde(with = "engine_id")]
+    pub engine_dataset_id: u64,
+    pub manifest_path: PathBuf,
+    pub manifest_sha256: String,
+}
+
+mod engine_id {
+    use serde::{Deserialize, Deserializer, Serializer, de::Error};
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<u64, D::Error> {
+        let text = String::deserialize(d)?;
+        let id = text.parse::<u64>().map_err(D::Error::custom)?;
+        if id == 0 || id.to_string() != text {
+            return Err(D::Error::custom(
+                "expected a canonical positive decimal publication ID",
+            ));
+        }
+        Ok(id)
+    }
+
+    pub fn serialize<S: Serializer>(id: &u64, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&id.to_string())
+    }
+}
+
+impl MergeJobDocument {
+    pub fn validate(&self) -> Result<()> {
+        if self.job_id == 0 || self.inputs.is_empty() {
+            return invalid("merge requires a positive job ID and at least one registered file");
+        }
+        if self.time_range.start_ns >= self.time_range.end_ns
+            || !self.output.dataset_path.is_absolute()
+        {
+            return invalid("merge requires start_ns < end_ns and an absolute output path");
+        }
+        let mut ids = std::collections::HashSet::new();
+        let mut paths = std::collections::HashSet::new();
+        let mut publications = HashMap::new();
+        for input in &self.inputs {
+            let publication = &input.publication;
+            if input.dataset_id == 0
+                || !ids.insert(input.dataset_id)
+                || !paths.insert(&input.path)
+                || publication.engine_dataset_id == 0
+                || !input.path.is_absolute()
+                || !publication.manifest_path.is_absolute()
+                || [&input.sha256, &publication.manifest_sha256]
+                    .into_iter()
+                    .any(|hash| {
+                        hash.len() != 64
+                            || !hash
+                                .bytes()
+                                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                    })
+            {
+                return invalid(format!(
+                    "invalid or duplicate registered file {} at {} (publication {})",
+                    input.dataset_id,
+                    input.path.display(),
+                    publication.engine_dataset_id
+                ));
+            }
+            if let Some(previous) = publications.insert(publication.engine_dataset_id, publication)
+                && previous != publication
+            {
+                return invalid(format!(
+                    "conflicting publication {} for registered file {} at {}",
+                    publication.engine_dataset_id,
+                    input.dataset_id,
+                    input.path.display()
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn with_runtime(
+        self,
+        runtime: crate::shared::historical::config::MergeRuntimeSettings,
+    ) -> Result<MergeJob> {
+        self.validate()?;
+        let mut inputs = Vec::new();
+        let mut input_paths = HashMap::new();
+        let mut primary_files: HashMap<u64, Vec<MergePrimaryFile>> = HashMap::new();
+        for input in &self.inputs {
+            let publication = &input.publication;
+            let id = publication.engine_dataset_id;
+            let root = publication.manifest_path.parent().ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration(format!(
+                    "registered file {}: manifest has no parent",
+                    input.dataset_id
+                ))
+            })?;
+            if publication.manifest_path.file_name() != Some(std::ffi::OsStr::new("manifest.json"))
+            {
+                return invalid(format!(
+                    "registered file {}: expected committed manifest.json at {}",
+                    input.dataset_id,
+                    publication.manifest_path.display()
+                ));
+            }
+            let relative = input
+                .path
+                .strip_prefix(root)
+                .ok()
+                .and_then(|p| p.to_str())
+                .ok_or_else(|| {
+                    MarketForgeError::InvalidConfiguration(format!(
+                        "registered file {} at {} is outside publication {} ({})",
+                        input.dataset_id,
+                        input.path.display(),
+                        id,
+                        root.display()
+                    ))
+                })?;
+            if input_paths.insert(id, root.to_owned()).is_none() {
+                inputs.push(id);
+            }
+            primary_files.entry(id).or_default().push(MergePrimaryFile {
+                path: relative.to_owned(),
+                sha256: input.sha256.clone(),
+                manifest_sha256: publication.manifest_sha256.clone(),
+            });
+        }
+        let job = MergeJob {
+            job_id: self.job_id,
+            operation: self.operation,
+            inputs,
+            input_paths,
+            primary_files,
+            time_range: self.time_range,
+            output: self.output.clone(),
+            resources: runtime.resources,
+            partitioning: runtime.partitioning,
+            parquet: runtime.parquet,
+            submission: Some(self),
+        };
+        job.validate()?;
+        Ok(job)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MergeJob {
@@ -29,6 +194,8 @@ pub struct MergeJob {
     pub parquet: MergeParquetConfig,
 
     pub output: MergeOutput,
+    #[serde(skip)]
+    pub submission: Option<MergeJobDocument>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

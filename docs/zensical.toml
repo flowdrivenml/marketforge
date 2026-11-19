@@ -1,60 +1,40 @@
 [project]
 site_name = "MarketForge"
-site_description = "Data infrastructure and financial engineering — documentation draft"
+site_description = "Historical market-data acquisition, normalization and dataset inspection"
 docs_dir = "content"
 site_dir = "site"
 extra_css = ["assets/stylesheets/extra.css"]
 nav = [
-  { "Overview" = "index.md" },
-  { "Getting Started" = [
-    { "Start here" = "getting-started/index.md" },
+  { "Start here" = [
+    { "MarketForge" = "index.md" },
+    { "Orientation" = "getting-started/index.md" },
     { "Installation" = "getting-started/installation.md" },
-    { "Quick Start" = "getting-started/quickstart.md" },
+    { "Bybit Quick Start" = "getting-started/quickstart.md" },
   ] },
-  { "Workflows" = [
+  { "Guides" = [
     { "Overview" = "workflows/index.md" },
-    { "Acquisition" = [
-      { "Overview and prerequisites" = "workflows/acquisition/index.md" },
-      { "Historical data" = "workflows/acquisition/historical-data.md" },
-      { "External data" = "workflows/acquisition/external-data.md" },
-      { "Bring your own data" = "examples/bring-your-own-data/index.md" },
-      { "Databento AAPL example" = "examples/bring-your-own-data/databento/index.md" },
-      { "Unified Forge workflow" = "workflows/acquisition/forge.md" },
-      { "Managing acquisitions" = "workflows/acquisition/managing-acquisitions.md" },
-    ] },
-    { "Manual catalogue" = [
-      { "Overview" = "workflows/catalogue/index.md" },
-      { "Exchanges and instruments" = "workflows/catalogue/exchanges-and-instruments.md" },
-      { "Specifications" = "workflows/catalogue/specifications.md" },
-      { "Profiles" = "workflows/catalogue/profiles.md" },
-    ] },
-    { "Inspect datasets" = ["workflows/datasets.md", "workflows/notebooks.md"] },
-    { "Merge datasets" = "workflows/merge.md" },
-    { "Markets" = [
-      { "Overview" = "workflows/markets/index.md" },
-      { "Instrument discovery" = "workflows/markets/instrument-discovery.md" },
-      { "Market statistics" = "workflows/markets/market-statistics.md" },
-      { "Rankings" = "workflows/markets/rankings.md" },
-    ] },
+    { "Describe instruments" = ["workflows/catalogue/index.md", "workflows/catalogue/exchanges-and-instruments.md", "workflows/catalogue/specifications.md"] },
+    { "Acquire and register" = ["workflows/acquisition/index.md", "workflows/acquisition/historical-data.md", "workflows/acquisition/external-data.md", "workflows/acquisition/managing-acquisitions.md", "workflows/acquisition/forge.md"] },
+    { "Create profiles" = ["workflows/catalogue/profiles.md", "workflows/catalogue/profile-trades.md", "workflows/catalogue/profile-depth.md", "workflows/catalogue/profile-troubleshooting.md"] },
+    { "Process data" = ["workflows/normalize.md", "workflows/merge.md"] },
+    { "Use datasets" = ["workflows/datasets.md", "workflows/notebooks.md"] },
+    { "Explore markets" = ["workflows/markets/index.md", "workflows/markets/instrument-discovery.md", "workflows/markets/market-statistics.md", "workflows/markets/rankings.md"] },
+    { "Operate MarketForge" = "workflows/operations.md" },
   ] },
-  { "Configuration" = [
-    { "Overview" = "configuration/index.md" },
-    { "Acquisition and imports" = "configuration/acquisition.md" },
-    { "Markets and rankings" = "configuration/markets.md" },
-    { "Normalization Parameters" = "configuration/normalization.md" },
-  ] },
+  { "Concepts" = "concepts/index.md" },
   { "Reference" = [
     { "Overview" = "reference/index.md" },
-    { "Acquisition CLI" = "reference/cli/acquisition.md" },
-    { "Forge engine and processing" = "reference/cli/forge.md" },
-    { "Markets CLI" = "reference/cli/markets.md" },
+    { "CLI" = ["reference/cli/acquisition.md", "reference/cli/catalog.md", "reference/cli/maintenance.md", "reference/cli/engine.md", "reference/cli/registration.md", "reference/cli/normalize.md", "reference/cli/merge.md", "reference/cli/datasets.md", "reference/cli/markets.md"] },
+    { "Configuration and recipes" = ["configuration/index.md", "configuration/acquisition.md", "configuration/normalization.md", "configuration/markets.md"] },
+    { "Profiles" = "reference/profiles.md" },
+    { "Registration declarations" = "reference/registration.md" },
+    { "Runtime and policies" = "reference/runtime.md" },
+    { "Prepared contracts" = "reference/prepared.md" },
+    { "Publication formats" = "reference/publications.md" },
     { "Python datasets" = "reference/python-datasets.md" },
   ] },
-  { "Development" = [
-    { "Contributing" = "development/index.md" },
-    { "Architecture" = "development/architecture.md" },
-    { "Extending MarketForge" = "development/extending.md" },
-  ] },
+  { "Examples" = ["examples/index.md", "examples/catalogue/index.md", "examples/catalogue/merge.md", "examples/bring-your-own-data/index.md", "examples/bring-your-own-data/databento/index.md"] },
+  { "Development" = ["development/index.md", "development/architecture.md", "development/extending.md"] },
 ]
 
 [project.theme]

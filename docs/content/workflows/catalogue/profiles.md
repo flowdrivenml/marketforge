@@ -22,3 +22,10 @@ mf acquisition profiles inspect "$depth"
 Validation stages the submitted definition beside installed profiles and asks Rust to compile the catalogue. Installation checks the venue in PostgreSQL, retains the Rust fingerprint, and rejects a changed interpretation under the same ID. A canonical ID currently selects one physical format. Gate.io depth has existing explicit feed variants. A second arbitrary source layout under the same logical ID requires an engine contract extension.
 
 Registered equity venues can run through the managed normalization workflow. The [Databento reference profiles](../../examples/bring-your-own-data/databento/index.md) show nested JSONL timestamps, explicit unknown trade sides, and bounded depth observations.
+
+## Choose an authoring guide
+
+- [Map a trade CSV](profile-trades.md).
+- [Map a depth snapshot](profile-depth.md).
+- [Validate, install and troubleshoot](profile-troubleshooting.md).
+- [Profile schema and transformations](../../reference/profiles.md).

@@ -40,6 +40,11 @@ pub struct MergeExecutionResult {
 
 pub fn execute_merge_job(job: &MergeJob, project_root: &Path) -> Result<MergeExecutionResult> {
     job.validate()?;
+    if job.submission.is_some() {
+        return Err(MarketForgeError::InvalidConfiguration(
+            "file-based submissions require the unified merge executor".into(),
+        ));
+    }
 
     // -------------------------------------------------------------------------
     // Resolve input datasets

@@ -1,4 +1,6 @@
 #![cfg(feature = "historical")]
+use crate::publication::depth_publication;
+use crate::publication::trade_publication;
 
 use std::{
     collections::HashMap,
@@ -28,10 +30,6 @@ use {
     marketforge_engine::historical::merge::trade_task_intervals,
     marketforge_engine::historical::merge::validate_unified_merge_output,
 };
-#[path = "../support/mod.rs"]
-mod support;
-
-use support::datasets::{project_root, resolve_depth_dataset, resolve_trade_dataset};
 
 // -----------------------------------------------------------------------------
 // Temporary directory
@@ -78,6 +76,7 @@ fn test_job(dataset_ids: &[u64], output: &Path, start_ns: i64, end_ns: i64) -> M
 
         inputs: dataset_ids.to_vec(),
         primary_files: Default::default(),
+        submission: None,
         input_paths: HashMap::new(),
 
         time_range: MergeTimeRange { start_ns, end_ns },
@@ -125,10 +124,10 @@ fn test_stream(rank: usize, dataset_id: u64, kind: UnifiedMergeStreamKind) -> Un
 }
 
 // -----------------------------------------------------------------------------
-// Execute real parallel merge
+// Execute generated parallel merge
 // -----------------------------------------------------------------------------
 
-fn execute_real_merge(
+fn execute_generated_merge(
     trade_ids: &[u64],
     depth_ids: &[u64],
 ) -> (
@@ -138,11 +137,12 @@ fn execute_real_merge(
     Vec<TradeTaskInventory>,
     Vec<DepthTaskInventory>,
 ) {
-    let root = project_root();
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
     let staging = TestDirectory::new();
 
-    let start_ns = 1_788_220_800_000_000_000_i64;
-    let end_ns = start_ns + 240_000_000_000;
+    let start_ns = crate::publication::START;
+    let end_ns = start_ns + 400;
 
     let dataset_order = trade_ids
         .iter()
@@ -158,12 +158,12 @@ fn execute_real_merge(
 
     let trade_inputs = trade_ids
         .iter()
-        .map(|&id| resolve_trade_dataset(&root, id))
+        .map(|&id| trade_publication(&root, id))
         .collect::<Vec<_>>();
 
     let depth_inputs = depth_ids
         .iter()
-        .map(|&id| resolve_depth_dataset(&root, id))
+        .map(|&id| depth_publication(&root, id))
         .collect::<Vec<_>>();
 
     let trade_inventory = build_trade_inventory(&trade_inputs).unwrap();
@@ -183,8 +183,8 @@ fn execute_real_merge(
     let partitions = (0..4)
         .map(|index| MergePartition {
             partition_id: index,
-            start_ns: start_ns + i64::from(index) * 60_000_000_000,
-            end_ns: start_ns + (i64::from(index) + 1) * 60_000_000_000,
+            start_ns: start_ns + i64::from(index) * 100,
+            end_ns: start_ns + (i64::from(index) + 1) * 100,
         })
         .collect::<Vec<_>>();
 
@@ -226,9 +226,17 @@ fn execute_real_merge(
 // -----------------------------------------------------------------------------
 
 #[test]
-fn validates_real_trade_output() {
+fn validates_generated_trade_output() {
     let (staging, results, streams, trade_inventory, depth_inventory) =
-        execute_real_merge(&[111, 109, 115], &[]);
+        execute_generated_merge(&[111, 109, 115], &[]);
+    validate_unified_merge_output(
+        staging.path(),
+        &results,
+        &streams,
+        &trade_inventory,
+        &depth_inventory,
+    )
+    .unwrap();
 
     let validated = validate_unified_merge_output(
         staging.path(),
@@ -239,9 +247,9 @@ fn validates_real_trade_output() {
     )
     .expect("validate trade output");
 
-    assert_eq!(validated.trade_events, 1_376);
+    assert_eq!(validated.trade_events, 12);
     assert_eq!(validated.depth_events, 0);
-    assert_eq!(validated.output.events_written, 1_376);
+    assert_eq!(validated.output.events_written, 12);
     assert_eq!(validated.output.files_written, 4);
 
     println!("\nMARKETFORGE — PHYSICAL TRADE VALIDATION");
@@ -252,9 +260,9 @@ fn validates_real_trade_output() {
 }
 
 #[test]
-fn validates_real_combined_output() {
+fn validates_generated_combined_output() {
     let (staging, results, streams, trade_inventory, depth_inventory) =
-        execute_real_merge(&[111, 109], &[105, 112]);
+        execute_generated_merge(&[111, 109], &[105, 112]);
 
     let validated = validate_unified_merge_output(
         staging.path(),
@@ -265,9 +273,9 @@ fn validates_real_combined_output() {
     )
     .expect("validate combined output");
 
-    assert_eq!(validated.trade_events, 607);
-    assert_eq!(validated.depth_events, 49_132);
-    assert_eq!(validated.output.events_written, 49_739);
+    assert_eq!(validated.trade_events, 8);
+    assert_eq!(validated.depth_events, 8);
+    assert_eq!(validated.output.events_written, 16);
     assert_eq!(validated.output.files_written, 4);
 
     println!("\nMARKETFORGE — PHYSICAL COMBINED VALIDATION");
@@ -285,7 +293,15 @@ fn validates_real_combined_output() {
 #[test]
 fn rejects_incorrect_partition_event_count() {
     let (staging, mut results, streams, trade_inventory, depth_inventory) =
-        execute_real_merge(&[111, 109, 115], &[]);
+        execute_generated_merge(&[111, 109, 115], &[]);
+    validate_unified_merge_output(
+        staging.path(),
+        &results,
+        &streams,
+        &trade_inventory,
+        &depth_inventory,
+    )
+    .unwrap();
 
     results[0].events_written += 1;
 
@@ -297,14 +313,24 @@ fn rejects_incorrect_partition_event_count() {
             &trade_inventory,
             &depth_inventory,
         )
-        .is_err()
+        .unwrap_err()
+        .to_string()
+        .contains("physical event count mismatch")
     );
 }
 
 #[test]
 fn rejects_incorrect_stream_identity() {
     let (staging, results, mut streams, trade_inventory, depth_inventory) =
-        execute_real_merge(&[111, 109, 115], &[]);
+        execute_generated_merge(&[111, 109, 115], &[]);
+    validate_unified_merge_output(
+        staging.path(),
+        &results,
+        &streams,
+        &trade_inventory,
+        &depth_inventory,
+    )
+    .unwrap();
 
     streams[0].dataset_id = 999_999;
 
@@ -316,14 +342,24 @@ fn rejects_incorrect_stream_identity() {
             &trade_inventory,
             &depth_inventory,
         )
-        .is_err()
+        .unwrap_err()
+        .to_string()
+        .contains("unified stream identity mismatch")
     );
 }
 
 #[test]
 fn rejects_incorrect_file_size() {
     let (staging, mut results, streams, trade_inventory, depth_inventory) =
-        execute_real_merge(&[111, 109, 115], &[]);
+        execute_generated_merge(&[111, 109, 115], &[]);
+    validate_unified_merge_output(
+        staging.path(),
+        &results,
+        &streams,
+        &trade_inventory,
+        &depth_inventory,
+    )
+    .unwrap();
 
     results[0].files[0].size_bytes += 1;
 
@@ -335,14 +371,24 @@ fn rejects_incorrect_file_size() {
             &trade_inventory,
             &depth_inventory,
         )
-        .is_err()
+        .unwrap_err()
+        .to_string()
+        .contains("invalid unified file metadata")
     );
 }
 
 #[test]
 fn rejects_unsafe_output_path() {
     let (staging, mut results, streams, trade_inventory, depth_inventory) =
-        execute_real_merge(&[111, 109, 115], &[]);
+        execute_generated_merge(&[111, 109, 115], &[]);
+    validate_unified_merge_output(
+        staging.path(),
+        &results,
+        &streams,
+        &trade_inventory,
+        &depth_inventory,
+    )
+    .unwrap();
 
     results[0].files[0].path = "../outside.parquet".to_owned();
 
@@ -354,6 +400,8 @@ fn rejects_unsafe_output_path() {
             &trade_inventory,
             &depth_inventory,
         )
-        .is_err()
+        .unwrap_err()
+        .to_string()
+        .contains("unsafe unified output path")
     );
 }

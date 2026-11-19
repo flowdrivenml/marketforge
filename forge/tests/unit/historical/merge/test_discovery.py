@@ -204,7 +204,7 @@ async def test_ambiguous_or_unlinked_requires_explicit_publication(
 
 
 @pytest.mark.asyncio
-async def test_mixed_and_depth_only_report_whole_incompatible_selection(
+async def test_mixed_and_depth_only_preserve_the_registry_selection(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -214,13 +214,13 @@ async def test_mixed_and_depth_only_report_whole_incompatible_selection(
     }
     result = await discover(monkeypatch, tmp_path, recipe(), pubs, {1, 2})
     assert set(result["selected_dataset_ids"]) == {100, 101, 200}
-    assert any("2 streams" in issue["reason"] for issue in result["blockers"])
-    assert any("v5 depth" in issue["reason"] for issue in result["blockers"])
+    assert result["stream_count"] == 3
+    assert result["blockers"] == []
     result = await discover(
         monkeypatch, tmp_path, recipe(data_types=["order_book_l2"]), pubs, {1, 2}
     )
     assert result["selected_dataset_ids"] == [200]
-    assert result["blockers"][0]["dataset_ids"] == [200]
+    assert result["blockers"] == []
 
 
 @pytest.mark.asyncio
@@ -336,4 +336,7 @@ async def test_degraded_and_missing_remain_visible(
     result = await discover(monkeypatch, tmp_path, recipe(), {5: (rows, evidence)}, {5})
     assert result["selected_dataset_ids"] == [500]
     assert result["missing"][0]["request_index"] == 2
-    assert any("degraded" in issue["reason"] for issue in result["blockers"])
+    assert result["candidates"][0]["integrity"] == "degraded"
+    assert [issue["reason"] for issue in result["blockers"]] == [
+        "Some requested selections have no approved files."
+    ]

@@ -1,5 +1,6 @@
 #![cfg(feature = "historical")]
-use marketforge_engine::historical::merge::ResolvedMergeInput;
+use crate::publication::depth_publication;
+use crate::publication::trade_publication;
 use marketforge_engine::historical::merge::{
     MergePartition, build_depth_inventory, build_trade_inventory, depth_task_intervals,
     plan_unified_partition_inputs, trade_task_intervals,
@@ -14,93 +15,12 @@ use {
     marketforge_engine::historical::merge::UnifiedPartitionResult,
     marketforge_engine::historical::merge::execute_unified_partition,
     marketforge_engine::historical::merge::reconcile_depth_boundaries,
-    marketforge_engine::historical::normalize::manifest::DatasetManifest,
 };
-
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
-fn resolve_depth_dataset(root: &Path, dataset_id: u64) -> ResolvedMergeInput {
-    let dataset_path = root.join(format!("data/processed/{dataset_id}"));
-
-    let manifest: DatasetManifest = serde_json::from_reader(
-        File::open(dataset_path.join("manifest.json")).expect("open depth manifest"),
-    )
-    .expect("parse depth manifest");
-
-    let canonical_files = manifest
-        .files
-        .iter()
-        .map(|file| dataset_path.join(&file.path))
-        .collect();
-
-    let auxiliary_files = manifest
-        .auxiliary_files
-        .iter()
-        .map(|file| dataset_path.join(&file.path))
-        .collect();
-
-    ResolvedMergeInput {
-        dataset_id,
-        dataset_path,
-        manifest,
-        canonical_files,
-        auxiliary_files,
-    }
-}
 
 // -----------------------------------------------------------------------------
 // Resolve real trade dataset
 // -----------------------------------------------------------------------------
 
-fn resolve_trade_dataset(root: &Path, dataset_id: u64) -> ResolvedMergeInput {
-    let datasets = root.join("data/.work/full-trade-test/datasets");
-
-    for entry in std::fs::read_dir(&datasets).expect("read trade datasets") {
-        let entry = entry.expect("read dataset entry");
-
-        let dataset_path = entry.path();
-        let manifest_path = dataset_path.join("manifest.json");
-
-        if !manifest_path.is_file() {
-            continue;
-        }
-
-        let manifest: DatasetManifest =
-            serde_json::from_reader(File::open(&manifest_path).unwrap())
-                .expect("parse trade manifest");
-
-        if manifest.dataset_id != dataset_id {
-            continue;
-        }
-
-        let canonical_files = manifest
-            .files
-            .iter()
-            .map(|file| dataset_path.join(&file.path))
-            .collect();
-
-        let auxiliary_files = manifest
-            .auxiliary_files
-            .iter()
-            .map(|file| dataset_path.join(&file.path))
-            .collect();
-
-        return ResolvedMergeInput {
-            dataset_id,
-            dataset_path,
-            manifest,
-            canonical_files,
-            auxiliary_files,
-        };
-    }
-
-    panic!("trade dataset {dataset_id} not found");
-}
 // -----------------------------------------------------------------------------
 // Temporary staging directory
 // -----------------------------------------------------------------------------
@@ -152,12 +72,12 @@ fn parquet_config() -> MergeParquetConfig {
 // -----------------------------------------------------------------------------
 
 fn test_partition() -> MergePartition {
-    let start_ns = 1_788_220_800_000_000_000_i64;
+    let start_ns = crate::publication::START;
 
     MergePartition {
         partition_id: 0,
         start_ns,
-        end_ns: start_ns + 60_000_000_000,
+        end_ns: start_ns + 200,
     }
 }
 
@@ -210,15 +130,16 @@ fn validate_partition_output(staging: &Path, result: &UnifiedPartitionResult) {
 // -----------------------------------------------------------------------------
 
 #[test]
-fn executes_real_trade_partition() {
-    let root = project_root();
+fn executes_generated_trade_partition() {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
     let staging = TestDirectory::new();
 
     let dataset_order = [111_u64, 109, 115];
 
     let inputs = dataset_order
         .iter()
-        .map(|&id| resolve_trade_dataset(&root, id))
+        .map(|&id| trade_publication(&root, id))
         .collect::<Vec<_>>();
 
     let trade_inventory = build_trade_inventory(&inputs).unwrap();
@@ -259,8 +180,9 @@ fn executes_real_trade_partition() {
 // -----------------------------------------------------------------------------
 
 #[test]
-fn executes_real_combined_partition() {
-    let root = project_root();
+fn executes_generated_combined_partition() {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
     let staging = TestDirectory::new();
 
     let trade_datasets = [111_u64, 109];
@@ -268,12 +190,12 @@ fn executes_real_combined_partition() {
 
     let trade_inputs = trade_datasets
         .iter()
-        .map(|&id| resolve_trade_dataset(&root, id))
+        .map(|&id| trade_publication(&root, id))
         .collect::<Vec<_>>();
 
     let depth_inputs = depth_datasets
         .iter()
-        .map(|&id| resolve_depth_dataset(&root, id))
+        .map(|&id| depth_publication(&root, id))
         .collect::<Vec<_>>();
 
     let trade_inventory = build_trade_inventory(&trade_inputs).unwrap();

@@ -1,7 +1,6 @@
 use std::{
     collections::HashSet,
-    fs::{self, File},
-    io::BufReader,
+    fs,
     path::{Component, Path, PathBuf},
 };
 
@@ -27,6 +26,38 @@ pub struct ResolvedMergeInput {
     pub auxiliary_files: Vec<PathBuf>,
 }
 
+impl ResolvedMergeInput {
+    /// Determine selected stream membership using committed manifest ownership.
+    pub fn selected_streams(
+        &self,
+    ) -> Result<Vec<&crate::historical::normalize::streams::StreamOutput>> {
+        let mut seen = HashSet::new();
+        let mut result = Vec::new();
+        for file in &self.canonical_files {
+            if self.manifest.streams.is_empty() {
+                break; // Older manifests are interpreted by the committed processing job.
+            }
+            let mut owners = self.manifest.streams.iter().filter(|stream| {
+                file.parent() == Some(self.dataset_path.join(&stream.directory).as_path())
+            });
+            let owner = owners
+                .next()
+                .filter(|_| owners.next().is_none())
+                .ok_or_else(|| {
+                    MarketForgeError::InvalidConfiguration(format!(
+                        "publication {}: no unique manifest stream owns {}",
+                        self.dataset_id,
+                        file.display()
+                    ))
+                })?;
+            if seen.insert(&owner.stream_id) {
+                result.push(owner);
+            }
+        }
+        Ok(result)
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Resolve merge inputs
 // -----------------------------------------------------------------------------
@@ -35,12 +66,23 @@ pub fn resolve_merge_inputs(
     job: &MergeJob,
     project_root: &Path,
 ) -> Result<Vec<ResolvedMergeInput>> {
+    resolve_merge_inputs_with_progress(job, project_root, |_| {})
+}
+
+pub(crate) fn resolve_merge_inputs_with_progress(
+    job: &MergeJob,
+    project_root: &Path,
+    mut checked: impl FnMut(usize),
+) -> Result<Vec<ResolvedMergeInput>> {
     job.validate()?;
 
     let processed_root = project_root.join("data/processed");
 
+    let mut verified_files = 0;
     let mut resolved = Vec::with_capacity(job.inputs.len());
     let mut seen = HashSet::new();
+    #[cfg(unix)]
+    let mut physical_files = HashSet::new();
 
     for &dataset_id in &job.inputs {
         if !seen.insert(dataset_id) {
@@ -52,6 +94,11 @@ pub fn resolve_merge_inputs(
 
             Some(path) => project_root.join(path),
 
+            None if job.submission.is_some() => {
+                return invalid(format!(
+                    "publication {dataset_id}: missing pinned manifest path"
+                ));
+            }
             None => processed_root.join(dataset_id.to_string()),
         };
 
@@ -71,15 +118,37 @@ pub fn resolve_merge_inputs(
 
         let manifest_path = dataset_path.join(DATASET_MANIFEST_FILENAME);
 
-        let file = File::open(&manifest_path).map_err(|error| {
+        if job.submission.is_some()
+            && (dataset_path
+                != *job
+                    .input_paths
+                    .get(&dataset_id)
+                    .expect("explicit publication")
+                || manifest_path.canonicalize().ok().as_ref() != Some(&manifest_path))
+        {
+            return invalid(format!(
+                "publication {dataset_id}: expected a regular committed manifest at {}",
+                manifest_path.display()
+            ));
+        }
+        let manifest_bytes = fs::read(&manifest_path).map_err(|error| {
             MarketForgeError::InvalidConfiguration(format!(
                 "failed to open dataset manifest {}: {error}",
                 manifest_path.display()
             ))
         })?;
-
+        if let Some(selection) = job.primary_files.get(&dataset_id) {
+            use sha2::{Digest, Sha256};
+            let digest = crate::historical::normalize::hex_digest(Sha256::digest(&manifest_bytes));
+            if selection.iter().any(|file| file.manifest_sha256 != digest) {
+                return invalid(format!(
+                    "publication {dataset_id}: manifest fingerprint changed at {}",
+                    manifest_path.display()
+                ));
+            }
+        }
         let manifest: DatasetManifest =
-            serde_json::from_reader(BufReader::new(file)).map_err(|error| {
+            serde_json::from_slice(&manifest_bytes).map_err(|error| {
                 MarketForgeError::InvalidConfiguration(format!(
                     "invalid dataset manifest {}: {error}",
                     manifest_path.display()
@@ -92,27 +161,11 @@ pub fn resolve_merge_inputs(
         // Manifest identity
         // ---------------------------------------------------------------------
 
-        let selected_timestamp_trades = job.primary_files.contains_key(&dataset_id)
-            && matches!(manifest.protocol_version, 4 | 5)
-            && manifest.content_type == crate::historical::job::ContentType::Trades
-            && manifest
-                .processing_quality
-                .as_ref()
-                .is_some_and(|quality| quality.timestamp_ordering == "event_timestamp_ns")
-            && manifest.streams.iter().all(|stream| {
-                let mut tasks = HashSet::new();
-                stream
-                    .sources
-                    .iter()
-                    .all(|source| source.ranges.is_empty() && tasks.insert(source.task_id))
-            });
-
-        if !matches!(manifest.protocol_version, 2)
+        if !matches!(manifest.protocol_version, 2 | 4 | 5)
             && manifest.protocol_version != DATASET_MANIFEST_VERSION
-            && !selected_timestamp_trades
         {
             return invalid(format!(
-                "dataset {dataset_id}: unsupported manifest version {}; this timestamp-first merger cannot consume segmented/native-order policy output; use an event-index/segment-aware reader",
+                "dataset {dataset_id}: unsupported manifest version {}",
                 manifest.protocol_version
             ));
         }
@@ -168,51 +221,75 @@ pub fn resolve_merge_inputs(
 
         let mut paths = HashSet::new();
 
-        for entry in &manifest.files {
-            let path = resolve_file(&dataset_path, &entry.path, dataset_id, &mut paths)?;
-
-            validate_canonical_file(dataset_id, entry, &path)?;
-
-            canonical_files.push(path);
-        }
-
         if let Some(selection) = job.primary_files.get(&dataset_id) {
-            if manifest.content_type == crate::historical::job::ContentType::Depth
-                && selection.len() != manifest.files.len()
-            {
+            let descriptors = job
+                .submission
+                .as_ref()
+                .into_iter()
+                .flat_map(|job| &job.inputs)
+                .filter(|input| input.publication.engine_dataset_id == dataset_id)
+                .map(|input| (input.path.as_path(), input.dataset_id))
+                .collect::<std::collections::HashMap<_, _>>();
+            let entries = manifest
+                .files
+                .iter()
+                .map(|entry| (entry.path.as_str(), entry))
+                .collect::<std::collections::HashMap<_, _>>();
+            if entries.len() != manifest.files.len() {
                 return invalid(format!(
-                    "depth publication {dataset_id} requires all primary files for reconstruction; select the missing files explicitly"
+                    "publication {dataset_id}: duplicate primary manifest paths"
                 ));
             }
-            let manifest_sha = crate::historical::normalize::manifest::file_sha256(&manifest_path)
-                .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
-            let mut selected_paths = Vec::with_capacity(selection.len());
             for item in selection {
-                if manifest_sha != item.manifest_sha256 {
-                    return invalid(format!(
-                        "publication {dataset_id}: manifest fingerprint changed"
-                    ));
+                let specified = dataset_path.join(&item.path);
+                let label = descriptors.get(specified.as_path()).map_or_else(
+                    || "selected file".to_owned(),
+                    |id| format!("registered file {id}"),
+                );
+                let context = format!(
+                    "{label} at {} (publication {dataset_id})",
+                    specified.display()
+                );
+                let entry = entries.get(item.path.as_str()).ok_or_else(|| {
+                    MarketForgeError::InvalidConfiguration(format!(
+                        "{context}: not a primary manifest member"
+                    ))
+                })?;
+                let path = resolve_file(&dataset_path, &entry.path, dataset_id, &mut paths)
+                    .map_err(|error| {
+                        MarketForgeError::InvalidConfiguration(format!("{context}: {error}"))
+                    })?;
+                if job.submission.is_some() && path != specified {
+                    return invalid(format!("{context}: expected canonical file path"));
                 }
-                let Some((index, _)) = manifest
-                    .files
-                    .iter()
-                    .enumerate()
-                    .find(|(_, entry)| entry.path == item.path)
-                else {
-                    return invalid(format!(
-                        "publication {dataset_id}: {} is not a primary manifest member",
-                        item.path
-                    ));
-                };
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::MetadataExt;
+                    let metadata = path.metadata().map_err(|error| {
+                        MarketForgeError::InvalidConfiguration(format!("{context}: {error}"))
+                    })?;
+                    if !physical_files.insert((metadata.dev(), metadata.ino())) {
+                        return invalid(format!("{context}: duplicate physical file"));
+                    }
+                }
+                validate_canonical_file(dataset_id, entry, &path)?;
                 let sha =
-                    crate::historical::normalize::manifest::file_sha256(&canonical_files[index])
-                        .map_err(|e| MarketForgeError::InvalidConfiguration(e.to_string()))?;
+                    crate::historical::normalize::manifest::file_sha256(&path).map_err(|e| {
+                        MarketForgeError::InvalidConfiguration(format!("{context}: {e}"))
+                    })?;
                 if sha != item.sha256 {
-                    return invalid(format!("selected primary file {} changed", item.path));
+                    return invalid(format!("{context}: SHA-256 mismatch"));
                 }
-                selected_paths.push(canonical_files[index].clone());
+                canonical_files.push(path);
+                verified_files += 1;
+                checked(verified_files);
             }
-            canonical_files = selected_paths;
+        } else {
+            for entry in &manifest.files {
+                let path = resolve_file(&dataset_path, &entry.path, dataset_id, &mut paths)?;
+                validate_canonical_file(dataset_id, entry, &path)?;
+                canonical_files.push(path);
+            }
         }
 
         // ---------------------------------------------------------------------

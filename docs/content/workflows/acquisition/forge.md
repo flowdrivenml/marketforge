@@ -4,34 +4,7 @@ Raw registration copies and verifies bytes; it does not normalize them. Profiles
 
 ## Synthetic shared-instrument example
 
-These are synthetic assertions, not real historical Binance specifications. Use isolated testing storage and an isolated profile catalogue: the example depth definition conflicts if a different definition is already installed under its ID. Never overwrite an existing profile to run an example.
-
-The complete documents are [registration.toml](../../examples/forge/registration.toml), [normalization.toml](../../examples/forge/normalization.toml), [trade profile](../../examples/forge/binance.spot.spot.trades.toml) and [depth profile](../../examples/forge/binance.spot.spot.depth.toml). Both groups reference a registered instrument and an applicable immutable specification. Register the catalogue prerequisites first using the [manual catalogue workflow](../catalogue/index.md). Optional specification fields include exact decimal `qty_step`, `min_qty`, `max_qty`, `min_notional` and `max_notional` with their denominations, contract value/asset, retrieval `as_of`, effective `valid_from`/`valid_to`, and provenance. Missing limits stay unknown; order-submission limits do not filter historical records.
-
-Create only the small synthetic source archives below; originals remain read-only during registration:
-
-```python
-from pathlib import Path
-from zipfile import ZipFile
-root = Path("data/tests/historical/forge-example/source")
-root.mkdir(parents=True, exist_ok=True)
-with ZipFile(root / "trades.zip", "x") as out:
-    out.writestr("trades.csv", "1,100,1,100,1767225600000000,false,true\n2,101,1,101,1767225601000000,true,true\n")
-with ZipFile(root / "depth.zip", "x") as out:
-    out.writestr("depth.jsonl", '{"timestamp":1767225600,"asks":[[101,1]],"bids":[[99,1]]}\n{"timestamp":1767225601,"asks":[[102,1]],"bids":[[100,1]]}\n')
-```
-
-```bash
-mf engine build normalize
-mf acquisition profiles add binance.spot.spot.trades --from docs/content/examples/forge/binance.spot.spot.trades.toml --testing
-mf acquisition profiles add binance.spot.spot.depth --from docs/content/examples/forge/binance.spot.spot.depth.toml --testing
-mf acquisition register new synthetic --from docs/content/examples/forge/registration.toml
-mf acquisition register plan synthetic --testing
-mf acquisition register run synthetic --testing
-mf normalize run docs/content/examples/forge/normalization.toml --testing
-```
-
-The unmodified production runtime budgets can be too large for a small development machine: tests use an isolated runtime configuration, never edit production policy as an orchestration workaround.
+Use the [synthetic trade and depth bundle](../../examples/catalogue/index.md) for complete source files, catalogue declarations and executable commands. Its fictional venue has an independent profile namespace.
 
 ## Ownership, history and recovery
 

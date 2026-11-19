@@ -23,6 +23,7 @@ pub struct DepthEventCursor {
     canonical_base: u64,
 
     range: Option<(i64, i64)>,
+    timestamp_ordered: bool,
 }
 
 impl DepthEventCursor {
@@ -52,6 +53,7 @@ impl DepthEventCursor {
             row: 0,
             canonical_base: 0,
             range: None,
+            timestamp_ordered: true,
         })
     }
     pub fn open_range(path: &Path, start_ns: i64, end_ns: i64) -> Result<Self> {
@@ -176,6 +178,7 @@ impl DepthEventCursor {
             row: 0,
             canonical_base: 0,
             range: Some((start_ns, end_ns)),
+            timestamp_ordered: true,
         })
     }
 
@@ -216,6 +219,7 @@ impl DepthEventCursor {
             row: 0,
             canonical_base,
             range,
+            timestamp_ordered: false,
         })
     }
     pub fn for_task(
@@ -249,7 +253,11 @@ impl DepthEventCursor {
                         }
 
                         if event.event_timestamp_ns >= end_ns {
-                            return Ok(None);
+                            if self.timestamp_ordered {
+                                return Ok(None);
+                            }
+                            // A later native-order event may regress into the interval.
+                            continue;
                         }
                     }
 

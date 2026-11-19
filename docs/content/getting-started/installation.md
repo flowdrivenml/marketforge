@@ -1,6 +1,6 @@
 # Installation
 
-Managed normalizer builds were verified on Linux. See the [Forge build reference](../reference/cli/forge.md) for approved features, offline builds and installation status.
+Managed normalizer builds were verified on Linux. See the [Forge build reference](../reference/cli/engine.md) for approved features, offline builds and installation status.
 
 Forge requires Python 3.12+ and uses Hatchling packaging at `forge/pyproject.toml`. Engine uses Rust edition 2024 with explicit Cargo features at `engine/Cargo.toml`. Linux and macOS are the project targets; platform installation recipes still need verification.
 
@@ -9,7 +9,6 @@ From the repository root, in your chosen application Python environment:
 ```bash
 python3 -m pip install -e ./forge
 mf engine build normalize
-mf engine build merge
 ```
 
 The editable Python package exposes `marketforge` and `mf`. Forge resolves the installed release binaries `.bin/marketforge-normalize` and `.bin/marketforge-merge` through checksum-verified installation metadata. Other Rust executables require their own feature/target selection; this is not an all-components installation.
@@ -36,13 +35,32 @@ The file is resolved through project-root discovery or the CLI's `--project-root
 so database commands also work from repository subdirectories or another directory
 with an explicit root. No credentials are copied into application configuration.
 
-Next, [explore the CLI and run the AAPL example](quickstart.md).
+### Prepare the testing registry
 
+Create a dedicated PostgreSQL database named `marketforge_test` and provide a role that can apply its migrations. For a PostgreSQL role with database creation rights, run `createdb marketforge_test` once. Set the testing URL for that database using the credential loader above. Run from the checkout:
 
-uv add --project forge --group lab ipykernel
+```bash
+mf database migrate --testing
+mf database status --testing
+mf doctor --testing
+mf engine status
+```
+
+Confirm identity purpose `testing`, no pending migrations, and a verified normalizer. Testing commands can write real files and registry rows. `mf init --testing` also collects provider metadata, enriches historical evidence and publishes rankings. Use [database migration](../reference/cli/maintenance.md#database) for schema setup alone.
+
+### Inspection and notebook tools
+
+Install Arrow in the same application environment for `datasets schema` and `datasets head`:
+
+```bash
+python -m pip install 'pyarrow>=18'
+```
+
+For optional notebook work, the repository's lab group also includes Polars and a Jupyter kernel. With uv installed:
+
+```bash
 uv sync --project forge --group lab
-uv run --project forge --group lab \
-    python -m ipykernel install \
-    --user \
-    --name marketforge \
-    --display-name "MarketForge (Python)"
+uv run --project forge --group lab python -m ipykernel install --user --name marketforge
+```
+
+Install the merger separately with `mf engine build merge` when needed. Continue to the [Bybit Quick Start](quickstart.md).

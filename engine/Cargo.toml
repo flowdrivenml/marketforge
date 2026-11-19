@@ -12,7 +12,6 @@ management-tui = ["management-client", "monitor-tui"]
 postgres = ["dep:sqlx"]
 # Synchronization hooks for deterministic production-path regression tests only.
 normalization-test-hooks = ["historical"]
-historical-slow-tests = ["historical"]
 historical-real-tests = ["historical"]
 historical-full-tests = ["historical-real-tests"]
 historical = [
@@ -453,14 +452,9 @@ path = "tests/historical/normalize/main.rs"
 required-features = ["historical"]
 
 [[test]]
-name = "historical_slow_convert"
-path = "tests/historical/slow/convert/main.rs"
-required-features = ["historical-slow-tests"]
-
-[[test]]
-name = "historical_slow_merge"
-path = "tests/historical/slow/merge/main.rs"
-required-features = ["historical-slow-tests"]
+name = "historical_recorded_convert"
+path = "tests/historical/convert/recorded.rs"
+required-features = ["historical-real-tests"]
 
 
 [[test]]

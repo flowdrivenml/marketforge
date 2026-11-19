@@ -1,79 +1,22 @@
 #![cfg(feature = "historical")]
-
-use std::{
-    fs::File,
-    path::{Path, PathBuf},
-};
+use crate::publication::trade_publication;
 
 use {
     marketforge_engine::historical::merge::KWayEventMerger,
     marketforge_engine::historical::merge::MergeEventKind,
     marketforge_engine::historical::merge::MergeEventSource,
-    marketforge_engine::historical::merge::ResolvedMergeInput,
     marketforge_engine::historical::merge::TradeStream,
     marketforge_engine::historical::merge::build_trade_inventory,
-    marketforge_engine::historical::normalize::manifest::DatasetManifest,
 };
-
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("project root")
-        .to_path_buf()
-}
 
 // -----------------------------------------------------------------------------
 // Resolve real trade dataset
 // -----------------------------------------------------------------------------
 
-fn resolve_trade_dataset(root: &Path, dataset_id: u64) -> ResolvedMergeInput {
-    let datasets = root.join("data/.work/full-trade-test/datasets");
-
-    for entry in std::fs::read_dir(&datasets).expect("read trade datasets") {
-        let entry = entry.expect("read dataset entry");
-
-        let dataset_path = entry.path();
-        let manifest_path = dataset_path.join("manifest.json");
-
-        if !manifest_path.is_file() {
-            continue;
-        }
-
-        let manifest: DatasetManifest =
-            serde_json::from_reader(File::open(&manifest_path).unwrap())
-                .expect("parse dataset manifest");
-
-        if manifest.dataset_id != dataset_id {
-            continue;
-        }
-
-        let canonical_files = manifest
-            .files
-            .iter()
-            .map(|file| dataset_path.join(&file.path))
-            .collect();
-
-        let auxiliary_files = manifest
-            .auxiliary_files
-            .iter()
-            .map(|file| dataset_path.join(&file.path))
-            .collect();
-
-        return ResolvedMergeInput {
-            dataset_id,
-            dataset_path,
-            manifest,
-            canonical_files,
-            auxiliary_files,
-        };
-    }
-
-    panic!("trade dataset {dataset_id} not found");
-}
-
 #[test]
-fn merges_real_trade_datasets() {
-    let root = project_root();
+fn merges_generated_trade_datasets() {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
 
     let dataset_ids = [
         111_u64, // Gate.io
@@ -88,7 +31,7 @@ fn merges_real_trade_datasets() {
     let mut expected_counts = Vec::new();
 
     for dataset_id in dataset_ids {
-        let input = resolve_trade_dataset(&root, dataset_id);
+        let input = trade_publication(&root, dataset_id);
 
         expected_counts.push(input.manifest.events_written);
 
@@ -148,7 +91,7 @@ fn merges_real_trade_datasets() {
 
     assert_eq!(merger.events_emitted(), total);
 
-    assert_eq!(total, 6_016_219);
+    assert_eq!(total, 24);
 
     println!("{}", "=".repeat(90));
     println!("Streams       : {}", dataset_ids.len());
@@ -156,4 +99,10 @@ fn merges_real_trade_datasets() {
     println!("Global order  : VERIFIED");
     println!("Event counts  : VERIFIED");
     println!("Result        : PASS");
+}
+
+#[test]
+#[ignore = "opt-in compatibility with canonical normalized publications"]
+fn merges_two_bounded_recorded_trade_streams() {
+    crate::recorded_references::check_kway_trade_references();
 }

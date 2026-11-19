@@ -1,9 +1,7 @@
 #![cfg(feature = "historical")]
 use marketforge_engine::historical::merge::DepthEventSource;
-use std::path::PathBuf;
 
 use {
-    marketforge_engine::historical::job::load_merge_job,
     marketforge_engine::historical::merge::DepthStream,
     marketforge_engine::historical::merge::KWayDepthMerger,
     marketforge_engine::historical::merge::build_depth_inventory,
@@ -11,18 +9,12 @@ use {
     marketforge_engine::historical::merge::resolve_merge_inputs,
 };
 
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
 #[test]
-fn merges_real_depth_events_chronologically() {
-    let root = project_root();
+fn merges_generated_depth_events_chronologically() {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
 
-    let job = load_merge_job(root.join("data/.jobs/merge/merge-200.json")).expect("load merge job");
+    let job = crate::publication::depth_job(&root);
 
     let inputs = resolve_merge_inputs(&job, &root).expect("resolve merge inputs");
 
@@ -51,11 +43,7 @@ fn merges_real_depth_events_chronologically() {
     let mut events = 0_u64;
 
     // Focused test: first 100,000 events.
-    while events < 100_000 {
-        let Some(event) = merger.next_event().expect("read merged event") else {
-            break;
-        };
-
+    while let Some(event) = merger.next_event().expect("read merged event") {
         let timestamp = event.event.event.event_timestamp_ns;
 
         if let Some(previous) = previous_timestamp {
@@ -69,7 +57,7 @@ fn merges_real_depth_events_chronologically() {
         events += 1;
     }
 
-    assert_eq!(events, 100_000);
+    assert_eq!(events, 8);
 
     println!("\nMARKETFORGE — K-WAY DEPTH MERGE");
     println!("Streams       : {}", job.inputs.len());

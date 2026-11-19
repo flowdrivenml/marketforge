@@ -1,77 +1,52 @@
-#![cfg(feature = "historical")]
-
-use std::path::PathBuf;
-
-use {
-    marketforge_engine::historical::job::load_merge_job,
-    marketforge_engine::historical::merge::build_depth_inventory,
-    marketforge_engine::historical::merge::build_merge_checkpoints,
-    marketforge_engine::historical::merge::resolve_initial_checkpoints,
-    marketforge_engine::historical::merge::resolve_merge_inputs,
+use crate::publication::depth_publication;
+use marketforge_engine::historical::merge::{
+    CheckpointAvailability, MergeCheckpoint, build_depth_inventory, build_merge_checkpoints,
+    resolve_initial_checkpoints,
 };
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
 
 #[test]
-fn builds_real_reconstruction_checkpoints() {
-    let root = project_root();
-
-    let job = load_merge_job(root.join("data/.jobs/merge/merge-200.json")).expect("load merge job");
-
-    let inputs = resolve_merge_inputs(&job, &root).expect("resolve merge inputs");
-
-    let inventory = build_depth_inventory(&inputs).expect("build depth inventory");
-
-    let checkpoints = build_merge_checkpoints(&inventory).expect("build checkpoints");
-
-    assert_eq!(checkpoints.len(), 81);
-
-    println!("\nMARKETFORGE — RECONSTRUCTION CHECKPOINTS");
-    println!("Checkpoints: {}", checkpoints.len());
-
-    for dataset_id in [105, 108, 112, 92] {
-        let count = checkpoints
-            .iter()
-            .filter(|checkpoint| checkpoint.dataset_id == dataset_id)
-            .count();
-
-        println!("dataset={} | checkpoints={}", dataset_id, count);
-    }
+fn builds_generated_reconstruction_checkpoints() {
+    let workspace = tempfile::tempdir().unwrap();
+    let inventory = build_depth_inventory(&[depth_publication(workspace.path(), 12)]).unwrap();
+    let checkpoints = build_merge_checkpoints(&inventory).unwrap();
+    assert_eq!(
+        checkpoints,
+        [(0, 100), (1, 300)].map(|(task_id, timestamp_ns)| MergeCheckpoint {
+            dataset_id: 12,
+            task_id,
+            segment_id: 0,
+            timestamp_ns,
+            canonical_row_offset: 0,
+            canonical_row_count: 1,
+        })
+    );
+    let initial = resolve_initial_checkpoints(&checkpoints, &[12], 350, 450).unwrap();
+    assert_eq!(initial[0].checkpoint, checkpoints[1]);
+    assert_eq!(initial[0].availability, CheckpointAvailability::Prior);
 }
 
 #[test]
 fn resolves_initial_checkpoints() {
-    let root = project_root();
-
-    let job = load_merge_job(root.join("data/.jobs/merge/merge-200.json")).expect("load merge job");
-
-    let inputs = resolve_merge_inputs(&job, &root).expect("resolve merge inputs");
-
-    let inventory = build_depth_inventory(&inputs).expect("build inventory");
-
-    let checkpoints = build_merge_checkpoints(&inventory).expect("build checkpoints");
-
-    let selected = resolve_initial_checkpoints(
-        &checkpoints,
-        &job.inputs,
-        job.time_range.start_ns,
-        job.time_range.end_ns,
-    )
-    .expect("resolve initial checkpoints");
-
-    assert_eq!(selected.len(), 4);
-
-    for entry in selected {
-        println!(
-            "dataset={} | task={} | timestamp={} | availability={:?}",
-            entry.checkpoint.dataset_id,
-            entry.checkpoint.task_id,
-            entry.checkpoint.timestamp_ns,
-            entry.availability,
-        );
-    }
+    let checkpoint = |dataset_id, timestamp_ns, segment_id| MergeCheckpoint {
+        dataset_id,
+        task_id: 7,
+        segment_id,
+        timestamp_ns,
+        canonical_row_offset: 2 * segment_id,
+        canonical_row_count: 2,
+    };
+    let checkpoints = [
+        checkpoint(1, 10, 0),
+        checkpoint(1, 15, 1),
+        checkpoint(2, 21, 0),
+    ];
+    let selected = resolve_initial_checkpoints(&checkpoints, &[2, 1], 15, 22).unwrap();
+    assert_eq!(selected[0].checkpoint, checkpoints[2]);
+    assert_eq!(
+        selected[0].availability,
+        CheckpointAvailability::InsideInterval
+    );
+    assert_eq!(selected[1].checkpoint, checkpoints[1]);
+    assert_eq!(selected[1].availability, CheckpointAvailability::Prior);
+    assert!(resolve_initial_checkpoints(&checkpoints, &[2], 15, 21).is_err());
 }

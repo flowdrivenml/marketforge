@@ -1,11 +1,7 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashSet, path::Path};
 
 use crate::{
-    historical::job::{ContentType, load_processing_job},
+    historical::job::{ContentType, load_committed_processing_job},
     shared::error::{MarketForgeError, Result},
 };
 
@@ -21,19 +17,8 @@ use {
 
 pub fn resolve_unified_merge_streams(
     inputs: &[ResolvedMergeInput],
-    project_root: &Path,
+    _project_root: &Path,
 ) -> Result<Vec<UnifiedMergeStream>> {
-    let jobs_directory = project_root.join("data/.jobs/process");
-
-    let job_paths = if inputs
-        .iter()
-        .any(|i| !i.dataset_path.join("processing-job.json").is_file())
-    {
-        discover_processing_jobs(&jobs_directory)?
-    } else {
-        HashMap::new()
-    };
-
     let mut streams = Vec::with_capacity(inputs.len());
     let mut seen_datasets = HashSet::new();
 
@@ -45,18 +30,42 @@ pub fn resolve_unified_merge_streams(
             ));
         }
 
-        let snapshot = input.dataset_path.join("processing-job.json");
-        let job = if snapshot.is_file() {
-            crate::historical::job::load_committed_processing_job(&input.dataset_path)?
-        } else {
-            let job_path = job_paths.get(&input.dataset_id).ok_or_else(|| {
-                invalid_error(format!(
-                    "dataset {}: processing job not found",
+        if input.manifest.content_type == ContentType::Depth {
+            if input.canonical_files.len() != input.manifest.files.len() {
+                return invalid(format!(
+                    "depth publication {}: selected parts require validated reconstruction-state dependencies",
                     input.dataset_id
-                ))
-            })?;
-            load_processing_job(job_path)?
-        };
+                ));
+            }
+            if input.manifest.protocol_version >= 4 {
+                return invalid(format!(
+                    "depth publication {}: merge cannot yet replay v{} segmented/native-order depth with causal ordering",
+                    input.dataset_id, input.manifest.protocol_version
+                ));
+            }
+        }
+        if input.manifest.content_type == ContentType::Trades
+            && input.manifest.protocol_version >= 4
+            && (input
+                .manifest
+                .processing_quality
+                .as_ref()
+                .is_none_or(|quality| quality.timestamp_ordering != "event_timestamp_ns")
+                || input.manifest.streams.iter().any(|stream| {
+                    let mut tasks = HashSet::new();
+                    stream
+                        .sources
+                        .iter()
+                        .any(|source| !source.ranges.is_empty() || !tasks.insert(source.task_id))
+                }))
+        {
+            return invalid(format!(
+                "trade publication {}: merge cannot yet consume disjoint source ranges or native-order output",
+                input.dataset_id
+            ));
+        }
+
+        let job = load_committed_processing_job(&input.dataset_path)?;
 
         if job.dataset_id.0 != input.dataset_id {
             return invalid(format!(
@@ -104,18 +113,7 @@ pub fn resolve_unified_merge_streams(
             && !input.manifest.streams.is_empty()
             && !input.canonical_files.is_empty()
         {
-            let matching = input
-                .manifest
-                .streams
-                .iter()
-                .filter(|stream| {
-                    let directory = input.dataset_path.join(&stream.directory);
-                    input
-                        .canonical_files
-                        .iter()
-                        .any(|file| file.parent() == Some(directory.as_path()))
-                })
-                .collect::<Vec<_>>();
+            let matching = input.selected_streams()?;
             if matching.len() != 1 {
                 return invalid(format!(
                     "publication {}: select files from a single concrete trade stream; multiple stream ranks per publication are unsupported",
@@ -197,55 +195,6 @@ pub fn resolve_unified_merge_streams(
     }
 
     Ok(streams)
-}
-
-// -----------------------------------------------------------------------------
-// Discover processing jobs
-// -----------------------------------------------------------------------------
-
-fn discover_processing_jobs(directory: &Path) -> Result<HashMap<u64, PathBuf>> {
-    let mut jobs = HashMap::new();
-
-    for entry in fs::read_dir(directory).map_err(|error| {
-        invalid_error(format!(
-            "failed to read processing jobs {}: {error}",
-            directory.display()
-        ))
-    })? {
-        let entry = entry.map_err(|error| {
-            invalid_error(format!("failed to read processing job entry: {error}"))
-        })?;
-
-        let path = entry.path();
-
-        if path.extension().and_then(|value| value.to_str()) != Some("json") {
-            continue;
-        }
-
-        // Processing job filenames use the suffix -d<ID>.json.
-        let filename = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .ok_or_else(|| invalid_error("invalid processing job filename"))?;
-
-        let Some(stem) = filename.strip_suffix(".json") else {
-            continue;
-        };
-
-        let Some((_, suffix)) = stem.rsplit_once("-d") else {
-            continue;
-        };
-
-        let Ok(dataset_id) = suffix.parse::<u64>() else {
-            continue;
-        };
-
-        if jobs.insert(dataset_id, path.clone()).is_some() {
-            return invalid(format!("duplicate processing job for dataset {dataset_id}"));
-        }
-    }
-
-    Ok(jobs)
 }
 
 // -----------------------------------------------------------------------------

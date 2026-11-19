@@ -83,3 +83,5 @@ Use the returned local archive ID and run UUID with `storage show`, `runs report
 ## If acquisition is incomplete
 
 Inspect request outcomes and individual archive events before retrying. Unsupported scope is different from an empty successful search. Partial scans are not reusable coverage. A retry can reuse valid files and recover durable publication reservations, but it does not resume an incomplete HTTP body at its previous byte offset. Provider cooldowns and retry budgets are respected; repeated retries are not a way to bypass them.
+
+When the managed copies are complete, [prepare and normalize them](../normalize.md).

@@ -224,6 +224,14 @@ pub fn validate_physical_dataset_with_progress(
                 end_timestamp_ns: Some(file.last_timestamp_ns),
             });
         }
+        partitions_completed += 1;
+
+        reporter.validation_progress(
+            partitions_completed,
+            files_completed,
+            events_validated,
+            row_groups_validated,
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -266,14 +274,6 @@ pub fn validate_physical_dataset_with_progress(
 
         _ => {}
     }
-    partitions_completed += 1;
-
-    reporter.validation_progress(
-        partitions_completed,
-        files_completed,
-        events_validated,
-        row_groups_validated,
-    );
     reporter.validation_completed(
         partitions_completed,
         files_completed,

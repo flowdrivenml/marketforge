@@ -1,4 +1,5 @@
 #![cfg(feature = "historical")]
+use crate::publication::depth_publication;
 
 use std::{
     fs::File,
@@ -14,14 +15,12 @@ use {
     marketforge_engine::historical::merge::DepthStream,
     marketforge_engine::historical::merge::MergeEventRef,
     marketforge_engine::historical::merge::MergedEvent,
-    marketforge_engine::historical::merge::ResolvedMergeInput,
     marketforge_engine::historical::merge::TradeEventRef,
     marketforge_engine::historical::merge::UnifiedTimelineRecord,
     marketforge_engine::historical::merge::UnifiedTimelineWriter,
     marketforge_engine::historical::merge::build_depth_inventory,
     marketforge_engine::historical::merge::reconcile_depth_boundaries,
     marketforge_engine::historical::merge::unified_timeline_schema,
-    marketforge_engine::historical::normalize::manifest::DatasetManifest,
 };
 
 // -----------------------------------------------------------------------------
@@ -74,47 +73,12 @@ fn parquet_config() -> MergeParquetConfig {
 // Real depth dataset
 // -----------------------------------------------------------------------------
 
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
-fn resolve_depth_dataset(root: &Path, dataset_id: u64) -> ResolvedMergeInput {
-    let dataset_path = root.join(format!("data/processed/{dataset_id}"));
-
-    let manifest: DatasetManifest = serde_json::from_reader(
-        File::open(dataset_path.join("manifest.json")).expect("open depth manifest"),
-    )
-    .expect("parse depth manifest");
-
-    let canonical_files = manifest
-        .files
-        .iter()
-        .map(|file| dataset_path.join(&file.path))
-        .collect();
-
-    let auxiliary_files = manifest
-        .auxiliary_files
-        .iter()
-        .map(|file| dataset_path.join(&file.path))
-        .collect();
-
-    ResolvedMergeInput {
-        dataset_id,
-        dataset_path,
-        manifest,
-        canonical_files,
-        auxiliary_files,
-    }
-}
-
-fn real_depth_events(count: usize) -> Vec<UnifiedTimelineRecord> {
-    let root = project_root();
+fn fixture_depth_events(count: usize) -> Vec<UnifiedTimelineRecord> {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
     let dataset_id = 112;
 
-    let input = resolve_depth_dataset(&root, dataset_id);
+    let input = depth_publication(&root, dataset_id);
 
     let inventory = build_depth_inventory(&[input]).unwrap();
     let boundaries = reconcile_depth_boundaries(&inventory).unwrap();
@@ -127,7 +91,7 @@ fn real_depth_events(count: usize) -> Vec<UnifiedTimelineRecord> {
         let depth = stream
             .next_event()
             .unwrap()
-            .expect("insufficient real depth events");
+            .expect("insufficient fixture depth events");
 
         let merged = MergedEvent {
             stream_rank: 1,
@@ -169,11 +133,11 @@ fn writes_and_reads_unified_timeline() {
 
     let mut records = Vec::new();
 
-    // Real canonical depth references.
-    records.extend(real_depth_events(10_000));
+    // Depth references from the miniature publication.
+    records.extend(fixture_depth_events(4));
 
     // Trade references.
-    for index in 0..1_000_u64 {
+    for index in 0..3_u64 {
         records.push(trade_record(
             1_788_220_800_000_000_000 + index as i64,
             index,
@@ -356,8 +320,8 @@ fn writes_and_reads_unified_timeline() {
     }
 
     assert_eq!(actual_rows, records.len());
-    assert_eq!(trade_rows, 1_000);
-    assert_eq!(depth_rows, 10_000);
+    assert_eq!(trade_rows, 3);
+    assert_eq!(depth_rows, 4);
 
     println!("\nMARKETFORGE — UNIFIED PARQUET ROUND TRIP");
     println!("{}", "=".repeat(80));

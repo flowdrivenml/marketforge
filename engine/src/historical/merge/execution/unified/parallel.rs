@@ -1,4 +1,6 @@
-use crate::historical::merge::progress::{MergePhase, MergeProgressReporter, PartitionKey};
+use crate::historical::merge::progress::{
+    MergePhase, MergeProgressReporter, MergeWorkerProgress, PartitionKey,
+};
 use std::{collections::HashSet, path::Path};
 use {
     crate::historical::job::MergeJob,
@@ -11,7 +13,7 @@ use {
     crate::historical::merge::depth::inventory::DepthTaskInventory,
     crate::historical::merge::execution::shared::resources::estimate_merge_stream_resources,
     crate::historical::merge::partition::unified::partition_executor::UnifiedPartitionResult,
-    crate::historical::merge::partition::unified::partition_executor::execute_unified_partition,
+    crate::historical::merge::partition::unified::partition_executor::execute_unified_partition_with_progress,
     crate::historical::merge::partition::unified::partition_input::UnifiedPartitionInputPlan,
     crate::historical::merge::trades::inventory::TradeTaskInventory,
 };
@@ -83,7 +85,9 @@ pub fn execute_unified_partitions_parallel_with_progress(
                 .collect::<HashSet<_>>()
                 .len();
 
-            estimate_merge_stream_resources(stream_count, &job.parquet)
+            // Empty time partitions still create a timeline writer and return
+            // an empty result. Reserve writer resources instead of rejecting them.
+            estimate_merge_stream_resources(stream_count.max(1), &job.parquet)
         },
         |plan| {
             let key = PartitionKey {
@@ -93,7 +97,8 @@ pub fn execute_unified_partitions_parallel_with_progress(
 
             reporter.partition_started(key);
 
-            let result = execute_unified_partition(
+            let mut progress = MergeWorkerProgress::new(reporter, key);
+            let result = execute_unified_partition_with_progress(
                 &plan,
                 trade_inventory,
                 depth_inventory,
@@ -101,6 +106,7 @@ pub fn execute_unified_partitions_parallel_with_progress(
                 &job.inputs,
                 &job.parquet,
                 staging,
+                &mut progress,
             );
 
             match &result {

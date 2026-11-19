@@ -36,7 +36,7 @@ mod reconciled;
 pub(crate) mod family;
 
 /// Render digest bytes without allocating a temporary String for each byte.
-fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
+pub(crate) fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let bytes = bytes.as_ref();
     let mut encoded = String::with_capacity(bytes.len() * 2);

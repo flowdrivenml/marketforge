@@ -15,7 +15,7 @@ from pydantic import Field, model_validator
 
 from forge.historical.engine.managed import checksum, resolve, supervised
 from forge.historical.merge.config import DatabaseID, DerivedRecipe, Timestamp, normalization_source
-from forge.historical.merge.discovery import discover, layout_reason
+from forge.historical.merge.discovery import discover
 from forge.historical.normalization.datasets import (
     primary_reference,
     register_verified,
@@ -62,11 +62,17 @@ def read_json(path: Path) -> dict[str, Any]:
     return cast(dict[str, Any], result)
 
 
-def runtime_settings(paths: ProjectPaths, binary: Path, config: Path) -> dict[str, Any]:
-    process = supervised([str(binary), "--runtime-settings", str(config)], cwd=paths.root)
-    if process.returncode:
-        raise MarketForgeError(f"Invalid historical runtime configuration: {process.stdout}")
-    return json.loads(process.stdout)
+def file_input(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "dataset_id": item["database_id"],
+        "path": item["registered_path"],
+        "sha256": item["file_sha256"],
+        "publication": {
+            "engine_dataset_id": str(item["engine_id"]),
+            "manifest_path": item["manifest_path"],
+            "manifest_sha256": item["manifest_sha256"],
+        },
+    }
 
 
 async def select_inputs(
@@ -75,23 +81,36 @@ async def select_inputs(
     ids: list[int] | None = None,
     job: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    references: list[tuple[str, dict[str, Any]]]
+    references: list[tuple[int, str, dict[str, Any]]] = []
+    submitted_files: list[dict[str, Any]] | None = None
     if ids is None:
-        if job is None or not job.get("primary_files"):
-            raise MarketForgeError(
-                "Prepare a new merge from file dataset IDs; legacy whole-publication requests are ambiguous."
-            )
-        references = [
-            (job["input_paths"][str(engine)], item)
-            for engine in job["inputs"]
-            for item in job["primary_files"][str(engine)]
-        ]
-    else:
-        references = []
+        if job and job.get("primary_files"):
+            # Keep registration recovery for publications produced with the previous contract.
+            references = [
+                (engine, job["input_paths"][str(engine)], item)
+                for engine in job["inputs"]
+                for item in job["primary_files"][str(engine)]
+            ]
+        elif (
+            job
+            and isinstance(job.get("inputs"), list)
+            and all(isinstance(item, dict) for item in job["inputs"])
+        ):
+            submitted_files = job["inputs"]
+            ids = [item.get("dataset_id") for item in submitted_files]
+        else:
+            raise MarketForgeError("Prepare a new merge from registered file dataset IDs.")
+    if ids is not None and (
+        not ids
+        or any(type(i) is not int or not 0 < i < 2**63 for i in ids)
+        or len(set(ids)) != len(ids)
+    ):
+        raise MarketForgeError("Select valid registered file dataset IDs without duplicates.")
+
     async with testing_connection(testing_dsn(paths.root)) as c:
         query = """SELECT d.id,d.storage_path,d.primary_file,d.file_sha256,d.operation_details,
                    d.start_timestamp_ns,d.end_timestamp_ns,p.storage_root,p.engine_dataset_id,
-                   p.instrument_namespace,p.evidence->>'manifest_sha256'
+                   p.instrument_namespace,p.evidence->>'manifest_sha256',p.manifest_path
                    FROM historical.datasets d JOIN historical.dataset_publications p ON p.id=d.publication_id
                    WHERE d.operation='normalize' AND p.operation='normalize' AND d.status='complete'
                    AND d.storage_format='parquet' AND d.primary_file IS NOT NULL"""
@@ -106,13 +125,13 @@ async def select_inputs(
             rows = [records[i] for i in ids]
         else:
             rows = []
-            for root, item in references:
+            for engine, root, item in references:
                 cur = await c.execute(
                     query + " AND p.storage_root=%s AND d.primary_file=%s AND d.file_sha256=%s",
                     (root, item["path"], item["sha256"]),
                 )
                 found = await cur.fetchall()
-                if len(found) != 1:
+                if len(found) != 1 or found[0][8] != str(engine):
                     raise MarketForgeError(
                         f"No unique registered file matches {root}/{item['path']}."
                     )
@@ -121,6 +140,7 @@ async def select_inputs(
     result: list[dict[str, Any]] = []
     publications: dict[str, dict[str, Any]] = {}
     by_engine: dict[str, str] = {}
+    file_ids: dict[tuple[int, int], int] = {}
     for (
         db_id,
         file,
@@ -133,8 +153,17 @@ async def select_inputs(
         engine,
         namespace,
         manifest_sha,
+        manifest_path,
     ) in rows:
-        if engine in by_engine and by_engine[engine] != root:
+        if not all((file, relative, root, engine, namespace, sha, manifest_sha, manifest_path)):
+            raise MarketForgeError(
+                f"Dataset {db_id} lacks a registered file path, publication identity or fingerprint."
+            )
+        if not Path(file).is_absolute() or not Path(manifest_path).is_absolute():
+            raise MarketForgeError(
+                f"Dataset {db_id} requires absolute registered file and manifest paths."
+            )
+        if references and engine in by_engine and by_engine[engine] != root:
             raise MarketForgeError(f"Ambiguous engine publication ID {engine}.")
         by_engine[engine] = root
         if root not in publications:
@@ -145,6 +174,7 @@ async def select_inputs(
             evidence["manifest_sha256"] != manifest_sha
             or evidence["instrument_namespace"] != namespace
             or str(manifest["dataset_id"]) != engine
+            or evidence["manifest_path"] != manifest_path
             or file != str(Path(root) / relative)
             or evidence["inventory_sha256"].get(relative) != sha
         ):
@@ -157,33 +187,13 @@ async def select_inputs(
             entry["end_timestamp_ns"],
         ):
             raise MarketForgeError(f"Dataset {db_id} is not an exact primary manifest member.")
-        selected_streams: set[str] = (
-            {
-                stream["stream_id"]
-                for stream in manifest["streams"]
-                if any(r[7] == root and str(Path(r[2]).parent) == stream["directory"] for r in rows)
-            }
-            if manifest["streams"] and "directory" in manifest["streams"][0]
-            else set()
-        )
-        if reason := layout_reason(manifest):
-            raise MarketForgeError(f"Dataset {db_id}: {reason}")
-        streams = evidence["resolved_job"]["streams"]
-        if len(selected_streams) == 1 and manifest["content_type"] == "trades":
-            stream_id = next(iter(selected_streams))
-        elif len(streams) == 1 and len(manifest["streams"]) <= 1:
-            stream_id = streams[0]["stream_id"]
-        else:
+        metadata = await asyncio.to_thread(Path(file).stat)
+        physical_file = (metadata.st_dev, metadata.st_ino)
+        if physical_file in file_ids:
             raise MarketForgeError(
-                f"Dataset {db_id} belongs to a multi-stream selection unsupported by the current Rust merger. Select one concrete trade stream per publication."
+                f"Datasets {file_ids[physical_file]} and {db_id} reference the same physical file: {file}"
             )
-        if manifest["content_type"] == "depth":
-            siblings = {r[2] for r in rows if r[7] == root}
-            missing = [f["path"] for f in manifest["files"] if f["path"] not in siblings]
-            if missing:
-                raise MarketForgeError(
-                    f"Depth reconstruction in publication {engine} requires explicit selection of all primary files. Missing {missing}."
-                )
+        file_ids[physical_file] = db_id
         result.append(
             {
                 "database_id": db_id,
@@ -191,21 +201,26 @@ async def select_inputs(
                 "namespace": namespace,
                 "path": root,
                 "primary_file": relative,
+                "registered_path": file,
+                "manifest_path": manifest_path,
                 "file_sha256": sha,
                 "manifest_sha256": manifest_sha,
                 "start_ns": start,
                 "end_ns": end,
-                "stream_id": stream_id,
                 "integrity_status": manifest["integrity_status"],
                 "memberships": summary["memberships"],
             }
         )
-    if job is not None and any(
+    if references and any(
         item["manifest_sha256"] != expected["manifest_sha256"]
-        for item, (_, expected) in zip(result, references, strict=True)
+        for item, (_, _, expected) in zip(result, references, strict=True)
     ):
         raise MarketForgeError("Submitted file selection has stale publication fingerprints.")
-    if len({item["namespace"] for item in result}) != 1:
+    if submitted_files is not None and [file_input(item) for item in result] != submitted_files:
+        raise MarketForgeError(
+            "Submitted file inputs disagree with registered paths or fingerprints."
+        )
+    if references and len({item["namespace"] for item in result}) != 1:
         raise MarketForgeError("Select files from a single instrument namespace.")
     return result
 
@@ -234,8 +249,14 @@ def coverage(inputs: list[dict[str, Any]], start_ns: int, end_ns: int) -> dict[s
             raise MarketForgeError(
                 f"Registry input {item['database_id']} does not overlap the merge interval."
             )
-        observations.setdefault(item["stream_id"], []).append((lo, hi))
-        envelopes.setdefault(item["stream_id"], set()).add((item["start_ns"], item["end_ns"]))
+        for member in item["memberships"]:
+            first = member.get("start_timestamp_ns", item["start_ns"])
+            last = member.get("end_timestamp_ns", item["end_ns"])
+            left, right = max(start, first), min(end, last + 1)
+            if left < right:
+                stream = member["stream_id"]
+                observations.setdefault(stream, []).append((left, right))
+                envelopes.setdefault(stream, set()).add((first, last))
     gaps: dict[str, list[tuple[int, int]]] = {}
     for stream, intervals in sorted(observations.items()):
         cursor = start
@@ -283,14 +304,14 @@ def source_selection(paths: ProjectPaths, recipe: DerivedRecipe) -> dict[str, An
         [
             {
                 "database_id": item["database_id"],
-                "stream_id": member["stream_id"],
-                "start_ns": member.get("start_timestamp_ns", item["start_ns"]),
-                "end_ns": member.get("end_timestamp_ns", item["end_ns"]),
+                "start_ns": item["start_ns"],
+                "end_ns": item["end_ns"],
+                "memberships": [
+                    member for member in item["memberships"] if member["request_indexes"]
+                ],
             }
             for item in result["candidates"]
             if item["database_id"] in selected
-            for member in item["memberships"]
-            if member["request_indexes"]
         ],
         recipe.start_ns,
         recipe.end_ns,
@@ -352,7 +373,6 @@ def prepare_job(
     ids: list[int],
     discovery: dict[str, Any],
 ) -> dict[str, Any]:
-    binary = resolve(paths, "merge")
     selected = asyncio.run(select_inputs(paths, ids=ids))
     if discovery:
         candidates = {item["database_id"]: item for item in discovery["candidates"]}
@@ -372,7 +392,7 @@ def prepare_job(
                     )
                 )
                 or str(item["engine_id"]) != candidate["engine_id"]
-                or str(Path(item["path"]) / item["primary_file"]) != candidate["registered_path"]
+                or item["registered_path"] != candidate["registered_path"]
                 or item["memberships"]
                 != [
                     {
@@ -390,53 +410,42 @@ def prepare_job(
     selected_coverage = (
         discovery["coverage"] if discovery else coverage(selected, recipe.start_ns, recipe.end_ns)
     )
-    runtime = paths.config_dir / "historical/general.toml"
-    config_sha = checksum(runtime)
-    settings = runtime_settings(paths, binary, runtime)
-    if checksum(runtime) != config_sha:
-        raise MarketForgeError("Historical runtime configuration changed during preparation.")
+    output = (paths.datasets_dir / "merged" / str(identity)).absolute()
+    if output.exists() or output.is_symlink():
+        raise MarketForgeError(f"Merge output already exists: {output}")
     directory.mkdir(parents=True, exist_ok=False)
     source = directory / "merge-job.json"
-    publications = publication_selection(selected)
-    grouped: dict[str, list[dict[str, str]]] = {}
-    for item in selected:
-        grouped.setdefault(str(item["engine_id"]), []).append(
-            {
-                "path": item["primary_file"],
-                "sha256": item["file_sha256"],
-                "manifest_sha256": item["manifest_sha256"],
-            }
-        )
     job: dict[str, Any] = {
-        "operation": "merge",
         "job_id": identity,
-        "inputs": [item["engine_id"] for item in publications],
-        "primary_files": grouped,
-        "input_paths": {str(item["engine_id"]): item["path"] for item in selected},
+        "operation": "merge",
+        "inputs": [file_input(item) for item in selected],
         "time_range": {"start_ns": recipe.start_ns, "end_ns": recipe.end_ns},
-        **settings,
-        "output": {"dataset_path": str(paths.datasets_dir / "merged" / str(identity))},
+        "output": {"dataset_path": str(output)},
     }
-    candidate = directory / "candidate-job.json"
-    write_job(candidate, job)
-    try:
-        validate_job(paths, binary, candidate)
-        candidate.rename(source)
-    finally:
-        candidate.unlink(missing_ok=True)
+    write_job(source, job)
     report: dict[str, Any] = {
         **discovery,
-        "status": "prepared",
-        "compatibility": "validated",
+        "status": "generated",
+        "compatibility": "not_validated",
         "recipe": name,
         "job_path": str(source),
-        "executable_sha256": checksum(binary),
-        "configuration_sha256": config_sha,
         "submitted_sha256": checksum(source),
         "inputs": selected,
         "report_path": str(directory / "prepare-report.json"),
         "coverage": selected_coverage,
     }
+    try:
+        binary = resolve(paths, "merge")
+        digest = checksum(binary)
+        validate_job(paths, binary, source)
+        if checksum(binary) != digest or checksum(source) != report["submitted_sha256"]:
+            raise MarketForgeError(
+                "Managed merge executable or generated job changed during validation."
+            )
+    except (MarketForgeError, OSError) as error:
+        report["validation_error"] = str(error)
+    else:
+        report.update(status="prepared", compatibility="validated", executable_sha256=digest)
     write_job(directory / "prepare-report.json", report)
     return report
 
@@ -516,6 +525,20 @@ def verify_output(
     }
 
 
+def same_inputs(saved: list[dict[str, Any]], selected: list[dict[str, Any]]) -> bool:
+    # Older receipts carried an inferred stream and predate explicit registered path fields.
+    if len(saved) != len(selected):
+        return False
+    for previous, current in zip(saved, selected, strict=True):
+        previous = {key: value for key, value in previous.items() if key != "stream_id"}
+        if "registered_path" not in previous and "manifest_path" not in previous:
+            previous["registered_path"] = str(Path(previous["path"]) / previous["primary_file"])
+            previous["manifest_path"] = str(Path(previous["path"]) / "manifest.json")
+        if previous != current:
+            return False
+    return True
+
+
 def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str, Any]:
     if tui and not all(os.isatty(fd) for fd in (0, 1, 2)):
         raise MarketForgeError("--tui requires an interactive terminal.")
@@ -530,17 +553,24 @@ def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str
         raise MarketForgeError("Managed merge executable changed during execution preparation.")
     submission = directory / "submitted-merge.json"
     submission.write_bytes(source.read_bytes())
+    submitted_sha = checksum(submission)
     validate_job(paths, pinned, submission)
     job = read_json(submission)
     selected = asyncio.run(select_inputs(paths, job=job))
     report = source.parent / "prepare-report.json"
     prepared = read_json(report) if report.is_file() else {}
     if prepared and (
-        prepared.get("submitted_sha256") != checksum(submission)
-        or prepared.get("executable_sha256") != digest
-        or prepared.get("inputs") != selected
-        or prepared.get("configuration_sha256")
-        != checksum(paths.config_dir / "historical/general.toml")
+        prepared.get("submitted_sha256") != submitted_sha
+        or (
+            prepared.get("executable_sha256") is not None
+            and prepared["executable_sha256"] != digest
+        )
+        or not same_inputs(prepared.get("inputs", []), selected)
+        or (
+            prepared.get("configuration_sha256") is not None
+            and prepared["configuration_sha256"]
+            != checksum(paths.config_dir / "historical/general.toml")
+        )
     ):
         raise MarketForgeError(
             "Prepared merge job, selected inputs, executable or runtime changed."
@@ -557,7 +587,7 @@ def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str
         "job_id": job["job_id"],
         "recipe": prepared.get("recipe"),
         "submission_path": str(submission),
-        "submitted_sha256": checksum(submission),
+        "submitted_sha256": submitted_sha,
         "executable_sha256": digest,
         "configuration_sha256": prepared.get("configuration_sha256"),
         "inputs": selected,
@@ -573,6 +603,8 @@ def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str
         "counts": {"requested": 1, "successful": 0, "failed": 0, "registered": 0},
     }
     sync_submission(submission)
+    if checksum(submission) != submitted_sha or checksum(pinned) != digest:
+        raise MarketForgeError("Validated merge job or executable changed before launch.")
     write_job(intent, receipt)
     try:
         code, interrupted = run_process(
@@ -704,7 +736,7 @@ async def register(paths: ProjectPaths, source: Path) -> dict[str, Any]:
         root = source.parent if source.name == "manifest.json" else source
         job = read_json(root / "merge-job.json")
     selected = await select_inputs(paths, job=job)
-    if intent is not None and selected != intent["inputs"]:
+    if intent is not None and not same_inputs(intent["inputs"], selected):
         raise MarketForgeError("Recovery inputs differ from merge execution intent.")
     try:
         evidence = await asyncio.to_thread(verify_output, paths, source, binary, selected, job)

@@ -213,12 +213,9 @@ historical_merge       # core/trades/depth, partition, execution, materialize
 historical_convert     # existing planning/reference/arithmetic/output tests
 ```
 
-Three opt-in groups are rooted at `engine/tests/historical/slow/{normalize,merge,convert}/main.rs`:
-`historical_slow_normalize`, `historical_slow_merge`, `historical_slow_convert`.
-Their `required-features` is `historical-slow-tests`, which enables Historical but
-is not enabled by Historical or defaults. Existing test files stay in responsibility
-directories; explicit grouped module registration provides isolation. Mixed files
-are split so bounded cases remain normal; test bodies and assertions are preserved.
+The merge target now includes portable and bounded recorded cases. Full merge
+workloads are explicitly ignored. Recorded conversion remains available as
+`historical_recorded_convert` with the `historical-real-tests` feature.
 Shared targets remain in Shared. The target map is in
 [test-inventory.json](test-inventory.json), with per-case discovery and classification
 evidence in [.planning/historical/evidence](../../.planning/historical/evidence/).
@@ -282,13 +279,12 @@ python3 scripts/bounded_tests.py target/normal-artifacts.jsonl target/normal-run
   --run --targets 'historical_(normalize|merge|convert)'
 ```
 
-Slow target compilation (permitted in this milestone):
+Recorded conversion target compilation:
 
 ```sh
 cargo test --manifest-path engine/Cargo.toml --locked --offline \
-  --no-default-features --features historical-slow-tests \
-  --test historical_slow_normalize --test historical_slow_merge \
-  --test historical_slow_convert --no-run
+  --no-default-features --features historical-real-tests \
+  --test historical_recorded_convert --no-run
 ```
 
 A future explicitly authorized slow campaign can omit `--no-run` for a chosen

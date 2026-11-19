@@ -1,9 +1,6 @@
 #![cfg(feature = "historical")]
 
-use std::path::PathBuf;
-
 use {
-    marketforge_engine::historical::job::load_merge_job,
     marketforge_engine::historical::merge::DepthEventRef,
     marketforge_engine::historical::merge::DepthEventSource,
     marketforge_engine::historical::merge::DepthStream,
@@ -19,13 +16,6 @@ use {
 // -----------------------------------------------------------------------------
 // Project root
 // -----------------------------------------------------------------------------
-
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("project root")
-        .to_path_buf()
-}
 
 // -----------------------------------------------------------------------------
 // Event identity
@@ -77,15 +67,17 @@ impl From<&DepthEventRef> for EventIdentity {
 // -----------------------------------------------------------------------------
 
 struct TestContext {
+    _workspace: tempfile::TempDir,
     inventory: Vec<marketforge_engine::historical::merge::DepthTaskInventory>,
     boundaries: Vec<marketforge_engine::historical::merge::DepthBoundaryLink>,
     dataset_order: Vec<u64>,
 }
 
 fn load_context() -> TestContext {
-    let root = project_root();
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
 
-    let job = load_merge_job(root.join("data/.jobs/merge/merge-200.json")).expect("load merge job");
+    let job = crate::publication::depth_job(&root);
 
     let inputs = resolve_merge_inputs(&job, &root).expect("resolve inputs");
 
@@ -94,6 +86,7 @@ fn load_context() -> TestContext {
     let boundaries = reconcile_depth_boundaries(&inventory).expect("reconcile boundaries");
 
     TestContext {
+        _workspace: workspace,
         inventory,
         boundaries,
         dataset_order: job.inputs,
@@ -168,10 +161,10 @@ fn partition_merger(context: &TestContext, partition: MergePartition) -> KWayDep
 fn partition_concatenation_matches_sequential_merge() {
     let context = load_context();
 
-    let start_ns = 1788220800000000000_i64;
+    let start_ns = crate::publication::START;
 
     // Two-hour interval.
-    let end_ns = start_ns + 7_200_000_000_000;
+    let end_ns = start_ns + 400;
 
     // Eight 15-minute partitions.
     let partition_duration = (end_ns - start_ns) / 8;
@@ -256,21 +249,18 @@ fn partition_concatenation_matches_sequential_merge() {
     // Verify no sequential events remain inside the tested interval
     // -------------------------------------------------------------------------
 
-    while let Some(event) = sequential
+    if let Some(event) = sequential
         .next_event()
         .expect("read remaining sequential event")
+        && event.event.event.event_timestamp_ns < end_ns
     {
-        if event.event.event.event_timestamp_ns >= end_ns {
-            break;
-        }
-
         panic!(
             "sequential event missing from partitioned output: {:?}",
             EventIdentity::from(&event.event)
         );
     }
 
-    assert!(total_events > 0);
+    assert_eq!(total_events, 8);
 
     println!("{}", "=".repeat(90));
     println!("Partitions       : {}", partitions.len());

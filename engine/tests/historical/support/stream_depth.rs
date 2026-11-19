@@ -510,6 +510,7 @@ fn legacy_manifest2_depth_and_boundary1_remain_readable() {
         operation: MergeOperation::Merge,
         inputs: vec![job.dataset_id.0],
         primary_files: Default::default(),
+        submission: None,
         input_paths: std::collections::HashMap::from([(job.dataset_id.0, root)]),
         time_range: MergeTimeRange {
             start_ns: 0,

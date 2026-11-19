@@ -578,7 +578,8 @@ def test_databento_recordings(
     assert report["engine_ready"], report
     result = cli("normalize", "run", str(report["batch_path"]), "--testing")
     assert result["status"] == "complete", result
-    assert len(result["registrations"]) == 2
+    assert result["counts"]["verified_publications"] == 2
+    assert result["registrations"]
     assert all(item["registration"] == "registered" for item in result["registrations"])
 
     def read_source(filename: str) -> list[dict[str, Any]]:
@@ -613,6 +614,14 @@ def test_databento_recordings(
         manifest = json.loads((root / "manifest.json").read_bytes())
         manifests[manifest["content_type"]] = (root, manifest)
     assert set(manifests) == {"trades", "depth"}
+    expected_parts = {
+        str(directory / file["path"])
+        for directory, manifest in manifests.values()
+        for file in manifest["files"]
+    }
+    registered_parts = [item["path"] for item in result["registrations"]]
+    assert len(registered_parts) == len(expected_parts)
+    assert set(registered_parts) == expected_parts
 
     def verify_dataset(kind: str, records: list[dict[str, Any]]) -> tuple[Any, ...]:
         directory, manifest = manifests[kind]

@@ -12,6 +12,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from forge.datasets import parquet
+from forge.datasets.inspection import contribution_counts, terminal_lineage
 from forge.datasets.migration import migrate
 from forge.datasets.registration import file_summaries
 from forge.historical.archives.storage.files import disk
@@ -19,7 +20,12 @@ from forge.historical.engine.managed import checksum
 from forge.shared.database.testing import testing_connection, testing_dsn
 from forge.shared.errors import MarketForgeError
 from forge.shared.terminal.console import create_console
-from forge.shared.terminal.datasets import render_coverage, render_datasets
+from forge.shared.terminal.datasets import (
+    render_coverage,
+    render_datasets,
+    render_find,
+    render_inspection,
+)
 from forge.startup.context import ApplicationContext
 
 COLUMNS = """d.id,d.operation,d.data_type,d.storage_path,d.primary_file,d.file_sha256,
@@ -27,6 +33,16 @@ d.status,d.storage_format,d.start_timestamp_ns,d.end_timestamp_ns,d.operation_de
 p.id AS publication_id,p.engine_dataset_id,p.instrument_namespace,p.storage_root,p.manifest_path,
 p.evidence->>'manifest_sha256' AS manifest_sha256,
 p.evidence#>>'{resolved_job,job_id}' AS engine_job_id"""
+SEARCH_ACTIONS = {"list", "coverage", "find"}
+DATA_TYPES = {
+    "trade": "trade",
+    "l2": "l2",
+    "trade_l2": "trade_l2",
+    "trades": "trade",
+    "depth": "l2",
+    "order_book_l2": "l2",
+    "combined": "trade_l2",
+}
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
@@ -70,6 +86,7 @@ def configure(parser: argparse.ArgumentParser) -> None:
     actions = parser.add_subparsers(dest="dataset_action", required=True)
     for name in (
         "list",
+        "find",
         "show",
         "streams",
         "lineage",
@@ -80,21 +97,23 @@ def configure(parser: argparse.ArgumentParser) -> None:
         "migrate-registration",
         "refresh-summary",
     ):
-        command = actions.add_parser(name, allow_abbrev=False)
+        command = actions.add_parser(
+            name,
+            allow_abbrev=False,
+            **({"help": "Find registered files by market identity."} if name == "find" else {}),
+        )
         command.add_argument("--testing", action="store_true", required=True)
         command.set_defaults(service_handler=run)
-        if name not in {"list", "coverage", "migrate-registration"}:
+        if name not in SEARCH_ACTIONS | {"migrate-registration"}:
             command.add_argument("id", type=int)
         if name == "list":
             command.add_argument("--wide", action="store_true")
             command.add_argument(
                 "--precise", action="store_true", help="Display full nanosecond UTC timestamps."
             )
-        if name in {"list", "coverage"}:
+        if name in SEARCH_ACTIONS:
             command.add_argument("--operation", choices=("normalize", "merge"))
-            command.add_argument(
-                "--data-type", choices=("trade", "l2", "trade_l2", "trades", "depth", "combined")
-            )
+            command.add_argument("--data-type", choices=DATA_TYPES)
             for flag in (
                 "status",
                 "exchange",
@@ -111,6 +130,22 @@ def configure(parser: argparse.ArgumentParser) -> None:
         if name == "head":
             command.add_argument("--limit", type=bounded, default=10)
             command.add_argument("--column", action="append")
+            command.add_argument(
+                "--wide", action="store_true", help="Show all stored columns by default."
+            )
+            command.add_argument(
+                "--precise", action="store_true", help="Show exact nanosecond UTC timestamps."
+            )
+        if name == "lineage":
+            command.add_argument(
+                "--publication", action="store_true", help="Expand publication-level selection."
+            )
+            command.add_argument(
+                "--checksums", action="store_true", help="Show retained raw input checksums."
+            )
+            command.add_argument(
+                "--limit", type=bounded, default=25, help="Maximum rows per lineage section."
+            )
         if name == "migrate-registration":
             command.add_argument("--all", action="store_true", required=True)
             command.add_argument("--dry-run", action="store_true")
@@ -137,7 +172,7 @@ async def browse(args: argparse.Namespace, context: ApplicationContext) -> dict[
         return await migrate(paths, dry_run=args.dry_run)
     async with testing_connection(testing_dsn(paths.root)) as c:
         async with c.cursor(row_factory=dict_row) as cur:
-            if action in {"list", "coverage"}:
+            if action in SEARCH_ACTIONS:
                 if args.offset < 0 or (
                     args.start is not None and args.end is not None and args.start >= args.end
                 ):
@@ -170,9 +205,7 @@ async def browse(args: argparse.Namespace, context: ApplicationContext) -> dict[
                     {
                         **vars(args),
                         "limit": args.limit if args.as_json else args.limit + 1,
-                        "data_type": {"trades": "trade", "depth": "l2", "combined": "trade_l2"}.get(
-                            args.data_type, args.data_type
-                        ),
+                        "data_type": DATA_TYPES.get(args.data_type),
                     },
                 )
                 records = await cur.fetchall()
@@ -214,6 +247,14 @@ async def browse(args: argparse.Namespace, context: ApplicationContext) -> dict[
                     f"No active file dataset {args.id}. Aggregate IDs require migration."
                 )
             if action == "lineage":
+                if not args.as_json:
+                    return await terminal_lineage(
+                        cur,
+                        row,
+                        publication=args.publication,
+                        checksums=args.checksums,
+                        limit=args.limit,
+                    )
                 await cur.execute(
                     """SELECT local_archive_id,input_sha256 FROM historical.dataset_raw_inputs
                     WHERE dataset_id=%s ORDER BY local_archive_id""",
@@ -252,12 +293,18 @@ async def browse(args: argparse.Namespace, context: ApplicationContext) -> dict[
                 return {
                     "file": {k: v for k, v in row.items() if k not in keys},
                     "publication": {k: row[k] for k in keys},
+                    **(
+                        {"counts": await contribution_counts(cur, args.id)}
+                        if not args.as_json
+                        else {}
+                    ),
                 }
             if action == "streams":
                 return {
                     "id": args.id,
-                    "scope": row["summary"]["membership_scope"],
-                    "streams": row["summary"]["memberships"],
+                    "scope": row["summary"].get("membership_scope", "unresolved"),
+                    "streams": row["summary"].get("memberships", []),
+                    **({"file": row} if not args.as_json else {}),
                 }
             file = selected_path(row)
             if action == "verify":
@@ -294,11 +341,24 @@ async def browse(args: argparse.Namespace, context: ApplicationContext) -> dict[
             if action == "head":
                 from itertools import islice
 
-                def read() -> list[dict[str, Any]]:
-                    batches = parquet.batches([file], columns=args.column, batch_size=args.limit)
-                    return [row for batch in islice(batches, 1) for row in batch.to_pylist()]
+                def read() -> dict[str, Any]:
+                    columns = args.column
+                    if not args.as_json and columns is None:
+                        names = parquet.schema([file]).names
+                        columns = names if args.wide else preview_columns(row, names)
+                    batches = parquet.batches([file], columns=columns, batch_size=args.limit)
+                    rows = [record for batch in islice(batches, 1) for record in batch.to_pylist()]
+                    result: dict[str, Any] = {"id": args.id, "rows": rows}
+                    if not args.as_json:
+                        result.update(
+                            file=row,
+                            projection=columns,
+                            precise=args.precise,
+                            compact=not args.wide and args.column is None,
+                        )
+                    return result
 
-                return {"id": args.id, "rows": await disk(read)}
+                return await disk(read)
             await cur.execute(
                 "SELECT evidence FROM historical.dataset_publications WHERE id=%s",
                 (row["publication_id"],),
@@ -312,6 +372,40 @@ async def browse(args: argparse.Namespace, context: ApplicationContext) -> dict[
                 (Jsonb(summary), args.id),
             )
             return {"id": args.id, "summary": summary}
+
+
+def preview_columns(row: dict[str, Any], names: list[str]) -> list[str]:
+    memberships = row.get("summary", {}).get("memberships", [])
+    identities = (
+        ("exchange", "symbol", "instrument_id", "stream_id", "stream_rank")
+        if len(memberships) != 1
+        else ()
+    )
+    fields = {
+        "trade": (
+            "side",
+            "price",
+            "quantity_base",
+            "quantity_quote",
+            "quantity_contracts",
+            "trade_id",
+        ),
+        "l2": (
+            "side",
+            "price",
+            "quantity_base",
+            "quantity_quote",
+            "quantity_contracts",
+            "order_count",
+            "source_operation",
+            "sequence_start",
+            "sequence_end",
+            "canonical_row_count",
+        ),
+        "trade_l2": ("event_kind", "trade", "canonical_row_count"),
+    }.get(row["data_type"], ())
+    available = [name for name in ("event_timestamp_ns", *identities, *fields) if name in names]
+    return available or names[:5]
 
 
 def run(args: argparse.Namespace, context: ApplicationContext) -> int:
@@ -329,6 +423,10 @@ def run(args: argparse.Namespace, context: ApplicationContext) -> int:
         console = create_console(settings, stream=console.file)
     if args.dataset_action == "list":
         render_datasets(console, result, wide=args.wide, precise=args.precise)
+    elif args.dataset_action == "find":
+        render_find(console, result, filters=vars(args))
+    elif args.dataset_action in {"show", "streams", "lineage", "schema", "head"}:
+        render_inspection(console, args.dataset_action, result)
     elif args.dataset_action == "coverage":
         render_coverage(console, result, filters=vars(args))
     else:

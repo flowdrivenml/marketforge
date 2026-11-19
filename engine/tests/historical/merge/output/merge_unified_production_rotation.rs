@@ -1,261 +1,74 @@
-#![cfg(feature = "historical")]
-
+use crate::{
+    merge_test_job::bounded_runtime,
+    publication::{make_job, rotating_trade_publication},
+};
+use arrow_array::{UInt8Array, UInt64Array};
+use marketforge_engine::historical::merge::{
+    PhysicalMergeManifest, UnifiedMergeMode, execute_unified_merge_job, physical_combined_schema,
+    validate_committed_merge,
+};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-use std::{
-    collections::HashMap,
-    fs::{self, File},
-    path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
-};
-use {
-    marketforge_engine::historical::job::MergeJob,
-    marketforge_engine::historical::job::MergeOperation,
-    marketforge_engine::historical::job::MergeOutput,
-    marketforge_engine::historical::job::MergeParquetConfig,
-    marketforge_engine::historical::job::MergePartitioning,
-    marketforge_engine::historical::job::MergeResources,
-    marketforge_engine::historical::job::MergeTimeRange,
-    marketforge_engine::historical::merge::PhysicalMergeManifest,
-    marketforge_engine::historical::merge::UnifiedMergeMode,
-    marketforge_engine::historical::merge::execute_unified_merge_job,
-    marketforge_engine::historical::merge::physical_combined_schema,
-};
-
-#[path = "../support/mod.rs"]
-mod support;
-
-use support::datasets::{project_root, resolve_depth_dataset, resolve_trade_dataset};
-
-// -----------------------------------------------------------------------------
-// Temporary directory
-// -----------------------------------------------------------------------------
-
-struct TestDirectory(PathBuf);
-
-impl TestDirectory {
-    fn new() -> Self {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-
-        let path = std::env::temp_dir().join(format!(
-            "marketforge-production-rotation-{}-{timestamp}",
-            std::process::id()
-        ));
-
-        fs::create_dir_all(&path).unwrap();
-
-        Self(path)
-    }
-
-    fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for TestDirectory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
-// -----------------------------------------------------------------------------
-// Job configuration
-// -----------------------------------------------------------------------------
-
-fn test_job(root: &Path, output: &Path) -> MergeJob {
-    let trade_ids = [111_u64, 109];
-    let depth_ids = [105_u64, 112];
-
-    let mut input_paths = HashMap::new();
-
-    for dataset_id in trade_ids {
-        let input = resolve_trade_dataset(root, dataset_id);
-        input_paths.insert(dataset_id, input.dataset_path);
-    }
-
-    for dataset_id in depth_ids {
-        let input = resolve_depth_dataset(root, dataset_id);
-        input_paths.insert(dataset_id, input.dataset_path);
-    }
-
-    let start_ns = 1_788_220_800_000_000_000_i64;
-
-    MergeJob {
-        job_id: 900_700,
-        operation: MergeOperation::Merge,
-
-        inputs: vec![111, 109, 105, 112],
-        primary_files: Default::default(),
-        input_paths,
-
-        time_range: MergeTimeRange {
-            start_ns,
-            end_ns: start_ns + 7_200_000_000_000,
-        },
-
-        resources: MergeResources {
-            workers: 1,
-            memory_limit_mb: 4096,
-            max_open_files: 128,
-        },
-
-        partitioning: MergePartitioning {
-            partitions_per_worker: 1,
-        },
-
-        parquet: MergeParquetConfig {
-            row_group_target_mb: 1,
-            file_target_mb: 1,
-            compression_level: 3,
-        },
-
-        output: MergeOutput {
-            dataset_path: output.to_path_buf(),
-        },
-    }
-}
-
-// -----------------------------------------------------------------------------
-// Production rotation test
-// -----------------------------------------------------------------------------
+use std::fs::File;
 
 #[test]
-fn validates_real_combined_rotation() {
-    let root = project_root();
-    let temporary = TestDirectory::new();
-
-    let output = temporary.path().join("merged");
-
-    let job = test_job(&root, &output);
-
-    // -------------------------------------------------------------------------
-    // Execute complete production pipeline
-    // -------------------------------------------------------------------------
-
-    let result = execute_unified_merge_job(&job, &root).expect("execute production unified merge");
-
+fn rotates_committed_combined_output_in_one_partition() {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path();
+    // One full 16,384-event materialization window plus six events, using the
+    // minimum production file target of 1 MiB.
+    let mut document = make_job(root, &[], &[12]);
+    document
+        .inputs
+        .splice(..0, rotating_trade_publication(root, 11));
+    let mut job = bounded_runtime(document);
+    job.parquet.file_target_mb = 1;
+    assert_eq!(job.primary_files.values().map(Vec::len).sum::<usize>(), 4);
+    let start = std::time::Instant::now();
+    let result = execute_unified_merge_job(&job, root).unwrap();
+    validate_committed_merge(&result.dataset_path).unwrap();
     assert_eq!(result.mode, UnifiedMergeMode::Combined);
     assert_eq!(result.partitions_completed, 1);
-
-    // -------------------------------------------------------------------------
-    // Verify file rotation
-    // -------------------------------------------------------------------------
-
-    assert!(
-        result.files_written > 1,
-        "expected multiple Parquet files in one partition, got {}",
-        result.files_written
-    );
-
-    // -------------------------------------------------------------------------
-    // Validate committed manifest
-    // -------------------------------------------------------------------------
-
+    assert_eq!((result.trade_events, result.depth_events), (16_386, 4));
     let manifest: PhysicalMergeManifest =
-        serde_json::from_reader(File::open(&result.manifest_path).unwrap())
-            .expect("parse physical manifest");
-
-    manifest.validate().unwrap();
-
-    assert_eq!(manifest.files_written, result.files_written);
-    assert_eq!(manifest.events_written, result.events_written);
-
-    assert_eq!(
-        manifest.trade_events + manifest.depth_events,
-        manifest.events_written
-    );
-
-    // -------------------------------------------------------------------------
-    // Verify committed files
-    // -------------------------------------------------------------------------
-
-    let mut total_rows = 0_u64;
-
-    let mut next_file_index = HashMap::<u32, u32>::new();
-
-    for file in &manifest.files {
-        // ---------------------------------------------------------------------
-        // Validate partition-local file numbering
-        // ---------------------------------------------------------------------
-
-        let partition_id = file
-            .partition_id
-            .expect("physical file must have partition ID");
-
-        let index = next_file_index.entry(partition_id).or_insert(0);
-
-        let expected_name = format!("part-{:06}.parquet", *index);
-
-        assert!(
-            file.path.ends_with(&expected_name),
-            "unexpected rotated file name: {}",
-            file.path
-        );
-
-        *index += 1;
-
-        // ---------------------------------------------------------------------
-        // Validate committed physical file
-        // ---------------------------------------------------------------------
-
-        let path = result.dataset_path.join(&file.path);
-
-        assert!(
-            path.is_file(),
-            "missing committed physical file: {}",
-            path.display()
-        );
-
-        let reader = ParquetRecordBatchReaderBuilder::try_new(File::open(&path).unwrap())
-            .expect("open rotated physical Parquet");
-
-        assert_eq!(
-            reader.schema().as_ref(),
-            physical_combined_schema().as_ref(),
-            "rotated file has incorrect physical schema"
-        );
-
-        // ---------------------------------------------------------------------
-        // Validate file metadata
-        // ---------------------------------------------------------------------
-
-        assert_eq!(fs::metadata(&path).unwrap().len(), file.size_bytes,);
-
-        let expected_rows = file.rows.expect("validated row count");
-
-        let actual_rows = reader.metadata().file_metadata().num_rows() as u64;
-
-        assert_eq!(
-            actual_rows, expected_rows,
-            "physical Parquet row count mismatch: {}",
-            file.path
-        );
-
-        total_rows += actual_rows;
+        serde_json::from_reader(File::open(&result.manifest_path).unwrap()).unwrap();
+    assert_eq!(manifest.files.len(), 2);
+    let mut next = [[0, 0], [0, 0]];
+    for (index, file) in manifest.files.iter().enumerate() {
+        assert_eq!(file.partition_id, Some(0));
+        assert!(file.path.ends_with(&format!("part-{index:06}.parquet")));
+        let reader = ParquetRecordBatchReaderBuilder::try_new(
+            File::open(result.dataset_path.join(&file.path)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(reader.schema(), &physical_combined_schema());
+        for batch in reader.build().unwrap() {
+            let batch = batch.unwrap();
+            let kinds = batch
+                .column_by_name("event_kind")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<UInt8Array>()
+                .unwrap();
+            let column = |name| {
+                batch
+                    .column_by_name(name)
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap()
+            };
+            for row in 0..batch.num_rows() {
+                let kind = kinds.value(row) as usize;
+                let task = column("task_id").value(row) as usize;
+                assert_eq!(column("dataset_id").value(row), 11 + kind as u64);
+                assert_eq!(column("canonical_row_offset").value(row), next[kind][task]);
+                next[kind][task] += 1;
+            }
+        }
     }
-
-    assert_eq!(total_rows, manifest.events_written);
-    assert_eq!(total_rows, manifest.events_written);
-
-    // -------------------------------------------------------------------------
-    // Summary
-    // -------------------------------------------------------------------------
-
-    println!("\nMARKETFORGE — PRODUCTION FILE ROTATION");
-    println!("{}", "=".repeat(80));
-
-    println!("Mode         : {:?}", result.mode);
-    println!("Partitions   : {}", result.partitions_completed);
-    println!("Trade events : {}", result.trade_events);
-    println!("Depth events : {}", result.depth_events);
-    println!("Total events : {}", result.events_written);
-    println!("Parquet files: {}", result.files_written);
-
-    println!("Rotation     : VERIFIED");
-    println!("References   : VERIFIED");
-    println!("Manifest     : VERIFIED");
-    println!("Commit       : VERIFIED");
-    println!("Result       : PASS");
+    assert_eq!(next, [[8_193, 8_193], [2, 2]]);
+    println!(
+        "workers=1, primary_files=4, rows=16390, output_files=2, elapsed={:?}",
+        start.elapsed()
+    );
 }

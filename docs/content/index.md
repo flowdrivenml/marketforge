@@ -1,11 +1,12 @@
-# From data to financial engineering
+# MarketForge
 
 ![MarketForge](assets/branding/logo.png)
 
-MarketForge is a developing platform for data infrastructure and financial engineering. CLI commands, TOML configuration, and terminal interfaces connect acquisition and preparation with processing foundations shared by research and live operation.
+MarketForge acquires historical market data, manages source archives and normalizes trades and L2 books to canonical Parquet. Forge coordinates acquisition, catalogue evidence and PostgreSQL registration. The Rust Engine processes and publishes datasets. Compatible publications can be merged and inspected through Forge.
 
-> **Documentation draft.** This site establishes orientation and navigation. It is not a complete manual or a certification of workflow readiness.
-
-Begin with [Getting Started](getting-started/index.md) for requirements and the first-workflow outline. [Workflows](workflows/index.md) explains the data path, [Configuration](configuration/index.md) introduces configuration categories, and [Reference](reference/index.md) identifies the command and contract documentation to come.
-
-Contributors can use [Development](development/index.md) for architecture and extension boundaries. Broader research, financial engineering, and algorithmic workflows are planned direction; individual implementation readiness is described separately.
+- [Start here](getting-started/index.md) for installation and the Bybit BTC perpetual Quick Start.
+- [Guides](workflows/index.md) for acquisition, profiles, processing and operations.
+- [Concepts](concepts/index.md) for data identity, book state and lineage.
+- [Reference](reference/index.md) for commands and file contracts.
+- [Examples](examples/index.md) for reusable recipes and recordings.
+- [Development](development/index.md) for architecture, tests and extensions.

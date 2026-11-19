@@ -2,23 +2,9 @@
 
 Use `marketforge` or its installed alias `mf`. Uppercase tokens below are placeholders: replace `NAME`/`IMPORT` with a managed configuration name, `LOCAL_ID` with a returned local archive ID, `RUN_UUID` with a returned run UUID, and `PATH` with an actual path. Examples are parser/source-verified, not executed data jobs.
 
-## Global options
+See the [CLI overview](../index.md#global-options) for global flags and the [testing prerequisites](../../workflows/acquisition/index.md#prerequisites) for registry access. Mutation-capable operations may acquire workspace ownership.
 
-Place global options **before** the command group:
-
-```bash
-marketforge --project-root . --json acquisition plan september --testing --cache-only
-```
-
-| Option | Meaning |
-| --- | --- |
-| `--project-root PATH` | Explicit checkout root; otherwise workspace resolution uses the configured environment or enclosing directory. |
-| `--config PATH` | Application TOML settings file, not the acquisition/import recipe. |
-| `--json` | Structured result on stdout where supported; setup/validation errors are JSON on stderr. |
-| `--version` | Installed package version, exits without a data operation. |
-| `-h`, `--help` | Available on each command, without initializing a database operation. |
-
-Registry commands use the [testing prerequisites](../../workflows/acquisition/index.md#prerequisites). `--testing` does not disable writes. The application takes workspace/data-root ownership for mutation-capable operations; a conflict is an error, not permission to remove another operation's lock.
+Acquisition has separate stages. Map discovers source identities and stores discovery evidence. Download acquires managed copies from providers. Register binds local archives to canonical catalogue identities and validated profiles. Import preserves raw bytes without establishing a normalization binding. The [source support matrix](../../workflows/acquisition/historical-data.md#supported-sources) lists provider, content and scope combinations.
 
 ## Saved acquisition recipes
 
@@ -82,13 +68,9 @@ Import recipes resolve in `data/.config/acquisition/import/`. No import command 
 
 All five accept `--silent`; final results remain. They support global JSON. Failed per-file import results produce a failed run with individual outcomes; sources remain unchanged. Source changes during hashing/copying fail rather than being treated as a stable import.
 
-```text
-# Legacy automatic format drafting is retired; use acquisition profiles validate/add.
-```
+### Retired format drafting
 
-`--profile` and `--input` are required. Profile names use lowercase letters, digits and hyphens (must begin with a letter, at most 101 characters). `REFERENCE` is an exact selected root-relative input, not a filesystem path outside the selection. `--member` chooses a ZIP member. Header defaults to unresolved. `--overwrite` explicitly allows replacing the draft directory's generated files, not source bytes.
-
-Writes physical/profile TOML and diagnostics outside the active Engine catalogue. Requires existing physical templates under `data/.config/historical/formats/trades/` or `formats/depth/`; neither directory exists in the inspected checkout, so drafting is currently blocked here. It neither updates the import recipe nor validates an executable normalization mapping. Result includes unresolved fields and pending Engine validation. Global JSON is supported; this command has no `--silent` flag.
+The parser recognizes `acquisition import format new IMPORT --profile PROFILE --input REFERENCE [--member MEMBER] [--header | --no-header] [--overwrite]`, but the handler rejects the action with a retirement error after loading the import recipe. It does not generate TOML or overwrite files, regardless of the supplied flags. Use [profiles sample, validate and add](forge.md#profiles-and-registration) for the supported workflow.
 
 ## Storage inspection
 
@@ -101,9 +83,9 @@ All browsing requires `--testing` even when a subparser does not mark it syntact
 | `storage list --testing [FILTERS] [--status STATUS] [--wide] [--archive LOCAL_ID]` | Paginated stored local records; `--wide` includes filenames in human view. |
 | `storage show LOCAL_ID --testing` | One managed local record; plain positive bigint or `local:ID`. Missing record is an error. |
 
-Common `FILTERS`: `--exchange binance|bybit|okx|gateio|bitget`, `--market spot|linear|inverse|option`, `--instrument-type spot|perpetual|future|option`, `--instrument SYMBOL`, `--scope-kind instrument|family|base_coin`, `--data-type trades|order_book_l2`, `--feed incremental|snapshot|unknown`, `--origin remote|external`, `--base-asset ASSET`, `--quote-asset ASSET`, `--match GLOB`, `--start DATETIME`, `--end DATETIME`, `--limit N`, `--offset N`.
+Common `FILTERS`: `--exchange VENUE`, `--market spot|linear|inverse|option|equity`, `--instrument-type spot|perpetual|future|option|equity`, `--instrument SYMBOL`, `--scope-kind instrument|family|base_coin`, `--data-type trades|order_book_l2`, `--feed incremental|snapshot|unknown`, `--origin remote|external`, `--base-asset ASSET`, `--quote-asset ASSET`, `--match GLOB`, `--start DATETIME`, `--end DATETIME`, `--limit N`, `--offset N`.
 
-Asset filters are case-insensitive exact matches; glob semantics match [markets filtering](../../workflows/markets/instrument-discovery.md#browse-without-network-access). Dates require aware timestamps and use half-open overlap. Bounds must be ordered. Limit defaults to 100 (1–10000), offset 0. `--status` choices: pending, downloading, complete, missing, corrupt, failed, deleted. Global JSON exposes full detail/pagination; list/coverage limits still apply. Nominal gaps do not certify bytes/events.
+`--exchange` takes an exact registered venue code, including manual venues. On explicit browse commands, common filters can appear before or after the action. Asset filters are case-insensitive exact matches; glob semantics match [markets filtering](../../workflows/markets/instrument-discovery.md#browse-without-network-access). Dates require aware timestamps and use half-open overlap. Bounds must be ordered. Limit defaults to 100 (1–10000), offset 0. `--status` choices: pending, downloading, complete, missing, corrupt, failed, deleted. Global JSON exposes full detail/pagination; list/coverage limits still apply. Nominal gaps do not certify bytes/events.
 
 ## Verification and reconciliation
 
@@ -142,7 +124,7 @@ marketforge runs report RUN_UUID [--limit N]
 marketforge runs logs RUN_UUID [--limit N]
 ```
 
-No database/network or `--testing`. Default limit 100; list/log bounds 1–1000. `show` and `report` read the same report and ignore the accepted limit. Logs read first events, capped at 1 MiB; report inspection caps at 4 MiB. Missing/interrupted reports and truncated logs are explicit. Global JSON returns the corresponding document.
+No database/network or `--testing`. Only UUID-named run directories are listed and UUIDs are required for detail commands. Prefixed normalization, merge and registration operation directories are opened using their reported artifact paths. Default limit 100; list/log bounds 1–1000. `show` and `report` read the same report and ignore the accepted limit. Logs read first events, capped at 1 MiB; report inspection caps at 4 MiB. Missing/interrupted reports and truncated logs are explicit. Global JSON returns the corresponding document.
 
 ## Exit behavior
 

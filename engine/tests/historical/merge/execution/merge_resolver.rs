@@ -1,45 +1,26 @@
-#![cfg(feature = "historical")]
-
-use std::path::PathBuf;
-
-use {
-    marketforge_engine::historical::job::load_merge_job,
-    marketforge_engine::historical::merge::resolve_merge_inputs,
-};
-
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
+use crate::{merge_test_job::bounded_runtime, publication::make_job};
+use marketforge_engine::historical::{job::ContentType, merge::resolve_merge_inputs};
 
 #[test]
-fn resolves_real_merge_inputs() {
-    let root = project_root();
-
-    let job = load_merge_job(root.join("data/.jobs/merge/merge-200.json")).expect("load merge job");
-
-    let inputs = resolve_merge_inputs(&job, &root).expect("resolve merge inputs");
-
-    assert_eq!(inputs.len(), 4);
-
-    let expected = [105, 108, 112, 92];
-
-    for (input, expected_id) in inputs.iter().zip(expected) {
-        assert_eq!(input.dataset_id, expected_id);
-
-        assert!(!input.canonical_files.is_empty());
-        assert!(!input.auxiliary_files.is_empty());
-
-        println!(
-            "RESOLVED | dataset={} | canonical={} | auxiliary={} | rows={}",
-            input.dataset_id,
-            input.canonical_files.len(),
-            input.auxiliary_files.len(),
-            input.manifest.events_written,
+fn resolves_generated_merge_inputs() {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path();
+    let job = make_job(root, &[11], &[12]);
+    let resolved = resolve_merge_inputs(&bounded_runtime(job.clone()), root).unwrap();
+    assert_eq!(resolved.len(), 2);
+    for (input, (kind, members)) in resolved.iter().zip([
+        (ContentType::Trades, &job.inputs[..2]),
+        (ContentType::Depth, &job.inputs[2..]),
+    ]) {
+        assert_eq!(input.dataset_id, members[0].publication.engine_dataset_id);
+        assert_eq!(input.manifest.content_type, kind);
+        assert_eq!(
+            input.canonical_files,
+            members
+                .iter()
+                .map(|item| item.path.clone())
+                .collect::<Vec<_>>()
         );
     }
-
-    println!("\nMERGE INPUT RESOLUTION: PASS");
+    assert!(!job.output.dataset_path.exists());
 }

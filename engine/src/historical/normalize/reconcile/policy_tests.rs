@@ -1134,6 +1134,7 @@ fn native_order_dataset_requires_a_segment_aware_consumer() {
         operation: MergeOperation::Merge,
         inputs: vec![job.dataset_id.0],
         primary_files: Default::default(),
+        submission: None,
         input_paths: std::collections::HashMap::from([(
             job.dataset_id.0,
             job.output.dataset_path.clone(),

@@ -65,6 +65,12 @@ pub struct PartitionKey {
 
 #[derive(Debug, Clone)]
 pub enum MergeProgressEvent {
+    InputsVerified {
+        files: usize,
+    },
+    InputsResolved {
+        streams: usize,
+    },
     PhaseStarted {
         phase: MergePhase,
     },
@@ -93,7 +99,7 @@ pub enum MergeProgressEvent {
     },
 
     Finished {
-        success: bool,
+        error: Option<String>,
     },
     ValidationStarted {
         total_partitions: usize,
@@ -252,6 +258,14 @@ impl MergeProgressReporter {
         }
     }
 
+    pub fn inputs_verified(&self, files: usize) {
+        self.emit(MergeProgressEvent::InputsVerified { files });
+    }
+
+    pub fn inputs_resolved(&self, streams: usize) {
+        self.emit(MergeProgressEvent::InputsResolved { streams });
+    }
+
     pub fn phase_started(&self, phase: MergePhase) {
         self.emit(MergeProgressEvent::PhaseStarted { phase });
     }
@@ -284,8 +298,8 @@ impl MergeProgressReporter {
         self.emit(MergeProgressEvent::PartitionFailed { key, message });
     }
 
-    pub fn finished(&self, success: bool) {
-        self.emit(MergeProgressEvent::Finished { success });
+    pub fn finished(&self, error: Option<String>) {
+        self.emit(MergeProgressEvent::Finished { error });
     }
 }
 

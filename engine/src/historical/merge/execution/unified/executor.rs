@@ -1,3 +1,4 @@
+use crate::historical::merge::execution::shared::resolver::resolve_merge_inputs_with_progress;
 use crate::historical::merge::progress::{MergePhase, MergeProgressReporter};
 use crate::historical::merge::validate_physical_dataset_with_progress;
 use crate::historical::merge::{
@@ -6,8 +7,8 @@ use crate::historical::merge::{
     build_merge_checkpoints, build_physical_checkpoints, build_trade_inventory,
     depth_task_intervals, plan_merge_partitions, plan_unified_partition_inputs,
     prepare_physical_publication, reconcile_depth_boundaries, resolve_initial_checkpoints,
-    resolve_merge_inputs, resolve_physical_initial_reconstruction, resolve_unified_merge_streams,
-    trade_task_intervals, validate_unified_merge_output,
+    resolve_physical_initial_reconstruction, resolve_unified_merge_streams, trade_task_intervals,
+    validate_unified_merge_output,
 };
 use crate::{
     historical::job::{ContentType, MergeJob},
@@ -63,7 +64,7 @@ pub fn execute_unified_merge_job_with_progress(
 ) -> Result<UnifiedMergeExecutionResult> {
     let result = execute_unified_merge_job_inner(job, project_root, reporter);
 
-    reporter.finished(result.is_ok());
+    reporter.finished(result.as_ref().err().map(ToString::to_string));
 
     result
 }
@@ -81,14 +82,27 @@ fn execute_unified_merge_job_inner(
     // -------------------------------------------------------------------------
     reporter.phase_started(MergePhase::InputResolution);
     let resolved = profile_stage("input_resolution", || {
-        resolve_merge_inputs(job, project_root)
+        resolve_merge_inputs_with_progress(job, project_root, |files| {
+            reporter.inputs_verified(files)
+        })
     })?;
-    reporter.phase_completed(MergePhase::InputResolution);
+    let stream_count = resolved.iter().try_fold(0, |total, input| {
+        input
+            .selected_streams()
+            .map(|streams| total + streams.len().max(1))
+    })?;
+    reporter.inputs_resolved(stream_count);
     let streams = resolve_unified_merge_streams(&resolved, project_root)?;
     use crate::historical::normalize::manifest::{file_sha256, write_publication_checksums};
     let input_hashes = resolved
         .iter()
-        .map(|input| file_sha256(&input.dataset_path.join("manifest.json")))
+        .map(|input| {
+            if let Some(files) = job.primary_files.get(&input.dataset_id) {
+                Ok(files[0].manifest_sha256.clone())
+            } else {
+                file_sha256(&input.dataset_path.join("manifest.json"))
+            }
+        })
         .collect::<std::io::Result<Vec<_>>>()
         .map_err(|error| invalid_error(error.to_string()))?;
 
@@ -119,18 +133,23 @@ fn execute_unified_merge_job_inner(
     // -------------------------------------------------------------------------
     // Build source inventories
     // -------------------------------------------------------------------------
+    reporter.phase_completed(MergePhase::InputResolution);
     reporter.phase_started(MergePhase::Inventory);
     let mut trade_inventory =
         profile_stage("trade_inventory", || build_trade_inventory(&trade_inputs))?;
 
-    // Retain original task row ordinals while excluding unselected event data.
+    // Stream-layout inventories already honor selection. Apply the same file
+    // filter to task-layout publications while preserving their original offsets.
     for task in &mut trade_inventory {
         if let Some(files) = job.primary_files.get(&task.dataset_id) {
-            let root = &resolved
+            let input = resolved
                 .iter()
                 .find(|input| input.dataset_id == task.dataset_id)
-                .expect("resolved trade publication")
-                .dataset_path;
+                .expect("resolved trade publication");
+            if !input.manifest.streams.is_empty() {
+                continue;
+            }
+            let root = &input.dataset_path;
             task.files.retain(|file| {
                 files
                     .iter()
@@ -140,8 +159,10 @@ fn execute_unified_merge_job_inner(
                 task.files.iter().map(|file| file.start_timestamp_ns).min(),
                 task.files.iter().map(|file| file.end_timestamp_ns).max(),
             ) {
-                task.start_timestamp_ns = start;
-                task.end_timestamp_ns = end;
+                // A selected part can contain several tasks. Its envelope constrains
+                // each task but cannot replace that task's own observed bounds.
+                task.start_timestamp_ns = task.start_timestamp_ns.max(start);
+                task.end_timestamp_ns = task.end_timestamp_ns.min(end);
             }
         }
     }
@@ -151,6 +172,7 @@ fn execute_unified_merge_job_inner(
         profile_stage("depth_inventory", || build_depth_inventory(&depth_inputs))?;
     reporter.phase_completed(MergePhase::Inventory);
 
+    reporter.phase_started(MergePhase::BoundaryReconciliation);
     let boundaries = profile_stage("depth_boundaries", || {
         reconcile_depth_boundaries(&depth_inventory)
     })?;
@@ -176,12 +198,13 @@ fn execute_unified_merge_job_inner(
 
     // Initial reconstruction availability must be preserved in the
     // physical manifest before publication is enabled.
-    let _ = &initial_checkpoints;
+    reporter.phase_completed(MergePhase::BoundaryReconciliation);
 
     // -------------------------------------------------------------------------
     // Plan unified partitions
     // -------------------------------------------------------------------------
 
+    reporter.phase_started(MergePhase::PartitionPlanning);
     let mut intervals = trade_task_intervals(&trade_inventory);
 
     intervals.extend(depth_task_intervals(&depth_inventory)?);
@@ -192,6 +215,7 @@ fn execute_unified_merge_job_inner(
 
     // Preserve plans because logical execution consumes them.
     let materialization_input_plans = plans.clone();
+    reporter.phase_completed(MergePhase::PartitionPlanning);
 
     // -------------------------------------------------------------------------
     // Prepare transactional staging
@@ -247,7 +271,6 @@ fn execute_unified_merge_job_inner(
             &depth_inventory,
         )
     })?;
-    reporter.phase_completed(MergePhase::LogicalValidation);
     let expected_trade_events = results.iter().try_fold(0_u64, |total, result| {
         total
             .checked_add(result.trade_events)
@@ -270,6 +293,8 @@ fn execute_unified_merge_job_inner(
     // Construct physical materialization plans
     // -------------------------------------------------------------------------
 
+    reporter.phase_completed(MergePhase::LogicalValidation);
+    reporter.phase_started(MergePhase::MaterializationPlanning);
     let materialization_plans = profile_stage("materialization_planning", || {
         build_materialization_plans(&logical_staging, &materialization_input_plans, &results)
     })?;
@@ -300,6 +325,7 @@ fn execute_unified_merge_job_inner(
     // Execute parallel physical materialization
     // -------------------------------------------------------------------------
 
+    reporter.phase_completed(MergePhase::MaterializationPlanning);
     reporter.phase_started(MergePhase::PhysicalMaterialization);
 
     let physical_results = profile_stage("physical_materialization", || {
@@ -329,7 +355,6 @@ fn execute_unified_merge_job_inner(
             reporter,
         )
     })?;
-    reporter.phase_completed(MergePhase::PhysicalValidation);
     // -------------------------------------------------------------------------
     // Verify logical and physical event counts
     // -------------------------------------------------------------------------
@@ -349,6 +374,7 @@ fn execute_unified_merge_job_inner(
     // Collect skipped depth initializations
     // -------------------------------------------------------------------------
 
+    reporter.phase_completed(MergePhase::PhysicalValidation);
     let mut skipped_initializations = results
         .iter()
         .flat_map(|partition| partition.skipped_initializations.iter().cloned())
@@ -380,8 +406,6 @@ fn execute_unified_merge_job_inner(
         )
     })?;
 
-    reporter.phase_completed(MergePhase::Checkpoints);
-
     // -------------------------------------------------------------------------
     // Resolve independent physical reconstruction availability
     // -------------------------------------------------------------------------
@@ -397,6 +421,7 @@ fn execute_unified_merge_job_inner(
     // Construct input dataset metadata
     // -------------------------------------------------------------------------
 
+    reporter.phase_completed(MergePhase::Checkpoints);
     let inputs = resolved
         .iter()
         .map(|input| MergeInputDataset {
@@ -440,7 +465,11 @@ fn execute_unified_merge_job_inner(
     let provenance = (|| -> std::io::Result<()> {
         use std::io::Write;
         let mut file = std::fs::File::create(commit.staging_path.join("merge-job.json"))?;
-        serde_json::to_writer_pretty(&mut file, job)?;
+        if let Some(submission) = &job.submission {
+            serde_json::to_writer_pretty(&mut file, submission)?;
+        } else {
+            serde_json::to_writer_pretty(&mut file, job)?;
+        }
         file.sync_all()?;
         let mut file =
             std::fs::File::create(commit.staging_path.join("merge-input-checksums.json"))?;

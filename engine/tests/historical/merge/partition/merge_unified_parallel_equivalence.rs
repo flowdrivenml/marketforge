@@ -1,4 +1,6 @@
 #![cfg(feature = "historical")]
+use crate::publication::depth_publication;
+use crate::publication::trade_publication;
 
 use std::{
     collections::HashMap,
@@ -40,11 +42,6 @@ use {
 // -----------------------------------------------------------------------------
 // Shared test utilities
 // -----------------------------------------------------------------------------
-
-#[path = "../support/mod.rs"]
-mod support;
-
-use support::datasets::{project_root, resolve_depth_dataset, resolve_trade_dataset};
 
 // -----------------------------------------------------------------------------
 // Temporary directory
@@ -91,6 +88,7 @@ fn test_job(dataset_ids: &[u64], output: &Path, start_ns: i64, end_ns: i64) -> M
 
         inputs: dataset_ids.to_vec(),
         primary_files: Default::default(),
+        submission: None,
         input_paths: HashMap::new(),
 
         time_range: MergeTimeRange { start_ns, end_ns },
@@ -254,11 +252,12 @@ fn sequential_reference(
 // -----------------------------------------------------------------------------
 
 fn assert_parallel_equivalence(trade_ids: &[u64], depth_ids: &[u64]) {
-    let root = project_root();
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
     let staging = TestDirectory::new();
 
-    let start_ns = 1_788_220_800_000_000_000_i64;
-    let end_ns = start_ns + 240_000_000_000;
+    let start_ns = crate::publication::START;
+    let end_ns = start_ns + 400;
 
     let dataset_order = trade_ids
         .iter()
@@ -272,12 +271,12 @@ fn assert_parallel_equivalence(trade_ids: &[u64], depth_ids: &[u64]) {
 
     let trade_inputs = trade_ids
         .iter()
-        .map(|&id| resolve_trade_dataset(&root, id))
+        .map(|&id| trade_publication(&root, id))
         .collect::<Vec<_>>();
 
     let depth_inputs = depth_ids
         .iter()
-        .map(|&id| resolve_depth_dataset(&root, id))
+        .map(|&id| depth_publication(&root, id))
         .collect::<Vec<_>>();
 
     let trade_inventory = build_trade_inventory(&trade_inputs).expect("build trade inventory");
@@ -298,15 +297,15 @@ fn assert_parallel_equivalence(trade_ids: &[u64], depth_ids: &[u64]) {
     let partitions = (0..4)
         .map(|index| MergePartition {
             partition_id: index,
-            start_ns: start_ns + i64::from(index) * 60_000_000_000,
-            end_ns: start_ns + (i64::from(index) + 1) * 60_000_000_000,
+            start_ns: start_ns + i64::from(index) * 100,
+            end_ns: start_ns + (i64::from(index) + 1) * 100,
         })
         .collect::<Vec<_>>();
 
     let plans =
         plan_unified_partition_inputs(&partitions, &intervals).expect("plan unified partitions");
 
-    let job = test_job(&dataset_order, staging.path(), start_ns, end_ns);
+    let mut job = test_job(&dataset_order, staging.path(), start_ns, end_ns);
 
     // -------------------------------------------------------------------------
     // Sequential reference
@@ -325,56 +324,35 @@ fn assert_parallel_equivalence(trade_ids: &[u64], depth_ids: &[u64]) {
     // Parallel execution
     // -------------------------------------------------------------------------
 
-    let results = execute_unified_partitions_parallel(
-        &job,
-        plans,
-        &trade_inventory,
-        &depth_inventory,
-        &boundaries,
-        staging.path(),
-    )
-    .expect("execute parallel unified merge");
-
-    // -------------------------------------------------------------------------
-    // Compare persisted output
-    // -------------------------------------------------------------------------
-
-    let actual = read_unified_output(staging.path(), &results);
-
-    assert_eq!(
-        actual.len(),
-        expected.len(),
-        "parallel/sequential event count mismatch"
-    );
-
-    for (index, (actual, expected)) in actual.iter().zip(expected.iter()).enumerate() {
+    assert_eq!(expected.len(), 4 * dataset_order.len());
+    for workers in [1, 2] {
+        let output = staging.path().join(format!("workers-{workers}"));
+        std::fs::create_dir(&output).unwrap();
+        job.output.dataset_path = output.clone();
+        job.resources.workers = workers;
+        let started = std::time::Instant::now();
+        let results = execute_unified_partitions_parallel(
+            &job,
+            plans.clone(),
+            &trade_inventory,
+            &depth_inventory,
+            &boundaries,
+            &output,
+        )
+        .expect("execute parallel unified merge");
+        assert_eq!(results.len(), 4);
+        assert!(results.iter().all(|partition| partition.events_written > 0));
+        let actual = read_unified_output(&output, &results);
         assert_eq!(
             actual, expected,
-            "parallel/sequential mismatch at event {index}"
+            "partitioned results with {workers} workers"
+        );
+        println!(
+            "workers={workers}, partitions=4, events={}, elapsed={:?}",
+            actual.len(),
+            started.elapsed()
         );
     }
-
-    // -------------------------------------------------------------------------
-    // Summary
-    // -------------------------------------------------------------------------
-
-    let trade_events = actual.iter().filter(|event| event.event_kind == 0).count();
-
-    let depth_events = actual.iter().filter(|event| event.event_kind == 1).count();
-
-    println!("\nMARKETFORGE — UNIFIED PARALLEL EQUIVALENCE");
-    println!("{}", "=".repeat(80));
-
-    println!("Streams      : {}", dataset_order.len());
-    println!("Partitions   : {}", results.len());
-    println!("Trade events : {trade_events}");
-    println!("Depth events : {depth_events}");
-    println!("Total events : {}", actual.len());
-
-    println!("Ordering     : VERIFIED");
-    println!("Row identity : VERIFIED");
-    println!("Equivalence  : VERIFIED");
-    println!("Result       : PASS");
 }
 
 // -----------------------------------------------------------------------------

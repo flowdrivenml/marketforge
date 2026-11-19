@@ -1,9 +1,6 @@
 #![cfg(feature = "historical")]
 
-use std::path::PathBuf;
-
 use {
-    marketforge_engine::historical::job::load_merge_job,
     marketforge_engine::historical::merge::DepthEventRef,
     marketforge_engine::historical::merge::DepthEventSource,
     marketforge_engine::historical::merge::DepthStream,
@@ -19,13 +16,6 @@ use {
 // -----------------------------------------------------------------------------
 // Project root
 // -----------------------------------------------------------------------------
-
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("project root")
-        .to_path_buf()
-}
 
 // -----------------------------------------------------------------------------
 // Event identity
@@ -77,15 +67,17 @@ impl From<&DepthEventRef> for EventIdentity {
 // -----------------------------------------------------------------------------
 
 struct TestContext {
+    _workspace: tempfile::TempDir,
     inventory: Vec<marketforge_engine::historical::merge::DepthTaskInventory>,
     boundaries: Vec<marketforge_engine::historical::merge::DepthBoundaryLink>,
     dataset_order: Vec<u64>,
 }
 
 fn load_context() -> TestContext {
-    let root = project_root();
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
 
-    let job = load_merge_job(root.join("data/.jobs/merge/merge-200.json")).expect("load merge job");
+    let job = crate::publication::depth_job(&root);
 
     let inputs = resolve_merge_inputs(&job, &root).expect("resolve inputs");
 
@@ -94,6 +86,7 @@ fn load_context() -> TestContext {
     let boundaries = reconcile_depth_boundaries(&inventory).expect("reconcile boundaries");
 
     TestContext {
+        _workspace: workspace,
         inventory,
         boundaries,
         dataset_order: job.inputs,
@@ -192,6 +185,7 @@ fn assert_equivalent(context: &TestContext, partition: MergePartition) {
     let sequential = sequential_events(context, partition);
     let partitioned = partitioned_events(context, partition);
 
+    assert!(!sequential.is_empty());
     assert_eq!(
         sequential.len(),
         partitioned.len(),
@@ -224,12 +218,12 @@ fn assert_equivalent(context: &TestContext, partition: MergePartition) {
 fn matches_sequential_merge_within_archive() {
     let context = load_context();
 
-    let start = 1788220800000000000_i64;
+    let start = crate::publication::START;
 
     let partition = MergePartition {
         partition_id: 0,
-        start_ns: start + 1_200_000_000_000,
-        end_ns: start + 1_260_000_000_000,
+        start_ns: start + 100,
+        end_ns: start + 200,
     };
 
     assert_equivalent(&context, partition);
@@ -239,13 +233,13 @@ fn matches_sequential_merge_within_archive() {
 fn matches_sequential_merge_across_archive_boundary() {
     let context = load_context();
 
-    // Gate.io archive boundary at 01:00 UTC.
-    let boundary = 1788224400000000000_i64;
+    // Include the last event of task 0 and the snapshot from task 1.
+    let boundary = crate::publication::START + 150;
 
     let partition = MergePartition {
         partition_id: 1,
-        start_ns: boundary - 30_000_000_000,
-        end_ns: boundary + 30_000_000_000,
+        start_ns: boundary - 100,
+        end_ns: boundary + 100,
     };
 
     assert_equivalent(&context, partition);
@@ -253,18 +247,32 @@ fn matches_sequential_merge_across_archive_boundary() {
 
 #[test]
 fn matches_sequential_merge_across_timestamp_discrepancy() {
-    let context = load_context();
-
-    // Gate.io boundary between tasks 58 and 59.
-    // The redundant initialization is timestamped
-    // 600 milliseconds earlier than the preceding final update.
-    let boundary = 1788433200000000000_i64;
-
+    let workspace = tempfile::tempdir().unwrap();
+    let input = crate::publication::depth_with_overlapping_snapshot(workspace.path(), 12);
+    let inventory = build_depth_inventory(&[input]).unwrap();
+    let boundaries = reconcile_depth_boundaries(&inventory).unwrap();
+    assert_eq!(boundaries[0].timestamp_delta_ns, Some(-10));
+    assert_eq!(
+        boundaries[0].relation,
+        marketforge_engine::historical::merge::MergeBoundaryRelation::VerifiedContinuation
+    );
+    let context = TestContext {
+        _workspace: workspace,
+        inventory,
+        boundaries,
+        dataset_order: vec![12],
+    };
     let partition = MergePartition {
         partition_id: 2,
-        start_ns: boundary - 30_000_000_000,
-        end_ns: boundary + 30_000_000_000,
+        start_ns: 150,
+        end_ns: 450,
     };
-
+    assert_eq!(
+        sequential_events(&context, partition)
+            .iter()
+            .map(|event| event.timestamp_ns)
+            .collect::<Vec<_>>(),
+        [200, 400]
+    );
     assert_equivalent(&context, partition);
 }

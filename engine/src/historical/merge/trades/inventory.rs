@@ -65,7 +65,17 @@ pub fn build_trade_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<TradeT
         }
 
         if !input.manifest.streams.is_empty() {
-            for stream in &input.manifest.streams {
+            let selected = input
+                .canonical_files
+                .iter()
+                .map(|path| path.as_path())
+                .collect::<HashSet<_>>();
+            let streams = if selected.is_empty() {
+                input.manifest.streams.iter().collect()
+            } else {
+                input.selected_streams()?
+            };
+            for stream in streams {
                 let mut parts = input
                     .manifest
                     .files
@@ -82,9 +92,12 @@ pub fn build_trade_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<TradeT
                             .ok_or_else(|| invalid_error("stream row overflow"))?;
                         let start = offset.max(source.start_row);
                         let stop = end.min(source.end_row);
-                        if start < stop {
+                        let path = input.dataset_path.join(&part.path);
+                        if start < stop
+                            && (selected.is_empty() || selected.contains(path.as_path()))
+                        {
                             files.push(TradeFileInventory {
-                                path: input.dataset_path.join(&part.path),
+                                path,
                                 part_index: part_index as u64,
                                 row_offset: start - source.start_row,
                                 file_start_row: start - offset,
@@ -109,7 +122,17 @@ pub fn build_trade_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<TradeT
                     dataset_rows = dataset_rows
                         .checked_add(rows)
                         .ok_or_else(|| invalid_error("dataset row overflow"))?;
-                    if rows > 0 {
+                    if !files.is_empty() {
+                        let selected_start = files
+                            .iter()
+                            .map(|file| file.start_timestamp_ns)
+                            .min()
+                            .unwrap();
+                        let selected_end = files
+                            .iter()
+                            .map(|file| file.end_timestamp_ns)
+                            .max()
+                            .unwrap();
                         let metrics = input
                             .manifest
                             .processing_metrics
@@ -123,16 +146,28 @@ pub fn build_trade_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<TradeT
                             canonical_rows: rows,
                             start_timestamp_ns: metrics
                                 .start_timestamp_ns
-                                .ok_or_else(|| invalid_error("missing task timestamp"))?,
+                                .ok_or_else(|| invalid_error("missing task timestamp"))?
+                                .max(selected_start),
                             end_timestamp_ns: metrics
                                 .end_timestamp_ns
-                                .ok_or_else(|| invalid_error("missing task timestamp"))?,
+                                .ok_or_else(|| invalid_error("missing task timestamp"))?
+                                .min(selected_end),
                             files,
                         });
                     }
                 }
             }
-            if dataset_rows != input.manifest.events_written {
+            // Ownership validation checks that each manifest part is accounted for.
+            // Selected streams need only allocate inventories for their selected parts.
+            let publication_rows = input.manifest.files.iter().try_fold(0_u64, |total, file| {
+                total
+                    .checked_add(file.rows)
+                    .ok_or_else(|| invalid_error("dataset row overflow"))
+            })?;
+            if publication_rows != input.manifest.events_written
+                || ((selected.is_empty() || selected.len() == input.manifest.files.len())
+                    && dataset_rows != publication_rows)
+            {
                 return invalid("stream inventory row mismatch");
             }
             continue;

@@ -1,27 +1,18 @@
 #![cfg(feature = "historical")]
 
-use std::path::PathBuf;
-
 use {
-    marketforge_engine::historical::job::load_merge_job,
     marketforge_engine::historical::merge::build_depth_inventory,
     marketforge_engine::historical::merge::plan_merge_partitions,
     marketforge_engine::historical::merge::plan_partition_inputs,
     marketforge_engine::historical::merge::resolve_merge_inputs,
 };
 
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
 #[test]
-fn plans_real_partition_inputs() {
-    let root = project_root();
+fn plans_generated_partition_inputs() {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
 
-    let job = load_merge_job(root.join("data/.jobs/merge/merge-200.json")).expect("load merge job");
+    let job = crate::publication::depth_job(&root);
 
     let inputs = resolve_merge_inputs(&job, &root).expect("resolve inputs");
 
@@ -32,7 +23,7 @@ fn plans_real_partition_inputs() {
     let plans =
         plan_partition_inputs(&partitions.partitions, &inventory).expect("plan partition inputs");
 
-    assert_eq!(plans.len(), 64);
+    assert_eq!(plans.len(), 1);
 
     println!("\nMARKETFORGE — PARTITION INPUT PLANNING");
 

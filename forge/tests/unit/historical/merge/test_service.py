@@ -22,8 +22,18 @@ def test_recipe_and_coverage() -> None:
         service.Recipe(dataset_ids=[8], start_ns=50, end_ns=10)
     result = service.coverage(
         [
-            {"database_id": 8, "stream_id": "first", "start_ns": 11, "end_ns": 40},
-            {"database_id": 3, "stream_id": "first", "start_ns": 41, "end_ns": 45},
+            {
+                "database_id": 8,
+                "memberships": [{"stream_id": "first"}],
+                "start_ns": 11,
+                "end_ns": 40,
+            },
+            {
+                "database_id": 3,
+                "memberships": [{"stream_id": "first"}],
+                "start_ns": 41,
+                "end_ns": 45,
+            },
         ],
         10,
         50,
@@ -36,11 +46,13 @@ def test_recipe_and_coverage() -> None:
     "mode,expected",
     [
         ("valid", None),
-        ("collision", "Ambiguous engine"),
-        ("namespace", "single instrument namespace"),
-        ("multi", "multi-stream"),
-        ("segmented", "requires v3"),
-        ("depth", "requires explicit selection"),
+        ("collision", None),
+        ("namespace", None),
+        ("missing", "lacks a registered file path"),
+        ("hardlink", "same physical file"),
+        ("multi", None),
+        ("segmented", None),
+        ("depth", None),
     ],
 )
 async def test_selection_uses_registry_order_and_paths(
@@ -58,6 +70,7 @@ async def test_selection_uses_registry_order_and_paths(
         root = tmp_path / "custom" / str(db_id)
         details = {
             "path": str(root),
+            "manifest_path": str(root / "manifest.json"),
             "manifest_sha256": f"manifest-{db_id}",
             "engine_dataset_id": str(engine_id),
             "instrument_namespace": namespace,
@@ -65,19 +78,25 @@ async def test_selection_uses_registry_order_and_paths(
             "processing_runtime_sha256": "runtime",
         }
         name = "part.parquet"
+        root.mkdir(parents=True)
+        if mode == "hardlink" and db_id == 7:
+            (root / name).hardlink_to(tmp_path / "custom" / "4" / name)
+        else:
+            (root / name).touch()
         records.append(
             (
                 db_id,
                 str(root / name),
                 name,
                 "sha",
-                {"memberships": []},
+                {"memberships": [{"exchange": "bybit" if db_id == 4 else "okx"}]},
                 10,
                 50,
                 str(root),
                 str(engine_id),
                 namespace,
                 details["manifest_sha256"],
+                None if mode == "missing" else details["manifest_path"],
             )
         )
         streams = [{"stream_id": "first"}]
@@ -128,8 +147,19 @@ async def test_selection_uses_registry_order_and_paths(
             await service.select_inputs(paths, ids=[7, 4])
     else:
         selected = await service.select_inputs(paths, ids=[7, 4])
-        assert [item["engine_id"] for item in selected] == [47, 44]
+        assert [item["engine_id"] for item in selected] == (
+            [20, 20] if mode == "collision" else [47, 44]
+        )
         assert [item["path"] for item in selected] == [row[7] for row in reversed(records)]
+        inputs = [service.file_input(item) for item in selected]
+        assert [item["path"] for item in inputs] == [row[1] for row in reversed(records)]
+        assert await service.select_inputs(paths, ids=[7, 4]) == selected
+        assert await service.select_inputs(paths, job={"inputs": inputs}) == selected
+        with pytest.raises(MarketForgeError, match="without duplicates"):
+            await service.select_inputs(paths, job={"inputs": inputs + inputs[:1]})
+        inputs[0]["publication"]["manifest_sha256"] = "tampered"
+        with pytest.raises(MarketForgeError, match="registered paths or fingerprints"):
+            await service.select_inputs(paths, job={"inputs": inputs})
 
 
 @pytest.mark.asyncio
@@ -140,6 +170,9 @@ async def test_two_file_ids_share_one_verified_publication(
     root = tmp_path / "publication"
     directory = "streams/s/trades"
     names = [f"{directory}/part-{i}.parquet" for i in range(3)]
+    (root / directory).mkdir(parents=True)
+    for name in names:
+        (root / name).touch()
     records = [
         (
             i,
@@ -153,6 +186,7 @@ async def test_two_file_ids_share_one_verified_publication(
             "77",
             "ns",
             "manifest-sha",
+            str(root / "manifest.json"),
         )
         for i, name in enumerate(names[:2], 1)
     ]
@@ -168,6 +202,7 @@ async def test_two_file_ids_share_one_verified_publication(
         verification_calls.append(source)
         return {
             "manifest_sha256": "manifest-sha",
+            "manifest_path": str(root / "manifest.json"),
             "instrument_namespace": "ns",
             "inventory_sha256": {name: f"sha-{i}" for i, name in enumerate(names, 1)},
             "resolved_job": {"streams": [{"stream_id": "one"}, {"stream_id": "other"}]},

@@ -1,4 +1,6 @@
 #![cfg(feature = "historical")]
+use crate::publication::depth_publication;
+use crate::publication::trade_publication;
 
 use std::collections::HashSet;
 use std::{
@@ -23,11 +25,6 @@ use {
     marketforge_engine::historical::merge::UnifiedMergeMode,
     marketforge_engine::historical::merge::execute_unified_merge_job,
 };
-
-#[path = "../support/mod.rs"]
-mod support;
-
-use support::datasets::{project_root, resolve_depth_dataset, resolve_trade_dataset};
 
 // -----------------------------------------------------------------------------
 // Temporary output directory
@@ -68,7 +65,7 @@ impl Drop for TestDirectory {
 // -----------------------------------------------------------------------------
 
 fn test_job(dataset_ids: &[u64], output: &Path, input_paths: HashMap<u64, PathBuf>) -> MergeJob {
-    let start_ns = 1_788_220_800_000_000_000_i64;
+    let start_ns = crate::publication::START;
 
     MergeJob {
         job_id: 900_500,
@@ -76,11 +73,12 @@ fn test_job(dataset_ids: &[u64], output: &Path, input_paths: HashMap<u64, PathBu
 
         inputs: dataset_ids.to_vec(),
         primary_files: Default::default(),
+        submission: None,
         input_paths,
 
         time_range: MergeTimeRange {
             start_ns,
-            end_ns: start_ns + 240_000_000_000,
+            end_ns: start_ns + 400,
         },
 
         resources: MergeResources {
@@ -113,12 +111,12 @@ fn input_paths(root: &Path, trade_ids: &[u64], depth_ids: &[u64]) -> HashMap<u64
     let mut paths = HashMap::new();
 
     for &dataset_id in trade_ids {
-        let input = resolve_trade_dataset(root, dataset_id);
+        let input = trade_publication(root, dataset_id);
         paths.insert(dataset_id, input.dataset_path);
     }
 
     for &dataset_id in depth_ids {
-        let input = resolve_depth_dataset(root, dataset_id);
+        let input = depth_publication(root, dataset_id);
         paths.insert(dataset_id, input.dataset_path);
     }
 
@@ -136,7 +134,8 @@ fn assert_transactional_commit(
     expected_trades: u64,
     expected_depth: u64,
 ) {
-    let root = project_root();
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
     let temporary = TestDirectory::new();
 
     let dataset_path = temporary.path().join("merged-900500");
@@ -182,7 +181,17 @@ fn assert_transactional_commit(
 
     assert_eq!(
         entries,
-        HashSet::from(["manifest.json".to_owned(), "timeline".to_owned(),]),
+        HashSet::from(
+            [
+                "manifest.json",
+                "timeline",
+                "publication-checksums.json",
+                "merge-job.json",
+                "merge-input-checksums.json",
+                "merge-partitions.json"
+            ]
+            .map(str::to_owned)
+        ),
     );
 
     // -------------------------------------------------------------------------
@@ -248,10 +257,8 @@ fn assert_transactional_commit(
 
     let duplicate = execute_unified_merge_job(&job, &root);
 
-    assert!(
-        duplicate.is_err(),
-        "duplicate publication should be rejected"
-    );
+    let error = duplicate.unwrap_err();
+    assert!(error.to_string().contains("already exists"), "{error}");
 
     // Original committed dataset must remain intact.
     assert!(manifest_path.is_file());
@@ -286,8 +293,8 @@ fn assert_transactional_commit(
 // -----------------------------------------------------------------------------
 
 #[test]
-fn commits_real_trade_merge() {
-    assert_transactional_commit(&[111, 109, 115], &[], UnifiedMergeMode::Trades, 1_376, 0);
+fn commits_generated_trade_merge() {
+    assert_transactional_commit(&[111, 109, 115], &[], UnifiedMergeMode::Trades, 12, 0);
 }
 
 // -----------------------------------------------------------------------------
@@ -295,12 +302,6 @@ fn commits_real_trade_merge() {
 // -----------------------------------------------------------------------------
 
 #[test]
-fn commits_real_combined_merge() {
-    assert_transactional_commit(
-        &[111, 109],
-        &[105, 112],
-        UnifiedMergeMode::Combined,
-        607,
-        49_132,
-    );
+fn commits_generated_combined_merge() {
+    assert_transactional_commit(&[111, 109], &[105, 112], UnifiedMergeMode::Combined, 8, 8);
 }

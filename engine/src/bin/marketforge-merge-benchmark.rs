@@ -332,6 +332,7 @@ fn benchmark_job(
 
         inputs: inputs.iter().map(|input| input.dataset_id).collect(),
         primary_files: Default::default(),
+        submission: None,
         input_paths,
 
         time_range: MergeTimeRange { start_ns, end_ns },

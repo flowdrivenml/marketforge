@@ -1,102 +1,14 @@
 #![cfg(feature = "historical")]
+use crate::publication::depth_publication;
+use crate::publication::trade_publication;
 use marketforge_engine::historical::merge::{
     MergePartition, build_depth_inventory, build_trade_inventory, depth_task_intervals,
     plan_partition_inputs, plan_unified_partition_inputs, trade_task_intervals,
 };
-use std::{
-    fs::File,
-    path::{Path, PathBuf},
-};
-
-use {
-    marketforge_engine::historical::merge::ResolvedMergeInput,
-    marketforge_engine::historical::normalize::manifest::DatasetManifest,
-};
-
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
-fn resolve_depth_dataset(root: &Path, dataset_id: u64) -> ResolvedMergeInput {
-    let dataset_path = root.join(format!("data/processed/{dataset_id}"));
-
-    let manifest: DatasetManifest = serde_json::from_reader(
-        File::open(dataset_path.join("manifest.json")).expect("open depth manifest"),
-    )
-    .expect("parse depth manifest");
-
-    let canonical_files = manifest
-        .files
-        .iter()
-        .map(|file| dataset_path.join(&file.path))
-        .collect();
-
-    let auxiliary_files = manifest
-        .auxiliary_files
-        .iter()
-        .map(|file| dataset_path.join(&file.path))
-        .collect();
-
-    ResolvedMergeInput {
-        dataset_id,
-        dataset_path,
-        manifest,
-        canonical_files,
-        auxiliary_files,
-    }
-}
 
 // -----------------------------------------------------------------------------
 // Resolve real trade dataset
 // -----------------------------------------------------------------------------
-
-fn resolve_trade_dataset(root: &Path, dataset_id: u64) -> ResolvedMergeInput {
-    let datasets = root.join("data/.work/full-trade-test/datasets");
-
-    for entry in std::fs::read_dir(&datasets).expect("read trade datasets") {
-        let entry = entry.expect("read dataset entry");
-
-        let dataset_path = entry.path();
-        let manifest_path = dataset_path.join("manifest.json");
-
-        if !manifest_path.is_file() {
-            continue;
-        }
-
-        let manifest: DatasetManifest =
-            serde_json::from_reader(File::open(&manifest_path).unwrap())
-                .expect("parse trade manifest");
-
-        if manifest.dataset_id != dataset_id {
-            continue;
-        }
-
-        let canonical_files = manifest
-            .files
-            .iter()
-            .map(|file| dataset_path.join(&file.path))
-            .collect();
-
-        let auxiliary_files = manifest
-            .auxiliary_files
-            .iter()
-            .map(|file| dataset_path.join(&file.path))
-            .collect();
-
-        return ResolvedMergeInput {
-            dataset_id,
-            dataset_path,
-            manifest,
-            canonical_files,
-            auxiliary_files,
-        };
-    }
-
-    panic!("trade dataset {dataset_id} not found");
-}
 
 // -----------------------------------------------------------------------------
 // Depth planner equivalence
@@ -104,21 +16,22 @@ fn resolve_trade_dataset(root: &Path, dataset_id: u64) -> ResolvedMergeInput {
 
 #[test]
 fn unified_planner_matches_depth_planner() {
-    let root = project_root();
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
 
     let dataset_ids = [105_u64, 108, 112, 92];
 
     let inputs = dataset_ids
         .iter()
-        .map(|&id| resolve_depth_dataset(&root, id))
+        .map(|&id| depth_publication(&root, id))
         .collect::<Vec<_>>();
 
     let inventory = build_depth_inventory(&inputs).expect("build depth inventory");
 
     let intervals = depth_task_intervals(&inventory).expect("depth intervals");
 
-    let base = 1_788_220_800_000_000_000_i64;
-    let hour = 3_600_000_000_000_i64;
+    let base = crate::publication::START;
+    let hour = 200_i64;
 
     let partitions = (0..8)
         .map(|index| MergePartition {
@@ -166,22 +79,23 @@ fn unified_planner_matches_depth_planner() {
 // -----------------------------------------------------------------------------
 
 #[test]
-fn plans_real_trade_partitions() {
-    let root = project_root();
+fn plans_generated_trade_partitions() {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
 
     let dataset_ids = [111_u64, 109, 115, 100, 97, 99];
 
     let inputs = dataset_ids
         .iter()
-        .map(|&id| resolve_trade_dataset(&root, id))
+        .map(|&id| trade_publication(&root, id))
         .collect::<Vec<_>>();
 
     let inventory = build_trade_inventory(&inputs).expect("build trade inventory");
 
     let intervals = trade_task_intervals(&inventory);
 
-    let base = 1_788_220_800_000_000_000_i64;
-    let hour = 3_600_000_000_000_i64;
+    let base = crate::publication::START;
+    let hour = 200_i64;
 
     let partitions = (0..24)
         .map(|index| MergePartition {
@@ -237,16 +151,17 @@ fn plans_real_trade_partitions() {
 
 #[test]
 fn plans_combined_trade_depth_partitions() {
-    let root = project_root();
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path().to_path_buf();
 
     let trade_inputs = [111_u64, 109]
         .iter()
-        .map(|&id| resolve_trade_dataset(&root, id))
+        .map(|&id| trade_publication(&root, id))
         .collect::<Vec<_>>();
 
     let depth_inputs = [105_u64, 112]
         .iter()
-        .map(|&id| resolve_depth_dataset(&root, id))
+        .map(|&id| depth_publication(&root, id))
         .collect::<Vec<_>>();
 
     let trades = build_trade_inventory(&trade_inputs).expect("trade inventory");
@@ -257,18 +172,18 @@ fn plans_combined_trade_depth_partitions() {
 
     intervals.extend(depth_task_intervals(&depth).expect("depth intervals"));
 
-    let base = 1_788_220_800_000_000_000_i64;
+    let base = crate::publication::START;
 
     let partitions = vec![
         MergePartition {
             partition_id: 0,
             start_ns: base,
-            end_ns: base + 60_000_000_000,
+            end_ns: base + 200,
         },
         MergePartition {
             partition_id: 1,
-            start_ns: base + 60_000_000_000,
-            end_ns: base + 120_000_000_000,
+            start_ns: base + 200,
+            end_ns: base + 400,
         },
     ];
 

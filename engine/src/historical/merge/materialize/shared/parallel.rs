@@ -101,12 +101,6 @@ pub fn execute_parallel_materialization_with_progress(
         &budget,
         // Estimate each partition independently.
         |plan| {
-            let key = PartitionKey {
-                phase: MergePhase::PhysicalMaterialization,
-                partition_id: plan.partition_id,
-            };
-
-            reporter.partition_started(key);
             let task_count = plan.source_tasks.len();
 
             estimate_materialization_resources(task_count.max(1), &job.parquet, &job.resources)

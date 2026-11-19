@@ -1,209 +1,141 @@
-#![cfg(feature = "historical")]
-
-use std::{
-    fs::File,
-    path::{Path, PathBuf},
+use crate::{merge_test_job::bounded_runtime, publication::make_job};
+use arrow_array::{Decimal256Array, Int64Array, ListArray, StructArray, UInt8Array, UInt64Array};
+use arrow_buffer::i256;
+use arrow_select::concat::concat_batches;
+use marketforge_engine::historical::merge::{
+    PhysicalMergeManifest, PhysicalReconstructionAvailability, UnifiedMergeMode,
+    execute_unified_merge_job, physical_combined_schema, validate_committed_merge,
 };
-
-use {
-    marketforge_engine::historical::merge::DepthStream,
-    marketforge_engine::historical::merge::KWayEventMerger,
-    marketforge_engine::historical::merge::MergeEventKind,
-    marketforge_engine::historical::merge::MergeEventSource,
-    marketforge_engine::historical::merge::ResolvedMergeInput,
-    marketforge_engine::historical::merge::TradeStream,
-    marketforge_engine::historical::merge::build_depth_inventory,
-    marketforge_engine::historical::merge::build_trade_inventory,
-    marketforge_engine::historical::merge::reconcile_depth_boundaries,
-    marketforge_engine::historical::normalize::manifest::DatasetManifest,
-};
-
-// -----------------------------------------------------------------------------
-// Project root
-// -----------------------------------------------------------------------------
-
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("project root")
-        .to_path_buf()
-}
-
-// -----------------------------------------------------------------------------
-// Resolve dataset
-// -----------------------------------------------------------------------------
-
-fn resolve_dataset(root: &Path, dataset_id: u64, trades: bool) -> ResolvedMergeInput {
-    let dataset_path = if trades {
-        let datasets = root.join("data/.work/full-trade-test/datasets");
-
-        std::fs::read_dir(&datasets)
-            .expect("read trade datasets")
-            .map(|entry| entry.expect("dataset entry").path())
-            .find(|path| {
-                let manifest_path = path.join("manifest.json");
-
-                if !manifest_path.is_file() {
-                    return false;
-                }
-
-                let manifest: DatasetManifest =
-                    serde_json::from_reader(File::open(manifest_path).unwrap())
-                        .expect("parse manifest");
-
-                manifest.dataset_id == dataset_id
-            })
-            .expect("trade dataset not found")
-    } else {
-        root.join(format!("data/processed/{dataset_id}"))
-    };
-
-    let manifest: DatasetManifest = serde_json::from_reader(
-        File::open(dataset_path.join("manifest.json")).expect("open manifest"),
-    )
-    .expect("parse manifest");
-
-    assert_eq!(manifest.dataset_id, dataset_id);
-
-    let canonical_files = manifest
-        .files
-        .iter()
-        .map(|file| dataset_path.join(&file.path))
-        .collect();
-
-    let auxiliary_files = manifest
-        .auxiliary_files
-        .iter()
-        .map(|file| dataset_path.join(&file.path))
-        .collect();
-
-    ResolvedMergeInput {
-        dataset_id,
-        dataset_path,
-        manifest,
-        canonical_files,
-        auxiliary_files,
-    }
-}
-
-// -----------------------------------------------------------------------------
-// Combined merge integration test
-// -----------------------------------------------------------------------------
+use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use std::fs::File;
 
 #[test]
-fn merges_real_trades_and_depth() {
-    let root = project_root();
-
-    let trade_datasets = [111_u64, 109, 115, 100, 97, 99];
-
-    let depth_datasets = [105_u64, 108, 112, 92];
-
-    let start_ns = 1788220800000000000_i64;
-    let end_ns = start_ns + 60_000_000_000;
-
-    let mut streams: Vec<Box<dyn MergeEventSource>> = Vec::new();
-
-    // -------------------------------------------------------------------------
-    // Trade streams
-    // -------------------------------------------------------------------------
-
-    for dataset_id in trade_datasets {
-        let input = resolve_dataset(&root, dataset_id, true);
-
-        let inventory = build_trade_inventory(&[input]).expect("build trade inventory");
-
-        streams.push(Box::new(
-            TradeStream::new_range(dataset_id, inventory, start_ns, end_ns)
-                .expect("construct trade stream"),
-        ));
-    }
-
-    // -------------------------------------------------------------------------
-    // Depth streams
-    // -------------------------------------------------------------------------
-
-    let depth_inputs = depth_datasets
-        .iter()
-        .map(|&dataset_id| resolve_dataset(&root, dataset_id, false))
-        .collect::<Vec<_>>();
-
-    let depth_inventory = build_depth_inventory(&depth_inputs).expect("build depth inventory");
-
-    let boundaries =
-        reconcile_depth_boundaries(&depth_inventory).expect("reconcile depth boundaries");
-
-    for dataset_id in depth_datasets {
-        let tasks = depth_inventory
+fn commits_combined_replay_with_a_checkpoint_and_equivalent_workers() {
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path();
+    let document = make_job(root, &[11], &[12]);
+    assert_eq!(document.inputs.len(), 4);
+    let mut first = None;
+    for workers in [1, 2] {
+        let start = std::time::Instant::now();
+        let mut submission = document.clone();
+        submission.output.dataset_path = root.join(format!("workers-{workers}"));
+        let mut job = bounded_runtime(submission);
+        job.resources.workers = workers;
+        let result = execute_unified_merge_job(&job, root).unwrap();
+        validate_committed_merge(&result.dataset_path).unwrap();
+        assert_eq!(result.mode, UnifiedMergeMode::Combined);
+        assert_eq!(result.partitions_completed, workers);
+        assert_eq!((result.trade_events, result.depth_events), (4, 4));
+        let manifest: PhysicalMergeManifest =
+            serde_json::from_reader(File::open(&result.manifest_path).unwrap()).unwrap();
+        let checkpoints = manifest
+            .checkpoints
             .iter()
-            .filter(|task| task.dataset_id == dataset_id)
-            .cloned()
-            .collect();
+            .map(|c| (c.dataset_id, c.task_id, c.timestamp_ns))
+            .collect::<Vec<_>>();
+        assert_eq!(checkpoints, [(12, 0, 100), (12, 1, 300)]);
+        let [initial] = manifest.initial_reconstruction.as_slice() else {
+            panic!("expected one depth reconstruction source");
+        };
+        assert_eq!(initial.dataset_id, 12);
+        assert_eq!(
+            initial.availability,
+            PhysicalReconstructionAvailability::Available
+        );
+        assert_eq!(initial.first_physical_checkpoint_ns, Some(100));
 
-        streams.push(Box::new(
-            DepthStream::new(dataset_id, tasks, &boundaries).expect("construct depth stream"),
-        ));
-    }
-
-    // -------------------------------------------------------------------------
-    // Merge
-    // -------------------------------------------------------------------------
-
-    let mut merger = KWayEventMerger::new(streams).expect("construct combined merger");
-
-    let mut trade_events = 0_u64;
-    let mut depth_events = 0_u64;
-
-    let mut previous_key = None;
-
-    println!("\nMARKETFORGE — COMBINED TRADE + DEPTH MERGE");
-    println!("{}", "=".repeat(90));
-
-    while let Some(merged) = merger.next_event().expect("merge event") {
-        let timestamp = merged.event.timestamp_ns();
-
-        if timestamp >= end_ns {
-            break;
-        }
-
-        if timestamp < start_ns {
-            continue;
-        }
-
-        let key = merged.event.merge_key(merged.stream_rank);
-
-        if let Some(previous) = previous_key {
-            assert!(key >= previous, "combined merge ordering regression");
-        }
-
-        previous_key = Some(key);
-
-        match merged.event.kind() {
-            MergeEventKind::Trade => {
-                trade_events += 1;
+        let batches = manifest
+            .files
+            .iter()
+            .flat_map(|file| {
+                ParquetRecordBatchReaderBuilder::try_new(
+                    File::open(result.dataset_path.join(&file.path)).unwrap(),
+                )
+                .unwrap()
+                .build()
+                .unwrap()
+                .map(Result::unwrap)
+            })
+            .collect::<Vec<_>>();
+        let batch = concat_batches(&physical_combined_schema(), &batches).unwrap();
+        let times = batch
+            .column_by_name("event_timestamp_ns")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        let kinds = batch
+            .column_by_name("event_kind")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<UInt8Array>()
+            .unwrap();
+        let lineage = |name| {
+            batch
+                .column_by_name(name)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .unwrap()
+        };
+        let depth = batch
+            .column_by_name("depth")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        let changes = depth
+            .column_by_name("changes")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .unwrap();
+        for (row, (timestamp, kind, task, offset)) in [
+            (100, 0, 0, 0),
+            (100, 1, 0, 0),
+            (200, 0, 0, 1),
+            (200, 1, 0, 1),
+            (300, 0, 1, 0),
+            (300, 1, 1, 0),
+            (400, 0, 1, 1),
+            (400, 1, 1, 1),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!((times.value(row), kinds.value(row)), (timestamp, kind));
+            assert_eq!(
+                (
+                    lineage("dataset_id").value(row),
+                    lineage("task_id").value(row),
+                    lineage("canonical_row_offset").value(row)
+                ),
+                (11 + kind as u64, task, offset)
+            );
+            if kind == 1 {
+                let event = changes.value(row);
+                let level = event.as_any().downcast_ref::<StructArray>().unwrap();
+                let qty = level
+                    .column_by_name("quantity_base")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<Decimal256Array>()
+                    .unwrap();
+                assert_eq!(
+                    qty.value(0),
+                    i256::from_i128((offset as i128 + 1) * 10_i128.pow(28))
+                );
             }
-
-            MergeEventKind::Depth => {
-                depth_events += 1;
-            }
         }
+        if let Some(expected) = &first {
+            assert_eq!(&batch, expected);
+        } else {
+            first = Some(batch);
+        }
+        println!(
+            "workers={workers}, primary_files=4, trade_events=4, depth_events=4, elapsed={:?}",
+            start.elapsed()
+        );
     }
-
-    println!("Trade events : {trade_events}");
-    println!("Depth events : {depth_events}");
-    println!("Total events : {}", trade_events + depth_events);
-    println!("Global order : VERIFIED");
-    println!("Result       : PASS");
-
-    assert!(trade_events > 0);
-    assert!(depth_events > 0);
-
-    // The merger may consume one additional event when detecting
-    // the end of the requested timestamp interval.
-    let consumed = merger.events_emitted();
-    let accepted = trade_events + depth_events;
-
-    assert!(
-        consumed == accepted || consumed == accepted + 1,
-        "unexpected merged event count: consumed={consumed}, accepted={accepted}"
-    );
 }

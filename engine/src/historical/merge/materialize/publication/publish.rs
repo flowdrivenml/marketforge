@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::{fs, path::Path};
 
 use crate::shared::error::{MarketForgeError, Result};
@@ -76,14 +77,65 @@ pub fn validate_committed_merge(root: &Path) -> Result<()> {
     let manifest: PhysicalMergeManifest = serde_json::from_slice(&load("manifest.json")?)
         .map_err(|error| invalid_error(error.to_string()))?;
     manifest.validate()?;
-    let job = crate::historical::job::load_merge_job(root.join("merge-job.json"))?;
-    if job.output.dataset_path != root
-        || job.job_id != manifest.job_id
-        || job.time_range != manifest.time_range
-        || job
-            .inputs
-            .iter()
-            .copied()
+    use crate::historical::job::{MergeJob, MergeJobDocument};
+
+    let saved = load("merge-job.json")?;
+    let (path, job_id, interval, publications) =
+        if let Ok(job) = serde_json::from_slice::<MergeJobDocument>(&saved) {
+            job.validate()?;
+            let mut seen = HashSet::new();
+            let descriptors = job
+                .inputs
+                .iter()
+                .filter_map(|input| {
+                    let id = input.publication.engine_dataset_id;
+                    seen.insert(id).then_some(&input.publication)
+                })
+                .collect::<Vec<_>>();
+            let input_hashes: Vec<String> =
+                serde_json::from_slice(&load("merge-input-checksums.json")?)
+                    .map_err(|error| invalid_error(error.to_string()))?;
+            if descriptors
+                .iter()
+                .map(|publication| &publication.manifest_sha256)
+                .ne(&input_hashes)
+                || descriptors
+                    .iter()
+                    .map(|publication| publication.manifest_path.parent())
+                    .ne(manifest
+                        .input_datasets
+                        .iter()
+                        .map(|input| Some(Path::new(&input.dataset_path))))
+            {
+                return invalid("committed merge publication paths or input fingerprints changed");
+            }
+            let publications = descriptors
+                .iter()
+                .map(|publication| publication.engine_dataset_id)
+                .collect();
+            (
+                job.output.dataset_path,
+                job.job_id,
+                job.time_range,
+                publications,
+            )
+        } else {
+            // Previously committed publications stored the internally resolved legacy job.
+            let job: MergeJob =
+                serde_json::from_slice(&saved).map_err(|e| invalid_error(e.to_string()))?;
+            job.validate()?;
+            (
+                job.output.dataset_path,
+                job.job_id,
+                job.time_range,
+                job.inputs,
+            )
+        };
+    if path != root
+        || job_id != manifest.job_id
+        || interval != manifest.time_range
+        || publications
+            .into_iter()
             .ne(manifest.input_datasets.iter().map(|input| input.dataset_id))
     {
         return invalid("committed merge path, job, interval or input identity mismatch");
