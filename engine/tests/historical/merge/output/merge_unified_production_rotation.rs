@@ -72,3 +72,96 @@ fn rotates_committed_combined_output_in_one_partition() {
         start.elapsed()
     );
 }
+
+#[test]
+fn causal_sequence_survives_rotation_parallel_materialization_and_permutation() {
+    use crate::publication::native_depth_job;
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path();
+    let mut document = native_depth_job(root);
+    document.inputs.extend(rotating_trade_publication(root, 11));
+    document.time_range.end_ns = 500;
+    let mut outputs = Vec::new();
+    for workers in [1, 2] {
+        let mut run = document.clone();
+        run.output.dataset_path = root.join(format!("causal-rotation-{workers}"));
+        if workers == 2 {
+            run.inputs.reverse();
+        }
+        let mut runtime = crate::merge_test_job::small_runtime();
+        runtime.resources.workers = workers;
+        runtime.resources.memory_limit_mb = 4096;
+        runtime.parquet.row_group_target_mb = 1;
+        runtime.parquet.file_target_mb = 1;
+        let result = execute_unified_merge_job(&run.with_runtime(runtime).unwrap(), root).unwrap();
+        validate_committed_merge(&result.dataset_path).unwrap();
+        assert!(result.partitions_completed > 1);
+        assert_eq!((result.trade_events, result.depth_events), (16_386, 10));
+        let manifest: PhysicalMergeManifest =
+            serde_json::from_reader(File::open(&result.manifest_path).unwrap()).unwrap();
+        let mut batches = Vec::new();
+        for file in &manifest.files {
+            let reader = ParquetRecordBatchReaderBuilder::try_new(
+                File::open(result.dataset_path.join(&file.path)).unwrap(),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+            batches.extend(reader.map(|batch| batch.unwrap()));
+        }
+        let rows = arrow_select::concat::concat_batches(&batches[0].schema(), &batches).unwrap();
+        let sequence = rows
+            .column_by_name("timeline_sequence")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .unwrap();
+        assert!(sequence.values().iter().copied().eq(0..16_396));
+        outputs.push(rows);
+
+        if workers == 2 {
+            // A duplicate or a gap is invalid even when the Parquet decodes
+            // and its row count still matches the publication.
+            let path = result.dataset_path.join(&manifest.files[0].path);
+            let reader = ParquetRecordBatchReaderBuilder::try_new(File::open(&path).unwrap())
+                .unwrap()
+                .build()
+                .unwrap();
+            let batches = reader.map(|batch| batch.unwrap()).collect::<Vec<_>>();
+            let schema = batches[0].schema();
+            let index = schema.index_of("timeline_sequence").unwrap();
+            for bad_sequence in [0, 2] {
+                let mut columns = batches[0].columns().to_vec();
+                let mut sequence = columns[index]
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap()
+                    .values()
+                    .to_vec();
+                sequence[1] = bad_sequence;
+                columns[index] = std::sync::Arc::new(UInt64Array::from(sequence));
+                let mut writer = parquet::arrow::ArrowWriter::try_new(
+                    File::create(&path).unwrap(),
+                    schema.clone(),
+                    None,
+                )
+                .unwrap();
+                writer
+                    .write(&arrow_array::RecordBatch::try_new(schema.clone(), columns).unwrap())
+                    .unwrap();
+                for batch in &batches[1..] {
+                    writer.write(batch).unwrap();
+                }
+                writer.close().unwrap();
+                let error = validate_committed_merge(&result.dataset_path).unwrap_err();
+                assert!(
+                    error
+                        .to_string()
+                        .contains("invalid physical causal sequence"),
+                    "{error}"
+                );
+            }
+        }
+    }
+    assert_eq!(outputs[0], outputs[1]);
+}

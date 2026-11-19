@@ -25,6 +25,7 @@ pub use convert_load::load_convert_job;
 pub use merge::{
     MergeFileInput, MergeJob, MergeJobDocument, MergeOperation, MergeOutput, MergeParquetConfig,
     MergePartitioning, MergePrimaryFile, MergePublication, MergeResources, MergeTimeRange,
+    MergeTimelineOrdering,
 };
 
 pub use merge_load::load_merge_job;

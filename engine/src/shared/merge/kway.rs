@@ -73,6 +73,7 @@ pub struct HeadQueue<E> {
     previous_key: Option<MergeKey>,
     events_emitted: u64,
     validate_source_order: bool,
+    validate_global_order: bool,
 }
 
 impl<E> HeadQueue<E> {
@@ -93,8 +94,15 @@ impl<E> HeadQueue<E> {
             previous_key: None,
             events_emitted: 0,
             validate_source_order,
+            validate_global_order: true,
         })
     }
+    pub(crate) fn available_heads(source_count: usize) -> Result<Self, MergeError> {
+        let mut queue = Self::new(source_count, false)?;
+        queue.validate_global_order = false;
+        Ok(queue)
+    }
+
     pub fn push(&mut self, source_index: usize, key: MergeKey, event: E) -> Result<(), MergeError> {
         let slot = self
             .pending
@@ -151,7 +159,7 @@ impl<E> HeadQueue<E> {
         if !matches!(self.pending.get(index), Some(Slot::Ready(_))) {
             return Err(MergeError::MissingHead(index));
         }
-        if let Some(previous) = self.previous_key {
+        if let Some(previous) = self.previous_key.filter(|_| self.validate_global_order) {
             if entry.key < previous {
                 return Err(MergeError::GlobalRegression {
                     previous,

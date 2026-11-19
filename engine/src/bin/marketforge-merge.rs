@@ -210,6 +210,12 @@ fn run(args: CliArgs) -> Result<serde_json::Value, String> {
         let resolved = resolve_merge_inputs(&job, &project_root).map_err(|e| e.to_string())?;
         resolve_ranked_merge_streams(&resolved, &project_root, job.submission.as_ref())
             .map_err(|e| e.to_string())?;
+        if job.timeline_ordering()
+            == marketforge_engine::historical::job::MergeTimelineOrdering::Causal
+        {
+            marketforge_engine::historical::merge::validate_causal_depth_selection(&resolved)
+                .map_err(|error| error.to_string())?;
+        }
         let output = MergeCommitPaths::new(&job.output.dataset_path, job.job_id)
             .map_err(|e| e.to_string())?;
         for path in [output.dataset_path, output.staging_path] {
@@ -257,10 +263,18 @@ fn run(args: CliArgs) -> Result<serde_json::Value, String> {
     println!("Publications    : {}", job.inputs.len());
     println!("Workers         : {}", job.resources.workers);
 
-    println!(
-        "Partitions      : {}",
-        job.resources.workers * job.partitioning.partitions_per_worker
-    );
+    println!("Timeline order  : {:?}", job.timeline_ordering());
+    if job.timeline_ordering() == marketforge_engine::historical::job::MergeTimelineOrdering::Causal
+    {
+        println!(
+            "Logical merge   : forward replay, followed by sequence-partitioned materialization"
+        );
+    } else {
+        println!(
+            "Partitions      : {}",
+            job.resources.workers * job.partitioning.partitions_per_worker
+        );
+    }
 
     println!(
         "Time range      : [{} , {})",

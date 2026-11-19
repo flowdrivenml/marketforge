@@ -36,6 +36,7 @@ pub struct PhysicalPartitionValidation {
     pub trade_events: u64,
     pub depth_events: u64,
     pub canonical_rows: u64,
+    pub reconstruction_events: u64,
 
     pub files: Vec<PathBuf>,
     pub file_metadata: Vec<PhysicalFileValidation>,
@@ -64,6 +65,7 @@ pub fn validate_physical_partition(
         &mut events_validated,
         &mut row_groups_validated,
         0,
+        false,
     )
 }
 
@@ -77,6 +79,7 @@ pub fn validate_physical_partition_with_progress(
     events_validated: &mut u64,
     row_groups_validated: &mut u64,
     partitions_completed: usize,
+    causal: bool,
 ) -> Result<PhysicalPartitionValidation> {
     let directory = staging
         .join("timeline")
@@ -122,7 +125,7 @@ pub fn validate_physical_partition_with_progress(
         return invalid("physical partition file-count mismatch");
     }
 
-    let expected_schema = match mode {
+    let mut expected_schema = match mode {
         UnifiedMergeMode::Trades => physical_trade_schema(),
         UnifiedMergeMode::Depth => physical_depth_schema(),
         UnifiedMergeMode::Combined => physical_combined_schema(),
@@ -134,6 +137,14 @@ pub fn validate_physical_partition_with_progress(
     };
     let mut last_progress = Instant::now();
     let mut previous_key: Option<OrderingKey> = None;
+
+    if causal {
+        expected_schema =
+            crate::historical::merge::output::writers::unified_timeline::causal_schema(
+                &expected_schema,
+                false,
+            );
+    }
 
     for (index, path) in files.iter().enumerate() {
         let expected_name = format!("part-{index:06}.parquet");
@@ -192,6 +203,7 @@ pub fn validate_physical_partition_with_progress(
                 result.end_ns,
                 &mut previous_key,
                 &mut validation,
+                causal.then_some(*events_validated),
             )?;
             if reporter.is_enabled() && last_progress.elapsed() >= Duration::from_millis(500) {
                 reporter.validation_progress(
@@ -209,9 +221,12 @@ pub fn validate_physical_partition_with_progress(
                     .and_then(|column| column.as_any().downcast_ref::<Int64Array>())
                     .ok_or_else(|| invalid_error("missing physical event timestamps"))?;
 
-                file_first_timestamp.get_or_insert(timestamps.value(0));
-
-                file_last_timestamp = Some(timestamps.value(batch.num_rows() - 1));
+                let first = *timestamps.values().iter().min().expect("nonempty batch");
+                let last = *timestamps.values().iter().max().expect("nonempty batch");
+                file_first_timestamp =
+                    Some(file_first_timestamp.map_or(first, |old: i64| old.min(first)));
+                file_last_timestamp =
+                    Some(file_last_timestamp.map_or(last, |old: i64| old.max(last)));
             }
         }
 
@@ -270,6 +285,7 @@ fn validate_batch(
     end_ns: i64,
     previous_key: &mut Option<OrderingKey>,
     validation: &mut PhysicalPartitionValidation,
+    sequence_base: Option<u64>,
 ) -> Result<()> {
     validate_required_fields(batch)?;
     let timestamps = column::<Int64Array>(batch, "event_timestamp_ns")?;
@@ -315,17 +331,36 @@ fn validate_batch(
     for row in 0..batch.num_rows() {
         let timestamp = timestamps.value(row);
 
-        if timestamp < start_ns || timestamp >= end_ns {
-            return invalid("physical event outside partition bounds");
+        let outside = timestamp < start_ns || timestamp >= end_ns;
+        if let Some(sequence_base) = sequence_base {
+            let position =
+                crate::historical::merge::output::writers::unified_timeline::read_causal_position(
+                    batch, row, false,
+                )?;
+            let depth = mode == UnifiedMergeMode::Depth
+                || kinds.is_some_and(|column| column.value(row) == 1);
+            if position.sequence
+                != sequence_base
+                    .checked_add(validation.events)
+                    .ok_or_else(|| invalid_error("physical sequence overflow"))?
+                || position.reconstruction_only != outside
+                || (outside && !depth)
+            {
+                return invalid("invalid physical causal sequence or reconstruction marker");
+            }
+            if outside {
+                validation.reconstruction_events += 1;
+            }
+        } else {
+            if outside {
+                return invalid("physical event outside partition bounds");
+            }
+            let key = (timestamp, ranks.value(row));
+            if previous_key.is_some_and(|previous| key < previous) {
+                return invalid("physical event ordering regression");
+            }
+            *previous_key = Some(key);
         }
-
-        let key = (timestamp, ranks.value(row));
-
-        if previous_key.is_some_and(|previous| key < previous) {
-            return invalid("physical event ordering regression");
-        }
-
-        *previous_key = Some(key);
 
         let canonical_rows = canonical_counts.value(row);
         let canonical_offsets = column::<UInt64Array>(batch, "canonical_row_offset")?;
@@ -407,11 +442,17 @@ fn validate_batch(
         validation.events += 1;
         validation.canonical_rows += canonical_rows;
 
-        if validation.first_timestamp_ns.is_none() {
-            validation.first_timestamp_ns = Some(timestamp);
-        }
+        validation.first_timestamp_ns = Some(
+            validation
+                .first_timestamp_ns
+                .map_or(timestamp, |old| old.min(timestamp)),
+        );
 
-        validation.last_timestamp_ns = Some(timestamp);
+        validation.last_timestamp_ns = Some(
+            validation
+                .last_timestamp_ns
+                .map_or(timestamp, |old| old.max(timestamp)),
+        );
     }
 
     Ok(())

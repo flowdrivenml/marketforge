@@ -107,6 +107,7 @@ pub(crate) fn execute_unified_partition_impl(
     ranked: Option<&crate::historical::merge::execution::unified::parallel::RankedStreams<'_>>,
 ) -> Result<UnifiedPartitionResult> {
     let partition = plan.partition;
+    let causal = ranked.is_some_and(|r| r.causal);
 
     // -------------------------------------------------------------------------
     // Select partition tasks
@@ -151,17 +152,30 @@ pub(crate) fn execute_unified_partition_impl(
                     let tasks = depth_inventory
                         .iter()
                         .filter(|task| {
-                            task.dataset_id == stream.dataset_id
-                                && selected.contains(&(task.dataset_id, task.task_id))
+                            let key = (task.dataset_id, task.task_id);
+                            ranked.depth_ranks.get(&key) == Some(&stream.stream_rank)
+                                && (causal || selected.contains(&key))
                         })
                         .cloned()
                         .collect();
-                    streams.push(Box::new(PartitionDepthStream::new(
-                        stream.dataset_id,
-                        partition,
-                        tasks,
-                        boundaries,
-                    )?));
+                    if causal {
+                        streams.push(Box::new(
+                            crate::historical::merge::depth::causal_stream::CausalDepthStream::new(
+                                tasks,
+                                crate::historical::job::MergeTimeRange {
+                                    start_ns: partition.start_ns,
+                                    end_ns: partition.end_ns,
+                                },
+                            ),
+                        ));
+                    } else {
+                        streams.push(Box::new(PartitionDepthStream::new(
+                            stream.dataset_id,
+                            partition,
+                            tasks,
+                            boundaries,
+                        )?));
+                    }
                 }
             }
         }
@@ -228,7 +242,7 @@ pub(crate) fn execute_unified_partition_impl(
         // -------------------------------------------------------------------------
     }
     let mut merger = if ranked.is_some() {
-        KWayEventMerger::new_ranked(streams, ranks)?
+        KWayEventMerger::new_ranked(streams, ranks, causal)?
     } else {
         KWayEventMerger::new(streams)?
     };
@@ -241,7 +255,7 @@ pub(crate) fn execute_unified_partition_impl(
 
     let output_directory = staging.join(&relative_directory);
 
-    let mut writer = UnifiedTimelineWriter::new(&output_directory, parquet)?;
+    let mut writer = UnifiedTimelineWriter::with_ordering(&output_directory, parquet, causal)?;
 
     let mut trade_events = 0_u64;
     let mut depth_events = 0_u64;
@@ -256,7 +270,7 @@ pub(crate) fn execute_unified_partition_impl(
         }
         let timestamp = merged.event.timestamp_ns();
 
-        if !partition.contains(timestamp) {
+        if !causal && !partition.contains(timestamp) {
             return invalid(format!(
                 "partition {} emitted timestamp {} outside [{}, {})",
                 partition.partition_id, timestamp, partition.start_ns, partition.end_ns,
@@ -277,7 +291,27 @@ pub(crate) fn execute_unified_partition_impl(
             }
         }
 
-        writer.write(UnifiedTimelineRecord::from(&merged))?;
+        let mut record = UnifiedTimelineRecord::from(&merged);
+        if causal {
+            use crate::historical::merge::{
+                core::event::MergeEventRef, output::writers::unified_timeline::CausalPosition,
+            };
+            let depth = match &merged.event {
+                MergeEventRef::Depth(depth) => Some(&depth.event),
+                MergeEventRef::Trade(_) => None,
+            };
+            record.causal = Some(CausalPosition {
+                sequence: merger
+                    .events_emitted()
+                    .checked_sub(1)
+                    .ok_or_else(|| invalid_error("missing timeline position"))?,
+                reconstruction_only: !partition.contains(timestamp),
+                system_timestamp_ns: depth.and_then(|event| event.system_timestamp_ns),
+                sequence_start: depth.and_then(|event| event.sequence_start),
+                sequence_end: depth.and_then(|event| event.sequence_end),
+            });
+        }
+        writer.write(record)?;
     }
 
     // -------------------------------------------------------------------------

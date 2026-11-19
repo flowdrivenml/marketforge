@@ -85,6 +85,7 @@ fn canonical_batch(kind: u8, timestamp: i64) -> RecordBatch {
 fn event(kind: u8, dataset_id: u64, rank: u32, timestamp: i64) -> ResolvedMarketEvent {
     ResolvedMarketEvent {
         reference: UnifiedTimelineRecord {
+            causal: None,
             event_timestamp_ns: timestamp,
             stream_rank: rank,
             event_kind: kind,

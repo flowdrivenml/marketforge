@@ -42,6 +42,7 @@ fn reference(
     count: u64,
 ) -> UnifiedTimelineRecord {
     UnifiedTimelineRecord {
+        causal: None,
         event_timestamp_ns: timestamp,
         stream_rank: kind as u32,
         event_kind: kind,

@@ -13,6 +13,7 @@ use {
 
 fn reference(ordinal: u64, timestamp: i64) -> UnifiedTimelineRecord {
     UnifiedTimelineRecord {
+        causal: None,
         event_timestamp_ns: timestamp,
         stream_rank: 0,
         event_kind: 0,

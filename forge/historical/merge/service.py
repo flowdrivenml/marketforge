@@ -18,6 +18,7 @@ from forge.historical.merge.config import (
     DatabaseID,
     DerivedRecipe,
     StreamRank,
+    TimelineOrdering,
     Timestamp,
     normalization_source,
 )
@@ -49,6 +50,7 @@ class Recipe(SettingsModel, frozen=True):
     start_ns: Timestamp
     end_ns: Timestamp
     stream_ranks: dict[str, StreamRank] = Field(default_factory=dict)
+    timeline_ordering: TimelineOrdering | None = None
 
     @model_validator(mode="after")
     def validate_selection(self) -> Self:
@@ -241,6 +243,9 @@ async def select_inputs(
                 "start_ns": start,
                 "end_ns": end,
                 "integrity_status": manifest["integrity_status"],
+                "requires_causal_timeline": (
+                    manifest["content_type"] == "depth" and manifest["protocol_version"] >= 4
+                ),
                 "memberships": summary["memberships"],
             }
         )
@@ -538,6 +543,12 @@ def prepare_job(
         "job_id": identity,
         "operation": "merge",
         "inputs": [file_input(item) for item in selected],
+        "timeline_ordering": recipe.timeline_ordering
+        or (
+            "causal"
+            if any(item.get("requires_causal_timeline") for item in selected)
+            else "chronological"
+        ),
         "time_range": {"start_ns": recipe.start_ns, "end_ns": recipe.end_ns},
         "output": {"dataset_path": str(output)},
     }
@@ -546,6 +557,7 @@ def prepare_job(
         **discovery,
         "status": "generated",
         "compatibility": "not_validated",
+        "timeline_ordering": job["timeline_ordering"],
         "recipe": name,
         "job_path": str(source),
         "submitted_sha256": checksum(source),
@@ -597,6 +609,8 @@ def verify_output(
         or Path(job["output"]["dataset_path"]) != root
         or manifest["job_id"] != job["job_id"]
         or manifest["time_range"] != job["time_range"]
+        or manifest.get("timeline_ordering", "chronological")
+        != job.get("timeline_ordering", "chronological")
         or manifest["start_timestamp_ns"] is None
         or manifest["end_timestamp_ns"] is None
         or [(entry["dataset_id"], entry["dataset_path"]) for entry in manifest["input_datasets"]]
@@ -667,6 +681,10 @@ def same_inputs(saved: list[dict[str, Any]], selected: list[dict[str, Any]]) -> 
     if len(saved) != len(selected):
         return False
     for previous, current in zip(saved, selected, strict=True):
+        if "requires_causal_timeline" not in previous:
+            current = {
+                key: value for key, value in current.items() if key != "requires_causal_timeline"
+            }
         if "stream_rank" not in previous:
             previous = {key: value for key, value in previous.items() if key != "stream_id"}
             current = {

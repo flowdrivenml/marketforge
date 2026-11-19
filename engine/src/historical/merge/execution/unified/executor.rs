@@ -2,14 +2,13 @@ use super::parallel::execute_ranked_partitions;
 use crate::historical::merge::execution::shared::resolver::resolve_merge_inputs_with_progress;
 use crate::historical::merge::output::validation::unified_output_validation::validate_ranked_unified_merge_output;
 use crate::historical::merge::progress::{MergePhase, MergeProgressReporter};
-use crate::historical::merge::validate_physical_dataset_with_progress;
 use crate::historical::merge::{
     MergeBoundaryRecord, MergeCommitPaths, MergeInputDataset, PhysicalMergeManifest,
-    UnifiedMergeMode, UnifiedMergeStreamKind, build_depth_inventory, build_materialization_plans,
-    build_merge_checkpoints, build_physical_checkpoints, build_trade_inventory,
-    depth_task_intervals, plan_merge_partitions, plan_unified_partition_inputs,
-    prepare_physical_publication, reconcile_depth_boundaries, resolve_initial_checkpoints,
-    resolve_physical_initial_reconstruction, resolve_ranked_merge_streams, trade_task_intervals,
+    UnifiedMergeMode, UnifiedMergeStreamKind, build_materialization_plans, build_merge_checkpoints,
+    build_physical_checkpoints, build_trade_inventory, depth_task_intervals, plan_merge_partitions,
+    plan_unified_partition_inputs, prepare_physical_publication, reconcile_depth_boundaries,
+    resolve_initial_checkpoints, resolve_physical_initial_reconstruction,
+    resolve_ranked_merge_streams, trade_task_intervals,
 };
 use crate::{
     historical::job::{ContentType, MergeJob},
@@ -73,6 +72,9 @@ fn execute_unified_merge_job_inner(
     reporter: &MergeProgressReporter,
 ) -> Result<UnifiedMergeExecutionResult> {
     job.validate()?;
+    use crate::historical::job::MergeTimelineOrdering;
+    use crate::historical::merge::depth::inventory::build_depth_inventory_with_order;
+    let causal = job.timeline_ordering() == MergeTimelineOrdering::Causal;
     let execution_started = std::time::Instant::now();
 
     // -------------------------------------------------------------------------
@@ -198,17 +200,44 @@ fn execute_unified_merge_job_inner(
             }
         }
     }
+    let depth_inventory = profile_stage("depth_inventory", || {
+        build_depth_inventory_with_order(&depth_inputs, causal)
+    })?;
+    let mut depth_ranks = std::collections::HashMap::new();
+    for stream in streams
+        .iter()
+        .filter(|stream| stream.kind == UnifiedMergeStreamKind::Depth)
+    {
+        for task in depth_inventory.iter().filter(|task| {
+            task.dataset_id == stream.dataset_id
+                && (task.boundary.stream_id == stream.stream_id || !causal)
+        }) {
+            if depth_ranks
+                .insert((task.dataset_id, task.task_id), stream.stream_rank)
+                .is_some()
+            {
+                return invalid("depth task belongs to multiple selected streams");
+            }
+        }
+    }
+    if depth_ranks.len() != depth_inventory.len() {
+        return invalid("depth source has no selected concrete stream");
+    }
     let ranked = super::parallel::RankedStreams {
         streams: &streams,
         trade_ranks: &trade_ranks,
+        depth_ranks: &depth_ranks,
+        causal,
     };
-    let depth_inventory =
-        profile_stage("depth_inventory", || build_depth_inventory(&depth_inputs))?;
     reporter.phase_completed(MergePhase::Inventory);
 
     reporter.phase_started(MergePhase::BoundaryReconciliation);
     let boundaries = profile_stage("depth_boundaries", || {
-        reconcile_depth_boundaries(&depth_inventory)
+        if causal {
+            Ok(Vec::new())
+        } else {
+            reconcile_depth_boundaries(&depth_inventory)
+        }
     })?;
 
     // -------------------------------------------------------------------------
@@ -216,10 +245,14 @@ fn execute_unified_merge_job_inner(
     // -------------------------------------------------------------------------
 
     let checkpoints = profile_stage("canonical_checkpoints", || {
-        build_merge_checkpoints(&depth_inventory)
+        if causal {
+            Ok(Vec::new())
+        } else {
+            build_merge_checkpoints(&depth_inventory)
+        }
     })?;
 
-    let initial_checkpoints = if depth_dataset_ids.is_empty() {
+    let initial_checkpoints = if causal || depth_dataset_ids.is_empty() {
         Vec::new()
     } else {
         resolve_initial_checkpoints(
@@ -241,11 +274,27 @@ fn execute_unified_merge_job_inner(
     reporter.phase_started(MergePhase::PartitionPlanning);
     let mut intervals = trade_task_intervals(&trade_inventory);
 
-    intervals.extend(depth_task_intervals(&depth_inventory)?);
-
-    let partition_plan = plan_merge_partitions(job)?;
-
-    let plans = plan_unified_partition_inputs(&partition_plan.partitions, &intervals)?;
+    let plans = if causal {
+        use crate::historical::merge::{MergePartition, MergeTaskInterval};
+        intervals.extend(depth_inventory.iter().map(|task| MergeTaskInterval {
+            dataset_id: task.dataset_id,
+            task_id: task.task_id,
+            start_timestamp_ns: job.time_range.start_ns,
+            end_timestamp_ns: job.time_range.end_ns - 1,
+        }));
+        plan_unified_partition_inputs(
+            &[MergePartition {
+                partition_id: 0,
+                start_ns: job.time_range.start_ns,
+                end_ns: job.time_range.end_ns,
+            }],
+            &intervals,
+        )?
+    } else {
+        intervals.extend(depth_task_intervals(&depth_inventory)?);
+        let partition_plan = plan_merge_partitions(job)?;
+        plan_unified_partition_inputs(&partition_plan.partitions, &intervals)?
+    };
 
     // Preserve plans because logical execution consumes them.
     let materialization_input_plans = plans.clone();
@@ -305,6 +354,7 @@ fn execute_unified_merge_job_inner(
             &trade_inventory,
             &depth_inventory,
             Some(&trade_ranks),
+            causal,
         )
     })?;
     let expected_trade_events = results.iter().try_fold(0_u64, |total, result| {
@@ -332,7 +382,16 @@ fn execute_unified_merge_job_inner(
     reporter.phase_completed(MergePhase::LogicalValidation);
     reporter.phase_started(MergePhase::MaterializationPlanning);
     let materialization_plans = profile_stage("materialization_planning", || {
-        build_materialization_plans(&logical_staging, &materialization_input_plans, &results)
+        let plans =
+            build_materialization_plans(&logical_staging, &materialization_input_plans, &results)?;
+        if causal {
+            crate::historical::merge::materialize::planning::plan::split_causal_materialization_plan(
+                plans,
+                validated.source_tasks_by_file,
+            )
+        } else {
+            Ok(plans)
+        }
     })?;
 
     // -------------------------------------------------------------------------
@@ -384,11 +443,12 @@ fn execute_unified_merge_job_inner(
     // -------------------------------------------------------------------------
     reporter.phase_started(MergePhase::PhysicalValidation);
     let physical_validated = profile_stage("physical_validation", || {
-        validate_physical_dataset_with_progress(
+        crate::historical::merge::materialize::validation::global_validate::validate_physical_dataset_with_ordering(
             &physical_staging,
             mode,
             &physical_results,
             reporter,
+            causal,
         )
     })?;
     // -------------------------------------------------------------------------
@@ -432,6 +492,9 @@ fn execute_unified_merge_job_inner(
     reporter.phase_started(MergePhase::Checkpoints);
 
     let physical_checkpoints = profile_stage("physical_checkpoints", || {
+        if causal {
+            return Ok(Vec::new());
+        }
         build_physical_checkpoints(
             &physical_staging,
             mode,
@@ -446,12 +509,16 @@ fn execute_unified_merge_job_inner(
     // Resolve independent physical reconstruction availability
     // -------------------------------------------------------------------------
 
-    let initial_reconstruction = resolve_physical_initial_reconstruction(
-        &initial_checkpoints,
-        &physical_checkpoints,
-        job.time_range.start_ns,
-        job.time_range.end_ns,
-    )?;
+    let initial_reconstruction = if causal {
+        Vec::new()
+    } else {
+        resolve_physical_initial_reconstruction(
+            &initial_checkpoints,
+            &physical_checkpoints,
+            job.time_range.start_ns,
+            job.time_range.end_ns,
+        )?
+    };
 
     // -------------------------------------------------------------------------
     // Construct input dataset metadata
@@ -471,7 +538,7 @@ fn execute_unified_merge_job_inner(
     // Construct physical dataset manifest
     // -------------------------------------------------------------------------
     reporter.phase_started(MergePhase::Manifest);
-    let physical_manifest = PhysicalMergeManifest::new(
+    let physical_manifest = PhysicalMergeManifest::new_with_ordering(
         job.job_id,
         mode,
         inputs,
@@ -482,6 +549,7 @@ fn execute_unified_merge_job_inner(
         skipped_initializations,
         physical_checkpoints,
         initial_reconstruction,
+        job.timeline_ordering(),
     )?;
     // -------------------------------------------------------------------------
     // Validate physical manifest

@@ -37,6 +37,7 @@ pub struct UnifiedTimelineWriterMetrics {
 
 pub struct UnifiedTimelineWriter {
     output_dir: PathBuf,
+    causal: bool,
 
     row_group_target_bytes: u64,
     file_target_bytes: u64,
@@ -47,6 +48,7 @@ pub struct UnifiedTimelineWriter {
 
     writer: Option<ArrowWriter<File>>,
     current_file_bytes: u64,
+    current_file_estimated_bytes: u64,
     next_file_index: u64,
 
     metrics: UnifiedTimelineWriterMetrics,
@@ -61,6 +63,14 @@ pub struct UnifiedTimelineWriter {
 
 impl UnifiedTimelineWriter {
     pub fn new(output_dir: impl AsRef<Path>, config: &MergeParquetConfig) -> Result<Self> {
+        Self::with_ordering(output_dir, config, false)
+    }
+
+    pub(crate) fn with_ordering(
+        output_dir: impl AsRef<Path>,
+        config: &MergeParquetConfig,
+        causal: bool,
+    ) -> Result<Self> {
         let row_group_target_bytes = config
             .row_group_target_mb
             .checked_mul(1024 * 1024)
@@ -93,6 +103,7 @@ impl UnifiedTimelineWriter {
 
         Ok(Self {
             output_dir,
+            causal,
 
             row_group_target_bytes,
             file_target_bytes,
@@ -103,6 +114,7 @@ impl UnifiedTimelineWriter {
 
             writer: None,
             current_file_bytes: 0,
+            current_file_estimated_bytes: 0,
             next_file_index: 0,
 
             metrics: UnifiedTimelineWriterMetrics::default(),
@@ -175,13 +187,17 @@ impl UnifiedTimelineWriter {
             ))
             .build();
 
-        let writer = ArrowWriter::try_new(file, unified_timeline_schema(), Some(properties))
-            .map_err(|error| {
-                invalid_error(format!("failed to initialize timeline writer: {error}"))
-            })?;
+        let mut schema = unified_timeline_schema();
+        if self.causal {
+            schema = super::unified_timeline::causal_schema(&schema, true);
+        }
+        let writer = ArrowWriter::try_new(file, schema, Some(properties)).map_err(|error| {
+            invalid_error(format!("failed to initialize timeline writer: {error}"))
+        })?;
 
         self.writer = Some(writer);
         self.current_file_bytes = 0;
+        self.current_file_estimated_bytes = 0;
 
         self.next_file_index = self
             .next_file_index
@@ -220,12 +236,22 @@ impl UnifiedTimelineWriter {
             .checked_add(batch.num_rows() as u64)
             .ok_or_else(|| invalid_error("timeline event counter overflow"))?;
 
+        if self.causal {
+            self.current_file_estimated_bytes = self
+                .current_file_estimated_bytes
+                .checked_add(self.batch_bytes)
+                .ok_or_else(|| invalid_error("timeline partition byte counter overflow"))?;
+        }
         self.batch_bytes = 0;
 
         // Track approximate serialized bytes.
         self.current_file_bytes = writer.bytes_written() as u64;
 
-        if self.current_file_bytes >= self.file_target_bytes {
+        if self
+            .current_file_bytes
+            .max(self.current_file_estimated_bytes)
+            >= self.file_target_bytes
+        {
             self.close_file()?;
         }
 
@@ -252,6 +278,7 @@ impl UnifiedTimelineWriter {
             .ok_or_else(|| invalid_error("timeline file counter overflow"))?;
 
         self.current_file_bytes = 0;
+        self.current_file_estimated_bytes = 0;
 
         Ok(())
     }
@@ -263,12 +290,9 @@ impl UnifiedTimelineWriter {
     pub fn write(&mut self, record: UnifiedTimelineRecord) -> Result<()> {
         self.ensure_writable()?;
 
-        // Unified timeline contains ten columns, including nullable depth metadata.
-        //
-        // Reserve additional memory for Arrow buffers and overhead.
-        const ESTIMATED_RECORD_BYTES: u64 = 96;
-
-        let result = self.write_inner(record, ESTIMATED_RECORD_BYTES);
+        // Include Arrow buffer overhead and the five causal metadata columns.
+        let estimated_record_bytes = if self.causal { 128 } else { 96 };
+        let result = self.write_inner(record, estimated_record_bytes);
 
         if result.is_err() {
             self.failed = true;

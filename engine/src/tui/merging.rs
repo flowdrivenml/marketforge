@@ -158,6 +158,7 @@ struct MergeDashboard {
     verified_files: usize,
     concrete_streams: Option<usize>,
     requested: crate::historical::job::MergeTimeRange,
+    ordering: crate::historical::job::MergeTimelineOrdering,
     output: std::path::PathBuf,
 
     phase: Option<MergePhase>,
@@ -189,6 +190,7 @@ impl MergeDashboard {
             verified_files: 0,
             concrete_streams: None,
             requested: job.time_range,
+            ordering: job.timeline_ordering(),
             output: job.output.dataset_path.clone(),
 
             phase: None,
@@ -574,7 +576,10 @@ fn render_header(frame: &mut ratatui::Frame, area: Rect, dashboard: &MergeDashbo
         .map(MergePhase::label)
         .unwrap_or("INITIALIZING");
 
-    let title = format!(" ◆ MARKETFORGE  │  MERGING  │  JOB #{} ", dashboard.job_id,);
+    let title = format!(
+        " ◆ MARKETFORGE │ {:?} merge │ JOB #{} ",
+        dashboard.ordering, dashboard.job_id
+    );
 
     let status_text = format!(" {phase}  ● {status} ");
 

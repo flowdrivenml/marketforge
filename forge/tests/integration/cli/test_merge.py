@@ -84,10 +84,12 @@ def test_new_and_validate_use_managed_paths_and_guard_registry(
     assert discover.await_count == 2
 
 
+@pytest.mark.parametrize("requires_causal", [False, True])
 def test_prepare_freezes_registry_inputs_and_routes_existing_references(
     workspace: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    requires_causal: bool,
 ) -> None:
     args = ["--project-root", str(workspace), "--json", "merge"]
     historical = workspace / "data/.config/historical"
@@ -102,7 +104,8 @@ def test_prepare_freezes_registry_inputs_and_routes_existing_references(
         {
             "database_id": i,
             "stream_id": f"stream-{i}",
-            "content_type": "trades",
+            "content_type": "depth" if requires_causal and i == 3 else "trades",
+            "requires_causal_timeline": requires_causal and i == 3,
             "engine_id": 7401 if i == 3 else 7400,
             "namespace": "ns",
             "path": "/published/7401" if i == 3 else "/published/7400",
@@ -162,7 +165,16 @@ def test_prepare_freezes_registry_inputs_and_routes_existing_references(
     result = json.loads(capsys.readouterr().out)
     path = Path(result["job_path"])
     job = json.loads(path.read_bytes())
-    assert set(job) == {"job_id", "operation", "inputs", "time_range", "output"}
+    assert set(job) == {
+        "job_id",
+        "operation",
+        "inputs",
+        "time_range",
+        "output",
+        "timeline_ordering",
+    }
+    assert job["timeline_ordering"] == ("causal" if requires_causal else "chronological")
+    assert result["timeline_ordering"] == job["timeline_ordering"]
     assert job["operation"] == "merge"
     output = Path(job["output"]["dataset_path"])
     assert output == workspace / "data/datasets/merged" / str(job["job_id"])
@@ -191,7 +203,7 @@ def test_prepare_freezes_registry_inputs_and_routes_existing_references(
         {
             "stream_id": f"stream-{index + 1}",
             "stream_rank": index,
-            "content_type": "trades",
+            "content_type": files[index]["content_type"],
             "file_count": 1,
         }
         for index in range(3)
@@ -201,6 +213,7 @@ def test_prepare_freezes_registry_inputs_and_routes_existing_references(
 
     (directory / "manual.toml").write_text(
         "dataset_ids = [2, 3, 1]\nstart_ns = 1793059200000000001\nend_ns = 1793318400000000000\n"
+        'timeline_ordering = "causal"\n'
     )
     assert main([*args, "prepare", "manual", "--testing"]) == 0
     manual = json.loads(capsys.readouterr().out)
@@ -208,6 +221,7 @@ def test_prepare_freezes_registry_inputs_and_routes_existing_references(
     assert select_inputs.await_args.kwargs["ids"] == [2, 3, 1]
     manual_job = json.loads(Path(manual["job_path"]).read_bytes())
     assert [item["dataset_id"] for item in manual_job["inputs"]] == [2, 3, 1]
+    assert manual_job["timeline_ordering"] == "causal"
     assert manual_job["time_range"]["start_ns"] == 1793059200000000001
 
     original = path.read_bytes()

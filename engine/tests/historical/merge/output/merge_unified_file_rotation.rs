@@ -71,6 +71,7 @@ fn record(index: u64) -> UnifiedTimelineRecord {
     let mixed = index.wrapping_mul(0x9E3779B97F4A7C15).rotate_left(17);
 
     UnifiedTimelineRecord {
+        causal: None,
         event_timestamp_ns: 1_788_220_800_000_000_000 + i64::try_from(index).unwrap(),
 
         stream_rank: 0,
@@ -145,6 +146,7 @@ fn read_output(directory: &Path) -> Vec<UnifiedTimelineRecord> {
 
             for row in 0..batch.num_rows() {
                 records.push(UnifiedTimelineRecord {
+                    causal: None,
                     event_timestamp_ns: timestamps.value(row),
                     stream_rank: ranks.value(row),
                     event_kind: kinds.value(row),

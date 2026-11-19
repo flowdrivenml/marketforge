@@ -148,6 +148,7 @@ pub(super) fn write_parquet(path: &Path, batch: &RecordBatch) {
 
 fn timeline_reference(ordinal: u64, timestamp: i64) -> UnifiedTimelineRecord {
     UnifiedTimelineRecord {
+        causal: None,
         event_timestamp_ns: timestamp,
         stream_rank: 0,
         event_kind: 0,
@@ -322,6 +323,7 @@ pub(super) fn write_depth_events(path: &Path, events: &[IndexedDepthEvent]) {
 
 fn depth_reference(event: &IndexedDepthEvent) -> UnifiedTimelineRecord {
     UnifiedTimelineRecord {
+        causal: None,
         event_timestamp_ns: event.event_timestamp_ns,
         stream_rank: 1,
         event_kind: 1,

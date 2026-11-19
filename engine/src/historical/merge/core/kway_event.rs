@@ -25,25 +25,32 @@ impl KWayEventMerger {
         let ranks = (0..streams.len())
             .map(|index| u32::try_from(index).map_err(|_| merge_error(MergeError::TooManySources)))
             .collect::<Result<Vec<_>>>()?;
-        Self::build(streams, ranks, MergeEventRef::merge_key)
+        Self::build(streams, ranks, MergeEventRef::merge_key, false)
     }
 
     pub(crate) fn new_ranked(
         streams: Vec<Box<dyn MergeEventSource>>,
         ranks: Vec<u32>,
+        causal: bool,
     ) -> Result<Self> {
-        Self::build(streams, ranks, MergeEventRef::ranked_merge_key)
+        Self::build(streams, ranks, MergeEventRef::ranked_merge_key, causal)
     }
 
     fn build(
         mut streams: Vec<Box<dyn MergeEventSource>>,
         ranks: Vec<u32>,
         key: fn(&MergeEventRef, u32) -> crate::shared::merge::MergeKey,
+        causal: bool,
     ) -> Result<Self> {
         if ranks.len() != streams.len() || ranks.windows(2).any(|pair| pair[0] >= pair[1]) {
             return invalid("merge stream priorities must be unique and ascending");
         }
-        let mut queue = HeadQueue::new(streams.len(), true).map_err(merge_error)?;
+        let mut queue = if causal {
+            HeadQueue::available_heads(streams.len())
+        } else {
+            HeadQueue::new(streams.len(), true)
+        }
+        .map_err(merge_error)?;
         for (index, stream) in streams.iter_mut().enumerate() {
             match stream.next_event()? {
                 Some(event) => {

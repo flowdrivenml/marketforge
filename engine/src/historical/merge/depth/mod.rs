@@ -1,5 +1,6 @@
 pub(in crate::historical::merge) mod boundary;
 pub(in crate::historical::merge) mod boundary_summary;
+pub(in crate::historical::merge) mod causal_stream;
 pub(in crate::historical::merge) mod checkpoint;
 pub(in crate::historical::merge) mod cursor;
 pub(in crate::historical::merge) mod event_validation;

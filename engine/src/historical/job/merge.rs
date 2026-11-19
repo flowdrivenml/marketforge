@@ -13,9 +13,19 @@ use crate::shared::error::{MarketForgeError, Result};
 pub struct MergeJobDocument {
     pub job_id: u64,
     pub operation: MergeOperation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeline_ordering: Option<MergeTimelineOrdering>,
     pub inputs: Vec<MergeFileInput>,
     pub time_range: MergeTimeRange,
     pub output: MergeOutput,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MergeTimelineOrdering {
+    #[default]
+    Chronological,
+    Causal,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -280,6 +290,13 @@ pub struct MergeOutput {
 // -----------------------------------------------------------------------------
 
 impl MergeJob {
+    pub fn timeline_ordering(&self) -> MergeTimelineOrdering {
+        self.submission
+            .as_ref()
+            .and_then(|job| job.timeline_ordering)
+            .unwrap_or_default()
+    }
+
     pub fn validate(&self) -> Result<()> {
         if self.inputs.is_empty() {
             return invalid("merge job requires at least one input");

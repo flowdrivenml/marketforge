@@ -28,6 +28,7 @@ fn read(path: &Path) -> Vec<RecordBatch> {
 fn bounded_v5_trade_matches_normalized_rows_and_commits_with_one_or_two_workers() {
     let root = tempfile::tempdir().unwrap();
     let mut job = recorded_job();
+    job.timeline_ordering = None;
     let (input, metadata) = recorded_members(&job, ContentType::Trades)
         .into_iter()
         .find(|(_, file)| {
@@ -167,29 +168,8 @@ fn bounded_v5_trade_matches_normalized_rows_and_commits_with_one_or_two_workers(
 
 #[test]
 #[ignore = "opt-in compatibility with canonical normalized publications"]
-fn bounded_v5_depth_reaches_the_reconstruction_guard() {
-    use marketforge_engine::historical::merge::{
-        resolve_merge_inputs, resolve_ranked_merge_streams,
-    };
-    let workspace = tempfile::tempdir().unwrap();
-    let mut job = recorded_job();
-    let (input, file) = recorded_members(&job, ContentType::Depth)
-        .into_iter()
-        .next()
-        .unwrap();
-    assert!(file.size_bytes <= 8 * 1024 * 1024);
-    job.inputs = vec![input];
-    job.output.dataset_path = workspace.path().join("merged");
-    let resolved = resolve_merge_inputs(&bounded_runtime(job.clone()), workspace.path()).unwrap();
-    assert_eq!(resolved[0].manifest.protocol_version, 5);
-    assert_eq!(resolved[0].selected_streams().unwrap().len(), 1);
-    let err = resolve_ranked_merge_streams(&resolved, workspace.path(), Some(&job)).unwrap_err();
-    assert!(
-        err.to_string()
-            .contains("reconstruction-state dependencies"),
-        "{err}"
-    );
-    assert!(!job.output.dataset_path.exists());
+fn bounded_v5_depth_commits_real_regression() {
+    verify_recorded_causal(false);
 }
 
 #[test]
@@ -198,6 +178,7 @@ fn bounded_v5_trade_streams_from_one_publication_commit() {
     use marketforge_engine::historical::merge::resolve_merge_inputs;
     let workspace = tempfile::tempdir().unwrap();
     let mut job = recorded_job();
+    job.timeline_ordering = None;
     job.inputs = recorded_members(&job, ContentType::Trades)
         .into_iter()
         .filter(|(_, file)| {
@@ -257,47 +238,284 @@ fn adjacent_depth_parts_preserve_stream_rows_without_opening_primary_files() {
 
 #[test]
 #[ignore = "opt-in compatibility with canonical normalized publications"]
-fn bounded_v5_combined_inputs_resolve_before_the_reconstruction_guard() {
-    use marketforge_engine::historical::merge::{
-        resolve_merge_inputs, resolve_ranked_merge_streams,
-    };
+fn bounded_v5_combined_commits_real_regression() {
+    verify_recorded_causal(true);
+}
+
+fn verify_recorded_causal(combined: bool) {
+    use arrow_array::{BooleanArray, ListArray, StructArray, UInt8Array};
+    use marketforge_engine::historical::job::MergeTimelineOrdering;
+    use marketforge_engine::shared::persistence::parquet::DepthStreamBoundaries;
+    use parquet::arrow::arrow_reader::RowSelection;
+
     let workspace = tempfile::tempdir().unwrap();
     let mut job = recorded_job();
-    let (depth, depth_file) = recorded_members(&job, ContentType::Depth)
-        .into_iter()
-        .next()
-        .unwrap();
-    assert!(depth_file.size_bytes <= 8 * 1024 * 1024);
-    let (trade, trade_file) = recorded_members(&job, ContentType::Trades)
-        .into_iter()
-        .find(|(_, file)| {
-            file.rows <= 256
-                && file.size_bytes <= 1024 * 1024
-                && file.start_timestamp_ns.unwrap() <= depth_file.end_timestamp_ns.unwrap()
-                && file.end_timestamp_ns.unwrap() >= depth_file.start_timestamp_ns.unwrap()
-        })
-        .unwrap();
-    let start = trade_file
-        .start_timestamp_ns
+    // Gate.io snapshot stream with a recorded 1 ms regression. Its source
+    // prefix is bounded to one hour of index space and only a few thousand events.
+    let depth = job
+        .inputs
+        .iter()
+        .find(|file| file.dataset_id == 41)
         .unwrap()
-        .max(depth_file.start_timestamp_ns.unwrap());
+        .clone();
+    let trade = job
+        .inputs
+        .iter()
+        .find(|file| file.dataset_id == 119)
+        .unwrap()
+        .clone();
+    assert!(depth.path.metadata().unwrap().len() < 24 * 1024 * 1024);
+    assert!(trade.path.metadata().unwrap().len() < 1024 * 1024);
+    assert_eq!(job.timeline_ordering, Some(MergeTimelineOrdering::Causal));
+    job.inputs = if combined {
+        vec![trade, depth.clone()]
+    } else {
+        vec![depth.clone()]
+    };
+    let start = 1793080538547000000;
+    let end = if combined {
+        1793080650602000001
+    } else {
+        start + 1_000_001
+    };
     job.time_range.start_ns = start;
-    job.time_range.end_ns = start + 1_000_000_000;
-    job.inputs = vec![trade, depth];
+    job.time_range.end_ns = end;
     job.output.dataset_path = workspace.path().join("merged");
-    let resolved = resolve_merge_inputs(&bounded_runtime(job.clone()), workspace.path()).unwrap();
-    assert_eq!(
-        resolved
-            .iter()
-            .map(|input| input.manifest.content_type)
-            .collect::<Vec<_>>(),
-        [ContentType::Trades, ContentType::Depth]
-    );
-    let err = resolve_ranked_merge_streams(&resolved, workspace.path(), Some(&job)).unwrap_err();
+
+    let directory = depth.path.parent().unwrap();
+    let boundaries: DepthStreamBoundaries =
+        serde_json::from_reader(File::open(directory.join("boundary.json")).unwrap()).unwrap();
+    let index = directory.join("events.parquet");
+    assert!(index.metadata().unwrap().len() < 12 * 1024 * 1024);
+    let mut index_rows = Vec::new();
+    for batch in read(&index) {
+        let u64s = |name| {
+            batch
+                .column_by_name(name)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .unwrap()
+        };
+        let times = batch
+            .column_by_name("event_timestamp_ns")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+        let bounds = batch
+            .column_by_name("event_boundary")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<UInt8Array>()
+            .unwrap();
+        let operations = batch
+            .column_by_name("source_operation")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<UInt8Array>()
+            .unwrap();
+        for row in 0..batch.num_rows() {
+            index_rows.push((
+                times.value(row),
+                u64s("event_ordinal").value(row),
+                u64s("canonical_row_offset").value(row),
+                u64s("canonical_row_count").value(row),
+                bounds.value(row),
+                operations.value(row),
+            ));
+        }
+    }
+
+    let mut expected = Vec::new();
+    let mut canonical_ranges: Vec<std::ops::Range<usize>> = Vec::new();
+    for source in &boundaries.sources {
+        let rows = &index_rows[source.start_event as usize..source.end_event as usize];
+        {
+            let starts = rows
+                .iter()
+                .enumerate()
+                .filter_map(|(i, row)| (row.4 == 1).then_some(i))
+                .chain(std::iter::once(rows.len()))
+                .collect::<Vec<_>>();
+            for pair in starts.windows(2) {
+                let segment = &rows[pair[0]..pair[1]];
+                let Some(last) = segment
+                    .iter()
+                    .rposition(|row| (start..end).contains(&row.0))
+                else {
+                    continue;
+                };
+                for &(time, ordinal, offset, count, boundary, operation) in &segment[..=last] {
+                    expected.push((
+                        time,
+                        source.task_id,
+                        ordinal,
+                        offset - source.start_row,
+                        count,
+                        boundary,
+                        operation,
+                        !(start..end).contains(&time),
+                    ));
+                    if count > 0 {
+                        let range = offset as usize..(offset + count) as usize;
+                        if let Some(previous) = canonical_ranges
+                            .last_mut()
+                            .filter(|previous| previous.end == range.start)
+                        {
+                            previous.end = range.end;
+                        } else {
+                            canonical_ranges.push(range);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(expected.len() <= 4000);
     assert!(
-        err.to_string()
-            .contains("reconstruction-state dependencies"),
-        "{err}"
+        expected
+            .windows(2)
+            .any(|rows| rows[0].0 > rows[1].0 && !rows[0].7 && !rows[1].7)
+    );
+    let builder =
+        ParquetRecordBatchReaderBuilder::try_new(File::open(&depth.path).unwrap()).unwrap();
+    let total = builder.metadata().file_metadata().num_rows() as usize;
+    let schema = builder.schema().clone();
+    let selection = RowSelection::from_consecutive_ranges(canonical_ranges.into_iter(), total);
+    let payload_batches = builder
+        .with_row_selection(selection)
+        .build()
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let payload = arrow_select::concat::concat_batches(&schema, &payload_batches).unwrap();
+
+    let result =
+        execute_unified_merge_job(&bounded_runtime(job.clone()), workspace.path()).unwrap();
+    validate_committed_merge(&result.dataset_path).unwrap();
+    let manifest: PhysicalMergeManifest =
+        serde_json::from_slice(&fs::read(result.manifest_path).unwrap()).unwrap();
+    assert_eq!(manifest.timeline_ordering, MergeTimelineOrdering::Causal);
+    assert_eq!(manifest.depth_events as usize, expected.len());
+    assert_eq!(manifest.trade_events, u64::from(combined));
+    assert_eq!(
+        manifest.reconstruction_events as usize,
+        expected.iter().filter(|row| row.7).count()
+    );
+    let mut sequence = 0;
+    let mut depth_index = 0;
+    let mut payload_row = 0;
+    for file in &manifest.files {
+        for batch in read(&result.dataset_path.join(&file.path)) {
+            let u64s = |name| {
+                batch
+                    .column_by_name(name)
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap()
+            };
+            let times = batch
+                .column_by_name("event_timestamp_ns")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let context = batch
+                .column_by_name("reconstruction_only")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .unwrap();
+            for row in 0..batch.num_rows() {
+                assert_eq!(u64s("timeline_sequence").value(row), sequence);
+                sequence += 1;
+                let field = |name| {
+                    if combined {
+                        batch
+                            .column_by_name("depth")
+                            .unwrap()
+                            .as_any()
+                            .downcast_ref::<StructArray>()
+                            .unwrap()
+                            .column_by_name(name)
+                    } else {
+                        batch.column_by_name(name)
+                    }
+                };
+                if combined && batch.column_by_name("depth").unwrap().is_null(row) {
+                    assert!(!context.value(row));
+                    assert_eq!(times.value(row), 1793080650602000000);
+                    continue;
+                }
+                assert_eq!(
+                    u64s("dataset_id").value(row),
+                    depth.publication.engine_dataset_id
+                );
+                let boundary = field("event_boundary")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<UInt8Array>()
+                    .unwrap()
+                    .value(row);
+                let operation = field("source_operation")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<UInt8Array>()
+                    .unwrap()
+                    .value(row);
+                let count = u64s("canonical_row_count").value(row);
+                assert_eq!(
+                    (
+                        times.value(row),
+                        u64s("task_id").value(row),
+                        u64s("event_ordinal").value(row),
+                        u64s("canonical_row_offset").value(row),
+                        count,
+                        boundary,
+                        operation,
+                        context.value(row)
+                    ),
+                    expected[depth_index]
+                );
+                let changes = field("changes")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<ListArray>()
+                    .unwrap()
+                    .value(row);
+                let changes = changes.as_any().downcast_ref::<StructArray>().unwrap();
+                assert_eq!(changes.len(), count as usize);
+                for (field, column) in changes.fields().iter().zip(changes.columns()) {
+                    assert_eq!(
+                        column.as_ref(),
+                        payload
+                            .column_by_name(field.name())
+                            .unwrap()
+                            .slice(payload_row, count as usize)
+                            .as_ref(),
+                        "{}",
+                        field.name()
+                    );
+                }
+                depth_index += 1;
+                payload_row += count as usize;
+            }
+        }
+    }
+    assert_eq!(sequence, manifest.events_written);
+    assert_eq!(depth_index, expected.len());
+    assert_eq!(payload_row, payload.num_rows());
+
+    job.timeline_ordering = Some(MergeTimelineOrdering::Chronological);
+    job.output.dataset_path = workspace.path().join("chronological");
+    let error =
+        execute_unified_merge_job(&bounded_runtime(job.clone()), workspace.path()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("chronological ordering cannot consume")
     );
     assert!(!job.output.dataset_path.exists());
 }

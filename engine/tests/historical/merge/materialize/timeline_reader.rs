@@ -13,6 +13,7 @@ use marketforge_engine::historical::merge::{
 
 fn trade(timestamp: i64, rank: u32, ordinal: u64) -> UnifiedTimelineRecord {
     UnifiedTimelineRecord {
+        causal: None,
         event_timestamp_ns: timestamp,
         stream_rank: rank,
         event_kind: 0,
@@ -28,6 +29,7 @@ fn trade(timestamp: i64, rank: u32, ordinal: u64) -> UnifiedTimelineRecord {
 
 fn depth(timestamp: i64, rank: u32, ordinal: u64, rows: u64) -> UnifiedTimelineRecord {
     UnifiedTimelineRecord {
+        causal: None,
         event_timestamp_ns: timestamp,
         stream_rank: rank,
         event_kind: 1,

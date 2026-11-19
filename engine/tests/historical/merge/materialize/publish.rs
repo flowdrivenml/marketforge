@@ -18,6 +18,7 @@ use {
 
 fn manifest() -> PhysicalMergeManifest {
     let validated = ValidatedPhysicalDataset {
+        reconstruction_events: 0,
         events: 2,
         trade_events: 2,
         depth_events: 0,

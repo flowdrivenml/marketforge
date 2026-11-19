@@ -53,6 +53,7 @@ fn file(partition_id: u32, rows: u64, first: i64, last: i64) -> MergeTimelineFil
 
 fn validated() -> ValidatedPhysicalDataset {
     ValidatedPhysicalDataset {
+        reconstruction_events: 0,
         events: 5,
         trade_events: 3,
         depth_events: 2,

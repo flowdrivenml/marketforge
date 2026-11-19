@@ -75,6 +75,7 @@ pub struct MaterializationPartitionResult {
 
 pub struct MaterializationPartitionWorker {
     registered_files: HashSet<PathBuf>,
+    causal: bool,
     planner: CanonicalReadPlanner,
     decoder: GroupedCanonicalDecoder,
     depth_metadata: DepthMetadataResolver,
@@ -88,6 +89,13 @@ pub struct MaterializationPartitionWorker {
 
 impl MaterializationPartitionWorker {
     pub fn new(input: &MaterializationPartitionInput<'_>) -> Result<Self> {
+        Self::new_with_ordering(input, false)
+    }
+
+    pub(crate) fn new_with_ordering(
+        input: &MaterializationPartitionInput<'_>,
+        causal: bool,
+    ) -> Result<Self> {
         if input.start_ns >= input.end_ns {
             return invalid("invalid materialization partition time range");
         }
@@ -98,6 +106,7 @@ impl MaterializationPartitionWorker {
 
         let mut worker = Self {
             registered_files: HashSet::new(),
+            causal,
             planner: CanonicalReadPlanner::new(),
             decoder,
             depth_metadata: DepthMetadataResolver::new(),
@@ -201,8 +210,10 @@ impl MaterializationPartitionWorker {
                     .collect(),
             )?;
 
-            self.depth_metadata
-                .register_inventory_range(task, start_ns, end_ns)?;
+            if !self.causal {
+                self.depth_metadata
+                    .register_inventory_range(task, start_ns, end_ns)?;
+            }
         }
 
         Ok(())
@@ -299,13 +310,33 @@ impl MaterializationPartitionWorker {
             .join("timeline")
             .join(format!("partition-{:06}", input.partition_id));
 
-        let mut writer = PhysicalParquetWriter::new(&output_dir, input.mode, input.parquet)?;
+        let mut writer = if self.causal {
+            use crate::historical::merge::{
+                physical_combined_schema, physical_depth_schema, physical_trade_schema,
+            };
+            let schema = match input.mode {
+                UnifiedMergeMode::Trades => physical_trade_schema(),
+                UnifiedMergeMode::Depth => physical_depth_schema(),
+                UnifiedMergeMode::Combined => physical_combined_schema(),
+            };
+            let schema = crate::historical::merge::output::writers::unified_timeline::causal_schema(
+                &schema, false,
+            );
+            PhysicalParquetWriter::with_schema(&output_dir, input.mode, schema, input.parquet)?
+        } else {
+            PhysicalParquetWriter::new(&output_dir, input.mode, input.parquet)?
+        };
 
         let mut windows_processed = 0_u64;
 
         while let Some(reference) = timeline.next_record()? {
-            if reference.event_timestamp_ns < input.start_ns
-                || reference.event_timestamp_ns >= input.end_ns
+            let outside = reference.event_timestamp_ns < input.start_ns
+                || reference.event_timestamp_ns >= input.end_ns;
+            if self.causal != reference.causal.is_some()
+                || outside
+                    != reference
+                        .causal
+                        .is_some_and(|position| position.reconstruction_only)
             {
                 return invalid(format!(
                     "timeline reference outside partition: \
@@ -368,6 +399,23 @@ impl MaterializationPartitionWorker {
             writer_metrics: writer.metrics().clone(),
         })
     }
+    fn resolve_depth_metadata(
+        resolver: &mut DepthMetadataResolver,
+        reference: &crate::historical::merge::output::writers::unified_timeline::UnifiedTimelineRecord,
+    ) -> Result<
+        crate::historical::merge::materialize::builders::depth_metadata::ResolvedDepthMetadata,
+    > {
+        if let Some(position) = reference.causal {
+            Ok(crate::historical::merge::materialize::builders::depth_metadata::ResolvedDepthMetadata {
+                system_timestamp_ns: position.system_timestamp_ns,
+                sequence_start: position.sequence_start,
+                sequence_end: position.sequence_end,
+            })
+        } else {
+            resolver.resolve(reference)
+        }
+    }
+
     fn materialize_window(
         &mut self,
         window: &MaterializationWindow,
@@ -432,7 +480,8 @@ impl MaterializationPartitionWorker {
                         return invalid("depth event stream-kind mismatch");
                     }
 
-                    let metadata = self.depth_metadata.resolve(reference)?;
+                    let metadata =
+                        Self::resolve_depth_metadata(&mut self.depth_metadata, reference)?;
 
                     inputs.push(PhysicalDepthEvent {
                         event,
@@ -474,7 +523,10 @@ impl MaterializationPartitionWorker {
                                 return invalid("depth event stream-kind mismatch");
                             }
 
-                            Some(self.depth_metadata.resolve(reference)?)
+                            Some(Self::resolve_depth_metadata(
+                                &mut self.depth_metadata,
+                                reference,
+                            )?)
                         }
 
                         _ => return invalid("unsupported materialization event kind"),
@@ -494,6 +546,15 @@ impl MaterializationPartitionWorker {
         self.profile_building += building_started.elapsed();
 
         if let Some(batch) = batch {
+            let batch = if self.causal {
+                crate::historical::merge::output::writers::unified_timeline::add_causal_columns(
+                    batch,
+                    &window.references,
+                    false,
+                )?
+            } else {
+                batch
+            };
             let started = Instant::now();
 
             writer.write_batch(&batch)?;

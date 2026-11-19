@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use arrow_array::{ArrayRef, Int64Array, RecordBatch, UInt8Array, UInt32Array, UInt64Array};
+use arrow_array::{
+    ArrayRef, BooleanArray, Int64Array, RecordBatch, UInt8Array, UInt32Array, UInt64Array,
+};
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 
 use crate::{
@@ -54,6 +56,116 @@ pub struct UnifiedTimelineRecord {
 
     pub event_boundary: Option<u8>,
     pub source_operation: Option<u8>,
+    pub causal: Option<CausalPosition>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CausalPosition {
+    pub sequence: u64,
+    pub reconstruction_only: bool,
+    pub system_timestamp_ns: Option<i64>,
+    pub sequence_start: Option<u64>,
+    pub sequence_end: Option<u64>,
+}
+
+pub(crate) fn causal_schema(base: &SchemaRef, logical: bool) -> SchemaRef {
+    let mut fields = base.fields().to_vec();
+    fields.extend([
+        Arc::new(Field::new("timeline_sequence", DataType::UInt64, false)),
+        Arc::new(Field::new("reconstruction_only", DataType::Boolean, false)),
+    ]);
+    if logical {
+        fields.extend([
+            Arc::new(Field::new(
+                "indexed_system_timestamp_ns",
+                DataType::Int64,
+                true,
+            )),
+            Arc::new(Field::new("indexed_sequence_start", DataType::UInt64, true)),
+            Arc::new(Field::new("indexed_sequence_end", DataType::UInt64, true)),
+        ]);
+    }
+    Arc::new(Schema::new(fields))
+}
+
+pub(crate) fn add_causal_columns(
+    batch: RecordBatch,
+    records: &[UnifiedTimelineRecord],
+    logical: bool,
+) -> Result<RecordBatch> {
+    let positions = records
+        .iter()
+        .map(|record| {
+            record.causal.ok_or_else(|| {
+                MarketForgeError::InvalidCanonical("causal timeline row has no position".into())
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut columns = batch.columns().to_vec();
+    columns.push(Arc::new(UInt64Array::from_iter_values(
+        positions.iter().map(|position| position.sequence),
+    )));
+    columns.push(Arc::new(BooleanArray::from_iter(
+        positions
+            .iter()
+            .map(|position| Some(position.reconstruction_only)),
+    )));
+    if logical {
+        columns.push(Arc::new(Int64Array::from_iter(
+            positions
+                .iter()
+                .map(|position| position.system_timestamp_ns),
+        )));
+        columns.push(Arc::new(UInt64Array::from_iter(
+            positions.iter().map(|position| position.sequence_start),
+        )));
+        columns.push(Arc::new(UInt64Array::from_iter(
+            positions.iter().map(|position| position.sequence_end),
+        )));
+    }
+    RecordBatch::try_new(causal_schema(&batch.schema(), logical), columns)
+        .map_err(|error| MarketForgeError::InvalidCanonical(error.to_string()))
+}
+
+pub(crate) fn read_causal_position(
+    batch: &RecordBatch,
+    row: usize,
+    logical: bool,
+) -> Result<CausalPosition> {
+    use arrow_array::Array;
+    fn column<'a, T: Array + 'static>(batch: &'a RecordBatch, name: &str) -> Result<&'a T> {
+        batch
+            .column_by_name(name)
+            .and_then(|column| column.as_any().downcast_ref::<T>())
+            .ok_or_else(|| {
+                MarketForgeError::InvalidCanonical(format!(
+                    "missing or invalid causal timeline column {name}"
+                ))
+            })
+    }
+    let sequences = column::<UInt64Array>(batch, "timeline_sequence")?;
+    let reconstruction = column::<BooleanArray>(batch, "reconstruction_only")?;
+    if sequences.is_null(row) || reconstruction.is_null(row) {
+        return Err(MarketForgeError::InvalidCanonical(
+            "null causal sequence or reconstruction marker".into(),
+        ));
+    }
+    let mut position = CausalPosition {
+        sequence: sequences.value(row),
+        reconstruction_only: reconstruction.value(row),
+        system_timestamp_ns: None,
+        sequence_start: None,
+        sequence_end: None,
+    };
+    if logical {
+        let system = column::<Int64Array>(batch, "indexed_system_timestamp_ns")?;
+        let start = column::<UInt64Array>(batch, "indexed_sequence_start")?;
+        let end = column::<UInt64Array>(batch, "indexed_sequence_end")?;
+        position.system_timestamp_ns = (!system.is_null(row)).then(|| system.value(row));
+        position.sequence_start = (!start.is_null(row)).then(|| start.value(row));
+        position.sequence_end = (!end.is_null(row)).then(|| end.value(row));
+    }
+    Ok(position)
 }
 
 impl From<&MergedEvent> for UnifiedTimelineRecord {
@@ -90,6 +202,7 @@ impl From<&MergedEvent> for UnifiedTimelineRecord {
 
             event_boundary,
             source_operation,
+            causal: None,
         }
     }
 }
@@ -207,10 +320,18 @@ impl UnifiedTimelineBatchBuilder {
             )),
         ];
 
-        RecordBatch::try_new(unified_timeline_schema(), columns).map_err(|error| {
+        let batch = RecordBatch::try_new(unified_timeline_schema(), columns).map_err(|error| {
             MarketForgeError::InvalidCanonical(format!(
                 "failed to construct unified timeline RecordBatch: {error}"
             ))
-        })
+        })?;
+        if records
+            .first()
+            .is_some_and(|record| record.causal.is_some())
+        {
+            add_causal_columns(batch, records, true)
+        } else {
+            Ok(batch)
+        }
     }
 }

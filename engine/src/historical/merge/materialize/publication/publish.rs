@@ -69,7 +69,7 @@ fn invalid<T>(message: impl Into<String>) -> Result<T> {
 
 /// Re-read the physical Parquet with the same validation used during publication.
 pub fn validate_committed_merge(root: &Path) -> Result<()> {
-    use crate::historical::merge::{MaterializationPartitionResult, validate_physical_dataset};
+    use crate::historical::merge::MaterializationPartitionResult;
 
     let load = |name: &str| {
         fs::read(root.join(name)).map_err(|error| invalid_error(format!("{name}: {error}")))
@@ -84,6 +84,9 @@ pub fn validate_committed_merge(root: &Path) -> Result<()> {
 
     let (path, job_id, interval, publications) = if let Some(job) = document {
         job.validate()?;
+        if job.timeline_ordering.unwrap_or_default() != manifest.timeline_ordering {
+            return invalid("committed timeline ordering differs from submitted job");
+        }
         use crate::historical::job::ContentType;
         use crate::historical::merge::UnifiedMergeStreamKind;
         let expected = job
@@ -184,8 +187,16 @@ pub fn validate_committed_merge(root: &Path) -> Result<()> {
     let partitions: Vec<MaterializationPartitionResult> =
         serde_json::from_slice(&load("merge-partitions.json")?)
             .map_err(|error| invalid_error(error.to_string()))?;
-    let resolved = validate_physical_dataset(root, manifest.mode, &partitions)?;
-    if resolved.files != manifest.files
+    let resolved =
+        super::super::validation::global_validate::validate_physical_dataset_with_ordering(
+            root,
+            manifest.mode,
+            &partitions,
+            &crate::historical::merge::progress::MergeProgressReporter::disabled(),
+            manifest.timeline_ordering == crate::historical::job::MergeTimelineOrdering::Causal,
+        )?;
+    if resolved.reconstruction_events != manifest.reconstruction_events
+        || resolved.files != manifest.files
         || resolved.events != manifest.events_written
         || resolved.trade_events != manifest.trade_events
         || resolved.depth_events != manifest.depth_events
@@ -195,6 +206,22 @@ pub fn validate_committed_merge(root: &Path) -> Result<()> {
         || resolved.last_timestamp_ns != manifest.end_timestamp_ns
     {
         return invalid("committed merge inventory or decoded metrics differ from manifest");
+    }
+    if manifest.timeline_ordering == crate::historical::job::MergeTimelineOrdering::Causal {
+        let inventory: std::collections::HashMap<String, String> =
+            serde_json::from_slice(&load("publication-checksums.json")?)
+                .map_err(|error| invalid_error(error.to_string()))?;
+        for file in &resolved.files {
+            let checksum =
+                crate::historical::normalize::manifest::file_sha256(&root.join(&file.path))
+                    .map_err(|error| invalid_error(format!("{}: {error}", file.path)))?;
+            if inventory.get(&file.path) != Some(&checksum) {
+                return invalid(format!(
+                    "committed causal payload checksum mismatch: {}",
+                    file.path
+                ));
+            }
+        }
     }
     Ok(())
 }

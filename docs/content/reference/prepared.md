@@ -174,7 +174,7 @@ Forge emits normalization batch version 4 in `forge/historical/normalization/bat
 
 ## Merge jobs
 
-A prepared merge job carries `job_id`, `operation`, `inputs`, `time_range`, and `output`. The interval is half-open and uses integer nanoseconds. Each input contains the following fields.
+A prepared merge job carries `job_id`, `operation`, `inputs`, `time_range`, `timeline_ordering`, and `output`. The interval is half-open and uses integer nanoseconds. Each input contains the following fields.
 
 | Field | Meaning |
 | --- | --- |
@@ -185,7 +185,7 @@ A prepared merge job carries `job_id`, `operation`, `inputs`, `time_range`, and 
 | `path`, `sha256` | Absolute primary file path and its SHA-256. |
 | `publication` | The engine publication ID as a decimal string, plus the absolute `manifest_path` and `manifest_sha256`. |
 
-Files belonging to the same concrete stream repeat its rank. Distinct streams use distinct ranks across both content types. Rank gaps remain valid when filtering a job. Rust verifies the stream owner, content type, and publication pin before execution. The job carries no resource or ordering settings outside these per-file priorities. Regenerate older job files with Forge preparation. See the [merge procedure](../workflows/merge.md) for priority overrides, runtime settings, and compatible layouts.
+Files belonging to the same concrete stream repeat its rank. Distinct streams use distinct ranks across both content types. Rank gaps remain valid when filtering a job. Rust verifies the stream owner, content type, and publication pin before execution. The job-level `timeline_ordering` is `chronological` or `causal`. Jobs that omit it use chronological ordering. The committed causal timeline uses physical schema version 2, with `timeline_sequence` and `reconstruction_only` fields. Runtime resources come from `data/.config/historical/general.toml`. Regenerate jobs missing input identity fields with Forge preparation. See the [merge procedure](../workflows/merge.md) for priority overrides, runtime settings, and compatible layouts.
 
 ## What each version governs
 

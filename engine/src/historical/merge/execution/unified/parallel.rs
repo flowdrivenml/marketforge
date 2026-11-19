@@ -47,6 +47,8 @@ pub fn execute_unified_partitions_parallel(
 pub(crate) struct RankedStreams<'a> {
     pub streams:
         &'a [crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeStream],
+    pub causal: bool,
+    pub depth_ranks: &'a HashMap<(u64, u64), u32>,
     pub trade_ranks: &'a HashMap<(u64, u64), u32>,
 }
 
@@ -115,7 +117,10 @@ pub(crate) fn execute_ranked_partitions(
                 .iter()
                 .map(|input| {
                     ranked
-                        .and_then(|r| r.trade_ranks.get(&(input.dataset_id, input.task_id)))
+                        .and_then(|r| {
+                            let key = (input.dataset_id, input.task_id);
+                            r.trade_ranks.get(&key).or_else(|| r.depth_ranks.get(&key))
+                        })
                         .map_or((input.dataset_id, None), |&rank| (0, Some(rank)))
                 })
                 .collect::<HashSet<_>>()
@@ -297,7 +302,11 @@ pub fn validate_unified_partition_results(
                 .last_timestamp_ns
                 .ok_or_else(|| invalid_error("missing last partition timestamp"))?;
 
-            if first > last || first < result.start_ns || last >= result.end_ns {
+            if first > last
+                || (job.timeline_ordering()
+                    != crate::historical::job::MergeTimelineOrdering::Causal
+                    && (first < result.start_ns || last >= result.end_ns))
+            {
                 return invalid(format!(
                     "partition {}: invalid event timestamp range",
                     result.partition_id

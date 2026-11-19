@@ -32,6 +32,7 @@ pub struct ValidatedUnifiedMergeOutput {
     pub output: ValidatedMergeOutput,
     pub trade_events: u64,
     pub depth_events: u64,
+    pub(in crate::historical::merge) source_tasks_by_file: Vec<Vec<(u64, u64)>>,
 }
 
 // -----------------------------------------------------------------------------
@@ -52,6 +53,7 @@ pub fn validate_unified_merge_output(
         trade_inventory,
         depth_inventory,
         None,
+        false,
     )
 }
 
@@ -62,6 +64,7 @@ pub(crate) fn validate_ranked_unified_merge_output(
     trade_inventory: &[TradeTaskInventory],
     depth_inventory: &[DepthTaskInventory],
     trade_ranks: Option<&HashMap<(u64, u64), u32>>,
+    causal: bool,
 ) -> Result<ValidatedUnifiedMergeOutput> {
     if partitions.is_empty() {
         return invalid("unified output contains no partitions");
@@ -85,11 +88,30 @@ pub(crate) fn validate_ranked_unified_merge_output(
         .canonicalize()
         .map_err(|error| invalid_error(format!("invalid staging directory: {error}")))?;
 
+    use crate::historical::merge::output::writers::unified_timeline::{
+        causal_schema, read_causal_position,
+    };
+    let schema = if causal {
+        causal_schema(&unified_timeline_schema(), true)
+    } else {
+        unified_timeline_schema()
+    };
+    let mut initialized = HashSet::new();
+    let depth_members = depth_inventory
+        .iter()
+        .map(|task| {
+            (
+                (task.dataset_id, task.task_id),
+                task.boundary.stream_id.as_str(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
     let mut reference_validator = UnifiedReferenceValidator::new(trade_inventory, depth_inventory)?;
 
     let mut seen_files = HashSet::new();
 
     let mut validated_files = Vec::new();
+    let mut source_tasks_by_file = Vec::new();
 
     let mut total_events = 0_u64;
     let mut total_files = 0_u64;
@@ -167,7 +189,7 @@ pub(crate) fn validate_ranked_unified_merge_output(
                 )?)
                 .map_err(|error| invalid_error(format!("invalid unified Parquet: {error}")))?;
 
-            if builder.schema().as_ref() != unified_timeline_schema().as_ref() {
+            if builder.schema() != &schema {
                 return invalid(format!("unexpected unified schema: {}", file.path));
             }
 
@@ -179,6 +201,7 @@ pub(crate) fn validate_ranked_unified_merge_output(
             })?;
 
             let mut file_rows = 0_u64;
+            let mut file_tasks = HashSet::new();
             let mut file_first = None;
             let mut file_last = None;
 
@@ -234,7 +257,33 @@ pub(crate) fn validate_ranked_unified_merge_output(
                     // Timestamp interval
                     // -----------------------------------------------------
 
-                    if timestamp < partition.start_ns || timestamp >= partition.end_ns {
+                    let position = if causal {
+                        Some(read_causal_position(&batch, row, true)?)
+                    } else {
+                        None
+                    };
+                    let outside = timestamp < partition.start_ns || timestamp >= partition.end_ns;
+                    if let Some(position) = position {
+                        if position.sequence
+                            != total_events
+                                .checked_add(partition_events)
+                                .and_then(|n| n.checked_add(file_rows))
+                                .ok_or_else(|| invalid_error("logical sequence overflow"))?
+                            || position.reconstruction_only != outside
+                            || (outside && kind != 1)
+                        {
+                            return invalid("invalid causal sequence or reconstruction marker");
+                        }
+                        if kind == 1 {
+                            let identity = (dataset_id, task_id);
+                            if boundaries.value(row) == 1 {
+                                initialized.insert(identity);
+                            }
+                            if !initialized.contains(&identity) {
+                                return invalid("depth source begins without its initialization");
+                            }
+                        }
+                    } else if outside {
                         return invalid(format!(
                             "event outside partition {} interval",
                             partition.partition_id
@@ -276,6 +325,14 @@ pub(crate) fn validate_ranked_unified_merge_output(
                         }
 
                         1 => {
+                            if causal
+                                && depth_members.get(&(dataset_id, task_id))
+                                    != Some(&stream.stream_id.as_str())
+                            {
+                                return invalid(
+                                    "depth reference belongs to a different concrete stream",
+                                );
+                            }
                             if stream.kind != UnifiedMergeStreamKind::Depth {
                                 return invalid("depth event belongs to non-depth stream");
                             }
@@ -313,6 +370,7 @@ pub(crate) fn validate_ranked_unified_merge_output(
                     // -----------------------------------------------------
 
                     let record = UnifiedTimelineRecord {
+                        causal: position,
                         event_timestamp_ns: timestamp,
                         stream_rank: rank,
                         event_kind: kind,
@@ -330,6 +388,9 @@ pub(crate) fn validate_ranked_unified_merge_output(
                     };
 
                     reference_validator.validate(&record)?;
+                    if causal {
+                        file_tasks.insert((dataset_id, task_id));
+                    }
 
                     // -----------------------------------------------------
                     // Complete deterministic ordering
@@ -337,7 +398,7 @@ pub(crate) fn validate_ranked_unified_merge_output(
 
                     let key = MergeKey::new(timestamp, rank, 0, 0);
 
-                    if let Some(previous) = previous_key {
+                    if let Some(previous) = previous_key.filter(|_| !causal) {
                         if key < previous {
                             return invalid(format!(
                                 "unified ordering regression: \
@@ -348,11 +409,9 @@ pub(crate) fn validate_ranked_unified_merge_output(
 
                     previous_key = Some(key);
 
-                    if file_first.is_none() {
-                        file_first = Some(timestamp);
-                    }
-
-                    file_last = Some(timestamp);
+                    file_first =
+                        Some(file_first.map_or(timestamp, |first: i64| first.min(timestamp)));
+                    file_last = Some(file_last.map_or(timestamp, |last: i64| last.max(timestamp)));
 
                     file_rows = file_rows
                         .checked_add(1)
@@ -368,14 +427,18 @@ pub(crate) fn validate_ranked_unified_merge_output(
                 .checked_add(file_rows)
                 .ok_or_else(|| invalid_error("partition count overflow"))?;
 
-            if partition_first.is_none() {
-                partition_first = file_first;
+            if let Some(first) = file_first {
+                partition_first = Some(partition_first.map_or(first, |old: i64| old.min(first)));
+            }
+            if let Some(last) = file_last {
+                partition_last = Some(partition_last.map_or(last, |old: i64| old.max(last)));
             }
 
-            if file_last.is_some() {
-                partition_last = file_last;
+            if causal {
+                let mut tasks = file_tasks.into_iter().collect::<Vec<_>>();
+                tasks.sort_unstable();
+                source_tasks_by_file.push(tasks);
             }
-
             validated_files.push(MergeTimelineFile {
                 path: file.path.clone(),
                 size_bytes: metadata.len(),
@@ -451,6 +514,7 @@ pub(crate) fn validate_ranked_unified_merge_output(
         },
         trade_events: total_trades,
         depth_events: total_depth,
+        source_tasks_by_file,
     })
 }
 

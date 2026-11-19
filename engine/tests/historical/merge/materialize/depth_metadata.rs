@@ -91,6 +91,7 @@ fn write_events(path: &Path, events: &[TestEvent]) {
 
 fn reference(dataset_id: u64, task_id: u64, source: TestEvent) -> UnifiedTimelineRecord {
     UnifiedTimelineRecord {
+        causal: None,
         event_timestamp_ns: source.timestamp,
         stream_rank: 0,
         event_kind: 1,

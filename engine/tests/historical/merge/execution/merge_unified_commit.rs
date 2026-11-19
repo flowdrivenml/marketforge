@@ -324,3 +324,132 @@ fn commits_depth_only_with_its_sparse_explicit_rank() {
     assert_eq!(manifest.streams[0].stream_rank, 7);
     marketforge_engine::historical::merge::validate_committed_merge(&result.dataset_path).unwrap();
 }
+
+#[test]
+fn causal_v5_streams_preserve_source_order_dependencies_and_rank() {
+    use arrow_array::{Array, BooleanArray, Int64Array, UInt32Array, UInt64Array};
+    use marketforge_engine::historical::{
+        job::MergeTimelineOrdering, merge::validate_committed_merge,
+    };
+    let root = tempfile::tempdir().unwrap();
+    let mut job = crate::publication::native_depth_job(root.path());
+    job.time_range.start_ns = 140;
+    for workers in [1, 2] {
+        let mut run = job.clone();
+        if workers == 2 {
+            run.inputs.reverse();
+        }
+        run.output.dataset_path = root.path().join(format!("causal-{workers}"));
+        let mut config = crate::merge_test_job::small_runtime();
+        config.resources.workers = workers;
+        config.resources.memory_limit_mb = 2048;
+        let result =
+            execute_unified_merge_job(&run.clone().with_runtime(config).unwrap(), root.path())
+                .unwrap();
+        let manifest: PhysicalMergeManifest =
+            serde_json::from_reader(File::open(result.manifest_path).unwrap()).unwrap();
+        assert_eq!(manifest.timeline_ordering, MergeTimelineOrdering::Causal);
+        assert_eq!(manifest.reconstruction_events, 2);
+        assert_eq!(manifest.start_timestamp_ns, Some(100));
+        assert_eq!(manifest.end_timestamp_ns, Some(220));
+        let mut rows = Vec::new();
+        for file in &manifest.files {
+            let reader = ParquetRecordBatchReaderBuilder::try_new(
+                File::open(result.dataset_path.join(&file.path)).unwrap(),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+            for batch in reader {
+                let batch = batch.unwrap();
+                let column = |name| batch.column_by_name(name).unwrap().as_any();
+                let ts = column("event_timestamp_ns")
+                    .downcast_ref::<Int64Array>()
+                    .unwrap();
+                let ranks = column("stream_rank").downcast_ref::<UInt32Array>().unwrap();
+                let seq = column("timeline_sequence")
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap();
+                let context = column("reconstruction_only")
+                    .downcast_ref::<BooleanArray>()
+                    .unwrap();
+                let tasks = column("task_id").downcast_ref::<UInt64Array>().unwrap();
+                let ordinals = column("event_ordinal")
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap();
+                let offsets = column("canonical_row_offset")
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap();
+                rows.extend((0..batch.num_rows()).map(|i| {
+                    (
+                        seq.value(i),
+                        ts.value(i),
+                        ranks.value(i),
+                        tasks.value(i),
+                        ordinals.value(i),
+                        offsets.value(i),
+                        context.value(i),
+                    )
+                }));
+            }
+        }
+        assert_eq!(
+            rows,
+            vec![
+                (0, 100, 3, 19, 5, 0, true),
+                (1, 100, 14, 8, 5, 0, true),
+                (2, 160, 14, 8, 7, 1, false),
+                (3, 180, 3, 19, 7, 1, false),
+                (4, 150, 3, 19, 9, 2, false),
+                (5, 190, 3, 19, 11, 2, false),
+                (6, 195, 3, 19, 13, 3, false),
+                (7, 205, 14, 8, 9, 2, false),
+                (8, 220, 3, 4, 5, 0, false),
+                (9, 210, 3, 4, 7, 1, false),
+            ]
+        );
+        validate_committed_merge(&result.dataset_path).unwrap();
+    }
+    job.inputs.remove(0);
+    let error = execute_unified_merge_job(
+        &job.clone()
+            .with_runtime(crate::merge_test_job::small_runtime())
+            .unwrap(),
+        root.path(),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("select all primary parts"));
+    assert!(!job.output.dataset_path.exists());
+}
+
+#[test]
+fn causal_v5_rejects_unpinned_event_index_before_publication() {
+    let root = tempfile::tempdir().unwrap();
+    let job = crate::publication::native_depth_job(root.path());
+    let manifest_path = &job.inputs[0].publication.manifest_path;
+    let manifest: serde_json::Value =
+        serde_json::from_reader(File::open(manifest_path).unwrap()).unwrap();
+    let path = manifest["auxiliary_files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|file| file["path"].as_str())
+        .find(|path| path.ends_with("events.parquet"))
+        .unwrap();
+    let path = manifest_path.parent().unwrap().join(path);
+    let mut bytes = std::fs::read(&path).unwrap();
+    bytes[20] ^= 1;
+    std::fs::write(path, bytes).unwrap();
+    let output = job.output.dataset_path.clone();
+    let error = execute_unified_merge_job(
+        &job.with_runtime(crate::merge_test_job::small_runtime())
+            .unwrap(),
+        root.path(),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("auxiliary SHA-256 mismatch"),
+        "{error}"
+    );
+    assert!(!output.exists());
+}

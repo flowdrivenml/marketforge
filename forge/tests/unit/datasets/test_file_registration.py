@@ -86,19 +86,25 @@ def test_checksum_inventory_requires_every_file_and_recognizes_provenance_pair(
         verify_inventory(tmp_path, entries, meta, require_commit_checksums=True)
 
 
-def test_merged_membership_reads_only_file_local_streams(tmp_path: Path) -> None:
+@pytest.mark.parametrize("causal", [False, True])
+def test_merged_membership_reads_only_file_local_streams(tmp_path: Path, causal: bool) -> None:
     pa = pytest.importorskip("pyarrow")
     pq = pytest.importorskip("pyarrow.parquet")
-    pq.write_table(
-        pa.table(
-            {"dataset_id": [20, 21, 21], "stream_rank": [0, 1, 1], "event_timestamp_ns": [2, 3, 4]}
-        ),
-        tmp_path / "part.parquet",
-    )
-    pq.write_table(
-        pa.table({"dataset_id": [21], "stream_rank": [1], "event_timestamp_ns": [8]}),
-        tmp_path / "next.parquet",
-    )
+    first: dict[str, list[int] | list[bool]] = {
+        "dataset_id": [20, 21, 21, 21] if causal else [20, 21, 21],
+        "stream_rank": [0, 1, 1, 1] if causal else [0, 1, 1],
+        "event_timestamp_ns": [2, 3, 4, 1] if causal else [2, 3, 4],
+    }
+    second: dict[str, list[int] | list[bool]] = {
+        "dataset_id": [21],
+        "stream_rank": [1],
+        "event_timestamp_ns": [8],
+    }
+    if causal:
+        first["reconstruction_only"] = [False, False, False, True]
+        second["reconstruction_only"] = [False]
+    pq.write_table(pa.table(first), tmp_path / "part.parquet")
+    pq.write_table(pa.table(second), tmp_path / "next.parquet")
     streams = [
         {
             "stream_rank": rank,
@@ -113,6 +119,7 @@ def test_merged_membership_reads_only_file_local_streams(tmp_path: Path) -> None
     manifest = {
         "files": [{"path": name} for name in ("part.parquet", "next.parquet")],
         "streams": streams,
+        "timeline_ordering": "causal" if causal else "chronological",
     }
     result = merged_file_memberships(tmp_path, manifest, [])
     assert [

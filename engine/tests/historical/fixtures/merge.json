@@ -1,6 +1,7 @@
 {
   "job_id": 1370050071489649595,
   "operation": "merge",
+  "timeline_ordering": "causal",
   "inputs": [
     {
       "dataset_id": 119,

@@ -30,6 +30,9 @@ pub fn resolve_ranked_merge_streams(
     _project_root: &Path,
     submission: Option<&crate::historical::job::MergeJobDocument>,
 ) -> Result<Vec<UnifiedMergeStream>> {
+    use crate::historical::job::MergeTimelineOrdering;
+    let causal =
+        submission.and_then(|job| job.timeline_ordering) == Some(MergeTimelineOrdering::Causal);
     let mut streams = Vec::with_capacity(inputs.len());
     let mut seen_datasets = HashSet::new();
 
@@ -288,15 +291,34 @@ pub fn resolve_ranked_merge_streams(
                 );
             }
             if kind == UnifiedMergeStreamKind::Depth {
-                if input.canonical_files.len() != input.manifest.files.len() {
+                let complete = if let Some(stream) = selected_stream {
+                    let directory = input.dataset_path.join(&stream.directory);
+                    let parts = input
+                        .manifest
+                        .files
+                        .iter()
+                        .filter(|file| {
+                            Path::new(&file.path).parent() == Some(Path::new(&stream.directory))
+                        })
+                        .count();
+                    parts
+                        == input
+                            .canonical_files
+                            .iter()
+                            .filter(|file| file.parent() == Some(&directory))
+                            .count()
+                } else {
+                    input.canonical_files.len() == input.manifest.files.len()
+                };
+                if !complete {
                     return invalid(format!(
-                        "depth publication {}: selected parts require validated reconstruction-state dependencies",
-                        input.dataset_id
+                        "depth publication {} stream {}: selected parts require validated reconstruction-state dependencies; select all primary parts of this stream",
+                        input.dataset_id, first.stream_id.0
                     ));
                 }
-                if input.manifest.protocol_version >= 4 {
+                if input.manifest.protocol_version >= 4 && !causal {
                     return invalid(format!(
-                        "depth publication {}: merge cannot yet map v{} segmented depth to a timestamp-ordered timeline while preserving causal replay",
+                        "depth publication {}: chronological ordering cannot consume v{} segmented depth while preserving causal replay; prepare with timeline_ordering=causal",
                         input.dataset_id, input.manifest.protocol_version
                     ));
                 }

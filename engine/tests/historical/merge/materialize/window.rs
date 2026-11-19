@@ -4,6 +4,7 @@ use marketforge_engine::historical::merge::{
 
 fn reference(ordinal: u64, rows: u64) -> UnifiedTimelineRecord {
     UnifiedTimelineRecord {
+        causal: None,
         event_timestamp_ns: ordinal as i64,
         stream_rank: 0,
         event_kind: 1,

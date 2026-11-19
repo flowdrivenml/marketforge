@@ -68,6 +68,7 @@ fn fixture_document(root: &Path, mut inputs: Vec<MergeFileInput>) -> MergeJobDoc
     MergeJobDocument {
         job_id: 900_500,
         operation: MergeOperation::Merge,
+        timeline_ordering: None,
         inputs,
         time_range: MergeTimeRange {
             start_ns: START,
@@ -561,4 +562,217 @@ pub fn depth_with_overlapping_snapshot(
 ) -> marketforge_engine::historical::merge::ResolvedMergeInput {
     let inputs = publication_with_rows(root, id, ContentType::Depth, 2, true);
     resolve_fixture(root, fixture_document(root, inputs)).remove(0)
+}
+
+/// Small v5 publication with independent streams and native event indexes.
+pub fn native_depth_job(root: &Path) -> MergeJobDocument {
+    use marketforge_engine::{
+        historical::{
+            job::{MergeTimelineOrdering, load_committed_processing_job},
+            normalize::streams::{SourceSpan, StreamOutput},
+        },
+        shared::persistence::parquet::{DepthSourceBoundary, DepthStreamBoundaries},
+    };
+    use std::sync::Arc;
+    let mut job = make_job(root, &[], &[105]);
+    let manifest_path = job.inputs[0].publication.manifest_path.clone();
+    let directory = manifest_path.parent().unwrap();
+    let mut manifest: DatasetManifest =
+        serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    let mut processing = load_committed_processing_job(directory).unwrap();
+    let task_template = processing.tasks[0].clone();
+    let stream_template = processing.streams[0].clone();
+    processing.tasks.clear();
+    processing.streams.clear();
+    manifest.files.clear();
+    manifest.auxiliary_files.clear();
+    manifest.source_tasks.clear();
+    manifest.processing_metrics = Default::default();
+    manifest.protocol_version = 5;
+
+    type SourceEvents = (u64, &'static [(i64, bool, u64)]);
+    let fixtures: [(&str, &[SourceEvents]); 2] = [
+        (
+            "fixture.depth.a",
+            &[
+                (
+                    19,
+                    &[
+                        (100, true, 1),
+                        (180, false, 1),
+                        (150, false, 0),
+                        (190, true, 1),
+                        (195, false, 1),
+                    ],
+                ),
+                (4, &[(220, true, 1), (210, false, 1)]),
+            ],
+        ),
+        (
+            "fixture.depth.b",
+            &[(8, &[(100, true, 1), (160, false, 1), (205, false, 0)])],
+        ),
+    ];
+    for (index, (stream_id, sources)) in fixtures.into_iter().enumerate() {
+        let stream_directory = format!("streams/{:064x}/depth", index + 1);
+        let stream_path = directory.join(&stream_directory);
+        fs::create_dir_all(&stream_path).unwrap();
+        let mut stream = StreamOutput {
+            stream_id: stream_id.into(),
+            directory: stream_directory.clone(),
+            sources: Vec::new(),
+        };
+        let mut processing_stream = stream_template.clone();
+        processing_stream.stream_id.0 = stream_id.into();
+        processing_stream.stream_rank = index as u32;
+        processing.streams.push(processing_stream);
+        let mut boundaries = DepthStreamBoundaries {
+            version: 2,
+            continuity: "independent_sources".into(),
+            sources: Vec::new(),
+        };
+        let mut events = Vec::new();
+        let mut row_timestamps = Vec::new();
+        let mut segments = Vec::new();
+        for (id, source) in sources {
+            let mut task = task_template.clone();
+            task.task_id.0 = *id;
+            task.stream_id.0 = stream_id.into();
+            processing.tasks.push(task);
+            manifest.source_tasks.push(*id);
+            let start_row = row_timestamps.len() as u64;
+            let start_event = events.len() as u64;
+            for (index, &(timestamp, init, rows)) in source.iter().enumerate() {
+                let offset = row_timestamps.len() as u64;
+                if init {
+                    segments.push(BookSegment {
+                        segment_id: segments.len() as u64,
+                        start_timestamp_ns: timestamp,
+                        initial_event_offset: offset,
+                        initial_level_count: rows,
+                    });
+                }
+                events.push(IndexedDepthEvent {
+                    event_ordinal: 5 + 2 * index as u64,
+                    canonical_row_offset: offset,
+                    canonical_row_count: rows,
+                    event_timestamp_ns: timestamp,
+                    system_timestamp_ns: Some(timestamp + 1),
+                    sequence_start: Some(index as u64),
+                    sequence_end: Some(index as u64),
+                    event_boundary: if init {
+                        DepthEventBoundary::Initialization
+                    } else {
+                        DepthEventBoundary::Changes
+                    },
+                    source_operation: if init {
+                        DepthSourceOperation::Snapshot
+                    } else {
+                        DepthSourceOperation::AbsoluteUpdate
+                    },
+                });
+                row_timestamps.extend(std::iter::repeat_n(timestamp, rows as usize));
+            }
+            let end_row = row_timestamps.len() as u64;
+            let mut boundary = DepthBoundaryManifest::new(
+                Exchange::Bybit,
+                688,
+                "BTCUSDT".into(),
+                stream_id.into(),
+            );
+            boundary.first_timestamp_ns = Some(source[0].0);
+            boundary.last_timestamp_ns = Some(source.last().unwrap().0);
+            boundaries.sources.push(DepthSourceBoundary {
+                task_id: *id,
+                start_row,
+                end_row,
+                start_event,
+                end_event: events.len() as u64,
+                boundary,
+            });
+            stream.sources.push(SourceSpan {
+                task_id: *id,
+                start_row,
+                end_row,
+                ranges: vec![],
+            });
+            manifest
+                .processing_metrics
+                .add_task(TaskMetricsReport {
+                    failure: None,
+                    source: None,
+                    accepted_depth_events: Some(source.len() as u64),
+                    task_id: *id,
+                    stream_id: stream_id.into(),
+                    counters: ProcessingCounters {
+                        events_normalized: end_row - start_row,
+                        events_written: end_row - start_row,
+                        ..Default::default()
+                    },
+                    integrity: Default::default(),
+                    scoped_integrity: Default::default(),
+                    start_timestamp_ns: source.iter().map(|row| row.0).min(),
+                    end_timestamp_ns: source.iter().map(|row| row.0).max(),
+                })
+                .unwrap();
+        }
+        for (index, rows) in row_timestamps.chunks(2).enumerate() {
+            let relative = format!("{stream_directory}/part-{index:06}.parquet");
+            let path = directory.join(&relative);
+            let batch = canonical_depth(rows);
+            let mut columns = batch.columns().to_vec();
+            columns[batch.schema().index_of("stream_id").unwrap()] =
+                Arc::new(arrow_array::StringArray::from(vec![stream_id; rows.len()]));
+            columns[batch.schema().index_of("system_timestamp_ns").unwrap()] = Arc::new(
+                arrow_array::Int64Array::from_iter_values(rows.iter().map(|v| v + 1)),
+            );
+            let batch = arrow_array::RecordBatch::try_new(batch.schema(), columns).unwrap();
+            write_parquet(&path, &batch);
+            manifest.files.push(DatasetFile {
+                path: relative,
+                rows: rows.len() as u64,
+                size_bytes: path.metadata().unwrap().len(),
+                start_timestamp_ns: rows.iter().copied().min(),
+                end_timestamp_ns: rows.iter().copied().max(),
+            });
+        }
+        write_depth_events(&stream_path.join("events.parquet"), &events);
+        let segments = DepthSegmentManifest::new(row_timestamps.len() as u64, segments).unwrap();
+        fs::write(
+            stream_path.join("segments.json"),
+            serde_json::to_vec(&segments).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            stream_path.join("boundary.json"),
+            serde_json::to_vec(&boundaries).unwrap(),
+        )
+        .unwrap();
+        for (name, kind) in [
+            ("events.parquet", AuxiliaryFileKind::DepthEvents),
+            ("segments.json", AuxiliaryFileKind::DepthSegments),
+            ("boundary.json", AuxiliaryFileKind::DepthBoundary),
+        ] {
+            manifest.auxiliary_files.push(AuxiliaryFile {
+                path: format!("{stream_directory}/{name}"),
+                kind,
+                size_bytes: stream_path.join(name).metadata().unwrap().len(),
+            });
+        }
+        manifest.streams.push(stream);
+    }
+    manifest.files_written = manifest.files.len() as u64;
+    manifest.events_written = manifest.files.iter().map(|file| file.rows).sum();
+    manifest.end_timestamp_ns = Some(220);
+    write_job(directory, &processing);
+    job.inputs = finish_publication(directory, &manifest);
+    for input in &mut job.inputs {
+        input.stream_rank = if input.stream_id.ends_with(".a") {
+            3
+        } else {
+            14
+        };
+    }
+    job.timeline_ordering = Some(MergeTimelineOrdering::Causal);
+    job
 }

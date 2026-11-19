@@ -24,6 +24,13 @@ pub struct DepthEventValidation {
 }
 
 pub fn validate_depth_events(task: &DepthTaskInventory) -> Result<DepthEventValidation> {
+    visit_depth_events(task, |_, _| Ok(()))
+}
+
+pub(crate) fn visit_depth_events(
+    task: &DepthTaskInventory,
+    mut visit: impl FnMut(u64, &crate::shared::persistence::parquet::IndexedDepthEvent) -> Result<()>,
+) -> Result<DepthEventValidation> {
     let mut cursor = DepthEventCursor::for_task(task, None)?;
 
     let mut report = DepthEventValidation {
@@ -131,7 +138,10 @@ pub fn validate_depth_events(task: &DepthTaskInventory) -> Result<DepthEventVali
             report.zero_row_events += 1;
         }
 
-        report.events += 1;
+        visit(report.events, &event)?;
+        report.events = report.events.checked_add(1).ok_or_else(|| {
+            MarketForgeError::InvalidConfiguration("depth event count overflow".into())
+        })?;
     }
 
     // -----------------------------------------------------------------

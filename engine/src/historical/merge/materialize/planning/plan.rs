@@ -128,3 +128,36 @@ fn invalid_error(message: impl Into<String>) -> MarketForgeError {
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(invalid_error(message))
 }
+
+/// A logical causal replay emits files in timeline order. Allocate each
+/// contiguous logical file to a physical worker without re-sorting its rows.
+pub(crate) fn split_causal_materialization_plan(
+    mut plans: Vec<MaterializationPartitionPlan>,
+    source_tasks: Vec<Vec<(u64, u64)>>,
+) -> Result<Vec<MaterializationPartitionPlan>> {
+    if plans.len() != 1 {
+        return invalid("causal replay requires one forward logical pass");
+    }
+    let plan = plans.pop().expect("one logical causal pass");
+    if plan.timeline_files.is_empty() {
+        return Ok(vec![plan]);
+    }
+    if plan.timeline_files.len() != source_tasks.len() {
+        return invalid("causal logical files do not match validated source inventories");
+    }
+    plan.timeline_files
+        .into_iter()
+        .zip(source_tasks)
+        .enumerate()
+        .map(|(index, (file, source_tasks))| {
+            Ok(MaterializationPartitionPlan {
+                partition_id: u32::try_from(index)
+                    .map_err(|_| invalid_error("too many physical causal partitions"))?,
+                start_ns: plan.start_ns,
+                end_ns: plan.end_ns,
+                timeline_files: vec![file],
+                source_tasks,
+            })
+        })
+        .collect()
+}

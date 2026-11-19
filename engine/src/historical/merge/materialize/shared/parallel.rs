@@ -76,7 +76,8 @@ pub fn execute_parallel_materialization_with_progress(
         return invalid("parallel materialization requires partitions");
     }
 
-    validate_plans(&plans)?;
+    let causal = job.timeline_ordering() == crate::historical::job::MergeTimelineOrdering::Causal;
+    validate_plans(&plans, causal)?;
     reporter.partitions_planned(MergePhase::PhysicalMaterialization, plans.len());
     const MIB: u64 = 1024 * 1024;
 
@@ -155,7 +156,11 @@ pub fn execute_parallel_materialization_with_progress(
             };
 
             let result = (|| {
-                let mut worker = MaterializationPartitionWorker::new(&input)?;
+                let mut worker = MaterializationPartitionWorker::new_with_ordering(
+                    &input,
+                    job.timeline_ordering()
+                        == crate::historical::job::MergeTimelineOrdering::Causal,
+                )?;
 
                 if reporter.is_enabled() {
                     let mut progress = MergeWorkerProgress::new(reporter, key);
@@ -198,7 +203,7 @@ pub fn execute_parallel_materialization_with_progress(
 
     completed.sort_by_key(|result| result.partition_id);
 
-    validate_results(&completed)?;
+    validate_results(&completed, causal)?;
 
     Ok(completed)
 }
@@ -207,7 +212,7 @@ pub fn execute_parallel_materialization_with_progress(
 // Plan validation
 // -----------------------------------------------------------------------------
 
-fn validate_plans(plans: &[MaterializationPartitionPlan]) -> Result<()> {
+fn validate_plans(plans: &[MaterializationPartitionPlan], causal: bool) -> Result<()> {
     let mut seen = HashSet::new();
     let mut previous_end = None;
 
@@ -227,7 +232,7 @@ fn validate_plans(plans: &[MaterializationPartitionPlan]) -> Result<()> {
         }
 
         if let Some(previous) = previous_end {
-            if plan.start_ns < previous {
+            if !causal && plan.start_ns < previous {
                 return invalid("materialization partitions overlap or are unordered");
             }
         }
@@ -262,7 +267,7 @@ fn validate_plans(plans: &[MaterializationPartitionPlan]) -> Result<()> {
 // Result validation
 // -----------------------------------------------------------------------------
 
-fn validate_results(results: &[MaterializationPartitionResult]) -> Result<()> {
+fn validate_results(results: &[MaterializationPartitionResult], causal: bool) -> Result<()> {
     let mut previous_end = None;
 
     for result in results {
@@ -271,7 +276,7 @@ fn validate_results(results: &[MaterializationPartitionResult]) -> Result<()> {
         }
 
         if let Some(previous) = previous_end {
-            if result.start_ns < previous {
+            if !causal && result.start_ns < previous {
                 return invalid("completed materialization partitions overlap");
             }
         }

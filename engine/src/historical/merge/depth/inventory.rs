@@ -41,6 +41,13 @@ pub struct DepthTaskInventory {
 // -----------------------------------------------------------------------------
 
 pub fn build_depth_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<DepthTaskInventory>> {
+    build_depth_inventory_with_order(inputs, false)
+}
+
+pub(crate) fn build_depth_inventory_with_order(
+    inputs: &[ResolvedMergeInput],
+    authoritative: bool,
+) -> Result<Vec<DepthTaskInventory>> {
     let profile = std::env::var_os("MARKETFORGE_PROFILE").is_some();
 
     let mut inventory = Vec::new();
@@ -48,7 +55,7 @@ pub fn build_depth_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<DepthT
     for input in inputs {
         input.manifest.validate_streams()?;
         if !input.manifest.streams.is_empty() {
-            inventory.extend(build_stream_inventory(input)?);
+            inventory.extend(build_stream_inventory(input, authoritative)?);
             continue;
         }
         let mut tasks: BTreeMap<u64, TaskFiles> = BTreeMap::new();
@@ -337,7 +344,10 @@ fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(MarketForgeError::InvalidConfiguration(message.into()))
 }
 
-fn build_stream_inventory(input: &ResolvedMergeInput) -> Result<Vec<DepthTaskInventory>> {
+fn build_stream_inventory(
+    input: &ResolvedMergeInput,
+    authoritative: bool,
+) -> Result<Vec<DepthTaskInventory>> {
     use crate::shared::persistence::parquet::{
         BoundaryReadLimits, DepthSegmentManifest, visit_depth_stream_boundaries,
     };
@@ -363,9 +373,36 @@ fn build_stream_inventory(input: &ResolvedMergeInput) -> Result<Vec<DepthTaskInv
     let legacy_limits = crate::shared::historical::limits::current().is_none()
         && !input.dataset_path.join("processing-runtime.toml").exists()
         && !input.dataset_path.join("processing-job.json").exists();
-    for stream in &input.manifest.streams {
+    let streams = if authoritative && !input.canonical_files.is_empty() {
+        input.selected_streams()?
+    } else {
+        input.manifest.streams.iter().collect()
+    };
+    let mut expected_tasks = HashSet::new();
+    let mut expected_rows = 0u64;
+    for stream in streams {
+        expected_tasks.extend(stream.sources.iter().map(|source| source.task_id));
         let directory = input.dataset_path.join(&stream.directory);
+        if authoritative && input.manifest.protocol_version >= 4 {
+            for name in ["events.parquet", "segments.json", "boundary.json"] {
+                if !input.auxiliary_files.contains(&directory.join(name)) {
+                    return invalid(format!(
+                        "depth stream {} is missing committed {name}",
+                        stream.stream_id
+                    ));
+                }
+            }
+        }
         let global = read_depth_segments(&directory)?;
+        expected_rows = expected_rows
+            .checked_add(global.total_levels)
+            .ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration("depth inventory row total overflow".into())
+            })?;
+        let expected_event_count =
+            super::cursor::DepthEventCursor::event_count(&directory.join("events.parquet"))?;
+        let mut expected_start_event = 0;
+        let mut expected_start_row = 0;
         let mut parts = input
             .manifest
             .files
@@ -388,6 +425,16 @@ fn build_stream_inventory(input: &ResolvedMergeInput) -> Result<Vec<DepthTaskInv
         }
         let bounds = BoundaryReadLimits::for_sources(stream.sources.len(), source_limits)?;
         let summary = visit_depth_stream_boundaries(&directory, bounds, |source| {
+            if authoritative
+                && (source.start_event != expected_start_event
+                    || source.start_row != expected_start_row
+                    || source.end_event < source.start_event
+                    || source.end_row < source.start_row)
+            {
+                return invalid("noncontiguous depth source event or row ownership");
+            }
+            expected_start_event = source.end_event;
+            expected_start_row = source.end_row;
             if !seen.insert(source.task_id)
                 || !stream.sources.iter().any(|s| {
                     s.task_id == source.task_id
@@ -434,6 +481,11 @@ fn build_stream_inventory(input: &ResolvedMergeInput) -> Result<Vec<DepthTaskInv
                 segment.segment_id = index as u64;
                 segment.initial_event_offset -= source.start_row;
             }
+            let mut boundary = MergeBoundarySummary::from(&source.boundary);
+            if authoritative {
+                boundary.initial = None;
+                boundary.final_state = None;
+            }
             let task = DepthTaskInventory {
                 dataset_id: input.dataset_id,
                 task_id: source.task_id,
@@ -445,18 +497,26 @@ fn build_stream_inventory(input: &ResolvedMergeInput) -> Result<Vec<DepthTaskInv
                 boundary_path: directory.join("boundary.json"),
                 canonical_rows: rows,
                 segments: DepthSegmentManifest::new(rows, segments)?,
-                boundary: MergeBoundarySummary::from(&source.boundary),
+                boundary,
             };
-            super::event_validation::validate_depth_events(&task)?;
+            if !authoritative {
+                super::event_validation::validate_depth_events(&task)?;
+            }
             tasks.push(task);
             Ok(())
         })?;
-        if summary.sources != stream.sources.len() || summary.total_rows != global.total_levels {
+        if summary.sources != stream.sources.len()
+            || summary.total_rows != global.total_levels
+            || (authoritative && expected_start_event != expected_event_count)
+        {
             return invalid("depth boundary/source inventory mismatch");
         }
     }
-    if total != input.manifest.events_written
-        || seen != input.manifest.source_tasks.iter().copied().collect()
+    if total != expected_rows
+        || seen != expected_tasks
+        || (!authoritative
+            && (total != input.manifest.events_written
+                || seen != input.manifest.source_tasks.iter().copied().collect()))
     {
         return invalid("depth source inventory mismatch");
     }

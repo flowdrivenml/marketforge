@@ -84,6 +84,7 @@ fn resolved(
 ) -> ResolvedMarketEvent {
     ResolvedMarketEvent {
         reference: UnifiedTimelineRecord {
+            causal: None,
             event_timestamp_ns: timestamp,
             stream_rank: 0,
             event_kind: 1,

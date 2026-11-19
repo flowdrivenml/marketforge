@@ -105,8 +105,9 @@ def merged_file_memberships(
     inputs: list[dict[str, Any]],
 ) -> dict[str, list[dict[str, Any]]]:
     """Read only provenance and time columns in bounded batches at registration."""
-    from forge.datasets.parquet import batches
+    from forge.datasets.parquet import arrow_modules, batches
 
+    pa, _ = arrow_modules()
     source_members = {
         (item["engine_id"], member["stream_id"]): member
         for item in inputs
@@ -116,26 +117,28 @@ def merged_file_memberships(
     for item in inputs:
         selected_files[item["engine_id"], item.get("stream_id")].add(item["database_id"])
     streams = {(s["dataset_id"], s["stream_rank"]): s for s in manifest["streams"]}
-    results = {}
+    causal = manifest.get("timeline_ordering") == "causal"
+    keys = ["dataset_id", "stream_rank"]
+    if causal:
+        keys.append("reconstruction_only")
+    results: dict[str, list[dict[str, Any]]] = {}
     for file in manifest["files"]:
         observed: dict[tuple[int, int], tuple[int, int]] = {}
-        for batch in batches(
-            [root / file["path"]], columns=["dataset_id", "stream_rank", "event_timestamp_ns"]
-        ):
-            import pyarrow as pa
-
+        for batch in batches([root / file["path"]], columns=[*keys, "event_timestamp_ns"]):
             grouped = (
                 pa.Table.from_batches([batch])
-                .group_by(["dataset_id", "stream_rank"], use_threads=False)
+                .group_by(keys, use_threads=False)
                 .aggregate([("event_timestamp_ns", "min"), ("event_timestamp_ns", "max")])
             )
-            for publication, rank, lo, hi in zip(
-                *(column.to_pylist() for column in grouped.columns), strict=True
-            ):
-                key = (publication, rank)
+            groups: list[dict[str, int]] = grouped.to_pylist()
+            for group in groups:
+                if group.get("reconstruction_only"):
+                    continue
+                key = (group["dataset_id"], group["stream_rank"])
+                lo, hi = group["event_timestamp_ns_min"], group["event_timestamp_ns_max"]
                 start, end = observed.get(key, (lo, hi))
                 observed[key] = (min(start, lo), max(end, hi))
-        memberships = []
+        memberships: list[dict[str, Any]] = []
         for (publication, rank), (start, end) in sorted(
             observed.items(), key=lambda item: (item[0][1], item[0][0])
         ):

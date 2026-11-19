@@ -166,6 +166,7 @@ fn read_unified_output(
 
                 for row in 0..batch.num_rows() {
                     records.push(UnifiedTimelineRecord {
+                        causal: None,
                         event_timestamp_ns: timestamps.value(row),
                         stream_rank: ranks.value(row),
                         event_kind: kinds.value(row),

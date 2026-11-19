@@ -384,6 +384,7 @@ fn downstream_materialization_registers_shared_files_and_source_metadata() {
             .unwrap();
         let timestamp = 1_000_000_000 + (task.task_id - 1) as i64 * 100_000_000;
         let reference = UnifiedTimelineRecord {
+            causal: None,
             event_timestamp_ns: timestamp,
             stream_rank: 0,
             event_kind: 1,

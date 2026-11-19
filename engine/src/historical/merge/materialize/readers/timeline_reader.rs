@@ -35,6 +35,8 @@ pub struct MaterializationTimelineReader {
 
     previous_key: Option<TimelineKey>,
     records_read: u64,
+    causal: Option<bool>,
+    last_sequence: Option<u64>,
 }
 
 impl MaterializationTimelineReader {
@@ -66,6 +68,8 @@ impl MaterializationTimelineReader {
             batch_size,
             previous_key: None,
             records_read: 0,
+            causal: None,
+            last_sequence: None,
         })
     }
 
@@ -119,13 +123,23 @@ impl MaterializationTimelineReader {
             ))
         })?;
 
-        if builder.schema().as_ref() != unified_timeline_schema().as_ref() {
+        let chronological = unified_timeline_schema();
+        let causal_schema =
+            crate::historical::merge::output::writers::unified_timeline::causal_schema(
+                &chronological,
+                true,
+            );
+        let causal = builder.schema() == &causal_schema;
+        if (builder.schema() != &chronological && !causal)
+            || self.causal.is_some_and(|previous| previous != causal)
+        {
             return invalid(format!(
                 "unexpected unified timeline schema: {}",
                 path.display()
             ));
         }
 
+        self.causal = Some(causal);
         let reader = builder
             .with_batch_size(self.batch_size)
             .build()
@@ -152,13 +166,24 @@ impl MaterializationTimelineReader {
         loop {
             if let Some(batch) = &self.batch {
                 if self.batch_row < batch.num_rows() {
-                    let record = decode_record(batch, self.batch_row)?;
+                    let mut record = decode_record(batch, self.batch_row)?;
+                    if self.causal == Some(true) {
+                        let position = crate::historical::merge::output::writers::unified_timeline::read_causal_position(batch, self.batch_row, true)?;
+                        if self
+                            .last_sequence
+                            .is_some_and(|last| last.checked_add(1) != Some(position.sequence))
+                        {
+                            return invalid("noncontiguous logical timeline sequence");
+                        }
+                        self.last_sequence = Some(position.sequence);
+                        record.causal = Some(position);
+                    }
 
                     validate_reference(&record)?;
 
                     let key = (record.event_timestamp_ns, record.stream_rank);
 
-                    if let Some(previous) = self.previous_key {
+                    if let Some(previous) = self.previous_key.filter(|_| record.causal.is_none()) {
                         if key < previous {
                             return invalid(format!(
                                 "timeline ordering regression: \
@@ -272,6 +297,7 @@ fn decode_record(batch: &RecordBatch, row: usize) -> Result<UnifiedTimelineRecor
 
         event_boundary: optional!("event_boundary", UInt8Array),
         source_operation: optional!("source_operation", UInt8Array),
+        causal: None,
     })
 }
 

@@ -7,6 +7,7 @@ use marketforge_engine::historical::merge::{
 
 fn trade(offset: u64) -> UnifiedTimelineRecord {
     UnifiedTimelineRecord {
+        causal: None,
         event_timestamp_ns: 100,
         stream_rank: 0,
         event_kind: 0,

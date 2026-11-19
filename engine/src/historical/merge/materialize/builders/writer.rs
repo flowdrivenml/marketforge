@@ -260,6 +260,7 @@ impl PhysicalParquetWriter {
             .ok_or_else(|| invalid_error("missing physical event timestamp"))?;
 
         // Validate chronological ordering, including batch boundaries.
+        let causal = self.schema.index_of("timeline_sequence").is_ok();
         let mut previous = self.metrics.end_timestamp_ns;
 
         for row in 0..timestamps.len() {
@@ -269,7 +270,7 @@ impl PhysicalParquetWriter {
 
             let timestamp = timestamps.value(row);
 
-            if let Some(last) = previous {
+            if let Some(last) = previous.filter(|_| !causal) {
                 if timestamp < last {
                     return invalid(format!(
                         "physical event timestamp regression: \
@@ -282,8 +283,15 @@ impl PhysicalParquetWriter {
             previous = Some(timestamp);
         }
 
-        let first_timestamp = timestamps.value(0);
-        let last_timestamp = timestamps.value(timestamps.len() - 1);
+        let (first_timestamp, last_timestamp) = if causal {
+            let values = timestamps.values();
+            (
+                *values.iter().min().expect("nonempty batch"),
+                *values.iter().max().expect("nonempty batch"),
+            )
+        } else {
+            (timestamps.value(0), timestamps.value(timestamps.len() - 1))
+        };
 
         // Count event types before writing.
         let (trade_count, depth_count) = count_event_kinds(batch, self.mode)?;
@@ -354,10 +362,17 @@ impl PhysicalParquetWriter {
         self.metrics.depth_events = next_depth;
         self.metrics.canonical_rows = next_canonical;
 
-        self.metrics.start_timestamp_ns =
-            Some(self.metrics.start_timestamp_ns.unwrap_or(first_timestamp));
+        self.metrics.start_timestamp_ns = Some(
+            self.metrics
+                .start_timestamp_ns
+                .map_or(first_timestamp, |previous| previous.min(first_timestamp)),
+        );
 
-        self.metrics.end_timestamp_ns = Some(last_timestamp);
+        self.metrics.end_timestamp_ns = Some(
+            self.metrics
+                .end_timestamp_ns
+                .map_or(last_timestamp, |previous| previous.max(last_timestamp)),
+        );
 
         self.pending_bytes = next_pending;
 

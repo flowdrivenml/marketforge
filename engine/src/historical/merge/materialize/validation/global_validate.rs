@@ -20,6 +20,7 @@ pub struct ValidatedPhysicalDataset {
     pub trade_events: u64,
     pub depth_events: u64,
     pub canonical_rows: u64,
+    pub reconstruction_events: u64,
 
     pub files_written: u64,
     pub row_groups: u64,
@@ -52,6 +53,16 @@ pub fn validate_physical_dataset_with_progress(
     mode: UnifiedMergeMode,
     partitions: &[MaterializationPartitionResult],
     reporter: &MergeProgressReporter,
+) -> Result<ValidatedPhysicalDataset> {
+    validate_physical_dataset_with_ordering(staging, mode, partitions, reporter, false)
+}
+
+pub(crate) fn validate_physical_dataset_with_ordering(
+    staging: &Path,
+    mode: UnifiedMergeMode,
+    partitions: &[MaterializationPartitionResult],
+    reporter: &MergeProgressReporter,
+    causal: bool,
 ) -> Result<ValidatedPhysicalDataset> {
     if partitions.is_empty() {
         return invalid("physical dataset contains no partitions");
@@ -106,7 +117,7 @@ pub fn validate_physical_dataset_with_progress(
         }
 
         if let Some(previous_end) = previous_partition_end {
-            if partition.start_ns < previous_end {
+            if !causal && partition.start_ns < previous_end {
                 return invalid("physical partitions overlap or are unordered");
             }
         }
@@ -126,21 +137,27 @@ pub fn validate_physical_dataset_with_progress(
             &mut events_validated,
             &mut row_groups_validated,
             partitions_completed,
+            causal,
         )?;
 
         if let (Some(previous), Some(first)) = (previous_timestamp, validated.first_timestamp_ns) {
-            if first < previous {
+            if !causal && first < previous {
                 return invalid("physical cross-partition timestamp regression");
             }
         }
 
         if let Some(first) = validated.first_timestamp_ns {
-            result.first_timestamp_ns.get_or_insert(first);
+            result.first_timestamp_ns = Some(
+                result
+                    .first_timestamp_ns
+                    .map_or(first, |old| old.min(first)),
+            );
         }
 
         if let Some(last) = validated.last_timestamp_ns {
             previous_timestamp = Some(last);
-            result.last_timestamp_ns = Some(last);
+            result.last_timestamp_ns =
+                Some(result.last_timestamp_ns.map_or(last, |old| old.max(last)));
         }
 
         // ---------------------------------------------------------------------
@@ -151,6 +168,12 @@ pub fn validate_physical_dataset_with_progress(
             result.events,
             validated.events,
             "physical event count overflow",
+        )?;
+
+        result.reconstruction_events = checked_add(
+            result.reconstruction_events,
+            validated.reconstruction_events,
+            "reconstruction event count overflow",
         )?;
 
         result.trade_events = checked_add(

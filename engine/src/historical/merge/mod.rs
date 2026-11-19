@@ -150,3 +150,15 @@ pub use progress::{
     MergePhase, MergeProgressEvent, MergeProgressReporter, MergeProgressState, MergeWorkerProgress,
     PartitionKey, PartitionProgress, PartitionProgressCounters,
 };
+
+/// Validate reconstruction metadata for the streams selected by a causal job.
+pub fn validate_causal_depth_selection(
+    inputs: &[ResolvedMergeInput],
+) -> crate::shared::error::Result<()> {
+    let depth = inputs
+        .iter()
+        .filter(|input| input.manifest.content_type == crate::historical::job::ContentType::Depth)
+        .cloned()
+        .collect::<Vec<_>>();
+    depth::inventory::build_depth_inventory_with_order(&depth, true).map(|_| ())
+}

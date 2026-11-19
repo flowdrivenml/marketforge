@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::{
-    historical::job::MergeTimeRange,
+    historical::job::{MergeTimeRange, MergeTimelineOrdering},
     shared::error::{MarketForgeError, Result},
 };
 use serde::{Deserialize, Serialize};
@@ -36,6 +36,10 @@ pub const PHYSICAL_MERGE_SCHEMA_VERSION: u32 = 1;
 pub struct PhysicalMergeManifest {
     pub protocol_version: u32,
     pub physical_schema_version: u32,
+    #[serde(default)]
+    pub timeline_ordering: MergeTimelineOrdering,
+    #[serde(default)]
+    pub reconstruction_events: u64,
 
     pub job_id: u64,
     pub mode: UnifiedMergeMode,
@@ -83,9 +87,45 @@ impl PhysicalMergeManifest {
         checkpoints: Vec<PhysicalMergeCheckpoint>,
         initial_reconstruction: Vec<PhysicalInitialReconstruction>,
     ) -> Result<Self> {
+        Self::new_with_ordering(
+            job_id,
+            mode,
+            input_datasets,
+            time_range,
+            streams,
+            validated,
+            boundary_links,
+            skipped_initializations,
+            checkpoints,
+            initial_reconstruction,
+            MergeTimelineOrdering::Chronological,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_ordering(
+        job_id: u64,
+        mode: UnifiedMergeMode,
+        input_datasets: Vec<MergeInputDataset>,
+        time_range: MergeTimeRange,
+        streams: Vec<UnifiedMergeStream>,
+        validated: ValidatedPhysicalDataset,
+        boundary_links: Vec<MergeBoundaryRecord>,
+        skipped_initializations: Vec<MergeSkippedInitialization>,
+        checkpoints: Vec<PhysicalMergeCheckpoint>,
+        initial_reconstruction: Vec<PhysicalInitialReconstruction>,
+        timeline_ordering: MergeTimelineOrdering,
+    ) -> Result<Self> {
+        let causal = timeline_ordering == MergeTimelineOrdering::Causal;
         let manifest = Self {
             protocol_version: PHYSICAL_MERGE_MANIFEST_VERSION,
-            physical_schema_version: PHYSICAL_MERGE_SCHEMA_VERSION,
+            physical_schema_version: if causal {
+                2
+            } else {
+                PHYSICAL_MERGE_SCHEMA_VERSION
+            },
+            timeline_ordering,
+            reconstruction_events: validated.reconstruction_events,
 
             job_id,
             mode,
@@ -123,10 +163,22 @@ impl PhysicalMergeManifest {
             return invalid("unsupported physical merge manifest version");
         }
 
-        if self.physical_schema_version != PHYSICAL_MERGE_SCHEMA_VERSION {
+        let causal = self.timeline_ordering == MergeTimelineOrdering::Causal;
+        if self.physical_schema_version
+            != if causal {
+                2
+            } else {
+                PHYSICAL_MERGE_SCHEMA_VERSION
+            }
+        {
             return invalid("unsupported physical merge schema version");
         }
 
+        if self.reconstruction_events > self.depth_events
+            || (!causal && self.reconstruction_events != 0)
+        {
+            return invalid("invalid reconstruction-only event count");
+        }
         if self.time_range.start_ns >= self.time_range.end_ns {
             return invalid("invalid physical merge time range");
         }
@@ -222,7 +274,7 @@ impl PhysicalMergeManifest {
                 return invalid("invalid physical file timestamp interval");
             }
 
-            if first < self.time_range.start_ns || last >= self.time_range.end_ns {
+            if !causal && (first < self.time_range.start_ns || last >= self.time_range.end_ns) {
                 return invalid("physical file exceeds requested time range");
             }
 
@@ -248,7 +300,7 @@ impl PhysicalMergeManifest {
                 return invalid("invalid physical dataset timestamp range");
             }
 
-            if first < self.time_range.start_ns || last >= self.time_range.end_ns {
+            if !causal && (first < self.time_range.start_ns || last >= self.time_range.end_ns) {
                 return invalid("physical dataset timestamps outside requested range");
             }
         }
@@ -261,6 +313,17 @@ impl PhysicalMergeManifest {
         // ---------------------------------------------------------------------
         // Physical checkpoint validation
         // ---------------------------------------------------------------------
+
+        if causal {
+            if !self.checkpoints.is_empty()
+                || !self.initial_reconstruction.is_empty()
+                || !self.skipped_initializations.is_empty()
+                || !self.boundary_links.is_empty()
+            {
+                return invalid("causal publications record initialization in the timeline");
+            }
+            return Ok(());
+        }
 
         let mut seen_checkpoints = HashSet::new();
 

@@ -296,10 +296,61 @@ pub(crate) fn resolve_merge_inputs_with_progress(
         // Auxiliary file inventory
         // ---------------------------------------------------------------------
 
+        let authoritative_depth = manifest.content_type
+            == crate::historical::job::ContentType::Depth
+            && manifest.protocol_version >= 4;
+        let checksums = if authoritative_depth {
+            let checksums_url = dataset_path.join("publication-checksums.json");
+            let contents = fs::read(&checksums_url).map_err(|error| {
+                MarketForgeError::InvalidConfiguration(format!(
+                    "publication {dataset_id} missing auxiliary checksums: {error}"
+                ))
+            })?;
+            Some(
+                serde_json::from_slice::<std::collections::HashMap<String, String>>(&contents)
+                    .map_err(|error| {
+                        MarketForgeError::InvalidConfiguration(format!(
+                            "publication {dataset_id} has invalid auxiliary checksums: {error}"
+                        ))
+                    })?,
+            )
+        } else {
+            None
+        };
+        let selected_directories = canonical_files
+            .iter()
+            .filter_map(|file| file.parent())
+            .collect::<HashSet<_>>();
         for entry in &manifest.auxiliary_files {
+            if authoritative_depth
+                && !selected_directories.contains(
+                    dataset_path
+                        .join(&entry.path)
+                        .parent()
+                        .expect("publication auxiliary has a parent"),
+                )
+            {
+                continue;
+            }
             let path = resolve_file(&dataset_path, &entry.path, dataset_id, &mut paths)?;
 
             validate_auxiliary_file(dataset_id, entry, &path)?;
+            if let Some(checksums) = &checksums {
+                let actual = crate::historical::normalize::manifest::file_sha256(&path).map_err(
+                    |error| {
+                        MarketForgeError::InvalidConfiguration(format!(
+                            "cannot hash {}: {error}",
+                            path.display()
+                        ))
+                    },
+                )?;
+                if checksums.get(&entry.path) != Some(&actual) {
+                    return invalid(format!(
+                        "publication {dataset_id} auxiliary SHA-256 mismatch: {}",
+                        entry.path
+                    ));
+                }
+            }
 
             auxiliary_files.push(path);
         }

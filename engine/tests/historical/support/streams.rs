@@ -356,6 +356,7 @@ fn physical_reader_resolves_source_rows_inside_shared_trade_part() {
     let task = &tasks[1];
     let result = reader
         .resolve(UnifiedTimelineRecord {
+            causal: None,
             event_timestamp_ns: 1_000_010_000,
             stream_rank: 0,
             event_kind: 0,

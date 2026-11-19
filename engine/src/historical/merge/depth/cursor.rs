@@ -182,11 +182,37 @@ impl DepthEventCursor {
         })
     }
 
+    pub(crate) fn event_count(path: &Path) -> Result<u64> {
+        let builder = ParquetRecordBatchReaderBuilder::try_new(
+            File::open(path).map_err(|e| invalid_error(e.to_string()))?,
+        )
+        .map_err(|e| invalid_error(e.to_string()))?;
+        if builder.schema().as_ref() != depth_event_schema().as_ref() {
+            return invalid("invalid depth event schema");
+        }
+        u64::try_from(builder.metadata().file_metadata().num_rows())
+            .map_err(|e| invalid_error(e.to_string()))
+    }
+
     /// Open one source's half-open event-index range, rebasing canonical rows.
     pub fn open_source(
         path: &Path,
         start_event: u64,
         end_event: u64,
+        canonical_base: u64,
+        range: Option<(i64, i64)>,
+    ) -> Result<Self> {
+        Self::open_source_ranges(
+            path,
+            std::slice::from_ref(&(start_event..end_event)),
+            canonical_base,
+            range,
+        )
+    }
+
+    pub(crate) fn open_source_ranges(
+        path: &Path,
+        ranges: &[std::ops::Range<u64>],
         canonical_base: u64,
         range: Option<(i64, i64)>,
     ) -> Result<Self> {
@@ -198,16 +224,22 @@ impl DepthEventCursor {
         }
         let total = u64::try_from(builder.metadata().file_metadata().num_rows())
             .map_err(|e| invalid_error(e.to_string()))?;
-        if start_event > end_event || end_event > total {
-            return invalid("invalid depth source event range");
-        }
-        let selection = RowSelection::from_consecutive_ranges(
-            std::iter::once(
-                usize::try_from(start_event).map_err(|e| invalid_error(e.to_string()))?
-                    ..usize::try_from(end_event).map_err(|e| invalid_error(e.to_string()))?,
-            ),
-            usize::try_from(total).map_err(|e| invalid_error(e.to_string()))?,
-        );
+        let total = usize::try_from(total).map_err(|e| invalid_error(e.to_string()))?;
+        let mut previous = 0;
+        let ranges = ranges
+            .iter()
+            .map(|range| {
+                let start =
+                    usize::try_from(range.start).map_err(|e| invalid_error(e.to_string()))?;
+                let end = usize::try_from(range.end).map_err(|e| invalid_error(e.to_string()))?;
+                if start < previous || start > end || end > total {
+                    return invalid("invalid depth source event range");
+                }
+                previous = end;
+                Ok(start..end)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let selection = RowSelection::from_consecutive_ranges(ranges.into_iter(), total);
         let reader = builder
             .with_row_selection(selection)
             .with_batch_size(8192)
