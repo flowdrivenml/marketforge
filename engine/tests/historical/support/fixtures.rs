@@ -1,7 +1,12 @@
-use super::{TestResult, root};
+use super::{
+    TestResult,
+    normalization_fixture::{
+        canonical_normalization_batch, select_normalization_sample, select_normalization_tasks,
+    },
+};
 use marketforge_engine::{
     historical::{
-        config::{Feed, PreparedBatch, PreparedTask, read_prepared_batch},
+        config::{Feed, PreparedBatch, PreparedTask},
         job::{ContentType, InstrumentKind},
     },
     shared::domain::canonical::Exchange,
@@ -18,8 +23,7 @@ pub struct Selection<'a> {
     pub filename: Option<&'a str>,
 }
 pub fn workload() -> TestResult<PreparedBatch> {
-    read_prepared_batch("engine/tests/historical/fixtures/normalize.json", root())
-        .map_err(|e| e.to_string())
+    canonical_normalization_batch()
 }
 impl Selection<'_> {
     fn matches(&self, t: &PreparedTask) -> bool {
@@ -41,13 +45,8 @@ pub fn select(
     selection: &Selection<'_>,
     expected: usize,
 ) -> TestResult<PreparedBatch> {
-    let mut subset = batch.clone();
-    subset.jobs.retain_mut(|j| {
-        if j.output.content_type != selection.content_type {
-            return false;
-        }
-        j.tasks.retain(|t| selection.matches(t));
-        !j.tasks.is_empty()
+    let subset = select_normalization_tasks(batch, selection.content_type, |task| {
+        selection.matches(task)
     });
     let count: usize = subset.jobs.iter().map(|j| j.tasks.len()).sum();
     if expected == 0 || count != expected {
@@ -114,26 +113,20 @@ pub fn profile_source(
     feed: Option<Feed>,
     family: bool,
 ) -> TestResult<PreparedBatch> {
-    let mut subset = batch.clone();
-    subset.jobs.retain_mut(|job| {
-        if job.output.content_type != content_type {
-            return false;
-        }
-        job.tasks.retain(|task| {
+    select_normalization_sample(
+        batch,
+        &format!(
+            "{exchange:?}/{instrument_type:?}/{market_category} feed={feed:?} family={family}"
+        ),
+        content_type,
+        1,
+        |task| {
             task.exchange == exchange
                 && task.instrument_type == instrument_type
                 && serde_json::to_value(task.market_category).unwrap().as_str()
                     == Some(market_category)
                 && task.source_options.as_ref().map(|o| o.feed) == feed
                 && task.scope.is_some() == family
-        });
-        !job.tasks.is_empty()
-    });
-    subset.jobs.truncate(1);
-    let job = subset
-        .jobs
-        .first_mut()
-        .ok_or("prepared batch lacks the required synthetic test profile")?;
-    job.tasks.truncate(1);
-    Ok(subset)
+        },
+    )
 }

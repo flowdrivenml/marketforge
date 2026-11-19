@@ -21,3 +21,9 @@ pub(crate) use batch::family_of;
 pub(crate) use batch::selection_tests as selection_test_support;
 
 pub(crate) use batch::family_source_symbol;
+
+#[cfg(test)]
+use crate as fixture_engine;
+#[cfg(test)]
+#[path = "../../../tests/historical/support/normalization_fixture.rs"]
+pub(crate) mod normalization_fixture;

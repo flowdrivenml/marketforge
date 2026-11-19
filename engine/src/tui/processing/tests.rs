@@ -1,4 +1,5 @@
 use super::*;
+use crate::historical::config::normalization_fixture::bybit_spot_trade_job;
 static DIAGNOSTIC_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 use ratatui::backend::TestBackend;
 fn dashboard(count: usize) -> ProcessingDashboard {
@@ -10,16 +11,8 @@ fn dashboard(count: usize) -> ProcessingDashboard {
         root,
     )
     .unwrap();
-    let catalog =
-        crate::historical::config::FormatCatalog::load(root.join("data/.config/historical"))
-            .unwrap();
-    let mut job = crate::historical::config::load_normalization_job(
-        root.join("docs/historical/normalize-job-v3.example.json"),
-        &catalog,
-        &config,
-        root,
-    )
-    .unwrap();
+    let mut job = bybit_spot_trade_job(&config).unwrap();
+    job.job_id.0 = 1001;
     let template = job.tasks[0].clone();
     job.tasks = (0..count)
         .map(|i| {
@@ -366,10 +359,7 @@ fn quiet_phase_redraw_and_navigation_do_not_need_record_events() {
 #[test]
 fn production_replay_can_pause_without_record_updates_and_matches_non_tui_output() {
     let _diagnostics = DIAGNOSTIC_TEST_LOCK.lock().unwrap();
-    use crate::historical::{
-        config::{FormatCatalog, load_normalization_job},
-        normalize::{execute_processing_job, manifest::DatasetManifest},
-    };
+    use crate::historical::normalize::{execute_processing_job, manifest::DatasetManifest};
     use crate::shared::io::container::SourceContainer;
     use std::sync::{
         Mutex,
@@ -383,14 +373,7 @@ fn production_replay_can_pause_without_record_updates_and_matches_non_tui_output
         root,
     )
     .unwrap();
-    let catalog = FormatCatalog::load(root.join("data/.config/historical")).unwrap();
-    let mut job = load_normalization_job(
-        root.join("docs/historical/normalize-job-v3.example.json"),
-        &catalog,
-        &config,
-        root,
-    )
-    .unwrap();
+    let mut job = bybit_spot_trade_job(&config).unwrap();
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -531,7 +514,6 @@ fn stream_failure_settles_sources_without_fabricating_failed_inputs() {
 #[ignore = "requires the PTY/FIFO driver; run through normalization-tui-pty.py"]
 fn pty_production_loop_harness() {
     let _diagnostics = DIAGNOSTIC_TEST_LOCK.lock().unwrap();
-    use crate::historical::config::{FormatCatalog, load_normalization_job};
     use crate::shared::io::container::SourceContainer;
     use std::{
         io::Read,
@@ -548,14 +530,7 @@ fn pty_production_loop_harness() {
         root,
     )
     .unwrap();
-    let catalog = FormatCatalog::load(root.join("data/.config/historical")).unwrap();
-    let mut job = load_normalization_job(
-        root.join("docs/historical/normalize-job-v3.example.json"),
-        &catalog,
-        &config,
-        root,
-    )
-    .unwrap();
+    let mut job = bybit_spot_trade_job(&config).unwrap();
     config.resources.scratch_path = path.join("scratch");
     let template = job.tasks[0].clone();
     job.tasks = (0..4)
@@ -616,7 +591,6 @@ fn pty_production_loop_harness() {
 #[test]
 fn concurrent_report_quota_failure_drains_without_deadlock_and_keeps_metrics() {
     let _diagnostics = DIAGNOSTIC_TEST_LOCK.lock().unwrap();
-    use crate::historical::config::{FormatCatalog, load_normalization_job};
     use crate::historical::normalize::{
         failure::ProcessingFailureReport, session::execute_processing_session_with_progress,
     };
@@ -629,14 +603,7 @@ fn concurrent_report_quota_failure_drains_without_deadlock_and_keeps_metrics() {
         root,
     )
     .unwrap();
-    let catalog = FormatCatalog::load(root.join("data/.config/historical")).unwrap();
-    let mut job = load_normalization_job(
-        root.join("docs/historical/normalize-job-v3.example.json"),
-        &catalog,
-        &config,
-        root,
-    )
-    .unwrap();
+    let mut job = bybit_spot_trade_job(&config).unwrap();
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -727,7 +694,6 @@ fn failed_failure_json_preserves_existing_observation_evidence_and_original_erro
 }
 fn stream_rejection_evidence(block_failure_report: bool) {
     let _diagnostics = DIAGNOSTIC_TEST_LOCK.lock().unwrap();
-    use crate::historical::config::{FormatCatalog, load_normalization_job};
     use crate::historical::normalize::failure::ProcessingFailureReport;
     use crate::shared::io::container::SourceContainer;
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -742,14 +708,7 @@ fn stream_rejection_evidence(block_failure_report: bool) {
     // experimental source-preference setting from the deployment configuration.
     config.reconciliation.trades.overlap_policy =
         crate::shared::historical::policies::TradeOverlap::Strict;
-    let catalog = FormatCatalog::load(root.join("data/.config/historical")).unwrap();
-    let mut job = load_normalization_job(
-        root.join("docs/historical/normalize-job-v3.example.json"),
-        &catalog,
-        &config,
-        root,
-    )
-    .unwrap();
+    let mut job = bybit_spot_trade_job(&config).unwrap();
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()

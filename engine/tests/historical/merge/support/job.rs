@@ -1,5 +1,7 @@
 //! Shared, working-directory-independent baseline for the public merge contract.
-use marketforge_engine::historical::job::{MergeJob, MergeJobDocument, load_merge_job};
+use marketforge_engine::historical::job::{
+    ContentType, MergeFileInput, MergeJob, MergeJobDocument, load_merge_job,
+};
 use std::path::{Path, PathBuf};
 
 pub fn canonical_job() -> MergeJobDocument {
@@ -7,6 +9,31 @@ pub fn canonical_job() -> MergeJobDocument {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/historical/fixtures/merge.json"),
     )
     .expect("parse the canonical Forge merge job")
+}
+
+pub fn select_inputs(
+    job: &MergeJobDocument,
+    description: &str,
+    matches: impl Fn(&MergeFileInput) -> bool,
+) -> Result<MergeJobDocument, String> {
+    let mut selected = job.clone();
+    selected.inputs.retain(matches);
+    if selected.inputs.is_empty() {
+        return Err(format!("merge.json has no files for {description}"));
+    }
+    selected
+        .validate()
+        .map_err(|error| format!("invalid {description} selection: {error}"))?;
+    Ok(selected)
+}
+
+pub fn select_content_type(
+    job: &MergeJobDocument,
+    kind: ContentType,
+) -> Result<MergeJobDocument, String> {
+    select_inputs(job, &format!("{kind:?}"), |input| {
+        input.content_type == kind
+    })
 }
 
 pub fn small_runtime() -> marketforge_engine::shared::historical::config::MergeRuntimeSettings {

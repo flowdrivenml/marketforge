@@ -10,10 +10,36 @@ fn directory() -> tempfile::TempDir {
     tempfile::tempdir_in(path).unwrap()
 }
 fn wire() -> Value {
+    use super::super::normalization_fixture::{
+        canonical_normalization_batch, select_normalization_sample,
+    };
+
+    let canonical = canonical_normalization_batch().unwrap();
+    let family = canonical
+        .families
+        .iter()
+        .find(|family| family.exchange == Exchange::Okx && family.identifier == "BTC-USD_UM")
+        .expect("normalize.json must bind the OKX BTC-USD_UM family");
+    let selected = select_normalization_sample(
+        &canonical,
+        "OKX BTC-USD_UM",
+        ContentType::Trades,
+        1,
+        |task| task.scope.as_ref().and_then(|scope| scope.family_id) == Some(family.family_id),
+    )
+    .unwrap();
     let mut value = serde_json::to_value(support::batch()).unwrap();
+    // The wire tests exercise the compact family reference and force inheritance
+    // for the generated members in the test namespace.
     value["instruments"] = json!([]);
-    value["families"] = json!([{"family_id":5134923400617818826i64,"exchange":"okx","instrument_type":"future","market_category":"linear","identifier":"BTC-USD_UM","base_asset":"BTC","quote_asset":"USD","instrument":{"tick_size":"0.1","contract_value":"0.01","contract_value_asset":"BTC"}}]);
-    value["jobs"][0]["tasks"] = json!([{"task_id":900,"input_path":"unused.tar.gz","family_id":5134923400617818826i64,"stream_rank":5,"instrument_selection":{"mode":"all"}}]);
+    value["families"] = json!([family]);
+    value["jobs"][0]["tasks"] = json!([{
+        "task_id": 900,
+        "input_path": "unused.tar.gz",
+        "family_id": family.family_id,
+        "stream_rank": 5,
+        "instrument_selection": selected.jobs[0].tasks[0].instrument_selection,
+    }]);
     value
 }
 fn batch(value: Value) -> PreparedBatch {
@@ -51,31 +77,18 @@ fn okx_depth(path: &Path) -> PreparedBatch {
 }
 #[test]
 fn every_active_migrated_fixture_parses_without_opening_archives() {
-    for name in [
-        "normalize.json",
-        "normalize_binance.json",
-        "normalize_bybit.json",
-        "normalize_okx.json",
-        "normalize_bitget.json",
-        "normalize_gateio.json",
-    ] {
-        let b = read_prepared_batch(
-            root().join("engine/tests/historical/fixtures").join(name),
-            root(),
-        )
-        .unwrap();
-        assert_eq!(b.schema_version, 4);
-        for family in &b.families {
-            assert!(family.family_id > 9_007_199_254_740_992);
-        }
-        // Concrete preparation remains independent of archive availability.
-        for job in &b.jobs {
-            let mut concrete = job.clone();
-            concrete.tasks.retain(|t| t.scope.is_none());
-            if !concrete.tasks.is_empty() {
-                b.resolve_job(&concrete, &catalog(), &support::runtime(), &root())
-                    .unwrap();
-            }
+    let b = super::super::normalization_fixture::canonical_normalization_batch().unwrap();
+    assert_eq!(b.schema_version, 4);
+    for family in &b.families {
+        assert!(family.family_id > 9_007_199_254_740_992);
+    }
+    // Concrete preparation remains independent of archive availability.
+    for job in &b.jobs {
+        let mut concrete = job.clone();
+        concrete.tasks.retain(|t| t.scope.is_none());
+        if !concrete.tasks.is_empty() {
+            b.resolve_job(&concrete, &catalog(), &support::runtime(), &root())
+                .unwrap();
         }
     }
 }

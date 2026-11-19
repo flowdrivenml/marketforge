@@ -166,8 +166,11 @@ fn unsafe_logical_ids_are_preserved_but_paths_are_encoded() {
 }
 #[test]
 fn prepared_fixture_omits_external_coverage() {
-    let value: serde_json::Value =
-        serde_json::from_str(include_str!("../fixtures/normalize.json")).unwrap();
+    let value: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(crate::support::normalization_fixture::normalization_fixture_path())
+            .unwrap(),
+    )
+    .unwrap();
     for job in value["jobs"].as_array().unwrap() {
         for task in job["tasks"].as_array().unwrap() {
             assert!(task.get("source_time_bounds").is_none());
@@ -184,6 +187,12 @@ fn production_trade_execution_preserves_degraded_task_local_order() {
     config.integrity_policy.timestamp_regression.action = IntegrityAction::Degrade;
     config.integrity_policy.timestamp_regression.max_count = Some(10);
     config.integrity_policy.timestamp_regression.max_rate = None;
+    config.timestamp_regression.trades =
+        marketforge_engine::shared::historical::policies::TradeTimestampConfig {
+            policy: marketforge_engine::shared::historical::policies::TradeTimestamp::Preserve,
+            max_regression_ms: 1,
+            ..Default::default()
+        };
     let r = execute_processing_job(&job, &config).unwrap();
     assert_eq!(r.status, ProcessingStatus::Complete, "{:?}", r.failure);
     let m = manifest(&job);
@@ -217,8 +226,12 @@ fn production_trade_execution_preserves_degraded_task_local_order() {
 fn resource_preflight_isolates_unadmittable_job() {
     let run = TestRun::new("resources/session_admission").unwrap();
     let (bad, mut config) = job(&run);
-    let mut good = bad.clone();
+    // A single strict depth stream uses the direct path. Even a single trade
+    // source now requires an identity-reconciliation workspace.
+    let (mut good, _) = super::stream_depth::fixture(&run);
     good.tasks.truncate(1);
+    config.reconciliation.depth = Default::default();
+    config.timestamp_regression.depth = Default::default();
     good.job_id = JobId(9003);
     good.dataset_id = DatasetId(9003);
     good.output.staging_path = run.path.join("good-stage");

@@ -35,6 +35,8 @@ const DECLARED: &[&str] = &[
     "okx.future.linear.depth",
     "okx.future.inverse.trades",
     "okx.future.inverse.depth",
+    "xnas.equity.equity.trades",
+    "xnas.equity.equity.depth",
 ];
 #[test]
 fn every_supported_profile_has_an_identifiable_case() {
@@ -69,7 +71,7 @@ fn profile_coverage_distinguishes_fixture_and_execution_prerequisites() {
             })
             .flat_map(|j| &j.tasks)
             .filter(|t| {
-                t.exchange == p.definition.exchange
+                t.exchange.as_str() == p.definition.exchange
                     && t.instrument_type == p.definition.instrument_type
                     && t.market_category == p.definition.market_category
             })
@@ -92,4 +94,22 @@ fn profile_coverage_distinguishes_fixture_and_execution_prerequisites() {
     .unwrap();
     assert!(!coverage.is_empty());
     run.finish(&Ok(())).unwrap();
+}
+
+#[test]
+fn xnas_equity_trades_profile() {
+    crate::support::profile_cases::synthetic(
+        "xnas.equity.equity.trades",
+        crate::support::profile_cases::Units::Base,
+    )
+    .unwrap();
+}
+
+#[test]
+fn xnas_equity_depth_profile() {
+    crate::support::profile_cases::synthetic(
+        "xnas.equity.equity.depth",
+        crate::support::profile_cases::Units::Base,
+    )
+    .unwrap();
 }

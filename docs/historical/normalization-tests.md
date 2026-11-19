@@ -1,6 +1,8 @@
 # Normalization correctness tests
 
-The maintained archive workload is `engine/tests/historical/fixtures/normalize.json`. Shared test support selects by classified identity, source feed and exact filename and rejects missing/ambiguous selections. It serializes valid subsets through the production schema-4 loader and profile resolver. Runtime overrides are isolated in memory; policies remain unchanged.
+The authoritative normalization job fixture is `engine/tests/historical/fixtures/normalize.json`. The authoritative merge job fixture is `engine/tests/historical/fixtures/merge.json`. Shared test support resolves them from the crate manifest directory and uses the production loaders. Normalization subsets keep the namespace, instrument catalog, family bindings, and job metadata. Small source samples are chosen by semantic selection and stable task identity. Tests generate source records and apply scenario-specific policy overrides in memory. Temporary job files used by path-based APIs belong to the individual test run.
+
+Merge selectors keep the original per-file identities, content types, ranks, and publication pins. Ordinary execution tests generate their own small publications. Recorded merge checks remain opt-in. The legacy v3 normalization example is a documentation wire-contract case exercised by its protocol and CLI compatibility tests.
 
 Run source-only harness tests:
 
@@ -39,7 +41,7 @@ workloads were not run during this refactor. The obsolete
 `historical_slow_normalize` target has been removed. Merge/convert slow targets
 are unchanged. No performance benchmarks are authorized.
 
-Each of the 33 supported profiles has a named synthetic execution case with
+Each of the 35 supported profiles has a named synthetic execution case with
 fixed decimal, timestamp, identity and side expectations. These cases prove
 interpretation of their supplied source records, not coverage of every real
 archive. The catalog coverage report separately records fixture availability,

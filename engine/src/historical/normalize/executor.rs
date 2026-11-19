@@ -724,7 +724,7 @@ mod failure_path_tests {
     #[test]
     fn unavailable_failure_report_preserves_definitive_failure() {
         use crate::{
-            historical::config::{FormatCatalog, load_normalization_job},
+            historical::config::normalization_fixture::bybit_spot_trade_job,
             shared::historical::load_processing_config,
         };
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -732,14 +732,7 @@ mod failure_path_tests {
             .unwrap()
             .to_path_buf();
         let config = load_processing_config("data/.config/historical/general.toml", &root).unwrap();
-        let catalog = FormatCatalog::load(root.join("data/.config/historical")).unwrap();
-        let mut job = load_normalization_job(
-            root.join("docs/historical/normalize-job-v3.example.json"),
-            &catalog,
-            &config,
-            &root,
-        )
-        .unwrap();
+        let mut job = bybit_spot_trade_job(&config).unwrap();
         let temp = tempfile::tempdir().unwrap();
         job.output.staging_path = temp.path().join("not-created");
         let result = persist_processing_failure(

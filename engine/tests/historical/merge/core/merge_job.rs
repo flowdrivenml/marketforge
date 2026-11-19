@@ -34,6 +34,84 @@ fn canonical_file_inputs_parse_without_touching_data() {
 }
 
 #[test]
+fn canonical_subsets_preserve_file_pins_stream_identity_and_sparse_ranks() {
+    use crate::merge_test_job::{select_content_type, select_inputs};
+    use marketforge_engine::historical::job::ContentType;
+    use std::collections::{BTreeMap, HashSet};
+
+    let job = canonical_job();
+    assert_eq!(job.inputs.len(), 93);
+    let mut by_rank = BTreeMap::new();
+    let mut by_stream = BTreeMap::new();
+    for file in &job.inputs {
+        let identity = (&file.stream_id, file.content_type);
+        assert_eq!(
+            *by_rank.entry(file.stream_rank).or_insert(identity),
+            identity
+        );
+        assert_eq!(
+            *by_stream.entry(&file.stream_id).or_insert(file.stream_rank),
+            file.stream_rank
+        );
+    }
+    assert_eq!(by_rank.len(), 40);
+
+    for kind in [ContentType::Trades, ContentType::Depth] {
+        let subset = select_content_type(&job, kind).unwrap();
+        assert_eq!(
+            subset.inputs.iter().collect::<Vec<_>>(),
+            job.inputs
+                .iter()
+                .filter(|file| file.content_type == kind)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(subset.time_range, job.time_range);
+        assert_eq!(subset.output, job.output);
+    }
+    let sparse = select_inputs(&job, "ranks 3, 7 and 14", |file| {
+        [3, 7, 14].contains(&file.stream_rank)
+    })
+    .unwrap();
+    assert_eq!(
+        sparse
+            .inputs
+            .iter()
+            .map(|file| file.stream_rank)
+            .collect::<HashSet<_>>(),
+        HashSet::from([3, 7, 14])
+    );
+
+    let stream = job
+        .inputs
+        .iter()
+        .find(|candidate| {
+            job.inputs
+                .iter()
+                .filter(|file| file.stream_id == candidate.stream_id)
+                .count()
+                > 1
+        })
+        .unwrap();
+    let parts = select_inputs(&job, &stream.stream_id, |file| {
+        file.stream_id == stream.stream_id
+    })
+    .unwrap();
+    assert!(parts.inputs.len() > 1);
+    assert!(
+        parts
+            .inputs
+            .iter()
+            .all(|file| file.stream_rank == stream.stream_rank
+                && file.content_type == stream.content_type)
+    );
+    assert!(
+        select_inputs(&job, "missing stream", |_| false)
+            .unwrap_err()
+            .contains("missing stream")
+    );
+}
+
+#[test]
 fn merge_wire_contract_round_trips() {
     let expected = wire_fixture();
     let job: MergeJobDocument = serde_json::from_value(expected.clone()).unwrap();

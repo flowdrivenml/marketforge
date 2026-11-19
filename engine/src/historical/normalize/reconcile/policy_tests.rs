@@ -6,9 +6,7 @@ use crate::{
         job::*,
         normalize::{metrics::*, *},
     },
-    shared::{
-        domain::canonical::Exchange, historical::policies::*, io::container::SourceContainer,
-    },
+    shared::{historical::policies::*, io::container::SourceContainer},
 };
 use serde_json::{Value, json};
 fn directory() -> tempfile::TempDir {
@@ -609,26 +607,19 @@ fn recovery_without_snapshot_or_without_positive_allowance_never_publishes() {
 #[test]
 fn actual_gate_snapshot_profile_preserves_one_millisecond_regression_without_sequence_fields() {
     let root = directory();
-    let b = crate::historical::config::read_prepared_batch(
-        "engine/tests/historical/fixtures/normalize.json",
-        super::super::super::config::selection_test_support::root(),
+    use crate::historical::config::normalization_fixture::{
+        canonical_normalization_batch, select_normalization_sample,
+    };
+    let stream = "gateio.inverse.perpetual.BTC_USD.depth.snapshot";
+    let b = select_normalization_sample(
+        &canonical_normalization_batch().unwrap(),
+        stream,
+        ContentType::Depth,
+        1,
+        |task| task.stream_id.0 == stream,
     )
     .unwrap();
-    let mut job = b
-        .jobs
-        .iter()
-        .find(|j| j.output.content_type == ContentType::Depth)
-        .unwrap()
-        .clone();
-    job.tasks.retain(|t| {
-        t.exchange == Exchange::GateIo
-            && t.market_category == crate::historical::config::MarketCategory::Inverse
-            && t.source_options
-                .as_ref()
-                .is_some_and(|o| o.feed == crate::historical::config::Feed::Snapshot)
-    });
-    job.tasks.truncate(1);
-    assert_eq!(job.tasks.len(), 1);
+    let mut job = b.jobs[0].clone();
     let mut config = super::super::super::config::selection_test_support::runtime();
     config.resources.scratch_path = root.path().join("scratch");
     config.resources.normalization_limits.reconciliation_bytes = 4 << 20;
@@ -1160,13 +1151,19 @@ fn native_order_dataset_requires_a_segment_aware_consumer() {
             dataset_path: root.path().join("merge"),
         },
     };
-    let error = crate::historical::merge::resolve_merge_inputs(&merge, root.path()).unwrap_err();
+    let resolved = crate::historical::merge::resolve_merge_inputs(&merge, root.path()).unwrap();
+    assert_eq!(resolved.len(), 1);
+    let error = crate::historical::merge::resolve_unified_merge_streams(&resolved, root.path())
+        .unwrap_err();
     assert!(
-        error
-            .to_string()
-            .contains("event-index/segment-aware reader"),
+        error.to_string().contains("preserving causal replay"),
         "{error}"
     );
+
+    let execution_error =
+        crate::historical::merge::execute_unified_merge_job(&merge, root.path()).unwrap_err();
+    assert_eq!(execution_error.to_string(), error.to_string());
+    assert!(!merge.output.dataset_path.exists());
 }
 
 #[test]

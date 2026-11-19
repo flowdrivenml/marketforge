@@ -13,7 +13,7 @@ fn root() -> PathBuf {
         .into()
 }
 fn fixture() -> PreparedBatch {
-    read_prepared_batch("engine/tests/historical/fixtures/normalize.json", root()).unwrap()
+    super::super::normalization_fixture::canonical_normalization_batch().unwrap()
 }
 fn catalog() -> FormatCatalog {
     FormatCatalog::load(root().join("data/.config/historical")).unwrap()
@@ -25,18 +25,18 @@ fn runtime() -> ProcessingConfig {
     )
     .unwrap()
 }
-fn selected(kind: &str, exchange: Exchange) -> (PreparedBatch, PreparedJob) {
-    let b = fixture();
-    let mut j = b
-        .jobs
-        .iter()
-        .find(|j| token(&j.output.content_type).unwrap() == kind)
-        .unwrap()
-        .clone();
-    j.tasks
-        .retain(|t| t.exchange == exchange && t.instrument_type == InstrumentKind::Spot);
-    j.tasks.truncate(1);
-    (b, j)
+fn selected_trade() -> (PreparedBatch, PreparedJob) {
+    let batch = fixture();
+    let stream = "bybit.spot.spot.BTCUSDT.trades";
+    let subset = super::super::normalization_fixture::select_normalization_sample(
+        &batch,
+        stream,
+        ContentType::Trades,
+        1,
+        |task| task.stream_id.0 == stream,
+    )
+    .unwrap();
+    (batch, subset.jobs.into_iter().next().unwrap())
 }
 #[test]
 fn fixture_preserves_large_ids_shared_ranks_and_authority() {
@@ -130,7 +130,7 @@ fn unknown_nested_fields_and_invalid_wire_values_fail() {
 }
 #[test]
 fn resolution_rejects_conflicts_missing_profiles_and_unmapped_family() {
-    let (b, mut j) = selected("trades", Exchange::Bybit);
+    let (b, mut j) = selected_trade();
     j.tasks[0].instrument_id = Some(999);
     assert!(
         b.resolve_job(&j, &catalog(), &runtime(), &root())
@@ -294,7 +294,7 @@ fn gzip(path: &Path, bytes: &[u8]) {
 }
 #[test]
 fn resolved_trade_worker_has_independent_canonical_expectations() {
-    let (b, mut j) = selected("trades", Exchange::Bybit);
+    let (b, mut j) = selected_trade();
     let temp = tempfile::tempdir().unwrap();
     j.tasks[0].input_path = temp.path().join("input.csv.gz");
     gzip(

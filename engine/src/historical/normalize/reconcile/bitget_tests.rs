@@ -2,8 +2,11 @@
 //! committed Parquet. Native IDs exceed 2^53, as in the inspected archives.
 use crate::{
     historical::{
-        config::{FormatCatalog, read_prepared_batch, selection_test_support as support},
-        job::{ContentType, InstrumentKind, ProcessingJob},
+        config::{
+            FormatCatalog, normalization_fixture::bitget_trade_sources,
+            selection_test_support as support,
+        },
+        job::ProcessingJob,
         normalize::{manifest::DatasetManifest, metrics::*, *},
     },
     shared::historical::policies::*,
@@ -16,27 +19,7 @@ fn case(spot: bool, count: usize) -> (tempfile::TempDir, ProcessingJob, Processi
         .join("data/tests/historical/normalize/completion/bitget-reconciliation/unit");
     std::fs::create_dir_all(&parent).unwrap();
     let dir = tempfile::tempdir_in(parent).unwrap();
-    let b = read_prepared_batch(
-        "engine/tests/historical/fixtures/normalize_bitget.json",
-        &support::root(),
-    )
-    .unwrap();
-    let mut prepared = b
-        .jobs
-        .iter()
-        .find(|j| j.output.content_type == ContentType::Trades)
-        .unwrap()
-        .clone();
-    prepared.tasks.retain(|t| {
-        t.instrument_type
-            == if spot {
-                InstrumentKind::Spot
-            } else {
-                InstrumentKind::Perpetual
-            }
-    });
-    prepared.tasks.truncate(count);
-    assert_eq!(prepared.tasks.len(), count);
+    let b = bitget_trade_sources(spot, count).unwrap();
     let mut config = support::runtime();
     config.resources.normalization_limits.reconciliation_bytes = 4 << 20;
     config.resources.scratch_path = dir.path().join("scratch");
@@ -46,7 +29,7 @@ fn case(spot: bool, count: usize) -> (tempfile::TempDir, ProcessingJob, Processi
     config.timestamp_regression.trades = Default::default();
     let mut job = b
         .resolve_job(
-            &prepared,
+            &b.jobs[0],
             &FormatCatalog::load(support::root().join("data/.config/historical")).unwrap(),
             &config,
             &support::root(),

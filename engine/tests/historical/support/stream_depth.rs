@@ -14,7 +14,7 @@ use marketforge_engine::{
     },
 };
 use serde_json::json;
-fn fixture(run: &TestRun) -> (ProcessingJob, ProcessingConfig) {
+pub(super) fn fixture(run: &TestRun) -> (ProcessingJob, ProcessingConfig) {
     let mut job = template("bybit.spot.spot.depth:BTCUSDT").unwrap();
     let config = run.runtime(Default::default()).unwrap();
     job.output.staging_path = run.path.join("staging");
@@ -435,6 +435,9 @@ fn correctness_verifier_accepts_shared_depth_without_benchmark_execution() {
     for rotate in [false, true] {
         let run = TestRun::new("depth/verification").unwrap();
         let (mut job, mut config) = fixture(&run);
+        // Exercise the verifier's timestamp-ordered v3 input contract.
+        config.reconciliation = Default::default();
+        config.timestamp_regression = Default::default();
         if rotate {
             config.resources.parquet.row_group_target_bytes = 1;
             config.resources.parquet.file_target_bytes = 1;
@@ -545,7 +548,8 @@ fn legacy_manifest2_depth_and_boundary1_remain_readable() {
 #[test]
 fn equal_time_independent_depth_books_fail_without_identity_evidence() {
     let run = TestRun::new("depth/equal_time_ambiguity").unwrap();
-    let (mut job, config) = fixture(&run);
+    let (mut job, mut config) = fixture(&run);
+    config.reconciliation.depth = Default::default();
     for (index, task) in job.tasks.iter_mut().enumerate() {
         let message = json!({"type":"snapshot","ts":1000,"cts":1000,"data":{"s":"BTCUSDT","u":10,"b":[["99",(index+2).to_string()]],"a":[["101","5"]]}});
         std::fs::write(&task.input_path, format!("{message}\n")).unwrap();

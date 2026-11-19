@@ -488,7 +488,7 @@ pub(crate) fn read_outputs(root: &Path) -> Result<Vec<StreamOutput>> {
 mod tests {
     use super::*;
     use crate::historical::{
-        config::{FormatCatalog, load_normalization_job},
+        config::normalization_fixture::bybit_spot_trade_job,
         job::{ContractKind, InstrumentKind, TaskId},
     };
     fn job() -> ProcessingJob {
@@ -499,14 +499,7 @@ mod tests {
         let config =
             super::super::load_processing_config("data/.config/historical/general.toml", &root)
                 .unwrap();
-        let catalog = FormatCatalog::load(root.join("data/.config/historical")).unwrap();
-        let mut job = load_normalization_job(
-            root.join("docs/historical/normalize-job-v3.example.json"),
-            &catalog,
-            &config,
-            &root,
-        )
-        .unwrap();
+        let mut job = bybit_spot_trade_job(&config).unwrap();
         let mut next = job.tasks[0].clone();
         next.task_id = TaskId(2);
         next.input_path = "another-path".into();

@@ -69,12 +69,14 @@ pub(super) fn identity(exchange: &str, kind: &str, category: &str) -> (i64, &'st
         ("okx", "perpetual", "inverse") => (17, "BTC-USD-SWAP"),
         ("okx", "future", "linear") => (18, "BTC-USD_UM-261225"),
         ("okx", "future", "inverse") => (19, "BTC-USD-261225"),
+        ("xnas", "equity", "equity") => (20, "AAPL"),
         _ => panic!("undeclared unit identity"),
     }
 }
 fn wrap(path: &std::path::Path, container: &str, bytes: &[u8]) -> TestResult<()> {
     let f = fs::File::create(path).map_err(|e| e.to_string())?;
     match container {
+        "plain" => (&f).write_all(bytes).map_err(|e| e.to_string())?,
         "gzip" => {
             let mut e = flate2::write::GzEncoder::new(f, flate2::Compression::default());
             e.write_all(bytes).map_err(|e| e.to_string())?;
@@ -149,6 +151,17 @@ fn source(
                     "instrument_name,trade_id,side,price,size,created_time,source\n{symbol},7,buy,200,3,1250,1\n"
                 ),
             ),
+            "xnas" => (
+                "plain",
+                format!(
+                    "{}\n",
+                    json!({
+                        "hd": {"ts_event": "1970-01-01T00:00:01.250000000Z"},
+                        "ts_recv": "1970-01-01T00:00:01.260000000Z", "symbol": symbol,
+                        "price": "200", "size": 3, "side": "b", "sequence": 7,
+                    })
+                ),
+            ),
             _ => panic!("unknown exchange"),
         };
         return (container.into(), text.into_bytes());
@@ -187,6 +200,14 @@ fn source(
             z.write_all(xml.as_bytes()).unwrap();
             ("zip".into(), z.finish().unwrap().into_inner())
         }
+        "xnas" => (
+            "plain".into(),
+            format!("{}\n", json!({
+                "hd": {"ts_event": "1970-01-01T00:00:01.250000000Z"},
+                "ts_recv": "1970-01-01T00:00:01.260000000Z", "symbol": symbol, "sequence": 7,
+                "levels": [{"bid_px":"200","bid_sz":2,"bid_ct":1,"ask_px":"400","ask_sz":3,"ask_ct":1}],
+            })).into_bytes(),
+        ),
         _ => panic!("unknown depth format"),
     }
 }
@@ -224,7 +245,7 @@ pub fn synthetic(id: &str, units: Units) -> TestResult<()> {
     let result = (|| {
         let path = run.path.join("synthetic.source");
         wrap(&path, &container, &bytes)?;
-        let mut task = json!({"task_id":1,"input_path":path,"exchange":exchange,"instrument_type":kind,"market_category":category,"symbol":symbol,"base_asset":"BTC","quote_asset":if *category=="inverse"{"USD"}else{"USDT"},"instrument_id":instrument_id,"instrument":{"tick_size":"0.1","contract_value":value,"contract_value_asset":asset},"stream_id":format!("unit.{exchange}.{kind}.{category}.{symbol}"),"stream_rank":1});
+        let mut task = json!({"task_id":1,"input_path":path,"exchange":exchange,"instrument_type":kind,"market_category":category,"symbol":symbol,"base_asset":if *kind=="equity"{symbol}else{"BTC"},"quote_asset":if matches!(*category,"inverse"|"equity"){"USD"}else{"USDT"},"instrument_id":instrument_id,"instrument":{"tick_size":"0.1","contract_value":value,"contract_value_asset":asset},"stream_id":format!("unit.{exchange}.{kind}.{category}.{symbol}"),"stream_rank":1});
         if *exchange == "gateio" && !trade {
             task["source_options"] =
                 json!({"feed":if *kind=="spot"{"incremental"}else{"snapshot"}});
@@ -268,7 +289,7 @@ pub fn synthetic(id: &str, units: Units) -> TestResult<()> {
         }
         let expected_rows = if trade {
             1
-        } else if *exchange == "gateio" && *kind != "spot" {
+        } else if *exchange == "xnas" || (*exchange == "gateio" && *kind != "spot") {
             2
         } else {
             3
@@ -334,7 +355,8 @@ pub fn synthetic(id: &str, units: Units) -> TestResult<()> {
                             ));
                         }
                         if trade {
-                            if text(&batch, "trade_id", row) != Some("7") {
+                            let expected_id = (*exchange != "xnas").then_some("7");
+                            if text(&batch, "trade_id", row) != expected_id {
                                 return Err("trade ID mismatch".into());
                             }
                             let a = batch

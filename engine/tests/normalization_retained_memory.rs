@@ -1,4 +1,5 @@
 //! Synthetic lifetime/overflow regressions. No real archive is opened by these tests.
+use marketforge_engine as fixture_engine;
 use marketforge_engine::{
     historical::normalize::{manifest::*, metrics::*},
     shared::{
@@ -8,6 +9,9 @@ use marketforge_engine::{
         persistence::parquet::*,
     },
 };
+#[allow(dead_code)]
+#[path = "historical/support/normalization_fixture.rs"]
+mod normalization_fixture;
 use rust_decimal::Decimal;
 use std::{
     alloc::{GlobalAlloc, Layout, System},
@@ -495,23 +499,26 @@ fn oversized_nested_values_are_rejected_before_unbounded_decode_allocation() {
 #[test]
 fn finalization_reserves_one_boundary_workspace_and_keeps_report_admission_honest() {
     use marketforge_engine::historical::{
-        config::{FormatCatalog, read_prepared_batch},
+        config::FormatCatalog,
+        job::ContentType,
         normalize::{load_processing_config, resources::inspect_admission},
     };
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let mut config =
         load_processing_config(root.join("data/.config/historical/general.toml"), root).unwrap();
-    let batch = read_prepared_batch(
-        root.join("engine/tests/historical/fixtures/normalize.json"),
-        root,
+    let canonical = normalization_fixture::canonical_normalization_batch().unwrap();
+    let stream = "bitget.linear.perpetual.BTCUSDT.depth";
+    let batch = normalization_fixture::select_normalization_sample(
+        &canonical,
+        stream,
+        ContentType::Depth,
+        1,
+        |task| task.stream_id.0 == stream,
     )
     .unwrap();
     let catalog = FormatCatalog::load(root.join("data/.config/historical")).unwrap();
     let mut job = batch
-        .jobs
-        .iter()
-        .map(|j| batch.resolve_job(j, &catalog, &config, root).unwrap())
-        .find(|j| j.output.content_type == marketforge_engine::historical::job::ContentType::Depth)
+        .resolve_job(&batch.jobs[0], &catalog, &config, root)
         .unwrap();
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("not-an-archive");

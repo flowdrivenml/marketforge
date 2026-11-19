@@ -1,5 +1,5 @@
 //! Bounded selections from canonical descriptors and verified publication metadata.
-use super::merge_test_job::recorded_job;
+use super::merge_test_job::{recorded_job, select_content_type};
 use marketforge_engine::historical::{
     job::{ContentType, MergeFileInput, MergeJobDocument},
     normalize::manifest::{DatasetFile, DatasetManifest, file_sha256},
@@ -42,14 +42,13 @@ pub fn recorded_members(
     job: &MergeJobDocument,
     kind: ContentType,
 ) -> Vec<(MergeFileInput, DatasetFile)> {
-    let mut matches = job
+    let mut matches = select_content_type(job, kind)
+        .unwrap()
         .inputs
-        .iter()
-        .filter_map(|input| {
-            let manifest = recorded_manifest(input);
-            if manifest.content_type != kind {
-                return None;
-            }
+        .into_iter()
+        .map(|input| {
+            let manifest = recorded_manifest(&input);
+            assert_eq!(manifest.content_type, kind);
             let relative = input
                 .path
                 .strip_prefix(input.publication.manifest_path.parent().unwrap())
@@ -59,7 +58,7 @@ pub fn recorded_members(
                 .iter()
                 .find(|file| Path::new(&file.path) == relative)
                 .expect("a canonical descriptor must select a primary file");
-            Some((input.clone(), member.clone()))
+            (input, member.clone())
         })
         .collect::<Vec<_>>();
     matches.sort_by_key(|(_, file)| (file.rows, file.path.clone()));

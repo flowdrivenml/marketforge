@@ -72,6 +72,43 @@ fn trade_equal_and_increasing_timestamps_pass() {
         run.finish(&Ok(())).unwrap();
     }
 }
+fn publish_regression_case(
+    job: &ProcessingJob,
+    config: &normalize::ProcessingConfig,
+) -> (TaskMetricsReport, arrow_array::RecordBatch) {
+    use std::fs::File;
+    let result = normalize::execute_processing_job(job, config).unwrap();
+    assert_eq!(
+        result.status,
+        normalize::ProcessingStatus::Complete,
+        "{:?}",
+        result.failure
+    );
+    let manifest: normalize::manifest::DatasetManifest =
+        serde_json::from_reader(File::open(result.manifest_path.unwrap()).unwrap()).unwrap();
+    assert_eq!(manifest.integrity_status, IntegrityStatus::Degraded);
+    assert_eq!(manifest.files.len(), 1);
+    let batch = parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(
+        File::open(job.output.dataset_path.join(&manifest.files[0].path)).unwrap(),
+    )
+    .unwrap()
+    .build()
+    .unwrap()
+    .next()
+    .unwrap()
+    .unwrap();
+    assert_eq!(batch.num_rows() as u64, manifest.events_written);
+    (
+        manifest
+            .processing_metrics
+            .tasks
+            .into_iter()
+            .next()
+            .unwrap(),
+        batch,
+    )
+}
+
 #[test]
 fn trade_regression_fails_or_degrades_without_silent_drop_or_sort() {
     for degrade in [false, true] {
@@ -83,30 +120,69 @@ fn trade_regression_fails_or_degrades_without_silent_drop_or_sort() {
             allow(&mut c.integrity_policy.timestamp_regression);
         }
         let resolved = run.prepare(&b, &c).unwrap();
-        let mut m = TaskMetrics::default();
-        let mut sink = Trades::default();
-        let result = process_trade_task_with_metrics(
-            &resolved.jobs[0].tasks[0],
-            &mut sink,
-            &mut m,
-            &c.integrity_policy,
-            &Default::default(),
-        );
-        assert_eq!(result.is_ok(), degrade);
-        assert_eq!(m.scoped_integrity.global.timestamp_regression.violations, 1);
-        assert_eq!(m.integrity.diagnostics[0].source_record, Some(2));
-        assert!(m.integrity.diagnostics[0].message.contains("100000000"));
         if degrade {
+            use marketforge_engine::shared::historical::policies::{
+                TradeTimestamp, TradeTimestampConfig,
+            };
+            c.timestamp_regression.trades = TradeTimestampConfig {
+                policy: TradeTimestamp::Preserve,
+                max_regression_ms: 1,
+                ..Default::default()
+            };
+            let (metrics, batch) = publish_regression_case(&resolved.jobs[0], &c);
             assert_eq!(
-                sink.0
-                    .iter()
-                    .map(|t| t.envelope.event_timestamp_ns)
-                    .collect::<Vec<_>>(),
-                vec![100_000_000, 99_000_000, 101_000_000]
+                metrics
+                    .scoped_integrity
+                    .global
+                    .timestamp_regression
+                    .violations,
+                1
+            );
+            assert_eq!(metrics.integrity.diagnostics[0].source_record, Some(2));
+            assert!(
+                metrics.integrity.diagnostics[0]
+                    .message
+                    .contains("100000000")
+            );
+            let timestamps = batch
+                .column_by_name("event_timestamp_ns")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<arrow_array::Int64Array>()
+                .unwrap();
+            assert_eq!(
+                timestamps.values().as_ref(),
+                &[100_000_000, 99_000_000, 101_000_000]
             );
         } else {
+            let mut metrics = TaskMetrics::default();
+            let mut sink = Trades::default();
+            assert!(
+                process_trade_task_with_metrics(
+                    &resolved.jobs[0].tasks[0],
+                    &mut sink,
+                    &mut metrics,
+                    &c.integrity_policy,
+                    &Default::default(),
+                )
+                .is_err()
+            );
+            assert_eq!(
+                metrics
+                    .scoped_integrity
+                    .global
+                    .timestamp_regression
+                    .violations,
+                1
+            );
+            assert_eq!(metrics.integrity.diagnostics[0].source_record, Some(2));
+            assert!(
+                metrics.integrity.diagnostics[0]
+                    .message
+                    .contains("100000000")
+            );
             assert_eq!(sink.0.len(), 1);
-            assert_eq!(m.counters.records_rejected, 1);
+            assert_eq!(metrics.counters.records_rejected, 1);
         }
         run.finish(&Ok(())).unwrap();
     }
@@ -138,30 +214,77 @@ fn depth_regression_obeys_policy_and_preserves_sequence_order() {
         }
         let r = run.prepare(&b, &c).unwrap();
         let t = &r.jobs[0].tasks[0];
-        let mut m = TaskMetrics::default();
-        let mut sink = Depth::default();
-        let result = process_depth_task_with_metrics(
-            t,
-            &mut sink,
-            &mut m,
-            &c.integrity_policy,
-            &Default::default(),
-            normalize::resolve_sequence_policy(t).unwrap(),
-        );
-        assert_eq!(result.is_ok(), degrade);
-        assert_eq!(m.scoped_integrity.global.timestamp_regression.violations, 1);
         if degrade {
-            let bids: Vec<_> = sink
-                .0
-                .iter()
-                .filter(|e| e.price == rust_decimal::Decimal::from(100))
-                .map(|e| e.quantity_base.unwrap())
-                .collect();
+            use arrow_array::{Decimal256Array, StringArray};
+            use marketforge_engine::shared::historical::policies::{
+                DepthTimestamp, DepthTimestampConfig,
+            };
+            use marketforge_engine::shared::persistence::parquet::i256_to_decimal;
+            c.timestamp_regression.depth = DepthTimestampConfig {
+                policy: DepthTimestamp::Preserve,
+                max_regression_ms: 1,
+                ..Default::default()
+            };
+            let (metrics, batch) = publish_regression_case(&r.jobs[0], &c);
+            assert_eq!(
+                metrics
+                    .scoped_integrity
+                    .global
+                    .timestamp_regression
+                    .violations,
+                1
+            );
+            assert_eq!(metrics.scoped_integrity.global.sequence_gap.violations, 0);
+            let sides = batch
+                .column_by_name("side")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let prices = batch
+                .column_by_name("price")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Decimal256Array>()
+                .unwrap();
+            let quantities = batch
+                .column_by_name("quantity_base")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Decimal256Array>()
+                .unwrap();
+            let bids = (0..batch.num_rows())
+                .filter(|&row| {
+                    sides.value(row) == "bid"
+                        && i256_to_decimal(prices.value(row)).unwrap() == 100.into()
+                })
+                .map(|row| i256_to_decimal(quantities.value(row)).unwrap())
+                .collect::<Vec<_>>();
             assert_eq!(bids, vec![1.into(), 2.into(), 3.into()]);
-            assert_eq!(m.scoped_integrity.global.sequence_gap.violations, 0);
         } else {
+            let mut metrics = TaskMetrics::default();
+            let mut sink = Depth::default();
+            assert!(
+                process_depth_task_with_metrics(
+                    t,
+                    &mut sink,
+                    &mut metrics,
+                    &c.integrity_policy,
+                    &Default::default(),
+                    normalize::resolve_sequence_policy(t).unwrap(),
+                )
+                .is_err()
+            );
+            assert_eq!(
+                metrics
+                    .scoped_integrity
+                    .global
+                    .timestamp_regression
+                    .violations,
+                1
+            );
             assert_eq!(sink.0.len(), 2);
-            assert_eq!(m.counters.records_processed, 1);
+            assert_eq!(metrics.counters.records_processed, 1);
         }
         run.finish(&Ok(())).unwrap();
     }
@@ -365,8 +488,10 @@ fn independent_family_streams_do_not_share_timestamp_watermarks() {
     });
     // The following records and instruments define an independent synthetic
     // family; only the production profile is borrowed from the prepared batch.
-    b.jobs[0].tasks[0].scope.as_mut().unwrap().identifier = "BTC-USD_UM".into();
-    b.jobs[0].tasks[0].scope.as_mut().unwrap().members.clear();
+    let scope = b.jobs[0].tasks[0].scope.as_mut().unwrap();
+    assert_eq!(scope.identifier, "BTC-USD_UM");
+    scope.family_id = None;
+    scope.members.clear();
     b.jobs[0].tasks[0].instrument_selection = Some(InstrumentSelection::Include {
         symbols: vec!["BTC-USD_UM-261030".into(), "BTC-USD_UM-261225".into()],
     });

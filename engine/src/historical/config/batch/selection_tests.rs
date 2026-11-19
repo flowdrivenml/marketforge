@@ -206,10 +206,8 @@ fn metadata_is_deferred_for_unencountered_family_candidates() {
 }
 #[test]
 fn active_fixture_contract_has_no_bounds_and_explicit_family_intent() {
-    let value: Value = serde_json::from_str(include_str!(
-        "../../../../tests/historical/fixtures/normalize.json"
-    ))
-    .unwrap();
+    let path = super::super::normalization_fixture::normalization_fixture_path();
+    let value: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert_eq!(value["schema_version"], 4);
     let mut count = 0;
     for job in value["jobs"].as_array().unwrap() {
@@ -292,4 +290,81 @@ fn family_expansion_cannot_allocate_an_unadmitted_fanout() {
     assert!(
         matches!(error.processing_cause(),crate::shared::error::MarketForgeError::ResourceLimit(e) if e.resource=="prepared expansion bytes" && e.scope.contains("job=41") && e.scope.contains("source task=900"))
     );
+}
+
+#[test]
+fn canonical_samples_keep_authority_and_are_independent_of_task_order() {
+    use super::super::normalization_fixture::{
+        canonical_normalization_batch, select_normalization_sample,
+    };
+    let mut batch = canonical_normalization_batch().unwrap();
+    let stream = "bitget.linear.perpetual.BTCUSDT.trades";
+    let sample = |batch: &PreparedBatch| {
+        select_normalization_sample(batch, stream, ContentType::Trades, 2, |task| {
+            task.stream_id.0 == stream
+        })
+        .unwrap()
+    };
+    let selected = sample(&batch);
+    assert_eq!(selected.instrument_namespace, batch.instrument_namespace);
+    assert_eq!(selected.instruments.len(), batch.instruments.len());
+    assert_eq!(selected.families.len(), batch.families.len());
+    let expected_ids = selected.jobs[0]
+        .tasks
+        .iter()
+        .map(|task| task.task_id)
+        .collect::<Vec<_>>();
+    let resolved = resolved(&selected);
+    for (input, task) in selected.jobs[0].tasks.iter().zip(&resolved.tasks) {
+        assert_eq!(task.input_path, input.input_path);
+        assert_eq!(task.instrument_id, input.instrument_id.unwrap());
+        assert_eq!(task.stream_id.0, stream);
+        assert_eq!(
+            task.raw_schema["marketforge_source"]["instrument_namespace"],
+            selected.instrument_namespace
+        );
+    }
+    batch.jobs.reverse();
+    for job in &mut batch.jobs {
+        job.tasks.reverse();
+    }
+    assert_eq!(
+        serde_json::to_value(sample(&batch)).unwrap(),
+        serde_json::to_value(selected).unwrap()
+    );
+    assert_eq!(
+        resolved
+            .tasks
+            .iter()
+            .map(|task| task.task_id)
+            .collect::<Vec<_>>(),
+        expected_ids
+    );
+    let error = select_normalization_sample(
+        &batch,
+        "missing exchange and stream",
+        ContentType::Trades,
+        1,
+        |_| false,
+    )
+    .unwrap_err();
+    assert!(error.contains("normalize.json"));
+    assert!(error.contains("missing exchange and stream"));
+    assert!(error.contains("maximum 0"));
+
+    let family = batch
+        .families
+        .iter()
+        .find(|f| f.exchange == Exchange::Okx && f.identifier == "BTC-USD_UM")
+        .unwrap();
+    let derived =
+        select_normalization_sample(&batch, "OKX BTC-USD_UM", ContentType::Trades, 1, |task| {
+            task.scope.as_ref().and_then(|scope| scope.family_id) == Some(family.family_id)
+        })
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&derived.families).unwrap(),
+        serde_json::to_value(&batch.families).unwrap()
+    );
+    assert!(derived.jobs[0].tasks[0].instrument_selection.is_some());
 }

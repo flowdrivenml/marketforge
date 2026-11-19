@@ -1,12 +1,15 @@
 //! Tiny production-executor regressions. No archive fixture is read: only its
 //! configuration metadata selects existing profiles; source bytes are synthetic.
 use crate::historical::{
-    config::{FormatCatalog, read_prepared_batch, selection_test_support as support},
-    job::{ContentType, InstrumentKind},
+    config::{
+        FormatCatalog,
+        normalization_fixture::{canonical_normalization_batch, select_normalization_sample},
+        selection_test_support as support,
+    },
+    job::ContentType,
     normalize::*,
 };
 use crate::shared::{
-    domain::canonical::Exchange,
     io::container::SourceContainer,
     persistence::parquet::{read_depth_segments, read_depth_stream_boundaries},
 };
@@ -15,31 +18,20 @@ pub(super) fn setup(
     depth: bool,
     root: &std::path::Path,
 ) -> (crate::historical::job::ProcessingJob, ProcessingConfig) {
-    let b = read_prepared_batch(
-        "engine/tests/historical/fixtures/normalize.json",
-        support::root(),
+    let (kind, stream) = if depth {
+        (ContentType::Depth, "bybit.spot.spot.BTCUSDT.depth")
+    } else {
+        (ContentType::Trades, "bybit.spot.spot.BTCUSDT.trades")
+    };
+    let b = select_normalization_sample(
+        &canonical_normalization_batch().unwrap(),
+        stream,
+        kind,
+        2,
+        |task| task.stream_id.0 == stream,
     )
     .unwrap();
-    let mut j = b
-        .jobs
-        .iter()
-        .find(|j| {
-            j.output.content_type
-                == if depth {
-                    ContentType::Depth
-                } else {
-                    ContentType::Trades
-                }
-        })
-        .unwrap()
-        .clone();
-    j.tasks.retain(|t| {
-        t.exchange == Exchange::Bybit
-            && t.instrument_type == InstrumentKind::Spot
-            && t.symbol.as_deref() == Some("BTCUSDT")
-    });
-    j.tasks.truncate(2);
-    assert_eq!(j.tasks.len(), 2);
+    let mut j = b.jobs[0].clone();
     j.output.dataset_path = root.join("dataset");
     j.output.staging_path = root.join("staging");
     let mut config = support::runtime();

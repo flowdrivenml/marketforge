@@ -77,23 +77,9 @@ The current prepared fixture contains five exchanges.
 
 This describes the current test workload, not necessarily every format supported by the wider MarketForge platform.
 
-### Exchange-specific fixtures
+### Exchange-specific selections
 
-```text
-normalize_binance.json
-normalize_bybit.json
-normalize_bitget.json
-normalize_gateio.json
-normalize_okx.json
-```
-
-The original combined fixture is:
-
-```text
-normalize.json
-```
-
-These fixtures allow independent exchange-level investigations without executing the entire workload.
+`engine/tests/historical/fixtures/normalize.json` is the authoritative prepared batch. The Rust test helpers derive exchange and stream subsets in memory while retaining the batch's identity namespace, instrument catalog, and family definitions. A path-based test can serialize its validated subset to an isolated run directory.
 
 ---
 
@@ -1258,13 +1244,13 @@ These count task outcomes and are distinct from the dashboard's broader task-sta
 
 ## 23. Normalization CLI Parameters
 
-The normalization command used in the current workflow is:
+For an isolated Bybit run, set `PATH_TO_DERIVED_BATCH` to a prepared Bybit subset of the canonical batch. The interactive command is:
 
 ```bash
 ./engine/target/release/marketforge-normalize \
   --project-root . \
   --config data/.config/historical/general.toml \
-  --batch engine/tests/historical/fixtures/normalize_bybit.json \
+  --batch "$PATH_TO_DERIVED_BATCH" \
   --output-root "data/tests/historical/normalize/bybit/$(date +%Y%m%d-%H%M%S)" \
   --tui
 ```

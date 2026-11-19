@@ -13,3 +13,5 @@ pub fn root() -> std::path::PathBuf {
 pub mod depth_assertions;
 pub mod migration;
 pub mod profile_cases;
+use marketforge_engine as fixture_engine;
+pub(crate) mod normalization_fixture;

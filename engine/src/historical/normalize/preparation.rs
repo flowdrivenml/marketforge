@@ -288,32 +288,19 @@ impl Preparations {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::historical::{
-        config::{FormatCatalog, read_prepared_batch, selection_test_support as support},
-        job::{ContentType, InstrumentKind},
+    use crate::historical::config::{
+        FormatCatalog, normalization_fixture::bitget_trade_sources,
+        selection_test_support as support,
     };
     use std::{io::Write, time::Duration};
     #[test]
     fn independent_sources_make_progress_before_consumption_and_cancel_without_permit_deadlock() {
         let root = tempfile::tempdir().unwrap();
-        let batch = read_prepared_batch(
-            "engine/tests/historical/fixtures/normalize_bitget.json",
-            &support::root(),
-        )
-        .unwrap();
-        let mut job = batch
-            .jobs
-            .iter()
-            .find(|j| j.output.content_type == ContentType::Trades)
-            .unwrap()
-            .clone();
-        job.tasks
-            .retain(|t| t.instrument_type == InstrumentKind::Perpetual);
-        job.tasks.truncate(2);
+        let batch = bitget_trade_sources(false, 2).unwrap();
         let config = support::runtime();
         let mut job = batch
             .resolve_job(
-                &job,
+                &batch.jobs[0],
                 &FormatCatalog::load(support::root().join("data/.config/historical")).unwrap(),
                 &config,
                 &support::root(),
