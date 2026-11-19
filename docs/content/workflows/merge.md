@@ -1,14 +1,14 @@
 # Merge registered normalized files
-Check [supported layouts](#supported-layouts) before choosing inputs. Use dataset inspection to confirm one compatible stream, its publication identity and the required primary parts.
+Check [supported layouts](#supported-layouts) before choosing inputs. Use dataset inspection to confirm concrete stream ownership, publication identities, and required primary parts.
 
-Install the managed merge binary with `mf engine build merge`. Use the [configured testing PostgreSQL registry](../getting-started/installation.md#postgresql-credentials) for discovery and preparation.
+Install the managed merge binary with `mf engine build merge 2>&1 | cpout`. Use the [configured testing PostgreSQL registry](../getting-started/installation.md#postgresql-credentials) for discovery and preparation.
 
 ## Start from a normalization recipe
 
 ```bash
-mf merge new first_merge --from-normalize engine_test --testing
-mf merge validate first_merge
-mf merge prepare first_merge --testing
+mf merge new first_merge --from-normalize engine_test --testing 2>&1 | cpout
+mf merge validate first_merge 2>&1 | cpout
+mf merge prepare first_merge --testing 2>&1 | cpout
 ```
 
 `new` reads the existing managed normalization recipe and creates `data/.config/historical/merge/first_merge.toml`. A TOML path also works as the source. Creation is exclusive and reports matching registered files and known blockers. `validate` checks recipe structure without a database connection. `prepare` resolves the live registry and validates the resulting job with Rust. Both creation and preparation stop before processing.
@@ -54,7 +54,7 @@ Missing requests, incomplete inputs and unresolved publication choices can block
 ## Select file dataset IDs explicitly
 
 ```bash
-mf merge new manual_merge
+mf merge new manual_merge 2>&1 | cpout
 ```
 
 Edit `data/.config/historical/merge/manual_merge.toml`. Use either this explicit format or the source-derived format for each recipe. Replace the illustrative IDs with file dataset IDs returned by normalization registration or `mf datasets list --testing` and set the requested half-open interval in integer nanoseconds.
@@ -66,9 +66,9 @@ end_ns = 1727769600000000000
 ```
 
 ```bash
-mf merge validate manual_merge
-mf merge prepare manual_merge --testing
-mf merge run manual_merge --testing
+mf merge validate manual_merge 2>&1 | cpout
+mf merge prepare manual_merge --testing 2>&1 | cpout
+mf merge run manual_merge --testing 2>&1 | cpout
 mf merge run manual_merge --testing --tui
 ```
 
@@ -76,9 +76,21 @@ Choose one run command. Both modes prepare one `MergeJob`, submit it, verify the
 
 ## Selection and runtime
 
-Explicit recipes preserve their listed file order. Source-derived recipes use a stable market-identity ordering. The public JSON contains `job_id`, `operation`, `inputs`, `time_range` and `output`. Each entry in `inputs` has the PostgreSQL file `dataset_id`, its absolute `path` and `sha256`, and a `publication` object with `engine_dataset_id` (a decimal string), `manifest_path` and `manifest_sha256`. The manifest describes source ownership and auxiliary artifacts. Its presence does not guarantee that a single selected depth file has enough reconstruction state.
+Explicit-file recipes assign priority in order of the first file listed for each stream. Source-derived recipes use the first matching normalization request, with expanded members ordered by canonical stream ID. Streams without a matching request use ascending canonical stream ID. The preparation report shows stream IDs, content types, ranks, and file counts alongside separate totals for files, streams, and publications.
 
-Set execution options in `data/.config/historical/general.toml`. The Rust CLI uses `--config PATH` to override that location. The shared configuration supplies worker count, memory budget, open-file limit, and Parquet sizes. Merge requires whole-MiB byte budgets. The optional merge settings default to the values below.
+Either recipe may override selected priorities using a top-level TOML table. Quote canonical IDs to keep punctuation literal. Unspecified streams take the lowest unused ranks in their default order.
+
+```toml
+[stream_ranks]
+"binance.inverse.perpetual.BTCUSD_PERP.trades" = 3
+"binance.linear.future.BTCUSDT_261225.trades" = 7
+```
+
+Forge uses the committed manifest's file ownership and content type. Older task-layout publications supply their single stream through the checksummed processing job. The public JSON carries each selected file's `stream_id`, `stream_rank`, and `content_type` with its existing file ID, SHA-256, path, and publication pin. Depth appears as `depth` in the job and as `order_book_l2` in recipe discovery filters. Use the exact reported stream ID in overrides. For the full schema, see the [prepared job reference](../reference/prepared.md#merge-jobs).
+
+Rust verifies every selected primary and its owning stream against the pinned publication. Files in one stream repeat its assigned rank. Lower ranks receive priority at equal timestamps across streams. This priority expresses a merge policy. Original source order and task-local row references are preserved within a stream. Removing files to run a trades-only or depth-only selection can leave gaps in the ranks. Preserve those ranks when preparing a filtered job under a new output path.
+
+Normalization, merge, and conversion resolve the default runtime from `data/.config/historical/general.toml` under the selected project root. Direct merge and conversion accept `--config PATH` and resolve relative overrides against `--project-root`. Merge uses workers, memory, open files, partitioning, and Parquet settings. The optional merge table defaults to the values below.
 
 ```toml
 [merge]
@@ -86,21 +98,21 @@ partitions_per_worker = 4
 compression_level = 3
 ```
 
-Rust verifies the selected files and their owning manifests. Forge retains registry and source-recipe evidence in the preparation report. To submit the same job later, use `mf merge run data/runs/PREPARE_ID/merge-job.json --testing`, replacing `PREPARE_ID` with the preparation directory. The job JSON carries no runtime overrides.
+Forge copies and checksums the TOML at preparation. Execution pins a copy in its execution directory, rejects configuration drift for a prepared job, and passes that same copy to Rust for validation and execution. The intent records the TOML checksum and resolved settings. The committed `merge-runtime.json` records effective settings and its SHA-256 is in `publication-checksums.json`. A direct job-file run without a preparation report pins the runtime at launch. Re-prepare after changes to ranks, binary, or runtime. Older submissions require regeneration with `mf merge prepare RECIPE --testing`.
 
 ## Supported layouts
 
-Managed merge accepts v3 single-stream inputs and can select one concrete trade stream from a timestamp-first v4/v5 publication with contiguous source ownership and no repeated source spans. Supported trade selections may contain one part, several parts of the same stream, or parts from different publications. The current engine accepts one selected stream per publication. Native-order or interleaved trade layouts and already-combined inputs are unsupported.
+A timestamp-ordered v4/v5 trade publication may contribute multiple concrete streams and multiple parts per stream. Each selected stream must have contiguous source spans with no repeated task spans. Compatible consecutive trade publications can share one rank when the exact stream ID and instrument namespace agree and the committed task metadata describes the same instrument. Publications without a verified namespace remain distinct. Equal or overlapping timestamps at a cross-publication boundary for the same stream are ambiguous and rejected. Each row retains its original publication, task, and task-local offset.
 
-Depth currently requires a compatible single-stream v3 publication and explicit selection of all its primary files for reconstruction. Rust reads the shared auxiliary state from the publication. Requests missing required primary parts are rejected before processing.
+Depth-only and combined execution support compatible single-stream v3 depth publications with all primary parts needed for reconstruction. Native-order v5 depth remains incompatible with the current timestamp-ordered merge timeline. The v5 indexes, segments, and boundary files describe native-order reconstruction, and the canonical recording contains timestamp regressions. Supporting this layout requires dependency-aware replay of selected parts and a timeline contract that can preserve causal update order through a regression. Sorting those updates by timestamp would alter reconstruction. Replay of segmented v4/v5 depth remains guarded, including timestamp-ordered layouts.
 
 ### Merge tests
 
 The ordinary `historical_merge` target runs under the `historical` feature using source-controlled and generated fixtures. It requires no local datasets, PostgreSQL, or prior normalization.
 
 ```bash
-cargo test --manifest-path engine/Cargo.toml --features historical --test historical_merge -- --list
-cargo test --manifest-path engine/Cargo.toml --features historical --test historical_merge -- --nocapture
+cargo test --manifest-path engine/Cargo.toml --features historical --test historical_merge -- --list 2>&1 | cpout
+cargo test --manifest-path engine/Cargo.toml --features historical --test historical_merge -- --nocapture 2>&1 | cpout
 ```
 
 Reference bounds, event kinds, duplicate identities and zero-change events use typed inventories. Stream metadata, provenance, partitioning, checkpoint reconstruction, publication and corruption cases use test-owned fixtures. Their primary files use production Arrow schemas and their processing-job checksums are local to each temporary directory. The production combined rotation case uses four primary files and 16,390 total events to cross one materialization window and rotate at the minimum configured 1 MiB file target.
@@ -110,16 +122,16 @@ Reference bounds, event kinds, duplicate identities and zero-change events use t
 Opt-in tests derive their selections from `engine/tests/historical/fixtures/merge.json`. They require the pinned normalized manifests, selected Parquet files, and applicable processing provenance and sidecars. To use an identical relocated copy, set `MARKETFORGE_MERGE_FIXTURE_FROM` and `MARKETFORGE_MERGE_FIXTURE_TO` to absolute path prefixes. Both primary and manifest paths relocate together. The tests verify the existing checksums and require no PostgreSQL connection.
 
 ```bash
-cargo test --manifest-path engine/Cargo.toml --features historical --test historical_merge bounded_recorded:: -- --ignored --nocapture
-cargo test --manifest-path engine/Cargo.toml --features historical --test historical_merge validates_real_ -- --ignored --nocapture
-cargo test --manifest-path engine/Cargo.toml --features historical --test historical_merge merges_two_bounded_recorded_trade_streams -- --ignored --nocapture
+cargo test --manifest-path engine/Cargo.toml --features historical --test historical_merge bounded_recorded:: -- --ignored --nocapture 2>&1 | cpout
+cargo test --manifest-path engine/Cargo.toml --features historical --test historical_merge validates_real_ -- --ignored --nocapture 2>&1 | cpout
+cargo test --manifest-path engine/Cargo.toml --features historical --test historical_merge merges_two_bounded_recorded_trade_streams -- --ignored --nocapture 2>&1 | cpout
 ```
 
 Explicit requests fail with the missing prerequisite when a pinned artifact is absent. The checks select their inputs before opening primary Parquet or resolving the runtime job.
 
 The workload guard caps runtime resolution at four selected files. Trade compatibility reads primaries of up to 256 rows and 1 MiB each. The K-way case compares trades from two concrete streams. The v5 trade commit case compares physical values with the selected source Parquet using one and two workers. The depth reference check compares 16 index events starting at an initialization. It caps the selected primary at 8 MiB and also caps sidecar bytes, row-group size and snapshot levels. The miniature fixtures exercise depth reconstruction and combined publication.
 
-Separate bounded probes verify the guards for missing depth reconstruction dependencies and replay of multiple concrete ranks from one publication. The cursor performance comparison remains ignored in the ordinary target. Bounded partition comparisons and publication tests replace the former full-day equivalence and full canonical execution cases.
+The bounded trade probe commits two ranks from one v5 publication. Separate depth and mixed probes cover rejection for missing reconstruction dependencies. The ordinary suite checks equal-time rank order, input permutations, sparse ranks, and unchanged original row offsets. The cursor performance comparison remains ignored in the ordinary target. Bounded partition comparisons and publication tests replace the former full-day equivalence and full canonical execution cases.
 
 Launch a **validated** prepared job with the TUI by substituting its path for `PATH_TO_VALIDATED_JOB`. The direct Rust command publishes files. Forge is responsible for PostgreSQL registration.
 
@@ -129,19 +141,15 @@ cargo run --manifest-path engine/Cargo.toml --locked --features historical,monit
 
 ## Publication and recovery
 
-A recipe uses a fresh output under `data/datasets/merged/<engine-job-id>` relative to the configured data root. Rust publishes the validated physical timeline, manifest, resolved job, input manifest checksums and physical validation evidence atomically. Forge revalidates the committed physical Parquet and byte fingerprints and registers each primary output in `historical.datasets` under one shared publication. Selected input file IDs are retained as publication-scope lineage.
+A recipe uses a fresh output under `data/datasets/merged/<engine-job-id>` relative to the configured data root. Rust publishes the validated physical timeline, manifest, resolved job, effective runtime, input manifest checksums and physical validation evidence atomically. Forge revalidates the committed physical Parquet and byte fingerprints and registers each primary output in `historical.datasets` under one shared publication. Selected input file IDs are retained as publication-scope lineage.
 
 The report under `data/runs/merge-execute-*/execution-result.json` distinguishes execution, verification and database registration. A complete report includes each file dataset ID and its path. Failed or interrupted runs return nonzero. One merge job publishes one output.
 
 After a power loss or database error, retry registration by passing the execution intent, committed directory, its `manifest.json`, or a particular primary file path.
 
 ```bash
-mf merge register data/runs/MERGE_EXECUTION_ID/execution-intent.json --testing
-mf merge register data/datasets/merged/ENGINE_JOB_ID --testing
+mf merge register data/runs/MERGE_EXECUTION_ID/execution-intent.json --testing 2>&1 | cpout
+mf merge register data/datasets/merged/ENGINE_JOB_ID --testing 2>&1 | cpout
 ```
 
 Registration-only recovery checks the output and required input lineage again. Identical retries reuse the database ID.
-
-### Empty processing partitions
-
-A job can pass preparation and still fail with `merge stream resource estimation requires at least one active stream` when the requested interval is much wider than the selected observations. This occurred in the one-trade synthetic example with a full-day interval. The same input successfully merged over its one-nanosecond observed interval. Inspect the preparation report's observed bounds and narrow the interval when that matches your intent.

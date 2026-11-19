@@ -90,11 +90,14 @@ def test_merged_membership_reads_only_file_local_streams(tmp_path: Path) -> None
     pa = pytest.importorskip("pyarrow")
     pq = pytest.importorskip("pyarrow.parquet")
     pq.write_table(
-        pa.table({"stream_rank": [0, 1, 1], "event_timestamp_ns": [2, 3, 4]}),
+        pa.table(
+            {"dataset_id": [20, 21, 21], "stream_rank": [0, 1, 1], "event_timestamp_ns": [2, 3, 4]}
+        ),
         tmp_path / "part.parquet",
     )
     pq.write_table(
-        pa.table({"stream_rank": [1], "event_timestamp_ns": [8]}), tmp_path / "next.parquet"
+        pa.table({"dataset_id": [21], "stream_rank": [1], "event_timestamp_ns": [8]}),
+        tmp_path / "next.parquet",
     )
     streams = [
         {

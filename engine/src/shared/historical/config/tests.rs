@@ -322,3 +322,22 @@ fn performance_settings_default_validate_and_roundtrip() {
     let typed_events = load(&text.replace("typed_trades", "typed_events")).unwrap();
     assert_eq!(typed_events.scratch_format, ScratchFormat::TypedEvents);
 }
+
+#[test]
+fn shared_runtime_preserves_operation_specific_validation() {
+    let root = TempDir::new().unwrap();
+    let path = Path::new("runtime.toml");
+    fs::write(
+        root.path().join(path),
+        format!("{TOML}\n[merge]\npartitions_per_worker = 0\n"),
+    )
+    .unwrap();
+    let normalization = load_processing_config(path, root.path()).unwrap();
+    let (conversion, parquet) = load_conversion_runtime_settings(path, root.path()).unwrap();
+    assert_eq!(conversion.workers, normalization.resources.workers);
+    assert_eq!(
+        parquet.row_group_target_mb * 1024 * 1024,
+        normalization.resources.parquet.row_group_target_bytes
+    );
+    assert!(load_merge_runtime_settings(path, root.path()).is_err());
+}

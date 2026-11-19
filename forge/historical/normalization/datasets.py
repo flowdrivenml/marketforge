@@ -20,17 +20,24 @@ from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
 
-def verify(paths: ProjectPaths, source: Path, *, binary: Path | None = None) -> dict[str, Any]:
+def verify(
+    paths: ProjectPaths,
+    source: Path,
+    *,
+    binary: Path | None = None,
+    selected_files: set[str] | None = None,
+) -> dict[str, Any]:
     root = source.parent if source.name == "manifest.json" else source
     if root.is_symlink():
         raise MarketForgeError("Dataset root must not be a symlink.")
     root = root.resolve()
     manifest_path = root / "manifest.json"
-    response = supervised(
-        [str(binary or resolve(paths)), "--validate-dataset", str(root)], cwd=paths.root
-    )
-    if response.returncode:
-        raise MarketForgeError(f"Rust committed-output validation failed: {response.stdout}")
+    if selected_files is None:
+        response = supervised(
+            [str(binary or resolve(paths)), "--validate-dataset", str(root)], cwd=paths.root
+        )
+        if response.returncode:
+            raise MarketForgeError(f"Rust committed-output validation failed: {response.stdout}")
     manifest = json.loads(manifest_path.read_bytes())
     if manifest.get("protocol_version") not in {3, 4, 5} or manifest.get(
         "integrity_status"
@@ -56,15 +63,25 @@ def verify(paths: ProjectPaths, source: Path, *, binary: Path | None = None) -> 
         != manifest["end_timestamp_ns"]
     ):
         raise MarketForgeError("Manifest inventory totals or coverage disagree.")
+    auxiliary = manifest.get("auxiliary_files", [])
+    if selected_files is not None:
+        directories = {Path(name).parent for name in selected_files}
+        auxiliary = [
+            item
+            for item in auxiliary
+            if manifest["content_type"] == "depth" and Path(item["path"]).parent in directories
+        ]
     inventory = verify_inventory(
         root,
-        files + manifest.get("auxiliary_files", []),
+        [file for file in files if selected_files is None or file["path"] in selected_files]
+        + auxiliary,
         (
             "manifest.json",
             "processing-job.json",
             "processing-runtime.json",
         ),
-        require_commit_checksums=binary is not None,
+        require_commit_checksums=binary is not None or selected_files is not None,
+        selected_only=selected_files is not None,
     )
     if (
         job.get("operation") != "process"
@@ -106,6 +123,7 @@ def verify_inventory(
     metadata: tuple[str, ...],
     *,
     require_commit_checksums: bool,
+    selected_only: bool = False,
 ) -> dict[str, str]:
     sizes = {item["path"]: item["size_bytes"] for item in entries}
     if len(sizes) != len(entries) or set(sizes).intersection(metadata):
@@ -135,10 +153,9 @@ def verify_inventory(
         extras = set(stored) - result.keys() if isinstance(stored, dict) else set()
         normalized_provenance = {"processing-job.sha256", "processing-runtime.sha256"}
         if (
-            extras == normalized_provenance
-            and {"processing-job.json", "processing-runtime.json"} <= result.keys()
-        ):
-            for name in sorted(extras):
+            extras >= normalized_provenance if selected_only else extras == normalized_provenance
+        ) and {"processing-job.json", "processing-runtime.json"} <= result.keys():
+            for name in sorted(normalized_provenance):
                 artifact = root / name
                 if (
                     not artifact.is_file()
@@ -147,7 +164,13 @@ def verify_inventory(
                 ):
                     raise MarketForgeError(f"Unsafe checksum provenance: {name}")
                 result[name] = checksum(artifact)
-    if (has_sidecar and stored != result) or (require_commit_checksums and not has_sidecar):
+    matches = (
+        isinstance(stored, dict)
+        and all(stored.get(name) == digest for name, digest in result.items())
+        if selected_only
+        else stored == result
+    )
+    if (has_sidecar and not matches) or (require_commit_checksums and not has_sidecar):
         raise MarketForgeError("Publication checksums are missing or disagree with the output.")
     return result
 

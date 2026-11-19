@@ -119,48 +119,78 @@ pub struct MergeRuntimeSettings {
 }
 
 pub fn load_merge_runtime_settings(path: &Path, root: &Path) -> Result<MergeRuntimeSettings> {
-    use crate::historical::job::{MergeParquetConfig, MergePartitioning, MergeResources};
+    use crate::historical::job::MergePartitioning;
     let (config, merge) = load_runtime(path, root)?;
-    let resources = config.resources;
-    let mb = |bytes: u64, field: &str| -> Result<u64> {
-        const MIB: u64 = 1024 * 1024;
-        if bytes % MIB != 0 {
-            return invalid(&format!(
-                "merge requires {field} to be a whole number of MiB"
-            ));
-        }
-        Ok(bytes / MIB)
-    };
     if merge.partitions_per_worker == 0 || !(1..=22).contains(&merge.compression_level) {
         return invalid("invalid merge partition count or ZSTD compression level");
     }
-    if resources
+    if config
+        .resources
         .workers
         .checked_mul(merge.partitions_per_worker)
         .is_none()
     {
         return invalid("merge partition count overflow");
     }
+    let (resources, parquet) = runtime_io_settings(config.resources, merge.compression_level)?;
     Ok(MergeRuntimeSettings {
-        resources: MergeResources {
-            workers: resources.workers,
-            memory_limit_mb: mb(resources.memory_budget_bytes, "memory_budget_bytes")?,
-            max_open_files: usize::try_from(resources.normalization_limits.open_files).map_err(
-                |_| MarketForgeError::InvalidConfiguration("merge open-file limit overflow".into()),
-            )?,
-        },
+        resources,
         partitioning: MergePartitioning {
             partitions_per_worker: merge.partitions_per_worker,
         },
-        parquet: MergeParquetConfig {
+        parquet,
+    })
+}
+
+pub fn load_conversion_runtime_settings(
+    path: &Path,
+    root: &Path,
+) -> Result<(
+    crate::historical::job::MergeResources,
+    crate::historical::job::MergeParquetConfig,
+)> {
+    let config = load_processing_config(path, root)?;
+    runtime_io_settings(config.resources, 3)
+}
+
+fn runtime_io_settings(
+    resources: ResourceConfig,
+    compression_level: i32,
+) -> Result<(
+    crate::historical::job::MergeResources,
+    crate::historical::job::MergeParquetConfig,
+)> {
+    use crate::historical::job::{MergeParquetConfig, MergeResources};
+    let mb = |bytes: u64, field: &str| -> Result<u64> {
+        const MIB: u64 = 1024 * 1024;
+        if bytes % MIB != 0 {
+            return invalid(&format!(
+                "historical runtime requires {field} to be a whole number of MiB"
+            ));
+        }
+        Ok(bytes / MIB)
+    };
+    Ok((
+        MergeResources {
+            workers: resources.workers,
+            memory_limit_mb: mb(resources.memory_budget_bytes, "memory_budget_bytes")?,
+            max_open_files: usize::try_from(resources.normalization_limits.open_files).map_err(
+                |_| {
+                    MarketForgeError::InvalidConfiguration(
+                        "historical runtime open-file limit overflow".into(),
+                    )
+                },
+            )?,
+        },
+        MergeParquetConfig {
             row_group_target_mb: mb(
                 resources.parquet.row_group_target_bytes,
                 "row_group_target_bytes",
             )?,
             file_target_mb: mb(resources.parquet.file_target_bytes, "file_target_bytes")?,
-            compression_level: merge.compression_level,
+            compression_level,
         },
-    })
+    ))
 }
 
 /// Canonicalize a real project directory, without changing the process CWD.

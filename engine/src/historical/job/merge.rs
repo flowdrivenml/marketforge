@@ -22,6 +22,9 @@ pub struct MergeJobDocument {
 #[serde(deny_unknown_fields)]
 pub struct MergeFileInput {
     pub dataset_id: u64,
+    pub stream_id: String,
+    pub stream_rank: u32,
+    pub content_type: super::ContentType,
     pub path: PathBuf,
     pub sha256: String,
     pub publication: MergePublication,
@@ -70,7 +73,12 @@ impl MergeJobDocument {
         let mut publications = HashMap::new();
         for input in &self.inputs {
             let publication = &input.publication;
-            if input.dataset_id == 0
+            if input.stream_id.is_empty()
+                || !matches!(
+                    input.content_type,
+                    super::ContentType::Trades | super::ContentType::Depth
+                )
+                || input.dataset_id == 0
                 || !ids.insert(input.dataset_id)
                 || !paths.insert(&input.path)
                 || publication.engine_dataset_id == 0

@@ -188,7 +188,8 @@ fn assert_transactional_commit(
                 "publication-checksums.json",
                 "merge-job.json",
                 "merge-input-checksums.json",
-                "merge-partitions.json"
+                "merge-partitions.json",
+                "merge-runtime.json"
             ]
             .map(str::to_owned)
         ),
@@ -304,4 +305,22 @@ fn commits_generated_trade_merge() {
 #[test]
 fn commits_generated_combined_merge() {
     assert_transactional_commit(&[111, 109], &[105, 112], UnifiedMergeMode::Combined, 8, 8);
+}
+
+#[test]
+fn commits_depth_only_with_its_sparse_explicit_rank() {
+    let root = tempfile::tempdir().unwrap();
+    let mut job = crate::publication::make_job(root.path(), &[], &[105]);
+    for input in &mut job.inputs {
+        input.stream_rank = 7;
+    }
+    let resolved = crate::merge_test_job::bounded_runtime(job);
+    let result = execute_unified_merge_job(&resolved, root.path()).unwrap();
+    assert_eq!(result.mode, UnifiedMergeMode::Depth);
+    assert!(result.depth_events > 0);
+    assert_eq!(result.trade_events, 0);
+    let manifest: PhysicalMergeManifest =
+        serde_json::from_reader(File::open(result.manifest_path).unwrap()).unwrap();
+    assert_eq!(manifest.streams[0].stream_rank, 7);
+    marketforge_engine::historical::merge::validate_committed_merge(&result.dataset_path).unwrap();
 }

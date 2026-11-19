@@ -83,6 +83,12 @@ impl MergeEventRef {
             event_ordinal: self.event_ordinal(),
         }
     }
+
+    pub(crate) fn ranked_merge_key(&self, stream_rank: u32) -> MergeKey {
+        // One cursor supplies each stream in source order. Task IDs and
+        // local ordinals have no ordering significance at source boundaries.
+        MergeKey::new(self.timestamp_ns(), stream_rank, 0, 0)
+    }
 }
 
 // -----------------------------------------------------------------------------

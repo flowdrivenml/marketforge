@@ -152,13 +152,13 @@ fn rejects_combined_mode_without_depth() {
 }
 
 #[test]
-fn rejects_invalid_stream_rank() {
+fn accepts_sparse_stream_rank() {
     let manifest = manifest(
         UnifiedMergeMode::Trades,
         vec![stream(5, 111, UnifiedMergeStreamKind::Trade)],
     );
 
-    assert!(manifest.validate().is_err());
+    manifest.validate().unwrap();
 }
 
 #[test]

@@ -4,6 +4,9 @@
   "inputs": [
     {
       "dataset_id": 119,
+      "stream_id": "binance.linear.future.BTCUSDT_261225.trades",
+      "stream_rank": 0,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/64e53facb2eadd4625bb99de0287b427654f70576fd31eb7b8dbf81387c64c8e/trades/part-000000.parquet",
       "sha256": "2d0b754cc11564a3d659624112956d80ff410b0a84fab8165f668080eb3f5ed6",
       "publication": {
@@ -14,6 +17,9 @@
     },
     {
       "dataset_id": 130,
+      "stream_id": "binance.inverse.perpetual.BTCUSD_PERP.trades",
+      "stream_rank": 1,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/ec8554e1e3f3889dbb2d762109868d898177aa9bc3553d3da8194c30ad9b1f6b/trades/part-000000.parquet",
       "sha256": "b60ba11742e828490a6f760804e062a3f6c4c552d8e5333ce0e237bfd065d02b",
       "publication": {
@@ -24,6 +30,9 @@
     },
     {
       "dataset_id": 114,
+      "stream_id": "binance.linear.perpetual.BTCUSDT.trades",
+      "stream_rank": 2,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/40ed3d938855f3e4886db989eeda319250e2a569cd5c94d86a97fb30ad2388b4/trades/part-000000.parquet",
       "sha256": "c0f941dc9e90cdf8a97c50d6b99842bd0c4d05aa8bff1ae5d5bdc7294ffe1f32",
       "publication": {
@@ -34,6 +43,9 @@
     },
     {
       "dataset_id": 128,
+      "stream_id": "binance.spot.spot.BTCUSDT.trades",
+      "stream_rank": 3,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/e67bef224bf03f5645cec69879dc7ce1a4b22465b1496dce970078dc2266d7b5/trades/part-000000.parquet",
       "sha256": "5646a72aa0d1b4d8a7bfb05497b1ae83d24542feb664e986a29a55cd53bfcb21",
       "publication": {
@@ -44,6 +56,9 @@
     },
     {
       "dataset_id": 133,
+      "stream_id": "bitget.linear.perpetual.BTCUSDT.trades",
+      "stream_rank": 4,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/f62bfc9d589c27cd765aff565b182fd7f214c50a93239af702bdf565572eee61/trades/part-000000.parquet",
       "sha256": "c609a4fbba1437c8cf84d2723be39a54b975e7819a9f2a44ae0897c254608bcb",
       "publication": {
@@ -54,6 +69,9 @@
     },
     {
       "dataset_id": 118,
+      "stream_id": "bitget.spot.spot.BTCUSDT.trades",
+      "stream_rank": 5,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/5bdea9d5a51ad45534d5f505afe6e67480a7488c303efb0f9695c3522cbb62f3/trades/part-000000.parquet",
       "sha256": "c2c01d7f26e984f50b832cd4fdf269c7dd1f6f38ab8a9e1ee7edd1cd17db540d",
       "publication": {
@@ -64,6 +82,9 @@
     },
     {
       "dataset_id": 124,
+      "stream_id": "bybit.linear.future.BTCUSDT-25DEC26.trades",
+      "stream_rank": 6,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/843d736e9747a840253356fbf401acd35e1ea65af821a7aa919281df8929c3e1/trades/part-000000.parquet",
       "sha256": "2e805508ee52073cca8c16f12fe3f7cda096ad064dc69b87fca688606657bef5",
       "publication": {
@@ -74,6 +95,9 @@
     },
     {
       "dataset_id": 120,
+      "stream_id": "bybit.inverse.perpetual.BTCUSD.trades",
+      "stream_rank": 7,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/6a41ec6771a55d3c206770fce0ab5b9c079ad9e6e0bfcc9f1d972f6eb8ccf6b2/trades/part-000000.parquet",
       "sha256": "2b593a8f986444517042e6515630ce949a289ed01dd15988c7281560d788a782",
       "publication": {
@@ -84,6 +108,9 @@
     },
     {
       "dataset_id": 127,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.trades",
+      "stream_rank": 8,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/dfa640b2cd1fedb81fd2551f1237c839161fe49d1ba25f42c15c308da51ca0aa/trades/part-000000.parquet",
       "sha256": "1e1fc2645d0c85bdc42ce03adafbb530955c2baa84553a6d1fc943a50a84e493",
       "publication": {
@@ -94,6 +121,9 @@
     },
     {
       "dataset_id": 115,
+      "stream_id": "bybit.spot.spot.BTCUSDT.trades",
+      "stream_rank": 9,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/4207c9d268ef090de6ac4a521d190d380092e492bdbbd94704fea3dde9e5f04f/trades/part-000000.parquet",
       "sha256": "0673cfbbf9de9fc593da2a23ea00389ce66fc0355c09ec89a157e58143c8c3cb",
       "publication": {
@@ -104,6 +134,9 @@
     },
     {
       "dataset_id": 123,
+      "stream_id": "bybit.spot.spot.ETHBTC.trades",
+      "stream_rank": 10,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/76672c99b88e6fc62d8c6cca081142e0e88dd3ae341f0a34550a40faa0657bc0/trades/part-000000.parquet",
       "sha256": "31396bab21e165b66c13f34b1d3f7ad97bc58b4da68f0cfce7d650862224ccd3",
       "publication": {
@@ -114,6 +147,9 @@
     },
     {
       "dataset_id": 126,
+      "stream_id": "bybit.spot.spot.ETHUSDC.trades",
+      "stream_rank": 11,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/d7b09ebe88578f144191e63bd18797ba0e7e0eb0b3faf38e4530bf99c10c49f5/trades/part-000000.parquet",
       "sha256": "16c5b8d4972259525b6196b9e7dcadf48012cdb7e006f236f38b13013bce63d4",
       "publication": {
@@ -124,6 +160,9 @@
     },
     {
       "dataset_id": 116,
+      "stream_id": "gateio.inverse.perpetual.BTC_USD.trades",
+      "stream_rank": 12,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/4577ace87286e8625f495e75d0e67798122b3376f9376c964a120ed520346de1/trades/part-000000.parquet",
       "sha256": "12fa73ca8987da8754d1af826bfe30d8cbd53caf76865ec26e738cab6ee5004a",
       "publication": {
@@ -134,6 +173,9 @@
     },
     {
       "dataset_id": 131,
+      "stream_id": "gateio.linear.perpetual.BTC_USDT.trades",
+      "stream_rank": 13,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/ecd88649a3b9a0502857458e775d44b300d8e83f6da92b7bf591afe9120b72e7/trades/part-000000.parquet",
       "sha256": "aae1aa3cf5f1341aa32db30d0c5c2ea12d1532494fa12e0568aa99d042a2ac3a",
       "publication": {
@@ -144,6 +186,9 @@
     },
     {
       "dataset_id": 122,
+      "stream_id": "gateio.spot.spot.BTC_USDT.trades",
+      "stream_rank": 14,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/73e79e355f3c41bf8b614509023855037a7295988841d4b42114af9e4a5ee96b/trades/part-000000.parquet",
       "sha256": "e9fca341e1aebdc28c88a35802a7b41069c686439d3cc44dc81b19bf9ac01037",
       "publication": {
@@ -154,6 +199,9 @@
     },
     {
       "dataset_id": 129,
+      "stream_id": "okx.linear.future.family:BTC-USD_UM.trades.instrument:BTC-USD_UM-261030",
+      "stream_rank": 15,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/e98d0947557a69831976fc735772c1e62f190829447c28f7c156c196a6a61fbd/trades/part-000000.parquet",
       "sha256": "7eebade32dedde198e3721887cc0c83ff111f6347bc265037c9649d6d68b79cd",
       "publication": {
@@ -164,6 +212,9 @@
     },
     {
       "dataset_id": 117,
+      "stream_id": "okx.linear.future.family:BTC-USD_UM.trades.instrument:BTC-USD_UM-261127",
+      "stream_rank": 16,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/5642d3de1dc91f65fc374617ef3a042b77c410281c59ddcf6c46fa639b07d4eb/trades/part-000000.parquet",
       "sha256": "dcdae69a8b104009673123ebc53bca5899532c0bec2cb57ed6b9d4e19b0bbec7",
       "publication": {
@@ -174,6 +225,9 @@
     },
     {
       "dataset_id": 111,
+      "stream_id": "okx.linear.future.family:BTC-USD_UM.trades.instrument:BTC-USD_UM-261225",
+      "stream_rank": 17,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/2f9b6fc246683b77b00812de8ca98c2f5257a59b30da125feb4cf51d43bbec95/trades/part-000000.parquet",
       "sha256": "12528f398be590a69fc9fd9166ff9e403ac0a1337a91db23948aeefe8c39874a",
       "publication": {
@@ -184,6 +238,9 @@
     },
     {
       "dataset_id": 132,
+      "stream_id": "okx.linear.future.family:BTC-USD_UM.trades.instrument:BTC-USD_UM-270326",
+      "stream_rank": 18,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/f0871222f3b2cc6708101c8db0069296fdc1eb0b1df1f671ac43f175a2f0cedc/trades/part-000000.parquet",
       "sha256": "0521e1d95c7f4f3db471e1abd39ef1ff476e695e862167edb025b352fa6e102a",
       "publication": {
@@ -194,6 +251,9 @@
     },
     {
       "dataset_id": 121,
+      "stream_id": "okx.inverse.perpetual.family:BTC-USD.trades.instrument:BTC-USD-SWAP",
+      "stream_rank": 19,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/7276cedc54639292cf28e2b001de3422c6601c144c4707dbb1bac905935f2c83/trades/part-000000.parquet",
       "sha256": "4f4fd996da67dbbd847cd21412971f5ed57054fd18181d2f325b5573f5706e4d",
       "publication": {
@@ -204,6 +264,9 @@
     },
     {
       "dataset_id": 125,
+      "stream_id": "okx.linear.perpetual.family:BTC-USDT.trades.instrument:BTC-USDT-SWAP",
+      "stream_rank": 20,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/aae78178647bc47a1c7e2bb04d96e46d0245345407d7e0cc08debfa442e777ac/trades/part-000000.parquet",
       "sha256": "ae82f5a182e68924f66f82871facc464cca403a3307b3114ce349941d5eddefd",
       "publication": {
@@ -214,6 +277,9 @@
     },
     {
       "dataset_id": 112,
+      "stream_id": "okx.spot.spot.BTC-USDT.trades",
+      "stream_rank": 21,
+      "content_type": "trades",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/7868739277080297142/streams/3dbf03dbceec254bda0344fcaf518b08501ee582e23c0e4dff3d1dda8ab449ee/trades/part-000000.parquet",
       "sha256": "2bcf542cfeebf8ef27689f79c2b6a0755699bcdef04128731163ec157b95f163",
       "publication": {
@@ -224,6 +290,9 @@
     },
     {
       "dataset_id": 96,
+      "stream_id": "bitget.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 22,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/e6395a9ce8b17f9883efb6b1bf90a4887156dcaea8c715e6a2c2d875aa6dd6c2/depth/part-000000.parquet",
       "sha256": "1bcb41b041cde24e4d4daa7d8bfc53db54102c3a18a7fc29060b04429c666daf",
       "publication": {
@@ -234,6 +303,9 @@
     },
     {
       "dataset_id": 97,
+      "stream_id": "bitget.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 22,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/e6395a9ce8b17f9883efb6b1bf90a4887156dcaea8c715e6a2c2d875aa6dd6c2/depth/part-000001.parquet",
       "sha256": "1c82c1c9ab4f83be75fe4155dc1ff052dabc7250a9df637b6d8778a957b3035c",
       "publication": {
@@ -244,6 +316,9 @@
     },
     {
       "dataset_id": 95,
+      "stream_id": "bitget.spot.spot.BTCUSDT.depth",
+      "stream_rank": 23,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/de0bd198f854fa04f716aba008cdebebaa2751b19952bf97d8d6313f66c627f6/depth/part-000000.parquet",
       "sha256": "2b641ca95ef4b3d3cce8fabc2e8cf85d6ebb4db16567ff1135130f0117417fff",
       "publication": {
@@ -254,6 +329,9 @@
     },
     {
       "dataset_id": 40,
+      "stream_id": "bybit.linear.future.BTCUSDT-25DEC26.depth",
+      "stream_rank": 24,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/00491b0884513b79d9c7ad80434dcb3fb5aec7a728935957ad264fa3029adc01/depth/part-000000.parquet",
       "sha256": "342a93cf5e307fc1ff826e31c47dd31a09e7559d03843f4e669198da69354e0a",
       "publication": {
@@ -264,6 +342,9 @@
     },
     {
       "dataset_id": 57,
+      "stream_id": "bybit.inverse.perpetual.BTCUSD.depth",
+      "stream_rank": 25,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/7aace8c2b6e5128e1290cf5d1cd5b0db13c155bca6042bbbb7619c143e051e0c/depth/part-000000.parquet",
       "sha256": "95552f361d4fe22ba3459ba805c5c1640a9d5493f3d9b551e9edea292f50cae1",
       "publication": {
@@ -274,6 +355,9 @@
     },
     {
       "dataset_id": 58,
+      "stream_id": "bybit.inverse.perpetual.BTCUSD.depth",
+      "stream_rank": 25,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/7aace8c2b6e5128e1290cf5d1cd5b0db13c155bca6042bbbb7619c143e051e0c/depth/part-000001.parquet",
       "sha256": "072d281bf0b4316d6ff5419e86148f40309f38e9e56e8fbb3fa0a9c41bf98fc1",
       "publication": {
@@ -284,6 +368,9 @@
     },
     {
       "dataset_id": 59,
+      "stream_id": "bybit.inverse.perpetual.BTCUSD.depth",
+      "stream_rank": 25,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/7aace8c2b6e5128e1290cf5d1cd5b0db13c155bca6042bbbb7619c143e051e0c/depth/part-000002.parquet",
       "sha256": "382d0d702999d15f019b51dab6c46144349851d7b5434fe62ae40bfe00bf8441",
       "publication": {
@@ -294,6 +381,9 @@
     },
     {
       "dataset_id": 60,
+      "stream_id": "bybit.inverse.perpetual.BTCUSD.depth",
+      "stream_rank": 25,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/7aace8c2b6e5128e1290cf5d1cd5b0db13c155bca6042bbbb7619c143e051e0c/depth/part-000003.parquet",
       "sha256": "9542ea3dab4996b693bd43f9328ed51f80e79aa1c02fc366e8bd3349f514de09",
       "publication": {
@@ -304,6 +394,9 @@
     },
     {
       "dataset_id": 61,
+      "stream_id": "bybit.inverse.perpetual.BTCUSD.depth",
+      "stream_rank": 25,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/7aace8c2b6e5128e1290cf5d1cd5b0db13c155bca6042bbbb7619c143e051e0c/depth/part-000004.parquet",
       "sha256": "82ef2978e46153bc294d1c8f5b95f69f5dad22f64d6a27157c3e9b3e1635b562",
       "publication": {
@@ -314,6 +407,9 @@
     },
     {
       "dataset_id": 63,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000000.parquet",
       "sha256": "6baa4083457aad614ff32a3ed42edcad24ac27b4b3c0b76997b413f4c6ee31d3",
       "publication": {
@@ -324,6 +420,9 @@
     },
     {
       "dataset_id": 64,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000001.parquet",
       "sha256": "09e10773e59c9a5b8a7608c2fea94d7e3cee142c31dfb10c2463f5850bccc1a3",
       "publication": {
@@ -334,6 +433,9 @@
     },
     {
       "dataset_id": 65,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000002.parquet",
       "sha256": "c1eb9e2d2ae0217d2417b46ca4a08738af5d35766675cd3f566f9d3b42cbc863",
       "publication": {
@@ -344,6 +446,9 @@
     },
     {
       "dataset_id": 66,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000003.parquet",
       "sha256": "bb4e4b4fca659fc27898f9f06c1b3abaf256aa86a87ae10c4c351df8db6347da",
       "publication": {
@@ -354,6 +459,9 @@
     },
     {
       "dataset_id": 67,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000004.parquet",
       "sha256": "0d10d676485acfcc6ccba9048f737ece140a556e586e226ffe50f845d77881d4",
       "publication": {
@@ -364,6 +472,9 @@
     },
     {
       "dataset_id": 68,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000005.parquet",
       "sha256": "956c9d6bd61580272be9792ffdc01eaf88ae0075a88ea822f7dc426a9caf6488",
       "publication": {
@@ -374,6 +485,9 @@
     },
     {
       "dataset_id": 69,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000006.parquet",
       "sha256": "5e163e3ac3c23be8f273049d222d05ae2466e2249caca4a040821a63f89715ce",
       "publication": {
@@ -384,6 +498,9 @@
     },
     {
       "dataset_id": 70,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000007.parquet",
       "sha256": "571c3532e4e4773c5df9095af4c4098ad0effca157538a34e5a7ad6efe6a165e",
       "publication": {
@@ -394,6 +511,9 @@
     },
     {
       "dataset_id": 71,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000008.parquet",
       "sha256": "784ed131818df3719d3f3b9db63e4a985203d7094c8505b355f146581e0cdafb",
       "publication": {
@@ -404,6 +524,9 @@
     },
     {
       "dataset_id": 72,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000009.parquet",
       "sha256": "ebdf0869b72508b0d4ff1c2b532da4c3ada07cabce56d76886784ca29efab7fb",
       "publication": {
@@ -414,6 +537,9 @@
     },
     {
       "dataset_id": 73,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000010.parquet",
       "sha256": "ce7206cf71dceaa451c46067451dabe59154aa919f538f1a7103fb7749c281d6",
       "publication": {
@@ -424,6 +550,9 @@
     },
     {
       "dataset_id": 74,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000011.parquet",
       "sha256": "23044465637f228f936a46d5de4c26810bb654ad32ed56cc636a7e9c5971b9e9",
       "publication": {
@@ -434,6 +563,9 @@
     },
     {
       "dataset_id": 75,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000012.parquet",
       "sha256": "cdb6bdff9fff1305413eac1179caa235238503c6633eb65bb0815d265c27d485",
       "publication": {
@@ -444,6 +576,9 @@
     },
     {
       "dataset_id": 76,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000013.parquet",
       "sha256": "e12e88f69d54a841fa114b9ea6a5a3a5d8f91c2af8667637c53db540e5608ea9",
       "publication": {
@@ -454,6 +589,9 @@
     },
     {
       "dataset_id": 77,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000014.parquet",
       "sha256": "0f3d618582226270f9163192b900d0062b782aa2f9621ed820bf40ea6f7135b6",
       "publication": {
@@ -464,6 +602,9 @@
     },
     {
       "dataset_id": 78,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000015.parquet",
       "sha256": "23c5a24469a743389591736b1447daf3948150b75096554f38ea51f4d9eb64a2",
       "publication": {
@@ -474,6 +615,9 @@
     },
     {
       "dataset_id": 79,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000016.parquet",
       "sha256": "6cd8975260c5fa8b696a8ff1deba09cd3a1e2aa2b5f78cc87fff43fc3551bdb2",
       "publication": {
@@ -484,6 +628,9 @@
     },
     {
       "dataset_id": 80,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000017.parquet",
       "sha256": "525757288cb6fb20703394f0f2fd452766d6e88313220da33816abfcffb2023a",
       "publication": {
@@ -494,6 +641,9 @@
     },
     {
       "dataset_id": 81,
+      "stream_id": "bybit.linear.perpetual.BTCUSDT.depth",
+      "stream_rank": 26,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/9cfb35e321b8101b7970651b841aef983fcb16d366e4776e3f3ebcd827d10209/depth/part-000018.parquet",
       "sha256": "48311516a841e18a76cf97c42dc7fd90c23427838af029332abd88eeddb32ea5",
       "publication": {
@@ -504,6 +654,9 @@
     },
     {
       "dataset_id": 44,
+      "stream_id": "bybit.spot.spot.BTCUSDT.depth",
+      "stream_rank": 27,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/4dfa13d26a3074672959f6f3d9a0568692b598a7038a76be419c8dc8b5c229e8/depth/part-000000.parquet",
       "sha256": "89d715fd65905ee2b3aa0884ba81464a50c5bae7c6b5aabf6cd0c4392132db0f",
       "publication": {
@@ -514,6 +667,9 @@
     },
     {
       "dataset_id": 45,
+      "stream_id": "bybit.spot.spot.BTCUSDT.depth",
+      "stream_rank": 27,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/4dfa13d26a3074672959f6f3d9a0568692b598a7038a76be419c8dc8b5c229e8/depth/part-000001.parquet",
       "sha256": "a46617d258b24ac34b8f639f6c5b6cc9d9c2abd30f01865d56f36a12b6a42cf8",
       "publication": {
@@ -524,6 +680,9 @@
     },
     {
       "dataset_id": 46,
+      "stream_id": "bybit.spot.spot.BTCUSDT.depth",
+      "stream_rank": 27,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/4dfa13d26a3074672959f6f3d9a0568692b598a7038a76be419c8dc8b5c229e8/depth/part-000002.parquet",
       "sha256": "3b21cc1f7aaf9918ee2122f89b7b9c8ee88d503d2b2a57ee6c60eb88eafeaa19",
       "publication": {
@@ -534,6 +693,9 @@
     },
     {
       "dataset_id": 47,
+      "stream_id": "bybit.spot.spot.BTCUSDT.depth",
+      "stream_rank": 27,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/4dfa13d26a3074672959f6f3d9a0568692b598a7038a76be419c8dc8b5c229e8/depth/part-000003.parquet",
       "sha256": "d05d508b4a221f30e8a0784eeedd87b49d7dc36805bc6f9a582d28477100c7ee",
       "publication": {
@@ -544,6 +706,9 @@
     },
     {
       "dataset_id": 94,
+      "stream_id": "bybit.spot.spot.ETHBTC.depth",
+      "stream_rank": 28,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/dcbd394e0d7796e0ade1ba33d445e9b640f35dffdd12d74ac82a12b3b7bed303/depth/part-000000.parquet",
       "sha256": "f3fc7fc1f62385afb87e86fe4f0ad06cab0090614bdcd2074eafcde5df97d4d4",
       "publication": {
@@ -554,6 +719,9 @@
     },
     {
       "dataset_id": 55,
+      "stream_id": "bybit.spot.spot.ETHUSDC.depth",
+      "stream_rank": 29,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/71fa4961d926126d691c9c8c5e6f6e0787f51344012b7c41d61cffde20dc4936/depth/part-000000.parquet",
       "sha256": "63a2d5f9dd0499531c088296b7dfb6ac3c9d798ecea8b71d9e0fc93c958fadae",
       "publication": {
@@ -564,6 +732,9 @@
     },
     {
       "dataset_id": 56,
+      "stream_id": "bybit.spot.spot.ETHUSDC.depth",
+      "stream_rank": 29,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/71fa4961d926126d691c9c8c5e6f6e0787f51344012b7c41d61cffde20dc4936/depth/part-000001.parquet",
       "sha256": "83bb438d8c1a26e4614a1c9080cbeb8108fadf2bff9e70875f57426bbe924e31",
       "publication": {
@@ -574,6 +745,9 @@
     },
     {
       "dataset_id": 41,
+      "stream_id": "gateio.inverse.perpetual.BTC_USD.depth.snapshot",
+      "stream_rank": 30,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/01fdfe3ba0070beb8cce42843cc67b1a434eed15d177495c39ebbda3b4894681/depth/part-000000.parquet",
       "sha256": "06f386f4c9740b8b4ab46ab845e5abf2948790222acfe7eb251137794fda04b9",
       "publication": {
@@ -584,6 +758,9 @@
     },
     {
       "dataset_id": 43,
+      "stream_id": "gateio.linear.perpetual.BTC_USDT.depth.snapshot",
+      "stream_rank": 31,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/1861563bde9936463bb48c76b04c1dfc1ad4cca3c421d70b5ffa08ecda1bd057/depth/part-000000.parquet",
       "sha256": "277eee013f65c201c17847b339f569ce76df57902891dbcc68956b441de5e267",
       "publication": {
@@ -594,6 +771,9 @@
     },
     {
       "dataset_id": 82,
+      "stream_id": "gateio.spot.spot.BTC_USDT.depth.incremental",
+      "stream_rank": 32,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/c0427d2b40feeb72b14eac64a61d8b25765a3fe2103f84379100cfc7e98a34f2/depth/part-000000.parquet",
       "sha256": "06ca216ca4e05d05e6fdcbec752997e2c0e6af3e5d1df0222e75e50162040104",
       "publication": {
@@ -604,6 +784,9 @@
     },
     {
       "dataset_id": 83,
+      "stream_id": "gateio.spot.spot.BTC_USDT.depth.incremental",
+      "stream_rank": 32,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/c0427d2b40feeb72b14eac64a61d8b25765a3fe2103f84379100cfc7e98a34f2/depth/part-000001.parquet",
       "sha256": "f7d354fb81b1bae3e55acca4e314c8866f4c0ddea10775722d9103ad209a5d83",
       "publication": {
@@ -614,6 +797,9 @@
     },
     {
       "dataset_id": 84,
+      "stream_id": "gateio.spot.spot.BTC_USDT.depth.incremental",
+      "stream_rank": 32,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/c0427d2b40feeb72b14eac64a61d8b25765a3fe2103f84379100cfc7e98a34f2/depth/part-000002.parquet",
       "sha256": "bb2625e5e7347541d352e4f362fd513daf53ef024c1a810d05e17cb366f6ae5c",
       "publication": {
@@ -624,6 +810,9 @@
     },
     {
       "dataset_id": 85,
+      "stream_id": "gateio.spot.spot.BTC_USDT.depth.incremental",
+      "stream_rank": 32,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/c0427d2b40feeb72b14eac64a61d8b25765a3fe2103f84379100cfc7e98a34f2/depth/part-000003.parquet",
       "sha256": "dfb07d013b0a4f6154284c20268e90581c46da52b2244c95d882bbbc2734bd4d",
       "publication": {
@@ -634,6 +823,9 @@
     },
     {
       "dataset_id": 86,
+      "stream_id": "gateio.spot.spot.BTC_USDT.depth.incremental",
+      "stream_rank": 32,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/c0427d2b40feeb72b14eac64a61d8b25765a3fe2103f84379100cfc7e98a34f2/depth/part-000004.parquet",
       "sha256": "4ce4d370d6eb6eed0becf8d07d36f20445fd0033d1f252595db6482a36ae25fe",
       "publication": {
@@ -644,6 +836,9 @@
     },
     {
       "dataset_id": 87,
+      "stream_id": "gateio.spot.spot.BTC_USDT.depth.incremental",
+      "stream_rank": 32,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/c0427d2b40feeb72b14eac64a61d8b25765a3fe2103f84379100cfc7e98a34f2/depth/part-000005.parquet",
       "sha256": "11c899d3b6d0a91ac92f5d6b0f67316b34d9bc783627e9183e7971716431c3a6",
       "publication": {
@@ -654,6 +849,9 @@
     },
     {
       "dataset_id": 88,
+      "stream_id": "gateio.spot.spot.BTC_USDT.depth.incremental",
+      "stream_rank": 32,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/c0427d2b40feeb72b14eac64a61d8b25765a3fe2103f84379100cfc7e98a34f2/depth/part-000006.parquet",
       "sha256": "f3ff670d9778950838776a9afa623b368c30a483cb2f2b829bdcc0b73c11afb0",
       "publication": {
@@ -664,6 +862,9 @@
     },
     {
       "dataset_id": 89,
+      "stream_id": "gateio.spot.spot.BTC_USDT.depth.incremental",
+      "stream_rank": 32,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/c0427d2b40feeb72b14eac64a61d8b25765a3fe2103f84379100cfc7e98a34f2/depth/part-000007.parquet",
       "sha256": "6bd5d3a73d3d47a8dcf82a84eac4457f5928a185c9832ac174b2fc30f7a0dd51",
       "publication": {
@@ -674,6 +875,9 @@
     },
     {
       "dataset_id": 90,
+      "stream_id": "gateio.spot.spot.BTC_USDT.depth.incremental",
+      "stream_rank": 32,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/c0427d2b40feeb72b14eac64a61d8b25765a3fe2103f84379100cfc7e98a34f2/depth/part-000008.parquet",
       "sha256": "e50e104291f8b064289b42387b28b46624be669c4b5d1b7f156c81f2b5bdf648",
       "publication": {
@@ -684,6 +888,9 @@
     },
     {
       "dataset_id": 91,
+      "stream_id": "gateio.spot.spot.BTC_USDT.depth.incremental",
+      "stream_rank": 32,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/c0427d2b40feeb72b14eac64a61d8b25765a3fe2103f84379100cfc7e98a34f2/depth/part-000009.parquet",
       "sha256": "910bea3b5966053e5a98c052238c71b47ee63ff1dc7bb1fa7baaa8fae5f2e493",
       "publication": {
@@ -694,6 +901,9 @@
     },
     {
       "dataset_id": 92,
+      "stream_id": "okx.linear.future.family:BTC-USD_UM.depth.instrument:BTC-USD_UM-261030",
+      "stream_rank": 33,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/c6b3d6a9d456fee1caeaacdf51bd09acd909902f799f2acfa6ec8c7b32c4ab85/depth/part-000000.parquet",
       "sha256": "ec9950f9054f5fa90338f7bdf73c3ae5e936692b3489bc42e85b2e873d02f2e9",
       "publication": {
@@ -704,6 +914,9 @@
     },
     {
       "dataset_id": 62,
+      "stream_id": "okx.linear.future.family:BTC-USD_UM.depth.instrument:BTC-USD_UM-261127",
+      "stream_rank": 34,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/988c3c26bb78634f453510a8e1d031f02488cf26cfbe73c28df7a848539545f3/depth/part-000000.parquet",
       "sha256": "b14d3ed2e05c6c9880b108fbf50df9eff8ee523da45ace5d8fc4d759a80813c0",
       "publication": {
@@ -714,6 +927,9 @@
     },
     {
       "dataset_id": 93,
+      "stream_id": "okx.linear.future.family:BTC-USD_UM.depth.instrument:BTC-USD_UM-261225",
+      "stream_rank": 35,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/ce7f4b03e5dd050e9204b1159bdc3c56b8c213439fe737f34c8b6c7fc6b16e69/depth/part-000000.parquet",
       "sha256": "be55be9945cecb5990b8c26446d952b1fbc4e84df78f72f5659898c25e83921e",
       "publication": {
@@ -724,6 +940,9 @@
     },
     {
       "dataset_id": 42,
+      "stream_id": "okx.linear.future.family:BTC-USD_UM.depth.instrument:BTC-USD_UM-270326",
+      "stream_rank": 36,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/09f1c37ca1d35348aad8283792edcf7ede2462517cdfa82f9f0bd2dc45ec0d62/depth/part-000000.parquet",
       "sha256": "c9ce2ed4e57647ef21e267c83a145cb18d3706d980e070dd1ccf36c25256a123",
       "publication": {
@@ -734,6 +953,9 @@
     },
     {
       "dataset_id": 48,
+      "stream_id": "okx.inverse.perpetual.family:BTC-USD.depth.instrument:BTC-USD-SWAP",
+      "stream_rank": 37,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/66a1c4ce8d4c48acf05933264d54eb0995afd5a2ac63a016d99038a2d52c94e5/depth/part-000000.parquet",
       "sha256": "0ac27b3827d4a919318dead85bcf57b02f5195b8bf62715677ad5e731388a9b2",
       "publication": {
@@ -744,6 +966,9 @@
     },
     {
       "dataset_id": 49,
+      "stream_id": "okx.inverse.perpetual.family:BTC-USD.depth.instrument:BTC-USD-SWAP",
+      "stream_rank": 37,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/66a1c4ce8d4c48acf05933264d54eb0995afd5a2ac63a016d99038a2d52c94e5/depth/part-000001.parquet",
       "sha256": "24847578feed17bc22eafe9510fee2e3a662868add2ea7367564f1d8366a277a",
       "publication": {
@@ -754,6 +979,9 @@
     },
     {
       "dataset_id": 50,
+      "stream_id": "okx.inverse.perpetual.family:BTC-USD.depth.instrument:BTC-USD-SWAP",
+      "stream_rank": 37,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/66a1c4ce8d4c48acf05933264d54eb0995afd5a2ac63a016d99038a2d52c94e5/depth/part-000002.parquet",
       "sha256": "020de08a5c10104d27d8d4757ff0ffb961d3593d8bdc0cfdc086addc6c783d17",
       "publication": {
@@ -764,6 +992,9 @@
     },
     {
       "dataset_id": 51,
+      "stream_id": "okx.inverse.perpetual.family:BTC-USD.depth.instrument:BTC-USD-SWAP",
+      "stream_rank": 37,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/66a1c4ce8d4c48acf05933264d54eb0995afd5a2ac63a016d99038a2d52c94e5/depth/part-000003.parquet",
       "sha256": "9567dd54a7e817cd016c52b69d875c2b5a4af4f8d57989af5f9ea35ca3d3e9e9",
       "publication": {
@@ -774,6 +1005,9 @@
     },
     {
       "dataset_id": 98,
+      "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth.instrument:BTC-USDT-SWAP",
+      "stream_rank": 38,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/f48e221a119eb046ac1a65035eb51658ac533e7631c51bd1f34c35e5d6fbeeb5/depth/part-000000.parquet",
       "sha256": "78e29d51a473faa666b524dda4890065eb9ea963daafc29938710be17bf1695a",
       "publication": {
@@ -784,6 +1018,9 @@
     },
     {
       "dataset_id": 99,
+      "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth.instrument:BTC-USDT-SWAP",
+      "stream_rank": 38,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/f48e221a119eb046ac1a65035eb51658ac533e7631c51bd1f34c35e5d6fbeeb5/depth/part-000001.parquet",
       "sha256": "2c6746373e7f85f7abbef9e138fc544e2fee7666ad4191ec10f2ed7453594822",
       "publication": {
@@ -794,6 +1031,9 @@
     },
     {
       "dataset_id": 100,
+      "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth.instrument:BTC-USDT-SWAP",
+      "stream_rank": 38,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/f48e221a119eb046ac1a65035eb51658ac533e7631c51bd1f34c35e5d6fbeeb5/depth/part-000002.parquet",
       "sha256": "29d88e10e2bca35aac27c77773371436e61699fb2a92e88f71f5fc611a7cf282",
       "publication": {
@@ -804,6 +1044,9 @@
     },
     {
       "dataset_id": 101,
+      "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth.instrument:BTC-USDT-SWAP",
+      "stream_rank": 38,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/f48e221a119eb046ac1a65035eb51658ac533e7631c51bd1f34c35e5d6fbeeb5/depth/part-000003.parquet",
       "sha256": "26408bf239c8ce4884e1c1cf61ca4ed1497688880f9883feaa439dc3c3a8474d",
       "publication": {
@@ -814,6 +1057,9 @@
     },
     {
       "dataset_id": 102,
+      "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth.instrument:BTC-USDT-SWAP",
+      "stream_rank": 38,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/f48e221a119eb046ac1a65035eb51658ac533e7631c51bd1f34c35e5d6fbeeb5/depth/part-000004.parquet",
       "sha256": "25a3472b5f2d8ce75e8f429e04b0b412ad2b8014915adbc697b5d3e558bb63ad",
       "publication": {
@@ -824,6 +1070,9 @@
     },
     {
       "dataset_id": 103,
+      "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth.instrument:BTC-USDT-SWAP",
+      "stream_rank": 38,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/f48e221a119eb046ac1a65035eb51658ac533e7631c51bd1f34c35e5d6fbeeb5/depth/part-000005.parquet",
       "sha256": "3a6fe94b9a2dcd1ceec5a23e269576b3eaeb7a90dd7447042bb6d6f048f9fa02",
       "publication": {
@@ -834,6 +1083,9 @@
     },
     {
       "dataset_id": 104,
+      "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth.instrument:BTC-USDT-SWAP",
+      "stream_rank": 38,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/f48e221a119eb046ac1a65035eb51658ac533e7631c51bd1f34c35e5d6fbeeb5/depth/part-000006.parquet",
       "sha256": "2b24dba096b4fded6d00b3634f10a8a35c234509b3f8a22a075393fbaf79cd9b",
       "publication": {
@@ -844,6 +1096,9 @@
     },
     {
       "dataset_id": 105,
+      "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth.instrument:BTC-USDT-SWAP",
+      "stream_rank": 38,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/f48e221a119eb046ac1a65035eb51658ac533e7631c51bd1f34c35e5d6fbeeb5/depth/part-000007.parquet",
       "sha256": "5f621821b88dc8b11ebccd8d767a724ba488f861d4c7fa64e86fd0c30d50400f",
       "publication": {
@@ -854,6 +1109,9 @@
     },
     {
       "dataset_id": 106,
+      "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth.instrument:BTC-USDT-SWAP",
+      "stream_rank": 38,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/f48e221a119eb046ac1a65035eb51658ac533e7631c51bd1f34c35e5d6fbeeb5/depth/part-000008.parquet",
       "sha256": "ba64d2a056acc41a918007c80fc4db40b69b2887fac9e0a752ce476b9f3157b4",
       "publication": {
@@ -864,6 +1122,9 @@
     },
     {
       "dataset_id": 107,
+      "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth.instrument:BTC-USDT-SWAP",
+      "stream_rank": 38,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/f48e221a119eb046ac1a65035eb51658ac533e7631c51bd1f34c35e5d6fbeeb5/depth/part-000009.parquet",
       "sha256": "4a1bfe2301c67c573ca2badb3fa5c4144468ec64e205bc94aa5f55f8ff13ecf8",
       "publication": {
@@ -874,6 +1135,9 @@
     },
     {
       "dataset_id": 108,
+      "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth.instrument:BTC-USDT-SWAP",
+      "stream_rank": 38,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/f48e221a119eb046ac1a65035eb51658ac533e7631c51bd1f34c35e5d6fbeeb5/depth/part-000010.parquet",
       "sha256": "323c3a0845aa482e227341eedc26fef41ed8d0a723365b61b219f168054c3910",
       "publication": {
@@ -884,6 +1148,9 @@
     },
     {
       "dataset_id": 109,
+      "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth.instrument:BTC-USDT-SWAP",
+      "stream_rank": 38,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/f48e221a119eb046ac1a65035eb51658ac533e7631c51bd1f34c35e5d6fbeeb5/depth/part-000011.parquet",
       "sha256": "9fce9ee62311c5dd9441476b546510fade8635339cce0e244e20a4a4c40f11bf",
       "publication": {
@@ -894,6 +1161,9 @@
     },
     {
       "dataset_id": 110,
+      "stream_id": "okx.linear.perpetual.family:BTC-USDT.depth.instrument:BTC-USDT-SWAP",
+      "stream_rank": 38,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/f48e221a119eb046ac1a65035eb51658ac533e7631c51bd1f34c35e5d6fbeeb5/depth/part-000012.parquet",
       "sha256": "f12c70d106c69e39d789b34a4677a6b469f0dc040ea0671ce936dab6427fa93f",
       "publication": {
@@ -904,6 +1174,9 @@
     },
     {
       "dataset_id": 52,
+      "stream_id": "okx.spot.spot.BTC-USDT.depth",
+      "stream_rank": 39,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/66b422d5705dbc4897206b3c53bddd989aa2de7a1371cb9bc252baf1f85d0d0d/depth/part-000000.parquet",
       "sha256": "b2252b82072faa2c951ee1d520d47842ee44840e743fb18341a1dd240843d688",
       "publication": {
@@ -914,6 +1187,9 @@
     },
     {
       "dataset_id": 53,
+      "stream_id": "okx.spot.spot.BTC-USDT.depth",
+      "stream_rank": 39,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/66b422d5705dbc4897206b3c53bddd989aa2de7a1371cb9bc252baf1f85d0d0d/depth/part-000001.parquet",
       "sha256": "e305615f7b555ac3a65bcb766921546ebacbd30d8e2ec2729a759aa4dafef8b2",
       "publication": {
@@ -924,6 +1200,9 @@
     },
     {
       "dataset_id": 54,
+      "stream_id": "okx.spot.spot.BTC-USDT.depth",
+      "stream_rank": 39,
+      "content_type": "depth",
       "path": "/home/pasha/projects/marketforge/data/datasets/normalized/4599351948291050987/streams/66b422d5705dbc4897206b3c53bddd989aa2de7a1371cb9bc252baf1f85d0d0d/depth/part-000002.parquet",
       "sha256": "90d4787eaea4577a8de616ba1bebf5e84c8ad26efb23564dc9d3062e083e07ed",
       "publication": {

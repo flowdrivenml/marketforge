@@ -12,6 +12,8 @@ use {
 pub struct KWayEventMerger {
     streams: Vec<Box<dyn MergeEventSource>>,
     queue: HeadQueue<MergeEventRef>,
+    ranks: Vec<u32>,
+    key: fn(&MergeEventRef, u32) -> crate::shared::merge::MergeKey,
 }
 
 impl KWayEventMerger {
@@ -19,20 +21,46 @@ impl KWayEventMerger {
     // Construction
     // -------------------------------------------------------------------------
 
-    pub fn new(mut streams: Vec<Box<dyn MergeEventSource>>) -> Result<Self> {
+    pub fn new(streams: Vec<Box<dyn MergeEventSource>>) -> Result<Self> {
+        let ranks = (0..streams.len())
+            .map(|index| u32::try_from(index).map_err(|_| merge_error(MergeError::TooManySources)))
+            .collect::<Result<Vec<_>>>()?;
+        Self::build(streams, ranks, MergeEventRef::merge_key)
+    }
+
+    pub(crate) fn new_ranked(
+        streams: Vec<Box<dyn MergeEventSource>>,
+        ranks: Vec<u32>,
+    ) -> Result<Self> {
+        Self::build(streams, ranks, MergeEventRef::ranked_merge_key)
+    }
+
+    fn build(
+        mut streams: Vec<Box<dyn MergeEventSource>>,
+        ranks: Vec<u32>,
+        key: fn(&MergeEventRef, u32) -> crate::shared::merge::MergeKey,
+    ) -> Result<Self> {
+        if ranks.len() != streams.len() || ranks.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return invalid("merge stream priorities must be unique and ascending");
+        }
         let mut queue = HeadQueue::new(streams.len(), true).map_err(merge_error)?;
         for (index, stream) in streams.iter_mut().enumerate() {
             match stream.next_event()? {
                 Some(event) => {
                     let stream_rank = u32::try_from(index)
                         .map_err(|_| merge_error(MergeError::TooManySources))?;
-                    let key = event.merge_key(stream_rank);
+                    let key = key(&event, stream_rank);
                     queue.push(index, key, event).map_err(merge_error)?;
                 }
                 None => queue.finish_source(index).map_err(merge_error)?,
             }
         }
-        Ok(Self { streams, queue })
+        Ok(Self {
+            streams,
+            queue,
+            ranks,
+            key,
+        })
     }
 
     // -------------------------------------------------------------------------
@@ -50,13 +78,13 @@ impl KWayEventMerger {
         match self.streams[index].next_event()? {
             Some(event) => {
                 let stream_rank = selected.key.stream_rank;
-                let key = event.merge_key(stream_rank);
+                let key = (self.key)(&event, stream_rank);
                 self.queue.push(index, key, event).map_err(merge_error)?;
             }
             None => self.queue.finish_source(index).map_err(merge_error)?,
         }
         Ok(Some(MergedEvent {
-            stream_rank: selected.key.stream_rank,
+            stream_rank: self.ranks[index],
             event: selected.event,
         }))
     }

@@ -40,7 +40,7 @@ pub fn build_unified_merge_manifest(
         return invalid("cannot build unified manifest without partitions");
     }
 
-    if inputs.len() != job.inputs.len() || streams.len() != job.inputs.len() {
+    if inputs.len() != job.inputs.len() {
         return invalid("unified merge input/stream count mismatch");
     }
 
@@ -58,17 +58,8 @@ pub fn build_unified_merge_manifest(
         if !seen_datasets.insert(dataset_id) {
             return invalid(format!("duplicate unified input dataset {dataset_id}"));
         }
-
-        let stream = &streams[index];
-
-        if stream.dataset_id != dataset_id {
-            return invalid(format!("unified stream dataset mismatch at index {index}"));
-        }
-
-        if usize::try_from(stream.stream_rank).ok() != Some(index) {
-            return invalid(format!("invalid unified stream rank at index {index}"));
-        }
     }
+    super::unified_manifest::validate_stream_membership(&streams, &seen_datasets)?;
 
     // -------------------------------------------------------------------------
     // Determine merge mode

@@ -172,7 +172,20 @@ This is especially relevant to OKX futures-chain archives.
 
 Forge emits normalization batch version 4 in `forge/historical/normalization/batch.py`. Rust parses and validates it in `engine/src/historical/config/batch.rs`. The maintained parser workloads are `engine/tests/historical/fixtures/normalize.json` and `engine/tests/historical/fixtures/merge.json`. They are regression inputs and may refer to local files.
 
-A prepared merge job carries `job_id`, `operation`, `inputs`, `time_range`, and `output`. Each input carries the selected registry file ID, absolute path and SHA-256, plus its owning manifest path and SHA-256 and decimal-string Engine publication ID. Forge prepares it in `forge/historical/merge/service.py`. Rust checks it in `engine/src/historical/job/merge_load.rs`. See the [merge procedure](../workflows/merge.md) for layout restrictions.
+## Merge jobs
+
+A prepared merge job carries `job_id`, `operation`, `inputs`, `time_range`, and `output`. The interval is half-open and uses integer nanoseconds. Each input contains the following fields.
+
+| Field | Meaning |
+| --- | --- |
+| `dataset_id` | Integer registry identity of the selected primary file. |
+| `stream_id` | Exact concrete stream ID from verified normalization metadata. |
+| `stream_rank` | Merge priority for equal timestamps. Lower unsigned 32-bit ranks come first. |
+| `content_type` | `trades` or `depth`, verified against the pinned normalized publication. |
+| `path`, `sha256` | Absolute primary file path and its SHA-256. |
+| `publication` | The engine publication ID as a decimal string, plus the absolute `manifest_path` and `manifest_sha256`. |
+
+Files belonging to the same concrete stream repeat its rank. Distinct streams use distinct ranks across both content types. Rank gaps remain valid when filtering a job. Rust verifies the stream owner, content type, and publication pin before execution. The job carries no resource or ordering settings outside these per-file priorities. Regenerate older job files with Forge preparation. See the [merge procedure](../workflows/merge.md) for priority overrides, runtime settings, and compatible layouts.
 
 ## What each version governs
 

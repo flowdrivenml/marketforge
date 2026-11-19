@@ -11,6 +11,7 @@ use marketforge_engine::historical::convert::progress::{
 use std::cell::Cell;
 use std::{
     env, fs,
+    io::Write,
     path::{Path, PathBuf},
     time::Instant,
 };
@@ -40,6 +41,7 @@ thread_local! {
     static CONVERSION_TUI_MODE: Cell<bool> = const { Cell::new(false) };
 }
 
+#[cfg(feature = "monitor-tui")]
 fn set_conversion_tui_mode(enabled: bool) {
     CONVERSION_TUI_MODE.with(|mode| mode.set(enabled));
 }
@@ -74,9 +76,52 @@ enum ExecutionMode {
 struct Args {
     project_root: PathBuf,
     job: PathBuf,
+    config: PathBuf,
     mode: ExecutionMode,
     workers: Option<usize>,
     tui: bool,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ConversionRuntime {
+    workers: usize,
+    parquet: MergeParquetConfig,
+    configuration_sha256: String,
+}
+
+fn resolve_runtime(
+    args: &Args,
+    root: &Path,
+    job: &mut ConvertJob,
+) -> Result<ConversionRuntime, String> {
+    use marketforge_engine::historical::normalize::manifest::file_sha256;
+    use marketforge_engine::shared::historical::config::load_conversion_runtime_settings;
+    let config = resolve_path(root, &args.config);
+    let checksum = || {
+        file_sha256(&config)
+            .map_err(|error| format!("historical configuration {}: {error}", config.display()))
+    };
+    let configuration_sha256 = checksum()?;
+    let (limits, parquet) =
+        load_conversion_runtime_settings(&config, root).map_err(|error| error.to_string())?;
+    if checksum()? != configuration_sha256 {
+        return Err("historical configuration changed during conversion preparation".into());
+    }
+    job.resources.workers = job.resources.workers.min(limits.workers);
+    job.resources.memory_limit_mb = job.resources.memory_limit_mb.min(limits.memory_limit_mb);
+    job.resources.max_open_files = job.resources.max_open_files.min(limits.max_open_files);
+    let workers = args.workers.unwrap_or(job.resources.workers);
+    if workers == 0 || workers > job.resources.workers {
+        return Err(format!(
+            "requested workers {workers} exceed configured limit {}",
+            job.resources.workers
+        ));
+    }
+    Ok(ConversionRuntime {
+        workers,
+        parquet,
+        configuration_sha256,
+    })
 }
 
 // -----------------------------------------------------------------------------
@@ -94,72 +139,48 @@ fn execute_conversion_with_progress(
     source_manifest: &PhysicalMergeManifest,
     root: &Path,
     staging: &Path,
-    workers: usize,
+    runtime: &ConversionRuntime,
     mode: ExecutionMode,
     reporter: &ConversionProgressReporter,
 ) -> Result<(), String> {
-    let result = execute_conversion_with_progress_inner(
-        job,
-        source_manifest,
-        root,
-        staging,
-        workers,
-        mode,
-        reporter,
-    );
-
-    reporter.finished(result.is_ok());
-
-    result
-}
-
-fn execute_conversion_with_progress_inner(
-    job: &ConvertJob,
-    source_manifest: &PhysicalMergeManifest,
-    root: &Path,
-    staging: &Path,
-    workers: usize,
-    mode: ExecutionMode,
-    reporter: &ConversionProgressReporter,
-) -> Result<(), String> {
-    match mode {
-        ExecutionMode::Materialize => {
-            materialize_with_progress(job, source_manifest, root, staging, workers, reporter)
-        }
-
-        ExecutionMode::Publish => {
-            publish_with_progress(job, source_manifest, staging, workers, reporter)
-        }
-
-        ExecutionMode::Run => {
-            materialize_with_progress(job, source_manifest, root, staging, workers, reporter)?;
-
-            publish_with_progress(job, source_manifest, staging, workers, reporter)
-        }
-    }
-}
-fn materialize_with_progress(
-    job: &ConvertJob,
-    source_manifest: &PhysicalMergeManifest,
-    root: &Path,
-    staging: &Path,
-    workers: usize,
-    reporter: &ConversionProgressReporter,
-) -> Result<(), String> {
-    reporter.phase_started(ConversionPhase::SourceValidation);
-
-    source_manifest
-        .validate()
+    let result = (|| {
+        let provenance = staging.join("conversion-runtime.json");
+        let effective = serde_json::to_vec_pretty(&serde_json::json!({
+            "runtime": runtime, "resources": job.resources,
+        }))
         .map_err(|error| error.to_string())?;
-
-    reporter.phase_completed(ConversionPhase::SourceValidation);
-
-    let result = materialize_with_reporter(job, source_manifest, root, staging, workers, reporter);
-
+        if mode != ExecutionMode::Publish {
+            reporter.phase_started(ConversionPhase::SourceValidation);
+            source_manifest
+                .validate()
+                .map_err(|error| error.to_string())?;
+            reporter.phase_completed(ConversionPhase::SourceValidation);
+            materialize_with_reporter(job, source_manifest, root, staging, runtime, reporter)?;
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&provenance)
+                .map_err(|error| error.to_string())?;
+            file.write_all(&effective)
+                .and_then(|()| file.sync_all())
+                .map_err(|error| error.to_string())?;
+        }
+        if mode != ExecutionMode::Materialize {
+            let pinned = fs::read(&provenance)
+                .map_err(|error| format!("cannot read staged conversion runtime: {error}"))?;
+            if pinned != effective {
+                return Err("conversion runtime differs from materialization; use the original configuration and worker count".to_owned());
+            }
+            publish_with_reporter(job, source_manifest, staging, runtime.workers, reporter)?;
+        }
+        Ok(())
+    })();
+    reporter.finished(result.is_ok());
     result
 }
+
 fn run() -> Result<(), String> {
-    let args = parse_args()?;
+    let args = parse_args(env::args().skip(1))?;
 
     let root = args
         .project_root
@@ -174,25 +195,14 @@ fn run() -> Result<(), String> {
     job.output.dataset_path = resolve_path(&root, &job.output.dataset_path);
 
     job.validate().map_err(|error| error.to_string())?;
-    let workers = args.workers.unwrap_or(job.resources.workers as usize);
-
-    if workers == 0 {
-        return Err("conversion worker count must be positive".to_owned());
-    }
-
-    if workers > job.resources.workers as usize {
-        return Err(format!(
-            "requested workers {} exceed configured limit {}",
-            workers, job.resources.workers,
-        ));
-    }
+    let runtime = resolve_runtime(&args, &root, &mut job)?;
     let source_manifest = load_source_manifest(&job.input_merge)?;
     let output = job.output.dataset_path.clone();
     let staging = output.with_extension("staging");
     if args.tui {
         #[cfg(feature = "monitor-tui")]
         {
-            return run_conversion_tui(job, source_manifest, root, staging, workers, args.mode);
+            return run_conversion_tui(job, source_manifest, root, staging, runtime, args.mode);
         }
 
         #[cfg(not(feature = "monitor-tui"))]
@@ -212,22 +222,15 @@ fn run() -> Result<(), String> {
     conversion_println!("Staging         : {}", staging.display());
     conversion_println!("Events expected : {}", source_manifest.events_written);
 
-    match args.mode {
-        ExecutionMode::Materialize => {
-            materialize(&job, &source_manifest, &root, &staging, workers)?;
-        }
-
-        ExecutionMode::Publish => {
-            publish(&job, &source_manifest, &staging, workers)?;
-        }
-
-        ExecutionMode::Run => {
-            materialize(&job, &source_manifest, &root, &staging, workers)?;
-            publish(&job, &source_manifest, &staging, workers)?;
-        }
-    }
-
-    Ok(())
+    execute_conversion_with_progress(
+        &job,
+        &source_manifest,
+        &root,
+        &staging,
+        &runtime,
+        args.mode,
+        &ConversionProgressReporter::disabled(),
+    )
 }
 #[cfg(feature = "monitor-tui")]
 fn run_conversion_tui(
@@ -235,7 +238,7 @@ fn run_conversion_tui(
     source_manifest: PhysicalMergeManifest,
     root: PathBuf,
     staging: PathBuf,
-    workers: usize,
+    runtime: ConversionRuntime,
     mode: ExecutionMode,
 ) -> Result<(), String> {
     use std::sync::mpsc;
@@ -253,7 +256,7 @@ fn run_conversion_tui(
             &source_manifest,
             &root,
             &staging,
-            workers,
+            &runtime,
             mode,
             &reporter,
         )
@@ -273,38 +276,21 @@ fn run_conversion_tui(
 // Materialization
 // -----------------------------------------------------------------------------
 
-fn materialize(
-    job: &ConvertJob,
-    source_manifest: &PhysicalMergeManifest,
-    root: &Path,
-    staging: &Path,
-    workers: usize,
-) -> Result<(), String> {
-    materialize_with_reporter(
-        job,
-        source_manifest,
-        root,
-        staging,
-        workers,
-        &ConversionProgressReporter::disabled(),
-    )
-}
-
 fn materialize_with_reporter(
     job: &ConvertJob,
     source_manifest: &PhysicalMergeManifest,
     root: &Path,
     staging: &Path,
-    workers: usize,
+    runtime: &ConversionRuntime,
     reporter: &ConversionProgressReporter,
 ) -> Result<(), String> {
     match source_manifest.mode {
         UnifiedMergeMode::Trades => {
-            materialize_trades_with_reporter(job, source_manifest, root, staging, workers, reporter)
+            materialize_trades_with_reporter(job, source_manifest, root, staging, runtime, reporter)
         }
 
         UnifiedMergeMode::Depth => {
-            materialize_depth_with_reporter(job, source_manifest, root, staging, workers, reporter)
+            materialize_depth_with_reporter(job, source_manifest, root, staging, runtime, reporter)
         }
 
         UnifiedMergeMode::Combined => materialize_combined_with_reporter(
@@ -312,7 +298,7 @@ fn materialize_with_reporter(
             source_manifest,
             root,
             staging,
-            workers,
+            runtime,
             reporter,
         ),
     }
@@ -322,7 +308,7 @@ fn materialize_trades_with_reporter(
     source_manifest: &PhysicalMergeManifest,
     root: &Path,
     staging: &Path,
-    workers: usize,
+    runtime: &ConversionRuntime,
     reporter: &ConversionProgressReporter,
 ) -> Result<(), String> {
     if job.output.dataset_path.exists() {
@@ -372,11 +358,8 @@ fn materialize_trades_with_reporter(
         );
     }
 
-    let parquet = MergeParquetConfig {
-        row_group_target_mb: 128,
-        file_target_mb: 512,
-        compression_level: 3,
-    };
+    let workers = runtime.workers;
+    let parquet = &runtime.parquet;
 
     let start = Instant::now();
 
@@ -385,7 +368,7 @@ fn materialize_trades_with_reporter(
         // Sequential execution
         // -------------------------------------------------------------
 
-        materialize_trade_conversion(job, source_manifest, &plan, staging, &parquet)
+        materialize_trade_conversion(job, source_manifest, &plan, staging, parquet)
             .map_err(|error| error.to_string())?
     } else {
         // -------------------------------------------------------------
@@ -431,7 +414,7 @@ fn materialize_trades_with_reporter(
             &prepass,
             staging,
             workers,
-            &parquet,
+            parquet,
             reporter,
         )
         .map_err(|error| error.to_string())?;
@@ -485,7 +468,7 @@ fn materialize_depth_with_reporter(
     source_manifest: &PhysicalMergeManifest,
     root: &Path,
     staging: &Path,
-    workers: usize,
+    runtime: &ConversionRuntime,
     reporter: &ConversionProgressReporter,
 ) -> Result<(), String> {
     if job.output.dataset_path.exists() {
@@ -518,11 +501,8 @@ fn materialize_depth_with_reporter(
 
     let references = load_source_manifest(&reference_directory)?;
 
-    let parquet = MergeParquetConfig {
-        row_group_target_mb: 128,
-        file_target_mb: 512,
-        compression_level: 3,
-    };
+    let workers = runtime.workers;
+    let parquet = &runtime.parquet;
 
     let start = Instant::now();
 
@@ -533,7 +513,7 @@ fn materialize_depth_with_reporter(
             &references,
             &plan,
             staging,
-            &parquet,
+            parquet,
             None,
         )
         .map_err(|error| error.to_string())?
@@ -575,7 +555,7 @@ fn materialize_depth_with_reporter(
             &prepass,
             staging,
             workers,
-            &parquet,
+            parquet,
             reporter,
         )
         .map_err(|error| error.to_string())?;
@@ -625,21 +605,6 @@ fn materialize_depth_with_reporter(
 // -----------------------------------------------------------------------------
 // Publication
 // -----------------------------------------------------------------------------
-
-fn publish(
-    job: &ConvertJob,
-    source_manifest: &PhysicalMergeManifest,
-    staging: &Path,
-    workers: usize,
-) -> Result<(), String> {
-    publish_with_reporter(
-        job,
-        source_manifest,
-        staging,
-        workers,
-        &ConversionProgressReporter::disabled(),
-    )
-}
 
 fn publish_with_reporter(
     job: &ConvertJob,
@@ -723,19 +688,23 @@ fn load_source_manifest(directory: &Path) -> Result<PhysicalMergeManifest, Strin
 // Arguments
 // -----------------------------------------------------------------------------
 
-fn parse_args() -> Result<Args, String> {
+fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut project_root = env::current_dir().map_err(|error| error.to_string())?;
 
     let mut job = None;
     let mut mode = None;
     let mut workers = None;
     let mut tui = false;
-    let mut args = env::args().skip(1);
+    let mut config = PathBuf::from("data/.config/historical/general.toml");
 
     while let Some(argument) = args.next() {
         match argument.as_str() {
             "--project-root" => {
                 project_root = PathBuf::from(args.next().ok_or("missing --project-root value")?);
+            }
+
+            "--config" => {
+                config = PathBuf::from(args.next().ok_or("missing --config value")?);
             }
 
             "--job" => {
@@ -759,7 +728,7 @@ fn parse_args() -> Result<Args, String> {
             "--help" | "-h" => {
                 conversion_println!(
                     "Usage: marketforge-convert --job PATH \
-                     [--project-root PATH] \
+                     [--project-root PATH] [--config PATH] \
                      [--materialize | --publish | --run] \
                      [--workers N]"
                 );
@@ -792,6 +761,7 @@ fn parse_args() -> Result<Args, String> {
 
     Ok(Args {
         project_root,
+        config,
         job: job.ok_or("missing required --job argument")?,
         mode: mode.unwrap_or(ExecutionMode::Run),
         workers,
@@ -822,7 +792,7 @@ fn materialize_combined_with_reporter(
     source_manifest: &PhysicalMergeManifest,
     root: &Path,
     staging: &Path,
-    workers: usize,
+    runtime: &ConversionRuntime,
     reporter: &ConversionProgressReporter,
 ) -> Result<(), String> {
     if job.output.dataset_path.exists() {
@@ -888,6 +858,7 @@ fn materialize_combined_with_reporter(
     // Build physical partitions
     // ---------------------------------------------------------------------
 
+    let workers = runtime.workers;
     let requested_partitions = workers
         .checked_mul(4)
         .ok_or("conversion partition count overflow")?;
@@ -933,11 +904,7 @@ fn materialize_combined_with_reporter(
     // Parallel combined materialization
     // ---------------------------------------------------------------------
 
-    let parquet = MergeParquetConfig {
-        row_group_target_mb: 128,
-        file_target_mb: 512,
-        compression_level: 3,
-    };
+    let parquet = &runtime.parquet;
 
     let result = execute_parallel_combined_conversion_with_progress(
         &execution_job,
@@ -949,7 +916,7 @@ fn materialize_combined_with_reporter(
         &selection,
         staging,
         workers,
-        &parquet,
+        parquet,
         reporter,
     )
     .map_err(|error| error.to_string())?;
@@ -1015,12 +982,66 @@ fn materialize_combined_with_reporter(
     Ok(())
 }
 
-fn publish_with_progress(
-    job: &ConvertJob,
-    source_manifest: &PhysicalMergeManifest,
-    staging: &Path,
-    workers: usize,
-    reporter: &ConversionProgressReporter,
-) -> Result<(), String> {
-    publish_with_reporter(job, source_manifest, staging, workers, reporter)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cli_resolves_shared_runtime_and_caps_worker_overrides() {
+        let root = tempfile::tempdir().unwrap();
+        let mut job: ConvertJob = serde_json::from_value(serde_json::json!({
+            "job_id": 1,
+            "operation": "convert",
+            "input_merge": root.path().join("input"),
+            "output": {"dataset_path": root.path().join("output")},
+            "conversion": {
+                "target_quote": "USD", "price_source": "last_trade", "max_staleness_ns": 1
+            },
+            "resources": {"workers": 4, "memory_limit_mb": 128, "max_open_files": 32}
+        }))
+        .unwrap();
+        let defaults = parse_args(["--job", "job.json"].map(String::from).into_iter()).unwrap();
+        assert_eq!(
+            defaults.config,
+            Path::new("data/.config/historical/general.toml")
+        );
+        let config = include_str!("../../../data/.config/historical/general.toml")
+            .replace("workers = 8", "workers = 2")
+            .replace(
+                "row_group_target_bytes = 268435456",
+                "row_group_target_bytes = 1048576",
+            );
+        fs::write(root.path().join("runtime.toml"), config).unwrap();
+        let mut explicit = parse_args(
+            [
+                "--job",
+                "job.json",
+                "--config",
+                "runtime.toml",
+                "--workers",
+                "1",
+            ]
+            .map(String::from)
+            .into_iter(),
+        )
+        .unwrap();
+        let runtime = resolve_runtime(&explicit, root.path(), &mut job).unwrap();
+        assert_eq!(runtime.workers, 1);
+        assert_eq!(runtime.parquet.row_group_target_mb, 1);
+        assert_eq!(runtime.configuration_sha256.len(), 64);
+        assert_eq!(job.resources.workers, 2);
+        assert_eq!(job.resources.memory_limit_mb, 128);
+        explicit.workers = Some(3);
+        assert!(
+            resolve_runtime(&explicit, root.path(), &mut job)
+                .unwrap_err()
+                .contains("exceed configured limit 2")
+        );
+        explicit.config = "missing.toml".into();
+        assert!(
+            resolve_runtime(&explicit, root.path(), &mut job)
+                .unwrap_err()
+                .contains("missing.toml")
+        );
+    }
 }

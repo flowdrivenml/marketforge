@@ -56,8 +56,15 @@ pub fn make_job(root: &Path, trade_ids: &[u64], depth_ids: &[u64]) -> MergeJobDo
     fixture_document(root, inputs)
 }
 
-fn fixture_document(root: &Path, inputs: Vec<MergeFileInput>) -> MergeJobDocument {
+fn fixture_document(root: &Path, mut inputs: Vec<MergeFileInput>) -> MergeJobDocument {
     assert!(!inputs.is_empty() && inputs.len() <= 8);
+    let mut ranks = std::collections::HashMap::new();
+    for input in &mut inputs {
+        let next = ranks.len() as u32;
+        input.stream_rank = *ranks
+            .entry((input.publication.engine_dataset_id, input.stream_id.clone()))
+            .or_insert(next);
+    }
     MergeJobDocument {
         job_id: 900_500,
         operation: MergeOperation::Merge,
@@ -360,6 +367,24 @@ fn finish_publication(directory: &Path, manifest: &DatasetManifest) -> Vec<Merge
         .map(|(index, file)| {
             let path = directory.join(&file.path);
             MergeFileInput {
+                stream_id: manifest
+                    .streams
+                    .iter()
+                    .find(|stream| {
+                        Path::new(&file.path).parent() == Some(Path::new(&stream.directory))
+                    })
+                    .map_or_else(
+                        || {
+                            if manifest.content_type == ContentType::Trades {
+                                TRADE_STREAM.into()
+                            } else {
+                                DEPTH_STREAM.into()
+                            }
+                        },
+                        |stream| stream.stream_id.clone(),
+                    ),
+                stream_rank: manifest.dataset_id as u32,
+                content_type: manifest.content_type,
                 dataset_id: 10_000 + manifest.dataset_id * 10 + index as u64,
                 sha256: file_sha256(&path).unwrap(),
                 path,
@@ -441,9 +466,18 @@ pub fn bounded_trade_job(output: std::path::PathBuf) -> MergeJobDocument {
 /// Two tasks contribute to a single primary part with a wider timestamp envelope
 /// than either task. This exercises selection of stream-layout publications.
 pub fn shared_part_trade_job(root: &Path) -> MergeJobDocument {
+    shared_part_trade_publication(root, 11, 0, None)
+}
+
+pub fn shared_part_trade_publication(
+    root: &Path,
+    id: u64,
+    offset: i64,
+    namespace: Option<&str>,
+) -> MergeJobDocument {
     use marketforge_engine::historical::normalize::streams::{SourceSpan, StreamOutput};
 
-    let mut job = make_job(root, &[11], &[]);
+    let mut job = make_job(root, &[id], &[]);
     let path = job.inputs[0].publication.manifest_path.clone();
     let directory = path.parent().unwrap();
     let mut manifest: DatasetManifest = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
@@ -451,7 +485,23 @@ pub fn shared_part_trade_job(root: &Path) -> MergeJobDocument {
     fs::create_dir_all(directory.join(&stream_directory)).unwrap();
     let part = format!("{stream_directory}/part-000000.parquet");
     let part_path = directory.join(&part);
-    write_parquet(&part_path, &canonical_trades(&[100, 200, 300, 400]));
+    let timestamps = [100, 200, 300, 400].map(|ts| ts + offset);
+    write_parquet(&part_path, &canonical_trades(&timestamps));
+    manifest.start_timestamp_ns = Some(timestamps[0]);
+    manifest.end_timestamp_ns = Some(timestamps[3]);
+    manifest.instrument_namespace = namespace.map(str::to_owned);
+    for metrics in &mut manifest.processing_metrics.tasks {
+        metrics.start_timestamp_ns = metrics.start_timestamp_ns.map(|value| value + offset);
+        metrics.end_timestamp_ns = metrics.end_timestamp_ns.map(|value| value + offset);
+    }
+    if let Some(namespace) = namespace {
+        let mut processing =
+            marketforge_engine::historical::job::load_committed_processing_job(directory).unwrap();
+        for task in &mut processing.tasks {
+            task.raw_schema["marketforge_source"] = json!({"instrument_namespace": namespace});
+        }
+        write_job(directory, &processing);
+    }
     let size_bytes = fs::metadata(&part_path).unwrap().len();
     for old in &manifest.files {
         fs::remove_file(directory.join(&old.path)).unwrap();
@@ -479,8 +529,8 @@ pub fn shared_part_trade_job(root: &Path) -> MergeJobDocument {
         path: part,
         rows: 4,
         size_bytes,
-        start_timestamp_ns: Some(100),
-        end_timestamp_ns: Some(400),
+        start_timestamp_ns: Some(timestamps[0]),
+        end_timestamp_ns: Some(timestamps[3]),
     }];
     manifest.files_written = 1;
     manifest.streams = vec![StreamOutput {

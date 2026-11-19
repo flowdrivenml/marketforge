@@ -1,7 +1,10 @@
 use crate::historical::merge::progress::{
     MergePhase, MergeProgressReporter, MergeWorkerProgress, PartitionKey,
 };
-use std::{collections::HashSet, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 use {
     crate::historical::job::MergeJob,
     crate::historical::normalize::scheduler::execute_parallel_budgeted,
@@ -13,7 +16,7 @@ use {
     crate::historical::merge::depth::inventory::DepthTaskInventory,
     crate::historical::merge::execution::shared::resources::estimate_merge_stream_resources,
     crate::historical::merge::partition::unified::partition_executor::UnifiedPartitionResult,
-    crate::historical::merge::partition::unified::partition_executor::execute_unified_partition_with_progress,
+    crate::historical::merge::partition::unified::partition_executor::execute_unified_partition_impl,
     crate::historical::merge::partition::unified::partition_input::UnifiedPartitionInputPlan,
     crate::historical::merge::trades::inventory::TradeTaskInventory,
 };
@@ -41,6 +44,12 @@ pub fn execute_unified_partitions_parallel(
     )
 }
 
+pub(crate) struct RankedStreams<'a> {
+    pub streams:
+        &'a [crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeStream],
+    pub trade_ranks: &'a HashMap<(u64, u64), u32>,
+}
+
 pub fn execute_unified_partitions_parallel_with_progress(
     job: &MergeJob,
     plans: Vec<UnifiedPartitionInputPlan>,
@@ -49,6 +58,29 @@ pub fn execute_unified_partitions_parallel_with_progress(
     boundaries: &[DepthBoundaryLink],
     staging: &Path,
     reporter: &MergeProgressReporter,
+) -> Result<Vec<UnifiedPartitionResult>> {
+    execute_ranked_partitions(
+        job,
+        plans,
+        trade_inventory,
+        depth_inventory,
+        boundaries,
+        staging,
+        reporter,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn execute_ranked_partitions(
+    job: &MergeJob,
+    plans: Vec<UnifiedPartitionInputPlan>,
+    trade_inventory: &[TradeTaskInventory],
+    depth_inventory: &[DepthTaskInventory],
+    boundaries: &[DepthBoundaryLink],
+    staging: &Path,
+    reporter: &MergeProgressReporter,
+    ranked: Option<&RankedStreams<'_>>,
 ) -> Result<Vec<UnifiedPartitionResult>> {
     if plans.is_empty() {
         return invalid("parallel unified merge requires partitions");
@@ -81,7 +113,11 @@ pub fn execute_unified_partitions_parallel_with_progress(
             let stream_count = plan
                 .inputs
                 .iter()
-                .map(|input| input.dataset_id)
+                .map(|input| {
+                    ranked
+                        .and_then(|r| r.trade_ranks.get(&(input.dataset_id, input.task_id)))
+                        .map_or((input.dataset_id, None), |&rank| (0, Some(rank)))
+                })
                 .collect::<HashSet<_>>()
                 .len();
 
@@ -98,7 +134,7 @@ pub fn execute_unified_partitions_parallel_with_progress(
             reporter.partition_started(key);
 
             let mut progress = MergeWorkerProgress::new(reporter, key);
-            let result = execute_unified_partition_with_progress(
+            let result = execute_unified_partition_impl(
                 &plan,
                 trade_inventory,
                 depth_inventory,
@@ -106,7 +142,8 @@ pub fn execute_unified_partitions_parallel_with_progress(
                 &job.inputs,
                 &job.parquet,
                 staging,
-                &mut progress,
+                Some(&mut progress),
+                ranked,
             );
 
             match &result {

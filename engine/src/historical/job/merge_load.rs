@@ -16,7 +16,7 @@ pub fn load_merge_job(path: impl AsRef<Path>) -> Result<MergeJobDocument> {
 
     let job: MergeJobDocument = serde_json::from_reader(BufReader::new(file)).map_err(|error| {
         MarketForgeError::InvalidConfiguration(format!(
-            "failed to parse merge job {}: {error}",
+            "failed to parse merge job {}: {error}. Regenerate older jobs with Forge merge preparation",
             path.display()
         ))
     })?;

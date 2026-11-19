@@ -135,25 +135,17 @@ impl PhysicalMergeManifest {
             return invalid("physical merge requires input datasets");
         }
 
-        if self.streams.len() != self.input_datasets.len() {
-            return invalid("physical merge stream count mismatch");
-        }
-
         let mut seen_datasets = HashSet::new();
 
-        for (index, (input, stream)) in self.input_datasets.iter().zip(&self.streams).enumerate() {
+        for input in &self.input_datasets {
             if !seen_datasets.insert(input.dataset_id) {
                 return invalid("duplicate physical input dataset");
             }
-
-            if input.dataset_id != stream.dataset_id {
-                return invalid("physical stream dataset mismatch");
-            }
-
-            if usize::try_from(stream.stream_rank).ok() != Some(index) {
-                return invalid("invalid physical stream rank");
-            }
         }
+        crate::historical::merge::output::manifests::unified_manifest::validate_stream_membership(
+            &self.streams,
+            &seen_datasets,
+        )?;
 
         let has_trades = self
             .streams

@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs::File,
     path::{Component, Path},
 };
@@ -45,12 +45,40 @@ pub fn validate_unified_merge_output(
     trade_inventory: &[TradeTaskInventory],
     depth_inventory: &[DepthTaskInventory],
 ) -> Result<ValidatedUnifiedMergeOutput> {
+    validate_ranked_unified_merge_output(
+        staging,
+        partitions,
+        streams,
+        trade_inventory,
+        depth_inventory,
+        None,
+    )
+}
+
+pub(crate) fn validate_ranked_unified_merge_output(
+    staging: &Path,
+    partitions: &[UnifiedPartitionResult],
+    streams: &[UnifiedMergeStream],
+    trade_inventory: &[TradeTaskInventory],
+    depth_inventory: &[DepthTaskInventory],
+    trade_ranks: Option<&HashMap<(u64, u64), u32>>,
+) -> Result<ValidatedUnifiedMergeOutput> {
     if partitions.is_empty() {
         return invalid("unified output contains no partitions");
     }
 
     if streams.is_empty() {
         return invalid("unified output contains no streams");
+    }
+
+    let mut stream_by_member = HashMap::with_capacity(streams.len());
+    for stream in streams {
+        if stream_by_member
+            .insert((stream.dataset_id, stream.stream_rank), stream)
+            .is_some()
+        {
+            return invalid("duplicate unified stream membership");
+        }
     }
 
     let staging = staging
@@ -217,13 +245,9 @@ pub fn validate_unified_merge_output(
                     // Stream identity
                     // -----------------------------------------------------
 
-                    let stream = streams.get(rank as usize).ok_or_else(|| {
-                        invalid_error(format!("invalid unified stream rank {rank}"))
+                    let stream = stream_by_member.get(&(dataset_id, rank)).ok_or_else(|| {
+                        invalid_error(format!("unified stream identity mismatch: publication={dataset_id}, rank={rank}"))
                     })?;
-
-                    if stream.stream_rank != rank || stream.dataset_id != dataset_id {
-                        return invalid(format!("unified stream identity mismatch: rank={rank}"));
-                    }
 
                     // -----------------------------------------------------
                     // Event kind and metadata
@@ -235,6 +259,13 @@ pub fn validate_unified_merge_output(
                                 return invalid("trade event belongs to non-trade stream");
                             }
 
+                            if trade_ranks.is_some_and(|expected| {
+                                expected.get(&(dataset_id, task_id)) != Some(&rank)
+                            }) {
+                                return invalid(format!(
+                                    "trade source task ({dataset_id}, {task_id}) does not belong to rank {rank}"
+                                ));
+                            }
                             if count != 1 || !boundaries.is_null(row) || !operations.is_null(row) {
                                 return invalid("invalid trade canonical reference");
                             }
@@ -278,36 +309,6 @@ pub fn validate_unified_merge_output(
                         .ok_or_else(|| invalid_error("canonical row range overflow"))?;
 
                     // -----------------------------------------------------
-                    // Complete deterministic ordering
-                    // -----------------------------------------------------
-
-                    let key = MergeKey {
-                        timestamp_ns: timestamp,
-                        stream_rank: rank,
-                        task_rank: task_id,
-                        event_ordinal: ordinal,
-                    };
-
-                    if let Some(previous) = previous_key {
-                        if key < previous {
-                            return invalid(format!(
-                                "unified ordering regression: \
-             previous={previous:?}, current={key:?}"
-                            ));
-                        }
-                    }
-
-                    previous_key = Some(key);
-
-                    // -----------------------------------------------------
-                    // Canonical reference arithmetic
-                    // -----------------------------------------------------
-
-                    offset
-                        .checked_add(count)
-                        .ok_or_else(|| invalid_error("canonical row range overflow"))?;
-
-                    // -----------------------------------------------------
                     // Canonical source-reference validation
                     // -----------------------------------------------------
 
@@ -334,12 +335,7 @@ pub fn validate_unified_merge_output(
                     // Complete deterministic ordering
                     // -----------------------------------------------------
 
-                    let key = MergeKey {
-                        timestamp_ns: timestamp,
-                        stream_rank: rank,
-                        task_rank: task_id,
-                        event_ordinal: ordinal,
-                    };
+                    let key = MergeKey::new(timestamp, rank, 0, 0);
 
                     if let Some(previous) = previous_key {
                         if key < previous {

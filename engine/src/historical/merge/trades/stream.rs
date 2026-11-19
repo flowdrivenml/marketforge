@@ -47,7 +47,7 @@ pub struct TradeStream {
 
 impl TradeStream {
     pub fn new(dataset_id: u64, tasks: Vec<TradeTaskInventory>) -> Result<Self> {
-        Self::build(dataset_id, tasks, None)
+        Self::build(dataset_id, tasks, None, false)
     }
 
     pub fn new_range(
@@ -60,15 +60,25 @@ impl TradeStream {
             return invalid("invalid trade stream timestamp range");
         }
 
-        Self::build(dataset_id, tasks, Some((start_ns, end_ns)))
+        Self::build(dataset_id, tasks, Some((start_ns, end_ns)), false)
+    }
+
+    pub(crate) fn new_ranked_range(
+        dataset_id: u64,
+        tasks: Vec<TradeTaskInventory>,
+        start_ns: i64,
+        end_ns: i64,
+    ) -> Result<Self> {
+        Self::build(dataset_id, tasks, Some((start_ns, end_ns)), true)
     }
 
     fn build(
         dataset_id: u64,
         mut tasks: Vec<TradeTaskInventory>,
         range: Option<(i64, i64)>,
+        ranked: bool,
     ) -> Result<Self> {
-        if tasks.iter().any(|task| task.dataset_id != dataset_id) {
+        if !ranked && tasks.iter().any(|task| task.dataset_id != dataset_id) {
             return invalid(format!(
                 "dataset {dataset_id}: trade stream contains foreign tasks"
             ));
@@ -78,17 +88,20 @@ impl TradeStream {
         tasks.sort_by_key(|task| task.start_timestamp_ns);
 
         for pair in tasks.windows(2) {
-            if pair[0].task_id == pair[1].task_id {
+            if pair[0].dataset_id == pair[1].dataset_id && pair[0].task_id == pair[1].task_id {
                 return invalid(format!(
                     "dataset {dataset_id}: duplicate trade task {}",
                     pair[0].task_id
                 ));
             }
 
-            if pair[1].start_timestamp_ns < pair[0].end_timestamp_ns {
+            if pair[1].start_timestamp_ns < pair[0].end_timestamp_ns
+                || (pair[0].dataset_id != pair[1].dataset_id
+                    && pair[1].start_timestamp_ns == pair[0].end_timestamp_ns)
+            {
                 return invalid(format!(
-                    "dataset {dataset_id}: overlapping trade tasks {} and {}",
-                    pair[0].task_id, pair[1].task_id
+                    "ambiguous overlap between trade tasks ({}, {}) and ({}, {})",
+                    pair[0].dataset_id, pair[0].task_id, pair[1].dataset_id, pair[1].task_id
                 ));
             }
         }
@@ -228,7 +241,7 @@ impl TradeStream {
                 .ok_or_else(|| invalid_error("trade event counter overflow"))?;
 
             return Ok(Some(TradeEventRef {
-                dataset_id: self.dataset_id,
+                dataset_id: task.dataset_id,
                 task_id: task.task_id,
 
                 event_ordinal: canonical_row_offset,

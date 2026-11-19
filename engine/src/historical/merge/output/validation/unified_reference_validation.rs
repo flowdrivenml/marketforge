@@ -26,7 +26,6 @@ pub struct CanonicalTaskBounds {
 
 #[derive(Debug, Clone, Copy)]
 struct StreamState {
-    task_id: u64,
     event_ordinal: u64,
     canonical_row_offset: u64,
     canonical_row_count: u64,
@@ -38,7 +37,7 @@ struct StreamState {
 
 pub struct UnifiedReferenceValidator {
     tasks: HashMap<(u64, u64), CanonicalTaskBounds>,
-    streams: HashMap<u32, StreamState>,
+    streams: HashMap<(u64, u64), StreamState>,
 }
 
 impl UnifiedReferenceValidator {
@@ -145,36 +144,30 @@ impl UnifiedReferenceValidator {
         // Validate source progression
         // ---------------------------------------------------------------------
 
-        if let Some(previous) = self.streams.get(&record.stream_rank) {
-            if record.task_id < previous.task_id {
-                return invalid("canonical task ordering regression");
+        let identity = (record.dataset_id, record.task_id);
+        if let Some(previous) = self.streams.get(&identity) {
+            if record.event_ordinal <= previous.event_ordinal {
+                return invalid("duplicate or regressing canonical event ordinal");
             }
 
-            if record.task_id == previous.task_id {
-                if record.event_ordinal <= previous.event_ordinal {
-                    return invalid("duplicate or regressing canonical event ordinal");
-                }
+            if record.canonical_row_offset < previous.canonical_row_offset {
+                return invalid("canonical row offset regression");
+            }
 
-                if record.canonical_row_offset < previous.canonical_row_offset {
-                    return invalid("canonical row offset regression");
-                }
+            // Overlapping canonical row ranges are not permitted.
+            let previous_end = previous
+                .canonical_row_offset
+                .checked_add(previous.canonical_row_count)
+                .ok_or_else(|| invalid_error("previous canonical range overflow"))?;
 
-                // Overlapping canonical row ranges are not permitted.
-                let previous_end = previous
-                    .canonical_row_offset
-                    .checked_add(previous.canonical_row_count)
-                    .ok_or_else(|| invalid_error("previous canonical range overflow"))?;
-
-                if record.canonical_row_offset < previous_end {
-                    return invalid("overlapping canonical row references");
-                }
+            if record.canonical_row_offset < previous_end {
+                return invalid("overlapping canonical row references");
             }
         }
 
         self.streams.insert(
-            record.stream_rank,
+            identity,
             StreamState {
-                task_id: record.task_id,
                 event_ordinal: record.event_ordinal,
                 canonical_row_offset: record.canonical_row_offset,
                 canonical_row_count: record.canonical_row_count,

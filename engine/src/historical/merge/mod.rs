@@ -40,7 +40,9 @@ pub use execution::unified::parallel::{
     execute_unified_partitions_parallel, execute_unified_partitions_parallel_with_progress,
     validate_unified_partition_results,
 };
-pub use execution::unified::stream_resolver::resolve_unified_merge_streams;
+pub use execution::unified::stream_resolver::{
+    resolve_ranked_merge_streams, resolve_unified_merge_streams,
+};
 pub use output::manifests::manifest::{
     MERGE_MANIFEST_FILENAME, MERGE_MANIFEST_VERSION, MergeBoundaryRecord, MergeInputDataset,
     MergeManifest, MergeSkippedInitialization, MergeStream, MergeTimelineFile, build_merge_streams,

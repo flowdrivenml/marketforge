@@ -83,7 +83,9 @@ pub fn build_trade_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<TradeT
                     .filter(|f| f.path.starts_with(&format!("{}/", stream.directory)))
                     .collect::<Vec<_>>();
                 parts.sort_by(|a, b| a.path.cmp(&b.path));
-                for source in &stream.sources {
+                let mut sources = stream.sources.iter().collect::<Vec<_>>();
+                sources.sort_by_key(|source| source.start_row);
+                for source in sources {
                     let mut offset = 0u64;
                     let mut files = Vec::new();
                     for (part_index, part) in parts.iter().enumerate() {
@@ -239,7 +241,10 @@ pub fn build_trade_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<TradeT
         // Build task inventories
         // ---------------------------------------------------------------------
 
-        for (task_id, mut entries) in tasks {
+        for &task_id in &input.manifest.source_tasks {
+            let Some(mut entries) = tasks.remove(&task_id) else {
+                continue;
+            };
             entries.sort_by_key(|entry| entry.0);
 
             let mut files = Vec::with_capacity(entries.len());

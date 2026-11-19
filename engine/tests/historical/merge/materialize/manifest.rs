@@ -171,9 +171,9 @@ fn rejects_duplicate_input_datasets() {
 }
 
 #[test]
-fn rejects_stream_rank_mismatch() {
+fn rejects_conflicting_stream_rank() {
     let mut manifest = manifest();
-    manifest.streams[1].stream_rank = 5;
+    manifest.streams[1].stream_rank = manifest.streams[0].stream_rank;
 
     assert!(manifest.validate().is_err());
 }

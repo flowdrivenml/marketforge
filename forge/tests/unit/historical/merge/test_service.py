@@ -1,5 +1,6 @@
 """Managed merge selection and preparation tests with no processing subprocess."""
 
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -46,8 +47,8 @@ def test_recipe_and_coverage() -> None:
     "mode,expected",
     [
         ("valid", None),
-        ("collision", None),
-        ("namespace", None),
+        ("collision", "Ambiguous engine publication ID"),
+        ("namespace", "single instrument namespace"),
         ("missing", "lacks a registered file path"),
         ("hardlink", "same physical file"),
         ("multi", None),
@@ -107,7 +108,12 @@ async def test_selection_uses_registry_order_and_paths(
             "inventory_sha256": {name: "sha"},
             "resolved_job": {"streams": streams},
             "manifest": {
-                "streams": streams,
+                "streams": [
+                    {"stream_id": "first", "directory": "."},
+                    {"stream_id": "second", "directory": "unused"},
+                ]
+                if mode == "multi"
+                else [],
                 "dataset_id": engine_id,
                 "protocol_version": 5 if mode == "segmented" else 3,
                 "content_type": "depth" if mode == "depth" else "trades",
@@ -141,7 +147,7 @@ async def test_selection_uses_registry_order_and_paths(
 
     monkeypatch.setattr(service, "testing_dsn", lambda root: "fixture")
     monkeypatch.setattr(service, "testing_connection", connect)
-    monkeypatch.setattr(service, "verify", lambda paths, source: evidence[str(source)])
+    monkeypatch.setattr(service, "verify", lambda paths, source, **kwargs: evidence[str(source)])
     if expected:
         with pytest.raises(MarketForgeError, match=expected):
             await service.select_inputs(paths, ids=[7, 4])
@@ -151,9 +157,10 @@ async def test_selection_uses_registry_order_and_paths(
             [20, 20] if mode == "collision" else [47, 44]
         )
         assert [item["path"] for item in selected] == [row[7] for row in reversed(records)]
+        assert await service.select_inputs(paths, ids=[7, 4]) == selected
+        service.assign_ranks(selected, {"first": 7}, {})
         inputs = [service.file_input(item) for item in selected]
         assert [item["path"] for item in inputs] == [row[1] for row in reversed(records)]
-        assert await service.select_inputs(paths, ids=[7, 4]) == selected
         assert await service.select_inputs(paths, job={"inputs": inputs}) == selected
         with pytest.raises(MarketForgeError, match="without duplicates"):
             await service.select_inputs(paths, job={"inputs": inputs + inputs[:1]})
@@ -198,7 +205,8 @@ async def test_two_file_ids_share_one_verified_publication(
 
     verification_calls = []
 
-    def verify(_paths: ProjectPaths, source: Path) -> dict[str, Any]:
+    def verify(_paths: ProjectPaths, source: Path, *, selected_files: set[str]) -> dict[str, Any]:
+        assert selected_files == set(names[:2])
         verification_calls.append(source)
         return {
             "manifest_sha256": "manifest-sha",
@@ -229,3 +237,74 @@ async def test_two_file_ids_share_one_verified_publication(
     assert verification_calls == [root]
     assert [item["primary_file"] for item in selected] == [names[1], names[0]]
     assert len(service.publication_selection(selected)) == 1
+
+
+def test_execution_uses_pinned_runtime_and_rejects_changed_preparation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = ProjectPaths(tmp_path, tmp_path / "data")
+    runtime = service.runtime_path(paths)
+    runtime.parent.mkdir(parents=True)
+    runtime.write_text("[resources]\nworkers = 2\n")
+    binary = tmp_path / "marketforge-merge"
+    binary.touch()
+    selected = {
+        "database_id": 3,
+        "engine_id": 20,
+        "stream_id": "stream",
+        "content_type": "trades",
+        "namespace": "ns",
+        "path": "/input",
+        "registered_path": "/input/part.parquet",
+        "manifest_path": "/input/manifest.json",
+        "file_sha256": "a" * 64,
+        "manifest_sha256": "b" * 64,
+        "start_ns": 10,
+        "end_ns": 19,
+        "memberships": [{"stream_id": "stream"}],
+    }
+
+    async def select(_paths: ProjectPaths, *, ids=None, job=None):
+        item = dict(selected)
+        if job:
+            item["stream_rank"] = job["inputs"][0]["stream_rank"]
+        return [item]
+
+    validated = []
+
+    def validate(_paths, _binary, _source, config):
+        validated.append(config)
+
+    def process(argv, _root, directory, *, tui):
+        assert not tui
+        config = Path(argv[argv.index("--config") + 1])
+        assert config == validated[-1] == directory / "general.toml"
+        assert config.read_bytes() == runtime.read_bytes()
+        return 1, False
+
+    monkeypatch.setattr(service, "resolve", lambda *_: binary)
+    monkeypatch.setattr(service, "select_inputs", select)
+    monkeypatch.setattr(service, "validate_job", validate)
+    monkeypatch.setattr(service, "effective_runtime", lambda *_: {"resources": {"workers": 2}})
+    monkeypatch.setattr(service, "run_process", process)
+    registration = AsyncMock()
+    monkeypatch.setattr(service, "register_verified", registration)
+    recipe = service.Recipe(dataset_ids=[3], start_ns=10, end_ns=20, stream_ranks={"stream": 7})
+    prepared = service.prepare_job(paths, recipe, "manual", 1, paths.runs_dir / "prepare", [3], {})
+    source = Path(prepared["job_path"])
+    receipt = service.execute(paths, source)
+    assert receipt["effective_runtime"]["resources"]["workers"] == 2
+    assert receipt["configuration_sha256"] == service.checksum(runtime)
+    assert receipt["registration"] == "not_started"
+    registration.assert_not_called()
+
+    job = service.read_json(source)
+    job["inputs"][0]["stream_rank"] = 3
+    source.write_text(json.dumps(job))
+    with pytest.raises(MarketForgeError, match="Prepared merge job.*changed"):
+        service.execute(paths, source)
+    job["inputs"][0]["stream_rank"] = 7
+    source.write_text(json.dumps(job))
+    runtime.write_text("[resources]\nworkers = 1\n")
+    with pytest.raises(MarketForgeError, match="Prepared merge job.*changed"):
+        service.execute(paths, source)

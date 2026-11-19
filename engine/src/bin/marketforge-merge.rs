@@ -205,10 +205,11 @@ fn run(args: CliArgs) -> Result<serde_json::Value, String> {
         .map_err(|error| error.to_string())?;
     if args.validate {
         use marketforge_engine::historical::merge::{
-            MergeCommitPaths, resolve_unified_merge_streams,
+            MergeCommitPaths, resolve_ranked_merge_streams,
         };
         let resolved = resolve_merge_inputs(&job, &project_root).map_err(|e| e.to_string())?;
-        resolve_unified_merge_streams(&resolved, &project_root).map_err(|e| e.to_string())?;
+        resolve_ranked_merge_streams(&resolved, &project_root, job.submission.as_ref())
+            .map_err(|e| e.to_string())?;
         let output = MergeCommitPaths::new(&job.output.dataset_path, job.job_id)
             .map_err(|e| e.to_string())?;
         for path in [output.dataset_path, output.staging_path] {

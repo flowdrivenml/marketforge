@@ -112,37 +112,44 @@ def merged_file_memberships(
         for item in inputs
         for member in item["memberships"]
     }
-    selected_files: dict[int, set[int]] = defaultdict(set)
+    selected_files: dict[tuple[int, str | None], set[int]] = defaultdict(set)
     for item in inputs:
-        selected_files[item["engine_id"]].add(item["database_id"])
-    streams = {s["stream_rank"]: s for s in manifest["streams"]}
+        selected_files[item["engine_id"], item.get("stream_id")].add(item["database_id"])
+    streams = {(s["dataset_id"], s["stream_rank"]): s for s in manifest["streams"]}
     results = {}
     for file in manifest["files"]:
-        observed: dict[int, tuple[int, int]] = {}
-        for batch in batches([root / file["path"]], columns=["stream_rank", "event_timestamp_ns"]):
+        observed: dict[tuple[int, int], tuple[int, int]] = {}
+        for batch in batches(
+            [root / file["path"]], columns=["dataset_id", "stream_rank", "event_timestamp_ns"]
+        ):
             import pyarrow as pa
 
             grouped = (
                 pa.Table.from_batches([batch])
-                .group_by("stream_rank", use_threads=False)
+                .group_by(["dataset_id", "stream_rank"], use_threads=False)
                 .aggregate([("event_timestamp_ns", "min"), ("event_timestamp_ns", "max")])
             )
-            for rank, lo, hi in zip(
+            for publication, rank, lo, hi in zip(
                 *(column.to_pylist() for column in grouped.columns), strict=True
             ):
-                start, end = observed.get(rank, (lo, hi))
-                observed[rank] = (min(start, lo), max(end, hi))
+                key = (publication, rank)
+                start, end = observed.get(key, (lo, hi))
+                observed[key] = (min(start, lo), max(end, hi))
         memberships = []
-        for rank, (start, end) in sorted(observed.items()):
-            s = streams[rank]
-            identity = source_members.get((s["dataset_id"], s["stream_id"]), {})
-            candidates = selected_files[s["dataset_id"]]
-            # This rank proves contribution from the sole selected file, when
-            # the publication was selected through exactly one primary part.
+        for (publication, rank), (start, end) in sorted(
+            observed.items(), key=lambda item: (item[0][1], item[0][0])
+        ):
+            s = streams[publication, rank]
+            identity = source_members.get((publication, s["stream_id"]), {})
+            candidates = selected_files.get(
+                (publication, s["stream_id"]), selected_files[publication, None]
+            )
             contributor = next(iter(candidates)) if len(candidates) == 1 else None
             memberships.append(
                 {
                     "stream_id": s["stream_id"],
+                    "stream_rank": rank,
+                    "source_publication_id": str(publication),
                     "kind": s.get("kind"),
                     "input_file_dataset_id": contributor,
                     "exchange": identity.get("exchange", s["exchange"]),

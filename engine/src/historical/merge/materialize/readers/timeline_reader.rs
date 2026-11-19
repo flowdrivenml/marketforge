@@ -17,7 +17,7 @@ use {
 // Ordering key
 // -----------------------------------------------------------------------------
 
-type TimelineKey = (i64, u32, u64, u64);
+type TimelineKey = (i64, u32);
 
 // -----------------------------------------------------------------------------
 // Streaming timeline reader
@@ -156,12 +156,7 @@ impl MaterializationTimelineReader {
 
                     validate_reference(&record)?;
 
-                    let key = (
-                        record.event_timestamp_ns,
-                        record.stream_rank,
-                        record.task_id,
-                        record.event_ordinal,
-                    );
+                    let key = (record.event_timestamp_ns, record.stream_rank);
 
                     if let Some(previous) = self.previous_key {
                         if key < previous {

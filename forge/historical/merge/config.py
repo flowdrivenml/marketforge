@@ -17,6 +17,7 @@ from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
 DatabaseID = Annotated[int, Field(strict=True, gt=0, lt=2**63)]
+StreamRank = Annotated[int, Field(strict=True, ge=0, le=2**32 - 1)]
 Timestamp = Annotated[int, Field(strict=True, ge=-(2**63), lt=2**63)]
 
 
@@ -61,6 +62,7 @@ class DerivedRecipe(SettingsModel, frozen=True):
     version: Literal[1]
     interval: AcquisitionInterval
     selection: Selection
+    stream_ranks: dict[str, StreamRank] = Field(default_factory=dict)
 
     @property
     def start_ns(self) -> int:

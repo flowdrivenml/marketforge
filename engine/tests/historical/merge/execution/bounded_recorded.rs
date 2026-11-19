@@ -120,7 +120,7 @@ fn bounded_v5_trade_matches_normalized_rows_and_commits_with_one_or_two_workers(
             File::open(result.dataset_path.join("publication-checksums.json")).unwrap(),
         )
         .unwrap();
-        assert_eq!(hashes.len(), manifest.files.len() + 4);
+        assert_eq!(hashes.len(), manifest.files.len() + 5);
         for (relative, expected_hash) in hashes {
             assert_eq!(
                 file_sha256(&result.dataset_path.join(relative)).unwrap(),
@@ -169,7 +169,7 @@ fn bounded_v5_trade_matches_normalized_rows_and_commits_with_one_or_two_workers(
 #[ignore = "opt-in compatibility with canonical normalized publications"]
 fn bounded_v5_depth_reaches_the_reconstruction_guard() {
     use marketforge_engine::historical::merge::{
-        resolve_merge_inputs, resolve_unified_merge_streams,
+        resolve_merge_inputs, resolve_ranked_merge_streams,
     };
     let workspace = tempfile::tempdir().unwrap();
     let mut job = recorded_job();
@@ -183,7 +183,7 @@ fn bounded_v5_depth_reaches_the_reconstruction_guard() {
     let resolved = resolve_merge_inputs(&bounded_runtime(job.clone()), workspace.path()).unwrap();
     assert_eq!(resolved[0].manifest.protocol_version, 5);
     assert_eq!(resolved[0].selected_streams().unwrap().len(), 1);
-    let err = resolve_unified_merge_streams(&resolved, workspace.path()).unwrap_err();
+    let err = resolve_ranked_merge_streams(&resolved, workspace.path(), Some(&job)).unwrap_err();
     assert!(
         err.to_string()
             .contains("reconstruction-state dependencies"),
@@ -194,10 +194,8 @@ fn bounded_v5_depth_reaches_the_reconstruction_guard() {
 
 #[test]
 #[ignore = "opt-in compatibility with canonical normalized publications"]
-fn bounded_v5_trade_streams_reach_the_replay_rank_guard() {
-    use marketforge_engine::historical::merge::{
-        resolve_merge_inputs, resolve_unified_merge_streams,
-    };
+fn bounded_v5_trade_streams_from_one_publication_commit() {
+    use marketforge_engine::historical::merge::resolve_merge_inputs;
     let workspace = tempfile::tempdir().unwrap();
     let mut job = recorded_job();
     job.inputs = recorded_members(&job, ContentType::Trades)
@@ -216,13 +214,14 @@ fn bounded_v5_trade_streams_reach_the_replay_rank_guard() {
     let resolved = resolve_merge_inputs(&bounded_runtime(job.clone()), workspace.path()).unwrap();
     assert_eq!(resolved.len(), 1);
     assert_eq!(resolved[0].selected_streams().unwrap().len(), 2);
-    let err = resolve_unified_merge_streams(&resolved, workspace.path()).unwrap_err();
-    assert!(
-        err.to_string()
-            .contains("multiple stream ranks per publication"),
-        "{err}"
-    );
-    assert!(!job.output.dataset_path.exists());
+    let result =
+        execute_unified_merge_job(&bounded_runtime(job.clone()), workspace.path()).unwrap();
+    let manifest: PhysicalMergeManifest =
+        serde_json::from_slice(&fs::read(result.manifest_path).unwrap()).unwrap();
+    assert_eq!(manifest.streams.len(), 2);
+    assert_eq!(manifest.input_datasets.len(), 1);
+    assert!(manifest.trade_events > 0);
+    validate_committed_merge(&job.output.dataset_path).unwrap();
 }
 
 #[test]
@@ -260,7 +259,7 @@ fn adjacent_depth_parts_preserve_stream_rows_without_opening_primary_files() {
 #[ignore = "opt-in compatibility with canonical normalized publications"]
 fn bounded_v5_combined_inputs_resolve_before_the_reconstruction_guard() {
     use marketforge_engine::historical::merge::{
-        resolve_merge_inputs, resolve_unified_merge_streams,
+        resolve_merge_inputs, resolve_ranked_merge_streams,
     };
     let workspace = tempfile::tempdir().unwrap();
     let mut job = recorded_job();
@@ -294,7 +293,7 @@ fn bounded_v5_combined_inputs_resolve_before_the_reconstruction_guard() {
             .collect::<Vec<_>>(),
         [ContentType::Trades, ContentType::Depth]
     );
-    let err = resolve_unified_merge_streams(&resolved, workspace.path()).unwrap_err();
+    let err = resolve_ranked_merge_streams(&resolved, workspace.path(), Some(&job)).unwrap_err();
     assert!(
         err.to_string()
             .contains("reconstruction-state dependencies"),

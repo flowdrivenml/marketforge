@@ -35,6 +35,7 @@ def workspace(tmp_path: Path) -> Path:
     folder = tmp_path / "data/.config/historical/normalization"
     folder.mkdir(parents=True)
     (folder / "engine_test.toml").write_text(SOURCE)
+    (folder.parent / "general.toml").write_text("schema_version = 1\n")
     (folder / "invalid.toml").write_text(SOURCE.replace('data_type = "trades"', 'data_type = "x"'))
     return tmp_path
 
@@ -100,6 +101,8 @@ def test_prepare_freezes_registry_inputs_and_routes_existing_references(
     files: list[dict[str, Any]] = [
         {
             "database_id": i,
+            "stream_id": f"stream-{i}",
+            "content_type": "trades",
             "engine_id": 7401 if i == 3 else 7400,
             "namespace": "ns",
             "path": "/published/7401" if i == 3 else "/published/7400",
@@ -167,6 +170,9 @@ def test_prepare_freezes_registry_inputs_and_routes_existing_references(
     assert job["inputs"] == [
         {
             "dataset_id": item["database_id"],
+            "stream_id": item["stream_id"],
+            "stream_rank": item["stream_rank"],
+            "content_type": item["content_type"],
             "path": item["registered_path"],
             "sha256": item["file_sha256"],
             "publication": {
@@ -181,6 +187,17 @@ def test_prepare_freezes_registry_inputs_and_routes_existing_references(
     assert len(result["source"]["sha256"]) == 64
     assert result["coverage"]["observed_extent_gaps"]["stream-1"][-1][-1] == 1793318400000000000
     assert calls == ["--validate-job"]
+    assert result["streams"] == [
+        {
+            "stream_id": f"stream-{index + 1}",
+            "stream_rank": index,
+            "content_type": "trades",
+            "file_count": 1,
+        }
+        for index in range(3)
+    ]
+    assert result["selected_file_count"] == 3
+    assert result["publication_count"] == 2
 
     (directory / "manual.toml").write_text(
         "dataset_ids = [2, 3, 1]\nstart_ns = 1793059200000000001\nend_ns = 1793318400000000000\n"
@@ -225,6 +242,8 @@ def test_validation_rejection_keeps_generated_job_and_blocks_processing(
     binary.write_bytes(b"fixture")
     item = {
         "database_id": 19,
+        "stream_id": "one",
+        "content_type": "trades",
         "engine_id": 8100,
         "path": "/registered/normalized/8100",
         "registered_path": "/registered/normalized/8100/part-2.parquet",

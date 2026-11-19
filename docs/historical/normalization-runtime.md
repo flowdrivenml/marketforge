@@ -2,6 +2,17 @@
 
 Runtime settings come from `data/.config/historical/general.toml` through `shared::historical`. Relative runtime and prepared-batch paths resolve against an explicit project root without changing process CWD.
 
+
+## Runtime resolution by operation
+
+The schema-1 file is shared. The Rust CLIs resolve the default `data/.config/historical/general.toml` under `--project-root`, which defaults to the working directory. An explicit `--config PATH` takes precedence and a relative value resolves against that same root. Missing or invalid explicit files fail with their resolved path. Each operation applies its supported settings and validation.
+
+- Normalization uses the processing resource, scratch, Parquet, and integrity settings. Managed Forge execution pins the TOML for Rust validation and execution. Committed `processing-runtime.json` has its own SHA-256 sidecar.
+- Merge uses the shared worker, memory, open-file, and Parquet budgets and the optional merge partition count and compression level. Forge retains the TOML checksum and effective settings in its intent. Every new merge commits `merge-runtime.json` and includes its SHA-256 in `publication-checksums.json`.
+- Conversion uses the shared worker cap and Parquet size targets and keeps its existing Zstandard level. Legacy job resource limits remain ceilings. An explicit `--workers N` selects at most the lower of the shared and job worker caps. A staged conversion records the effective settings and TOML checksum in `conversion-runtime.json`. A later `--publish` requires the same runtime settings and checksum.
+
+## Normalization loading
+
 The production loader is `historical::config::{read_prepared_batch, load_normalization_batch}`. Prepared schema 4 supports concrete tasks and top-level `families` with minimal `family_id` tasks. Structural reading validates references without opening archives; preparation discovers selected concrete futures from supported source records/member names. See [source selection](normalization-source-selection.md) for the authoritative wire contract, exact integer IDs, namespace compatibility and inherited specifications. No network/database lookup is needed.
 
 Preparation and normalization run off the TUI rendering thread. Discovery emits bounded/coalesced task registration, phases and decoded-byte telemetry before execution; registration survives completion-event coalescing. Physical acquisition identity is retained while members have independent reconstruction state.

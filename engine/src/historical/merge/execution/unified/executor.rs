@@ -1,4 +1,6 @@
+use super::parallel::execute_ranked_partitions;
 use crate::historical::merge::execution::shared::resolver::resolve_merge_inputs_with_progress;
+use crate::historical::merge::output::validation::unified_output_validation::validate_ranked_unified_merge_output;
 use crate::historical::merge::progress::{MergePhase, MergeProgressReporter};
 use crate::historical::merge::validate_physical_dataset_with_progress;
 use crate::historical::merge::{
@@ -7,8 +9,7 @@ use crate::historical::merge::{
     build_merge_checkpoints, build_physical_checkpoints, build_trade_inventory,
     depth_task_intervals, plan_merge_partitions, plan_unified_partition_inputs,
     prepare_physical_publication, reconcile_depth_boundaries, resolve_initial_checkpoints,
-    resolve_physical_initial_reconstruction, resolve_unified_merge_streams, trade_task_intervals,
-    validate_unified_merge_output,
+    resolve_physical_initial_reconstruction, resolve_ranked_merge_streams, trade_task_intervals,
 };
 use crate::{
     historical::job::{ContentType, MergeJob},
@@ -16,10 +17,7 @@ use crate::{
 };
 use std::path::{Path, PathBuf};
 
-use crate::historical::merge::{
-    execute_parallel_materialization_with_progress,
-    execute_unified_partitions_parallel_with_progress,
-};
+use crate::historical::merge::execute_parallel_materialization_with_progress;
 // -----------------------------------------------------------------------------
 // Execution result
 // -----------------------------------------------------------------------------
@@ -86,13 +84,14 @@ fn execute_unified_merge_job_inner(
             reporter.inputs_verified(files)
         })
     })?;
-    let stream_count = resolved.iter().try_fold(0, |total, input| {
-        input
-            .selected_streams()
-            .map(|streams| total + streams.len().max(1))
-    })?;
-    reporter.inputs_resolved(stream_count);
-    let streams = resolve_unified_merge_streams(&resolved, project_root)?;
+    let streams = resolve_ranked_merge_streams(&resolved, project_root, job.submission.as_ref())?;
+    reporter.inputs_resolved(
+        streams
+            .iter()
+            .map(|stream| stream.stream_rank)
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+    );
     use crate::historical::normalize::manifest::{file_sha256, write_publication_checksums};
     let input_hashes = resolved
         .iter()
@@ -168,6 +167,41 @@ fn execute_unified_merge_job_inner(
     }
     trade_inventory.retain(|task| !task.files.is_empty());
 
+    let mut trade_ranks = std::collections::HashMap::new();
+    for stream in streams
+        .iter()
+        .filter(|stream| stream.kind == UnifiedMergeStreamKind::Trade)
+    {
+        let input = resolved
+            .iter()
+            .find(|input| input.dataset_id == stream.dataset_id)
+            .expect("resolved publication");
+        let sources = input
+            .manifest
+            .streams
+            .iter()
+            .find(|entry| entry.stream_id == stream.stream_id);
+        for task in trade_inventory.iter().filter(|task| {
+            task.dataset_id == stream.dataset_id
+                && sources.is_none_or(|entry| {
+                    entry
+                        .sources
+                        .iter()
+                        .any(|source| source.task_id == task.task_id)
+                })
+        }) {
+            if trade_ranks
+                .insert((task.dataset_id, task.task_id), stream.stream_rank)
+                .is_some()
+            {
+                return invalid("trade task belongs to multiple selected streams");
+            }
+        }
+    }
+    let ranked = super::parallel::RankedStreams {
+        streams: &streams,
+        trade_ranks: &trade_ranks,
+    };
     let depth_inventory =
         profile_stage("depth_inventory", || build_depth_inventory(&depth_inputs))?;
     reporter.phase_completed(MergePhase::Inventory);
@@ -245,7 +279,7 @@ fn execute_unified_merge_job_inner(
     reporter.phase_started(MergePhase::LogicalMerge);
 
     let results = profile_stage("logical_merge", || {
-        execute_unified_partitions_parallel_with_progress(
+        execute_ranked_partitions(
             job,
             plans,
             &trade_inventory,
@@ -253,6 +287,7 @@ fn execute_unified_merge_job_inner(
             &boundaries,
             &logical_staging,
             reporter,
+            Some(&ranked),
         )
     })?;
 
@@ -263,12 +298,13 @@ fn execute_unified_merge_job_inner(
     // -------------------------------------------------------------------------
     reporter.phase_started(MergePhase::LogicalValidation);
     let validated = profile_stage("logical_validation", || {
-        validate_unified_merge_output(
+        validate_ranked_unified_merge_output(
             &logical_staging,
             &results,
             &streams,
             &trade_inventory,
             &depth_inventory,
+            Some(&trade_ranks),
         )
     })?;
     let expected_trade_events = results.iter().try_fold(0_u64, |total, result| {
@@ -479,6 +515,16 @@ fn execute_unified_merge_job_inner(
         let mut file = std::fs::File::create(commit.staging_path.join("merge-partitions.json"))?;
         serde_json::to_writer(&mut file, &physical_results)?;
         file.sync_all()?;
+        let mut runtime = std::fs::File::create(commit.staging_path.join("merge-runtime.json"))?;
+        serde_json::to_writer_pretty(
+            &mut runtime,
+            &crate::shared::historical::config::MergeRuntimeSettings {
+                resources: job.resources.clone(),
+                partitioning: job.partitioning.clone(),
+                parquet: job.parquet.clone(),
+            },
+        )?;
+        runtime.sync_all()?;
         write_publication_checksums(
             &commit.staging_path,
             [
@@ -486,6 +532,7 @@ fn execute_unified_merge_job_inner(
                 "merge-job.json",
                 "merge-input-checksums.json",
                 "merge-partitions.json",
+                "merge-runtime.json",
             ]
             .into_iter()
             .map(PathBuf::from)

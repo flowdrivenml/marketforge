@@ -111,3 +111,95 @@ fn selected_shared_trade_part_retains_task_bounds_across_workers() {
         );
     }
 }
+
+#[test]
+fn consecutive_publications_share_a_rank_and_keep_their_source_identity() {
+    use crate::{merge_test_job::bounded_runtime, publication::shared_part_trade_publication};
+    use arrow_array::{Int64Array, UInt32Array, UInt64Array};
+    use marketforge_engine::historical::merge::PhysicalMergeManifest;
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+    use std::fs::File;
+
+    let workspace = tempfile::tempdir().unwrap();
+    let root = workspace.path();
+    let mut job = shared_part_trade_publication(root, 11, 0, Some("test"));
+    let next = shared_part_trade_publication(root, 12, 400, Some("test"));
+    job.time_range.end_ns = 900;
+    job.inputs.splice(0..0, next.inputs);
+    for input in &mut job.inputs {
+        input.stream_rank = 7;
+    }
+
+    let result = execute_unified_merge_job(&bounded_runtime(job.clone()), root).unwrap();
+    validate_committed_merge(&result.dataset_path).unwrap();
+    let manifest: PhysicalMergeManifest =
+        serde_json::from_reader(File::open(&result.manifest_path).unwrap()).unwrap();
+    assert_eq!(manifest.streams.len(), 2);
+    assert!(
+        manifest
+            .streams
+            .iter()
+            .all(|stream| stream.stream_rank == 7)
+    );
+    let mut source = Vec::new();
+    for file in manifest.files {
+        let reader = ParquetRecordBatchReaderBuilder::try_new(
+            File::open(result.dataset_path.join(file.path)).unwrap(),
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+        for batch in reader {
+            let batch = batch.unwrap();
+            let column = |name| batch.column_by_name(name).unwrap().as_any();
+            let ranks = column("stream_rank").downcast_ref::<UInt32Array>().unwrap();
+            let publications = column("dataset_id").downcast_ref::<UInt64Array>().unwrap();
+            let tasks = column("task_id").downcast_ref::<UInt64Array>().unwrap();
+            let offsets = column("canonical_row_offset")
+                .downcast_ref::<UInt64Array>()
+                .unwrap();
+            let times = column("event_timestamp_ns")
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            source.extend((0..batch.num_rows()).map(|i| {
+                (
+                    ranks.value(i),
+                    publications.value(i),
+                    tasks.value(i),
+                    offsets.value(i),
+                    times.value(i),
+                )
+            }));
+        }
+    }
+    assert_eq!(
+        source,
+        [
+            (7, 11, 0, 0, 100),
+            (7, 11, 0, 1, 200),
+            (7, 11, 1, 0, 300),
+            (7, 11, 1, 1, 400),
+            (7, 12, 0, 0, 500),
+            (7, 12, 0, 1, 600),
+            (7, 12, 1, 0, 700),
+            (7, 12, 1, 1, 800),
+        ]
+    );
+
+    let overlap = shared_part_trade_publication(root, 13, 300, Some("test"));
+    job.inputs[0] = overlap.inputs.into_iter().next().unwrap();
+    job.inputs[0].stream_rank = 7;
+    job.output.dataset_path = root.join("overlap");
+    let error = execute_unified_merge_job(&bounded_runtime(job.clone()), root).unwrap_err();
+    assert!(error.to_string().contains("ambiguous overlap"), "{error}");
+    assert!(!job.output.dataset_path.exists());
+
+    let other = shared_part_trade_publication(root, 14, 400, Some("other-namespace"));
+    job.inputs[0] = other.inputs.into_iter().next().unwrap();
+    job.inputs[0].stream_rank = 7;
+    let error = execute_unified_merge_job(&bounded_runtime(job), root).unwrap_err();
+    assert!(
+        error.to_string().contains("assigned to distinct streams"),
+        "{error}"
+    );
+}

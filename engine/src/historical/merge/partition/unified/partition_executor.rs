@@ -66,6 +66,7 @@ pub fn execute_unified_partition(
         parquet,
         staging,
         None,
+        None,
     )
 }
 
@@ -89,11 +90,12 @@ pub fn execute_unified_partition_with_progress(
         parquet,
         staging,
         Some(progress),
+        None,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn execute_unified_partition_impl(
+pub(crate) fn execute_unified_partition_impl(
     plan: &UnifiedPartitionInputPlan,
     trade_inventory: &[TradeTaskInventory],
     depth_inventory: &[DepthTaskInventory],
@@ -102,6 +104,7 @@ fn execute_unified_partition_impl(
     parquet: &MergeParquetConfig,
     staging: &Path,
     mut progress: Option<&mut MergeWorkerProgress>,
+    ranked: Option<&crate::historical::merge::execution::unified::parallel::RankedStreams<'_>>,
 ) -> Result<UnifiedPartitionResult> {
     let partition = plan.partition;
 
@@ -117,66 +120,118 @@ fn execute_unified_partition_impl(
 
     let mut streams: Vec<Box<dyn MergeEventSource>> = Vec::with_capacity(dataset_order.len());
 
-    for &dataset_id in dataset_order {
-        let trades = trade_inventory
-            .iter()
-            .filter(|task| {
-                task.dataset_id == dataset_id && selected.contains(&(task.dataset_id, task.task_id))
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-
-        let depth = depth_inventory
-            .iter()
-            .filter(|task| {
-                task.dataset_id == dataset_id && selected.contains(&(task.dataset_id, task.task_id))
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-
-        let is_trade_dataset = trade_inventory
-            .iter()
-            .any(|task| task.dataset_id == dataset_id);
-
-        let is_depth_dataset = depth_inventory
-            .iter()
-            .any(|task| task.dataset_id == dataset_id);
-
-        match (is_trade_dataset, is_depth_dataset) {
-            (true, false) => {
-                streams.push(Box::new(TradeStream::new_range(
-                    dataset_id,
-                    trades,
-                    partition.start_ns,
-                    partition.end_ns,
-                )?));
+    let mut ranks = Vec::new();
+    if let Some(ranked) = ranked {
+        use crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeStreamKind;
+        let mut seen = HashSet::new();
+        for stream in ranked.streams {
+            if !seen.insert(stream.stream_rank) {
+                continue;
             }
-
-            (false, true) => {
-                streams.push(Box::new(PartitionDepthStream::new(
-                    dataset_id, partition, depth, boundaries,
-                )?));
-            }
-
-            (true, true) => {
-                return invalid(format!(
-                    "dataset {dataset_id}: classified as both trades and depth"
-                ));
-            }
-
-            (false, false) => {
-                return invalid(format!(
-                    "dataset {dataset_id}: missing from source inventories"
-                ));
+            ranks.push(stream.stream_rank);
+            match stream.kind {
+                UnifiedMergeStreamKind::Trade => {
+                    let tasks = trade_inventory
+                        .iter()
+                        .filter(|task| {
+                            let key = (task.dataset_id, task.task_id);
+                            selected.contains(&key)
+                                && ranked.trade_ranks.get(&key) == Some(&stream.stream_rank)
+                        })
+                        .cloned()
+                        .collect();
+                    streams.push(Box::new(TradeStream::new_ranked_range(
+                        stream.dataset_id,
+                        tasks,
+                        partition.start_ns,
+                        partition.end_ns,
+                    )?));
+                }
+                UnifiedMergeStreamKind::Depth => {
+                    let tasks = depth_inventory
+                        .iter()
+                        .filter(|task| {
+                            task.dataset_id == stream.dataset_id
+                                && selected.contains(&(task.dataset_id, task.task_id))
+                        })
+                        .cloned()
+                        .collect();
+                    streams.push(Box::new(PartitionDepthStream::new(
+                        stream.dataset_id,
+                        partition,
+                        tasks,
+                        boundaries,
+                    )?));
+                }
             }
         }
+    } else {
+        for &dataset_id in dataset_order {
+            let trades = trade_inventory
+                .iter()
+                .filter(|task| {
+                    task.dataset_id == dataset_id
+                        && selected.contains(&(task.dataset_id, task.task_id))
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+
+            let depth = depth_inventory
+                .iter()
+                .filter(|task| {
+                    task.dataset_id == dataset_id
+                        && selected.contains(&(task.dataset_id, task.task_id))
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+
+            let is_trade_dataset = trade_inventory
+                .iter()
+                .any(|task| task.dataset_id == dataset_id);
+
+            let is_depth_dataset = depth_inventory
+                .iter()
+                .any(|task| task.dataset_id == dataset_id);
+
+            match (is_trade_dataset, is_depth_dataset) {
+                (true, false) => {
+                    streams.push(Box::new(TradeStream::new_range(
+                        dataset_id,
+                        trades,
+                        partition.start_ns,
+                        partition.end_ns,
+                    )?));
+                }
+
+                (false, true) => {
+                    streams.push(Box::new(PartitionDepthStream::new(
+                        dataset_id, partition, depth, boundaries,
+                    )?));
+                }
+
+                (true, true) => {
+                    return invalid(format!(
+                        "dataset {dataset_id}: classified as both trades and depth"
+                    ));
+                }
+
+                (false, false) => {
+                    return invalid(format!(
+                        "dataset {dataset_id}: missing from source inventories"
+                    ));
+                }
+            }
+        }
+
+        // -------------------------------------------------------------------------
+        // Construct unified K-way merger
+        // -------------------------------------------------------------------------
     }
-
-    // -------------------------------------------------------------------------
-    // Construct unified K-way merger
-    // -------------------------------------------------------------------------
-
-    let mut merger = KWayEventMerger::new(streams)?;
+    let mut merger = if ranked.is_some() {
+        KWayEventMerger::new_ranked(streams, ranks)?
+    } else {
+        KWayEventMerger::new(streams)?
+    };
 
     // -------------------------------------------------------------------------
     // Prepare partition output

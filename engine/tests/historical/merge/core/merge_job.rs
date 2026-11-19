@@ -6,12 +6,12 @@ fn wire_fixture() -> serde_json::Value {
         "job_id": 1,
         "operation": "merge",
         "inputs": [
-            { "dataset_id": 11, "path": "/fixture/part-0.parquet", "sha256": "a".repeat(64),
+            { "dataset_id": 11, "stream_id": "stream", "stream_rank": 7, "content_type": "trades", "path": "/fixture/part-0.parquet", "sha256": "a".repeat(64),
               "publication": {
                   "engine_dataset_id": "9007199254740993", "manifest_path": "/fixture/manifest.json",
                   "manifest_sha256": "c".repeat(64)
               } },
-            { "dataset_id": 12, "path": "/fixture/part-1.parquet", "sha256": "b".repeat(64),
+            { "dataset_id": 12, "stream_id": "stream", "stream_rank": 7, "content_type": "trades", "path": "/fixture/part-1.parquet", "sha256": "b".repeat(64),
               "publication": {
                   "engine_dataset_id": "9007199254740993", "manifest_path": "/fixture/manifest.json",
                   "manifest_sha256": "c".repeat(64)
@@ -173,7 +173,7 @@ enabled = false
 }
 
 #[test]
-fn verifies_only_selected_primary_files_and_tracks_concrete_stream_owners() {
+fn merges_two_explicit_v5_streams_and_preserves_selected_part_offsets() {
     use marketforge_engine::historical::{
         job::{ContentType, MergeFileInput, MergePublication},
         merge::{build_trade_inventory, resolve_merge_inputs},
@@ -188,9 +188,22 @@ fn verifies_only_selected_primary_files_and_tracks_concrete_stream_owners() {
     use marketforge_engine::shared::historical::config::MergeRuntimeSettings;
     let workspace = tempfile::tempdir().unwrap();
     let root = workspace.path();
+    use crate::publication::{shared_part_trade_job, write_job};
+    use arrow_array::{UInt32Array, UInt64Array};
+    use marketforge_engine::historical::{
+        job::load_committed_processing_job,
+        merge::{PhysicalMergeManifest, resolve_ranked_merge_streams},
+    };
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+    let fixture = shared_part_trade_job(root);
+    let fixture_manifest = &fixture.inputs[0].publication.manifest_path;
+    let one_stream: DatasetManifest =
+        serde_json::from_slice(&std::fs::read(fixture_manifest).unwrap()).unwrap();
+    let mut processing = load_committed_processing_job(fixture_manifest.parent().unwrap()).unwrap();
     let mut job = canonical_job();
     job.output.dataset_path = root.join("output");
     let start = job.time_range.start_ns;
+    job.time_range.end_ns = start + 2;
     let mut report = ProcessingMetricsReport::default();
     let mut files = Vec::new();
     let mut streams = Vec::new();
@@ -251,7 +264,7 @@ fn verifies_only_selected_primary_files_and_tracks_concrete_stream_owners() {
         job_id: 100,
         dataset_id: 9007199254740993,
         content_type: ContentType::Trades,
-        processing_quality: None,
+        processing_quality: one_stream.processing_quality,
         events_written: 4,
         files_written: 4,
         start_timestamp_ns: Some(start),
@@ -268,6 +281,25 @@ fn verifies_only_selected_primary_files_and_tracks_concrete_stream_owners() {
     };
     let manifest_path = root.join("manifest.json");
     std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    processing.dataset_id.0 = manifest.dataset_id;
+    processing.job_id.0 = manifest.job_id;
+    for (task, stream) in processing.tasks.iter_mut().zip(&manifest.streams) {
+        task.task_id.0 = stream.sources[0].task_id;
+        task.stream_id.0.clone_from(&stream.stream_id);
+    }
+    let template = processing.streams[0].clone();
+    processing.streams = manifest
+        .streams
+        .iter()
+        .enumerate()
+        .map(|(index, stream)| {
+            let mut entry = template.clone();
+            entry.stream_id.0.clone_from(&stream.stream_id);
+            entry.stream_rank = index as u32;
+            entry
+        })
+        .collect();
+    write_job(root, &processing);
     let publication = MergePublication {
         engine_dataset_id: manifest.dataset_id,
         manifest_sha256: file_sha256(&manifest_path).unwrap(),
@@ -280,6 +312,14 @@ fn verifies_only_selected_primary_files_and_tracks_concrete_stream_owners() {
             let path = root.join(&manifest.files[part].path);
             MergeFileInput {
                 dataset_id: (index + 50) as u64,
+                stream_id: if part == 3 {
+                    "concrete-b"
+                } else {
+                    "concrete-a"
+                }
+                .into(),
+                stream_rank: if part == 3 { 7 } else { 3 },
+                content_type: ContentType::Trades,
                 sha256: file_sha256(&path).unwrap(),
                 path,
                 publication: publication.clone(),
@@ -334,6 +374,105 @@ fn verifies_only_selected_primary_files_and_tracks_concrete_stream_owners() {
             (10, 3, vec![(0, 0, 1), (2, 2, 1)])
         ]
     );
+    let validate = |job: &MergeJobDocument| {
+        resolve_ranked_merge_streams(&resolve(job.clone()).unwrap(), root, Some(job))
+    };
+    for (field, message) in [
+        ("wrong stream", "declared stream_id"),
+        ("wrong type", "declared content_type"),
+        ("conflicting rank", "conflicting ranks"),
+        ("shared rank", "assigned to distinct streams"),
+    ] {
+        let mut bad = job.clone();
+        match field {
+            "wrong stream" => bad.inputs[0].stream_id = "concrete-a".into(),
+            "wrong type" => bad.inputs[0].content_type = ContentType::Depth,
+            "conflicting rank" => bad.inputs[2].stream_rank = 10,
+            "shared rank" => bad.inputs[0].stream_rank = 3,
+            _ => unreachable!(),
+        }
+        assert!(validate(&bad).unwrap_err().to_string().contains(message));
+    }
+
+    // Both streams have identical timestamps. A's gap is an unselected part.
+    // The second invocation also permutes every input and uses more workers.
+    for workers in [1, 2] {
+        let mut run = job.clone();
+        if workers == 2 {
+            run.inputs.reverse();
+        }
+        run.output.dataset_path = root.join(format!("output-{workers}"));
+        let document = root.join("merge.json");
+        std::fs::write(&document, serde_json::to_vec(&run).unwrap()).unwrap();
+        let config = include_str!("../../../../../data/.config/historical/general.toml")
+            .replace("workers = 8", &format!("workers = {workers}"))
+            .replace(
+                "row_group_target_bytes = 268435456",
+                "row_group_target_bytes = 1048576",
+            )
+            .replace(
+                "file_target_bytes = 2147483648",
+                "file_target_bytes = 4194304",
+            );
+        std::fs::write(root.join("runtime.toml"), config).unwrap();
+        let result = std::process::Command::new(env!("CARGO_BIN_EXE_marketforge-merge"))
+            .current_dir(root.parent().unwrap())
+            .arg("--project-root")
+            .arg(root)
+            .args(["--config", "runtime.toml", "--job", "merge.json"])
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let manifest: PhysicalMergeManifest = serde_json::from_slice(
+            &std::fs::read(run.output.dataset_path.join("manifest.json")).unwrap(),
+        )
+        .unwrap();
+        let mut references = Vec::new();
+        for file in manifest.files {
+            let primary = std::fs::File::open(run.output.dataset_path.join(file.path)).unwrap();
+            for batch in ParquetRecordBatchReaderBuilder::try_new(primary)
+                .unwrap()
+                .build()
+                .unwrap()
+            {
+                let batch = batch.unwrap();
+                let ranks = batch
+                    .column_by_name("stream_rank")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<UInt32Array>()
+                    .unwrap();
+                let tasks = batch
+                    .column_by_name("task_id")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap();
+                let offsets = batch
+                    .column_by_name("canonical_row_offset")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap();
+                references.extend(
+                    (0..batch.num_rows())
+                        .map(|row| (ranks.value(row), tasks.value(row), offsets.value(row))),
+                );
+            }
+        }
+        assert_eq!(references, [(3, 10, 0), (3, 10, 2), (7, 20, 0)]);
+        let runtime: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(run.output.dataset_path.join("merge-runtime.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(runtime["resources"]["workers"], workers);
+        assert_eq!(runtime["parquet"]["row_group_target_mb"], 1);
+    }
+
     let mut unlisted = job.clone();
     unlisted.inputs[0].path = root.join("unlisted.parquet");
     assert!(

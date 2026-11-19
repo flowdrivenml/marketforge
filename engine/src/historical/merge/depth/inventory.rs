@@ -128,7 +128,12 @@ pub fn build_depth_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<DepthT
             ));
         }
 
-        for (task_id, mut files) in tasks {
+        for &task_id in &input.manifest.source_tasks {
+            let mut files = tasks.remove(&task_id).ok_or_else(|| {
+                MarketForgeError::InvalidConfiguration(format!(
+                    "duplicate depth source task {task_id}"
+                ))
+            })?;
             let task_started = std::time::Instant::now();
             files.canonical_files.sort_by(|a, b| a.0.cmp(&b.0));
 

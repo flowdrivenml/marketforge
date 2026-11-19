@@ -116,9 +116,6 @@ impl UnifiedMergeManifest {
             return invalid("unified merge contains no input datasets");
         }
 
-        if self.streams.len() != self.input_datasets.len() {
-            return invalid("unified merge stream count mismatch");
-        }
         // -------------------------------------------------------------------------
         // Validate dataset identities
         // -------------------------------------------------------------------------
@@ -223,18 +220,14 @@ impl UnifiedMergeManifest {
             return invalid("empty unified merge contains timestamp metadata");
         }
 
-        for (index, stream) in self.streams.iter().enumerate() {
-            if usize::try_from(stream.stream_rank).ok() != Some(index) {
-                return invalid(format!(
-                    "unexpected unified stream rank {}",
-                    stream.stream_rank
-                ));
-            }
-
-            if stream.dataset_id != self.input_datasets[index].dataset_id {
-                return invalid(format!("unified stream dataset mismatch at index {index}"));
-            }
-        }
+        validate_stream_membership(
+            &self.streams,
+            &self
+                .input_datasets
+                .iter()
+                .map(|input| input.dataset_id)
+                .collect(),
+        )?;
 
         Ok(())
     }
@@ -250,4 +243,36 @@ fn invalid_error(message: impl Into<String>) -> MarketForgeError {
 
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(invalid_error(message))
+}
+
+pub(crate) fn validate_stream_membership(
+    streams: &[UnifiedMergeStream],
+    datasets: &std::collections::HashSet<u64>,
+) -> Result<()> {
+    use std::collections::{HashMap, HashSet};
+    let mut members = HashSet::new();
+    let mut covered = HashSet::new();
+    let mut ranks = HashMap::new();
+    for stream in streams {
+        let identity = (
+            &stream.stream_id,
+            stream.kind,
+            stream.instrument_id,
+            &stream.exchange,
+            &stream.symbol,
+        );
+        if !datasets.contains(&stream.dataset_id)
+            || !members.insert((stream.dataset_id, stream.stream_rank))
+            || ranks
+                .insert(stream.stream_rank, identity)
+                .is_some_and(|previous| previous != identity)
+        {
+            return invalid("invalid unified stream membership or conflicting rank");
+        }
+        covered.insert(stream.dataset_id);
+    }
+    if &covered != datasets {
+        return invalid("missing unified stream membership");
+    }
+    Ok(())
 }

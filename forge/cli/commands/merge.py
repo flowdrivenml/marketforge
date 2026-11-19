@@ -146,12 +146,12 @@ def render_selection(context: ApplicationContext, result: dict[str, Any]) -> Non
     table.add_column(overflow="fold")
     for label, value in (
         ("Recipe", result["recipe"]),
-        ("Source", result["source"]["reference"]),
-        ("Interval", result["interval_display"]),
-        ("Requested", result["requested_count"]),
-        ("Matched files", result["matched_count"]),
-        ("Selected files", result["selected_count"]),
-        ("Publications", result["publication_count"]),
+        ("Source", result.get("source", {}).get("reference")),
+        ("Interval", result.get("interval_display")),
+        ("Requested", result.get("requested_count")),
+        ("Matched files", result.get("matched_count")),
+        ("Selected files", result.get("selected_file_count", result.get("selected_count"))),
+        ("Publications", result.get("publication_count")),
         ("Logical streams", result.get("stream_count")),
         ("Configuration" if created else "Report", result.get("path", result.get("report_path"))),
         (
@@ -163,13 +163,19 @@ def render_selection(context: ApplicationContext, result: dict[str, Any]) -> Non
         if value is not None:
             table.add_row(label, str(value))
     console.print(table, markup=False)
-    for problem in result["blockers"][:6]:
+    for stream in result.get("streams", []):
+        console.print(
+            f"{stream['stream_rank']}  {stream['stream_id']}  "
+            f"{stream['content_type']}  ({stream['file_count']} files)",
+            markup=False,
+        )
+    for problem in result.get("blockers", [])[:6]:
         reference = problem.get("publication_id") or problem.get("publication_ids")
         prefix = f"Publication {reference} · " if reference else ""
         console.print(prefix + problem["reason"], style="mf.warning", markup=False)
         if problem.get("suggestion"):
             console.print(problem["suggestion"], markup=False)
-    if result["missing"]:
+    if result.get("missing"):
         console.print(
             f"{len(result['missing'])} requested selections have no approved files.",
             style="mf.warning",

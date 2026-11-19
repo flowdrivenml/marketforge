@@ -17,7 +17,7 @@ use {
     crate::historical::merge::output::manifests::unified_manifest::UnifiedMergeMode,
 };
 
-type OrderingKey = (i64, u32, u64, u64);
+type OrderingKey = (i64, u32);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PhysicalFileValidation {
@@ -274,8 +274,6 @@ fn validate_batch(
     validate_required_fields(batch)?;
     let timestamps = column::<Int64Array>(batch, "event_timestamp_ns")?;
     let ranks = column::<UInt32Array>(batch, "stream_rank")?;
-    let tasks = column::<UInt64Array>(batch, "task_id")?;
-    let ordinals = column::<UInt64Array>(batch, "event_ordinal")?;
     let canonical_counts = column::<UInt64Array>(batch, "canonical_row_count")?;
 
     let kinds = if mode == UnifiedMergeMode::Combined {
@@ -321,12 +319,7 @@ fn validate_batch(
             return invalid("physical event outside partition bounds");
         }
 
-        let key = (
-            timestamp,
-            ranks.value(row),
-            tasks.value(row),
-            ordinals.value(row),
-        );
+        let key = (timestamp, ranks.value(row));
 
         if previous_key.is_some_and(|previous| key < previous) {
             return invalid("physical event ordering regression");
