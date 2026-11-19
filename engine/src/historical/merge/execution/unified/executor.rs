@@ -75,13 +75,14 @@ fn execute_unified_merge_job_inner(
     use crate::historical::job::MergeTimelineOrdering;
     use crate::historical::merge::depth::inventory::build_depth_inventory_with_order;
     let causal = job.timeline_ordering() == MergeTimelineOrdering::Causal;
+    let profile = !reporter.is_enabled() && std::env::var_os("MARKETFORGE_PROFILE").is_some();
     let execution_started = std::time::Instant::now();
 
     // -------------------------------------------------------------------------
     // Resolve and classify input datasets
     // -------------------------------------------------------------------------
     reporter.phase_started(MergePhase::InputResolution);
-    let resolved = profile_stage("input_resolution", || {
+    let resolved = profile_stage(profile, "input_resolution", || {
         resolve_merge_inputs_with_progress(job, project_root, |files| {
             reporter.inputs_verified(files)
         })
@@ -136,8 +137,9 @@ fn execute_unified_merge_job_inner(
     // -------------------------------------------------------------------------
     reporter.phase_completed(MergePhase::InputResolution);
     reporter.phase_started(MergePhase::Inventory);
-    let mut trade_inventory =
-        profile_stage("trade_inventory", || build_trade_inventory(&trade_inputs))?;
+    let mut trade_inventory = profile_stage(profile, "trade_inventory", || {
+        build_trade_inventory(&trade_inputs)
+    })?;
 
     // Stream-layout inventories already honor selection. Apply the same file
     // filter to task-layout publications while preserving their original offsets.
@@ -200,8 +202,8 @@ fn execute_unified_merge_job_inner(
             }
         }
     }
-    let depth_inventory = profile_stage("depth_inventory", || {
-        build_depth_inventory_with_order(&depth_inputs, causal)
+    let depth_inventory = profile_stage(profile, "depth_inventory", || {
+        build_depth_inventory_with_order(&depth_inputs, causal, profile)
     })?;
     let mut depth_ranks = std::collections::HashMap::new();
     for stream in streams
@@ -232,7 +234,7 @@ fn execute_unified_merge_job_inner(
     reporter.phase_completed(MergePhase::Inventory);
 
     reporter.phase_started(MergePhase::BoundaryReconciliation);
-    let boundaries = profile_stage("depth_boundaries", || {
+    let boundaries = profile_stage(profile, "depth_boundaries", || {
         if causal {
             Ok(Vec::new())
         } else {
@@ -244,7 +246,7 @@ fn execute_unified_merge_job_inner(
     // Build depth reconstruction checkpoints
     // -------------------------------------------------------------------------
 
-    let checkpoints = profile_stage("canonical_checkpoints", || {
+    let checkpoints = profile_stage(profile, "canonical_checkpoints", || {
         if causal {
             Ok(Vec::new())
         } else {
@@ -327,7 +329,7 @@ fn execute_unified_merge_job_inner(
 
     reporter.phase_started(MergePhase::LogicalMerge);
 
-    let results = profile_stage("logical_merge", || {
+    let results = profile_stage(profile, "logical_merge", || {
         execute_ranked_partitions(
             job,
             plans,
@@ -346,7 +348,7 @@ fn execute_unified_merge_job_inner(
     // Validate logical timeline references
     // -------------------------------------------------------------------------
     reporter.phase_started(MergePhase::LogicalValidation);
-    let validated = profile_stage("logical_validation", || {
+    let validated = profile_stage(profile, "logical_validation", || {
         validate_ranked_unified_merge_output(
             &logical_staging,
             &results,
@@ -381,7 +383,7 @@ fn execute_unified_merge_job_inner(
 
     reporter.phase_completed(MergePhase::LogicalValidation);
     reporter.phase_started(MergePhase::MaterializationPlanning);
-    let materialization_plans = profile_stage("materialization_planning", || {
+    let materialization_plans = profile_stage(profile, "materialization_planning", || {
         let plans =
             build_materialization_plans(&logical_staging, &materialization_input_plans, &results)?;
         if causal {
@@ -423,7 +425,7 @@ fn execute_unified_merge_job_inner(
     reporter.phase_completed(MergePhase::MaterializationPlanning);
     reporter.phase_started(MergePhase::PhysicalMaterialization);
 
-    let physical_results = profile_stage("physical_materialization", || {
+    let physical_results = profile_stage(profile, "physical_materialization", || {
         execute_parallel_materialization_with_progress(
             materialization_plans,
             &trade_inventory,
@@ -442,7 +444,7 @@ fn execute_unified_merge_job_inner(
     // Validate physical Parquet dataset
     // -------------------------------------------------------------------------
     reporter.phase_started(MergePhase::PhysicalValidation);
-    let physical_validated = profile_stage("physical_validation", || {
+    let physical_validated = profile_stage(profile, "physical_validation", || {
         crate::historical::merge::materialize::validation::global_validate::validate_physical_dataset_with_ordering(
             &physical_staging,
             mode,
@@ -491,7 +493,7 @@ fn execute_unified_merge_job_inner(
 
     reporter.phase_started(MergePhase::Checkpoints);
 
-    let physical_checkpoints = profile_stage("physical_checkpoints", || {
+    let physical_checkpoints = profile_stage(profile, "physical_checkpoints", || {
         if causal {
             return Ok(Vec::new());
         }
@@ -556,13 +558,23 @@ fn execute_unified_merge_job_inner(
     // -------------------------------------------------------------------------
 
     physical_manifest.validate()?;
+    reporter.emit(
+        crate::historical::merge::MergeProgressEvent::OutputMetrics {
+            trades: physical_manifest.trade_events,
+            depth: physical_manifest
+                .depth_events
+                .saturating_sub(physical_manifest.reconstruction_events),
+            reconstruction: physical_manifest.reconstruction_events,
+            canonical_rows: physical_manifest.canonical_rows,
+        },
+    );
     reporter.phase_completed(MergePhase::Manifest);
     // -------------------------------------------------------------------------
     // Prepare physical-only publication layout
     // -------------------------------------------------------------------------
     reporter.phase_started(MergePhase::PublicationPreparation);
 
-    profile_stage("publication_preparation", || {
+    profile_stage(profile, "publication_preparation", || {
         prepare_physical_publication(&commit.staging_path, &physical_manifest)
     })?;
 
@@ -621,7 +633,7 @@ fn execute_unified_merge_job_inner(
 
     reporter.phase_started(MergePhase::Commit);
 
-    profile_stage("transactional_commit", || commit.commit())?;
+    profile_stage(profile, "transactional_commit", || commit.commit())?;
 
     reporter.phase_completed(MergePhase::Commit);
 
@@ -629,7 +641,7 @@ fn execute_unified_merge_job_inner(
     // Transactional publication
     // -------------------------------------------------------------------------
 
-    if std::env::var_os("MARKETFORGE_PROFILE").is_some() {
+    if profile {
         eprintln!(
             "[marketforge-profile] total_executor: {:.3}s",
             execution_started.elapsed().as_secs_f64(),
@@ -675,12 +687,12 @@ fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(invalid_error(message))
 }
 
-fn profile_stage<T>(name: &str, operation: impl FnOnce() -> Result<T>) -> Result<T> {
+fn profile_stage<T>(profile: bool, name: &str, operation: impl FnOnce() -> Result<T>) -> Result<T> {
     let started = std::time::Instant::now();
 
     let result = operation();
 
-    if std::env::var_os("MARKETFORGE_PROFILE").is_some() {
+    if profile {
         eprintln!(
             "[marketforge-profile] {name}: {:.3}s",
             started.elapsed().as_secs_f64(),

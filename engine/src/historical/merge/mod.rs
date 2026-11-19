@@ -160,5 +160,5 @@ pub fn validate_causal_depth_selection(
         .filter(|input| input.manifest.content_type == crate::historical::job::ContentType::Depth)
         .cloned()
         .collect::<Vec<_>>();
-    depth::inventory::build_depth_inventory_with_order(&depth, true).map(|_| ())
+    depth::inventory::build_depth_inventory_with_order(&depth, true, false).map(|_| ())
 }

@@ -98,6 +98,12 @@ pub enum MergeProgressEvent {
         message: String,
     },
 
+    OutputMetrics {
+        trades: u64,
+        depth: u64,
+        reconstruction: u64,
+        canonical_rows: u64,
+    },
     Finished {
         error: Option<String>,
     },
@@ -126,19 +132,35 @@ pub enum MergeProgressEvent {
 // Atomic partition counters
 // -----------------------------------------------------------------------------
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct PartitionProgressCounters {
     events: AtomicU64,
+    elapsed_ns: AtomicU64,
+    started: Instant,
+}
+
+impl Default for PartitionProgressCounters {
+    fn default() -> Self {
+        Self {
+            events: AtomicU64::new(0),
+            elapsed_ns: AtomicU64::new(0),
+            started: Instant::now(),
+        }
+    }
 }
 
 impl PartitionProgressCounters {
     pub fn update(&self, events: u64) {
         self.events.store(events, Ordering::Relaxed);
+        let elapsed = u64::try_from(self.started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        self.elapsed_ns.store(elapsed.max(1), Ordering::Release);
     }
 
     pub fn snapshot(&self) -> PartitionProgress {
+        let elapsed = self.elapsed_ns.load(Ordering::Acquire);
         PartitionProgress {
             events: self.events.load(Ordering::Relaxed),
+            reported: (elapsed > 0).then(|| self.started + Duration::from_nanos(elapsed)),
         }
     }
 }
@@ -146,6 +168,7 @@ impl PartitionProgressCounters {
 #[derive(Debug, Clone, Default)]
 pub struct PartitionProgress {
     pub events: u64,
+    pub reported: Option<Instant>,
 }
 
 // -----------------------------------------------------------------------------
@@ -155,6 +178,7 @@ pub struct PartitionProgress {
 #[derive(Debug, Default)]
 pub struct MergeProgressState {
     partitions: Mutex<HashMap<PartitionKey, Arc<PartitionProgressCounters>>>,
+    validation_sample: Mutex<Option<MergeProgressEvent>>,
 }
 
 impl MergeProgressState {
@@ -165,6 +189,10 @@ impl MergeProgressState {
             .entry(key)
             .or_insert_with(|| Arc::new(PartitionProgressCounters::default()))
             .clone()
+    }
+
+    pub fn take_validation_sample(&self) -> Option<MergeProgressEvent> {
+        self.validation_sample.lock().unwrap().take()
     }
 
     pub fn snapshots(&self) -> HashMap<PartitionKey, PartitionProgress> {
@@ -218,12 +246,15 @@ impl MergeProgressReporter {
         events_validated: u64,
         row_groups_validated: u64,
     ) {
-        self.emit(MergeProgressEvent::ValidationProgress {
-            partitions_completed,
-            files_completed,
-            events_validated,
-            row_groups_validated,
-        });
+        if self.is_enabled() {
+            *self.state.validation_sample.lock().unwrap() =
+                Some(MergeProgressEvent::ValidationProgress {
+                    partitions_completed,
+                    files_completed,
+                    events_validated,
+                    row_groups_validated,
+                });
+        }
     }
 
     pub fn validation_completed(

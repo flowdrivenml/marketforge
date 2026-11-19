@@ -239,8 +239,9 @@ async def test_two_file_ids_share_one_verified_publication(
     assert len(service.publication_selection(selected)) == 1
 
 
+@pytest.mark.parametrize("tui", [False, True])
 def test_execution_uses_pinned_runtime_and_rejects_changed_preparation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tui: bool
 ) -> None:
     paths = ProjectPaths(tmp_path, tmp_path / "data")
     runtime = service.runtime_path(paths)
@@ -275,8 +276,14 @@ def test_execution_uses_pinned_runtime_and_rejects_changed_preparation(
     def validate(_paths, _binary, _source, config):
         validated.append(config)
 
+    expected_tui = tui
+
     def process(argv, _root, directory, *, tui):
-        assert not tui
+        assert tui == expected_tui
+        if tui:
+            assert Path(argv[argv.index("--config-origin") + 1]) == runtime
+        else:
+            assert "--config-origin" not in argv
         config = Path(argv[argv.index("--config") + 1])
         assert config == validated[-1] == directory / "general.toml"
         assert config.read_bytes() == runtime.read_bytes()
@@ -287,12 +294,14 @@ def test_execution_uses_pinned_runtime_and_rejects_changed_preparation(
     monkeypatch.setattr(service, "validate_job", validate)
     monkeypatch.setattr(service, "effective_runtime", lambda *_: {"resources": {"workers": 2}})
     monkeypatch.setattr(service, "run_process", process)
+    monkeypatch.setattr(service.os, "isatty", lambda _: True)
     registration = AsyncMock()
     monkeypatch.setattr(service, "register_verified", registration)
     recipe = service.Recipe(dataset_ids=[3], start_ns=10, end_ns=20, stream_ranks={"stream": 7})
     prepared = service.prepare_job(paths, recipe, "manual", 1, paths.runs_dir / "prepare", [3], {})
     source = Path(prepared["job_path"])
-    receipt = service.execute(paths, source)
+    receipt = service.execute(paths, source, tui=tui)
+    assert receipt["configuration_origin"] == str(runtime)
     assert receipt["effective_runtime"]["resources"]["workers"] == 2
     assert receipt["configuration_sha256"] == service.checksum(runtime)
     assert receipt["registration"] == "not_started"

@@ -150,6 +150,20 @@ Launch a **validated** prepared job with the TUI by substituting its path for `P
 cargo run --manifest-path engine/Cargo.toml --locked --features historical,monitor-tui --bin marketforge-merge -- --job PATH_TO_VALIDATED_JOB --project-root . --tui
 ```
 
+## Reading the merge dashboard
+
+Run with `--tui` in an interactive terminal. The header shows the requested selection, UTC interval with an exclusive end, and timeline ordering. The center shows the active phase, elapsed time, current rate when sampled, partition work, and recent activity. Press `D` for details, use the arrow keys to scroll, and press `Ctrl+C` to interrupt. Details include exact nanoseconds, the full job ID, configuration paths and SHA-256, effective runtime limits, the output path, and the report location.
+
+- **Checking inputs** counts selected primary files whose integrity was verified.
+- **Building timeline** counts logical event references. Its total is unknown until the timeline has been built. Individual partitions can process many references before any partition finishes.
+- **Writing Parquet** counts written output events against the completed timeline reference count. **Checking timeline** validates the logical references. **Verifying output** counts physical output events against the expected output and reports checked files. Each check remains pending until it starts.
+- **Active / worker cap** compares current running partitions with the effective configured maximum. A causal timeline uses one forward logical pass. Parquet work can use multiple admitted workers. Queued work counts planned partitions that have yet to start. The dashboard shows a queue of work, with live memory and open-file consumption unavailable.
+- The output breakdown distinguishes trade and depth observations from reconstruction context events. Canonical payload rows are a separate count available in Details. Throughput uses samples from the current phase. ETA is omitted because these samples lack a stable estimate of remaining work.
+
+The default runtime is `data/.config/historical/general.toml` under the project root. The direct Rust `--config` override resolves relative paths from the same root. Forge pins a copy for validation and execution, records both its original location and loaded copy in the execution intent, and checks the prepared fingerprint before launching. The dashboard shows the effective values already handed to the engine. The source TOML SHA-256 identifies the loaded configuration bytes. The separately checksummed `merge-runtime.json` records the effective values used for the committed publication.
+
+**Engine committed** indicates the Rust publication is ready for Forge verification. The persistent Forge summary distinguishes execution, verification, and registration and lists the registered file IDs when available. Direct Rust execution prints the engine outcome and manifest path after restoring the terminal.
+
 ## Publication and recovery
 
 A recipe uses a fresh output under `data/datasets/merged/<engine-job-id>` relative to the configured data root. Rust publishes the validated physical timeline, manifest, resolved job, effective runtime, input manifest checksums and physical validation evidence atomically. Forge revalidates the committed physical Parquet and byte fingerprints and registers each primary output in `historical.datasets` under one shared publication. Selected input file IDs are retained as publication-scope lineage.

@@ -574,6 +574,7 @@ def prepare_job(
         digest = checksum(binary)
         config = directory / "general.toml"
         shutil.copyfile(runtime_path(paths), config)
+        report["configuration_origin"] = str(runtime_path(paths))
         report["configuration_sha256"] = checksum(config)
         validate_job(paths, binary, source, config)
         if checksum(binary) != digest or checksum(source) != report["submitted_sha256"]:
@@ -755,6 +756,7 @@ def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str
         "executable_sha256": digest,
         "configuration_sha256": configuration_sha256,
         "configuration_path": str(config),
+        "configuration_origin": str(runtime_path(paths)),
         "effective_runtime": settings,
         "inputs": selected,
         "coverage": coverage(selected, **job["time_range"]),
@@ -788,6 +790,7 @@ def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str
                 str(config),
                 "--result-file",
                 str(engine_result_path),
+                *(["--config-origin", str(runtime_path(paths))] if tui else []),
             ],
             paths.root,
             directory,

@@ -22,6 +22,7 @@ struct CliArgs {
     result_file: Option<PathBuf>,
     project_root: PathBuf,
     config: PathBuf,
+    config_origin: Option<PathBuf>,
 
     #[cfg(feature = "monitor-tui")]
     tui: bool,
@@ -34,6 +35,7 @@ fn parse_args() -> Result<CliArgs, String> {
     let mut validate = false;
     let mut result_file = None;
     let mut project_root = None;
+    let mut config_origin = None;
     let mut config = PathBuf::from("data/.config/historical/general.toml");
     #[cfg(feature = "monitor-tui")]
     let mut tui = false;
@@ -93,6 +95,11 @@ fn parse_args() -> Result<CliArgs, String> {
             "--config" => {
                 config = PathBuf::from(args.next().ok_or("missing value for --config")?);
             }
+            "--config-origin" => {
+                config_origin = Some(PathBuf::from(
+                    args.next().ok_or("missing value for --config-origin")?,
+                ));
+            }
             "--project-root" => {
                 project_root = Some(PathBuf::from(
                     args.next().ok_or("missing value for --project-root")?,
@@ -103,7 +110,7 @@ fn parse_args() -> Result<CliArgs, String> {
                 println!(
                     "Usage: marketforge-merge [--validate-job <PATH> | --validate-dataset <DIR>] or \
                      --job <PATH> \
-                     [--project-root <PATH>] [--config <PATH>] [--result-file <PATH>] [--tui]"
+                     [--project-root <PATH>] [--config <PATH>] [--config-origin <PATH>] [--result-file <PATH>] [--tui]"
                 );
 
                 std::process::exit(0);
@@ -115,6 +122,9 @@ fn parse_args() -> Result<CliArgs, String> {
         }
     }
 
+    if config_origin.is_some() && result_file.is_none() {
+        return Err("--config-origin requires --result-file".to_owned());
+    }
     if validate && result_file.is_some() {
         return Err("--result-file requires --job".to_owned());
     }
@@ -128,6 +138,7 @@ fn parse_args() -> Result<CliArgs, String> {
         result_file,
         project_root,
         config,
+        config_origin,
 
         #[cfg(feature = "monitor-tui")]
         tui,
@@ -197,9 +208,9 @@ fn run(args: CliArgs) -> Result<serde_json::Value, String> {
         load_merge_runtime_settings, resolve_path,
     };
     let document = load_merge_job(&job_path).map_err(|error| error.to_string())?;
+    let config = resolve_path(&project_root, &args.config);
     let runtime =
-        load_merge_runtime_settings(&resolve_path(&project_root, &args.config), &project_root)
-            .map_err(|error| error.to_string())?;
+        load_merge_runtime_settings(&config, &project_root).map_err(|error| error.to_string())?;
     let job = document
         .with_runtime(runtime)
         .map_err(|error| error.to_string())?;
@@ -229,15 +240,55 @@ fn run(args: CliArgs) -> Result<serde_json::Value, String> {
         println!("{{\"kind\":\"merge_job_validation\",\"status\":\"valid\"}}");
         return Ok(serde_json::json!({"status":"valid"}));
     }
+    #[cfg(not(feature = "monitor-tui"))]
+    if args.config_origin.is_some() {
+        return Err("--config-origin requires --tui".into());
+    }
+    #[cfg(feature = "monitor-tui")]
+    if !args.tui && args.config_origin.is_some() {
+        return Err("--config-origin requires --tui".into());
+    }
     #[cfg(feature = "monitor-tui")]
     if args.tui {
-        let result = match execute_merge_with_tui(job, project_root) {
+        use marketforge_engine::tui::merging::MergeTuiPaths;
+        let managed = args.config_origin.is_some();
+        let origin = args
+            .config_origin
+            .as_ref()
+            .map_or_else(|| config.clone(), |path| resolve_path(&project_root, path));
+        let checksum = marketforge_engine::historical::normalize::manifest::file_sha256(&config)
+            .map_err(|error| format!("could not fingerprint {}: {error}", config.display()))?;
+        let report = args
+            .result_file
+            .as_deref()
+            .map(|path| {
+                if managed {
+                    path.with_file_name("execution-result.json")
+                } else {
+                    path.to_path_buf()
+                }
+            })
+            .unwrap_or_else(|| job.output.dataset_path.join("manifest.json"));
+        let result = match execute_merge_with_tui(
+            job,
+            project_root,
+            MergeTuiPaths {
+                origin,
+                loaded: config,
+                checksum,
+                report,
+                managed,
+            },
+        ) {
             Ok(result) => result,
             Err(error) => {
                 if error
                     .downcast_ref::<std::io::Error>()
                     .is_some_and(|cause| cause.kind() == std::io::ErrorKind::Interrupted)
                 {
+                    if !managed {
+                        eprintln!("Merge interrupted: {error}");
+                    }
                     std::process::exit(130);
                 }
                 return Err(error.to_string());
@@ -412,6 +463,7 @@ fn main() -> ExitCode {
         }
     };
     let path = args.result_file.clone();
+    let managed = args.config_origin.is_some();
     let result = run(args);
     if let Some(path) = path {
         let failure;
@@ -435,7 +487,9 @@ fn main() -> ExitCode {
     match result {
         Ok(_) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("Merge failed: {error}");
+            if !managed {
+                eprintln!("Merge failed: {error}");
+            }
             ExitCode::FAILURE
         }
     }

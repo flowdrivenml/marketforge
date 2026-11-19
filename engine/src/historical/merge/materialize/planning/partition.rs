@@ -368,7 +368,7 @@ impl MaterializationPartitionWorker {
         if let Some(reporter) = progress.as_deref_mut() {
             reporter.finish(writer.metrics().events_written);
         }
-        if std::env::var_os("MARKETFORGE_PROFILE").is_some() {
+        if progress.is_none() && std::env::var_os("MARKETFORGE_PROFILE").is_some() {
             eprintln!(
                 "[materialize-profile] partition={} windows={} \
          planning={:.3}s decoding={:.3}s \

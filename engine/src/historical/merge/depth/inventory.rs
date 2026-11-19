@@ -41,15 +41,18 @@ pub struct DepthTaskInventory {
 // -----------------------------------------------------------------------------
 
 pub fn build_depth_inventory(inputs: &[ResolvedMergeInput]) -> Result<Vec<DepthTaskInventory>> {
-    build_depth_inventory_with_order(inputs, false)
+    build_depth_inventory_with_order(
+        inputs,
+        false,
+        std::env::var_os("MARKETFORGE_PROFILE").is_some(),
+    )
 }
 
 pub(crate) fn build_depth_inventory_with_order(
     inputs: &[ResolvedMergeInput],
     authoritative: bool,
+    profile: bool,
 ) -> Result<Vec<DepthTaskInventory>> {
-    let profile = std::env::var_os("MARKETFORGE_PROFILE").is_some();
-
     let mut inventory = Vec::new();
 
     for input in inputs {
@@ -227,7 +230,7 @@ pub(crate) fn build_depth_inventory_with_order(
                     ))
                 })?;
 
-            if std::env::var_os("MARKETFORGE_PROFILE").is_some() {
+            if profile {
                 eprintln!(
                     "[depth-boundary] dataset={} task={} bytes={} read={:.6}s parse={:.6}s",
                     input.dataset_id,

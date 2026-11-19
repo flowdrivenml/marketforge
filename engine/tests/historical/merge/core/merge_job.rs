@@ -577,3 +577,96 @@ fn merges_two_explicit_v5_streams_and_preserves_selected_part_offsets() {
             .contains("SHA-256 mismatch")
     );
 }
+
+#[test]
+fn cli_resolves_and_persists_runtime_from_the_explicit_root() {
+    use std::{fs, process::Command};
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    let cwd = tempfile::tempdir().unwrap();
+    let config = root.join("data/.config/historical/general.toml");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    let initial = include_str!("../../../../src/shared/historical/config/fixtures/runtime.toml");
+    fs::write(&config, initial.replace("workers = 1", "workers = 0")).unwrap();
+    let alternate = root.join("override.toml");
+    let runtime = initial
+        .replace("workers = 1", "workers = 3")
+        .replace("67108864", "2097152")
+        .replace("268435456", "8388608")
+        .replace(
+            "schema_version = 1",
+            "schema_version = 1\n[merge]\npartitions_per_worker = 2\ncompression_level = 7",
+        );
+    fs::write(&alternate, &runtime).unwrap();
+    let job = crate::publication::make_job(root, &[12], &[]);
+    fs::write(root.join("job.json"), serde_json::to_vec(&job).unwrap()).unwrap();
+    let binary = env!("CARGO_BIN_EXE_marketforge-merge");
+    let run = |mode: &str, override_path: Option<&str>| {
+        let mut command = Command::new(binary);
+        command
+            .current_dir(cwd.path())
+            .args([mode, "job.json", "--project-root"])
+            .arg(root);
+        if let Some(path) = override_path {
+            command.args(["--config", path]);
+        }
+        command.output().unwrap()
+    };
+    let diagnostics =
+        |out: &std::process::Output| String::from_utf8_lossy(&out.stderr).into_owned();
+    let invalid = run("--validate-job", None);
+    assert!(!invalid.status.success());
+    assert!(diagnostics(&invalid).contains(config.to_str().unwrap()));
+    let missing = run("--validate-job", Some("missing.toml"));
+    assert!(!missing.status.success());
+    assert!(diagnostics(&missing).contains(root.join("missing.toml").to_str().unwrap()));
+    let valid = run("--validate-job", Some("override.toml"));
+    assert!(valid.status.success(), "{}", diagnostics(&valid));
+    fs::write(&config, &runtime).unwrap();
+    let default = run("--validate-job", None);
+    assert!(default.status.success(), "{}", diagnostics(&default));
+    let result = run("--job", Some("override.toml"));
+    assert!(result.status.success(), "{}", diagnostics(&result));
+    let resolve = Command::new(binary)
+        .current_dir(root)
+        .args(["--runtime-settings", "override.toml"])
+        .output()
+        .unwrap();
+    assert!(resolve.status.success(), "{}", diagnostics(&resolve));
+    let settings: serde_json::Value = serde_json::from_slice(&resolve.stdout).unwrap();
+    let recorded = job.output.dataset_path.join("merge-runtime.json");
+    let committed: serde_json::Value =
+        serde_json::from_slice(&fs::read(&recorded).unwrap()).unwrap();
+    assert_eq!(settings, committed);
+    assert_eq!(committed["resources"]["workers"], 3);
+    assert_eq!(committed["partitioning"]["partitions_per_worker"], 2);
+    assert_eq!(committed["parquet"]["file_target_mb"], 8);
+    assert_eq!(committed["parquet"]["compression_level"], 7);
+    let checksums: serde_json::Value = serde_json::from_slice(
+        &fs::read(job.output.dataset_path.join("publication-checksums.json")).unwrap(),
+    )
+    .unwrap();
+    use marketforge_engine::historical::normalize::manifest::file_sha256;
+    assert_eq!(
+        checksums["merge-runtime.json"],
+        file_sha256(&recorded).unwrap()
+    );
+    assert_ne!(
+        checksums["merge-runtime.json"],
+        file_sha256(&alternate).unwrap()
+    );
+    fs::write(alternate, initial).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&fs::read(&recorded).unwrap()).unwrap(),
+        committed
+    );
+    assert!(
+        Command::new(binary)
+            .arg("--validate-dataset")
+            .arg(&job.output.dataset_path)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+}
