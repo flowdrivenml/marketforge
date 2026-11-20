@@ -51,6 +51,15 @@ TARGETS = {
         default=False,
         smoke_expected="--validate-job",
     ),
+    "convert": Target(
+        "convert",
+        "marketforge-engine",
+        "marketforge-convert",
+        "marketforge-convert",
+        ("historical", "monitor-tui"),
+        default=False,
+        smoke_expected="--job",
+    ),
 }
 
 

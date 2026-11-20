@@ -21,6 +21,7 @@ from forge.cli.commands.acquisition import (
 )
 from forge.cli.commands.catalog import configure as configure_catalog
 from forge.cli.commands.config import show_config
+from forge.cli.commands.conversion import configure as configure_conversion
 from forge.cli.commands.database import migrate_database, show_database_status
 from forge.cli.commands.datasets import configure as configure_datasets
 from forge.cli.commands.engine import configure as configure_engine
@@ -119,8 +120,13 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
 
-    configure_datasets(commands.add_parser("datasets", help="Inspect registered primary data files."))
+    configure_datasets(
+        commands.add_parser("datasets", help="Inspect registered primary data files.")
+    )
 
+    configure_conversion(
+        commands.add_parser("convert", help="Prepare and submit historical conversion jobs.")
+    )
     configure_merge(
         commands.add_parser("merge", help="Prepare, execute and register historical merges.")
     )
