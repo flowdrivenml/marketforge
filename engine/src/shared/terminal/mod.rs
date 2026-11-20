@@ -4,3 +4,6 @@ pub mod guard;
 pub mod palette;
 
 pub mod widgets;
+
+#[cfg(feature = "historical")]
+pub(crate) mod interrupt;

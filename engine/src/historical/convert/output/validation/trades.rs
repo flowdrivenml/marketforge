@@ -1,3 +1,5 @@
+use super::causal::CausalPositions;
+use crate::historical::merge::UnifiedMergeMode;
 use std::{fs::File, path::Path};
 
 use arrow_array::{
@@ -59,7 +61,9 @@ pub fn validate_converted_trades_with_progress(
 
     let mut expected_schema: Option<SchemaRef> = None;
     let mut previous_key: Option<ReferenceKey> = None;
+    let mut causal = CausalPositions::default();
 
+    let mut last_update = std::time::Instant::now();
     for path in files {
         let file = File::open(&path).map_err(|error| invalid_error(error.to_string()))?;
 
@@ -88,9 +92,24 @@ pub fn validate_converted_trades_with_progress(
             .map_err(|error| invalid_error(error.to_string()))?;
 
         for batch in reader {
+            reporter.check_interrupted()?;
             let batch = batch.map_err(|error| invalid_error(error.to_string()))?;
 
+            causal.read(&batch, UnifiedMergeMode::Trades)?;
+            if causal.first.is_some_and(|sequence| sequence != 0) {
+                return invalid("converted causal sequence must begin at zero");
+            }
             validate_batch(&batch, max_staleness_ns, &mut previous_key, &mut metrics)?;
+            if reporter.is_enabled()
+                && last_update.elapsed() >= std::time::Duration::from_millis(250)
+            {
+                reporter.validation_progress(
+                    metrics.files.saturating_sub(1),
+                    metrics.events,
+                    metrics.row_groups,
+                );
+                last_update = std::time::Instant::now();
+            }
         }
         reporter.validation_progress(metrics.files, metrics.events, metrics.row_groups);
     }
@@ -133,6 +152,7 @@ fn validate_batch(
 
     let references = column::<ListArray>(batch, "conversion_references")?;
 
+    let chronological = batch.column_by_name("timeline_sequence").is_none();
     for row in 0..batch.num_rows() {
         let key = ReferenceKey::new(
             timestamps.value(row),
@@ -141,10 +161,8 @@ fn validate_batch(
             ordinals.value(row),
         );
 
-        if let Some(previous) = previous_key {
-            if key < *previous {
-                return invalid("converted timeline ordering regression");
-            }
+        if chronological && previous_key.is_some_and(|previous| key < previous) {
+            return invalid("converted timeline ordering regression");
         }
 
         *previous_key = Some(key);

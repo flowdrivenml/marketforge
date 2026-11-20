@@ -44,9 +44,7 @@ impl PhysicalReferenceReader {
 
         manifest.validate()?;
 
-        let mut files = manifest.files.clone();
-
-        files.sort_by_key(|file| (file.partition_id, file.path.clone()));
+        let files = &manifest.files;
 
         let files = files
             .iter()

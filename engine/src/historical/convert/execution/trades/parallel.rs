@@ -4,9 +4,7 @@ use crate::historical::convert::execution::{
     PhysicalConversionMetrics, execute_conversion_partition,
 };
 use crate::historical::convert::progress::ConversionWorkerProgress;
-use crate::historical::convert::progress::{
-    ConversionPartitionKey, ConversionProgress, ConversionProgressReporter,
-};
+use crate::historical::convert::progress::{ConversionPartitionKey, ConversionProgressReporter};
 use std::{
     collections::VecDeque,
     path::Path,
@@ -135,6 +133,7 @@ pub fn execute_parallel_conversion_with_progress(
 
             handles.push(scope.spawn(move || -> Result<()> {
                 loop {
+                    reporter.check_interrupted()?;
                     let index = {
                         let mut queue = queue
                             .lock()
@@ -186,30 +185,16 @@ pub fn execute_parallel_conversion_with_progress(
                         Ok(result) => {
                             let metrics = &result.metrics;
 
-                            reporter.partition_completed(
-                                key,
-                                ConversionProgress {
-                                    events_read: metrics.events_read,
-                                    events_written: metrics.events_written,
-
-                                    identity_events: metrics.identity_events,
-                                    converted_events: metrics.converted_events,
-                                    unavailable_events: metrics.unavailable_events,
-
-                                    internal_reference_updates: metrics.reference_updates,
-
-                                    files_written: metrics.files_written,
-                                    row_groups_written: metrics.row_groups_written,
-
-                                    ..ConversionProgress::default()
-                                },
-                            );
+                            reporter.partition_completed(key, metrics.progress());
 
                             result
                         }
 
                         Err(error) => {
                             reporter.partition_failed(key, error.to_string());
+                            if let Ok(mut queue) = queue.lock() {
+                                queue.clear();
+                            }
                             return Err(error);
                         }
                     };
@@ -235,13 +220,17 @@ pub fn execute_parallel_conversion_with_progress(
                 Ok(Ok(())) => {}
 
                 Ok(Err(error)) => {
-                    if first_error.is_none() {
+                    if first_error.as_ref().is_none_or(|current| {
+                        matches!(current, MarketForgeError::ConversionInterrupted)
+                    }) {
                         first_error = Some(error);
                     }
                 }
 
                 Err(_) => {
-                    if first_error.is_none() {
+                    if first_error.as_ref().is_none_or(|current| {
+                        matches!(current, MarketForgeError::ConversionInterrupted)
+                    }) {
                         first_error = Some(invalid_error("parallel conversion worker panicked"));
                     }
                 }
@@ -292,6 +281,9 @@ pub fn execute_parallel_conversion_with_progress(
         metrics.unavailable_events += result.metrics.unavailable_events;
 
         metrics.reference_updates += result.metrics.reference_updates;
+        for (total, count) in metrics.failures.iter_mut().zip(result.metrics.failures) {
+            *total += count;
+        }
 
         metrics.files_written += result.metrics.files_written;
         metrics.row_groups_written += result.metrics.row_groups_written;

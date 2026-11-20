@@ -81,6 +81,10 @@ pub struct ConversionManifestStatistics {
 #[serde(deny_unknown_fields)]
 pub struct ConversionManifestOutput {
     pub content_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeline_ordering: Option<crate::historical::job::MergeTimelineOrdering>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub reconstruction_events: u64,
 
     pub files_written: u64,
     pub row_groups: u64,
@@ -145,6 +149,12 @@ impl ConversionManifest {
 
         let row_groups = files.iter().map(|file| file.row_groups).sum();
 
+        let (first_timestamp_ns, last_timestamp_ns) = source_timestamp_bounds(
+            source,
+            validation.first_timestamp_ns,
+            validation.last_timestamp_ns,
+        );
+
         let manifest = Self {
             protocol_version: CONVERSION_MANIFEST_VERSION,
             conversion_schema_version:
@@ -172,12 +182,14 @@ impl ConversionManifest {
 
             output: ConversionManifestOutput {
                 content_type: "trades".to_owned(),
+                timeline_ordering: causal_ordering(source),
+                reconstruction_events: source.reconstruction_events,
 
                 files_written,
                 row_groups,
 
-                first_timestamp_ns: validation.first_timestamp_ns,
-                last_timestamp_ns: validation.last_timestamp_ns,
+                first_timestamp_ns,
+                last_timestamp_ns,
 
                 files,
             },
@@ -269,6 +281,14 @@ impl ConversionManifest {
             return invalid("source preservation count mismatch");
         }
 
+        if self.output.reconstruction_events > self.statistics.events_written
+            || (self.output.reconstruction_events != 0
+                && self.output.timeline_ordering
+                    != Some(crate::historical::job::MergeTimelineOrdering::Causal))
+        {
+            return invalid("invalid conversion reconstruction count");
+        }
+
         if self.output.first_timestamp_ns > self.output.last_timestamp_ns {
             return invalid("invalid conversion timestamp boundaries");
         }
@@ -348,25 +368,27 @@ impl ConversionManifest {
         let files_written = files.len() as u64;
         let row_groups = files.iter().map(|file| file.row_groups).sum();
 
-        let first_file = files
-            .first()
-            .ok_or_else(|| invalid_error("depth manifest has no Parquet files"))?;
-
-        let last_file = files
-            .last()
-            .ok_or_else(|| invalid_error("depth manifest has no Parquet files"))?;
-
-        let first_key = validate_depth_file(
-            &output_directory.join(&first_file.path),
-            job.conversion.max_staleness_ns,
-        )?
-        .first_key;
-
-        let last_key = validate_depth_file(
-            &output_directory.join(&last_file.path),
-            job.conversion.max_staleness_ns,
-        )?
-        .last_key;
+        let (first_timestamp_ns, last_timestamp_ns) = if causal_ordering(source).is_some() {
+            (source.start_timestamp_ns, source.end_timestamp_ns)
+        } else {
+            let first = files
+                .first()
+                .ok_or_else(|| invalid_error("depth manifest has no Parquet files"))?;
+            let last = files
+                .last()
+                .ok_or_else(|| invalid_error("depth manifest has no Parquet files"))?;
+            let first = validate_depth_file(
+                &output_directory.join(&first.path),
+                job.conversion.max_staleness_ns,
+            )?
+            .first_key;
+            let last = validate_depth_file(
+                &output_directory.join(&last.path),
+                job.conversion.max_staleness_ns,
+            )?
+            .last_key;
+            (Some(first.timestamp_ns), Some(last.timestamp_ns))
+        };
 
         let manifest = Self {
             protocol_version: CONVERSION_MANIFEST_VERSION,
@@ -401,10 +423,12 @@ impl ConversionManifest {
 
             output: ConversionManifestOutput {
                 content_type: "depth".to_owned(),
+                timeline_ordering: causal_ordering(source),
+                reconstruction_events: source.reconstruction_events,
                 files_written,
                 row_groups,
-                first_timestamp_ns: Some(first_key.timestamp_ns),
-                last_timestamp_ns: Some(last_key.timestamp_ns),
+                first_timestamp_ns,
+                last_timestamp_ns,
                 files,
             },
 
@@ -439,6 +463,7 @@ impl ConversionManifest {
         if validation.events != source.events_written
             || validation.trade_events != source.trade_events
             || validation.depth_events != source.depth_events
+            || validation.reconstruction_events != source.reconstruction_events
         {
             return invalid("combined manifest source/output count mismatch");
         }
@@ -453,25 +478,27 @@ impl ConversionManifest {
 
         let row_groups = files.iter().map(|file| file.row_groups).sum();
 
-        let first_file = files
-            .first()
-            .ok_or_else(|| invalid_error("combined manifest has no Parquet files"))?;
-
-        let last_file = files
-            .last()
-            .ok_or_else(|| invalid_error("combined manifest has no Parquet files"))?;
-
-        let first_key = validate_combined_file(
-            &output_directory.join(&first_file.path),
-            job.conversion.max_staleness_ns,
-        )?
-        .first_key;
-
-        let last_key = validate_combined_file(
-            &output_directory.join(&last_file.path),
-            job.conversion.max_staleness_ns,
-        )?
-        .last_key;
+        let (first_timestamp_ns, last_timestamp_ns) = if causal_ordering(source).is_some() {
+            (source.start_timestamp_ns, source.end_timestamp_ns)
+        } else {
+            let first = files
+                .first()
+                .ok_or_else(|| invalid_error("combined manifest has no Parquet files"))?;
+            let last = files
+                .last()
+                .ok_or_else(|| invalid_error("combined manifest has no Parquet files"))?;
+            let first = validate_combined_file(
+                &output_directory.join(&first.path),
+                job.conversion.max_staleness_ns,
+            )?
+            .first_key;
+            let last = validate_combined_file(
+                &output_directory.join(&last.path),
+                job.conversion.max_staleness_ns,
+            )?
+            .last_key;
+            (Some(first.timestamp_ns), Some(last.timestamp_ns))
+        };
 
         let manifest = Self {
             protocol_version: CONVERSION_MANIFEST_VERSION,
@@ -506,11 +533,13 @@ impl ConversionManifest {
 
             output: ConversionManifestOutput {
                 content_type: "combined".to_owned(),
+                timeline_ordering: causal_ordering(source),
+                reconstruction_events: source.reconstruction_events,
                 files_written,
                 row_groups,
 
-                first_timestamp_ns: Some(first_key.timestamp_ns),
-                last_timestamp_ns: Some(last_key.timestamp_ns),
+                first_timestamp_ns,
+                last_timestamp_ns,
 
                 files,
             },
@@ -579,4 +608,23 @@ fn invalid<T>(message: impl Into<String>) -> Result<T> {
 }
 fn is_zero(value: &u64) -> bool {
     *value == 0
+}
+
+fn causal_ordering(
+    source: &PhysicalMergeManifest,
+) -> Option<crate::historical::job::MergeTimelineOrdering> {
+    use crate::historical::job::MergeTimelineOrdering;
+    (source.timeline_ordering == MergeTimelineOrdering::Causal).then_some(source.timeline_ordering)
+}
+
+fn source_timestamp_bounds(
+    source: &PhysicalMergeManifest,
+    first: Option<i64>,
+    last: Option<i64>,
+) -> (Option<i64>, Option<i64>) {
+    if causal_ordering(source).is_some() {
+        (source.start_timestamp_ns, source.end_timestamp_ns)
+    } else {
+        (first, last)
+    }
 }

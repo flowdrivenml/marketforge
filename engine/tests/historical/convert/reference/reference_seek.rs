@@ -1,34 +1,24 @@
 use parquet::file::reader::{FileReader, SerializedFileReader};
-use std::{fs, path::PathBuf};
+use std::fs;
 use {
     marketforge_engine::historical::convert::reference::PhysicalReferenceReader,
-    marketforge_engine::historical::merge::PhysicalMergeManifest,
+    marketforge_engine::historical::merge::{PhysicalMergeManifest, UnifiedMergeMode},
 };
 
-fn fixture() -> (PathBuf, PhysicalMergeManifest) {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf();
-
-    let directory = root.join("data/merged/conversion-multihop");
-
-    let manifest: PhysicalMergeManifest =
-        serde_json::from_slice(&fs::read(directory.join("manifest.json")).unwrap()).unwrap();
-
+fn fixture() -> (tempfile::TempDir, PhysicalMergeManifest) {
+    let directory = tempfile::tempdir().unwrap();
+    let manifest = crate::market::create(directory.path(), UnifiedMergeMode::Trades, false);
     (directory, manifest)
 }
 
 fn row_group_boundaries(directory: &std::path::Path, manifest: &PhysicalMergeManifest) -> Vec<u64> {
-    let mut files = manifest.files.clone();
-
-    files.sort_by(|a, b| (a.partition_id, &a.path).cmp(&(b.partition_id, &b.path)));
+    let files = &manifest.files;
 
     let mut boundaries = Vec::new();
     let mut offset = 0_u64;
 
     for entry in files {
-        let file = fs::File::open(directory.join(entry.path)).unwrap();
+        let file = fs::File::open(directory.join(&entry.path)).unwrap();
 
         let reader = SerializedFileReader::new(file).unwrap();
 
@@ -52,11 +42,11 @@ fn row_group_boundaries(directory: &std::path::Path, manifest: &PhysicalMergeMan
 fn seeking_to_zero_matches_sequential_reader() {
     let (directory, manifest) = fixture();
 
-    let mut sequential = PhysicalReferenceReader::new(&directory, &manifest, 4096).unwrap();
+    let mut sequential = PhysicalReferenceReader::new(directory.path(), &manifest, 4096).unwrap();
 
-    let mut seeked = PhysicalReferenceReader::new_at(&directory, &manifest, 4096, 0).unwrap();
+    let mut seeked = PhysicalReferenceReader::new_at(directory.path(), &manifest, 4096, 0).unwrap();
 
-    for _ in 0..10_000 {
+    for _ in 0..=manifest.events_written {
         let expected = sequential.next_observation().unwrap();
         let actual = seeked.next_observation().unwrap();
 
@@ -72,7 +62,7 @@ fn seeking_to_dataset_end_returns_eof() {
     let (directory, manifest) = fixture();
 
     let mut reader =
-        PhysicalReferenceReader::new_at(&directory, &manifest, 4096, manifest.events_written)
+        PhysicalReferenceReader::new_at(directory.path(), &manifest, 4096, manifest.events_written)
             .unwrap();
 
     assert!(reader.next_observation().unwrap().is_none());
@@ -83,8 +73,13 @@ fn rejects_seek_beyond_dataset_end() {
     let (directory, manifest) = fixture();
 
     assert!(
-        PhysicalReferenceReader::new_at(&directory, &manifest, 4096, manifest.events_written + 1,)
-            .is_err()
+        PhysicalReferenceReader::new_at(
+            directory.path(),
+            &manifest,
+            4096,
+            manifest.events_written + 1,
+        )
+        .is_err()
     );
 }
 
@@ -102,17 +97,17 @@ fn assert_observations_equal(
 fn seeking_to_nonzero_position_matches_sequential() {
     let (directory, manifest) = fixture();
 
-    const POSITION: u64 = 100_000;
-    const COMPARE: usize = 10_000;
+    const POSITION: u64 = 3;
+    const COMPARE: usize = 3;
 
-    let mut sequential = PhysicalReferenceReader::new(&directory, &manifest, 4096).unwrap();
+    let mut sequential = PhysicalReferenceReader::new(directory.path(), &manifest, 4096).unwrap();
 
     for _ in 0..POSITION {
         sequential.next_observation().unwrap().unwrap();
     }
 
     let mut seeked =
-        PhysicalReferenceReader::new_at(&directory, &manifest, 4096, POSITION).unwrap();
+        PhysicalReferenceReader::new_at(directory.path(), &manifest, 4096, POSITION).unwrap();
 
     for _ in 0..COMPARE {
         assert_observations_equal(
@@ -128,23 +123,24 @@ fn seeking_to_nonzero_position_matches_sequential() {
 fn seeking_across_row_group_boundaries_matches_sequential() {
     let (directory, manifest) = fixture();
 
-    let boundaries = row_group_boundaries(&directory, &manifest);
+    let boundaries = row_group_boundaries(directory.path(), &manifest);
 
     assert!(!boundaries.is_empty());
 
     let boundary = boundaries[0];
 
-    let start = boundary - 2;
+    let start = boundary - 1;
 
-    let mut sequential = PhysicalReferenceReader::new(&directory, &manifest, 4096).unwrap();
+    let mut sequential = PhysicalReferenceReader::new(directory.path(), &manifest, 4096).unwrap();
 
     for _ in 0..start {
         sequential.next_observation().unwrap().unwrap();
     }
 
-    let mut seeked = PhysicalReferenceReader::new_at(&directory, &manifest, 4096, start).unwrap();
+    let mut seeked =
+        PhysicalReferenceReader::new_at(directory.path(), &manifest, 4096, start).unwrap();
 
-    for _ in 0..10 {
+    for _ in 0..4 {
         assert_observations_equal(
             sequential.next_observation().unwrap(),
             seeked.next_observation().unwrap(),
@@ -156,20 +152,20 @@ fn seeking_across_row_group_boundaries_matches_sequential() {
 fn seeking_directly_to_row_group_boundary() {
     let (directory, manifest) = fixture();
 
-    let boundaries = row_group_boundaries(&directory, &manifest);
+    let boundaries = row_group_boundaries(directory.path(), &manifest);
 
     let boundary = boundaries[0];
 
-    let mut sequential = PhysicalReferenceReader::new(&directory, &manifest, 4096).unwrap();
+    let mut sequential = PhysicalReferenceReader::new(directory.path(), &manifest, 4096).unwrap();
 
     for _ in 0..boundary {
         sequential.next_observation().unwrap().unwrap();
     }
 
     let mut seeked =
-        PhysicalReferenceReader::new_at(&directory, &manifest, 4096, boundary).unwrap();
+        PhysicalReferenceReader::new_at(directory.path(), &manifest, 4096, boundary).unwrap();
 
-    for _ in 0..100 {
+    for _ in 0..3 {
         assert_observations_equal(
             sequential.next_observation().unwrap(),
             seeked.next_observation().unwrap(),

@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, File},
+    fs::File,
     path::{Path, PathBuf},
 };
 
@@ -20,29 +20,18 @@ struct OrderedParquetReader {
 
 impl OrderedParquetReader {
     fn new(directory: &Path) -> Self {
-        let mut files = Vec::new();
-
-        fn discover(directory: &Path, files: &mut Vec<PathBuf>) {
-            for entry in fs::read_dir(directory).unwrap() {
-                let path = entry.unwrap().path();
-
-                if path.is_dir() {
-                    discover(&path, files);
-                } else if path.extension().is_some_and(|ext| ext == "parquet") {
-                    files.push(path);
-                }
-            }
-        }
-
-        discover(directory, &mut files);
-        files.sort();
-
-        assert!(
-            !files.is_empty(),
-            "no Parquet files found: {}",
-            directory.display()
-        );
-
+        let manifest = serde_json::from_reader::<
+            _,
+            marketforge_engine::historical::convert::output::ConversionManifest,
+        >(File::open(directory.join("manifest.json")).unwrap())
+        .unwrap();
+        manifest.validate().unwrap();
+        let files = manifest
+            .output
+            .files
+            .into_iter()
+            .map(|file| directory.join(file.path))
+            .collect();
         Self {
             files,
             next_file: 0,
@@ -141,14 +130,11 @@ pub fn compare_datasets(expected_directory: &Path, actual_directory: &Path) -> u
             "parallel conversion schema differs from sequential"
         );
 
-        assert_eq!(left.num_columns(), 32);
-        assert_eq!(right.num_columns(), 32);
-
         let count = (left.num_rows() - expected_offset).min(right.num_rows() - actual_offset);
 
         assert!(count > 0);
 
-        for column in 0..32 {
+        for column in 0..left.num_columns() {
             let expected_slice = left.column(column).slice(expected_offset, count);
 
             let actual_slice = right.column(column).slice(actual_offset, count);

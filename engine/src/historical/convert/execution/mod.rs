@@ -27,9 +27,13 @@ pub use combined::worker::{
 pub use depth::alignment::DepthConversionAlignment;
 pub use depth::checkpoints::{
     DepthReferenceCheckpoint, DepthReferencePrepass, build_depth_reference_checkpoints,
+    build_depth_reference_checkpoints_with_progress,
 };
 pub use depth::conversion::{DepthConversionKernel, DepthConversionMetrics};
-pub use depth::materialize::{PhysicalDepthConversionMetrics, materialize_depth_conversion};
+pub use depth::materialize::{
+    PhysicalDepthConversionMetrics, materialize_depth_conversion,
+    materialize_depth_conversion_with_progress,
+};
 pub use depth::parallel::{
     ParallelDepthConversionResult, execute_parallel_depth_conversion,
     execute_parallel_depth_conversion_with_progress,
@@ -43,10 +47,18 @@ pub use shared::partition::{
     build_conversion_partition_plan, build_conversion_partition_plan_with_count,
 };
 pub use shared::partition_reader::ConversionPartitionReader;
-pub use shared::prepass::{ConversionPrepassResult, build_conversion_checkpoints};
-pub use shared::reader::{CONVERSION_READ_BATCH_SIZE, PhysicalConversionReader};
+pub use shared::prepass::{
+    ConversionPrepassResult, build_conversion_checkpoints,
+    build_conversion_checkpoints_with_progress,
+};
+pub use shared::reader::{
+    CONVERSION_READ_BATCH_SIZE, PhysicalConversionReader, validate_conversion_input,
+};
 pub use trades::conversion::TradeConversionKernel;
-pub use trades::materialize::{PhysicalConversionMetrics, materialize_trade_conversion};
+pub use trades::materialize::{
+    PhysicalConversionMetrics, materialize_trade_conversion,
+    materialize_trade_conversion_with_progress,
+};
 pub use trades::parallel::{
     ParallelConversionResult, execute_parallel_conversion,
     execute_parallel_conversion_with_progress,

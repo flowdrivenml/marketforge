@@ -11,7 +11,7 @@ use {
     crate::historical::convert::output::shared::files::discover_conversion_files,
     crate::historical::convert::output::validation::combined::CombinedFileValidationResult,
     crate::historical::convert::output::validation::combined::CombinedValidationMetrics,
-    crate::historical::convert::output::validation::combined::validate_combined_file,
+    crate::historical::convert::output::validation::combined::validate_combined_file_with_progress,
 };
 
 // -----------------------------------------------------------------------------
@@ -84,6 +84,7 @@ pub fn validate_converted_combined_parallel_with_progress(
             let events_validated = &events_validated;
             handles.push(scope.spawn(move || -> Result<()> {
                 loop {
+                    reporter.check_interrupted()?;
                     let index = {
                         let mut queue = queue
                             .lock()
@@ -96,11 +97,26 @@ pub fn validate_converted_combined_parallel_with_progress(
                         break;
                     };
 
-                    let result = validate_combined_file(&files[index], max_staleness_ns)?;
-                    let file_events = result.metrics.events;
+                    let mut last_update = std::time::Instant::now();
+                    let result = validate_combined_file_with_progress(
+                        &files[index],
+                        max_staleness_ns,
+                        reporter,
+                        |rows| {
+                            events_validated.fetch_add(rows, Ordering::Relaxed);
+                            if reporter.is_enabled()
+                                && last_update.elapsed() >= std::time::Duration::from_millis(250)
+                            {
+                                reporter.validation_progress(
+                                    files_completed.load(Ordering::Relaxed),
+                                    events_validated.load(Ordering::Relaxed),
+                                    row_groups_validated.load(Ordering::Relaxed),
+                                );
+                                last_update = std::time::Instant::now();
+                            }
+                        },
+                    )?;
                     let file_row_groups = result.metrics.row_groups;
-
-                    events_validated.fetch_add(file_events, Ordering::Relaxed);
 
                     row_groups_validated.fetch_add(file_row_groups, Ordering::Relaxed);
 
@@ -162,22 +178,15 @@ pub fn validate_converted_combined_parallel_with_progress(
         .map_err(|_| invalid_error("combined validation results poisoned"))?;
 
     let mut metrics = CombinedValidationMetrics::default();
-    let mut previous_key = None;
+    let mut previous = None;
 
     for result in results {
         let result =
             result.ok_or_else(|| invalid_error("missing parallel combined validation result"))?;
 
-        // Cross-file chronological ordering.
-        if let Some(previous) = previous_key {
-            if result.first_key < previous {
-                return invalid("parallel combined ordering regressed across files");
-            }
-        }
-
-        previous_key = Some(result.last_key);
-
+        super::combined::validate_combined_file_boundary(previous.as_ref(), &result)?;
         metrics.accumulate(&result.metrics)?;
+        previous = Some(result);
     }
 
     // -------------------------------------------------------------------------

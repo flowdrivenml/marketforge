@@ -1,3 +1,4 @@
+use crate::historical::convert::progress::ConversionProgressReporter;
 use arrow_array::{Array, Int64Array, RecordBatch, UInt32Array, UInt64Array};
 use arrow_schema::SchemaRef;
 use parquet::arrow::{
@@ -35,6 +36,9 @@ pub struct PhysicalConversionReader {
     batch_size: usize,
     projection: ReaderProjection,
     last_key: Option<ReferenceKey>,
+    causal: bool,
+    mode: crate::historical::merge::UnifiedMergeMode,
+    range: crate::historical::job::MergeTimeRange,
 
     records_read: u64,
     files_opened: u64,
@@ -74,13 +78,11 @@ impl PhysicalConversionReader {
 
         manifest.validate()?;
 
-        let mut files = manifest.files.clone();
-
-        files.sort_by(|a, b| (a.partition_id, &a.path).cmp(&(b.partition_id, &b.path)));
+        let files = &manifest.files;
 
         let files = files
-            .into_iter()
-            .map(|file| dataset_path.join(file.path))
+            .iter()
+            .map(|file| dataset_path.join(&file.path))
             .collect();
 
         Ok(Self {
@@ -91,6 +93,10 @@ impl PhysicalConversionReader {
             batch_size,
             projection,
             last_key: None,
+            causal: manifest.timeline_ordering
+                == crate::historical::job::MergeTimelineOrdering::Causal,
+            range: manifest.time_range,
+            mode: manifest.mode,
             records_read: 0,
             files_opened: 0,
         })
@@ -172,7 +178,7 @@ impl PhysicalConversionReader {
             ReaderProjection::Full => builder,
 
             ReaderProjection::ReferencePrepass => {
-                let required_columns = [
+                let mut required_columns = vec![
                     "event_timestamp_ns",
                     "event_kind",
                     "stream_id",
@@ -182,6 +188,9 @@ impl PhysicalConversionReader {
                     "event_ordinal",
                     "trade.price",
                 ];
+                if self.causal {
+                    required_columns.extend(["timeline_sequence", "reconstruction_only"]);
+                }
 
                 let schema_descriptor = builder.parquet_schema();
 
@@ -231,6 +240,9 @@ impl PhysicalConversionReader {
     // -------------------------------------------------------------------------
 
     fn validate_batch(&mut self, batch: &RecordBatch) -> Result<()> {
+        if self.causal {
+            return validate_causal_batch(batch, self.records_read, self.mode, &self.range);
+        }
         let timestamps = column::<Int64Array>(batch, "event_timestamp_ns")?;
         let ranks = column::<UInt32Array>(batch, "stream_rank")?;
         let tasks = column::<UInt64Array>(batch, "task_id")?;
@@ -311,4 +323,143 @@ fn invalid_error(message: impl Into<String>) -> MarketForgeError {
 
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(invalid_error(message))
+}
+
+pub(super) fn validate_causal_batch(
+    batch: &RecordBatch,
+    start: u64,
+    mode: crate::historical::merge::UnifiedMergeMode,
+    range: &crate::historical::job::MergeTimeRange,
+) -> Result<()> {
+    use crate::historical::merge::UnifiedMergeMode;
+    let sequences = column::<UInt64Array>(batch, "timeline_sequence")?;
+    let reconstruction = column::<arrow_array::BooleanArray>(batch, "reconstruction_only")?;
+    let timestamps = column::<Int64Array>(batch, "event_timestamp_ns")?;
+    let kinds = if mode == UnifiedMergeMode::Combined {
+        Some(column::<arrow_array::UInt8Array>(batch, "event_kind")?)
+    } else {
+        None
+    };
+    for row in 0..batch.num_rows() {
+        let timestamp = timestamps.value(row);
+        let outside = timestamp < range.start_ns || timestamp >= range.end_ns;
+        let depth = mode == UnifiedMergeMode::Depth
+            || kinds.is_some_and(|kinds| !kinds.is_null(row) && kinds.value(row) == 1);
+        if sequences.is_null(row)
+            || reconstruction.is_null(row)
+            || timestamps.is_null(row)
+            || sequences.value(row) != start + row as u64
+            || reconstruction.value(row) != outside
+            || (outside && !depth)
+        {
+            return invalid("invalid causal conversion sequence or reconstruction marker");
+        }
+    }
+    Ok(())
+}
+
+/// Check the input inventory and Parquet footers without scanning market rows.
+pub fn validate_conversion_input(directory: &Path, manifest: &PhysicalMergeManifest) -> Result<()> {
+    use crate::historical::{job::MergeTimelineOrdering, merge::*};
+
+    manifest.validate()?;
+    let mut schema = match manifest.mode {
+        UnifiedMergeMode::Trades => physical_trade_schema(),
+        UnifiedMergeMode::Depth => physical_depth_schema(),
+        UnifiedMergeMode::Combined => physical_combined_schema(),
+    };
+    if manifest.timeline_ordering == MergeTimelineOrdering::Causal {
+        schema = physical_causal_schema(&schema);
+    }
+    let mut row_groups = 0;
+    for entry in &manifest.files {
+        if !Path::new(&entry.path)
+            .components()
+            .all(|component| matches!(component, std::path::Component::Normal(_)))
+        {
+            return invalid(format!("invalid conversion inventory path: {}", entry.path));
+        }
+        let path = directory.join(&entry.path);
+        let file = File::open(&path)
+            .map_err(|error| invalid_error(format!("cannot open {}: {error}", path.display())))?;
+        let size = file
+            .metadata()
+            .map_err(|error| invalid_error(error.to_string()))?
+            .len();
+        let builder = ParquetRecordBatchReaderBuilder::try_new(file).map_err(|error| {
+            invalid_error(format!("cannot read {} footer: {error}", path.display()))
+        })?;
+        if size != entry.size_bytes
+            || builder.schema().fields() != schema.fields()
+            || u64::try_from(builder.metadata().file_metadata().num_rows()).ok() != entry.rows
+        {
+            return invalid(format!(
+                "conversion source schema or inventory mismatch: {}",
+                path.display()
+            ));
+        }
+        row_groups += builder.metadata().num_row_groups() as u64;
+    }
+    if row_groups != manifest.row_groups {
+        return invalid("conversion source row group inventory mismatch");
+    }
+    Ok(())
+}
+/// Establish the largest backwards timestamp distance without reading prices or reordering rows.
+pub(crate) fn initial_reference_state(
+    directory: &Path,
+    manifest: &PhysicalMergeManifest,
+    reporter: &ConversionProgressReporter,
+) -> Result<crate::historical::convert::reference::ReferenceState> {
+    initial_reference_state_for_prefix(directory, manifest, reporter, None)
+}
+
+pub(crate) fn initial_reference_state_for_prefix(
+    directory: &Path,
+    manifest: &PhysicalMergeManifest,
+    reporter: &ConversionProgressReporter,
+    max_events: Option<u64>,
+) -> Result<crate::historical::convert::reference::ReferenceState> {
+    use crate::historical::convert::reference::ReferenceState;
+    if manifest.timeline_ordering != crate::historical::job::MergeTimelineOrdering::Causal {
+        return Ok(ReferenceState::new());
+    }
+    let mut peak = i64::MIN;
+    let mut regression_ns = 0;
+    let mut remaining = max_events.unwrap_or(u64::MAX);
+    let batch_size = remaining.min(CONVERSION_READ_BATCH_SIZE as u64) as usize;
+    'files: for file in &manifest.files {
+        let file = std::fs::File::open(directory.join(&file.path))
+            .map_err(|error| invalid_error(error.to_string()))?;
+        let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+            .map_err(|error| invalid_error(error.to_string()))?;
+        let index = builder
+            .schema()
+            .index_of("event_timestamp_ns")
+            .map_err(|error| invalid_error(error.to_string()))?;
+        let mask = ProjectionMask::roots(builder.parquet_schema(), [index]);
+        let reader = builder
+            .with_projection(mask)
+            .with_batch_size(batch_size)
+            .build()
+            .map_err(|error| invalid_error(error.to_string()))?;
+        for batch in reader {
+            reporter.check_interrupted()?;
+            let batch = batch.map_err(|error| invalid_error(error.to_string()))?;
+            let timestamps = column::<Int64Array>(&batch, "event_timestamp_ns")?;
+            for timestamp in timestamps
+                .iter()
+                .take(usize::try_from(remaining).unwrap_or(usize::MAX))
+            {
+                let timestamp = timestamp.ok_or_else(|| invalid_error("null causal timestamp"))?;
+                peak = peak.max(timestamp);
+                regression_ns = regression_ns.max(peak.abs_diff(timestamp));
+                remaining -= 1;
+                if remaining == 0 {
+                    break 'files;
+                }
+            }
+        }
+    }
+    Ok(ReferenceState::with_regression_window(regression_ns))
 }

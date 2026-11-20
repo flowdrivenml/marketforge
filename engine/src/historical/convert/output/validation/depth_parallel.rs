@@ -12,7 +12,7 @@ use {
     crate::historical::convert::output::validation::depth::DepthConversionValidationMetrics,
     crate::historical::convert::output::validation::depth::DepthFileValidationResult,
     crate::historical::convert::output::validation::depth::reconcile_depth_validation,
-    crate::historical::convert::output::validation::depth::validate_depth_file,
+    crate::historical::convert::output::validation::depth::validate_depth_file_with_progress,
 };
 
 pub fn validate_converted_depth_parallel(
@@ -70,6 +70,7 @@ pub fn validate_converted_depth_parallel_with_progress(
             let row_groups_validated = &row_groups_validated;
             handles.push(scope.spawn(move || -> Result<()> {
                 loop {
+                    reporter.check_interrupted()?;
                     let index = {
                         let mut queue = queue
                             .lock()
@@ -82,11 +83,27 @@ pub fn validate_converted_depth_parallel_with_progress(
                         break;
                     };
 
-                    let result = validate_depth_file(&files[index], max_staleness_ns)?;
-                    let file_events = result.metrics.events;
+                    let mut last_update = std::time::Instant::now();
+                    let result = validate_depth_file_with_progress(
+                        &files[index],
+                        max_staleness_ns,
+                        reporter,
+                        |rows| {
+                            events_validated.fetch_add(rows, Ordering::Relaxed);
+                            if reporter.is_enabled()
+                                && last_update.elapsed() >= std::time::Duration::from_millis(250)
+                            {
+                                reporter.validation_progress(
+                                    files_completed.load(Ordering::Relaxed),
+                                    events_validated.load(Ordering::Relaxed),
+                                    row_groups_validated.load(Ordering::Relaxed),
+                                );
+                                last_update = std::time::Instant::now();
+                            }
+                        },
+                    )?;
                     let file_row_groups = result.metrics.row_groups;
 
-                    events_validated.fetch_add(file_events, Ordering::Relaxed);
                     row_groups_validated.fetch_add(file_row_groups, Ordering::Relaxed);
                     files_completed.fetch_add(1, Ordering::Relaxed);
 
@@ -139,21 +156,15 @@ pub fn validate_converted_depth_parallel_with_progress(
         .map_err(|_| invalid_error("depth validation results poisoned"))?;
 
     let mut metrics = DepthConversionValidationMetrics::default();
-    let mut previous_key = None;
+    let mut previous = None;
 
     for result in results {
         let result =
             result.ok_or_else(|| invalid_error("missing parallel depth validation result"))?;
 
-        if let Some(previous) = previous_key {
-            if result.first_key < previous {
-                return invalid("parallel depth ordering regressed across files");
-            }
-        }
-
-        previous_key = Some(result.last_key);
-
+        super::depth::validate_depth_file_boundary(previous.as_ref(), &result)?;
         metrics.accumulate(&result.metrics)?;
+        previous = Some(result);
     }
 
     reconcile_depth_validation(&metrics)?;

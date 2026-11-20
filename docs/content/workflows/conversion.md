@@ -19,7 +19,7 @@ The managed recipe records `version = 1`, a `[source]` table with kind, referenc
 - `[selection].publication_ids` pins **registry publication primary keys**. Use this or `file_dataset_ids`.
 - `[selection].expected_engine_publication_ids` optionally checks the resolved engine publication IDs using exact decimal strings.
 - `[selection].whole_publication = true` explicitly approves executing all streams and rows when the requested interval is narrower. Approval still requires verified lineage and an overlapping interval.
-- `[conversion]` sets `target_quote`, `price_source = "last_trade"`, positive `max_staleness_ns`, `max_hops` from 1 to 4, `path_policy` of `"all"` or `"primary"`, and optional `instrument_kinds`. The installed engine rejects plans with multiple routes even with `"primary"`.
+- `[conversion]` sets `target_quote`, `price_source = "last_trade"`, positive `max_staleness_ns`, `max_hops` from 1 to 4, `path_policy` of `"all"` or `"primary"`, and optional `instrument_kinds`. The Forge preparation path still rejects plans with multiple routes.
 - `[resources]` sets positive `workers`, `memory_limit_mb`, and `max_open_files`. The engine caps these with its historical runtime configuration.
 - Top-level `reference_stream_ids` lists exact trade stream IDs. Top-level `reference_publication_id`, when given, denotes a separate registered **trade-only merge**. Combined and depth sources can use verified external trade merges. The converter's trade-only execution does not replay external references.
 
@@ -82,6 +82,62 @@ The current binary takes one `--job` document. Only `job-*.json` uses the Rust `
 mf convert run /absolute/path/to/convert.json --testing | cpout
 ```
 
-For the walkthrough source, preparation reaches `generated` and `run` blocks launch. The source uses causal physical schema 2, while conversion validates chronological timestamp/rank ordering. Its catalog lookup assumes the first normalization task owns each stream, and its identity-only reference lookup rejects an instrument when a depth stream shares the selected trade instrument's identity. The binary also loads the catalog from `data/catalog/instruments.json` under the project root, with no catalog argument. Forge retains a verified historical snapshot and reports a missing or conflicting fixed catalog. It never installs the snapshot at that location.
+For the walkthrough source, Forge preparation reaches `generated`. Its current orchestration still expects a fixed catalog and applies its existing compatibility checks. The Rust CLI can validate the retained single job and verified catalog directly. Passing the retained catalog and adopting the engine check in Forge are separate integration work. Registration also needs a conversion operation migration and operation-aware lineage verification.
 
-The engine follow-up is to support causal physical reads, resolve exact normalized stream provenance, resolve reference trades independently of depth, and expose nonexecuting validation and a pinned catalog input. A separate Forge registration phase would need compatible committed outputs, a new operation migration, and operation-aware registry lineage verification.
+## Validate and run a single engine job
+
+`--validate` loads the production job and runtime settings, checks the source and any external reference manifest against their published Parquet inventories and footer schemas, resolves committed normalization metadata, and plans the currency routes. It does not scan all market rows or create staging or output. Full physical and source-preservation checks run during publication.
+
+From the project root, point `catalog` at the verified `instruments.json` retained by the preparation run for this publication. The default catalog remains `data/catalog/instruments.json`. Both paths use the same catalog loader. `--config` defaults to `data/.config/historical/general.toml`. Paths supplied to these flags are relative to `--project-root` unless absolute paths are supplied.
+
+```bash
+set -o pipefail
+catalog=/absolute/path/to/verified/instruments.json
+engine/target/debug/marketforge-convert \
+  --job engine/tests/historical/fixtures/convert.json --catalog "$catalog" --validate 2>&1 | cpout
+```
+
+On another machine, the production job still requires absolute input and output paths. Edit a local copy of the job with `nvim /absolute/path/to/local-job.json`. For relocated provenance, `--normalization-root /absolute/path/to/normalized` selects committed directories named by the engine normalization dataset IDs in the merge manifest. Conversion checks their identity, stream metadata, processing-job checksum, and available catalog authority. Keep the relevant normalization manifests and committed processing-job snapshots with their checksums.
+
+The combined engine prefers configured internal trade streams and uses the external trade-only publication for configured instruments absent from the internal trades. Matching depth streams remain sources. Depth-only conversion uses external trade references. Trade-only conversion uses internal trades. `all` tries planned routes in deterministic graph order and emits a single valuation from the first successful route. `primary` tries the first planned route.
+
+Causal conversion keeps physical row order, event timestamps, and reconstruction markers. Physical row totals include reconstruction-only depth rows, and the converted manifest reports the reconstruction count separately. Internal references must precede the event in causal traversal and have a strictly earlier event-time key. At equal timestamps the stream rank, task ID, and ordinal break ties. External trades must have a strictly earlier timestamp and arrive in chronological order. The engine uses the latest eligible observation. If the most recent encountered observation is too far ahead in event time, it looks for an earlier eligible observation. Reference age equal to the staleness limit is eligible. A timestamp-only scan bounds the retained history and checkpoints preserve it across partitions. The memory and open-file values shown in the dashboard are configured caps.
+
+Build the engine with `historical,monitor-tui` for the dashboard. `D` toggles job details, the arrow keys scroll, and `Ctrl+C` requests interruption. Set `MARKETFORGE_TUI_HOLD=1` to keep the final screen open. Close it with `q` or `Esc`. The process joins workers before returning and exits with status 130 when interrupted before completion. If an atomic commit has already begun, the final status reports its actual outcome. `--materialize` leaves validated job and runtime context with staged Parquet and the execution receipt and shows **Materialized (unpublished)**. `--publish` validates and commits that staging directory. **Published** appears after the atomic rename. The dashboard also reports **Failed** and **Interrupted**, and prints the outcome and artifact paths after restoring the terminal. Interrupted materialization can leave staging that must be reviewed before reuse.
+
+```bash
+engine/target/debug/marketforge-convert --job /absolute/path/to/local-job.json --catalog "$catalog" --materialize --tui
+```
+
+## Verify conversion changes
+
+`engine/tests/historical/support/conversion_fixture.rs` loads the canonical single job with the production parser. Contract tests use that job unchanged or derive invalid fields explicitly. Portable execution tests derive jobs with locally declared overrides. They build complete trade, depth, combined, or external-reference inputs using production physical schemas and checksummed normalization job snapshots. Every writing case owns a temporary directory. The equivalence checks follow committed manifest inventories and compare logical Arrow rows and reference provenance across file and row-group boundaries.
+
+Use the bounded runner from `engine/`. Compiling separately keeps each case within the runner's 30-second limit. The monitor feature adds dashboard and PTY coverage. Omit it for a portable non-TUI check.
+
+```bash
+set -o pipefail
+run_dir=$(mktemp -d)
+cargo test --locked --offline --features historical,monitor-tui \
+  --test historical_convert --bin marketforge-convert --no-run --message-format=json > "$run_dir/artifacts.jsonl"
+python3 scripts/bounded_tests.py "$run_dir/artifacts.jsonl" "$run_dir/results" \
+  --run --targets 'historical_convert|marketforge-convert' 2>&1 | cpout
+```
+
+The recorded target requires `historical-real-tests` and an explicit catalog. It verifies engine publication `2079541492669036539` from registry publication 60 and primary file dataset 360. Set `MARKETFORGE_RECORDED_CONVERT_INPUT` to an absolute path for an exact copy of that publication if the canonical input path is unavailable. Set `MARKETFORGE_RECORDED_CONVERT_NORMALIZED` to the relocated normalization provenance root when needed. The full test also accepts `MARKETFORGE_RECORDED_CONVERT_CONFIG` for an absolute runtime config path. Preserve the merge manifest, its publication checksums, and all timeline files. No registry or network connection is required. Missing inputs or an incompatible publication fail the selected test.
+
+The prefix case checks the first 4,096 causal rows with their preceding in-publication reference history. It stays in temporary staging and is never published.
+
+```bash
+set -o pipefail
+export MARKETFORGE_RECORDED_CONVERT_CATALOG=/absolute/path/to/verified/instruments.json
+cargo test --locked --offline --features historical-real-tests --test historical_recorded_convert \
+  -- validates_canonical_recorded_prefix_with_causal_prehistory --exact 2>&1 | cpout
+```
+
+Select the full recorded conversion deliberately. It reads and validates the entire 12,477,919-row publication and needs temporary disk space for the conversion and validation. The test publishes only under its temporary directory.
+
+```bash
+cargo test --locked --offline --features historical-real-tests --test historical_recorded_convert \
+  -- publishes_canonical_recorded_conversion --exact 2>&1 | cpout
+```

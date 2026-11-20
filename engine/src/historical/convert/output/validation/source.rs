@@ -333,6 +333,7 @@ pub fn validate_source_preservation_with_progress(
     let mut expected_source_schema: Option<SchemaRef> = None;
 
     loop {
+        reporter.check_interrupted()?;
         if metrics.events_compared == expected_events {
             if converted_batch
                 .as_ref()

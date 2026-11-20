@@ -1,6 +1,4 @@
-use crate::historical::convert::progress::{
-    ConversionPartitionKey, ConversionProgress, ConversionProgressReporter,
-};
+use crate::historical::convert::progress::{ConversionPartitionKey, ConversionProgressReporter};
 use std::{
     collections::VecDeque,
     path::Path,
@@ -146,6 +144,7 @@ pub fn execute_parallel_depth_conversion_with_progress(
 
             handles.push(scope.spawn(move || -> Result<()> {
                 loop {
+                    reporter.check_interrupted()?;
                     let index = {
                         let mut queue = queue
                             .lock()
@@ -200,36 +199,16 @@ pub fn execute_parallel_depth_conversion_with_progress(
                         Ok(result) => {
                             let metrics = &result.metrics;
 
-                            reporter.partition_completed(
-                                key,
-                                ConversionProgress {
-                                    events_read: metrics.events_read,
-                                    events_written: metrics.events_written,
-
-                                    identity_events: metrics.identity_events,
-                                    converted_events: metrics.converted_events,
-                                    unavailable_events: metrics.unavailable_events,
-
-                                    depth_events: metrics.events_read,
-
-                                    depth_levels_read: metrics.levels_read,
-                                    depth_levels_converted: metrics.levels_converted,
-                                    depth_levels_unavailable: metrics.levels_unavailable,
-
-                                    external_reference_updates: metrics.reference_updates,
-
-                                    files_written: metrics.files_written,
-                                    row_groups_written: metrics.row_groups_written,
-
-                                    ..ConversionProgress::default()
-                                },
-                            );
+                            reporter.partition_completed(key, metrics.progress());
 
                             result
                         }
 
                         Err(error) => {
                             reporter.partition_failed(key, error.to_string());
+                            if let Ok(mut queue) = queue.lock() {
+                                queue.clear();
+                            }
                             return Err(error);
                         }
                     };
@@ -255,13 +234,17 @@ pub fn execute_parallel_depth_conversion_with_progress(
                 Ok(Ok(())) => {}
 
                 Ok(Err(error)) => {
-                    if first_error.is_none() {
+                    if first_error.as_ref().is_none_or(|current| {
+                        matches!(current, MarketForgeError::ConversionInterrupted)
+                    }) {
                         first_error = Some(error);
                     }
                 }
 
                 Err(_) => {
-                    if first_error.is_none() {
+                    if first_error.as_ref().is_none_or(|current| {
+                        matches!(current, MarketForgeError::ConversionInterrupted)
+                    }) {
                         first_error = Some(invalid_error("parallel depth worker panicked"));
                     }
                 }
@@ -329,6 +312,9 @@ pub fn execute_parallel_depth_conversion_with_progress(
         accumulate!(levels_unavailable);
 
         accumulate!(reference_updates);
+        for (total, count) in metrics.failures.iter_mut().zip(result.metrics.failures) {
+            *total += count;
+        }
         accumulate!(reference_observations_read);
 
         accumulate!(files_written);
@@ -366,6 +352,10 @@ pub fn execute_parallel_depth_conversion_with_progress(
 
     if accounted_levels != metrics.levels_read {
         return invalid("parallel depth level accounting mismatch");
+    }
+
+    if metrics.reference_updates != prepass.reference_updates {
+        return invalid("parallel depth reference update count differs from prepass");
     }
 
     if metrics.files_written == 0 || metrics.row_groups_written == 0 {

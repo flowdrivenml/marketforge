@@ -11,7 +11,7 @@ pub fn plan_conversion(
     resolved: &ResolvedConversionCatalog,
 ) -> Result<ConversionPlan> {
     job.validate()?;
-    crate::shared::conversion::planner::plan_conversion(
+    let mut plan = crate::shared::conversion::planner::plan_conversion(
         Currency::new(&job.conversion.target_quote)?,
         &resolved.sources,
         &resolved.references,
@@ -20,5 +20,11 @@ pub fn plan_conversion(
                 .selects_instrument_kind(source.identity.instrument_kind)
         },
         job.conversion.max_hops,
-    )
+    )?;
+    if job.conversion.path_policy == crate::historical::job::ConversionPathPolicy::Primary {
+        for stream in &mut plan.streams {
+            stream.paths.truncate(1);
+        }
+    }
+    Ok(plan)
 }

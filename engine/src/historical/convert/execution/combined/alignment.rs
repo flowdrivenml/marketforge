@@ -23,10 +23,6 @@ impl CombinedReferenceAlignment {
         selection: CombinedReferenceSelection,
         external: Option<ExternalReferenceCursor>,
     ) -> Result<Self> {
-        if selection.internal_streams.is_empty() && selection.external_streams.is_empty() {
-            return invalid("combined alignment requires reference streams");
-        }
-
         if !selection
             .internal_streams
             .is_disjoint(&selection.external_streams)
@@ -57,6 +53,7 @@ impl CombinedReferenceAlignment {
                 .ok_or_else(|| invalid_error("external reference counter overflow"))?;
         }
 
+        self.state.advance_watermark(timestamp_ns);
         Ok(())
     }
 
@@ -111,10 +108,6 @@ impl CombinedReferenceAlignment {
         external: Option<ExternalReferenceCursor>,
         state: ReferenceState,
     ) -> Result<Self> {
-        if selection.internal_streams.is_empty() && selection.external_streams.is_empty() {
-            return invalid("combined alignment requires reference streams");
-        }
-
         if !selection
             .internal_streams
             .is_disjoint(&selection.external_streams)

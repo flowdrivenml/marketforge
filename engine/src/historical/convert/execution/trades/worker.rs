@@ -3,7 +3,7 @@ use crate::historical::convert::execution::{
     ConversionPartitionReader, ConversionReferenceCheckpoint, PhysicalConversionMetrics,
     TradeConversionKernel,
 };
-use crate::historical::convert::progress::{ConversionProgress, ConversionWorkerProgress};
+use crate::historical::convert::progress::ConversionWorkerProgress;
 use std::path::{Path, PathBuf};
 use {
     crate::historical::convert::ConversionPlan,
@@ -165,6 +165,9 @@ fn execute_conversion_partition_impl(
     // -------------------------------------------------------------------------
 
     while let Some(batch) = reader.next_batch()? {
+        if let Some(progress) = &progress {
+            progress.check_interrupted()?;
+        }
         if builder.is_none() {
             let trade_builder = ConvertedTradeBatchBuilder::new(batch.schema())?;
 
@@ -206,22 +209,12 @@ fn execute_conversion_partition_impl(
                 .expect("conversion writer initialized")
                 .metrics();
 
-            let snapshot = ConversionProgress {
-                events_read: metrics.events_read,
-                events_written: physical.events_written,
-
-                identity_events: metrics.identity_events,
-                converted_events: metrics.converted_events,
-                unavailable_events: metrics.unavailable_events,
-
-                trade_events: metrics.events_read,
-
-                internal_reference_updates: metrics.reference_updates,
-
-                files_written: physical.files_written,
-                row_groups_written: physical.row_groups_written,
-
-                ..ConversionProgress::default()
+            let snapshot = {
+                let mut snapshot = metrics.progress();
+                snapshot.events_written = physical.events_written;
+                snapshot.files_written = physical.files_written;
+                snapshot.row_groups_written = physical.row_groups_written;
+                snapshot
             };
 
             progress.maybe_update(&snapshot);
@@ -279,24 +272,8 @@ fn execute_conversion_partition_impl(
     if metrics.reference_updates > metrics.events_read {
         return invalid("conversion partition reference updates exceed events");
     }
-    if let Some(progress) = progress.as_deref_mut() {
-        progress.finish(&ConversionProgress {
-            events_read: metrics.events_read,
-            events_written: metrics.events_written,
-
-            identity_events: metrics.identity_events,
-            converted_events: metrics.converted_events,
-            unavailable_events: metrics.unavailable_events,
-
-            trade_events: metrics.events_read,
-
-            internal_reference_updates: metrics.reference_updates,
-
-            files_written: metrics.files_written,
-            row_groups_written: metrics.row_groups_written,
-
-            ..ConversionProgress::default()
-        });
+    if let Some(progress) = progress {
+        progress.finish(&metrics.progress());
     }
     Ok(ConversionPartitionResult {
         partition_id: partition.partition_id,

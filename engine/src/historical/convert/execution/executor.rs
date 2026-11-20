@@ -8,7 +8,7 @@ use {
 use crate::historical::convert::{
     ConversionPlan,
     reference::{
-        ConversionUnavailable, PhysicalReferenceReader, REFERENCE_READ_BATCH_SIZE, ReferenceState,
+        ConversionUnavailable, PhysicalReferenceReader, REFERENCE_READ_BATCH_SIZE,
         evaluate_conversion_path,
     },
 };
@@ -55,31 +55,41 @@ pub fn execute_conversion_sequential(
     let mut reader =
         PhysicalReferenceReader::new(&job.input_merge, manifest, REFERENCE_READ_BATCH_SIZE)?;
 
-    let mut state = ReferenceState::new();
+    let mut state = super::shared::reader::initial_reference_state(
+        &job.input_merge,
+        manifest,
+        &crate::historical::convert::progress::ConversionProgressReporter::disabled(),
+    )?;
     let mut stats = ConversionExecutionStats::default();
 
     let streams = plan
         .streams
         .iter()
-        .map(|stream| (stream.source.dataset_id, stream))
+        .map(|stream| {
+            (
+                (stream.source.dataset_id, stream.source.stream_rank),
+                stream,
+            )
+        })
         .collect::<HashMap<_, _>>();
 
     let reference_streams = plan
-        .streams
+        .references
         .iter()
-        .filter(|stream| job.conversion.references.contains(&stream.source.identity))
-        .map(|stream| stream.source.stream_id.as_str())
+        .map(|stream| (stream.dataset_id, stream.stream_id.as_str()))
         .collect::<std::collections::HashSet<_>>();
 
     while let Some(observation) = reader.next_observation()? {
         stats.events_read += 1;
 
-        let stream = streams.get(&observation.dataset_id).ok_or_else(|| {
-            invalid_error(format!(
-                "unknown conversion source dataset {}",
-                observation.dataset_id
-            ))
-        })?;
+        let stream = streams
+            .get(&(observation.dataset_id, observation.key.stream_rank))
+            .ok_or_else(|| {
+                invalid_error(format!(
+                    "unknown conversion source dataset {}",
+                    observation.dataset_id
+                ))
+            })?;
 
         let stream_stats = stats.streams.entry(observation.dataset_id).or_default();
 
@@ -89,6 +99,7 @@ pub fn execute_conversion_sequential(
         // Evaluate source event before updating reference state.
         // ---------------------------------------------------------------------
 
+        state.advance_watermark(observation.key.timestamp_ns);
         if stream.identity_conversion {
             stream_stats.identity += 1;
             stats.identity_events += 1;
@@ -154,7 +165,7 @@ pub fn execute_conversion_sequential(
         // Update reference state after evaluating the current event.
         // ---------------------------------------------------------------------
 
-        if reference_streams.contains(observation.stream_id.as_str()) {
+        if reference_streams.contains(&(observation.dataset_id, observation.stream_id.as_str())) {
             state.update(observation)?;
             stats.reference_updates += 1;
         }

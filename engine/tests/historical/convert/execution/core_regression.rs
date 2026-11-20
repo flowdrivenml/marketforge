@@ -6,10 +6,7 @@ use arrow_array::{
 use arrow_buffer::{OffsetBuffer, ScalarBuffer, i256};
 use arrow_schema::{Field, Schema};
 use marketforge_engine::{
-    historical::{
-        convert::{execution::*, reference::*, *},
-        job::ConvertJob,
-    },
+    historical::convert::{execution::*, reference::*, *},
     shared::domain::instrument::{Currency, InstrumentIdentity, InstrumentKind},
 };
 use std::{collections::HashSet, sync::Arc};
@@ -138,8 +135,7 @@ fn state(rank: u32, timestamp: i64, dataset: u64) -> ReferenceState {
 }
 #[test]
 fn exact_kernel_baseline_transcript() {
-    let mut job: ConvertJob =
-        serde_json::from_str(include_str!("../fixtures/jobs/convert-combined.json")).unwrap();
+    let mut job = crate::conversion_fixture::canonical_job();
     job.conversion.max_staleness_ns = 10;
     let sources = vec![
         instrument(0, "BTC", "USDT"),

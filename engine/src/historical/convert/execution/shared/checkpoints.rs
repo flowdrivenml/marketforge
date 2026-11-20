@@ -21,8 +21,12 @@ pub struct ConversionCheckpointBuilder {
 
 impl ConversionCheckpointBuilder {
     pub fn new(reference_streams: HashSet<u32>) -> Self {
+        Self::with_state(reference_streams, ReferenceState::new())
+    }
+
+    pub(super) fn with_state(reference_streams: HashSet<u32>, state: ReferenceState) -> Self {
         Self {
-            state: ReferenceState::new(),
+            state,
             reference_streams,
             events_seen: 0,
         }
@@ -37,6 +41,7 @@ impl ConversionCheckpointBuilder {
     }
 
     pub fn observe(&mut self, observation: ReferenceObservation) -> Result<()> {
+        self.state.advance_watermark(observation.key.timestamp_ns);
         if self
             .reference_streams
             .contains(&observation.key.stream_rank)

@@ -16,6 +16,7 @@ pub mod reference;
 
 pub use catalog::{
     ResolvedConversionCatalog, ResolvedConversionInstrument, resolve_conversion_catalog,
+    resolve_conversion_catalog_with_normalization_root,
 };
 pub use decimal::{CONVERSION_DECIMAL_PRECISION, CONVERSION_DECIMAL_SCALE, ConversionDecimal};
 pub use depth::{ConvertedDepthLevel, convert_depth_level};

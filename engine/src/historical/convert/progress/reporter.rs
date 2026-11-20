@@ -92,6 +92,7 @@ pub struct ConversionProgress {
     pub identity_events: u64,
     pub converted_events: u64,
     pub unavailable_events: u64,
+    pub failures: [u64; 6],
     pub skipped_events: u64,
 
     pub trade_events: u64,
@@ -121,6 +122,7 @@ pub struct ConversionProgressCounters {
     identity_events: AtomicU64,
     converted_events: AtomicU64,
     unavailable_events: AtomicU64,
+    failures: [AtomicU64; 6],
     skipped_events: AtomicU64,
 
     trade_events: AtomicU64,
@@ -152,6 +154,9 @@ impl ConversionProgressCounters {
         store!(identity_events);
         store!(converted_events);
         store!(unavailable_events);
+        for (counter, value) in self.failures.iter().zip(progress.failures) {
+            counter.store(value, Ordering::Relaxed);
+        }
         store!(skipped_events);
 
         store!(trade_events);
@@ -183,6 +188,7 @@ impl ConversionProgressCounters {
             identity_events: load!(identity_events),
             converted_events: load!(converted_events),
             unavailable_events: load!(unavailable_events),
+            failures: std::array::from_fn(|index| self.failures[index].load(Ordering::Relaxed)),
             skipped_events: load!(skipped_events),
 
             trade_events: load!(trade_events),
@@ -208,10 +214,20 @@ impl ConversionProgressCounters {
 
 #[derive(Debug, Default)]
 pub struct ConversionProgressState {
+    interrupted: std::sync::atomic::AtomicBool,
     partitions: Mutex<HashMap<ConversionPartitionKey, Arc<ConversionProgressCounters>>>,
 }
 
 impl ConversionProgressState {
+    pub fn interrupt(&self) {
+        self.interrupted
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    pub fn is_interrupted(&self) -> bool {
+        self.interrupted.load(std::sync::atomic::Ordering::Acquire)
+    }
+
     pub fn register(&self, key: ConversionPartitionKey) -> Arc<ConversionProgressCounters> {
         let mut partitions = self.partitions.lock().unwrap();
 
@@ -221,6 +237,40 @@ impl ConversionProgressState {
             .clone()
     }
 
+    pub fn total(&self) -> ConversionProgress {
+        let snapshots = self.snapshots();
+
+        let mut total = ConversionProgress::default();
+
+        for progress in snapshots.values() {
+            total.events_read += progress.events_read;
+            total.events_written += progress.events_written;
+
+            total.identity_events += progress.identity_events;
+            total.converted_events += progress.converted_events;
+            total.unavailable_events += progress.unavailable_events;
+            for (total, value) in total.failures.iter_mut().zip(progress.failures) {
+                *total += value;
+            }
+            total.skipped_events += progress.skipped_events;
+
+            total.trade_events += progress.trade_events;
+            total.depth_events += progress.depth_events;
+
+            total.depth_levels_read += progress.depth_levels_read;
+            total.depth_levels_converted += progress.depth_levels_converted;
+            total.depth_levels_unavailable += progress.depth_levels_unavailable;
+            total.depth_levels_skipped += progress.depth_levels_skipped;
+
+            total.internal_reference_updates += progress.internal_reference_updates;
+            total.external_reference_updates += progress.external_reference_updates;
+
+            total.files_written += progress.files_written;
+            total.row_groups_written += progress.row_groups_written;
+        }
+
+        total
+    }
     pub fn snapshots(&self) -> HashMap<ConversionPartitionKey, ConversionProgress> {
         let partitions = self.partitions.lock().unwrap();
 
@@ -289,9 +339,7 @@ pub enum ConversionProgressEvent {
         events_compared: u64,
         total_events: u64,
     },
-    Finished {
-        success: bool,
-    },
+    Finished(ConversionOutcome),
 }
 
 // -----------------------------------------------------------------------------
@@ -304,11 +352,43 @@ pub struct ConversionProgressReporter {
     state: Arc<ConversionProgressState>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConversionOutcome {
+    Validated,
+    Materialized,
+    Published,
+    Failed(String),
+    Interrupted,
+}
+
+impl ConversionOutcome {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Validated => "VALIDATED",
+            Self::Materialized => "MATERIALIZED (UNPUBLISHED)",
+            Self::Published => "PUBLISHED",
+            Self::Failed(_) => "FAILED",
+            Self::Interrupted => "INTERRUPTED",
+        }
+    }
+
+    pub fn succeeded(&self) -> bool {
+        matches!(self, Self::Validated | Self::Materialized | Self::Published)
+    }
+}
+
 impl ConversionProgressReporter {
+    pub fn check_interrupted(&self) -> crate::shared::error::Result<()> {
+        if self.state.is_interrupted() {
+            return Err(crate::shared::error::MarketForgeError::ConversionInterrupted);
+        }
+        Ok(())
+    }
+
     pub fn new(sender: Sender<ConversionProgressEvent>) -> Self {
         Self {
             sender: Some(sender),
-            state: Arc::new(ConversionProgressState::default()),
+            ..Self::default()
         }
     }
 
@@ -414,8 +494,8 @@ impl ConversionProgressReporter {
             total_events,
         });
     }
-    pub fn finished(&self, success: bool) {
-        self.emit(ConversionProgressEvent::Finished { success });
+    pub fn finished(&self, outcome: ConversionOutcome) {
+        self.emit(ConversionProgressEvent::Finished(outcome));
     }
 }
 
@@ -425,12 +505,17 @@ impl ConversionProgressReporter {
 
 #[derive(Debug)]
 pub struct ConversionWorkerProgress {
+    reporter: ConversionProgressReporter,
     counters: Option<Arc<ConversionProgressCounters>>,
     last_update: Instant,
     last_checked_events: u64,
 }
 
 impl ConversionWorkerProgress {
+    pub fn check_interrupted(&self) -> crate::shared::error::Result<()> {
+        self.reporter.check_interrupted()
+    }
+
     pub fn new(reporter: &ConversionProgressReporter, key: ConversionPartitionKey) -> Self {
         let counters = if reporter.is_enabled() {
             Some(reporter.state.register(key))
@@ -439,6 +524,7 @@ impl ConversionWorkerProgress {
         };
 
         Self {
+            reporter: reporter.clone(),
             counters,
             last_update: Instant::now(),
             last_checked_events: 0,

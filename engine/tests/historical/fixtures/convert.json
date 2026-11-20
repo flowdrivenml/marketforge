@@ -1,0 +1,36 @@
+{
+  "job_id": 265083950276773788,
+  "operation": "convert",
+  "input_merge": "/home/pasha/projects/marketforge/data/datasets/merged/2079541492669036539",
+  "conversion": {
+    "target_quote": "USDT",
+    "price_source": "last_trade",
+    "max_staleness_ns": 60000000000,
+    "max_hops": 2,
+    "path_policy": "all",
+    "instrument_kinds": null,
+    "references": [
+      {
+        "exchange": "bybit",
+        "symbol": "BTCUSDT",
+        "instrument_kind": "spot",
+        "contract_kind": null
+      },
+      {
+        "exchange": "bybit",
+        "symbol": "BTCUSDC",
+        "instrument_kind": "spot",
+        "contract_kind": null
+      }
+    ],
+    "reference_merge": null
+  },
+  "resources": {
+    "workers": 1,
+    "memory_limit_mb": 1024,
+    "max_open_files": 64
+  },
+  "output": {
+    "dataset_path": "/home/pasha/projects/marketforge/data/datasets/converted/265083950276773788"
+  }
+}

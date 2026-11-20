@@ -39,6 +39,7 @@ pub struct DepthConversionMetrics {
     pub identity_events: u64,
     pub converted_events: u64,
     pub unavailable_events: u64,
+    pub failures: [u64; 6],
 
     pub levels_read: u64,
     pub levels_converted: u64,
@@ -342,6 +343,13 @@ impl<'a> DepthConversionKernel<'a> {
 
             CONVERSION_STATUS_UNAVAILABLE => {
                 metrics.unavailable_events += 1;
+                metrics.failures[usize::from(
+                    result
+                        .metadata
+                        .failure
+                        .expect("unavailable row has a reason")
+                        - 1,
+                )] += 1;
                 metrics.levels_unavailable += level_count as u64;
             }
 
@@ -661,6 +669,8 @@ impl<'a> DepthConversionKernel<'a> {
 
             CONVERSION_STATUS_UNAVAILABLE => {
                 metrics.unavailable_events += 1;
+                metrics.failures
+                    [usize::from(result.failure.expect("unavailable row has a reason") - 1)] += 1;
                 metrics.levels_unavailable += level_count as u64;
             }
 

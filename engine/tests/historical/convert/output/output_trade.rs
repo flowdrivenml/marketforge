@@ -1,8 +1,5 @@
-use std::{fs::File, path::PathBuf};
-
 use arrow_array::{Array, Decimal256Array, ListArray, RecordBatch, UInt8Array};
 use arrow_buffer::i256;
-use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
 use marketforge_engine::historical::convert::{
     ConversionDecimal, ConversionDirection,
@@ -13,34 +10,25 @@ use marketforge_engine::historical::convert::{
     reference::{EvaluatedReference, ReferenceKey},
 };
 
-fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
 fn decimal(value: i64) -> ConversionDecimal {
     ConversionDecimal::new(i256::from_i128(i128::from(value) * 10_i128.pow(28))).unwrap()
 }
 
 fn source_batch() -> RecordBatch {
-    let dataset = root().join("data/merged/conversion-multihop");
-
-    let manifest: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(dataset.join("manifest.json")).unwrap()).unwrap();
-
-    let relative_path = manifest["files"][0]["path"].as_str().unwrap();
-
-    let file = File::open(dataset.join(relative_path)).unwrap();
-
-    let mut reader = ParquetRecordBatchReaderBuilder::try_new(file)
-        .unwrap()
-        .with_batch_size(3)
-        .build()
+    let directory = tempfile::tempdir().unwrap();
+    let manifest = crate::market::create(
+        directory.path(),
+        marketforge_engine::historical::merge::UnifiedMergeMode::Trades,
+        false,
+    );
+    let mut reader =
+        marketforge_engine::historical::convert::execution::PhysicalConversionReader::new(
+            directory.path(),
+            &manifest,
+            3,
+        )
         .unwrap();
-
-    reader.next().unwrap().unwrap()
+    reader.next_batch().unwrap().unwrap()
 }
 
 fn reference() -> EvaluatedReference {

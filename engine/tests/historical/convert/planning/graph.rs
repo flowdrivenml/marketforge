@@ -1,38 +1,23 @@
-use std::path::PathBuf;
-
 use {
     marketforge_engine::historical::convert::ConversionDirection,
     marketforge_engine::historical::convert::ConversionGraph,
-    marketforge_engine::historical::convert::ResolvedConversionCatalog,
     marketforge_engine::historical::convert::resolve_conversion_catalog,
-    marketforge_engine::historical::job::load_convert_job,
-    marketforge_engine::historical::merge::PhysicalMergeManifest,
+    marketforge_engine::historical::merge::UnifiedMergeMode,
     marketforge_engine::shared::domain::instrument::Currency,
-    marketforge_engine::shared::domain::instrument::InstrumentCatalog,
 };
 
-fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
 fn graph() -> ConversionGraph {
-    let root = root();
-
-    let job = load_convert_job(root.join("data/.jobs/convert/convert-multihop.json")).unwrap();
-
-    let manifest: PhysicalMergeManifest = serde_json::from_slice(
-        &std::fs::read(root.join("data/merged/conversion-multihop/manifest.json")).unwrap(),
-    )
-    .unwrap();
-
-    let catalog = InstrumentCatalog::load(&root.join("data/catalog/instruments.json")).unwrap();
-
-    let resolved: ResolvedConversionCatalog =
-        resolve_conversion_catalog(&job, &manifest, &catalog, &root).unwrap();
-
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let mut job = crate::conversion_fixture::canonical_job();
+    job.input_merge = root.join("trades");
+    let manifest = crate::market::create(&job.input_merge, UnifiedMergeMode::Trades, false);
+    let catalog = crate::market::catalog(root);
+    // The graph cases also probe ETH as a currency through an explicit extra reference.
+    let mut ethbtc = job.conversion.references[0].clone();
+    ethbtc.symbol = "ETHBTC".into();
+    job.conversion.references.push(ethbtc);
+    let resolved = resolve_conversion_catalog(&job, &manifest, &catalog, root).unwrap();
     ConversionGraph::new(&resolved.references).unwrap()
 }
 
@@ -74,7 +59,7 @@ fn finds_direct_btc_to_usdt() {
     assert_eq!(paths.len(), 1);
     assert_eq!(paths[0].hops(), 1);
     assert_eq!(paths[0].edges[0].direction, ConversionDirection::Direct);
-    assert_eq!(paths[0].edges[0].reference_dataset_id, 106);
+    assert_eq!(paths[0].edges[0].reference_dataset_id, 101);
 }
 
 #[test]
@@ -88,7 +73,7 @@ fn finds_inverse_usdt_to_btc() {
     assert_eq!(paths.len(), 1);
     assert_eq!(paths[0].hops(), 1);
     assert_eq!(paths[0].edges[0].direction, ConversionDirection::Inverse);
-    assert_eq!(paths[0].edges[0].reference_dataset_id, 106);
+    assert_eq!(paths[0].edges[0].reference_dataset_id, 101);
 }
 
 // -----------------------------------------------------------------------------
@@ -223,16 +208,16 @@ fn preserves_reference_stream_identity() {
 
     assert_eq!(edges.len(), 2);
 
-    assert_eq!(edges[0].reference_dataset_id, 129);
-    assert_eq!(edges[1].reference_dataset_id, 106);
+    assert_eq!(edges[0].reference_dataset_id, 101);
+    assert_eq!(edges[1].reference_dataset_id, 101);
 
     assert_eq!(
         edges[0].reference_stream_id,
-        "binance:spot:spot:ETHBTC:trade"
+        crate::market::stream_id(3, false)
     );
 
     assert_eq!(
         edges[1].reference_stream_id,
-        "binance:spot:spot:BTCUSDT:trade"
+        crate::market::stream_id(0, false)
     );
 }

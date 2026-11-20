@@ -1,40 +1,28 @@
-use std::{fs, path::PathBuf};
-
 use {
     marketforge_engine::historical::convert::execution::ConversionPartitionPlan,
     marketforge_engine::historical::convert::execution::build_conversion_partition_plan,
-    marketforge_engine::historical::merge::PhysicalMergeManifest,
+    marketforge_engine::historical::merge::{PhysicalMergeManifest, UnifiedMergeMode},
 };
 
-const EXPECTED_EVENTS: u64 = 12_627_646;
-const EXPECTED_ROW_GROUPS: usize = 42;
+const EXPECTED_EVENTS: u64 = 12;
+const EXPECTED_ROW_GROUPS: usize = 6;
 
-const WORKER_COUNTS: [usize; 6] = [1, 2, 4, 8, 12, 24];
+const WORKER_COUNTS: [usize; 4] = [1, 2, 4, 8];
 
 // -----------------------------------------------------------------------------
 // Fixtures
 // -----------------------------------------------------------------------------
 
-fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
-fn fixture() -> (PathBuf, PhysicalMergeManifest) {
-    let directory = root().join("data/merged/conversion-multihop");
-
-    let manifest: PhysicalMergeManifest =
-        serde_json::from_slice(&fs::read(directory.join("manifest.json")).unwrap()).unwrap();
-
+fn fixture() -> (tempfile::TempDir, PhysicalMergeManifest) {
+    let directory = tempfile::tempdir().unwrap();
+    let manifest = crate::market::create(directory.path(), UnifiedMergeMode::Combined, true);
     (directory, manifest)
 }
 
 fn plan(workers: usize) -> ConversionPartitionPlan {
     let (directory, manifest) = fixture();
 
-    build_conversion_partition_plan(&directory, &manifest, workers).unwrap()
+    build_conversion_partition_plan(directory.path(), &manifest, workers).unwrap()
 }
 
 // -----------------------------------------------------------------------------
@@ -68,8 +56,8 @@ fn partitions_cover_every_row_group_exactly_once() {
         let mut coverage = vec![0_u32; plan.row_groups.len()];
 
         for partition in &plan.partitions {
-            for index in partition.first_row_group..partition.end_row_group {
-                coverage[index] += 1;
+            for count in &mut coverage[partition.first_row_group..partition.end_row_group] {
+                *count += 1;
             }
         }
 
@@ -151,7 +139,7 @@ fn respects_requested_worker_counts() {
 fn rejects_zero_workers() {
     let (directory, manifest) = fixture();
 
-    assert!(build_conversion_partition_plan(&directory, &manifest, 0,).is_err());
+    assert!(build_conversion_partition_plan(directory.path(), &manifest, 0,).is_err());
 }
 
 // -----------------------------------------------------------------------------

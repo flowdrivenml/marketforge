@@ -4,7 +4,7 @@ use crate::historical::convert::execution::{
     ConversionPartition, ConversionPartitionPlan, ConversionPartitionReader,
     PhysicalCombinedConversionMetrics,
 };
-use crate::historical::convert::progress::{ConversionProgress, ConversionWorkerProgress};
+use crate::historical::convert::progress::ConversionWorkerProgress;
 use std::path::{Path, PathBuf};
 use {
     crate::historical::convert::ConversionPlan,
@@ -185,6 +185,9 @@ fn execute_combined_partition_impl(
     let mut writer: Option<ConvertedParquetWriter> = None;
 
     while let Some(batch) = reader.next_batch()? {
+        if let Some(progress) = &progress {
+            progress.check_interrupted()?;
+        }
         if builder.is_none() {
             let combined_builder = ConvertedCombinedBatchBuilder::new(batch.schema())?;
 
@@ -216,43 +219,10 @@ fn execute_combined_partition_impl(
                 .expect("combined writer initialized")
                 .metrics();
 
-            let snapshot = ConversionProgress {
-                events_read: conversion_metrics.events_read,
-                events_written: physical.events_written,
-
-                identity_events: conversion_metrics.trade.identity_events
-                    + conversion_metrics.depth.identity_events,
-
-                converted_events: conversion_metrics.trade.converted_events
-                    + conversion_metrics.depth.converted_events,
-
-                unavailable_events: conversion_metrics.trade.unavailable_events
-                    + conversion_metrics.depth.unavailable_events,
-
-                skipped_events: conversion_metrics.skipped_trade_events
-                    + conversion_metrics.skipped_depth_events,
-
-                trade_events: conversion_metrics.trade_events,
-                depth_events: conversion_metrics.depth_events,
-
-                depth_levels_read: conversion_metrics.depth.levels_read
-                    + conversion_metrics.skipped_depth_levels,
-
-                depth_levels_converted: conversion_metrics.depth.levels_converted,
-
-                depth_levels_unavailable: conversion_metrics.depth.levels_unavailable,
-
-                depth_levels_skipped: conversion_metrics.skipped_depth_levels,
-
-                internal_reference_updates: alignment.internal_updates(),
-
-                external_reference_updates: alignment.external_updates(),
-
-                files_written: physical.files_written,
-                row_groups_written: physical.row_groups_written,
-            };
-
-            progress.maybe_update(&snapshot);
+            progress.maybe_update(
+                &super::materialize::execution_metrics(&conversion_metrics, &alignment, physical)?
+                    .progress(),
+            );
         }
     }
 
@@ -267,44 +237,7 @@ fn execute_combined_partition_impl(
 
     let physical = writer.metrics();
 
-    let metrics = PhysicalCombinedConversionMetrics {
-        events_read: conversion_metrics.events_read,
-        events_written: physical.events_written,
-
-        trade_events: conversion_metrics.trade_events,
-        depth_events: conversion_metrics.depth_events,
-
-        identity_events: conversion_metrics.trade.identity_events
-            + conversion_metrics.depth.identity_events,
-
-        converted_events: conversion_metrics.trade.converted_events
-            + conversion_metrics.depth.converted_events,
-
-        unavailable_events: conversion_metrics.trade.unavailable_events
-            + conversion_metrics.depth.unavailable_events,
-
-        depth_levels_converted: conversion_metrics.depth.levels_converted,
-        depth_levels_unavailable: conversion_metrics.depth.levels_unavailable,
-
-        internal_reference_updates: alignment.internal_updates(),
-        external_reference_updates: alignment.external_updates(),
-        external_observations_read: alignment.observations_read(),
-
-        files_written: physical.files_written,
-        row_groups_written: physical.row_groups_written,
-        skipped_events: conversion_metrics
-            .skipped_trade_events
-            .checked_add(conversion_metrics.skipped_depth_events)
-            .ok_or_else(|| invalid_error("skipped event counter overflow"))?,
-
-        depth_levels_read: conversion_metrics
-            .depth
-            .levels_read
-            .checked_add(conversion_metrics.skipped_depth_levels)
-            .ok_or_else(|| invalid_error("combined depth level counter overflow"))?,
-
-        depth_levels_skipped: conversion_metrics.skipped_depth_levels,
-    };
+    let metrics = super::materialize::execution_metrics(&conversion_metrics, &alignment, physical)?;
 
     // -------------------------------------------------------------
     // Validate partition accounting
@@ -368,30 +301,8 @@ fn execute_combined_partition_impl(
     {
         return invalid("combined partition physical event-kind mismatch");
     }
-    if let Some(progress) = progress.as_deref_mut() {
-        progress.finish(&ConversionProgress {
-            events_read: metrics.events_read,
-            events_written: metrics.events_written,
-
-            identity_events: metrics.identity_events,
-            converted_events: metrics.converted_events,
-            unavailable_events: metrics.unavailable_events,
-            skipped_events: metrics.skipped_events,
-
-            trade_events: metrics.trade_events,
-            depth_events: metrics.depth_events,
-
-            depth_levels_read: metrics.depth_levels_read,
-            depth_levels_converted: metrics.depth_levels_converted,
-            depth_levels_unavailable: metrics.depth_levels_unavailable,
-            depth_levels_skipped: metrics.depth_levels_skipped,
-
-            internal_reference_updates: metrics.internal_reference_updates,
-            external_reference_updates: metrics.external_reference_updates,
-
-            files_written: metrics.files_written,
-            row_groups_written: metrics.row_groups_written,
-        });
+    if let Some(progress) = progress {
+        progress.finish(&metrics.progress());
     }
     Ok(CombinedPartitionResult {
         partition_id: partition.partition_id,

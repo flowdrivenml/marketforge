@@ -162,3 +162,8 @@ pub fn validate_causal_depth_selection(
         .collect::<Vec<_>>();
     depth::inventory::build_depth_inventory_with_order(&depth, true, false).map(|_| ())
 }
+
+/// Schema of a physical merge timeline with causal positions.
+pub fn physical_causal_schema(base: &arrow_schema::SchemaRef) -> arrow_schema::SchemaRef {
+    output::writers::unified_timeline::causal_schema(base, false)
+}

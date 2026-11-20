@@ -37,6 +37,7 @@ pub struct ConversionPlan {
 
     pub source_streams: usize,
     pub reference_streams: usize,
+    pub references: Vec<ResolvedConversionInstrument>,
     pub convertible_streams: usize,
     pub identity_streams: usize,
     pub unresolved_streams: usize,
@@ -146,6 +147,7 @@ fn plan_conversion_inner(
         target_quote: target,
         source_streams: streams.len(),
         reference_streams: references.len(),
+        references: references.to_vec(),
         convertible_streams: convertible,
         identity_streams: identity,
         unresolved_streams: unresolved,

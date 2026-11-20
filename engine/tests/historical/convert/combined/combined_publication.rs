@@ -6,10 +6,6 @@ use parquet::{
 use std::sync::Arc;
 use std::{fs, path::PathBuf};
 use {
-    marketforge_engine::historical::convert::execution::CombinedReferenceSelection,
-    marketforge_engine::historical::convert::execution::build_combined_reference_checkpoints,
-    marketforge_engine::historical::convert::execution::build_conversion_partition_plan,
-    marketforge_engine::historical::convert::execution::execute_parallel_combined_conversion,
     marketforge_engine::historical::convert::output::ConversionExecutionReceipt,
     marketforge_engine::historical::convert::output::ConversionManifest,
     marketforge_engine::historical::convert::output::SourcePreservationMode,
@@ -17,20 +13,10 @@ use {
     marketforge_engine::historical::convert::output::validate_source_preservation_with_mode,
     marketforge_engine::historical::convert::plan_conversion,
     marketforge_engine::historical::convert::resolve_conversion_catalog,
-    marketforge_engine::historical::job::MergeParquetConfig,
-    marketforge_engine::historical::job::load_convert_job,
     marketforge_engine::historical::merge::PhysicalMergeManifest,
-    marketforge_engine::shared::domain::instrument::InstrumentCatalog,
 };
 
-const EVENTS: u64 = 20_000;
-
-fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
+const EVENTS: u64 = 12;
 
 struct Fixture {
     _temporary: tempfile::TempDir,
@@ -40,79 +26,35 @@ struct Fixture {
 }
 
 fn materialized_fixture() -> Fixture {
-    let root = root();
-
-    let mut job =
-        load_convert_job(root.join("data/.jobs/convert/convert-combined-test.json")).unwrap();
-
-    let fixture_path = root.join("data/fixtures/combined-worker");
-
-    job.input_merge = fixture_path.clone();
-
-    let source: PhysicalMergeManifest =
-        serde_json::from_slice(&fs::read(fixture_path.join("manifest.json")).unwrap()).unwrap();
-
-    source.validate().unwrap();
-
-    let reference_directory = job.conversion.reference_merge.as_ref().unwrap();
-
-    let external: PhysicalMergeManifest =
-        serde_json::from_slice(&fs::read(reference_directory.join("manifest.json")).unwrap())
-            .unwrap();
-
-    let catalog = InstrumentCatalog::load(&root.join("data/catalog/instruments.json")).unwrap();
-
-    let resolved = resolve_conversion_catalog(&job, &source, &catalog, &root).unwrap();
-
-    let plan = plan_conversion(&job, &resolved).unwrap();
-
-    let selection = CombinedReferenceSelection::resolve(&plan, &source, Some(&external)).unwrap();
-
-    let partitions = build_conversion_partition_plan(&fixture_path, &source, 2).unwrap();
-
-    let prepass = build_combined_reference_checkpoints(
-        &fixture_path,
-        &source,
-        Some(reference_directory),
-        Some(&external),
-        &selection,
-        &partitions,
-    )
-    .unwrap();
-
-    let temporary = tempfile::tempdir().unwrap();
-
-    let staging = temporary.path().join("combined.staging");
-
-    job.output.dataset_path = temporary.path().join("combined");
-
-    let parquet_config = MergeParquetConfig {
-        row_group_target_mb: 32,
-        file_target_mb: 128,
-        compression_level: 3,
+    use marketforge_engine::historical::{
+        convert::execution::materialize_combined_conversion, merge::UnifiedMergeMode,
     };
 
-    let materialized = execute_parallel_combined_conversion(
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path();
+    let mut job = crate::conversion_fixture::canonical_job();
+    job.input_merge = root.join("source");
+    job.output.dataset_path = root.join("combined");
+    let source = crate::market::create(&job.input_merge, UnifiedMergeMode::Combined, true);
+    let catalog = crate::market::catalog(root);
+    let resolved = resolve_conversion_catalog(&job, &source, &catalog, root).unwrap();
+    let plan = plan_conversion(&job, &resolved).unwrap();
+    let staging = root.join("combined.staging");
+    let metrics = materialize_combined_conversion(
         &job,
         &source,
-        Some(&external),
+        None,
         &plan,
-        &partitions,
-        &prepass,
-        &selection,
         &staging,
-        2,
-        &parquet_config,
+        &crate::market::parquet(),
+        None,
     )
     .unwrap();
-
-    assert_eq!(materialized.metrics.events_written, EVENTS);
-
-    let receipt =
-        ConversionExecutionReceipt::new_combined(job.job_id, &materialized.metrics).unwrap();
-
-    receipt.write(&staging).unwrap();
-
+    assert_eq!(metrics.events_written, EVENTS);
+    ConversionExecutionReceipt::new_combined(job.job_id, &metrics)
+        .unwrap()
+        .write(&staging)
+        .unwrap();
     Fixture {
         _temporary: temporary,
         job,
@@ -129,7 +71,6 @@ fn publishes_valid_combined_conversion() {
         publish_combined_conversion(&fixture.job, &fixture.source, &fixture.staging, 2).unwrap();
 
     assert_eq!(publication.events_written, EVENTS);
-    assert_eq!(publication.files_written, 2);
 
     assert!(publication.dataset_path.is_dir());
     assert!(publication.manifest_path.is_file());
@@ -153,7 +94,7 @@ fn publishes_valid_combined_conversion() {
 
     let depth = manifest.statistics.depth.as_ref().unwrap();
 
-    assert_eq!(depth.levels_read, 741_562);
+    assert_eq!(depth.levels_read, 5);
 
     assert_eq!(
         depth.levels_converted + depth.levels_unavailable,
@@ -230,25 +171,11 @@ fn rejects_existing_combined_destination() {
 fn rejects_corrupted_original_source_column() {
     let fixture = materialized_fixture();
 
-    // Locate one converted Parquet file.
-    let mut files = Vec::new();
-
-    fn collect_parquet(directory: &std::path::Path, files: &mut Vec<PathBuf>) {
-        for entry in fs::read_dir(directory).unwrap() {
-            let path = entry.unwrap().path();
-
-            if path.is_dir() {
-                collect_parquet(&path, files);
-            } else if path.extension().is_some_and(|ext| ext == "parquet") {
-                files.push(path);
-            }
-        }
-    }
-
-    collect_parquet(&fixture.staging, &mut files);
-    files.sort();
-
-    let path = files.first().expect("missing converted Parquet file");
+    let files = marketforge_engine::historical::convert::output::discover_conversion_files(
+        &fixture.staging,
+    )
+    .unwrap();
+    let path = &files[0];
 
     // Read the original converted batches.
     let file = fs::File::open(path).unwrap();

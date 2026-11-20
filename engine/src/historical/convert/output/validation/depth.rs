@@ -1,6 +1,9 @@
+use super::causal::CausalPositions;
 use crate::historical::convert::output::shared::files::discover_conversion_files;
 use crate::historical::convert::output::validation::depth_numeric::validate_depth_numeric_batch;
+use crate::historical::convert::progress::ConversionProgressReporter;
 use crate::historical::convert::reference::ReferenceKey;
+use crate::historical::merge::UnifiedMergeMode;
 use arrow_array::UInt32Array;
 use arrow_array::UInt64Array;
 use arrow_array::{
@@ -21,6 +24,7 @@ use {
 #[derive(Debug, Clone, Default)]
 pub struct DepthConversionValidationMetrics {
     pub events: u64,
+    pub reconstruction_events: u64,
 
     pub identity: u64,
     pub converted: u64,
@@ -42,6 +46,7 @@ pub struct DepthFileValidationResult {
     pub metrics: DepthConversionValidationMetrics,
     pub first_key: ReferenceKey,
     pub last_key: ReferenceKey,
+    pub causal: CausalPositions,
 }
 
 impl DepthConversionValidationMetrics {
@@ -58,6 +63,7 @@ impl DepthConversionValidationMetrics {
         }
 
         add!(events);
+        add!(reconstruction_events);
 
         add!(identity);
         add!(converted);
@@ -92,19 +98,14 @@ pub fn validate_converted_depth(
 
     let files = discover_conversion_files(directory)?;
     let mut metrics = DepthConversionValidationMetrics::default();
-    let mut previous_key = None;
+    let mut previous = None;
 
     for path in files {
         let result = validate_depth_file(&path, max_staleness_ns)?;
 
-        if let Some(previous) = previous_key {
-            if result.first_key < previous {
-                return invalid("converted depth ordering regressed across files");
-            }
-        }
-
-        previous_key = Some(result.last_key);
+        validate_depth_file_boundary(previous.as_ref(), &result)?;
         metrics.accumulate(&result.metrics)?;
+        previous = Some(result);
     }
 
     reconcile_depth_validation(&metrics)?;
@@ -121,10 +122,6 @@ fn validate_batch(
     previous_key: &mut Option<ReferenceKey>,
     metrics: &mut DepthConversionValidationMetrics,
 ) -> Result<()> {
-    if batch.num_columns() != 24 {
-        return invalid("invalid converted depth column count");
-    }
-
     let timestamps = column::<Int64Array>(batch, "event_timestamp_ns")?;
     let ranks = column::<UInt32Array>(batch, "stream_rank")?;
     let tasks = column::<UInt64Array>(batch, "task_id")?;
@@ -176,6 +173,7 @@ fn validate_batch(
     // Validate events
     // -------------------------------------------------------------------------
 
+    let chronological = batch.column_by_name("timeline_sequence").is_none();
     for row in 0..batch.num_rows() {
         if timestamps.is_null(row)
             || changes.is_null(row)
@@ -199,10 +197,8 @@ fn validate_batch(
             ordinals.value(row),
         );
 
-        if let Some(previous) = previous_key {
-            if key < *previous {
-                return invalid("converted depth ordering key regressed");
-            }
+        if chronological && previous_key.is_some_and(|previous| key < previous) {
+            return invalid("converted depth ordering key regressed");
         }
 
         *previous_key = Some(key);
@@ -297,6 +293,20 @@ pub fn validate_depth_file(
     path: &Path,
     max_staleness_ns: u64,
 ) -> Result<DepthFileValidationResult> {
+    validate_depth_file_with_progress(
+        path,
+        max_staleness_ns,
+        &ConversionProgressReporter::disabled(),
+        |_| {},
+    )
+}
+
+pub(super) fn validate_depth_file_with_progress(
+    path: &Path,
+    max_staleness_ns: u64,
+    reporter: &ConversionProgressReporter,
+    mut rows_validated: impl FnMut(u64),
+) -> Result<DepthFileValidationResult> {
     if max_staleness_ns == 0 {
         return invalid("depth conversion staleness limit must be positive");
     }
@@ -328,8 +338,10 @@ pub fn validate_depth_file(
 
     let mut previous_key = None;
     let mut first_key = None;
+    let mut causal = CausalPositions::default();
 
-    while let Some(batch) = reader.next() {
+    for batch in &mut reader {
+        reporter.check_interrupted()?;
         let batch = batch.map_err(|error| {
             invalid_error(format!("cannot read converted depth batch: {error}"))
         })?;
@@ -356,7 +368,10 @@ pub fn validate_depth_file(
             ));
         }
 
+        causal.read(&batch, UnifiedMergeMode::Depth)?;
+        metrics.reconstruction_events = causal.reconstruction_rows;
         validate_batch(&batch, max_staleness_ns, &mut previous_key, &mut metrics)?;
+        rows_validated(batch.num_rows() as u64);
     }
 
     let first_key = first_key.ok_or_else(|| invalid_error("empty converted depth file"))?;
@@ -367,6 +382,7 @@ pub fn validate_depth_file(
         metrics,
         first_key,
         last_key,
+        causal,
     })
 }
 
@@ -430,4 +446,17 @@ fn invalid_error(message: impl Into<String>) -> MarketForgeError {
 
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(invalid_error(message))
+}
+
+pub(super) fn validate_depth_file_boundary(
+    previous: Option<&DepthFileValidationResult>,
+    current: &DepthFileValidationResult,
+) -> Result<()> {
+    if !current.causal.follows(previous.map(|file| &file.causal))
+        || (current.causal.first.is_none()
+            && previous.is_some_and(|file| current.first_key < file.last_key))
+    {
+        return invalid("invalid converted depth ordering across files");
+    }
+    Ok(())
 }

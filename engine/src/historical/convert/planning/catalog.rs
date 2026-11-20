@@ -4,18 +4,23 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use {
-    crate::historical::job::ConvertJob, crate::historical::job::load_processing_job,
-    crate::historical::merge::PhysicalMergeManifest, crate::historical::merge::UnifiedMergeMode,
-    crate::historical::merge::UnifiedMergeStreamKind,
-    crate::shared::domain::instrument::InstrumentCatalog,
-    crate::shared::domain::instrument::InstrumentIdentity, crate::shared::error::MarketForgeError,
-    crate::shared::error::Result,
+use crate::{
+    historical::{
+        job::{
+            ContentType, ConvertJob, ProcessingJob, WorkTask, load_committed_processing_job,
+            load_processing_job,
+        },
+        merge::{
+            MergeInputDataset, PhysicalMergeManifest, UnifiedMergeMode, UnifiedMergeStream,
+            UnifiedMergeStreamKind,
+        },
+        normalize::manifest::DatasetManifest,
+    },
+    shared::{
+        domain::instrument::{InstrumentCatalog, InstrumentIdentity, InstrumentMetadata},
+        error::{MarketForgeError, Result},
+    },
 };
-
-// -----------------------------------------------------------------------------
-// Resolved instruments
-// -----------------------------------------------------------------------------
 
 pub use crate::shared::conversion::planner::ResolvedConversionInstrument;
 
@@ -25,49 +30,88 @@ pub struct ResolvedConversionCatalog {
     pub references: Vec<ResolvedConversionInstrument>,
 }
 
-// -----------------------------------------------------------------------------
-// Resolver
-// -----------------------------------------------------------------------------
-fn resolve_manifest_instruments(
-    manifest: &PhysicalMergeManifest,
-    catalog: &InstrumentCatalog,
-    processing_jobs: &HashMap<u64, PathBuf>,
-    project_root: &Path,
-) -> Result<Vec<ResolvedConversionInstrument>> {
-    let mut instruments = Vec::with_capacity(manifest.streams.len());
+struct Provenance {
+    job: ProcessingJob,
+    manifest: Option<DatasetManifest>,
+}
 
-    for stream in &manifest.streams {
-        let dataset = manifest
-            .input_datasets
-            .iter()
-            .find(|d| d.dataset_id == stream.dataset_id)
-            .ok_or_else(|| invalid_error("missing conversion input provenance"))?;
-        let path = PathBuf::from(&dataset.dataset_path);
-        let path = if path.is_absolute() {
-            path
-        } else {
-            project_root.join(path)
-        };
-        let processing_job = if path.join("processing-job.json").is_file() {
-            crate::historical::job::load_committed_processing_job(&path)?
-        } else {
-            let job_path = processing_jobs.get(&stream.dataset_id).ok_or_else(|| {
+impl Provenance {
+    fn load(
+        dataset: &MergeInputDataset,
+        project_root: &Path,
+        normalization_root: Option<&Path>,
+    ) -> Result<Self> {
+        let path = normalization_root.map_or_else(
+            || project_root.join(&dataset.dataset_path),
+            |root| root.join(dataset.dataset_id.to_string()),
+        );
+        let job = if dataset.manifest_version >= 5
+            || path.join("processing-job.json").is_file()
+            || normalization_root.is_some()
+        {
+            load_committed_processing_job(&path).map_err(|error| {
                 invalid_error(format!(
-                    "processing job not found for dataset {}",
-                    stream.dataset_id
+                    "normalization provenance {}: {error}",
+                    path.display()
                 ))
-            })?;
-            load_processing_job(job_path)?
+            })?
+        } else {
+            load_legacy_job(&project_root.join("data/.jobs/process"), dataset.dataset_id)?
         };
-        if processing_job.dataset_id.0 != stream.dataset_id {
+        if job.dataset_id.0 != dataset.dataset_id {
             return invalid("conversion dataset provenance identity mismatch");
         }
-        let task = processing_job.tasks.first().ok_or_else(|| {
+        let manifest = if dataset.manifest_version >= 5 {
+            let manifest: DatasetManifest = read_json(&path.join("manifest.json"))?;
+            manifest.validate_streams()?;
+            if manifest.dataset_id != dataset.dataset_id
+                || manifest.job_id != job.job_id.0
+                || manifest.protocol_version != dataset.manifest_version
+            {
+                return invalid("normalization manifest does not match committed processing job");
+            }
+            Some(manifest)
+        } else {
+            None
+        };
+        Ok(Self { job, manifest })
+    }
+
+    fn resolve(
+        &self,
+        stream: &UnifiedMergeStream,
+        catalog: &InstrumentCatalog,
+    ) -> Result<ResolvedConversionInstrument> {
+        let mut tasks = self
+            .job
+            .tasks
+            .iter()
+            .filter(|task| task.stream_id.0 == stream.stream_id);
+        let task = tasks.next().ok_or_else(|| {
             invalid_error(format!(
-                "dataset {} contains no processing tasks",
-                stream.dataset_id
+                "dataset {} contains no processing tasks for stream {}",
+                stream.dataset_id, stream.stream_id
             ))
         })?;
+        let namespace = task_namespace(task);
+        let kind = match stream.kind {
+            UnifiedMergeStreamKind::Trade => ContentType::Trades,
+            UnifiedMergeStreamKind::Depth => ContentType::Depth,
+        };
+        if self.job.output.content_type != kind
+            || std::iter::once(task).chain(tasks).any(|candidate| {
+                candidate.instrument_id != stream.instrument_id
+                    || candidate.symbol != stream.symbol
+                    || candidate.exchange.as_str() != stream.exchange
+                    || candidate.instrument != task.instrument
+                    || task_namespace(candidate) != namespace
+            })
+        {
+            return invalid(format!(
+                "dataset {} stream {} has conflicting instrument metadata",
+                stream.dataset_id, stream.stream_id
+            ));
+        }
 
         let identity = InstrumentIdentity {
             exchange: stream.exchange.clone(),
@@ -75,35 +119,108 @@ fn resolve_manifest_instruments(
             instrument_kind: task.instrument.instrument_kind,
             contract_kind: task.instrument.contract_kind,
         };
-
         let metadata = catalog.resolve(&identity).ok_or_else(|| {
             invalid_error(format!(
                 "instrument missing from catalog: {} {}",
                 identity.exchange, identity.symbol
             ))
         })?;
-
-        if task.instrument_id != stream.instrument_id
-            || task.symbol != stream.symbol
-            || task.stream_id.0 != stream.stream_id
-        {
-            return invalid(format!(
-                "dataset {} instrument identity mismatch",
-                stream.dataset_id
-            ));
+        if let Some(manifest) = &self.manifest {
+            if manifest.content_type != kind
+                || manifest.instrument_namespace.as_deref()
+                    != namespace.and_then(serde_json::Value::as_str)
+                || !manifest
+                    .streams
+                    .iter()
+                    .any(|item| item.stream_id == stream.stream_id)
+            {
+                return invalid(format!(
+                    "normalization provenance does not match conversion stream {}",
+                    stream.stream_id
+                ));
+            }
+            verify_catalog_authority(manifest, stream, metadata)?;
         }
 
-        instruments.push(ResolvedConversionInstrument {
+        Ok(ResolvedConversionInstrument {
             dataset_id: stream.dataset_id,
             stream_rank: stream.stream_rank,
             stream_id: stream.stream_id.clone(),
             identity,
             base_currency: metadata.base_currency.clone(),
             quote_currency: metadata.quote_currency.clone(),
-        });
+        })
     }
+}
 
-    Ok(instruments)
+fn task_namespace(task: &WorkTask) -> Option<&serde_json::Value> {
+    task.raw_schema
+        .pointer("/marketforge_source/instrument_namespace")
+}
+
+fn verify_catalog_authority(
+    manifest: &DatasetManifest,
+    stream: &UnifiedMergeStream,
+    metadata: &InstrumentMetadata,
+) -> Result<()> {
+    if manifest.resolved_instruments.is_empty() {
+        return Ok(());
+    }
+    let mut matching = manifest
+        .resolved_instruments
+        .iter()
+        .filter_map(|value| value.get("instrument"))
+        .filter(|value| {
+            value
+                .get("instrument_id")
+                .and_then(serde_json::Value::as_i64)
+                == Some(stream.instrument_id)
+        })
+        .peekable();
+    if matching.peek().is_none()
+        || matching.any(|value| {
+            value.get("exchange").and_then(serde_json::Value::as_str) != Some(&stream.exchange)
+                || value.get("symbol").and_then(serde_json::Value::as_str) != Some(&stream.symbol)
+                || value.get("base_asset").and_then(serde_json::Value::as_str)
+                    != Some(metadata.base_currency.as_str())
+                || value.get("quote_asset").and_then(serde_json::Value::as_str)
+                    != Some(metadata.quote_currency.as_str())
+        })
+    {
+        return invalid(format!(
+            "catalog disagrees with committed normalization authority for {}",
+            stream.stream_id
+        ));
+    }
+    Ok(())
+}
+
+fn resolve_manifest_instruments(
+    manifest: &PhysicalMergeManifest,
+    catalog: &InstrumentCatalog,
+    project_root: &Path,
+    normalization_root: Option<&Path>,
+) -> Result<Vec<ResolvedConversionInstrument>> {
+    let inputs = manifest
+        .input_datasets
+        .iter()
+        .map(|dataset| {
+            Ok((
+                dataset.dataset_id,
+                Provenance::load(dataset, project_root, normalization_root)?,
+            ))
+        })
+        .collect::<Result<HashMap<_, _>>>()?;
+    manifest
+        .streams
+        .iter()
+        .map(|stream| {
+            inputs
+                .get(&stream.dataset_id)
+                .ok_or_else(|| invalid_error("missing conversion input provenance"))?
+                .resolve(stream, catalog)
+        })
+        .collect()
 }
 
 pub fn resolve_conversion_catalog(
@@ -112,110 +229,53 @@ pub fn resolve_conversion_catalog(
     catalog: &InstrumentCatalog,
     project_root: &Path,
 ) -> Result<ResolvedConversionCatalog> {
+    resolve_conversion_catalog_with_normalization_root(job, manifest, catalog, project_root, None)
+}
+
+pub fn resolve_conversion_catalog_with_normalization_root(
+    job: &ConvertJob,
+    manifest: &PhysicalMergeManifest,
+    catalog: &InstrumentCatalog,
+    project_root: &Path,
+    normalization_root: Option<&Path>,
+) -> Result<ResolvedConversionCatalog> {
     job.validate()?;
     manifest.validate()?;
-
-    let processing_jobs = discover_processing_jobs(&project_root.join("data/.jobs/process"))?;
-
-    // -------------------------------------------------------------------------
-    // Resolve conversion sources
-    // -------------------------------------------------------------------------
-
-    let sources = resolve_manifest_instruments(manifest, catalog, &processing_jobs, project_root)?;
-
-    // -------------------------------------------------------------------------
-    // Resolve reference manifest
-    // -------------------------------------------------------------------------
-
-    let reference_manifest = if let Some(reference_path) = &job.conversion.reference_merge {
-        let path = reference_path.join("manifest.json");
-
-        let bytes = fs::read(&path).map_err(|error| {
-            invalid_error(format!(
-                "failed to read reference merge manifest {}: {error}",
-                path.display()
-            ))
-        })?;
-
-        let reference_manifest: PhysicalMergeManifest = serde_json::from_slice(&bytes)
-            .map_err(|error| invalid_error(format!("invalid reference merge manifest: {error}")))?;
-
-        reference_manifest.validate()?;
-        if job.conversion.reference_merge.is_some()
-            && !reference_manifest
-                .streams
-                .iter()
-                .any(|stream| stream.kind == UnifiedMergeStreamKind::Trade)
-        {
-            return invalid("external conversion reference merge contains no trade streams");
-        }
-
-        reference_manifest
-    } else {
-        manifest.clone()
-    };
-
-    // -------------------------------------------------------------------------
-    // Resolve available reference instruments
-    // -------------------------------------------------------------------------
-
-    let available_references =
-        resolve_manifest_instruments(&reference_manifest, catalog, &processing_jobs, project_root)?;
-
-    let combined = manifest.mode == UnifiedMergeMode::Combined;
+    if manifest.mode == UnifiedMergeMode::Trades && job.conversion.reference_merge.is_some() {
+        return invalid("trade-only conversion uses internal reference trades");
+    }
+    let sources =
+        resolve_manifest_instruments(manifest, catalog, project_root, normalization_root)?;
+    let external = job
+        .conversion
+        .reference_merge
+        .as_ref()
+        .map(|directory| {
+            let external: PhysicalMergeManifest = read_json(&directory.join("manifest.json"))?;
+            external.validate()?;
+            if external.mode != UnifiedMergeMode::Trades {
+                return invalid(
+                    "external last-trade references require a trade-only physical merge",
+                );
+            }
+            let instruments =
+                resolve_manifest_instruments(&external, catalog, project_root, normalization_root)?;
+            Ok((external, instruments))
+        })
+        .transpose()?;
 
     let mut references = Vec::new();
-
     for requested in &job.conversion.references {
-        let mut found = false;
-
-        // -------------------------------------------------------------
-        // Combined mode: prefer internal trade references
-        // -------------------------------------------------------------
-
-        if combined {
-            for (stream, resolved) in manifest.streams.iter().zip(&sources) {
-                if &resolved.identity != requested {
-                    continue;
-                }
-
-                if stream.kind != UnifiedMergeStreamKind::Trade {
-                    return invalid(format!(
-                        "conversion reference must be a trade stream: {}",
-                        resolved.stream_id
-                    ));
-                }
-
-                references.push(resolved.clone());
-                found = true;
-            }
+        let before = references.len();
+        if manifest.mode == UnifiedMergeMode::Combined || external.is_none() {
+            references.extend(matching_trades(manifest, &sources, requested).cloned());
         }
-
-        if found {
-            continue;
+        if references.len() == before
+            && let Some((external, instruments)) = &external
+        {
+            references.extend(matching_trades(external, instruments, requested).cloned());
         }
-
-        // -------------------------------------------------------------
-        // Resolve missing references from external merge
-        // -------------------------------------------------------------
-
-        for (stream, resolved) in reference_manifest.streams.iter().zip(&available_references) {
-            if &resolved.identity != requested {
-                continue;
-            }
-
-            if stream.kind != UnifiedMergeStreamKind::Trade {
-                return invalid(format!(
-                    "conversion reference must be a trade stream: {}",
-                    resolved.stream_id
-                ));
-            }
-
-            references.push(resolved.clone());
-            found = true;
-        }
-
-        if !found {
+        if references.len() == before {
             return invalid(format!(
                 "reference instrument not present in internal or external merge: {} {}",
                 requested.exchange, requested.symbol,
@@ -223,79 +283,73 @@ pub fn resolve_conversion_catalog(
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Reject duplicate reference streams
-    // -------------------------------------------------------------------------
-
     let mut seen = HashSet::new();
-
     for reference in &references {
-        if !seen.insert((reference.dataset_id, reference.stream_id.clone())) {
+        if !seen.insert(&reference.stream_id) {
             return invalid(format!(
                 "duplicate conversion reference stream: {}",
                 reference.stream_id
             ));
         }
     }
-
     Ok(ResolvedConversionCatalog {
         sources,
         references,
     })
 }
-// -----------------------------------------------------------------------------
-// Processing job discovery
-// -----------------------------------------------------------------------------
 
-fn discover_processing_jobs(directory: &Path) -> Result<HashMap<u64, PathBuf>> {
-    let mut jobs = HashMap::new();
-
-    if !directory.exists() {
-        return Ok(jobs);
-    }
-    for entry in fs::read_dir(directory).map_err(|error| {
-        invalid_error(format!(
-            "failed to read processing jobs {}: {error}",
-            directory.display()
-        ))
-    })? {
-        let entry = entry.map_err(|error| {
-            invalid_error(format!("failed to read processing job entry: {error}"))
-        })?;
-
-        let path = entry.path();
-
-        if path.extension().and_then(|value| value.to_str()) != Some("json") {
-            continue;
-        }
-
-        let Some(filename) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-
-        let Some(stem) = filename.strip_suffix(".json") else {
-            continue;
-        };
-
-        let Some((_, suffix)) = stem.rsplit_once("-d") else {
-            continue;
-        };
-
-        let Ok(dataset_id) = suffix.parse::<u64>() else {
-            continue;
-        };
-
-        if jobs.insert(dataset_id, path.clone()).is_some() {
-            return invalid(format!("duplicate processing job for dataset {dataset_id}"));
-        }
-    }
-
-    Ok(jobs)
+fn matching_trades<'a>(
+    manifest: &'a PhysicalMergeManifest,
+    instruments: &'a [ResolvedConversionInstrument],
+    identity: &'a InstrumentIdentity,
+) -> impl Iterator<Item = &'a ResolvedConversionInstrument> {
+    manifest
+        .streams
+        .iter()
+        .zip(instruments)
+        .filter_map(move |(stream, resolved)| {
+            (stream.kind == UnifiedMergeStreamKind::Trade && &resolved.identity == identity)
+                .then_some(resolved)
+        })
 }
 
-// -----------------------------------------------------------------------------
-// Errors
-// -----------------------------------------------------------------------------
+/// Pre-stream-layout publications may lack a committed processing snapshot.
+fn load_legacy_job(directory: &Path, dataset_id: u64) -> Result<ProcessingJob> {
+    let missing = || {
+        invalid_error(format!(
+            "no committed or legacy processing job for dataset {dataset_id}"
+        ))
+    };
+    if !directory.is_dir() {
+        return Err(missing());
+    }
+    let suffix = format!("-d{dataset_id}.json");
+    let mut paths = Vec::<PathBuf>::new();
+    for entry in fs::read_dir(directory).map_err(|error| invalid_error(error.to_string()))? {
+        let entry = entry.map_err(|error| invalid_error(error.to_string()))?;
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.ends_with(&suffix))
+        {
+            paths.push(entry.path());
+        }
+    }
+    match paths.as_slice() {
+        [] => Err(missing()),
+        [path] => load_processing_job(path),
+        _ => invalid(format!(
+            "duplicate legacy processing jobs for dataset {dataset_id}"
+        )),
+    }
+}
+
+fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
+    let bytes = fs::read(path)
+        .map_err(|error| invalid_error(format!("cannot read {}: {error}", path.display())))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|error| invalid_error(format!("invalid {}: {error}", path.display())))
+}
 
 fn invalid_error(message: impl Into<String>) -> MarketForgeError {
     MarketForgeError::InvalidConfiguration(message.into())

@@ -4,9 +4,7 @@ use crate::historical::convert::execution::{
     ConversionPartitionPlan, PhysicalCombinedConversionMetrics, execute_combined_partition,
 };
 use crate::historical::convert::progress::ConversionWorkerProgress;
-use crate::historical::convert::progress::{
-    ConversionPartitionKey, ConversionProgress, ConversionProgressReporter,
-};
+use crate::historical::convert::progress::{ConversionPartitionKey, ConversionProgressReporter};
 use std::{
     collections::VecDeque,
     path::Path,
@@ -162,6 +160,7 @@ pub fn execute_parallel_combined_conversion_with_progress(
 
             handles.push(scope.spawn(move || -> Result<()> {
                 loop {
+                    reporter.check_interrupted()?;
                     let index = {
                         let mut queue = queue
                             .lock()
@@ -218,32 +217,7 @@ pub fn execute_parallel_combined_conversion_with_progress(
                         Ok(result) => {
                             let metrics = &result.metrics;
 
-                            reporter.partition_completed(
-                                key,
-                                ConversionProgress {
-                                    events_read: metrics.events_read,
-                                    events_written: metrics.events_written,
-
-                                    identity_events: metrics.identity_events,
-                                    converted_events: metrics.converted_events,
-                                    unavailable_events: metrics.unavailable_events,
-                                    skipped_events: metrics.skipped_events,
-
-                                    trade_events: metrics.trade_events,
-                                    depth_events: metrics.depth_events,
-
-                                    depth_levels_read: metrics.depth_levels_read,
-                                    depth_levels_converted: metrics.depth_levels_converted,
-                                    depth_levels_unavailable: metrics.depth_levels_unavailable,
-                                    depth_levels_skipped: metrics.depth_levels_skipped,
-
-                                    internal_reference_updates: metrics.internal_reference_updates,
-                                    external_reference_updates: metrics.external_reference_updates,
-
-                                    files_written: metrics.files_written,
-                                    row_groups_written: metrics.row_groups_written,
-                                },
-                            );
+                            reporter.partition_completed(key, metrics.progress());
 
                             result
                         }
@@ -251,6 +225,9 @@ pub fn execute_parallel_combined_conversion_with_progress(
                         Err(error) => {
                             reporter.partition_failed(key, error.to_string());
 
+                            if let Ok(mut queue) = queue.lock() {
+                                queue.clear();
+                            }
                             return Err(error);
                         }
                     };
@@ -276,13 +253,17 @@ pub fn execute_parallel_combined_conversion_with_progress(
                 Ok(Ok(())) => {}
 
                 Ok(Err(error)) => {
-                    if first_error.is_none() {
+                    if first_error.as_ref().is_none_or(|current| {
+                        matches!(current, MarketForgeError::ConversionInterrupted)
+                    }) {
                         first_error = Some(error);
                     }
                 }
 
                 Err(_) => {
-                    if first_error.is_none() {
+                    if first_error.as_ref().is_none_or(|current| {
+                        matches!(current, MarketForgeError::ConversionInterrupted)
+                    }) {
                         first_error = Some(invalid_error("parallel combined worker panicked"));
                     }
                 }
@@ -355,6 +336,9 @@ pub fn execute_parallel_combined_conversion_with_progress(
         accumulate!(depth_levels_skipped);
 
         accumulate!(internal_reference_updates);
+        for (total, count) in metrics.failures.iter_mut().zip(result.metrics.failures) {
+            *total += count;
+        }
         accumulate!(external_reference_updates);
         accumulate!(external_observations_read);
 
@@ -421,6 +405,10 @@ pub fn execute_parallel_combined_conversion_with_progress(
 
     // Internal reference observations belong to the combined timeline.
     // Each selected internal trade must be processed exactly once.
+    if metrics.external_reference_updates != prepass.external_updates {
+        return invalid("parallel combined external reference update count differs from prepass");
+    }
+
     if metrics.internal_reference_updates != prepass.internal_updates {
         return invalid(format!(
             "parallel combined internal reference count mismatch: \

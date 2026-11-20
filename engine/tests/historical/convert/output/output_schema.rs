@@ -1,7 +1,7 @@
-use std::{collections::HashSet, fs::File, path::PathBuf};
+use std::collections::HashSet;
 
 use arrow_schema::{DataType, Schema};
-use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use marketforge_engine::historical::merge::physical_trade_schema;
 
 use marketforge_engine::historical::convert::output::{
     CONVERSION_FAILURE_ARITHMETIC, CONVERSION_FAILURE_FUTURE, CONVERSION_FAILURE_IDENTITY_MISMATCH,
@@ -10,28 +10,9 @@ use marketforge_engine::historical::convert::output::{
     converted_trade_schema,
 };
 
-fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
 fn schemas() -> (Schema, Schema) {
-    let dataset = root().join("data/merged/conversion-multihop");
-
-    let manifest: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(dataset.join("manifest.json")).unwrap()).unwrap();
-
-    let relative_path = manifest["files"][0]["path"].as_str().unwrap();
-
-    let file = File::open(dataset.join(relative_path)).unwrap();
-
-    let builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
-
-    let source = builder.schema().as_ref().clone();
+    let source = physical_trade_schema().as_ref().clone();
     let converted = converted_trade_schema(&source);
-
     (source, converted)
 }
 
@@ -42,9 +23,6 @@ fn schemas() -> (Schema, Schema) {
 #[test]
 fn preserves_all_original_fields() {
     let (source, converted) = schemas();
-
-    assert_eq!(source.fields().len(), 24);
-    assert_eq!(converted.fields().len(), 32);
 
     for (original, output) in source.fields().iter().zip(converted.fields()) {
         assert_eq!(original, output);

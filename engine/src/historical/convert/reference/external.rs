@@ -89,10 +89,15 @@ impl ExternalReferenceCursor {
     // -------------------------------------------------------------------------
 
     pub fn advance_before(&mut self, timestamp_ns: i64, state: &mut ReferenceState) -> Result<u64> {
-        if let Some(previous) = self.last_timestamp_ns {
-            if timestamp_ns < previous {
-                return invalid("external reference cursor timestamp regressed");
-            }
+        if self
+            .last_timestamp_ns
+            .is_some_and(|previous| timestamp_ns < previous)
+        {
+            return if state.allows_regression() {
+                Ok(0)
+            } else {
+                invalid("external reference cursor timestamp regressed")
+            };
         }
 
         self.last_timestamp_ns = Some(timestamp_ns);
@@ -142,7 +147,8 @@ impl ExternalReferenceCursor {
             // Update historical reference state
             // -------------------------------------------------------------
 
-            state.update(observation)?;
+            state.update_external(observation)?;
+            state.advance_watermark(timestamp_ns);
 
             updates = updates
                 .checked_add(1)

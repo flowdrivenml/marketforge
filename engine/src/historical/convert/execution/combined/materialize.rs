@@ -1,3 +1,4 @@
+use crate::historical::convert::progress::ConversionProgress;
 use std::path::Path;
 
 use {
@@ -30,6 +31,7 @@ pub struct PhysicalCombinedConversionMetrics {
     pub identity_events: u64,
     pub converted_events: u64,
     pub unavailable_events: u64,
+    pub failures: [u64; 6],
     pub skipped_events: u64,
     pub depth_levels_read: u64,
     pub depth_levels_converted: u64,
@@ -103,7 +105,13 @@ pub fn materialize_combined_conversion(
         )?)
     };
 
-    let mut alignment = CombinedReferenceAlignment::new(selection, external)?;
+    let state = super::super::shared::reader::initial_reference_state_for_prefix(
+        &job.input_merge,
+        source_manifest,
+        &crate::historical::convert::progress::ConversionProgressReporter::disabled(),
+        max_events,
+    )?;
+    let mut alignment = CombinedReferenceAlignment::from_checkpoint(selection, external, state)?;
 
     // -------------------------------------------------------------------------
     // Initialize conversion engine
@@ -116,7 +124,9 @@ pub fn materialize_combined_conversion(
     let mut reader = PhysicalConversionReader::new(
         &job.input_merge,
         source_manifest,
-        CONVERSION_READ_BATCH_SIZE,
+        max_events
+            .unwrap_or(u64::MAX)
+            .min(CONVERSION_READ_BATCH_SIZE as u64) as usize,
     )?;
 
     let mut builder: Option<ConvertedCombinedBatchBuilder> = None;
@@ -185,43 +195,7 @@ pub fn materialize_combined_conversion(
 
     let physical = writer.metrics();
 
-    let metrics = PhysicalCombinedConversionMetrics {
-        events_read: conversion_metrics.events_read,
-        events_written: physical.events_written,
-
-        trade_events: conversion_metrics.trade_events,
-        depth_events: conversion_metrics.depth_events,
-
-        identity_events: conversion_metrics.trade.identity_events
-            + conversion_metrics.depth.identity_events,
-
-        converted_events: conversion_metrics.trade.converted_events
-            + conversion_metrics.depth.converted_events,
-
-        unavailable_events: conversion_metrics.trade.unavailable_events
-            + conversion_metrics.depth.unavailable_events,
-
-        depth_levels_read: conversion_metrics
-            .depth
-            .levels_read
-            .checked_add(conversion_metrics.skipped_depth_levels)
-            .ok_or_else(|| invalid_error("combined depth level counter overflow"))?,
-        depth_levels_converted: conversion_metrics.depth.levels_converted,
-        depth_levels_unavailable: conversion_metrics.depth.levels_unavailable,
-
-        internal_reference_updates: alignment.internal_updates(),
-        external_reference_updates: alignment.external_updates(),
-        external_observations_read: alignment.observations_read(),
-
-        files_written: physical.files_written,
-        row_groups_written: physical.row_groups_written,
-        skipped_events: conversion_metrics
-            .skipped_trade_events
-            .checked_add(conversion_metrics.skipped_depth_events)
-            .ok_or_else(|| invalid_error("skipped event counter overflow"))?,
-
-        depth_levels_skipped: conversion_metrics.skipped_depth_levels,
-    };
+    let metrics = execution_metrics(&conversion_metrics, &alignment, physical)?;
 
     // -------------------------------------------------------------------------
     // Validate event accounting
@@ -282,4 +256,80 @@ fn invalid_error(message: impl Into<String>) -> MarketForgeError {
 
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(invalid_error(message))
+}
+
+impl PhysicalCombinedConversionMetrics {
+    pub fn progress(&self) -> ConversionProgress {
+        ConversionProgress {
+            events_read: self.events_read,
+            events_written: self.events_written,
+
+            identity_events: self.identity_events,
+            converted_events: self.converted_events,
+            unavailable_events: self.unavailable_events,
+            failures: self.failures,
+            skipped_events: self.skipped_events,
+
+            trade_events: self.trade_events,
+            depth_events: self.depth_events,
+
+            depth_levels_read: self.depth_levels_read,
+            depth_levels_converted: self.depth_levels_converted,
+            depth_levels_unavailable: self.depth_levels_unavailable,
+            depth_levels_skipped: self.depth_levels_skipped,
+
+            internal_reference_updates: self.internal_reference_updates,
+            external_reference_updates: self.external_reference_updates,
+
+            files_written: self.files_written,
+            row_groups_written: self.row_groups_written,
+        }
+    }
+}
+
+pub(super) fn execution_metrics(
+    conversion_metrics: &CombinedConversionMetrics,
+    alignment: &CombinedReferenceAlignment,
+    physical: &crate::historical::merge::PhysicalWriterMetrics,
+) -> Result<PhysicalCombinedConversionMetrics> {
+    Ok(PhysicalCombinedConversionMetrics {
+        events_read: conversion_metrics.events_read,
+        events_written: physical.events_written,
+
+        trade_events: conversion_metrics.trade_events,
+        depth_events: conversion_metrics.depth_events,
+
+        identity_events: conversion_metrics.trade.identity_events
+            + conversion_metrics.depth.identity_events,
+
+        converted_events: conversion_metrics.trade.converted_events
+            + conversion_metrics.depth.converted_events,
+
+        unavailable_events: conversion_metrics.trade.unavailable_events
+            + conversion_metrics.depth.unavailable_events,
+        failures: std::array::from_fn(|index| {
+            conversion_metrics.trade.failures[index] + conversion_metrics.depth.failures[index]
+        }),
+
+        depth_levels_read: conversion_metrics
+            .depth
+            .levels_read
+            .checked_add(conversion_metrics.skipped_depth_levels)
+            .ok_or_else(|| invalid_error("combined depth level counter overflow"))?,
+        depth_levels_converted: conversion_metrics.depth.levels_converted,
+        depth_levels_unavailable: conversion_metrics.depth.levels_unavailable,
+
+        internal_reference_updates: alignment.internal_updates(),
+        external_reference_updates: alignment.external_updates(),
+        external_observations_read: alignment.observations_read(),
+
+        files_written: physical.files_written,
+        row_groups_written: physical.row_groups_written,
+        skipped_events: conversion_metrics
+            .skipped_trade_events
+            .checked_add(conversion_metrics.skipped_depth_events)
+            .ok_or_else(|| invalid_error("skipped event counter overflow"))?,
+
+        depth_levels_skipped: conversion_metrics.skipped_depth_levels,
+    })
 }

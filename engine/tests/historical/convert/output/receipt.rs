@@ -3,6 +3,8 @@ use marketforge_engine::historical::convert::{
     output::{ConversionExecutionReceipt, ConversionValidationMetrics},
 };
 
+const JOB_ID: u64 = 123;
+
 fn metrics() -> PhysicalConversionMetrics {
     PhysicalConversionMetrics {
         events_read: 100,
@@ -10,6 +12,7 @@ fn metrics() -> PhysicalConversionMetrics {
         identity_events: 60,
         converted_events: 35,
         unavailable_events: 5,
+        failures: [5, 0, 0, 0, 0, 0],
         reference_updates: 100,
         files_written: 1,
         row_groups_written: 2,
@@ -32,59 +35,59 @@ fn validation() -> ConversionValidationMetrics {
 
 #[test]
 fn reconciles_valid_receipt() {
-    let receipt = ConversionExecutionReceipt::new(940004, &metrics()).unwrap();
+    let receipt = ConversionExecutionReceipt::new(JOB_ID, &metrics()).unwrap();
 
-    receipt.reconcile(940004, &validation()).unwrap();
+    receipt.reconcile(JOB_ID, &validation()).unwrap();
 }
 
 #[test]
 fn rejects_wrong_job_id() {
-    let receipt = ConversionExecutionReceipt::new(940004, &metrics()).unwrap();
+    let receipt = ConversionExecutionReceipt::new(JOB_ID, &metrics()).unwrap();
 
     assert!(receipt.reconcile(999, &validation()).is_err());
 }
 
 #[test]
 fn rejects_incorrect_event_count() {
-    let receipt = ConversionExecutionReceipt::new(940004, &metrics()).unwrap();
+    let receipt = ConversionExecutionReceipt::new(JOB_ID, &metrics()).unwrap();
 
     let mut validation = validation();
     validation.events += 1;
 
-    assert!(receipt.reconcile(940004, &validation).is_err());
+    assert!(receipt.reconcile(JOB_ID, &validation).is_err());
 }
 
 #[test]
 fn rejects_incorrect_status_accounting() {
-    let receipt = ConversionExecutionReceipt::new(940004, &metrics()).unwrap();
+    let receipt = ConversionExecutionReceipt::new(JOB_ID, &metrics()).unwrap();
 
     let mut validation = validation();
     validation.converted += 1;
 
-    assert!(receipt.reconcile(940004, &validation).is_err());
+    assert!(receipt.reconcile(JOB_ID, &validation).is_err());
 }
 
 #[test]
 fn rejects_incorrect_file_inventory() {
-    let receipt = ConversionExecutionReceipt::new(940004, &metrics()).unwrap();
+    let receipt = ConversionExecutionReceipt::new(JOB_ID, &metrics()).unwrap();
 
     let mut validation = validation();
     validation.row_groups += 1;
 
-    assert!(receipt.reconcile(940004, &validation).is_err());
+    assert!(receipt.reconcile(JOB_ID, &validation).is_err());
 }
 
 #[test]
 fn serializes_receipt() {
     let temporary = tempfile::tempdir().unwrap();
 
-    let receipt = ConversionExecutionReceipt::new(940004, &metrics()).unwrap();
+    let receipt = ConversionExecutionReceipt::new(JOB_ID, &metrics()).unwrap();
 
     receipt.write(temporary.path()).unwrap();
 
     let loaded = ConversionExecutionReceipt::load(temporary.path()).unwrap();
 
-    loaded.reconcile(940004, &validation()).unwrap();
+    loaded.reconcile(JOB_ID, &validation()).unwrap();
 
     assert!(receipt.write(temporary.path()).is_err());
 }

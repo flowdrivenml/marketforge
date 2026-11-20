@@ -6,6 +6,8 @@ use crate::shared::validation::IntegrityCategory;
 
 #[derive(Debug, Error)]
 pub enum MarketForgeError {
+    #[error("conversion interrupted")]
+    ConversionInterrupted,
     #[error("native trade identity: {reason}")]
     TradeIdentityViolation {
         source_index: usize,

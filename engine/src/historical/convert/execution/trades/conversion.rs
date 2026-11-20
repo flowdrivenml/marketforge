@@ -54,7 +54,12 @@ impl<'a> TradeConversionKernel<'a> {
         let reference_streams = plan
             .streams
             .iter()
-            .filter(|stream| job.conversion.references.contains(&stream.source.identity))
+            .filter(|stream| {
+                plan.references.iter().any(|reference| {
+                    reference.stream_id == stream.source.stream_id
+                        && reference.dataset_id == stream.source.dataset_id
+                })
+            })
             .map(|stream| stream.source.stream_rank)
             .collect::<HashSet<_>>();
 
@@ -135,6 +140,7 @@ impl<'a> TradeConversionKernel<'a> {
 
         let target_quote = self.plan.target_quote.as_str().to_owned();
 
+        state.advance_watermark(key.timestamp_ns);
         // Evaluate conversion before updating reference state.
         let result = if stream.identity_conversion {
             TradeConversionRow {
@@ -200,7 +206,11 @@ impl<'a> TradeConversionKernel<'a> {
         match result.status {
             CONVERSION_STATUS_IDENTITY => metrics.identity_events += 1,
             CONVERSION_STATUS_CONVERTED => metrics.converted_events += 1,
-            CONVERSION_STATUS_UNAVAILABLE => metrics.unavailable_events += 1,
+            CONVERSION_STATUS_UNAVAILABLE => {
+                metrics.unavailable_events += 1;
+                metrics.failures
+                    [usize::from(result.failure.expect("unavailable row has a reason") - 1)] += 1;
+            }
             _ => return invalid("invalid conversion status"),
         }
 

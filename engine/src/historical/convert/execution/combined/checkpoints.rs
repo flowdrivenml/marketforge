@@ -149,7 +149,13 @@ fn build_combined_reference_checkpoints_impl(
         )?)
     };
 
-    let alignment = CombinedReferenceAlignment::new(selection.clone(), external)?;
+    let state = super::super::shared::reader::initial_reference_state(
+        source_directory,
+        source_manifest,
+        reporter,
+    )?;
+    let alignment =
+        CombinedReferenceAlignment::from_checkpoint(selection.clone(), external, state)?;
 
     let mut accumulator = CombinedCheckpointAccumulator::new(alignment);
 
@@ -180,6 +186,7 @@ fn build_combined_reference_checkpoints_impl(
     reporter.reference_prepass_progress(0, total_events, 0, total_checkpoints);
 
     while let Some(batch) = reader.next_batch()? {
+        reporter.check_interrupted()?;
         let timestamps = column::<Int64Array>(&batch, "event_timestamp_ns")?;
         let kinds = column::<UInt8Array>(&batch, "event_kind")?;
         let streams = column::<StringArray>(&batch, "stream_id")?;
@@ -201,10 +208,6 @@ fn build_combined_reference_checkpoints_impl(
 
             let timestamp_ns = timestamps.value(row);
 
-            // External observations must be incorporated strictly before
-            // the current combined event timestamp.
-            accumulator.advance_before(timestamp_ns)?;
-
             // Capture checkpoint before processing the boundary event.
             if next_partition < partitions.partitions.len()
                 && global_row == partitions.partitions[next_partition].start_row
@@ -215,6 +218,10 @@ fn build_combined_reference_checkpoints_impl(
 
                 next_partition += 1;
             }
+
+            // Attribute external consumption to its first eligible source row,
+            // including the first row of a partition.
+            accumulator.advance_before(timestamp_ns)?;
 
             match kinds.value(row) {
                 0 => {

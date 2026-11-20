@@ -6,7 +6,7 @@ use marketforge_engine::historical::convert::output::{
     publish_depth_conversion_with_progress,
 };
 use marketforge_engine::historical::convert::progress::{
-    ConversionPhase, ConversionProgressReporter,
+    ConversionOutcome, ConversionPhase, ConversionProgressReporter,
 };
 use std::cell::Cell;
 use std::{
@@ -19,16 +19,16 @@ use {
     marketforge_engine::historical::convert::execution::CombinedReferenceSelection,
     marketforge_engine::historical::convert::execution::PhysicalConversionMetrics,
     marketforge_engine::historical::convert::execution::build_combined_reference_checkpoints_with_progress,
-    marketforge_engine::historical::convert::execution::build_conversion_checkpoints,
+    marketforge_engine::historical::convert::execution::build_conversion_checkpoints_with_progress,
     marketforge_engine::historical::convert::execution::build_conversion_partition_plan,
     marketforge_engine::historical::convert::execution::build_conversion_partition_plan_with_count,
-    marketforge_engine::historical::convert::execution::build_depth_reference_checkpoints,
-    marketforge_engine::historical::convert::execution::materialize_depth_conversion,
-    marketforge_engine::historical::convert::execution::materialize_trade_conversion,
+    marketforge_engine::historical::convert::execution::build_depth_reference_checkpoints_with_progress,
+    marketforge_engine::historical::convert::execution::materialize_depth_conversion_with_progress,
+    marketforge_engine::historical::convert::execution::materialize_trade_conversion_with_progress,
     marketforge_engine::historical::convert::output::ConversionExecutionReceipt,
     marketforge_engine::historical::convert::output::ConversionPublication,
     marketforge_engine::historical::convert::plan_conversion,
-    marketforge_engine::historical::convert::resolve_conversion_catalog,
+    marketforge_engine::historical::convert::resolve_conversion_catalog_with_normalization_root,
     marketforge_engine::historical::job::ConvertJob,
     marketforge_engine::historical::job::MergeParquetConfig,
     marketforge_engine::historical::job::load_convert_job,
@@ -68,6 +68,7 @@ macro_rules! conversion_println {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ExecutionMode {
+    Validate,
     Materialize,
     Publish,
     Run,
@@ -77,6 +78,8 @@ struct Args {
     project_root: PathBuf,
     job: PathBuf,
     config: PathBuf,
+    catalog: PathBuf,
+    normalization_root: Option<PathBuf>,
     mode: ExecutionMode,
     workers: Option<usize>,
     tui: bool,
@@ -87,6 +90,13 @@ struct ConversionRuntime {
     workers: usize,
     parquet: MergeParquetConfig,
     configuration_sha256: String,
+    #[cfg(feature = "monitor-tui")]
+    #[serde(skip)]
+    config_path: PathBuf,
+    #[serde(skip)]
+    catalog_path: PathBuf,
+    #[serde(skip)]
+    normalization_root: Option<PathBuf>,
 }
 
 fn resolve_runtime(
@@ -121,6 +131,13 @@ fn resolve_runtime(
         workers,
         parquet,
         configuration_sha256,
+        #[cfg(feature = "monitor-tui")]
+        config_path: config,
+        catalog_path: resolve_path(root, &args.catalog),
+        normalization_root: args
+            .normalization_root
+            .as_ref()
+            .map(|path| resolve_path(root, path)),
     })
 }
 
@@ -130,6 +147,10 @@ fn resolve_runtime(
 
 fn main() {
     if let Err(error) = run() {
+        if error == "conversion interrupted" {
+            eprintln!("Conversion interrupted");
+            std::process::exit(130);
+        }
         eprintln!("Conversion failed: {error}");
         std::process::exit(1);
     }
@@ -144,6 +165,65 @@ fn execute_conversion_with_progress(
     reporter: &ConversionProgressReporter,
 ) -> Result<(), String> {
     let result = (|| {
+        reporter
+            .check_interrupted()
+            .map_err(|error| error.to_string())?;
+        if mode == ExecutionMode::Validate {
+            reporter.phase_started(ConversionPhase::SourceValidation);
+            verify_input_inventory(&job.input_merge, source_manifest)?;
+            reporter.phase_completed(ConversionPhase::SourceValidation);
+            let plan = resolve_plan(job, source_manifest, root, runtime, reporter)?;
+            let external = job
+                .conversion
+                .reference_merge
+                .as_ref()
+                .map(|directory| {
+                    let manifest = load_source_manifest(directory)?;
+                    verify_input_inventory(directory, &manifest)?;
+                    Ok::<_, String>(manifest)
+                })
+                .transpose()?;
+            if source_manifest.mode == UnifiedMergeMode::Combined {
+                CombinedReferenceSelection::resolve(&plan, source_manifest, external.as_ref())
+                    .map_err(|error| error.to_string())?;
+            }
+            if source_manifest.mode == UnifiedMergeMode::Depth && external.is_none() {
+                return Err("depth conversion requires an external reference merge".into());
+            }
+            if external
+                .as_ref()
+                .is_some_and(|manifest| manifest.mode != UnifiedMergeMode::Trades)
+            {
+                return Err(
+                    "external last-trade references require a trade-only physical merge".into(),
+                );
+            }
+            conversion_println!(
+                "Validated job {} · {:?} · {} streams · {} references · {} physical rows",
+                job.job_id,
+                source_manifest.mode,
+                plan.source_streams,
+                plan.reference_streams,
+                source_manifest.events_written
+            );
+            for stream in &plan.streams {
+                let routes = stream
+                    .paths
+                    .iter()
+                    .map(|path| {
+                        path.currencies
+                            .iter()
+                            .map(|currency| currency.as_str())
+                            .collect::<Vec<_>>()
+                            .join(" → ")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                conversion_println!("  {}  {}", stream.source.stream_id, routes);
+            }
+            return Ok(());
+        }
+
         let provenance = staging.join("conversion-runtime.json");
         let effective = serde_json::to_vec_pretty(&serde_json::json!({
             "runtime": runtime, "resources": job.resources,
@@ -151,9 +231,7 @@ fn execute_conversion_with_progress(
         .map_err(|error| error.to_string())?;
         if mode != ExecutionMode::Publish {
             reporter.phase_started(ConversionPhase::SourceValidation);
-            source_manifest
-                .validate()
-                .map_err(|error| error.to_string())?;
+            verify_input_inventory(&job.input_merge, source_manifest)?;
             reporter.phase_completed(ConversionPhase::SourceValidation);
             materialize_with_reporter(job, source_manifest, root, staging, runtime, reporter)?;
             let mut file = fs::OpenOptions::new()
@@ -165,7 +243,17 @@ fn execute_conversion_with_progress(
                 .and_then(|()| file.sync_all())
                 .map_err(|error| error.to_string())?;
         }
-        if mode != ExecutionMode::Materialize {
+        reporter
+            .check_interrupted()
+            .map_err(|error| error.to_string())?;
+        if mode == ExecutionMode::Materialize {
+            conversion_println!("Status           : MATERIALIZED (UNPUBLISHED)");
+            conversion_println!(
+                "Receipt          : {}",
+                staging.join("execution.json").display()
+            );
+            conversion_println!("Runtime          : {}", provenance.display());
+        } else {
             let pinned = fs::read(&provenance)
                 .map_err(|error| format!("cannot read staged conversion runtime: {error}"))?;
             if pinned != effective {
@@ -175,7 +263,14 @@ fn execute_conversion_with_progress(
         }
         Ok(())
     })();
-    reporter.finished(result.is_ok());
+    let outcome = match &result {
+        Ok(()) if mode == ExecutionMode::Validate => ConversionOutcome::Validated,
+        Ok(()) if mode == ExecutionMode::Materialize => ConversionOutcome::Materialized,
+        Ok(()) => ConversionOutcome::Published,
+        Err(error) if error == "conversion interrupted" => ConversionOutcome::Interrupted,
+        Err(error) => ConversionOutcome::Failed(error.clone()),
+    };
+    reporter.finished(outcome);
     result
 }
 
@@ -220,7 +315,15 @@ fn run() -> Result<(), String> {
     conversion_println!("Input           : {}", job.input_merge.display());
     conversion_println!("Output          : {}", output.display());
     conversion_println!("Staging         : {}", staging.display());
-    conversion_println!("Events expected : {}", source_manifest.events_written);
+    conversion_println!("Physical rows     : {}", source_manifest.events_written);
+    conversion_println!(
+        "Market events     : {}",
+        source_manifest.events_written - source_manifest.reconstruction_events
+    );
+    conversion_println!(
+        "Reconstruction   : {}",
+        source_manifest.reconstruction_events
+    );
 
     execute_conversion_with_progress(
         &job,
@@ -243,33 +346,163 @@ fn run_conversion_tui(
 ) -> Result<(), String> {
     use std::sync::mpsc;
 
+    use marketforge_engine::tui::conversion::ConversionDashboardContext;
     let (sender, receiver) = mpsc::channel();
-
     let reporter = ConversionProgressReporter::new(sender);
     let progress_state = reporter.state();
+    let context = ConversionDashboardContext {
+        title: format!(
+            "Job {} · {:?} · {:?}",
+            job.job_id, mode, source_manifest.mode
+        ),
+        details: vec![
+            format!("Input {}", job.input_merge.display()),
+            format!("Output {}", job.output.dataset_path.display()),
+            format!(
+                "{} market events · {} reconstruction rows",
+                source_manifest.events_written - source_manifest.reconstruction_events,
+                source_manifest.reconstruction_events
+            ),
+            format!(
+                "Target {} · References {}",
+                job.conversion.target_quote,
+                job.conversion
+                    .references
+                    .iter()
+                    .map(|reference| format!(
+                        "{} {} {:?}",
+                        reference.exchange, reference.symbol, reference.instrument_kind
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            format!(
+                "Runtime {} ({})",
+                runtime.config_path.display(),
+                runtime.configuration_sha256
+            ),
+            format!(
+                "{} effective workers · configured caps {} workers, {} MB, {} open files",
+                runtime.workers,
+                job.resources.workers,
+                job.resources.memory_limit_mb,
+                job.resources.max_open_files
+            ),
+        ],
+        expected_rows: source_manifest.events_written,
+    };
+    let output = job.output.dataset_path.clone();
+    let staged = staging.clone();
+    let start = Instant::now();
+    let (result, terminal) = join_dashboard_execution(
+        &progress_state,
+        move || {
+            set_conversion_tui_mode(true);
+            execute_conversion_with_progress(
+                &job,
+                &source_manifest,
+                &root,
+                &staging,
+                &runtime,
+                mode,
+                &reporter,
+            )
+        },
+        |start| {
+            marketforge_engine::tui::conversion::execute_conversion_with_tui(
+                receiver,
+                progress_state.clone(),
+                context,
+                start,
+            )
+        },
+    );
+    if result.is_ok() {
+        match mode {
+            ExecutionMode::Validate => {
+                println!("VALIDATED · {:.2}s", start.elapsed().as_secs_f64())
+            }
+            ExecutionMode::Materialize => {
+                print_dashboard_summary(ConversionOutcome::Materialized, &staged, start)
+            }
+            ExecutionMode::Run | ExecutionMode::Publish => {
+                print_dashboard_summary(ConversionOutcome::Published, &output, start)
+            }
+        }
+    } else if staged.is_dir() {
+        eprintln!("Conversion staging {}", staged.display());
+    }
+    if let Err(error) = terminal {
+        if result
+            .as_ref()
+            .is_err_and(|error| error == "conversion interrupted")
+        {
+            return Err(format!(
+                "dashboard error: {error}; conversion interrupted before completion"
+            ));
+        }
+        eprintln!("Conversion dashboard error: {error}");
+    }
+    result
+}
 
-    let execution = std::thread::spawn(move || {
-        set_conversion_tui_mode(true);
+#[cfg(feature = "monitor-tui")]
+fn print_dashboard_summary(outcome: ConversionOutcome, directory: &Path, start: Instant) {
+    println!(
+        "{} · {:.2}s",
+        outcome.label(),
+        start.elapsed().as_secs_f64()
+    );
+    if outcome == ConversionOutcome::Published {
+        println!("Dataset {}", directory.display());
+        println!("Manifest {}", directory.join("manifest.json").display());
+    } else {
+        println!("Staging {}", directory.display());
+    }
+    if let Ok(receipt) = ConversionExecutionReceipt::load(directory) {
+        println!(
+            "{} rows · {} identity · {} converted · {} unavailable · {} skipped · {} files",
+            receipt.events_written,
+            receipt.identity_events,
+            receipt.converted_events,
+            receipt.unavailable_events,
+            receipt.skipped_events,
+            receipt.files_written
+        );
+    }
+    println!("Receipt {}", directory.join("execution.json").display());
+    println!(
+        "Runtime {}",
+        directory.join("conversion-runtime.json").display()
+    );
+}
 
-        execute_conversion_with_progress(
-            &job,
-            &source_manifest,
-            &root,
-            &staging,
-            &runtime,
-            mode,
-            &reporter,
-        )
-    });
+#[cfg(feature = "monitor-tui")]
+fn join_dashboard_execution(
+    progress: &marketforge_engine::historical::convert::progress::ConversionProgressState,
+    work: impl FnOnce() -> Result<(), String> + Send,
+    dashboard: impl FnOnce(std::sync::mpsc::Sender<()>) -> std::io::Result<()>,
+) -> (Result<(), String>, std::io::Result<()>) {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
 
-    // Temporary event consumer.
-    // The Ratatui dashboard will replace this in Part 2.
-    marketforge_engine::tui::conversion::execute_conversion_with_tui(receiver, progress_state)
-        .map_err(|error| error.to_string())?;
-
-    execution
-        .join()
-        .map_err(|_| "conversion execution thread panicked".to_owned())?
+    std::thread::scope(|scope| {
+        let (start, ready) = std::sync::mpsc::channel();
+        let execution = scope.spawn(move || {
+            ready
+                .recv()
+                .map_err(|_| "conversion interrupted".to_owned())?;
+            work()
+        });
+        let terminal = catch_unwind(AssertUnwindSafe(|| dashboard(start)))
+            .unwrap_or_else(|_| Err(std::io::Error::other("conversion renderer panicked")));
+        if terminal.is_err() {
+            progress.interrupt();
+        }
+        let result = execution
+            .join()
+            .unwrap_or_else(|_| Err("conversion execution thread panicked".to_owned()));
+        (result, terminal)
+    })
 }
 
 // -----------------------------------------------------------------------------
@@ -325,38 +558,7 @@ fn materialize_trades_with_reporter(
         ));
     }
 
-    reporter.phase_started(ConversionPhase::CatalogResolution);
-
-    let catalog = InstrumentCatalog::load(&root.join("data/catalog/instruments.json"))
-        .map_err(|error| error.to_string())?;
-
-    let resolved = resolve_conversion_catalog(job, source_manifest, &catalog, root)
-        .map_err(|error| error.to_string())?;
-
-    reporter.phase_completed(ConversionPhase::CatalogResolution);
-
-    reporter.phase_started(ConversionPhase::ConversionPlanning);
-
-    let plan = plan_conversion(job, &resolved).map_err(|error| error.to_string())?;
-
-    reporter.phase_completed(ConversionPhase::ConversionPlanning);
-
-    if plan.unresolved_streams > 0 {
-        return Err(format!(
-            "{} conversion streams have no available path",
-            plan.unresolved_streams
-        ));
-    }
-
-    // Current materializer emits one selected path per event.
-    // Reject genuinely ambiguous multi-path plans until the
-    // configured `all` policy is implemented.
-    if plan.streams.iter().any(|stream| stream.paths.len() > 1) {
-        return Err(
-            "multiple conversion paths are not yet supported by physical materialization"
-                .to_owned(),
-        );
-    }
+    let plan = resolve_plan(job, source_manifest, root, runtime, reporter)?;
 
     let workers = runtime.workers;
     let parquet = &runtime.parquet;
@@ -368,8 +570,15 @@ fn materialize_trades_with_reporter(
         // Sequential execution
         // -------------------------------------------------------------
 
-        materialize_trade_conversion(job, source_manifest, &plan, staging, parquet)
-            .map_err(|error| error.to_string())?
+        materialize_trade_conversion_with_progress(
+            job,
+            source_manifest,
+            &plan,
+            staging,
+            parquet,
+            reporter,
+        )
+        .map_err(|error| error.to_string())?
     } else {
         // -------------------------------------------------------------
         // Parallel execution
@@ -390,12 +599,13 @@ fn materialize_trades_with_reporter(
 
         reporter.phase_started(ConversionPhase::ReferencePrepass);
 
-        let prepass = build_conversion_checkpoints(
+        let prepass = build_conversion_checkpoints_with_progress(
             job,
             &job.input_merge,
             source_manifest,
             &plan,
             &partitions,
+            reporter,
         )
         .map_err(|error| error.to_string())?;
 
@@ -423,6 +633,9 @@ fn materialize_trades_with_reporter(
 
         result.metrics
     };
+    reporter
+        .check_interrupted()
+        .map_err(|error| error.to_string())?;
     reporter.phase_started(ConversionPhase::ExecutionReceipt);
     // Persist execution metrics for a later publish-only invocation.
     let receipt =
@@ -479,17 +692,7 @@ fn materialize_depth_with_reporter(
         return Err("depth conversion staging directory already exists".to_owned());
     }
 
-    let catalog = InstrumentCatalog::load(&root.join("data/catalog/instruments.json"))
-        .map_err(|error| error.to_string())?;
-
-    let resolved = resolve_conversion_catalog(job, source_manifest, &catalog, root)
-        .map_err(|error| error.to_string())?;
-
-    let plan = plan_conversion(job, &resolved).map_err(|error| error.to_string())?;
-
-    if plan.streams.iter().any(|stream| stream.paths.len() > 1) {
-        return Err("multiple conversion paths are not yet supported".to_owned());
-    }
+    let plan = resolve_plan(job, source_manifest, root, runtime, reporter)?;
 
     let reference_directory = job
         .conversion
@@ -500,6 +703,7 @@ fn materialize_depth_with_reporter(
     let reference_directory = resolve_path(root, reference_directory);
 
     let references = load_source_manifest(&reference_directory)?;
+    verify_input_inventory(&reference_directory, &references)?;
 
     let workers = runtime.workers;
     let parquet = &runtime.parquet;
@@ -507,7 +711,7 @@ fn materialize_depth_with_reporter(
     let start = Instant::now();
 
     let metrics = if workers == 1 {
-        materialize_depth_conversion(
+        materialize_depth_conversion_with_progress(
             job,
             source_manifest,
             &references,
@@ -515,13 +719,16 @@ fn materialize_depth_with_reporter(
             staging,
             parquet,
             None,
+            reporter,
         )
         .map_err(|error| error.to_string())?
     } else {
+        reporter.phase_started(ConversionPhase::PartitionPlanning);
         let partitions =
             build_conversion_partition_plan(&job.input_merge, source_manifest, workers)
                 .map_err(|error| error.to_string())?;
 
+        reporter.phase_completed(ConversionPhase::PartitionPlanning);
         conversion_println!("Requested workers : {}", workers);
         conversion_println!("Partitions        : {}", partitions.partitions.len());
 
@@ -529,13 +736,14 @@ fn materialize_depth_with_reporter(
 
         reporter.phase_started(ConversionPhase::ReferencePrepass);
 
-        let prepass = build_depth_reference_checkpoints(
+        let prepass = build_depth_reference_checkpoints_with_progress(
             &job.input_merge,
             source_manifest,
             &reference_directory,
             &references,
             &plan,
             &partitions,
+            reporter,
         )
         .map_err(|error| error.to_string())?;
 
@@ -564,6 +772,9 @@ fn materialize_depth_with_reporter(
 
         result.metrics
     };
+    reporter
+        .check_interrupted()
+        .map_err(|error| error.to_string())?;
     reporter.phase_started(ConversionPhase::ExecutionReceipt);
     let receipt = ConversionExecutionReceipt::new_depth(job.job_id, &metrics)
         .map_err(|error| error.to_string())?;
@@ -596,8 +807,6 @@ fn materialize_depth_with_reporter(
             metrics.events_written as f64 / elapsed
         );
     }
-
-    conversion_println!("Status            : MATERIALIZED — NOT COMMITTED");
 
     Ok(())
 }
@@ -661,6 +870,17 @@ fn print_publication(result: &ConversionPublication, elapsed: f64) {
 
     conversion_println!("Dataset          : {}", result.dataset_path.display());
     conversion_println!("Manifest         : {}", result.manifest_path.display());
+    conversion_println!(
+        "Receipt          : {}",
+        result.dataset_path.join("execution.json").display()
+    );
+    conversion_println!(
+        "Runtime          : {}",
+        result
+            .dataset_path
+            .join("conversion-runtime.json")
+            .display()
+    );
     conversion_println!("Events           : {}", result.events_written);
     conversion_println!("Files            : {}", result.files_written);
     conversion_println!("Validation time  : {:.3} s", elapsed);
@@ -670,6 +890,50 @@ fn print_publication(result: &ConversionPublication, elapsed: f64) {
 // -----------------------------------------------------------------------------
 // Source manifest
 // -----------------------------------------------------------------------------
+
+fn resolve_plan(
+    job: &ConvertJob,
+    source: &PhysicalMergeManifest,
+    root: &Path,
+    runtime: &ConversionRuntime,
+    reporter: &ConversionProgressReporter,
+) -> Result<marketforge_engine::historical::convert::ConversionPlan, String> {
+    reporter.phase_started(ConversionPhase::CatalogResolution);
+    let catalog = InstrumentCatalog::load(&runtime.catalog_path)
+        .map_err(|error| format!("catalog {}: {error}", runtime.catalog_path.display()))?;
+    let resolved = resolve_conversion_catalog_with_normalization_root(
+        job,
+        source,
+        &catalog,
+        root,
+        runtime.normalization_root.as_deref(),
+    )
+    .map_err(|error| error.to_string())?;
+    reporter.phase_completed(ConversionPhase::CatalogResolution);
+    reporter
+        .check_interrupted()
+        .map_err(|error| error.to_string())?;
+    reporter.phase_started(ConversionPhase::ConversionPlanning);
+    let plan = plan_conversion(job, &resolved).map_err(|error| error.to_string())?;
+    if source.mode == UnifiedMergeMode::Trades && plan.unresolved_streams > 0 {
+        return Err(format!(
+            "{} conversion streams have no available path",
+            plan.unresolved_streams
+        ));
+    }
+    reporter.phase_completed(ConversionPhase::ConversionPlanning);
+    Ok(plan)
+}
+
+fn verify_input_inventory(
+    directory: &Path,
+    manifest: &PhysicalMergeManifest,
+) -> Result<(), String> {
+    marketforge_engine::historical::convert::execution::validate_conversion_input(
+        directory, manifest,
+    )
+    .map_err(|error| error.to_string())
+}
 
 fn load_source_manifest(directory: &Path) -> Result<PhysicalMergeManifest, String> {
     let path = directory.join("manifest.json");
@@ -696,6 +960,8 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut workers = None;
     let mut tui = false;
     let mut config = PathBuf::from("data/.config/historical/general.toml");
+    let mut catalog = PathBuf::from("data/catalog/instruments.json");
+    let mut normalization_root = None;
 
     while let Some(argument) = args.next() {
         match argument.as_str() {
@@ -707,6 +973,15 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
                 config = PathBuf::from(args.next().ok_or("missing --config value")?);
             }
 
+            "--catalog" => {
+                catalog = PathBuf::from(args.next().ok_or("missing --catalog value")?);
+            }
+            "--normalization-root" => {
+                normalization_root = Some(PathBuf::from(
+                    args.next().ok_or("missing --normalization-root value")?,
+                ));
+            }
+            "--validate" => set_mode(&mut mode, ExecutionMode::Validate)?,
             "--job" => {
                 job = Some(PathBuf::from(args.next().ok_or("missing --job value")?));
             }
@@ -729,8 +1004,8 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
                 conversion_println!(
                     "Usage: marketforge-convert --job PATH \
                      [--project-root PATH] [--config PATH] \
-                     [--materialize | --publish | --run] \
-                     [--workers N]"
+                     [--validate | --materialize | --publish | --run] \
+                     [--workers N] [--catalog PATH] [--normalization-root PATH] [--tui]"
                 );
 
                 std::process::exit(0);
@@ -762,6 +1037,8 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     Ok(Args {
         project_root,
         config,
+        catalog,
+        normalization_root,
         job: job.ok_or("missing required --job argument")?,
         mode: mode.unwrap_or(ExecutionMode::Run),
         workers,
@@ -811,19 +1088,7 @@ fn materialize_combined_with_reporter(
     // Resolve instrument catalog and conversion plan
     // ---------------------------------------------------------------------
 
-    let catalog = InstrumentCatalog::load(&root.join("data/catalog/instruments.json"))
-        .map_err(|error| error.to_string())?;
-
-    let resolved = resolve_conversion_catalog(job, source_manifest, &catalog, root)
-        .map_err(|error| error.to_string())?;
-
-    let plan = plan_conversion(job, &resolved).map_err(|error| error.to_string())?;
-
-    if plan.streams.iter().any(|stream| stream.paths.len() > 1) {
-        return Err(
-            "multiple conversion paths are not supported by combined materialization".to_owned(),
-        );
-    }
+    let plan = resolve_plan(job, source_manifest, root, runtime, reporter)?;
 
     // ---------------------------------------------------------------------
     // Load external references when configured
@@ -836,7 +1101,11 @@ fn materialize_combined_with_reporter(
         .map(|path| resolve_path(root, path));
 
     let reference_manifest = match &reference_directory {
-        Some(directory) => Some(load_source_manifest(directory)?),
+        Some(directory) => {
+            let manifest = load_source_manifest(directory)?;
+            verify_input_inventory(directory, &manifest)?;
+            Some(manifest)
+        }
         None => None,
     };
 
@@ -863,6 +1132,7 @@ fn materialize_combined_with_reporter(
         .checked_mul(4)
         .ok_or("conversion partition count overflow")?;
 
+    reporter.phase_started(ConversionPhase::PartitionPlanning);
     let partitions = build_conversion_partition_plan_with_count(
         &execution_job.input_merge,
         source_manifest,
@@ -870,6 +1140,7 @@ fn materialize_combined_with_reporter(
     )
     .map_err(|error| error.to_string())?;
 
+    reporter.phase_completed(ConversionPhase::PartitionPlanning);
     conversion_println!("Requested workers : {}", workers);
     conversion_println!("Partitions        : {}", partitions.partitions.len());
 
@@ -925,6 +1196,9 @@ fn materialize_combined_with_reporter(
     // Persist execution receipt
     // ---------------------------------------------------------------------
 
+    reporter
+        .check_interrupted()
+        .map_err(|error| error.to_string())?;
     reporter.phase_started(ConversionPhase::ExecutionReceipt);
 
     let receipt = ConversionExecutionReceipt::new_combined(execution_job.job_id, &result.metrics)
@@ -977,10 +1251,12 @@ fn materialize_combined_with_reporter(
         );
     }
 
-    conversion_println!("Status            : MATERIALIZED — NOT COMMITTED");
-
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "../../tests/historical/support/conversion_fixture.rs"]
+mod conversion_fixture;
 
 #[cfg(test)]
 mod tests {
@@ -989,26 +1265,21 @@ mod tests {
     #[test]
     fn cli_resolves_shared_runtime_and_caps_worker_overrides() {
         let root = tempfile::tempdir().unwrap();
-        let mut job: ConvertJob = serde_json::from_value(serde_json::json!({
-            "job_id": 1,
-            "operation": "convert",
-            "input_merge": root.path().join("input"),
-            "output": {"dataset_path": root.path().join("output")},
-            "conversion": {
-                "target_quote": "USD", "price_source": "last_trade", "max_staleness_ns": 1
-            },
-            "resources": {"workers": 4, "memory_limit_mb": 128, "max_open_files": 32}
-        }))
-        .unwrap();
+        let mut job = conversion_fixture::canonical_job();
+        job.input_merge = root.path().join("input");
+        job.output.dataset_path = root.path().join("output");
+        job.resources.workers = 4;
+        job.resources.memory_limit_mb = 128;
+        job.resources.max_open_files = 32;
         let defaults = parse_args(["--job", "job.json"].map(String::from).into_iter()).unwrap();
         assert_eq!(
             defaults.config,
             Path::new("data/.config/historical/general.toml")
         );
-        let config = include_str!("../../../data/.config/historical/general.toml")
-            .replace("workers = 8", "workers = 2")
+        let config = include_str!("../shared/historical/config/fixtures/runtime.toml")
+            .replace("workers = 1", "workers = 2")
             .replace(
-                "row_group_target_bytes = 268435456",
+                "row_group_target_bytes = 67108864",
                 "row_group_target_bytes = 1048576",
             );
         fs::write(root.path().join("runtime.toml"), config).unwrap();
@@ -1043,5 +1314,58 @@ mod tests {
                 .unwrap_err()
                 .contains("missing.toml")
         );
+    }
+
+    #[cfg(feature = "monitor-tui")]
+    #[test]
+    fn renderer_failure_cancels_and_joins_the_worker() {
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            mpsc,
+        };
+        let progress = ConversionProgressReporter::disabled().state();
+        let (entered, wait_entered) = mpsc::channel();
+        let joined = AtomicBool::new(false);
+        let (result, renderer) = join_dashboard_execution(
+            &progress,
+            || {
+                entered.send(()).unwrap();
+                while !progress.is_interrupted() {
+                    std::thread::yield_now();
+                }
+                joined.store(true, Ordering::Release);
+                Err("conversion interrupted".into())
+            },
+            |start| {
+                start.send(()).unwrap();
+                wait_entered.recv().unwrap();
+                Err(std::io::Error::other("renderer error"))
+            },
+        );
+        assert!(joined.load(Ordering::Acquire));
+        assert_eq!(result.unwrap_err(), "conversion interrupted");
+        assert_eq!(renderer.unwrap_err().to_string(), "renderer error");
+    }
+
+    #[cfg(feature = "monitor-tui")]
+    #[test]
+    fn channel_disconnect_propagates_worker_panic() {
+        let (sender, receiver) = std::sync::mpsc::channel::<()>();
+        let progress = ConversionProgressReporter::disabled().state();
+        let (result, renderer) = join_dashboard_execution(
+            &progress,
+            move || {
+                let _owned = sender;
+                panic!("test worker panic");
+            },
+            |start| {
+                start.send(()).unwrap();
+                assert!(receiver.recv().is_err());
+                Err(std::io::Error::other("channel disconnected"))
+            },
+        );
+        assert!(progress.is_interrupted());
+        assert_eq!(result.unwrap_err(), "conversion execution thread panicked");
+        assert_eq!(renderer.unwrap_err().to_string(), "channel disconnected");
     }
 }

@@ -1,3 +1,4 @@
+mod causal;
 pub(in crate::historical::convert::output) mod combined;
 pub(in crate::historical::convert::output) mod combined_numeric;
 pub(in crate::historical::convert::output) mod combined_parallel;

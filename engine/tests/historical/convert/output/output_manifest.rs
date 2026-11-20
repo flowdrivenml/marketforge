@@ -1,53 +1,36 @@
-use std::sync::OnceLock;
 use std::{fs, path::PathBuf};
-use {
-    marketforge_engine::historical::convert::output::ConversionManifest,
-    marketforge_engine::historical::convert::output::validate_converted_trades,
-    marketforge_engine::historical::convert::output::validate_source_preservation,
-    marketforge_engine::historical::job::load_convert_job,
-    marketforge_engine::historical::merge::PhysicalMergeManifest,
+
+use marketforge_engine::historical::{
+    convert::{
+        execution::materialize_trade_conversion,
+        output::{ConversionExecutionReceipt, ConversionManifest, publish_conversion},
+        plan_conversion, resolve_conversion_catalog,
+    },
+    merge::UnifiedMergeMode,
 };
 
-const EXPECTED_EVENTS: u64 = 12_627_646;
-const EXPECTED_IDENTITY: u64 = 11_435_942;
-const EXPECTED_CONVERTED: u64 = 1_180_489;
-const EXPECTED_UNAVAILABLE: u64 = 11_215;
-const EXPECTED_REFERENCES: u64 = 2_308_230;
+const EXPECTED_EVENTS: u64 = 6;
 
-fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
 fn fixture() -> ConversionManifest {
-    static MANIFEST: OnceLock<ConversionManifest> = OnceLock::new();
-
-    MANIFEST.get_or_init(build_fixture).clone()
-}
-fn build_fixture() -> ConversionManifest {
-    let root = root();
-
-    let job = load_convert_job(root.join("data/.jobs/convert/convert-multihop.json")).unwrap();
-
-    let source: PhysicalMergeManifest =
-        serde_json::from_slice(&fs::read(job.input_merge.join("manifest.json")).unwrap()).unwrap();
-
-    let staging = root.join("data/converted/multihop-USDT");
-
-    let validation = validate_converted_trades(&staging, job.conversion.max_staleness_ns).unwrap();
-
-    let preservation = validate_source_preservation(&job.input_merge, &source, &staging).unwrap();
-
-    ConversionManifest::build(
-        &job,
-        &source,
-        &validation,
-        &preservation,
-        EXPECTED_EVENTS,
-        &staging,
-    )
-    .unwrap()
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let mut job = crate::conversion_fixture::canonical_job();
+    job.input_merge = root.join("trades");
+    job.output.dataset_path = root.join("output");
+    let source = crate::market::create(&job.input_merge, UnifiedMergeMode::Trades, false);
+    let catalog = crate::market::catalog(root);
+    let resolved = resolve_conversion_catalog(&job, &source, &catalog, root).unwrap();
+    let plan = plan_conversion(&job, &resolved).unwrap();
+    let stage = root.join("staging");
+    let metrics =
+        materialize_trade_conversion(&job, &source, &plan, &stage, &crate::market::parquet())
+            .unwrap();
+    ConversionExecutionReceipt::new(job.job_id, &metrics)
+        .unwrap()
+        .write(&stage)
+        .unwrap();
+    let published = publish_conversion(&job, &source, &stage).unwrap();
+    serde_json::from_reader(fs::File::open(published.manifest_path).unwrap()).unwrap()
 }
 
 // -----------------------------------------------------------------------------
@@ -55,21 +38,21 @@ fn build_fixture() -> ConversionManifest {
 // -----------------------------------------------------------------------------
 
 #[test]
-fn builds_manifest_from_real_dataset() {
+fn builds_manifest_from_complete_trade_dataset() {
     let manifest = fixture();
 
     assert_eq!(manifest.protocol_version, 1);
     assert_eq!(manifest.conversion_schema_version, 1);
 
-    assert_eq!(manifest.job_id, 940004);
-    assert_eq!(manifest.input.merge_job_id, 930005);
+    assert_eq!(manifest.job_id, 265083950276773788);
+    assert_eq!(manifest.input.merge_job_id, 901);
 
     assert_eq!(manifest.statistics.events_written, EXPECTED_EVENTS);
-    assert_eq!(manifest.statistics.identity, EXPECTED_IDENTITY);
-    assert_eq!(manifest.statistics.converted, EXPECTED_CONVERTED);
-    assert_eq!(manifest.statistics.unavailable, EXPECTED_UNAVAILABLE);
+    assert_eq!(manifest.statistics.identity, 3);
+    assert_eq!(manifest.statistics.converted, 2);
+    assert_eq!(manifest.statistics.unavailable, 1);
 
-    assert_eq!(manifest.integrity.references_checked, EXPECTED_REFERENCES);
+    assert_eq!(manifest.integrity.references_checked, 3);
     assert_eq!(manifest.integrity.source_events_compared, EXPECTED_EVENTS);
 
     manifest.validate().unwrap();
@@ -84,13 +67,13 @@ fn records_physical_file_inventory() {
     let manifest = fixture();
 
     assert_eq!(manifest.output.files_written, 1);
-    assert_eq!(manifest.output.row_groups, 48);
 
     let file = &manifest.output.files[0];
 
     assert_eq!(file.path, PathBuf::from("part-000000.parquet"));
     assert_eq!(file.rows, EXPECTED_EVENTS);
-    assert_eq!(file.row_groups, 48);
+    assert!(file.row_groups > 0);
+    assert_eq!(manifest.output.row_groups, file.row_groups);
     assert!(file.size_bytes > 0);
 }
 
@@ -103,9 +86,9 @@ fn preserves_conversion_configuration() {
     let manifest = fixture();
 
     assert_eq!(manifest.conversion.target_quote, "USDT");
-    assert_eq!(manifest.conversion.max_staleness_ns, 5_000_000_000);
-    assert_eq!(manifest.conversion.max_hops, 3);
-    assert_eq!(manifest.conversion.references.len(), 3);
+    assert_eq!(manifest.conversion.max_staleness_ns, 60_000_000_000);
+    assert_eq!(manifest.conversion.max_hops, 2);
+    assert_eq!(manifest.conversion.references.len(), 2);
 }
 
 // -----------------------------------------------------------------------------

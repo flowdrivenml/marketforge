@@ -3,7 +3,7 @@ use crate::historical::convert::execution::{
     ConversionPartitionReader, DepthConversionAlignment, DepthConversionKernel,
     DepthReferenceCheckpoint, PhysicalDepthConversionMetrics,
 };
-use crate::historical::convert::progress::{ConversionProgress, ConversionWorkerProgress};
+use crate::historical::convert::progress::ConversionWorkerProgress;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
@@ -169,6 +169,9 @@ fn execute_depth_partition_impl(
     let mut writer: Option<ConvertedParquetWriter> = None;
 
     while let Some(batch) = reader.next_batch()? {
+        if let Some(progress) = &progress {
+            progress.check_interrupted()?;
+        }
         // ---------------------------------------------------------------------
         // Convert the batch using the existing reference alignment.
         // ---------------------------------------------------------------------
@@ -202,33 +205,11 @@ fn execute_depth_partition_impl(
         // ---------------------------------------------------------------------
 
         if let Some(progress) = progress.as_deref_mut() {
-            let conversion = alignment.metrics();
-
             let physical = writer.as_ref().expect("depth writer initialized").metrics();
 
-            let snapshot = ConversionProgress {
-                events_read: conversion.events_read,
-                events_written: physical.events_written,
-
-                identity_events: conversion.identity_events,
-                converted_events: conversion.converted_events,
-                unavailable_events: conversion.unavailable_events,
-
-                depth_events: conversion.events_read,
-
-                depth_levels_read: conversion.levels_read,
-                depth_levels_converted: conversion.levels_converted,
-                depth_levels_unavailable: conversion.levels_unavailable,
-
-                external_reference_updates: alignment.reference_updates(),
-
-                files_written: physical.files_written,
-                row_groups_written: physical.row_groups_written,
-
-                ..ConversionProgress::default()
-            };
-
-            progress.maybe_update(&snapshot);
+            progress.maybe_update(
+                &super::materialize::execution_metrics(&alignment, physical).progress(),
+            );
         }
     }
 
@@ -240,27 +221,9 @@ fn execute_depth_partition_impl(
 
     writer.finish()?;
 
-    let conversion = alignment.metrics();
     let physical = writer.metrics();
 
-    let metrics = PhysicalDepthConversionMetrics {
-        events_read: conversion.events_read,
-        events_written: physical.events_written,
-
-        identity_events: conversion.identity_events,
-        converted_events: conversion.converted_events,
-        unavailable_events: conversion.unavailable_events,
-
-        levels_read: conversion.levels_read,
-        levels_converted: conversion.levels_converted,
-        levels_unavailable: conversion.levels_unavailable,
-
-        reference_updates: alignment.reference_updates(),
-        reference_observations_read: alignment.observations_read(),
-
-        files_written: physical.files_written,
-        row_groups_written: physical.row_groups_written,
-    };
+    let metrics = super::materialize::execution_metrics(&alignment, physical);
 
     // -------------------------------------------------------------------------
     // Validate worker accounting
@@ -298,28 +261,8 @@ fn execute_depth_partition_impl(
     if physical.depth_events != metrics.events_written || physical.trade_events != 0 {
         return invalid("depth partition physical event-kind mismatch");
     }
-    if let Some(progress) = progress.as_deref_mut() {
-        progress.finish(&ConversionProgress {
-            events_read: metrics.events_read,
-            events_written: metrics.events_written,
-
-            identity_events: metrics.identity_events,
-            converted_events: metrics.converted_events,
-            unavailable_events: metrics.unavailable_events,
-
-            depth_events: metrics.events_read,
-
-            depth_levels_read: metrics.levels_read,
-            depth_levels_converted: metrics.levels_converted,
-            depth_levels_unavailable: metrics.levels_unavailable,
-
-            external_reference_updates: metrics.reference_updates,
-
-            files_written: metrics.files_written,
-            row_groups_written: metrics.row_groups_written,
-
-            ..ConversionProgress::default()
-        });
+    if let Some(progress) = progress {
+        progress.finish(&metrics.progress());
     }
     Ok(DepthPartitionResult {
         partition_id: partition.partition_id,

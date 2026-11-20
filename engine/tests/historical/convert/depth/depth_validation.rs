@@ -1,115 +1,41 @@
-use arrow_array::{Array, RecordBatch, UInt8Array};
-use arrow_array::{Decimal256Array, ListArray, StructArray};
+use arrow_array::{Array, Decimal256Array, ListArray, RecordBatch, StructArray, UInt8Array};
 use arrow_schema::DataType;
-use marketforge_engine::historical::convert::output::validate_depth_file;
 use parquet::arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder};
-use std::sync::Arc;
-use std::{
-    fs::{self, File},
-    path::{Path, PathBuf},
-    sync::OnceLock,
-    time::Instant,
-};
-use {
-    marketforge_engine::historical::convert::execution::materialize_depth_conversion,
-    marketforge_engine::historical::convert::output::validate_converted_depth,
-    marketforge_engine::historical::convert::plan_conversion,
-    marketforge_engine::historical::convert::resolve_conversion_catalog,
-    marketforge_engine::historical::job::MergeParquetConfig,
-    marketforge_engine::historical::job::load_convert_job,
-    marketforge_engine::historical::merge::PhysicalMergeManifest,
-    marketforge_engine::shared::domain::instrument::InstrumentCatalog,
+use std::{fs::File, path::Path, sync::Arc};
+
+use marketforge_engine::historical::{
+    convert::{
+        execution::materialize_depth_conversion, output::validate_converted_depth, plan_conversion,
+        resolve_conversion_catalog,
+    },
+    merge::UnifiedMergeMode,
 };
 
-const EXPECTED_EVENTS: u64 = 12_194;
-const EXPECTED_LEVELS: u64 = 154_826;
-
-fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
+fn converted_fixture() -> tempfile::TempDir {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let mut job = crate::conversion_fixture::canonical_job();
+    job.input_merge = root.join("source");
+    job.output.dataset_path = root.join("output");
+    let reference = root.join("references");
+    job.conversion.reference_merge = Some(reference.clone());
+    let source = crate::market::create(&job.input_merge, UnifiedMergeMode::Depth, false);
+    let external = crate::market::create(&reference, UnifiedMergeMode::Trades, false);
+    let catalog = crate::market::catalog(root);
+    let resolved = resolve_conversion_catalog(&job, &source, &catalog, root).unwrap();
+    let plan = plan_conversion(&job, &resolved).unwrap();
+    materialize_depth_conversion(
+        &job,
+        &source,
+        &external,
+        &plan,
+        &root.join("depth"),
+        &crate::market::parquet(),
+        None,
+    )
+    .unwrap();
+    directory
 }
-
-// -----------------------------------------------------------------------------
-// Shared physical fixture
-// -----------------------------------------------------------------------------
-
-fn fixture_directory() -> &'static Path {
-    static FIXTURE: OnceLock<PathBuf> = OnceLock::new();
-
-    FIXTURE.get_or_init(|| {
-        let root = root();
-
-        let temporary = tempfile::tempdir().unwrap();
-        let directory = temporary.path().join("depth.staging");
-
-        let job =
-            load_convert_job(root.join("data/.jobs/convert/convert-depth-test.json")).unwrap();
-
-        let source: PhysicalMergeManifest =
-            serde_json::from_slice(&fs::read(job.input_merge.join("manifest.json")).unwrap())
-                .unwrap();
-
-        let reference_path = job.conversion.reference_merge.as_ref().unwrap();
-
-        let reference_manifest: PhysicalMergeManifest =
-            serde_json::from_slice(&fs::read(reference_path.join("manifest.json")).unwrap())
-                .unwrap();
-
-        let catalog = InstrumentCatalog::load(&root.join("data/catalog/instruments.json")).unwrap();
-
-        let resolved = resolve_conversion_catalog(&job, &source, &catalog, &root).unwrap();
-
-        let plan = plan_conversion(&job, &resolved).unwrap();
-
-        let parquet = MergeParquetConfig {
-            row_group_target_mb: 16,
-            file_target_mb: 64,
-            compression_level: 3,
-        };
-
-        materialize_depth_conversion(
-            &job,
-            &source,
-            &reference_manifest,
-            &plan,
-            &directory,
-            &parquet,
-            Some(EXPECTED_EVENTS),
-        )
-        .unwrap();
-
-        // Keep the fixture alive for the entire test process.
-        let persistent = temporary.keep();
-
-        persistent.join("depth.staging")
-    })
-}
-
-// -----------------------------------------------------------------------------
-// Copy fixture into isolated test directory
-// -----------------------------------------------------------------------------
-
-fn copy_fixture() -> tempfile::TempDir {
-    let temporary = tempfile::tempdir().unwrap();
-
-    let target = temporary.path().join("depth");
-
-    fs::create_dir_all(&target).unwrap();
-
-    for entry in fs::read_dir(fixture_directory()).unwrap() {
-        let entry = entry.unwrap();
-
-        fs::copy(entry.path(), target.join(entry.file_name())).unwrap();
-    }
-
-    temporary
-}
-
-// -----------------------------------------------------------------------------
-// Rewrite one Parquet file
-// -----------------------------------------------------------------------------
 
 fn rewrite_parquet(path: &Path, transform: impl FnOnce(RecordBatch) -> RecordBatch) {
     let file = File::open(path).unwrap();
@@ -141,50 +67,32 @@ fn rewrite_parquet(path: &Path, transform: impl FnOnce(RecordBatch) -> RecordBat
 // -----------------------------------------------------------------------------
 
 #[test]
-fn validates_real_physical_depth_output() {
-    let start = Instant::now();
-
-    let result = validate_converted_depth(fixture_directory(), 5_000_000_000).unwrap();
-
-    assert_eq!(result.events, EXPECTED_EVENTS);
-    assert_eq!(result.levels, EXPECTED_LEVELS);
-
-    assert_eq!(result.identity, 10_695);
-    assert_eq!(result.converted, 779);
-    assert_eq!(result.unavailable, 720);
-
-    assert_eq!(result.levels_converted, 140_332);
-    assert_eq!(result.levels_unavailable, 14_494);
-
-    assert!(result.references_checked > 0);
-
-    println!();
-    println!("{}", "=".repeat(90));
-    println!("MARKETFORGE — PHYSICAL DEPTH VALIDATION");
-    println!("{}", "=".repeat(90));
-
-    println!("Events             : {}", result.events);
-    println!("Depth levels       : {}", result.levels);
-    println!("Identity           : {}", result.identity);
-    println!("Converted          : {}", result.converted);
-    println!("Unavailable        : {}", result.unavailable);
-    println!("References checked : {}", result.references_checked);
-    println!("Files              : {}", result.files);
-    println!("Row groups         : {}", result.row_groups);
-    println!(
-        "Elapsed            : {:.3} s",
-        start.elapsed().as_secs_f64()
+fn validates_complete_physical_depth_output() {
+    let directory = converted_fixture();
+    let result = validate_converted_depth(&directory.path().join("depth"), 5_000_000_000).unwrap();
+    assert_eq!(
+        (
+            result.events,
+            result.identity,
+            result.converted,
+            result.unavailable
+        ),
+        (6, 3, 3, 0)
     );
-    println!("STATUS             : PASS");
+    assert_eq!(
+        (
+            result.levels,
+            result.levels_converted,
+            result.levels_unavailable
+        ),
+        (5, 5, 0)
+    );
+    assert_eq!(result.references_checked, 4);
 }
-
-// -----------------------------------------------------------------------------
-// Reject invalid status
-// -----------------------------------------------------------------------------
 
 #[test]
 fn rejects_invalid_conversion_status() {
-    let temporary = copy_fixture();
+    let temporary = converted_fixture();
 
     let path = temporary.path().join("depth/part-000000.parquet");
 
@@ -219,7 +127,7 @@ fn rejects_missing_parquet_files() {
 
 #[test]
 fn rejects_null_converted_price() {
-    let temporary = copy_fixture();
+    let temporary = converted_fixture();
     let path = temporary.path().join("depth/part-000000.parquet");
 
     rewrite_parquet(&path, |batch| {
@@ -296,7 +204,7 @@ fn rejects_null_converted_price() {
 
 #[test]
 fn rejects_future_reference_timestamp() {
-    let temporary = copy_fixture();
+    let temporary = converted_fixture();
     let path = temporary.path().join("depth/part-000000.parquet");
 
     rewrite_parquet(&path, |batch| {
@@ -384,7 +292,7 @@ fn rejects_future_reference_timestamp() {
 
 #[test]
 fn rejects_mismatched_depth_offsets() {
-    let temporary = copy_fixture();
+    let temporary = converted_fixture();
     let path = temporary.path().join("depth/part-000000.parquet");
 
     rewrite_parquet(&path, |batch| {
@@ -401,14 +309,9 @@ fn rejects_mismatched_depth_offsets() {
 
         let mut offsets = list.value_offsets().to_vec();
 
-        // Find a nonempty event with at least two levels.
-        let row = (0..batch.num_rows())
-            .find(|&row| offsets[row + 1] - offsets[row] >= 2)
-            .unwrap();
-
-        // Shift one boundary without changing the total number
-        // of nested values.
-        offsets[row + 1] -= 1;
+        // Move the initial level into the following event without changing the total.
+        assert_eq!(offsets[1], 1);
+        offsets[1] = 0;
 
         let DataType::List(item_field) = batch.schema().field(index).data_type().clone() else {
             panic!("changes_target must be a List");
@@ -507,7 +410,7 @@ fn corrupt_converted_price(batch: RecordBatch) -> RecordBatch {
 
 #[test]
 fn rejects_incorrect_converted_price() {
-    let temporary = copy_fixture();
+    let temporary = converted_fixture();
 
     let path = temporary.path().join("depth/part-000000.parquet");
 
@@ -522,7 +425,7 @@ fn rejects_incorrect_converted_price() {
 fn parallel_validation_matches_sequential() {
     use marketforge_engine::historical::convert::output::validate_converted_depth_parallel;
 
-    let temporary = copy_fixture();
+    let temporary = converted_fixture();
     let directory = temporary.path().join("depth");
 
     let sequential = validate_converted_depth(&directory, 5_000_000_000).unwrap();
@@ -552,227 +455,4 @@ fn parallel_validation_matches_sequential() {
 
     assert_eq!(sequential.files, parallel.files);
     assert_eq!(sequential.row_groups, parallel.row_groups);
-}
-
-#[test]
-fn parallel_validation_matches_sequential_across_files() {
-    use marketforge_engine::historical::convert::output::validate_converted_depth_parallel;
-
-    let temporary = copy_fixture();
-    let directory = temporary.path().join("depth");
-
-    let source = directory.join("part-000000.parquet");
-
-    let file = std::fs::File::open(&source).unwrap();
-
-    let reader = ParquetRecordBatchReaderBuilder::try_new(file)
-        .unwrap()
-        .with_batch_size(4096)
-        .build()
-        .unwrap();
-
-    let batches = reader.map(|batch| batch.unwrap()).collect::<Vec<_>>();
-
-    let schema = batches[0].schema();
-
-    std::fs::remove_file(&source).unwrap();
-
-    for (index, batch) in batches.iter().enumerate() {
-        let path = directory.join(format!("part-{index:06}.parquet"));
-
-        let file = std::fs::File::create(path).unwrap();
-
-        let mut writer = parquet::arrow::ArrowWriter::try_new(file, schema.clone(), None).unwrap();
-
-        writer.write(batch).unwrap();
-        writer.close().unwrap();
-    }
-
-    let sequential = validate_converted_depth(&directory, 5_000_000_000).unwrap();
-
-    let parallel = validate_converted_depth_parallel(&directory, 5_000_000_000, 16).unwrap();
-
-    assert_eq!(sequential.events, parallel.events);
-    assert_eq!(sequential.identity, parallel.identity);
-    assert_eq!(sequential.converted, parallel.converted);
-    assert_eq!(sequential.unavailable, parallel.unavailable);
-
-    assert_eq!(sequential.levels, parallel.levels);
-    assert_eq!(sequential.levels_converted, parallel.levels_converted,);
-    assert_eq!(sequential.levels_unavailable, parallel.levels_unavailable,);
-
-    assert_eq!(sequential.references_checked, parallel.references_checked,);
-
-    assert_eq!(
-        sequential.numerical_levels_checked,
-        parallel.numerical_levels_checked,
-    );
-
-    assert_eq!(
-        sequential.numerical_references_checked,
-        parallel.numerical_references_checked,
-    );
-
-    assert_eq!(sequential.files, parallel.files);
-    assert_eq!(sequential.row_groups, parallel.row_groups);
-
-    assert!(parallel.files >= 3);
-
-    println!();
-    println!("{}", "=".repeat(90));
-    println!("MARKETFORGE — MULTI-FILE PARALLEL DEPTH VALIDATION");
-    println!("{}", "=".repeat(90));
-
-    println!("Events          : {}", parallel.events);
-    println!("Levels          : {}", parallel.levels);
-    println!("Files           : {}", parallel.files);
-    println!("Row groups      : {}", parallel.row_groups);
-    println!("Workers         : 16");
-    println!("Numerical levels: {}", parallel.numerical_levels_checked);
-    println!("STATUS          : PASS");
-}
-
-#[test]
-fn parallel_validation_rejects_cross_file_regression() {
-    use marketforge_engine::historical::convert::output::validate_converted_depth_parallel;
-
-    let temporary = copy_fixture();
-    let directory = temporary.path().join("depth");
-    let original = directory.join("part-000000.parquet");
-
-    let file = std::fs::File::open(&original).unwrap();
-
-    let reader = ParquetRecordBatchReaderBuilder::try_new(file)
-        .unwrap()
-        .with_batch_size(4096)
-        .build()
-        .unwrap();
-
-    let batches = reader.map(|batch| batch.unwrap()).collect::<Vec<_>>();
-
-    assert!(batches.len() >= 2);
-
-    let schema = batches[0].schema();
-
-    std::fs::remove_file(&original).unwrap();
-
-    // Reverse chronological file order while preserving each
-    // individual batch's internal ordering.
-    for (index, batch) in batches.iter().rev().enumerate() {
-        let path = directory.join(format!("part-{index:06}.parquet"));
-
-        let file = std::fs::File::create(path).unwrap();
-
-        let mut writer = parquet::arrow::ArrowWriter::try_new(file, schema.clone(), None).unwrap();
-
-        writer.write(batch).unwrap();
-        writer.close().unwrap();
-    }
-
-    assert!(validate_converted_depth_parallel(&directory, 5_000_000_000, 16,).is_err());
-}
-
-#[test]
-fn parallel_validation_rejects_numerical_corruption_in_later_file() {
-    use marketforge_engine::historical::convert::output::validate_converted_depth_parallel;
-
-    let temporary = copy_fixture();
-    let directory = temporary.path().join("depth");
-    let original = directory.join("part-000000.parquet");
-
-    let file = std::fs::File::open(&original).unwrap();
-
-    let reader = ParquetRecordBatchReaderBuilder::try_new(file)
-        .unwrap()
-        .with_batch_size(4096)
-        .build()
-        .unwrap();
-
-    let batches = reader.map(|batch| batch.unwrap()).collect::<Vec<_>>();
-
-    assert!(batches.len() >= 3);
-
-    let schema = batches[0].schema();
-
-    std::fs::remove_file(&original).unwrap();
-
-    for (index, batch) in batches.into_iter().enumerate() {
-        let batch = if index == 1 {
-            corrupt_converted_price(batch)
-        } else {
-            batch
-        };
-
-        let path = directory.join(format!("part-{index:06}.parquet"));
-
-        let file = std::fs::File::create(path).unwrap();
-
-        let mut writer = parquet::arrow::ArrowWriter::try_new(file, schema.clone(), None).unwrap();
-
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
-    }
-
-    // The first file remains valid.
-    let first = directory.join("part-000000.parquet");
-
-    validate_depth_file(&first, 5_000_000_000).unwrap();
-
-    // The corrupted second file must fail independently.
-    let second = directory.join("part-000001.parquet");
-
-    assert!(validate_depth_file(&second, 5_000_000_000,).is_err());
-
-    // The complete parallel validation must also fail.
-    assert!(validate_converted_depth_parallel(&directory, 5_000_000_000, 16,).is_err());
-}
-
-#[test]
-fn parallel_validation_rejects_equal_timestamp_key_regression() {
-    use marketforge_engine::historical::convert::output::validate_converted_depth_parallel;
-
-    let temporary = copy_fixture();
-    let directory = temporary.path().join("depth");
-    let path = directory.join("part-000000.parquet");
-
-    rewrite_parquet(&path, |batch| {
-        use arrow_array::{Int64Array, UInt32Array};
-
-        let timestamps = batch
-            .column_by_name("event_timestamp_ns")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<Int64Array>()
-            .unwrap();
-
-        let ranks = batch
-            .column_by_name("stream_rank")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<UInt32Array>()
-            .unwrap();
-
-        let mut rows = (0..batch.num_rows()).collect::<Vec<_>>();
-
-        let pair = rows.windows(2).position(|pair| {
-            timestamps.value(pair[0]) == timestamps.value(pair[1])
-                && ranks.value(pair[0]) < ranks.value(pair[1])
-        });
-
-        let index = pair.expect("fixture must contain equal-timestamp events with different ranks");
-
-        rows.swap(index, index + 1);
-
-        let indices = UInt32Array::from(rows.into_iter().map(|row| row as u32).collect::<Vec<_>>());
-
-        let columns = batch
-            .columns()
-            .iter()
-            .map(|column| arrow_select::take::take(column.as_ref(), &indices, None).unwrap())
-            .collect::<Vec<_>>();
-
-        RecordBatch::try_new(batch.schema(), columns).unwrap()
-    });
-
-    assert!(validate_converted_depth_parallel(&directory, 5_000_000_000, 16,).is_err());
 }

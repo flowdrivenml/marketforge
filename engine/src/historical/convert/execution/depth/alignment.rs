@@ -72,6 +72,7 @@ impl<'a> DepthConversionAlignment<'a> {
             let timestamp_ns = view.timestamps.value(row);
 
             let updates = self.cursor.advance_before(timestamp_ns, &mut self.state)?;
+            self.state.advance_watermark(timestamp_ns);
 
             self.reference_updates = self
                 .reference_updates

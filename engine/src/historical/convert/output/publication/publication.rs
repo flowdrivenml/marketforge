@@ -173,6 +173,7 @@ pub fn publish_conversion_with_progress(
     // -------------------------------------------------------------------------
     // Publish directory
     // -------------------------------------------------------------------------
+    reporter.check_interrupted()?;
     reporter.phase_started(ConversionPhase::Commit);
 
     atomic_publish_directory(staging_directory, final_directory)?;
@@ -263,6 +264,7 @@ pub fn publish_depth_conversion_with_progress(
     receipt.reconcile_depth(job.job_id, &validation)?;
 
     if source_manifest.events_written != validation.events
+        || source_manifest.reconstruction_events != validation.reconstruction_events
         || source_manifest.events_written != receipt.events_read
     {
         return invalid("depth source/output event count mismatch");
@@ -311,6 +313,7 @@ pub fn publish_depth_conversion_with_progress(
     reporter.phase_completed(ConversionPhase::PublicationPreparation);
 
     // Atomic no-overwrite publication.
+    reporter.check_interrupted()?;
     reporter.phase_started(ConversionPhase::Commit);
 
     atomic_publish_directory(staging_directory, final_directory)?;
@@ -420,6 +423,7 @@ pub fn publish_combined_conversion_with_progress(
     if validation.events != source_manifest.events_written
         || validation.trade_events != source_manifest.trade_events
         || validation.depth_events != source_manifest.depth_events
+        || validation.reconstruction_events != source_manifest.reconstruction_events
     {
         return invalid("combined source/output event count mismatch");
     }
@@ -477,6 +481,7 @@ pub fn publish_combined_conversion_with_progress(
     // Atomic no-overwrite publication
     // -------------------------------------------------------------------------
 
+    reporter.check_interrupted()?;
     reporter.phase_started(ConversionPhase::Commit);
 
     atomic_publish_directory(staging_directory, final_directory)?;

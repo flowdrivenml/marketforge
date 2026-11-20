@@ -1,7 +1,4 @@
-#[path = "../support/depth_fixture.rs"]
-mod depth_fixture;
-
-use depth_fixture::{decimal, source_batch};
+use crate::depth_fixture::{decimal, source_batch};
 
 use arrow_array::{Array, Decimal256Array, ListArray, RecordBatch, StructArray};
 

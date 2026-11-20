@@ -23,9 +23,9 @@ The [focused follow-up report](../../docs/architecture/SHARED_REFACTOR_FOLLOWUP_
 
 ## Historical grouped verification
 
-Historical format/profile jobs and test grouping are documented in
-[Historical modernization](../../docs/historical/modernization.md).
-Use `scripts/verify-historical.sh normal` from the repository root for normal
-per-case bounded execution, or `compile` for compilation-only verification.
-Recorded conversion tests require `historical-real-tests`; the verifier only compiles
-them and never runs them. Keep a fresh output directory for selective bounded runs.
+See the [conversion workflow](../../docs/content/workflows/conversion.md#verify-conversion-changes)
+for the ordinary portable targets. Compile them with `historical` and optionally
+`monitor-tui` before passing the Cargo JSON artifacts to `bounded_tests.py`.
+The separate `historical_recorded_convert` target requires `historical-real-tests`.
+Keep its full-recording test out of a bounded run and select it by name when needed.
+Use a fresh output directory for each bounded execution.

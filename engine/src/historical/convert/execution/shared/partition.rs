@@ -75,9 +75,7 @@ pub fn build_conversion_partition_plan_with_count(
 
     manifest.validate()?;
 
-    let mut files = manifest.files.clone();
-
-    files.sort_by(|a, b| (a.partition_id, &a.path).cmp(&(b.partition_id, &b.path)));
+    let files = &manifest.files;
 
     let mut row_groups = Vec::new();
 

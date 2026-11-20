@@ -1,3 +1,6 @@
+use super::causal::CausalPositions;
+use crate::historical::convert::progress::ConversionProgressReporter;
+use crate::historical::merge::UnifiedMergeMode;
 use std::{fs::File, path::Path};
 
 use arrow_array::{
@@ -30,6 +33,7 @@ use {
 #[derive(Debug, Clone, Default)]
 pub struct CombinedValidationMetrics {
     pub events: u64,
+    pub reconstruction_events: u64,
     pub trade_events: u64,
     pub depth_events: u64,
 
@@ -57,6 +61,7 @@ pub struct CombinedFileValidationResult {
     pub metrics: CombinedValidationMetrics,
     pub first_key: ReferenceKey,
     pub last_key: ReferenceKey,
+    pub causal: CausalPositions,
 }
 
 impl CombinedValidationMetrics {
@@ -73,6 +78,7 @@ impl CombinedValidationMetrics {
         }
 
         add!(events);
+        add!(reconstruction_events);
         add!(trade_events);
         add!(depth_events);
 
@@ -104,6 +110,20 @@ pub fn validate_combined_file(
     path: &Path,
     max_staleness_ns: u64,
 ) -> Result<CombinedFileValidationResult> {
+    validate_combined_file_with_progress(
+        path,
+        max_staleness_ns,
+        &ConversionProgressReporter::disabled(),
+        |_| {},
+    )
+}
+
+pub(super) fn validate_combined_file_with_progress(
+    path: &Path,
+    max_staleness_ns: u64,
+    reporter: &ConversionProgressReporter,
+    mut rows_validated: impl FnMut(u64),
+) -> Result<CombinedFileValidationResult> {
     if max_staleness_ns == 0 {
         return invalid("combined validation staleness must be positive");
     }
@@ -128,13 +148,18 @@ pub fn validate_combined_file(
 
     let mut first_key = None;
     let mut previous_key = None;
+    let mut causal = CausalPositions::default();
 
     for batch in reader {
+        reporter.check_interrupted()?;
         let batch = batch.map_err(|error| invalid_error(error.to_string()))?;
 
         if batch.num_rows() == 0 {
             continue;
         }
+
+        causal.read(&batch, UnifiedMergeMode::Combined)?;
+        metrics.reconstruction_events = causal.reconstruction_rows;
 
         validate_combined_batch(
             &batch,
@@ -143,12 +168,14 @@ pub fn validate_combined_file(
             &mut previous_key,
             &mut metrics,
         )?;
+        rows_validated(batch.num_rows() as u64);
     }
 
     Ok(CombinedFileValidationResult {
         metrics,
         first_key: first_key.ok_or_else(|| invalid_error("empty combined Parquet file"))?,
         last_key: previous_key.ok_or_else(|| invalid_error("missing combined final key"))?,
+        causal,
     })
 }
 
@@ -202,6 +229,7 @@ fn validate_combined_batch(
 
     let reference_ordinals = struct_column::<UInt64Array>(reference_values, "event_ordinal")?;
 
+    let chronological = batch.column_by_name("timeline_sequence").is_none();
     for row in 0..batch.num_rows() {
         if timestamps.is_null(row)
             || ranks.is_null(row)
@@ -226,10 +254,8 @@ fn validate_combined_batch(
             *first_key = Some(key);
         }
 
-        if let Some(previous) = previous_key {
-            if key < *previous {
-                return invalid("combined timeline ordering regression");
-            }
+        if chronological && previous_key.is_some_and(|previous| key < previous) {
+            return invalid("combined timeline ordering regression");
         }
 
         *previous_key = Some(key);
@@ -424,20 +450,14 @@ pub fn validate_converted_combined(
     let files = discover_conversion_files(directory)?;
 
     let mut metrics = CombinedValidationMetrics::default();
-    let mut previous_key = None;
+    let mut previous = None;
 
     for path in files {
         let result = validate_combined_file(&path, max_staleness_ns)?;
 
-        if let Some(previous) = previous_key {
-            if result.first_key < previous {
-                return invalid("combined ordering regression across files");
-            }
-        }
-
-        previous_key = Some(result.last_key);
-
+        validate_combined_file_boundary(previous.as_ref(), &result)?;
         metrics.accumulate(&result.metrics)?;
+        previous = Some(result);
     }
 
     // -------------------------------------------------------------------------
@@ -516,4 +536,17 @@ fn invalid_error(message: impl Into<String>) -> MarketForgeError {
 
 fn invalid<T>(message: impl Into<String>) -> Result<T> {
     Err(invalid_error(message))
+}
+
+pub(super) fn validate_combined_file_boundary(
+    previous: Option<&CombinedFileValidationResult>,
+    current: &CombinedFileValidationResult,
+) -> Result<()> {
+    if !current.causal.follows(previous.map(|file| &file.causal))
+        || (current.causal.first.is_none()
+            && previous.is_some_and(|file| current.first_key < file.last_key))
+    {
+        return invalid("invalid combined ordering across files");
+    }
+    Ok(())
 }

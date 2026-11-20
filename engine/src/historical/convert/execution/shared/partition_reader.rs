@@ -6,7 +6,10 @@ use std::{
 use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 
-use parquet::arrow::arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder};
+use parquet::arrow::{
+    ProjectionMask,
+    arrow_reader::{ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder},
+};
 
 use {
     crate::historical::merge::PhysicalMergeManifest, crate::shared::error::MarketForgeError,
@@ -30,6 +33,10 @@ pub struct ConversionPartitionReader {
 
     schema: Option<SchemaRef>,
     batch_size: usize,
+    causal_start: Option<u64>,
+    mode: crate::historical::merge::UnifiedMergeMode,
+    range: crate::historical::job::MergeTimeRange,
+    timestamps_only: bool,
 
     expected_rows: u64,
     rows_read: u64,
@@ -49,6 +56,27 @@ impl ConversionPartitionReader {
         partition: &ConversionPartition,
         batch_size: usize,
     ) -> Result<Self> {
+        Self::new_with_projection(dataset_path, manifest, plan, partition, batch_size, false)
+    }
+
+    pub(crate) fn timestamps(
+        dataset_path: &Path,
+        manifest: &PhysicalMergeManifest,
+        plan: &ConversionPartitionPlan,
+        partition: &ConversionPartition,
+        batch_size: usize,
+    ) -> Result<Self> {
+        Self::new_with_projection(dataset_path, manifest, plan, partition, batch_size, true)
+    }
+
+    fn new_with_projection(
+        dataset_path: &Path,
+        manifest: &PhysicalMergeManifest,
+        plan: &ConversionPartitionPlan,
+        partition: &ConversionPartition,
+        batch_size: usize,
+        timestamps_only: bool,
+    ) -> Result<Self> {
         if batch_size == 0 {
             return invalid("partition reader batch size must be positive");
         }
@@ -62,9 +90,7 @@ impl ConversionPartitionReader {
             return invalid("invalid conversion partition boundaries");
         }
 
-        let mut manifest_files = manifest.files.clone();
-
-        manifest_files.sort_by(|a, b| (a.partition_id, &a.path).cmp(&(b.partition_id, &b.path)));
+        let manifest_files = &manifest.files;
 
         // -------------------------------------------------------------
         // Group selected row groups by physical file
@@ -103,6 +129,12 @@ impl ConversionPartitionReader {
             schema: None,
             batch_size,
             expected_rows: partition.rows,
+            causal_start: (manifest.timeline_ordering
+                == crate::historical::job::MergeTimelineOrdering::Causal)
+                .then_some(partition.start_row),
+            mode: manifest.mode,
+            range: manifest.time_range,
+            timestamps_only,
             rows_read: 0,
             files_opened: 0,
         })
@@ -121,6 +153,14 @@ impl ConversionPartitionReader {
                             continue;
                         }
 
+                        if let Some(start) = self.causal_start.filter(|_| !self.timestamps_only) {
+                            super::reader::validate_causal_batch(
+                                &batch,
+                                start + self.rows_read,
+                                self.mode,
+                                &self.range,
+                            )?;
+                        }
                         self.rows_read = self
                             .rows_read
                             .checked_add(batch.num_rows() as u64)
@@ -192,6 +232,16 @@ impl ConversionPartitionReader {
             self.schema = Some(schema);
         }
 
+        let builder = if self.timestamps_only {
+            let index = builder
+                .schema()
+                .index_of("event_timestamp_ns")
+                .map_err(|error| invalid_error(error.to_string()))?;
+            let mask = ProjectionMask::roots(builder.parquet_schema(), [index]);
+            builder.with_projection(mask)
+        } else {
+            builder
+        };
         let reader = builder
             .with_row_groups(selected.row_groups.clone())
             .with_batch_size(self.batch_size)

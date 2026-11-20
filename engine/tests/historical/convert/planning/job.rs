@@ -1,52 +1,59 @@
 use std::path::PathBuf;
 
-use marketforge_engine::historical::job::{ConvertJob, load_convert_job};
-
-fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
-fn load_test_job(mode: &str) -> ConvertJob {
-    let path = project_root()
-        .join("engine/tests/historical/convert/fixtures/jobs")
-        .join(format!("convert-{mode}.json"));
-
-    load_convert_job(path).unwrap()
-}
+use crate::conversion_fixture::canonical_job;
+use marketforge_engine::historical::job::{
+    ConversionPathPolicy, ConversionPriceSource, ConvertOperation, InstrumentKind, load_convert_job,
+};
 
 #[test]
-fn loads_trade_conversion_job() {
-    let job = load_test_job("trades");
-
-    assert_eq!(job.job_id, 940001);
-    assert_eq!(job.conversion.target_quote, "USDT");
-    assert_eq!(job.conversion.references.len(), 1);
-    assert_eq!(job.conversion.max_hops, 3);
-}
-
-#[test]
-fn loads_depth_conversion_job() {
-    let job = load_test_job("depth");
-
-    assert_eq!(job.job_id, 940002);
-    assert_eq!(job.conversion.references.len(), 1);
-    assert_eq!(job.resources.workers, 24);
-}
-
-#[test]
-fn loads_combined_conversion_job() {
-    let job = load_test_job("combined");
-
-    assert_eq!(job.job_id, 940003);
-    assert_eq!(job.conversion.references.len(), 1);
+fn production_loader_reads_canonical_combined_job() {
+    let job = canonical_job();
+    assert_eq!(job.job_id, 265083950276773788);
+    assert_eq!(job.operation, ConvertOperation::Convert);
+    assert_eq!(
+        job.input_merge,
+        PathBuf::from("/home/pasha/projects/marketforge/data/datasets/merged/2079541492669036539")
+    );
+    assert_eq!(
+        job.output.dataset_path,
+        PathBuf::from(
+            "/home/pasha/projects/marketforge/data/datasets/converted/265083950276773788"
+        )
+    );
+    let conversion = job.conversion;
+    assert_eq!(conversion.target_quote, "USDT");
+    assert_eq!(conversion.price_source, ConversionPriceSource::LastTrade);
+    assert_eq!(conversion.max_staleness_ns, 60_000_000_000);
+    assert_eq!(conversion.max_hops, 2);
+    assert_eq!(conversion.path_policy, ConversionPathPolicy::All);
+    assert!(conversion.instrument_kinds.is_none());
+    assert!(conversion.reference_merge.is_none());
+    assert_eq!(
+        conversion
+            .references
+            .iter()
+            .map(|reference| reference.symbol.as_str())
+            .collect::<Vec<_>>(),
+        ["BTCUSDT", "BTCUSDC"]
+    );
+    for reference in conversion.references {
+        assert_eq!(reference.exchange, "bybit");
+        assert_eq!(reference.instrument_kind, InstrumentKind::Spot);
+        assert!(reference.contract_kind.is_none());
+    }
+    assert_eq!(
+        (
+            job.resources.workers,
+            job.resources.memory_limit_mb,
+            job.resources.max_open_files
+        ),
+        (1, 1024, 64)
+    );
 }
 
 #[test]
 fn rejects_relative_input_path() {
-    let mut job = load_test_job("trades");
+    let mut job = canonical_job();
 
     job.input_merge = PathBuf::from("data/merged/final-trades");
 
@@ -55,7 +62,7 @@ fn rejects_relative_input_path() {
 
 #[test]
 fn rejects_duplicate_reference_instruments() {
-    let mut job = load_test_job("trades");
+    let mut job = canonical_job();
 
     job.conversion
         .references
@@ -66,7 +73,7 @@ fn rejects_duplicate_reference_instruments() {
 
 #[test]
 fn rejects_zero_staleness() {
-    let mut job = load_test_job("trades");
+    let mut job = canonical_job();
 
     job.conversion.max_staleness_ns = 0;
 
@@ -75,7 +82,7 @@ fn rejects_zero_staleness() {
 
 #[test]
 fn rejects_invalid_hop_limit() {
-    let mut job = load_test_job("trades");
+    let mut job = canonical_job();
 
     job.conversion.max_hops = 0;
 
@@ -88,7 +95,7 @@ fn rejects_invalid_hop_limit() {
 
 #[test]
 fn rejects_existing_input_as_output() {
-    let mut job = load_test_job("trades");
+    let mut job = canonical_job();
 
     job.output.dataset_path = job.input_merge.clone();
 
@@ -97,38 +104,24 @@ fn rejects_existing_input_as_output() {
 
 #[test]
 fn rejects_unknown_configuration_fields() {
-    let job = load_test_job("trades");
+    let job = canonical_job();
 
     let mut value = serde_json::to_value(job).unwrap();
 
     value["conversion"]["unexpected"] = serde_json::json!(true);
 
-    let result = serde_json::from_value::<ConvertJob>(value);
+    let path = tempfile::NamedTempFile::new().unwrap();
+    serde_json::to_writer(path.as_file(), &value).unwrap();
+    let result = load_convert_job(path.path());
 
     assert!(result.is_err());
 }
 
 #[test]
 fn rejects_invalid_reference_identity() {
-    let mut job = load_test_job("trades");
+    let mut job = canonical_job();
 
     job.conversion.references[0].exchange.clear();
 
     assert!(job.validate().is_err());
-}
-
-#[test]
-fn validates_all_production_configs() {
-    for mode in ["trades", "depth", "combined"] {
-        let job = load_test_job(mode);
-
-        assert!(job.input_merge.is_absolute());
-        assert!(job.output.dataset_path.is_absolute());
-        assert_eq!(job.resources.workers, 24);
-
-        let reference = &job.conversion.references[0];
-
-        assert_eq!(reference.exchange, "binance");
-        assert_eq!(reference.symbol, "BTCUSDT");
-    }
 }

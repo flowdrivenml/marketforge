@@ -1,7 +1,9 @@
+use crate::historical::convert::progress::ConversionProgressReporter;
 use crate::historical::job::ConvertJob;
 use arrow_array::{Array, Decimal256Array, UInt32Array, UInt64Array};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::time::{Duration, Instant};
 use {
     crate::historical::convert::ConversionDecimal, crate::historical::convert::ConversionPlan,
     crate::historical::convert::reference::ReferenceKey,
@@ -39,6 +41,24 @@ pub fn build_conversion_checkpoints(
     plan: &ConversionPlan,
     partitions: &ConversionPartitionPlan,
 ) -> Result<ConversionPrepassResult> {
+    build_conversion_checkpoints_with_progress(
+        job,
+        dataset_path,
+        manifest,
+        plan,
+        partitions,
+        &ConversionProgressReporter::disabled(),
+    )
+}
+
+pub fn build_conversion_checkpoints_with_progress(
+    _job: &ConvertJob,
+    dataset_path: &Path,
+    manifest: &PhysicalMergeManifest,
+    plan: &ConversionPlan,
+    partitions: &ConversionPartitionPlan,
+    reporter: &ConversionProgressReporter,
+) -> Result<ConversionPrepassResult> {
     manifest.validate()?;
 
     if partitions.total_rows != manifest.events_written {
@@ -58,11 +78,17 @@ pub fn build_conversion_checkpoints(
     let reference_streams = plan
         .streams
         .iter()
-        .filter(|stream| job.conversion.references.contains(&stream.source.identity))
+        .filter(|stream| {
+            plan.references.iter().any(|reference| {
+                reference.stream_id == stream.source.stream_id
+                    && reference.dataset_id == stream.source.dataset_id
+            })
+        })
         .map(|stream| stream.source.stream_rank)
         .collect::<HashSet<_>>();
 
-    let mut builder = ConversionCheckpointBuilder::new(reference_streams.clone());
+    let state = super::reader::initial_reference_state(dataset_path, manifest, reporter)?;
+    let mut builder = ConversionCheckpointBuilder::with_state(reference_streams.clone(), state);
 
     let mut reader =
         PhysicalConversionReader::new(dataset_path, manifest, CONVERSION_READ_BATCH_SIZE)?;
@@ -73,7 +99,10 @@ pub fn build_conversion_checkpoints(
     let mut global_row = 0_u64;
     let mut reference_updates = 0_u64;
 
+    let mut last_progress = Instant::now();
+    reporter.reference_prepass_progress(0, manifest.events_written, 0, partitions.partitions.len());
     while let Some(batch) = reader.next_batch()? {
+        reporter.check_interrupted()?;
         let timestamps = column::<arrow_array::Int64Array>(&batch, "event_timestamp_ns")?;
 
         let ranks = column::<UInt32Array>(&batch, "stream_rank")?;
@@ -138,7 +167,22 @@ pub fn build_conversion_checkpoints(
 
             global_row += 1;
         }
+        if last_progress.elapsed() >= Duration::from_millis(500) {
+            reporter.reference_prepass_progress(
+                global_row,
+                manifest.events_written,
+                checkpoints.len(),
+                partitions.partitions.len(),
+            );
+            last_progress = Instant::now();
+        }
     }
+    reporter.reference_prepass_progress(
+        global_row,
+        manifest.events_written,
+        checkpoints.len(),
+        partitions.partitions.len(),
+    );
 
     if global_row != manifest.events_written {
         return invalid("conversion prepass event count mismatch");
