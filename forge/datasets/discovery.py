@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
+from . import parquet
 from .dataset import Dataset, Stream
 from .metadata import content
 from .parquet import Footer, Predicate, footer
@@ -278,8 +279,161 @@ def _merged_streams(
     return tuple(streams), complete
 
 
+def _causal_streams(
+    item: Footer,
+    definitions: Mapping[int, Mapping[str, Any]],
+    registered: Mapping[str, Any],
+    kind: str,
+    observed: tuple[int | None, int | None],
+    requested: tuple[int, int],
+) -> tuple[Stream, ...]:
+    pa, _ = parquet.arrow_modules()
+    keys = {
+        "stream_rank": pa.uint32(),
+        "dataset_id": pa.uint64(),
+        "exchange": pa.string(),
+        "instrument_id": pa.int64(),
+        "symbol": pa.string(),
+        "stream_id": pa.string(),
+        "reconstruction_only": pa.bool_(),
+    }
+    if kind == "combined":
+        keys["event_kind"] = pa.uint8()
+    required = {
+        **keys,
+        "event_timestamp_ns": pa.int64(),
+        "timeline_sequence": pa.uint64(),
+        **dict.fromkeys(
+            ("task_id", "event_ordinal", "canonical_row_offset", "canonical_row_count"),
+            pa.uint64(),
+        ),
+    }
+    for name, dtype in required.items():
+        if name not in item.schema.names or item.schema.field(name) != pa.field(
+            name, dtype, nullable=False
+        ):
+            raise ValueError(f"Missing or invalid physical schema v2 column {name!r}.")
+    if kind == "combined":
+        for name in ("trade", "depth"):
+            if name not in item.schema.names or not pa.types.is_struct(
+                item.schema.field(name).type
+            ):
+                raise ValueError(f"Missing or invalid physical schema v2 payload {name!r}.")
+
+    # Footer endpoints give no evidence for intervening ranks and cannot associate
+    # a rank with a source dataset or distinguish reconstruction from market rows.
+    time = "event_timestamp_ns"
+    spans: dict[int, tuple[int, int, int, int]] = {}
+    market_spans: dict[tuple[int, int], tuple[int, int]] = {}
+    for batch in parquet.batches((item.path,), columns=[*keys, time]):
+        groups = pa.Table.from_batches([batch]).group_by(list(keys), use_threads=False)
+        for group in groups.aggregate([(time, "min"), (time, "max"), (time, "count")]).to_pylist():
+            rank, source = group["stream_rank"], group["dataset_id"]
+            definition = definitions.get(rank)
+            if (
+                definition is None
+                or source not in definition["source_datasets"]
+                or any(
+                    group[key] != definition.get(key)
+                    for key in ("exchange", "instrument_id", "symbol", "stream_id")
+                )
+            ):
+                raise ValueError("Physical row provenance disagrees with merge manifest.")
+            dtype = definition["kind"]
+            reconstruction = group["reconstruction_only"]
+            if (
+                reconstruction is None
+                or reconstruction
+                and dtype != "depth"
+                or kind == "combined"
+                and group["event_kind"] != (0 if dtype == "trades" else 1)
+            ):
+                raise ValueError(
+                    "Physical event kind or reconstruction marker disagrees with merge manifest."
+                )
+            lo, hi, count = group[f"{time}_min"], group[f"{time}_max"], group[f"{time}_count"]
+            if (
+                lo is None
+                or hi is None
+                or (not reconstruction and not requested[0] <= lo <= hi < requested[1])
+            ):
+                raise ValueError("Invalid physical market event timestamps.")
+            first, last, rows, reconstruction_rows = spans.get(rank, (lo, hi, 0, 0))
+            spans[rank] = (
+                min(first, lo),
+                max(last, hi),
+                rows + count,
+                reconstruction_rows + (count if reconstruction else 0),
+            )
+            if not reconstruction:
+                first, last = market_spans.get((rank, source), (lo, hi))
+                market_spans[rank, source] = min(first, lo), max(last, hi)
+    if (
+        sum(span[2] for span in spans.values()) != item.metadata.num_rows
+        or (
+            min((span[0] for span in spans.values()), default=None),
+            max((span[1] for span in spans.values()), default=None),
+        )
+        != observed
+    ):
+        raise ValueError("Physical event timestamps or row count disagree with stored metadata.")
+
+    identities = {rank: _declared_identity(definitions[rank]) for rank in spans}
+    registered_ranks: set[int] = set()
+    if registered.get("membership_scope") == "file":
+        seen: set[tuple[int, int]] = set()
+        for member in registered["memberships"]:
+            rank = member["stream_rank"]
+            source_id = member["source_publication_id"]
+            if type(rank) is not int or not (
+                type(source_id) is int
+                or isinstance(source_id, str)
+                and source_id.isascii()
+                and source_id.isdecimal()
+            ):
+                raise ValueError("Invalid registered merge provenance.")
+            source = int(source_id)
+            key = (rank, source)
+            if (
+                key not in market_spans
+                or key in seen
+                or market_spans[key] != _range(member)
+                or content(member["kind"]) != definitions[rank]["kind"]
+            ):
+                raise ValueError("Registered membership disagrees with physical market events.")
+            identities[rank] = _combine_identity(identities[rank], member)
+            registered_ranks.add(rank)
+            seen.add(key)
+        if seen != market_spans.keys():
+            raise ValueError("Registered memberships omit physical market events.")
+
+    streams: list[Stream] = []
+    for rank, (lo, hi, count, reconstruction_rows) in sorted(spans.items()):
+        dtype = definitions[rank]["kind"]
+        selector: tuple[Predicate, ...] = (("stream_rank", "=", rank),)
+        if kind == "combined":
+            selector += (("event_kind", "=", 0 if dtype == "trades" else 1),)
+        streams.append(
+            Stream(
+                (item.path,),
+                None,
+                dtype,
+                item.path,
+                identities[rank],
+                (item,),
+                selector,
+                (lo, hi),
+                "merge manifest + physical provenance"
+                + (" + registry file summary" if rank in registered_ranks else ""),
+                count,
+                reconstruction_rows=reconstruction_rows,
+            )
+        )
+    return tuple(streams)
+
+
 def _merge_definitions(
-    root: Path, manifest: Mapping[str, Any], kind: str
+    root: Path, manifest: Mapping[str, Any], kind: str, *, causal: bool = False
 ) -> dict[int, Mapping[str, Any]]:
     definitions: dict[int, Mapping[str, Any]] = {}
     parents: dict[Any, dict[int, Any]] = {}
@@ -300,9 +454,17 @@ def _merge_definitions(
                 }
         except (OSError, ValueError, TypeError, KeyError):
             continue
+    input_ids = [parent["dataset_id"] for parent in manifest.get("input_datasets", [])]
+    if causal and (
+        not input_ids
+        or any(type(source) is not int or not 0 <= source < 2**64 for source in input_ids)
+        or len(set(input_ids)) != len(input_ids)
+    ):
+        raise ValueError("Invalid or repeated physical merge input dataset.")
+    members: set[tuple[int, int]] = set()
     for stream in manifest["streams"]:
         rank = stream["stream_rank"]
-        if type(rank) is not int or rank < 0 or rank in definitions:
+        if type(rank) is not int or rank < 0 or (not causal and rank in definitions):
             raise ValueError("Invalid or repeated merge stream rank.")
         stored = _declared_identity(stream)
         source = _declared_identity(
@@ -312,13 +474,47 @@ def _merge_definitions(
             key for key in stored.keys() & source.keys() if stored[key] != source[key]
         )
         identity = {key: value for key, value in (stored | source).items() if key not in ambiguous}
+        dtype = content(stream["kind"] if causal else stream.get("kind", kind))
+        if causal:
+            dataset_id = stream["dataset_id"]
+            member = (dataset_id, rank)
+            if (
+                type(dataset_id) is not int
+                or dataset_id not in input_ids
+                or member in members
+                or rank >= 2**32
+                or dtype not in {"trades", "depth"}
+                or type(stored.get("instrument_id")) is not int
+                or any(
+                    not isinstance(stored.get(key), str) or not stored[key]
+                    for key in ("exchange", "symbol", "stream_id")
+                )
+            ):
+                raise ValueError("Invalid physical merge stream membership.")
+            members.add(member)
+            if previous := definitions.get(rank):
+                if previous["kind"] != dtype or previous["conflict"] or ambiguous:
+                    raise ValueError("Conflicting physical merge stream rank.")
+                identity = _combine_identity(previous, identity)
+                previous["source_datasets"].add(dataset_id)
+            else:
+                previous = {"source_datasets": {dataset_id}}
+        else:
+            previous = {}
         definitions[rank] = {
+            **previous,
             **identity,
-            "kind": content(stream.get("kind", kind)),
+            "kind": dtype,
             "conflict": f"Rank {rank} has conflicting parent and merge identity for {', '.join(ambiguous)}."
             if ambiguous
             else None,
         }
+    if causal:
+        expected_kinds = {"trades", "depth"} if kind == "combined" else {kind}
+        if {source for source, _ in members} != set(input_ids) or {
+            entry["kind"] for entry in definitions.values()
+        } != expected_kinds:
+            raise ValueError("Physical merge stream membership does not cover its inputs and mode.")
     return definitions
 
 
@@ -338,25 +534,48 @@ def inventory(
         normalized = "content_type" in manifest and "dataset_id" in manifest
         merge = "mode" in manifest and "job_id" in manifest
         version = manifest["protocol_version"]
+        physical = manifest.get("physical_schema_version", 1)
+        timeline = manifest.get("timeline_schema_version")
+        ordering = manifest.get("timeline_ordering", "chronological")
+        causal = (
+            merge
+            and version == 1
+            and type(physical) is int
+            and physical == 2
+            and ordering == "causal"
+            and "timeline_schema_version" not in manifest
+        )
         supported = type(version) is int and (
             normalized
             and version in {3, 4, 5}
             or merge
             and (
-                version == 1
-                and manifest.get("physical_schema_version", 1) == 1
+                causal
+                or version == 1
+                and type(physical) is int
+                and physical == 1
+                and ordering == "chronological"
                 or version == 2
-                and manifest.get("timeline_schema_version") == 1
+                and type(timeline) is int
+                and timeline == 1
             )
         )
         if not supported:
             if normalized or merge:
+                fields = {
+                    "protocol_version": version,
+                    "physical_schema_version": manifest.get("physical_schema_version"),
+                    "timeline_ordering": manifest.get("timeline_ordering"),
+                }
+                if "timeline_schema_version" in manifest:
+                    fields["timeline_schema_version"] = timeline
+                values = ", ".join(f"{key}={value!r}" for key, value in fields.items())
                 raise DiscoveryError(
-                    "unsupported_version", f"Unsupported manifest or schema version {version}."
+                    "unsupported_version", f"Unsupported manifest or schema: {values}."
                 )
             raise ValueError("Manifest has no recognizable normalization or merge contract.")
         kind = content(manifest["content_type" if normalized else "mode"])
-        definitions = _merge_definitions(root, manifest, kind) if merge else {}
+        definitions = _merge_definitions(root, manifest, kind, causal=causal) if merge else {}
         directories = {
             stream["directory"]: stream
             for stream in manifest.get("streams", [])
@@ -377,8 +596,19 @@ def inventory(
             raise ValueError("Primary file paths must be nonempty strings.")
         if len(set(names)) != len(names):
             raise ValueError("Duplicate primary file paths.")
+        if causal:
+            for entry in entries:
+                partition = entry["partition_id"]
+                if type(partition) is not int or not 0 <= partition < 2**32:
+                    raise ValueError("Invalid physical merge partition ID.")
+                if Path(entry["path"]).parent != Path(f"timeline/partition-{partition:06}"):
+                    raise ValueError("Physical primary path disagrees with its partition ID.")
+                if type(entry["rows"]) is not int or entry["rows"] <= 0 or _range(entry)[0] is None:
+                    raise ValueError(
+                        "Physical merge primary file requires rows and an event-time envelope."
+                    )
         requested: tuple[int, int] | None = None
-        if "time_range" in manifest:
+        if causal or "time_range" in manifest:
             time_range = manifest["time_range"]
             start, end = time_range["start_ns"], time_range["end_ns"]
             if (
@@ -452,8 +682,18 @@ def inventory(
                     entry, item, manifest, job, recorded, kind, directories, instruments
                 )
                 complete = bool(streams)
+            elif causal:
+                streams = (
+                    _causal_streams(item, definitions, recorded, kind, observed, requested)
+                    if not conflicts and requested is not None
+                    else ()
+                )
+                complete = bool(streams)
             else:
                 streams, complete = _merged_streams(item, definitions, recorded, kind, observed)
+        except OSError as error:
+            diagnostics.append(Diagnostic(file, "unreadable_file", str(error)))
+            continue
         except (ValueError, KeyError, TypeError) as error:
             streams, complete = (), False
             conflicts.append(str(error))
@@ -506,7 +746,7 @@ def inventory(
                 if conflicts
                 else "registry file summary"
                 if row and complete
-                else "manifest / footer"
+                else ("manifest / physical provenance" if causal else "manifest / footer")
                 if complete
                 else "partial membership"
                 if streams
@@ -518,6 +758,7 @@ def inventory(
                 if from_footer[0] is not None
                 else "manifest",
                 requested,
+                partition_id=entry.get("partition_id") if merge else None,
             )
         )
     return datasets, diagnostics
@@ -571,6 +812,10 @@ def group(root: Path, files: list[Dataset]) -> Dataset:
                     files=old.files + stream.files,
                     footers=old.footers + stream.footers,
                     observed=(first, last),
+                    reconstruction_rows=old.reconstruction_rows + stream.reconstruction_rows
+                    if old.reconstruction_rows is not None
+                    and stream.reconstruction_rows is not None
+                    else None,
                     exact_rows=old.exact_rows + stream.exact_rows
                     if old.exact_rows is not None and stream.exact_rows is not None
                     else None,
@@ -584,6 +829,7 @@ def group(root: Path, files: list[Dataset]) -> Dataset:
         seed,
         path=root,
         primary_file=None,
+        partition_id=None,
         dataset_id=None,
         streams_by_key=tuple(groups.values()),
         footers=all_footers,

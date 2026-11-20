@@ -113,6 +113,7 @@ class Stream(Rows):
     evidence: str = "unknown"
     exact_rows: int | None = None
     context: dict[str, object] | None = None
+    reconstruction_rows: int | None = None
 
     def _row_source(
         self,
@@ -128,6 +129,11 @@ class Stream(Rows):
             "observed_end_ns": self.observed[1],
             "membership_evidence": self.evidence,
             "matching_rows": self.exact_rows,
+            **(
+                {"reconstruction_rows": self.reconstruction_rows}
+                if self.reconstruction_rows is not None
+                else {}
+            ),
         }
 
     def info(self) -> dict[str, Any]:
@@ -141,6 +147,11 @@ class Stream(Rows):
             **physical,
             "physical_rows": physical["rows"],
             "matching_rows": self.exact_rows,
+            **(
+                {"reconstruction_rows": self.reconstruction_rows}
+                if self.reconstruction_rows is not None
+                else {}
+            ),
             "observed_start_ns": self.observed[0],
             "observed_end_ns": self.observed[1],
             "membership_evidence": self.evidence,
@@ -179,6 +190,7 @@ class Dataset(Rows):
     timestamp_evidence: str = "unknown"
     requested_interval: tuple[int, int] | None = None
     matching_streams: tuple[Stream, ...] | None = None
+    partition_id: int | None = None
 
     @property
     def files(self) -> tuple[Path, ...]:
@@ -206,6 +218,7 @@ class Dataset(Rows):
             "engine_publication_id": self.engine_publication_id,
             "publication_path": str(self.publication_path) if self.publication_path else None,
             "primary_file": self.primary_file,
+            "partition_id": self.partition_id,
             "instrument_namespace": self.instrument_namespace,
             "operation": self.operation,
             "data_type": self.data_type,
