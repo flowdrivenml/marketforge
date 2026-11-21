@@ -87,3 +87,18 @@ ModalScreen { align: center middle; background: #11111b 75%; }
 .menu Button { width: 100%; content-align: left middle; }
 
 .inspect-operation { display: none; height: 1; padding: 0 1; color: $forge-cyan; background: $forge-surface; }
+
+.overview-only { display: none; }
+.overview .overview-only { display: block; }
+.overview #views, .overview #filter, .overview #query-state, .overview #inspector, .overview #operation { display: none; }
+#overview-status, #overview-history-note { height: 1; padding: 0 1; }
+#overview-status { background: $forge-surface; }
+#overview-upper { height: auto; layout: vertical; }
+.wide #overview-upper { layout: horizontal; }
+#overview-current, #overview-attention { border: solid $forge-muted; padding: 0 1; height: auto; }
+#overview-current { width: 1fr; max-height: 7; }
+#overview-attention { width: 1fr; max-height: 5; }
+.wide #overview-attention { width: 46; }
+.short #overview-current { max-height: 5; }
+.short #overview-attention { max-height: 3; }
+#overview-primary { width: 16; }

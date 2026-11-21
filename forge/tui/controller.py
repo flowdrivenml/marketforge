@@ -2,7 +2,9 @@
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from time import monotonic
 from typing import cast
 from uuid import uuid4
 
@@ -38,6 +40,12 @@ class Operation:
     result: object = None
     error: str | None = None
 
+    reference: str = ""
+    started_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    started_tick: float = field(default_factory=monotonic)
+    finished_tick: float | None = None
+    finished_at: str | None = None
+
     def snapshot(self) -> object:
         if callable(self.progress):
             return cast(Callable[[], object], self.progress)()
@@ -61,7 +69,7 @@ class Controller:
     ) -> asyncio.Task[Operation]:
         if self.active():
             raise ValueError("Work is already active. Inspect it in Runs or wait for cleanup.")
-        op = Operation(uuid4().hex, action.key)
+        op = Operation(uuid4().hex, action.key, reference=str(values.get("reference", "")))
         self.current = op
         self.task = asyncio.create_task(self._run(op, action, values, apply))
         return self.task
@@ -103,6 +111,8 @@ class Controller:
             op.state = "failed"
             op.error = str(error)
         finally:
+            op.finished_tick = monotonic()
+            op.finished_at = datetime.now(UTC).isoformat()
             self.history.append(op)
             del self.history[:-30]
         return op

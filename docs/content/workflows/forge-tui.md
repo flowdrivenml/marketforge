@@ -23,7 +23,7 @@ processing, verification, and storage mutation are explicit actions.
 
 | Area | Contents |
 | --- | --- |
-| Overview | Workspace paths, retained activity, and diagnostics |
+| Overview | Workspace status, current operation, attention, and recent results |
 | Workflows | Pipeline, acquisition, normalization, merge, conversion, import, and raw registration |
 | Data | Registry publications, registered primary files, and raw archives |
 | Markets | Instruments, observations, policies, and ranking snapshots |
@@ -48,6 +48,27 @@ Forms include selectors and optional Advanced fields. Copy command displays
 the equivalent quoted CLI invocation for use outside the app. Copy value
 requests clipboard transfer through the terminal. If terminal or tmux clipboard
 forwarding is disabled, the displayed text remains selectable.
+
+## Overview
+
+The status strip shows the observed testing registry connection, verified
+managed installations, and filesystem free space. Use **F2 → Workspace status
+details** for each source’s check time. Ctrl+R refreshes these read-only checks
+and recent history. Returning to Overview reloads history and rechecks expired
+observations. Registry outages leave local history and owned operations usable.
+
+The current operation shows the latest reported phase and any measured work.
+The completion summary stays until dismissed through F2 or replaced by another
+operation. A requested validation, preparation, or stop-after boundary can
+succeed without producing a publication. Results show publishing and registration
+evidence separately. Recent run times are shown in UTC. A recorded running state
+in retained history has unconfirmed liveness.
+
+Use Enter to inspect the selected run and F2 to open its report, outputs, or
+available recovery actions. Attention highlights current blockers and interrupted
+pipelines with retained evidence. Resume opens the exact pipeline run, and
+registration recovery opens the retained execution intent. These actions use the
+existing review and verification flows.
 
 ## Pipeline and standalone workflows
 

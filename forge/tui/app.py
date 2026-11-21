@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import cast
@@ -12,7 +13,7 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.command import Hit, Hits, Provider
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.events import Resize
 from textual.widgets import Button, DataTable, Footer, Input, Static
 
@@ -20,15 +21,30 @@ from forge.datasets.query import publications, utc
 from forge.historical.archives.progress import ProgressSnapshot
 from forge.historical.archives.storage.files import disk
 from forge.historical.pipelines.progress import PipelineSnapshot
-from forge.orchestration.inspection import read_managed_report, run_page
+from forge.orchestration.inspection import (
+    MANAGED_RUN,
+    read_managed_logs,
+    read_managed_report,
+    run_page,
+)
 from forge.shared.config.library import list_config_names
 from forge.shared.terminal.editor import edit_file
 from forge.startup.context import ApplicationContext
+from forge.tui import overview
 from forge.tui.actions import ACTIONS, BY_KEY, Action, Values, read_only
 from forge.tui.controller import Controller, Invoke, Operation, document, outcome
 from forge.tui.inspection import ActionMenu, Inspection, fields
 from forge.tui.operation_view import OperationView
-from forge.tui.presentation import Results, Selection, bind, cell_text, columns, membership, visible
+from forge.tui.presentation import (
+    Cell,
+    Results,
+    Selection,
+    bind,
+    cell_text,
+    columns,
+    membership,
+    visible,
+)
 from forge.tui.resources import CATALOG, FAMILIES, Row, library, load_rows, records, value_at
 from forge.tui.screens import Confirm, Detail, Form
 from forge.tui.services import apply_cleanup, execute, ranks
@@ -116,6 +132,17 @@ class ForgeApp(App[None]):
         self.version = 0
         self.root_screen = self.screen_stack[0] if self.screen_stack else None
         self.editor_open = False
+        self.overview_probe: Invoke = execute
+        self.overview_history_lock = asyncio.Lock()
+        self.overview_status_lock = asyncio.Lock()
+        self.overview_keys = ("Registry", "Engines", "Storage")
+        self.overview_status: dict[str, overview.Observation] = {}
+        self.overview_history_note = "Loading recent runs…"
+        self.overview_retained: list[dict[str, object]] = []
+        self.overview_generation = 0
+        self.overview_dismissed: str | None = None
+        self.overview_completed: str | None = None
+        self.overview_recovered: set[tuple[str, str]] = set()
 
     @property
     def state(self) -> ViewState:
@@ -138,11 +165,19 @@ class ForgeApp(App[None]):
                     id="filter",
                 )
                 yield Static("", id="query-state", markup=False)
+                yield Static(id="overview-status", classes="overview-only", markup=False)
+                with Container(id="overview-upper", classes="overview-only"):
+                    yield Static(id="overview-current")
+                    yield Static(id="overview-attention")
+                yield Static(id="overview-history-note", classes="overview-only", markup=False)
                 with Horizontal(id="resource-body"):
                     yield Results(cursor_type="row", id="results")
                     yield Static("Select a resource", id="inspector")
                 with Horizontal(id="context-actions"):
                     yield Button("Enter Inspect", id="inspect-selected", classes="compact")
+                    yield Button(
+                        "Run pipeline", id="overview-primary", classes="overview-only compact"
+                    )
                     yield Button("F2 Actions", id="context-menu", classes="compact")
                     yield Button("Edit TOML", id="edit-source", classes="compact")
         yield Static("Idle", id="operation", markup=False)
@@ -152,7 +187,10 @@ class ForgeApp(App[None]):
         self.root_screen = self.screen
         self.set_interval(0.25, self.render_operation)
         await self.switch(AREAS[0])
-        self.query_one("#results", Results).focus()
+        if self.state.rows:
+            self.query_one("#results", Results).focus()
+        else:
+            self.query_one("#overview-primary", Button).focus()
 
     def on_resize(self, event: Resize) -> None:
         if self.root_screen is not None:
@@ -174,15 +212,27 @@ class ForgeApp(App[None]):
                 self.root_screen.query_one("#area-0", Button).focus()
 
     def action_filter(self) -> None:
-        if self.screen == self.root_screen and not isinstance(self.focused, Input):
+        if (
+            self.screen == self.root_screen
+            and self.area != "Overview"
+            and not isinstance(self.focused, Input)
+        ):
             self.query_one("#filter", Input).focus()
 
     def action_reload(self) -> None:
+        if self.area == "Overview":
+            self.refresh_overview_status()
         self.request_query()
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         if action in {"previous", "next"}:
-            return self.screen == self.root_screen and not isinstance(self.focused, Input)
+            return (
+                self.screen == self.root_screen
+                and self.area != "Overview"
+                and not isinstance(self.focused, Input)
+            )
+        if action == "filter" and self.area == "Overview" and self.screen == self.root_screen:
+            return False
         return super().check_action(action, parameters)
 
     def action_next(self) -> None:
@@ -198,7 +248,23 @@ class ForgeApp(App[None]):
     async def switch(self, area: str, view: str | None = None) -> None:
         results = self.query_one("#results", Results)
         self.state.scroll = (results.scroll_x, results.scroll_y)
+        if self.area == "Overview" and area != "Overview":
+            self.overview_generation += 1
         self.area, self.view = area, view or VIEWS[area][0]
+        results.display = area != "Overview" or bool(self.state.rows)
+        self.screen.set_class(area == "Overview", "overview")
+        self.query_one("#overview-history-note", Static).display = area == "Overview" and bool(
+            self.overview_history_note
+        )
+        if area == "Overview":
+            self.query_one("#overview-current", Static).border_title = "Current operation"
+            self.query_one("#overview-attention", Static).border_title = "Needs attention · F2"
+            if len(self.overview_status) < len(self.overview_keys) or any(
+                (datetime.now(UTC) - value.checked).total_seconds() > 300
+                for value in self.overview_status.values()
+            ):
+                self.refresh_overview_status()
+            self.paint_overview()
         self.query_one("#workspace-header", Static).update(
             f"MarketForge / Forge  ·  {self.context.paths.root.name}  ·  TESTING  /  {area}"
         )
@@ -223,7 +289,25 @@ class ForgeApp(App[None]):
 
     def request_query(self) -> None:
         self.version += 1
-        self.query_view(self.version, self.area, self.view, self.state.filter, self.state.offset)
+        groups = {"query"} if self.area == "Overview" else {"overview-history", "overview-status"}
+        for worker in self.workers:
+            if worker.group in groups:
+                worker.cancel()
+        if self.area == "Overview":
+            self.load_overview_history(self.version)
+        else:
+            self.query_view(
+                self.version, self.area, self.view, self.state.filter, self.state.offset
+            )
+
+    def refresh_overview_status(self) -> None:
+        if any(
+            worker.group == "overview-status" and worker.is_running and not worker.is_cancelled
+            for worker in self.workers
+        ):
+            return
+        self.overview_generation += 1
+        self.check_overview(self.overview_generation)
 
     @work(exclusive=True, group="query", exit_on_error=False)
     async def query_view(
@@ -259,6 +343,284 @@ class ForgeApp(App[None]):
         )
         await self.refresh_context()
 
+    @work(exclusive=True, group="overview-history", exit_on_error=False)
+    async def load_overview_history(self, version: int) -> None:
+        failed = False
+        try:
+            async with self.overview_history_lock:
+                if version != self.version:
+                    return
+                retained, _ = await disk(
+                    run_page, self.context.paths.runs_dir, 8, 0, include_managed=True
+                )
+        except Exception:
+            failed = True
+            retained = self.overview_retained
+        if version != self.version:
+            return
+        self.overview_retained = retained
+        self.overview_recovered.update(
+            key
+            for item in retained
+            if item.get("registration") == "registered"
+            and (key := overview.execution_key(document(item.get("execution")))) is not None
+        )
+        rows = overview.recent_rows(retained, self.controller.history)
+        page = self.state
+        table = self.query_one("#results", Results)
+        page.scroll = (table.scroll_x, table.scroll_y)
+        ordered = sorted(rows.values(), key=lambda row: overview.run_started(row), reverse=True)
+        page.rows = {row.id: row for row in ordered[:8]}
+        if page.selection in rows and page.selection not in page.rows:
+            page.rows.pop(next(reversed(page.rows)))
+            page.rows[page.selection] = rows[page.selection]
+        first_load = self.overview_history_note == "Loading recent runs…"
+        self.overview_history_note = (
+            "Retained history unavailable · showing cached and owned runs"
+            if failed and retained
+            else "Retained history unavailable"
+            if failed
+            else ""
+            if rows
+            else "No recent runs"
+        )
+        self.render_rows()
+        if (
+            first_load
+            and rows
+            and self.screen == self.root_screen
+            and self.focused is not None
+            and self.focused.id == "overview-primary"
+        ):
+            table.focus()
+        await self.refresh_context()
+        self.paint_overview()
+
+    @work(exclusive=True, group="overview-status", exit_on_error=False)
+    async def check_overview(self, generation: int) -> None:
+        async def source(key: str) -> None:
+            try:
+                if key == "Storage":
+                    value = await disk(overview.storage_free, self.context.paths.data_root)
+                    observed = overview.Observation(value, datetime.now(UTC))
+                else:
+                    value = await self.overview_probe(
+                        "database status" if key == "Registry" else "engine status",
+                        {},
+                        self.context,
+                        lambda _: None,
+                        self.edit_recipe,
+                    )
+                    if key == "Registry":
+                        evidence = document(value)
+                        observed = (
+                            overview.Observation(
+                                "connected"
+                                if evidence.get("initialized")
+                                else "connected · uninitialized",
+                                datetime.now(UTC),
+                            )
+                            if evidence.get("database") == "marketforge_test"
+                            else overview.Observation(
+                                "unavailable",
+                                datetime.now(UTC),
+                                False,
+                                "Testing identity could not be observed.",
+                            )
+                        )
+                    else:
+                        observed = overview.engine_summary(value)
+            except Exception:
+                observed = overview.Observation("unavailable", datetime.now(UTC), False)
+            if self.area == "Overview" and generation == self.overview_generation:
+                self.overview_status[key] = observed
+                self.paint_overview()
+
+        async with self.overview_status_lock:
+            if generation == self.overview_generation:
+                probes = asyncio.gather(*(source(key) for key in self.overview_keys))
+                try:
+                    await asyncio.shield(probes)
+                except asyncio.CancelledError:
+                    probes.cancel()
+                    await asyncio.gather(probes, return_exceptions=True)
+                    raise
+
+    def overview_needs_registration(self, evidence: Mapping[str, object]) -> bool:
+        return (
+            overview.registration_problem(evidence)
+            and overview.execution_key(evidence) not in self.overview_recovered
+        )
+
+    def overview_attention(self) -> dict[str, Callable[[], object]]:
+        items: dict[str, Callable[[], object]] = {}
+        op = self.controller.current
+        if op and op.id != self.overview_dismissed:
+            result = document(op.result)
+            if self.overview_needs_registration(result) and op.title.split()[0] in {
+                "normalize",
+                "merge",
+            }:
+                items["Registration outstanding · inspect output and recovery"] = partial(
+                    self.show_operation, op
+                )
+            elif op.state in {"blocked", "failed"} and not (
+                overview.registration_problem(result)
+                and not self.overview_needs_registration(result)
+            ):
+                items[f"{op.title} {op.state} · inspect result"] = partial(self.show_operation, op)
+            elif op.state == "interrupted" and overview.pipeline_recovery(result):
+                items["Pipeline interrupted · inspect resume"] = partial(self.show_operation, op)
+        for row in self.state.rows.values():
+            item = document(row.value)
+            if (
+                self.overview_needs_registration(item)
+                and row.id.split("-")[0] in {"normalize", "merge"}
+                and (not op or document(op.result).get("execution_id") != row.id)
+            ):
+                items[f"{row.name} ({row.id[-8:]}) · registration outstanding"] = partial(
+                    self.open_managed_run, row.id
+                )
+            if item.get("state") == "interrupted" and overview.pipeline_recovery(item):
+                if not op or document(op.result).get("run_id") != row.id:
+                    items[f"{row.name} ({row.id[-8:]}) · interrupted"] = partial(
+                        self.open_managed_run, row.id
+                    )
+        if op and op.state == "blocked" and op.id != self.overview_dismissed:
+            family = op.title.split()[0]
+            required = {"normalize", "merge"} if family == "pipeline" else {family}
+            engines = self.overview_status.get("Engines")
+            if engines and (datetime.now(UTC) - engines.checked).total_seconds() <= 300:
+                unavailable = [
+                    target
+                    for target, state in engines.targets
+                    if target in required and state != "verified"
+                ]
+                if unavailable:
+                    names = ", ".join(unavailable)
+                    items[f"Managed engines unavailable ({names}) · inspect status"] = partial(
+                        self.open_overview_area, "System"
+                    )
+        registry = self.overview_status.get("Registry")
+        if registry and not registry.available:
+            items["Testing registry unavailable · details"] = self.show_overview_status
+        return items
+
+    def show_overview_status(self) -> None:
+        self.push_screen(
+            Inspection(
+                "Workspace status · testing",
+                {
+                    key: " · ".join(
+                        filter(None, (observed.text, observed.checked.isoformat(), observed.detail))
+                    )
+                    if (observed := self.overview_status.get(key))
+                    else "Not checked"
+                    for key in self.overview_keys
+                },
+                actions={
+                    "Check testing registry": partial(self.open_action, BY_KEY["database status"]),
+                    "Inspect managed engines": partial(self.open_action, BY_KEY["engine status"]),
+                    "Check prerequisites": partial(self.open_action, BY_KEY["doctor"]),
+                },
+            )
+        )
+
+    def paint_overview(self) -> None:
+        if self.root_screen is None or self.area != "Overview":
+            return
+        now = datetime.now(UTC)
+        strip = self.root_screen.query_one("#overview-status", Static)
+        summary = "  ·  ".join(
+            f"{key} {item.label(now) if (item := self.overview_status.get(key)) else 'not checked'}"
+            for key in self.overview_keys
+        )
+        checks = [entry.checked for entry in self.overview_status.values() if entry.available]
+        if checks:
+            check_time = max(checks).strftime("%H:%M UTC")
+            if len(summary) + len(check_time) + 7 < strip.size.width:
+                summary += f"  ·  {check_time}"
+        update_static(strip, Text(summary, no_wrap=True, overflow="ellipsis"))
+        label = self.root_screen.query_one("#overview-current", Static)
+        op = self.controller.current
+        active = self.controller.active()
+        primary = self.root_screen.query_one("#overview-primary", Button)
+        primary.label = (
+            "Operation"
+            if active
+            else "Last outcome"
+            if op and op.id != self.overview_dismissed
+            else "Run pipeline"
+        )
+        if op and (active or op.id != self.overview_dismissed):
+            update_static(
+                label, overview.operation_lines(op, active, self.size.height, op.snapshot())
+            )
+        else:
+            update_static(label, "Idle · run a pipeline or open recipes")
+        attention = self.root_screen.query_one("#overview-attention", Static)
+        items = self.overview_attention()
+        attention.display = bool(items)
+        update_static(
+            attention,
+            Text("\n".join(list(items)[:3]), style="#e0af68", no_wrap=True, overflow="ellipsis"),
+        )
+        note = self.root_screen.query_one("#overview-history-note", Static)
+        update_static(note, self.overview_history_note)
+        note.display = bool(self.overview_history_note)
+
+    def overview_actions(self) -> dict[str, Callable[[], object]]:
+        op = self.controller.current
+        row = self.state.rows.get(self.state.selection or "")
+        actions: dict[str, Callable[[], object]] = {}
+        if op and (self.controller.active() or op.id != self.overview_dismissed):
+            actions[
+                "Open current operation" if self.controller.active() else "Inspect last outcome"
+            ] = partial(self.show_operation, op)
+            actions.update(self.operation_links(op, None, None))
+            if op.reference:
+                actions["Inspect exact request reference"] = partial(self.copy_value, op.reference)
+            if self.controller.active():
+                actions["Request cancellation"] = self.action_interrupt
+            else:
+                actions["Dismiss last outcome"] = self.dismiss_overview
+        if row:
+            actions["Inspect selected run"] = partial(self.open_overview_run, row)
+            if not isinstance(row.value, Operation):
+                actions.update(
+                    (f"Selected run · {label}", callback)
+                    for label, callback in self.overview_run_links(
+                        row.id, document(row.value)
+                    ).items()
+                )
+        if not self.controller.active():
+            actions["Run pipeline"] = partial(self.open_action, BY_KEY["pipeline run"])
+        actions.update(self.overview_attention())
+        actions.update(
+            {
+                "Open recipes": partial(self.open_overview_area, "Recipes & Profiles"),
+                "Browse data": partial(self.open_overview_area, "Data"),
+                "All runs": partial(self.open_overview_area, "Runs"),
+                "Workspace status details": self.show_overview_status,
+            }
+        )
+        return actions
+
+    @work(exit_on_error=False)
+    async def open_overview_area(self, area: str) -> None:
+        await self.switch(area)
+
+    def dismiss_overview(self) -> None:
+        if self.controller.current and not self.controller.active():
+            self.overview_dismissed = self.controller.current.id
+            self.paint_overview()
+
+    def open_overview_run(self, row: Row) -> None:
+        if isinstance(row.value, Operation):
+            self.show_operation(row.value)
+        else:
+            self.open_managed_run(row.id)
+
     def search_scope(self) -> str:
         if self.area == "Runs" and self.view == "Retained":
             return "Retained artifacts"
@@ -268,26 +630,27 @@ class ForgeApp(App[None]):
 
     def render_rows(self) -> None:
         table = self.query_one("#results", Results)
-        table.border_title = self.view
+        table.border_title = "Recent runs · UTC" if self.area == "Overview" else self.view
         page = self.state
         table.clear(columns=True)
+        table.display = self.area != "Overview" or bool(page.rows)
         first = next(iter(page.rows.values()), None)
         if first is None:
             return
-        layout = visible(
-            columns(self.view, first.name, first.kind, first.state, first.value),
-            table.size.width or self.size.width - 4,
-        )
+
+        def row_columns(row: Row) -> tuple[Cell, ...]:
+            if self.area != "Overview":
+                return columns(self.view, row.name, row.kind, row.state, row.value)
+            return overview.run_columns(row.name, row.state, row.value, self.size.width)
+
+        layout = visible(row_columns(first), table.size.width or self.size.width - 4)
         table.add_column("", width=1, key="mark")
         for cell in layout:
             table.add_column(cell.label, width=cell.width, key=cell.label)
         if page.selection not in page.rows:
             page.selection = first.id
         for row in page.rows.values():
-            by_name = {
-                cell.label: cell
-                for cell in columns(self.view, row.name, row.kind, row.state, row.value)
-            }
+            by_name = {cell.label: cell for cell in row_columns(row)}
             table.add_row(
                 Text("›" if page.selection == row.id else "", style="#7dcfff"),
                 *(cell_text(by_name[c.label]) if c.label in by_name else Text("—") for c in layout),
@@ -368,7 +731,9 @@ class ForgeApp(App[None]):
         row = self.state.rows.get(self.state.selection or "")
         self.query_one("#inspect-selected", Button).disabled = row is None
         self.query_one("#edit-source", Button).display = bool(row and row.path)
-        self.query_one("#context-menu", Button).disabled = not bool(self.related(row))
+        self.query_one("#context-menu", Button).disabled = self.area != "Overview" and not bool(
+            self.related(row)
+        )
         inspector = self.query_one("#inspector", Static)
         inspector.border_title = row.name if row else "Selection"
         inspector.update(fields(row.value) if row else Text("Select a resource"))
@@ -391,8 +756,8 @@ class ForgeApp(App[None]):
         if isinstance(row.value, Operation):
             self.show_operation(row.value)
             return
-        if row.id == "doctor" and self.area == "Overview":
-            self.open_action(BY_KEY["doctor"])
+        if self.area == "Overview":
+            self.open_overview_run(row)
             return
         actions: dict[str, Callable[[], object]] = {
             "Copy ID": lambda: self.copy_value(row.reference or row.id)
@@ -587,10 +952,80 @@ class ForgeApp(App[None]):
     @work(exit_on_error=False)
     async def open_managed_run(self, identity: str) -> None:
         try:
-            item = await disk(read_managed_report, self.context.paths.runs_dir, identity)
-            self.push_screen(Inspection(identity, item))
+            item = {
+                **await disk(read_managed_report, self.context.paths.runs_dir, identity),
+                "run_id": identity,
+            }
+            self.push_screen(
+                Inspection(identity, item, actions=self.overview_run_links(identity, item))
+            )
         except Exception as error:
             self.push_screen(Detail(identity, str(error), raw=True))
+
+    def overview_run_links(
+        self, identity: str, item: Mapping[str, object]
+    ) -> dict[str, Callable[[], object]]:
+        links: dict[str, Callable[[], object]] = {"Copy run ID": partial(self.copy_value, identity)}
+        if not MANAGED_RUN.fullmatch(identity):
+            links["Open report"] = partial(
+                self.open_action, BY_KEY["runs report"], None, {"reference": identity}
+            )
+            links["View run logs"] = partial(
+                self.open_action, BY_KEY["runs logs"], None, {"reference": identity}
+            )
+            if overview.pipeline_recovery(item):
+                links["Resume retained pipeline"] = partial(
+                    self.open_action, BY_KEY["pipeline resume"], None, {"reference": identity}
+                )
+        if self.overview_needs_registration(item) and (family := identity.split("-")[0]) in {
+            "normalize",
+            "merge",
+        }:
+            links["Recover registration"] = partial(
+                self.open_action,
+                BY_KEY[family + " register"],
+                None,
+                {"reference": str(item["execution_receipt"])},
+            )
+        if MANAGED_RUN.fullmatch(identity):
+            links["View engine logs"] = partial(self.open_overview_logs, identity)
+        for candidate in (item, *overview.stages(item)):
+            prepared = document(candidate.get("prepared"))
+            for key, label in (
+                ("batch", "Inspect prepared batch"),
+                ("job", "Inspect prepared job"),
+            ):
+                reference = prepared.get(key)
+                if isinstance(reference, str) and reference:
+                    links[f"{label} · {Path(reference).name}"] = partial(
+                        self.open_overview_artifact, reference
+                    )
+        for publication in overview.publications(item):
+            links[f"Publication {publication}"] = partial(
+                self.open_overview_publication, publication
+            )
+        return links
+
+    @work(exit_on_error=False)
+    async def open_overview_artifact(self, reference: str) -> None:
+        path = Path(reference)
+        try:
+            value = await disk(overview.read_artifact, self.context.paths.runs_dir, path)
+            self.push_screen(Detail(str(path), value, raw=True))
+        except Exception as error:
+            self.push_screen(Inspection("Prepared artifact unavailable", {"error": str(error)}))
+
+    @work(exit_on_error=False)
+    async def open_overview_logs(self, identity: str) -> None:
+        try:
+            logs = await disk(read_managed_logs, self.context.paths.runs_dir, identity)
+            self.push_screen(Inspection(f"Engine logs · {identity}", logs))
+        except Exception as error:
+            self.push_screen(Inspection("Engine logs unavailable", {"error": str(error)}))
+
+    @work(exit_on_error=False)
+    async def open_overview_publication(self, identity: int) -> None:
+        await self.inspect_publication(identity)
 
     def copy_value(self, value: str) -> None:
         self.push_screen(Detail("Value", value, raw=True))
@@ -606,6 +1041,12 @@ class ForgeApp(App[None]):
             await self.switch(self.area, VIEWS[self.area][int(key.split("-")[1])])
         elif key == "context-menu":
             self.action_context()
+        elif key == "overview-primary":
+            op = self.controller.current
+            if op and (self.controller.active() or op.id != self.overview_dismissed):
+                self.show_operation(op)
+            else:
+                self.open_action(BY_KEY["pipeline run"])
         elif key == "inspect-selected":
             row = self.state.rows.get(self.state.selection or "")
             if row:
@@ -619,6 +1060,15 @@ class ForgeApp(App[None]):
         if self.screen != self.root_screen:
             return
         row = self.state.rows.get(self.state.selection or "")
+        if self.area == "Overview":
+            choices = self.overview_actions()
+
+            def choose_overview(key: str | None) -> None:
+                if key is not None:
+                    choices[key]()
+
+            self.push_screen(ActionMenu("Overview actions", tuple(choices)), choose_overview)
+            return
         keys = self.related(row)
         if keys:
 
@@ -861,7 +1311,13 @@ class ForgeApp(App[None]):
             return
         op = self.controller.current
         if op is None:
+            self.paint_overview()
             return
+        if self.area == "Overview":
+            self.paint_overview()
+            if not self.controller.active() and op.id != self.overview_completed:
+                self.overview_completed = op.id
+                self.request_query()
         widget = self.root_screen.query_one("#operation", Static)
         label = f"{op.title} · {op.state}"
         phase = op.snapshot()
@@ -908,6 +1364,12 @@ class ForgeApp(App[None]):
             links["Resume retained pipeline"] = partial(
                 self.open_action, BY_KEY["pipeline resume"], None, {"reference": identity}
             )
+        if op.title.startswith("pipeline ") and isinstance(
+            snapshot := op.snapshot(), PipelineSnapshot
+        ):
+            links["View run logs"] = partial(
+                self.open_action, BY_KEY["runs logs"], None, {"reference": snapshot.run_id}
+            )
         if result.get("run_id"):
             ref = str(result["run_id"])
             links["Open report"] = lambda: self.open_action(
@@ -916,14 +1378,20 @@ class ForgeApp(App[None]):
         if (
             result.get("execution_receipt")
             and result.get("registration") != "registered"
+            and overview.execution_key(result) not in self.overview_recovered
             and (key := op.title.split()[0] + " register") in BY_KEY
         ):
             ref = str(result["execution_receipt"])
             links["Recover registration"] = lambda: self.open_action(
                 BY_KEY[key], Row(ref, ref, "Intent", "", {}, ref)
             )
-            links["Run logs"] = partial(
-                self.open_action, BY_KEY["runs logs"], None, {"reference": ref}
+        execution = result.get("execution_id")
+        if isinstance(execution, str) and MANAGED_RUN.fullmatch(execution):
+            links["Open execution report"] = partial(self.open_managed_run, execution)
+            links["View engine logs"] = partial(self.open_overview_logs, execution)
+        for publication in overview.publications(result):
+            links[f"Publication {publication}"] = partial(
+                self.open_overview_publication, publication
             )
         ids = dict.fromkeys(
             str(value) for value in document(result.get("catalogue_dataset_ids")).values()
@@ -989,3 +1457,8 @@ def review_text(values: Values) -> str:
         if value not in ("", False)
     )
     return "Environment  Testing" + ("\n" + selected if selected else "")
+
+
+def update_static(widget: Static, value: Text | str) -> None:
+    if widget.content != value:
+        widget.update(value)

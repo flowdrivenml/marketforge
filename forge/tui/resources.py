@@ -9,7 +9,7 @@ from forge.datasets.query import publications
 from forge.historical.archives.storage.files import disk
 from forge.historical.conversion.recipes import library as conversion_library
 from forge.historical.profiles.service import discover
-from forge.orchestration.inspection import list_runs, run_page
+from forge.orchestration.inspection import run_page
 from forge.shared.config.library import list_config_names
 from forge.startup.context import ApplicationContext
 from forge.tui.actions import Values
@@ -65,41 +65,7 @@ async def load_rows(
     async def inspect(key: str, values: Values) -> object:
         return await controller.invoke(key, values, context, lambda _: None, controller.editor)
 
-    if area == "Overview":
-        rows = [
-            Row(
-                "project",
-                paths.root.name,
-                "Workspace",
-                "Local",
-                {
-                    "workspace": str(paths.root),
-                    "storage": str(paths.data_root),
-                    "registry": "Explicit testing route",
-                },
-            ),
-            Row(
-                "doctor",
-                "Check prerequisites",
-                "Diagnostics",
-                "Unchecked",
-                {"action": "doctor"},
-            ),
-        ]
-        for index, item in enumerate(await disk(list_runs, paths.runs_dir, 8)):
-            run_id = value_at(item, "run_id", str(index))
-            state = value_at(item, "state", value_at(item, "status"))
-            rows.append(
-                Row(
-                    run_id,
-                    value_at(item, "name", run_id[:8]),
-                    "Retained run",
-                    "Last recorded " + state,
-                    item,
-                    run_id,
-                )
-            )
-    elif (family := FAMILIES.get(view)) is not None and area in {"Workflows", "Markets"}:
+    if (family := FAMILIES.get(view)) is not None and area in {"Workflows", "Markets"}:
         directory = library(context, family)
         rows = [
             Row(

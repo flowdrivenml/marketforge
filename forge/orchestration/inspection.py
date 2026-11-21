@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from pathlib import Path
 from uuid import UUID
 
@@ -83,14 +84,14 @@ def read_logs(root: Path, run_id: str, limit: int = 100) -> dict[str, object]:
     }
 
 
+MANAGED_RUN = re.compile(
+    r"(?:normalize|merge|convert)-(?:execute|prepare|retry|register|recovery)-[0-9a-f-]{1,64}"
+)
+
+
 def read_managed_report(root: Path, run_id: str) -> dict[str, object]:
     """Read a known child execution receipt by its safe directory identity."""
-    import re
-
-    if not re.fullmatch(
-        r"(?:normalize|merge|convert)-(?:execute|prepare|retry|register|recovery)-[0-9a-f-]{1,64}",
-        run_id,
-    ):
+    if not MANAGED_RUN.fullmatch(run_id):
         return read_report(root, run_id)
     directory = root / run_id
     if directory.is_symlink() or directory.resolve().parent != root.resolve():
@@ -113,7 +114,13 @@ def read_managed_report(root: Path, run_id: str) -> dict[str, object]:
 
 
 def run_page(
-    root: Path, limit: int, offset: int, search: str = "", *, pipeline_only: bool = False
+    root: Path,
+    limit: int,
+    offset: int,
+    search: str = "",
+    *,
+    pipeline_only: bool = False,
+    include_managed: bool = False,
 ) -> tuple[list[dict[str, object]], bool]:
     """Search retained report identities before applying a bounded result page."""
     if not 1 <= limit <= 100 or offset < 0:
@@ -128,7 +135,8 @@ def run_page(
             if not entry.is_dir(follow_symlinks=False):
                 continue
             try:
-                UUID(entry.name)
+                if not (include_managed and MANAGED_RUN.fullmatch(entry.name)):
+                    UUID(entry.name)
                 candidates.append((entry.stat().st_mtime, entry.name))
             except (ValueError, FileNotFoundError):
                 continue
@@ -138,8 +146,8 @@ def run_page(
         offset if not search and not pipeline_only else 0 :
     ]:
         try:
-            report = read_report(root, name)
-        except (MarketForgeError, OSError) as error:
+            report = read_managed_report(root, name) if include_managed else read_report(root, name)
+        except (MarketForgeError, OSError, ValueError) as error:
             report = {"status": "unavailable", "error": str(error)}
         if pipeline_only and report.get("kind") != "historical_pipeline":
             continue
@@ -155,3 +163,23 @@ def run_page(
         if len(result) > limit:
             break
     return result[:limit], len(result) > limit
+
+
+def read_managed_logs(root: Path, run_id: str) -> dict[str, object]:
+    """Read a bounded tail from the fixed engine log names."""
+    if not MANAGED_RUN.fullmatch(run_id):
+        raise MarketForgeError("Expected a managed execution identity.")
+    directory = root / run_id
+    if directory.is_symlink() or directory.resolve().parent != root.resolve():
+        raise MarketForgeError("Unsafe managed execution directory.")
+    logs: dict[str, object] = {}
+    for prefix in ("engine", "validation"):
+        for stream in ("stdout", "stderr"):
+            name = f"{prefix}-{stream}.log"
+            path = directory / name
+            if path.is_file() and not path.is_symlink():
+                with path.open("rb") as handle:
+                    end = handle.seek(0, os.SEEK_END)
+                    handle.seek(max(0, end - 12288))
+                    logs[name] = handle.read(12288).decode(errors="replace")
+    return logs or {"status": "No retained engine logs"}
