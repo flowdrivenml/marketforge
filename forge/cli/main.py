@@ -37,6 +37,7 @@ from forge.cli.commands.maintenance import (
 from forge.cli.commands.markets import configure as configure_markets
 from forge.cli.commands.merge import configure as configure_merge
 from forge.cli.commands.normalization import configure as configure_normalization
+from forge.cli.commands.pipeline import configure as configure_pipeline
 from forge.cli.commands.profiles import configure as configure_profiles
 from forge.cli.commands.registration import configure as configure_registration
 from forge.shared.config.library import resolve_config_file
@@ -112,6 +113,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     configure_engine(
         commands.add_parser("engine", help="Build and inspect approved managed engines.")
+    )
+
+    configure_pipeline(
+        commands.add_parser(
+            "pipeline", help="Run acquisition, normalization and merge from one recipe."
+        )
     )
 
     configure_normalization(

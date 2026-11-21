@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
 
 from forge.datasets.registration import register_files
+from forge.historical.archives.selection import ArchiveSelectionError
 from forge.historical.archives.storage.acquire import root_key
 from forge.historical.archives.storage.files import disk
 from forge.historical.engine.managed import checksum, resolve, supervised
@@ -125,10 +126,10 @@ def verify_inventory(
     require_commit_checksums: bool,
     selected_only: bool = False,
 ) -> dict[str, str]:
-    sizes = {item["path"]: item["size_bytes"] for item in entries}
+    sizes: dict[str, int] = {item["path"]: item["size_bytes"] for item in entries}
     if len(sizes) != len(entries) or set(sizes).intersection(metadata):
         raise MarketForgeError("Duplicate manifest inventory path.")
-    result = {}
+    result: dict[str, str] = {}
     for name in (*metadata, *sizes):
         relative = Path(name)
         file = root / relative
@@ -148,9 +149,10 @@ def verify_inventory(
     if sidecar.is_symlink():
         raise MarketForgeError("Publication checksum sidecar must not be a symlink.")
     has_sidecar = sidecar.is_file()
-    stored = json.loads(sidecar.read_bytes()) if has_sidecar else None
+    parsed: object = json.loads(sidecar.read_bytes()) if has_sidecar else None
+    stored = cast(dict[str, object], parsed) if isinstance(parsed, dict) else None
     if has_sidecar:
-        extras = set(stored) - result.keys() if isinstance(stored, dict) else set()
+        extras = set(stored) - result.keys() if stored is not None else set[str]()
         normalized_provenance = {"processing-job.sha256", "processing-runtime.sha256"}
         if (
             extras >= normalized_provenance if selected_only else extras == normalized_provenance
@@ -165,8 +167,7 @@ def verify_inventory(
                     raise MarketForgeError(f"Unsafe checksum provenance: {name}")
                 result[name] = checksum(artifact)
     matches = (
-        isinstance(stored, dict)
-        and all(stored.get(name) == digest for name, digest in result.items())
+        stored is not None and all(stored.get(name) == digest for name, digest in result.items())
         if selected_only
         else stored == result
     )
@@ -241,11 +242,25 @@ def hash_inputs(paths: ProjectPaths, tasks: list[dict[str, Any]]) -> dict[str, s
 async def pin_raw_inputs(
     paths: ProjectPaths,
     jobs: list[dict[str, Any]],
+    *,
+    expected: dict[str, tuple[int, str]] | None = None,
 ) -> dict[str, dict[str, str]]:
-    hashes = await disk(hash_inputs, paths, [task for job in jobs for task in job["tasks"]])
+    try:
+        hashes = await disk(hash_inputs, paths, [task for job in jobs for task in job["tasks"]])
+    except MarketForgeError as error:
+        if expected is not None:
+            raise ArchiveSelectionError(str(error)) from error
+        raise
     async with testing_connection(testing_dsn(paths.root)) as c:
         async with c.transaction():
-            await raw_inputs(c, paths, {"raw_sha256": hashes})
+            if expected is None:
+                await raw_inputs(c, paths, {"raw_sha256": hashes})
+            elif {
+                path: digest for path, (_, digest) in expected.items()
+            } != hashes or await raw_link_map(c, paths, {"raw_sha256": hashes}) != expected:
+                raise ArchiveSelectionError(
+                    "Submitted jobs differ from the exact acquired archive selection."
+                )
     return {
         str(job["job_id"]): {
             str((paths.root / task["input_path"]).resolve()): hashes[
@@ -298,7 +313,7 @@ async def register_verified(
         (dict(e) for e in verified),
         key=lambda e: (e["instrument_namespace"], e["engine_dataset_id"]),
     )
-    receipt = {
+    receipt: dict[str, Any] = {
         "schema_version": 1,
         "environment": "testing",
         "publication": "committed",
@@ -318,7 +333,7 @@ async def register_verified(
                 evidence["raw_sha256"] = hashes
         database_ids: dict[str, int] = {}
         file_states: dict[str, str] = {}
-        publications = {}
+        publications: dict[str, dict[str, Any]] = {}
         async with testing_connection(testing_dsn(paths.root)) as c:
             async with c.transaction():
                 for evidence in ordered:
@@ -333,7 +348,7 @@ async def register_verified(
                         raw = set(links.values())
                         parents = []
                     else:
-                        raw = set()
+                        raw = set[tuple[int, str]]()
                         parents = await dataset_inputs(c, evidence)
                     publication = await register_files(
                         c, evidence, execution=execution, raw=raw, parents=parents

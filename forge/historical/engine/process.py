@@ -1,0 +1,122 @@
+"""Async ownership of noninteractive historical engine processes."""
+
+import asyncio
+import contextlib
+import os
+import signal
+import subprocess
+from collections.abc import Callable
+from pathlib import Path
+
+from forge.historical.archives.storage.files import disk as joined_io
+from forge.shared.errors import MarketForgeError
+
+Lifecycle = Callable[[str], None]
+PreparationObserver = Callable[[Path, Path], None]
+
+
+def ignore_preparation(_job: Path, _report: Path) -> None:
+    """Default observer for callers that do not retain a pipeline checkpoint."""
+
+
+async def supervise(
+    argv: list[str],
+    root: Path,
+    directory: Path,
+    *,
+    grace: float = 10,
+    log_prefix: str = "engine",
+) -> tuple[int, bool]:
+    """Keep process groups and log readers within the lifetime of the caller."""
+    launch = asyncio.create_task(
+        asyncio.create_subprocess_exec(
+            *argv,
+            cwd=root,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
+        )
+    )
+    interrupted = False
+    try:
+        process = await asyncio.shield(launch)
+    except asyncio.CancelledError:
+        process = await launch
+        interrupted = True
+
+    async def capture(stream: asyncio.StreamReader, name: str) -> None:
+        remaining = 16 * 1024 * 1024
+        failure: OSError | None = None
+        output = None
+        try:
+            try:
+                output = (directory / name).open("wb")
+            except OSError as error:
+                failure = error
+            while chunk := await stream.read(65536):
+                if remaining and output is not None and failure is None:
+                    try:
+                        remaining -= output.write(chunk[:remaining])
+                    except OSError as error:
+                        failure = error
+            if failure:
+                raise failure
+        finally:
+            if output is not None:
+                output.close()
+
+    assert process.stdout is not None and process.stderr is not None
+    readers = asyncio.gather(
+        capture(process.stdout, f"{log_prefix}-stdout.log"),
+        capture(process.stderr, f"{log_prefix}-stderr.log"),
+        return_exceptions=True,
+    )
+    waiting = asyncio.create_task(process.wait())
+
+    def signal_group(number: int) -> None:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, number)
+
+    try:
+        if not interrupted:
+            await asyncio.shield(waiting)
+            await asyncio.shield(readers)
+    except asyncio.CancelledError:
+        interrupted = True
+    if interrupted:
+        signal_group(signal.SIGTERM)
+        try:
+            async with asyncio.timeout(grace):
+                await asyncio.shield(waiting)
+                await asyncio.shield(readers)
+        except TimeoutError:
+            signal_group(signal.SIGKILL)
+            await waiting
+            await readers
+    for error in readers.result():
+        if isinstance(error, OSError):
+            raise error
+    code = waiting.result()
+    return code, interrupted or code in {130, -signal.SIGINT, -signal.SIGTERM, -signal.SIGKILL}
+
+
+async def check(
+    argv: list[str], root: Path, directory: Path, label: str
+) -> subprocess.CompletedProcess[str]:
+    """Run a bounded engine preflight without blocking presentation or losing diagnostics."""
+    async with asyncio.timeout(30) as duration:
+        code, interrupted = await supervise(argv, root, directory, log_prefix=label)
+    if duration.expired():
+        raise MarketForgeError(f"Engine {label} timed out; inspect {directory}.")
+    if interrupted:
+        raise asyncio.CancelledError
+    output = await joined_io(
+        lambda: (directory / f"{label}-stdout.log").read_text(errors="replace")
+    )
+    if code:
+        errors = await joined_io(
+            lambda: (directory / f"{label}-stderr.log").read_text(errors="replace")
+        )
+        output += errors
+    return subprocess.CompletedProcess(argv, code, output)

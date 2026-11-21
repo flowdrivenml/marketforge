@@ -14,6 +14,14 @@ from uuid import uuid4
 from pydantic import Field, model_validator
 
 from forge.historical.engine.managed import checksum, resolve, supervised
+from forge.historical.engine.process import (
+    Lifecycle,
+    PreparationObserver,
+    check,
+    ignore_preparation,
+    joined_io,
+    supervise,
+)
 from forge.historical.merge.config import (
     DatabaseID,
     DerivedRecipe,
@@ -116,7 +124,11 @@ async def select_inputs(
             and all(isinstance(item, dict) for item in job["inputs"])
         ):
             submitted_files = job["inputs"]
-            ids = [item.get("dataset_id") for item in submitted_files]
+            assert submitted_files is not None
+            candidates = [item.get("dataset_id") for item in submitted_files]
+            if any(type(identity) is not int for identity in candidates):
+                raise MarketForgeError("Merge input requires a registered file dataset ID.")
+            ids = [identity for identity in candidates if isinstance(identity, int)]
         else:
             raise MarketForgeError("Prepare a new merge from registered file dataset IDs.")
     if ids is not None and (
@@ -257,7 +269,7 @@ async def select_inputs(
     if submitted_files is not None:
         fields = {"stream_id", "stream_rank", "content_type"}
         legacy = recovery and all(not fields.intersection(item) for item in submitted_files)
-        expected_files = []
+        expected_files: list[dict[str, Any]] = []
         for item in result:
             if legacy:
                 expected_files.append(file_pins(item))
@@ -335,20 +347,33 @@ def coverage(inputs: list[dict[str, Any]], start_ns: int, end_ns: int) -> dict[s
     }
 
 
+def validation_command(
+    paths: ProjectPaths, binary: Path, source: Path, config: Path | None
+) -> list[str]:
+    return [
+        str(binary),
+        "--validate-job",
+        str(source),
+        "--project-root",
+        str(paths.root),
+        "--config",
+        str(config or runtime_path(paths)),
+    ]
+
+
 def validate_job(
     paths: ProjectPaths, binary: Path, source: Path, config: Path | None = None
 ) -> None:
-    response = supervised(
-        [
-            str(binary),
-            "--validate-job",
-            str(source),
-            "--project-root",
-            str(paths.root),
-            "--config",
-            str(config or runtime_path(paths)),
-        ],
-        cwd=paths.root,
+    response = supervised(validation_command(paths, binary, source, config), cwd=paths.root)
+    if response.returncode:
+        raise MarketForgeError(f"Production merge validation failed: {response.stdout}")
+
+
+async def validate_async(
+    paths: ProjectPaths, binary: Path, source: Path, config: Path, directory: Path
+) -> None:
+    response = await check(
+        validation_command(paths, binary, source, config), paths.root, directory, "validation"
     )
     if response.returncode:
         raise MarketForgeError(f"Production merge validation failed: {response.stdout}")
@@ -457,7 +482,7 @@ def assign_ranks(
     order = sorted(groups, key=requested) if candidates else groups
     reserved = set(overrides.values())
     available = (rank for rank in range(2**32) if rank not in reserved)
-    summary = []
+    summary: list[dict[str, Any]] = []
     for stream in order:
         files = groups[stream]
         if len({item["content_type"] for item in files}) != 1:
@@ -480,10 +505,10 @@ def effective_runtime(paths: ProjectPaths, binary: Path, config: Path) -> dict[s
     result = supervised([str(binary), "--runtime-settings", str(config)], cwd=paths.root)
     if result.returncode:
         raise MarketForgeError(f"Could not resolve merge runtime: {result.stdout}")
-    settings = json.loads(result.stdout)
+    settings: object = json.loads(result.stdout)
     if not isinstance(settings, dict):
         raise MarketForgeError("Expected merge runtime settings from the engine.")
-    return settings
+    return cast(dict[str, Any], settings)
 
 
 def prepare_job(
@@ -496,7 +521,106 @@ def prepare_job(
     discovery: dict[str, Any],
 ) -> dict[str, Any]:
     selected = asyncio.run(select_inputs(paths, ids=ids))
-    candidates = {}
+    return assemble_job(paths, recipe, name, identity, directory, selected, discovery)
+
+
+async def prepare_direct(
+    paths: ProjectPaths,
+    recipe: Recipe,
+    name: str,
+    *,
+    historical: Path,
+    executable: Path,
+    lifecycle: Lifecycle = lambda _: None,
+    on_candidate: PreparationObserver = ignore_preparation,
+) -> dict[str, Any]:
+    selected = await select_inputs(paths, ids=recipe.dataset_ids)
+    identity = uuid4().int & (2**63 - 1)
+    directory = paths.runs_dir / f"merge-prepare-{identity}"
+    result = await joined_io(
+        lambda: assemble_job(
+            paths,
+            recipe,
+            name,
+            identity,
+            directory,
+            selected,
+            {},
+            validate=False,
+        )
+    )
+    source = Path(result["job_path"])
+    config = directory / "general.toml"
+    result["candidate_executable_sha256"] = copy_runtime(
+        result, executable, historical / "general.toml", config
+    )
+    candidate = directory / "prepare-candidate.json"
+    write_job(candidate, result)
+    on_candidate(source, candidate)
+    return await validate_candidate(paths, source, result, executable, lifecycle=lifecycle)
+
+
+async def validate_candidate(
+    paths: ProjectPaths,
+    source: Path,
+    result: dict[str, Any],
+    executable: Path,
+    *,
+    lifecycle: Lifecycle,
+) -> dict[str, Any]:
+    root = source.parent
+    config = root / "general.toml"
+    digest = result["candidate_executable_sha256"]
+    if (
+        checksum(executable) != digest
+        or checksum(config) != result["configuration_sha256"]
+        or checksum(source) != result["submitted_sha256"]
+    ):
+        raise MarketForgeError("Retained merge preparation changed before validation.")
+    logs = root / f"validation-{uuid4().hex}"
+    logs.mkdir()
+    try:
+        lifecycle("validate")
+        await validate_async(paths, executable, source, config, logs)
+        finish_preparation(result, executable, source, digest)
+    except (MarketForgeError, OSError) as error:
+        result["validation_error"] = str(error)
+        result["report_path"] = str(logs / "prepare-report.json")
+    else:
+        result["report_path"] = str(root / "prepare-report.json")
+    result["validation_logs"] = str(logs)
+    write_job(Path(result["report_path"]), result)
+    return result
+
+
+def copy_runtime(report: dict[str, Any], binary: Path, source: Path, config: Path) -> str:
+    digest = checksum(binary)
+    shutil.copyfile(source, config)
+    report["configuration_origin"] = str(source)
+    report["configuration_sha256"] = checksum(config)
+    return digest
+
+
+def finish_preparation(report: dict[str, Any], binary: Path, source: Path, digest: str) -> None:
+    if checksum(binary) != digest or checksum(source) != report["submitted_sha256"]:
+        raise MarketForgeError(
+            "Managed merge executable or generated job changed during validation."
+        )
+    report.update(status="prepared", compatibility="validated", executable_sha256=digest)
+
+
+def assemble_job(
+    paths: ProjectPaths,
+    recipe: Recipe | DerivedRecipe,
+    name: str,
+    identity: int,
+    directory: Path,
+    selected: list[dict[str, Any]],
+    discovery: dict[str, Any],
+    *,
+    validate: bool = True,
+) -> dict[str, Any]:
+    candidates: dict[int, dict[str, Any]] = {}
     if discovery:
         candidates = {item["database_id"]: item for item in discovery["candidates"]}
         for item in selected:
@@ -569,23 +693,16 @@ def prepare_job(
         "report_path": str(directory / "prepare-report.json"),
         "coverage": selected_coverage,
     }
-    try:
-        binary = resolve(paths, "merge")
-        digest = checksum(binary)
-        config = directory / "general.toml"
-        shutil.copyfile(runtime_path(paths), config)
-        report["configuration_origin"] = str(runtime_path(paths))
-        report["configuration_sha256"] = checksum(config)
-        validate_job(paths, binary, source, config)
-        if checksum(binary) != digest or checksum(source) != report["submitted_sha256"]:
-            raise MarketForgeError(
-                "Managed merge executable or generated job changed during validation."
-            )
-    except (MarketForgeError, OSError) as error:
-        report["validation_error"] = str(error)
-    else:
-        report.update(status="prepared", compatibility="validated", executable_sha256=digest)
-    write_job(directory / "prepare-report.json", report)
+    if validate:
+        try:
+            binary = resolve(paths, "merge")
+            config = directory / "general.toml"
+            digest = copy_runtime(report, binary, runtime_path(paths), config)
+            validate_job(paths, binary, source, config)
+            finish_preparation(report, binary, source, digest)
+        except (MarketForgeError, OSError) as error:
+            report["validation_error"] = str(error)
+        write_job(directory / "prepare-report.json", report)
     return report
 
 
@@ -702,10 +819,24 @@ def same_inputs(saved: list[dict[str, Any]], selected: list[dict[str, Any]]) -> 
 
 
 def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str, Any]:
+    return asyncio.run(execute_async(paths, source, tui=tui, standalone=True))
+
+
+async def execute_async(
+    paths: ProjectPaths,
+    source: Path,
+    *,
+    tui: bool = False,
+    standalone: bool = False,
+    execution_directory: Path | None = None,
+    historical: Path | None = None,
+    executable: Path | None = None,
+    lifecycle: Lifecycle = lambda _: None,
+) -> dict[str, Any]:
     if tui and not all(os.isatty(fd) for fd in (0, 1, 2)):
         raise MarketForgeError("--tui requires an interactive terminal.")
-    binary = resolve(paths, "merge")
-    directory = paths.runs_dir / f"merge-execute-{uuid4().hex}"
+    binary = executable or resolve(paths, "merge")
+    directory = execution_directory or paths.runs_dir / f"merge-execute-{uuid4().hex}"
     directory.mkdir(parents=True, exist_ok=False)
     pinned = directory / "marketforge-merge"
     digest = checksum(binary)
@@ -714,15 +845,25 @@ def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str
     if checksum(pinned) != digest:
         raise MarketForgeError("Managed merge executable changed during execution preparation.")
     submission = directory / "submitted-merge.json"
-    submission.write_bytes(source.read_bytes())
+    await joined_io(lambda: submission.write_bytes(source.read_bytes()))
     submitted_sha = checksum(submission)
     config = directory / "general.toml"
-    shutil.copyfile(runtime_path(paths), config)
+    runtime = historical / "general.toml" if historical else runtime_path(paths)
+    shutil.copyfile(runtime, config)
     configuration_sha256 = checksum(config)
-    validate_job(paths, pinned, submission, config)
-    settings = effective_runtime(paths, pinned, config)
+    if standalone:
+        validate_job(paths, pinned, submission, config)
+        settings = effective_runtime(paths, pinned, config)
+    else:
+        await validate_async(paths, pinned, submission, config, directory)
+        effective = await check(
+            [str(pinned), "--runtime-settings", str(config)], paths.root, directory, "runtime"
+        )
+        if effective.returncode:
+            raise MarketForgeError(f"Could not resolve merge runtime: {effective.stdout}")
+        settings = cast(dict[str, Any], json.loads(effective.stdout))
     job = read_json(submission)
-    selected = asyncio.run(select_inputs(paths, job=job))
+    selected = await select_inputs(paths, job=job)
     report = source.parent / "prepare-report.json"
     prepared = read_json(report) if report.is_file() else {}
     if prepared and (
@@ -779,22 +920,23 @@ def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str
         raise MarketForgeError("Validated merge job or executable changed before launch.")
     write_job(intent, receipt)
     try:
-        code, interrupted = run_process(
-            [
-                str(pinned),
-                "--job",
-                str(submission),
-                "--project-root",
-                str(paths.root),
-                "--config",
-                str(config),
-                "--result-file",
-                str(engine_result_path),
-                *(["--config-origin", str(runtime_path(paths))] if tui else []),
-            ],
-            paths.root,
-            directory,
-            tui=tui,
+        lifecycle("execute")
+        argv = [
+            str(pinned),
+            "--job",
+            str(submission),
+            "--project-root",
+            str(paths.root),
+            "--config",
+            str(config),
+            "--result-file",
+            str(engine_result_path),
+            *(["--config-origin", str(runtime_path(paths))] if tui else []),
+        ]
+        code, interrupted = (
+            run_process(argv, paths.root, directory, tui=tui)
+            if standalone
+            else await supervise(argv, paths.root, directory)
         )
     except OSError as error:
         receipt.update(status="failed", execution="failed", error=str(error))
@@ -818,6 +960,7 @@ def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str
     write_job(directory / "engine-outcome.json", receipt)
     try:
         if code == 0 and not interrupted:
+            lifecycle("verify")
             try:
                 engine_result = receipt.get("engine_result")
                 if engine_result != {
@@ -831,7 +974,9 @@ def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str
                     raise MarketForgeError(
                         "Merge engine returned inconsistent publication evidence."
                     )
-                evidence = verify_output(paths, output, pinned, selected, job)
+                evidence = await joined_io(
+                    lambda: verify_output(paths, output, pinned, selected, job)
+                )
                 if read_json(output / "merge-runtime.json") != settings:
                     raise MarketForgeError("Committed merge runtime differs from execution intent.")
             except (MarketForgeError, OSError, ValueError, KeyError, TypeError) as error:
@@ -843,6 +988,7 @@ def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str
                         **evidence["manifest"],
                         "bytes_written": evidence["bytes_written"],
                         "engine_dataset_id": evidence["engine_dataset_id"],
+                        "manifest_sha256": evidence["manifest_sha256"],
                     },
                 )
                 receipt["counts"].update(
@@ -850,16 +996,15 @@ def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str
                     verified_publications=1,
                     verified_primary_files=evidence["manifest"]["files_written"],
                 )
-                result = asyncio.run(
-                    register_verified(
-                        paths,
-                        [evidence],
-                        receipt_directory=directory,
-                        execution={
-                            "execution_id": directory.name,
-                            "submitted_sha256": receipt["submitted_sha256"],
-                        },
-                    )
+                lifecycle("register")
+                result = await register_verified(
+                    paths,
+                    [evidence],
+                    receipt_directory=directory,
+                    execution={
+                        "execution_id": directory.name,
+                        "submitted_sha256": receipt["submitted_sha256"],
+                    },
                 )
                 receipt.update(
                     registration=result["registration"],
@@ -877,7 +1022,7 @@ def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str
                     receipt.pop("recovery")
                 else:
                     receipt["registration_error"] = result["error"]
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         interrupted = True
         receipt.update(status="interrupted")
     if not interrupted and not receipt["counts"]["successful"]:
@@ -886,8 +1031,14 @@ def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str
     return receipt
 
 
-async def register(paths: ProjectPaths, source: Path) -> dict[str, Any]:
-    binary = resolve(paths, "merge")
+async def register(
+    paths: ProjectPaths,
+    source: Path,
+    *,
+    lifecycle: Lifecycle = lambda _: None,
+    require_pinned: bool = False,
+) -> dict[str, Any]:
+    binary = None
     execution = None
     intent = None
     selected_primary = None
@@ -899,6 +1050,8 @@ async def register(paths: ProjectPaths, source: Path) -> dict[str, Any]:
         pinned = directory / "marketforge-merge"
         if pinned.is_file() and checksum(pinned) == intent["executable_sha256"]:
             binary = pinned
+        elif require_pinned:
+            raise MarketForgeError("Pinned merge executable changed or is unavailable.")
         submission = directory / "submitted-merge.json"
         if checksum(submission) != intent["submitted_sha256"]:
             raise MarketForgeError("Recovery submission differs from merge execution intent.")
@@ -912,11 +1065,13 @@ async def register(paths: ProjectPaths, source: Path) -> dict[str, Any]:
         source, selected_primary = primary_reference(source)
         root = source.parent if source.name == "manifest.json" else source
         job = read_json(root / "merge-job.json")
+    binary = binary or resolve(paths, "merge")
+    lifecycle("verify")
     selected = await select_inputs(paths, job=job, recovery=True)
     if intent is not None and not same_inputs(intent["inputs"], selected):
         raise MarketForgeError("Recovery inputs differ from merge execution intent.")
     try:
-        evidence = await asyncio.to_thread(verify_output, paths, source, binary, selected, job)
+        evidence = await joined_io(lambda: verify_output(paths, source, binary, selected, job))
     except (ValueError, KeyError, TypeError) as error:
         raise MarketForgeError(f"Invalid merge output evidence: {error}") from error
     if intent and "effective_runtime" in intent:
@@ -924,6 +1079,7 @@ async def register(paths: ProjectPaths, source: Path) -> dict[str, Any]:
             raise MarketForgeError("Committed merge runtime differs from execution intent.")
     if selected_primary is not None:
         evidence["selected_primary"] = selected_primary
+    lifecycle("register")
     return await register_verified(
         paths,
         [evidence],

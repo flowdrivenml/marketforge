@@ -12,7 +12,7 @@ import httpx
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow, class_row
 
-from forge.historical.archives.config import AcquisitionConfig
+from forge.historical.archives.config import AcquisitionConfig, ArchiveRequest
 from forge.historical.archives.discovery import DiscoveryResult, discover, scan_archives
 from forge.historical.archives.models import archive_scope_key
 from forge.historical.archives.progress import (
@@ -22,14 +22,20 @@ from forge.historical.archives.progress import (
     RequestOutcome,
 )
 from forge.historical.archives.registry import CachedRemoteArchive
+from forge.historical.archives.selection import (
+    AcquiredArchive,
+    ArchiveSelection,
+    request_key,
+    revision_time,
+)
 from forge.historical.archives.sources.base import (
     DiscoveryError,
     ProbeEvent,
     UnsupportedRequestError,
 )
 from forge.historical.archives.sources.exchanges import ExchangeSource
-from forge.historical.archives.storage.acquire import acquire
-from forge.historical.archives.storage.files import ArchiveFileError, disk
+from forge.historical.archives.storage.acquire import acquire, root_key
+from forge.historical.archives.storage.files import ArchiveFileError, contained, disk, fingerprint
 from forge.orchestration.artifacts import RunArtifacts
 from forge.shared.async_work import bounded_map
 from forge.shared.database.testing import TestingDatabaseError, testing_connection
@@ -63,6 +69,7 @@ class OperationReport(TypedDict):
     files_total_final: bool
     archive_outcomes: str
     report: str
+    selection: dict[str, object]
 
 
 class Reporter:
@@ -74,6 +81,7 @@ class Reporter:
         self.progress = ProgressState(total_requests)
         self.run_id = new_run_id()
         self.artifacts = RunArtifacts.for_run(context.paths, self.run_id)
+        self.selected: list[AcquiredArchive] = []
         self.counts = self.progress.files
         self.requests: list[dict[str, object]] = []
         self._lock = asyncio.Lock()
@@ -108,6 +116,12 @@ class Reporter:
             "files_total_final": not self.progress.provisional,
             "archive_outcomes": str(self.artifacts.events),
             "report": str(self.artifacts.report),
+            "selection": ArchiveSelection(
+                acquisition_report=self.artifacts.report,
+                archives=sorted(
+                    self.selected, key=lambda a: (a.local_archive_id, a.request.model_dump_json())
+                ),
+            ).model_dump(mode="json"),
         }
         await disk(
             self.artifacts.report.write_text, json.dumps(result, indent=2) + "\n", encoding="utf-8"
@@ -128,12 +142,14 @@ async def _download_scan(
     transfer_slots: asyncio.Semaphore,
     archive_locks: tuple[asyncio.Lock, ...],
     scope_lock: asyncio.Lock,
+    retained: dict[int, AcquiredArchive],
 ) -> int:
     queue: asyncio.Queue[CachedRemoteArchive | None] = asyncio.Queue(maxsize=workers * 2)
 
     refresh_lock = asyncio.Lock()
     refreshed: DiscoveryResult | None = None
     failures = 0
+    unseen_pins = set(retained)
 
     async def worker() -> None:
         nonlocal failures
@@ -194,6 +210,31 @@ async def _download_scan(
                                 )
                             )
 
+                        prior = retained.get(remote.id)
+                        if prior is not None:
+                            await verify_retained(
+                                local_connection, reporter.context.paths.raw_dir, prior
+                            )
+                            reporter.emit(
+                                ProgressEvent(
+                                    "file_finished",
+                                    file_id=remote.id,
+                                    identity=identity,
+                                    file_outcome="reused",
+                                )
+                            )
+                            await reporter.event(
+                                {
+                                    "request_index": request_index,
+                                    "status": "reused",
+                                    "remote_archive_id": prior.remote_archive_id,
+                                    "local_archive_id": prior.local_archive_id,
+                                    "relative_path": prior.relative_path,
+                                    "sha256": prior.sha256,
+                                    "source_object_key": prior.source_object_key,
+                                }
+                            )
+                            continue
                         async with archive_locks[remote.id % len(archive_locks)], transfer_slots:
                             result = await acquire(
                                 local_connection,
@@ -242,6 +283,18 @@ async def _download_scan(
                             }
                         )
                     else:
+                        reporter.selected.append(
+                            AcquiredArchive(
+                                request=configuration.requests[request_index],
+                                local_archive_id=result.local_archive_id,
+                                remote_archive_id=remote.id,
+                                relative_path=result.relative_path,
+                                sha256=result.sha256,
+                                source_object_key=remote.source_object_key,
+                                source_etag=result.source_etag,
+                                source_last_modified=revision_time(result.source_last_modified),
+                            )
+                        )
                         reporter.emit(
                             ProgressEvent(
                                 "file_finished",
@@ -255,6 +308,7 @@ async def _download_scan(
                                 "request_index": request_index,
                                 "source_object_key": remote.source_object_key,
                                 **asdict(result),
+                                "source_last_modified": revision_time(result.source_last_modified),
                             }
                         )
                 finally:
@@ -273,6 +327,7 @@ async def _download_scan(
                 allow_superseded=True,
             ):
                 for remote in page:
+                    unseen_pins.discard(remote.id)
                     await queue.put(remote)
                     reporter.emit(ProgressEvent("queued"))
                 after_id = page[-1].id
@@ -301,7 +356,34 @@ async def _download_scan(
                 )
         raise
 
+    if unseen_pins:
+        raise ArchiveFileError("A retained acquisition is missing from its discovery scan.")
     return failures
+
+
+async def verify_retained(
+    connection: AsyncConnection[TupleRow], root: Path, prior: AcquiredArchive
+) -> None:
+    cursor = await connection.execute(
+        """SELECT relative_path,sha256,bytes_written,source_etag,source_last_modified
+        FROM historical.local_archives WHERE id=%s AND remote_archive_id=%s
+        AND storage_root_key=%s AND status='complete'""",
+        (prior.local_archive_id, prior.remote_archive_id, root_key(root)),
+    )
+    row = await cursor.fetchone()
+    if (
+        not row
+        or row[0] != prior.relative_path
+        or row[1] != prior.sha256
+        or row[3] != prior.source_etag
+        or revision_time(row[4]) != prior.source_last_modified
+    ):
+        raise ArchiveFileError(
+            f"Retained local archive {prior.local_archive_id} changed or is unavailable."
+        )
+    path = contained(root, prior.relative_path)
+    if not await disk(path.is_file) or await disk(fingerprint, path) != (row[2], prior.sha256):
+        raise ArchiveFileError(f"Retained archive checksum differs: {path}")
 
 
 async def run_acquisition(
@@ -316,6 +398,7 @@ async def run_acquisition(
     source_file: Path | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     observer: ProgressObserver | None = None,
+    resume_report: OperationReport | None = None,
 ) -> OperationReport:
     """Execute one historical owner operation; caller holds WorkspaceOwnership."""
     reporter = Reporter(context, total_requests=len(configuration.requests), observer=observer)
@@ -333,6 +416,24 @@ async def run_acquisition(
         {"index": i, "request": request.model_dump(mode="json")}
         for i, request in enumerate(configuration.requests)
     ]
+
+    retained_scans: dict[str, int] = {}
+    retained_archives: dict[str, dict[int, AcquiredArchive]] = {}
+    if resume_report is not None:
+        for item in resume_report["requests"]:
+            scan_id = item.get("scan_id")
+            if type(scan_id) is int:
+                identity = request_key(ArchiveRequest.model_validate(item["request"]))
+                retained_scans[identity] = scan_id
+                for pending, request in zip(reporter.requests, configuration.requests, strict=True):
+                    if request_key(request) == identity:
+                        pending["scan_id"] = scan_id
+        selected = ArchiveSelection.model_validate_json(json.dumps(resume_report["selection"]))
+        reporter.selected.extend(selected.archives)
+        for prior in selected.archives:
+            retained_archives.setdefault(request_key(prior.request), {})[
+                prior.remote_archive_id
+            ] = prior
 
     async def process(index: int) -> bool:
         async with testing_connection(dsn) as connection:
@@ -375,9 +476,35 @@ async def run_acquisition(
                 + (int(key[1][:8], 16) % 64) * 2
                 + int(request.data_type == "order_book_l2")
             )
+            pinned_scan = retained_scans.get(request_key(request))
+            keep = retained_archives.get(request_key(request), {})
             async with scope_locks[slot]:
                 previous = completed_scopes[slot]
-                if previous is not None and previous[0] == key:
+                if pinned_scan is not None:
+                    cursor = await connection.execute(
+                        """SELECT s.archives_found FROM historical.discovery_scans s
+                        JOIN catalog.exchanges e ON e.id=s.exchange_id
+                        WHERE s.id=%s AND e.code=%s AND s.scope_key=%s AND s.data_type=%s
+                        AND s.status IN ('complete','partial')
+                        AND s.searched_start_at<=%s AND s.searched_end_at>=%s""",
+                        (
+                            pinned_scan,
+                            *key,
+                            configuration.interval.start,
+                            configuration.interval.end,
+                        ),
+                    )
+                    evidence = await cursor.fetchone()
+                    if evidence is None:
+                        raise ArchiveFileError(
+                            f"Retained discovery scan {pinned_scan} is unavailable."
+                        )
+                    scan = DiscoveryResult(pinned_scan, True, evidence[0])
+                elif keep:
+                    raise ArchiveFileError(
+                        "Retained archives require their original discovery scan."
+                    )
+                elif previous is not None and previous[0] == key:
                     old = previous[1]
                     scan = DiscoveryResult(old.scan_id, True, old.archives_found)
                 else:
@@ -449,6 +576,7 @@ async def run_acquisition(
                     transfer_slots,
                     archive_locks,
                     scope_locks[slot],
+                    keep,
                 )
         except Exception as error:
             if not discovery_finished:

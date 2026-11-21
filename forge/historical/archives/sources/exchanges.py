@@ -75,6 +75,55 @@ class Links(HTMLParser):
             self._heading_parts = None
 
 
+def validate_request(request: ArchiveRequest) -> None:
+    """Check archive capability without requiring an HTTP client."""
+    if request.exchange not in {
+        "binance",
+        "bybit",
+        "bitget",
+        "okx",
+        "gateio",
+    }:
+        raise UnsupportedRequestError("Unsupported historical exchange.")
+    if not re.fullmatch(r"[A-Za-z0-9_.:/-]+", request.scope.identifier):
+        raise UnsupportedRequestError("Unsupported source scope identifier.")
+    if request.scope.identifier in {".", "..", "ANY"}:
+        raise UnsupportedRequestError("Use a specific historical scope.")
+    if request.instrument_type == "option":
+        if request.market_category != "option":
+            raise UnsupportedRequestError("Options require market_category = 'option'.")
+        if request.exchange not in {"bybit", "okx"}:
+            raise UnsupportedRequestError("This exchange has no supported option archives.")
+    elif request.instrument_type == "spot":
+        if request.market_category != "spot":
+            raise UnsupportedRequestError("Spot instruments require the spot market category.")
+    elif request.market_category not in {"linear", "inverse"}:
+        raise UnsupportedRequestError("Derivatives require linear or inverse market category.")
+    if request.exchange == "binance" and request.data_type != "trades":
+        raise UnsupportedRequestError("Binance supports historical trades only.")
+    if (
+        request.exchange == "bitget"
+        and request.instrument_type == "future"
+        and request.market_category != "inverse"
+    ):
+        raise UnsupportedRequestError("Bitget linear dated futures are not supported.")
+    if request.exchange == "okx":
+        permitted = {"instrument"} if request.instrument_type == "spot" else {"family"}
+        if request.instrument_type == "option":
+            permitted.add("base_coin")
+        if request.scope.kind not in permitted:
+            raise UnsupportedRequestError(
+                "OKX derivatives require an explicit family; options also accept base_coin."
+            )
+    elif request.exchange == "bybit" and request.instrument_type == "option":
+        if request.scope.kind != "base_coin":
+            raise UnsupportedRequestError(
+                "Bybit option archives require base_coin scope, not a contract."
+            )
+    elif request.scope.kind != "instrument":
+        raise UnsupportedRequestError("This archive source requires instrument scope.")
+
+
 class ExchangeSource:
     """A single upstream's archive adapter, sharing its HTTP client and budget."""
 
@@ -118,51 +167,9 @@ class ExchangeSource:
         )
 
     def validate(self, request: ArchiveRequest) -> None:
-        if request.exchange != self.exchange or self.exchange not in {
-            "binance",
-            "bybit",
-            "bitget",
-            "okx",
-            "gateio",
-        }:
-            raise UnsupportedRequestError("Unsupported historical exchange.")
-        if not re.fullmatch(r"[A-Za-z0-9_.:/-]+", request.scope.identifier):
-            raise UnsupportedRequestError("Unsupported source scope identifier.")
-        if request.scope.identifier in {".", "..", "ANY"}:
-            raise UnsupportedRequestError("Use a specific historical scope.")
-        if request.instrument_type == "option":
-            if request.market_category != "option":
-                raise UnsupportedRequestError("Options require market_category = 'option'.")
-            if self.exchange not in {"bybit", "okx"}:
-                raise UnsupportedRequestError("This exchange has no supported option archives.")
-        elif request.instrument_type == "spot":
-            if request.market_category != "spot":
-                raise UnsupportedRequestError("Spot instruments require the spot market category.")
-        elif request.market_category not in {"linear", "inverse"}:
-            raise UnsupportedRequestError("Derivatives require linear or inverse market category.")
-        if self.exchange == "binance" and request.data_type != "trades":
-            raise UnsupportedRequestError("Binance supports historical trades only.")
-        if (
-            self.exchange == "bitget"
-            and request.instrument_type == "future"
-            and request.market_category != "inverse"
-        ):
-            raise UnsupportedRequestError("Bitget linear dated futures are not supported.")
-        if self.exchange == "okx":
-            permitted = {"instrument"} if request.instrument_type == "spot" else {"family"}
-            if request.instrument_type == "option":
-                permitted.add("base_coin")
-            if request.scope.kind not in permitted:
-                raise UnsupportedRequestError(
-                    "OKX derivatives require an explicit family; options also accept base_coin."
-                )
-        elif self.exchange == "bybit" and request.instrument_type == "option":
-            if request.scope.kind != "base_coin":
-                raise UnsupportedRequestError(
-                    "Bybit option archives require base_coin scope, not a contract."
-                )
-        elif request.scope.kind != "instrument":
-            raise UnsupportedRequestError("This archive source requires instrument scope.")
+        if request.exchange != self.exchange:
+            raise UnsupportedRequestError("The archive request targets another adapter.")
+        validate_request(request)
 
     async def discover(
         self, request: ArchiveRequest, interval: AcquisitionInterval

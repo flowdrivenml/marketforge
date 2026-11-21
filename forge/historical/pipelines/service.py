@@ -1,0 +1,739 @@
+"""Durable, fixed acquire → normalize → merge pipeline."""
+
+import asyncio
+import hashlib
+import json
+import os
+import shutil
+import tempfile
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, cast
+
+from forge.historical.archives.operation import OperationReport, run_acquisition
+from forge.historical.archives.progress import ProgressSnapshot
+from forge.historical.archives.selection import ArchiveSelection, ArchiveSelectionError
+from forge.historical.archives.storage.files import contained
+from forge.historical.engine.managed import checksum, resolve
+from forge.historical.engine.process import PreparationObserver, joined_io
+from forge.historical.merge import service as merge
+from forge.historical.normalization import execution as normalize
+from forge.historical.normalization.batch import (
+    BatchPlan,
+    allocate,
+    prepare_batch,
+    publish_batch_async,
+    used_ids,
+)
+from forge.historical.normalization.batch import (
+    validate_candidate as validate_normalization_candidate,
+)
+from forge.historical.normalization.service import default_output_paths, write_job
+from forge.historical.pipelines.config import PipelineRecipe, load_recipe
+from forge.historical.pipelines.progress import Activity, PipelineSnapshot, StageSnapshot
+from forge.orchestration.artifacts import RunArtifacts
+from forge.shared.config.models import AppSettings
+from forge.shared.database.testing import TestingDatabaseError, testing_connection, testing_dsn
+from forge.shared.errors import MarketForgeError
+from forge.shared.identity import new_attempt_id, new_run_id, parse_run_id
+from forge.shared.paths import ProjectPaths
+from forge.startup.context import ApplicationContext
+
+STAGES = ("acquire", "normalize", "merge")
+
+
+class Blocked(MarketForgeError):
+    """The run cannot continue without resolving an explicit prerequisite."""
+
+
+@dataclass(frozen=True, slots=True)
+class RegisteredFiles:
+    ids: tuple[int, ...]
+
+    @classmethod
+    def from_receipt(cls, receipt: dict[str, Any]) -> "RegisteredFiles":
+        if receipt.get("registration") != "registered" or not receipt.get("catalogue_dataset_ids"):
+            raise Blocked("Required publication registration is incomplete; see the stage receipt.")
+        ids = tuple(sorted(receipt["catalogue_dataset_ids"].values()))
+        if any(type(value) is not int or value <= 0 for value in ids) or len(set(ids)) != len(ids):
+            raise Blocked("Registration returned invalid primary-file identities.")
+        return cls(ids)
+
+
+def now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def read(path: Path) -> dict[str, Any]:
+    return merge.read_json(path)
+
+
+def output_present(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def retained(path: Path, digest: str) -> Path:
+    if not path.is_file() or checksum(path) != digest:
+        raise Blocked(f"Retained artifact changed or is unavailable: {path}")
+    return path
+
+
+async def registry_identity(paths: ProjectPaths) -> str:
+    async with testing_connection(testing_dsn(paths.root)) as connection:
+        cursor = await connection.execute(
+            "SELECT database_id FROM forge_meta.database_identity WHERE singleton"
+        )
+        row = await cursor.fetchone()
+        if not row or row[0] is None:
+            raise Blocked("The testing registry has no retained database identity.")
+        return str(row[0])
+
+
+def artifacts_for(paths: ProjectPaths, run_id: str) -> RunArtifacts:
+    return RunArtifacts.for_run(paths, parse_run_id(run_id))
+
+
+def status(paths: ProjectPaths, run_id: str) -> dict[str, Any]:
+    report = read(artifacts_for(paths, run_id).report)
+    if report.get("kind") != "historical_pipeline" or report.get("schema_version") != 1:
+        raise Blocked("Expected a version 1 historical pipeline report.")
+    return report
+
+
+class PipelineRun:
+    def __init__(
+        self,
+        context: ApplicationContext,
+        artifacts: RunArtifacts,
+        report: dict[str, Any],
+        recipe: PipelineRecipe,
+    ) -> None:
+        self.context = context
+        self.paths = context.paths
+        self.artifacts = artifacts
+        self.report = report
+        self.recipe = recipe
+        self.acquisition: ProgressSnapshot | None = None
+        self.interrupting = False
+        self.historical = artifacts.root / "historical"
+
+    def snapshot(self) -> PipelineSnapshot:
+        report = self.report
+        stages: list[StageSnapshot] = []
+        for name in STAGES:
+            stage = self.stage(name)
+            counts = stage.get("result", {}).get("counts", {})
+            verified = (
+                (counts["verified_publications"], counts["requested"])
+                if ("verified_publications" in counts and "requested" in counts)
+                else None
+            )
+            stages.append(
+                StageSnapshot(
+                    name,
+                    stage["state"],
+                    stage.get("phase", "pending"),
+                    stage.get("started_at"),
+                    stage.get("finished_at"),
+                    stage.get("summary", ""),
+                    verified,
+                )
+            )
+        return PipelineSnapshot(
+            report["name"],
+            report["run_id"],
+            report["environment"],
+            (self.recipe.interval.start, self.recipe.interval.end),
+            "interrupting"
+            if self.interrupting and report["state"] == "running"
+            else report["state"],
+            report["started_at"],
+            report.get("finished_at"),
+            tuple(stages),
+            report.get("active_stage"),
+            tuple(
+                Activity(item["stage"], item["phase"], item["state"]) for item in report["recent"]
+            ),
+            self.acquisition,
+            report.get("error"),
+        )
+
+    def save(self) -> None:
+        with tempfile.TemporaryDirectory(prefix=".state-", dir=self.artifacts.root) as temporary:
+            snapshot = Path(temporary) / "report.json"
+            write_job(snapshot, self.report)
+            os.replace(snapshot, self.artifacts.report)
+            descriptor = os.open(self.artifacts.root, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+
+    def stage(self, name: str) -> dict[str, Any]:
+        return self.report["stages"][name]
+
+    def transition(self, name: str, phase: str, state: str, **evidence: Any) -> None:
+        stage = self.stage(name)
+        timestamp = now()
+        if stage.get("phase") != phase:
+            previous = stage.get("phase")
+            if previous and stage["state"] == "running":
+                stage["phases"][previous].update(state="complete", finished_at=timestamp)
+            stage["phases"][phase] = {"state": state, "started_at": timestamp}
+        stage["phases"][phase]["state"] = state
+        if state != "running":
+            stage["phases"][phase]["finished_at"] = timestamp
+            stage["finished_at"] = timestamp
+        else:
+            stage.pop("finished_at", None)
+        stage.setdefault("started_at", timestamp)
+        stage.update(phase=phase, state=state, **evidence)
+        self.report["active_stage"] = name
+        event = {"timestamp": timestamp, "stage": name, "phase": phase, "state": state}
+        activity = self.report["recent"]
+        activity.append(event)
+        del activity[:-16]
+        self.save()
+        with self.artifacts.events.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(event) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+
+    def new_attempt(self, name: str) -> Path:
+        attempt = str(new_attempt_id())
+        directory = self.artifacts.steps_dir / name / attempt
+        self.stage(name).setdefault("attempts", []).append(
+            {"id": attempt, "directory": str(directory)}
+        )
+        self.save()
+        return directory
+
+    def engine(self, name: str) -> Path:
+        item = self.report["engines"][name]
+        return retained(Path(item["path"]), item["sha256"])
+
+    def freeze(self) -> None:
+        historical = self.paths.config_dir / "historical"
+        self.historical.mkdir(parents=True, exist_ok=True)
+        files = [historical / "general.toml"]
+        files.extend(
+            Path(item["location"]) for item in normalize.profile_inventory(self.paths, None)
+        )
+        snapshots: dict[str, str] = {}
+        for source in files:
+            target = self.historical / source.relative_to(historical)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+            snapshots[str(target)] = checksum(target)
+        engines: dict[str, Any] = {}
+        for name in ("normalize", "merge"):
+            source = resolve(self.paths, name)
+            target = self.artifacts.root / source.name
+            digest = checksum(source)
+            shutil.copyfile(source, target)
+            target.chmod(0o755)
+            if checksum(target) != digest:
+                raise Blocked(f"Managed {name} executable changed during the snapshot.")
+            engines[name] = {"path": str(target), "sha256": digest}
+        self.report.update(settings_files=snapshots, engines=engines)
+        self.save()
+
+    def inspect_preparation(self, stage: dict[str, Any]) -> Path:
+        past = stage["prepared"]
+        retained(Path(past["report"]), past["report_sha256"])
+        return retained(Path(past["job"]), past["job_sha256"])
+
+    def on_candidate(self, name: str) -> PreparationObserver:
+        def save(job: Path, report: Path) -> None:
+            stage = self.stage(name)
+            reference = {
+                "job": str(job),
+                "job_sha256": checksum(job),
+                "report": str(report),
+                "report_sha256": checksum(report),
+            }
+            stage["candidate"] = reference
+            stage.setdefault("candidates", []).append(reference)
+            self.save()
+
+        return save
+
+    def candidate(self, name: str) -> tuple[Path, dict[str, Any]] | None:
+        reference = self.stage(name).get("candidate")
+        if reference is None:
+            return None
+        job = retained(Path(reference["job"]), reference["job_sha256"])
+        generated = retained(Path(reference["report"]), reference["report_sha256"])
+        completed = job.parent / "prepare-report.json"
+        if completed.is_file():
+            report = read(completed)
+            candidate = read(generated)
+            mutable = {
+                "status",
+                "report_path",
+                "engine_ready",
+                "engine_compatibility",
+                "compatibility",
+            }
+            if any(
+                report.get(key) != value for key, value in candidate.items() if key not in mutable
+            ):
+                raise Blocked("Completed preparation disagrees with the retained candidate.")
+            # The final report can exist if Forge stopped between validation and checkpointing.
+            return job, report
+        return job, read(generated)
+
+    def save_preparation(self, stage: dict[str, Any], result: dict[str, Any], job_key: str) -> None:
+        job, report = Path(result[job_key]), Path(result["report_path"])
+        stage["prepared"] = {
+            "job": str(job),
+            "job_sha256": checksum(job),
+            "report": str(report),
+            "report_sha256": checksum(report),
+        }
+        stage.setdefault("preparations", []).append(stage["prepared"])
+        stage.pop("candidate", None)
+        stage.pop("execution_intent", None)
+        stage.pop("execution_intent_sha256", None)
+        self.save()
+
+    async def acquire(self) -> ArchiveSelection:
+        stage = self.stage("acquire")
+        if stage["state"] != "complete":
+            prior = None
+            if stage.get("child_report"):
+                prior_path = retained(Path(stage["child_report"]), stage["child_report_sha256"])
+                prior = cast(OperationReport, read(prior_path))
+            self.new_attempt("acquire").mkdir(parents=True)
+            self.transition("acquire", "discover_and_acquire", "running")
+            try:
+                result = await run_acquisition(
+                    self.context,
+                    self.recipe.acquisition(),
+                    dsn=testing_dsn(self.paths.root),
+                    download=True,
+                    observer=self.observe_acquisition,
+                    resume_report=prior,
+                )
+            except asyncio.CancelledError:
+                if self.acquisition and self.acquisition.report:
+                    self.save_acquisition_reference(Path(self.acquisition.report))
+                raise
+            child = Path(result["report"])
+            self.save_acquisition_reference(child)
+            if result["status"] != "complete":
+                raise Blocked(f"Acquisition did not complete; inspect {child}.")
+            selection = ArchiveSelection.model_validate_json(json.dumps(result["selection"]))
+            if not selection.archives:
+                raise Blocked(
+                    "Discovery completed without ready archives; inspect the acquisition report."
+                )
+            selection_path = self.artifacts.steps_dir / "acquired.json"
+            write_job(selection_path, selection.model_dump(mode="json"))
+            self.transition(
+                "acquire",
+                "discover_and_acquire",
+                "complete",
+                child_report=str(child),
+                child_report_sha256=checksum(child),
+                selection=str(selection_path),
+                selection_sha256=checksum(selection_path),
+                summary=f"{len({item.local_archive_id for item in selection.archives})} ready archives",
+            )
+        retained(Path(stage["child_report"]), stage["child_report_sha256"])
+        selection_path = retained(Path(stage["selection"]), stage["selection_sha256"])
+        return ArchiveSelection.model_validate_json(selection_path.read_bytes())
+
+    def observe_acquisition(self, snapshot: ProgressSnapshot) -> None:
+        self.acquisition = snapshot
+
+    def save_acquisition_reference(self, child: Path) -> None:
+        stage = self.stage("acquire")
+        reference: dict[str, object] = {
+            "child_report": str(child),
+            "child_report_sha256": checksum(child),
+        }
+        stage.update(reference)
+        stage["attempts"][-1].update(reference)
+        write_job(Path(stage["attempts"][-1]["directory"]) / "acquisition.json", reference)
+        self.save()
+
+    def on_engine(self, name: str) -> Callable[[str], None]:
+        def phase(value: str) -> None:
+            stage = self.stage(name)
+            if value == "execute":
+                intent = Path(stage["execution_intent"])
+                stage["execution_intent_sha256"] = checksum(intent)
+                stage["attempts"][-1]["execution_intent_sha256"] = stage["execution_intent_sha256"]
+            self.transition(name, value, "running")
+
+        return phase
+
+    def inspect_intent(self, stage: dict[str, Any]) -> Path | None:
+        if "execution_intent" not in stage:
+            return None
+        intent = Path(stage["execution_intent"])
+        if "execution_intent_sha256" in stage:
+            retained(intent, stage["execution_intent_sha256"])
+        return intent if intent.is_file() else None
+
+    def start_execution(self, name: str) -> Path:
+        stage = self.stage(name)
+        directory = self.new_attempt(name)
+        stage.pop("execution_intent_sha256", None)
+        intent = str(directory / "execution-intent.json")
+        stage["execution_intent"] = intent
+        stage["attempts"][-1]["execution_intent"] = intent
+        self.transition(name, "validate", "running")
+        return directory
+
+    def finish(
+        self, name: str, result: dict[str, Any], *, recovered: bool = False
+    ) -> RegisteredFiles:
+        stage = self.stage(name)
+        stage["result"] = result
+        if stage.get("attempts"):
+            attempt = stage["attempts"][-1]
+            key = "recovery_receipts" if recovered else "execution_report"
+            if recovered:
+                attempt.setdefault(key, []).append(result["registration_receipt"])
+            elif result.get("report_path"):
+                attempt[key] = result["report_path"]
+        self.save()
+        if result.get("status") == "interrupted":
+            raise asyncio.CancelledError
+        if not recovered and result.get("status") != "complete":
+            message = str(
+                result.get("registration_error")
+                or result.get("error")
+                or "Processing did not complete; inspect the retained execution receipt."
+            )
+            if result.get("verification") == "verified" and result.get("registration") in {
+                "failed",
+                "pending",
+            }:
+                raise Blocked(message)
+            raise MarketForgeError(message)
+        if not recovered and result.get("verification") != "verified":
+            raise MarketForgeError("Required publication verification is incomplete.")
+        files = RegisteredFiles.from_receipt(result)
+        previous = stage.get("primary_file_ids")
+        if previous is not None and previous != list(files.ids):
+            raise Blocked("Recovered registration disagrees with retained primary-file identities.")
+        self.transition(
+            name,
+            "register",
+            "complete",
+            primary_file_ids=list(files.ids),
+            summary=f"{len(files.ids)} registered files",
+        )
+        return files
+
+    async def retry_normalization(self, source: Path, stage: dict[str, Any]) -> Path:
+        """Reallocate outputs from retained jobs without reranking or resolving inputs."""
+        batch = read(source)
+        report = read(Path(stage["prepared"]["report"]))
+        identity = f"normalize-retry-{new_attempt_id()}"
+        async with testing_connection(testing_dsn(self.paths.root)) as connection:
+            used = await used_ids(connection, self.paths)
+        directory = self.paths.runs_dir / identity
+        jobs: dict[int, dict[str, object]] = {}
+        for job, summary in zip(batch["jobs"], report["job_summaries"], strict=True):
+            job_id = allocate(f"{identity}:{job['job_id']}:job", used, self.paths)
+            dataset_id = allocate(f"{identity}:{job['dataset_id']}:dataset", used, self.paths)
+            staging, output = default_output_paths(self.paths, job_id, dataset_id)
+            job.update(
+                job_id=job_id,
+                dataset_id=dataset_id,
+                output={"staging_path": str(staging), "dataset_path": str(output)},
+            )
+            summary.update(
+                job_id=job_id,
+                dataset_id=dataset_id,
+                staging_path=str(staging),
+                dataset_path=str(output),
+            )
+            jobs[job_id] = job
+        common = {
+            "run_id": identity,
+            "run_directory": str(directory),
+            "batch_path": str(directory / "normalize-batch.json"),
+        }
+        batch.update(common)
+        report.update(common, report_path=str(directory / "prepare-report.json"))
+        binary = self.engine("normalize")
+        await publish_batch_async(
+            self.paths,
+            BatchPlan(report, batch, jobs, directory),
+            report,
+            self.historical,
+            binary,
+            lifecycle=self.on_engine("normalize"),
+            on_candidate=self.on_candidate("normalize"),
+        )
+        if not report["engine_ready"] or report["status"] != "prepared":
+            raise Blocked(f"Retained normalization retry failed validation; inspect {directory}.")
+        self.save_preparation(stage, report, "batch_path")
+        return self.inspect_preparation(stage)
+
+    async def normalize(self, selection: ArchiveSelection, *, stop: bool) -> RegisteredFiles | None:
+        name = "normalize"
+        stage = self.stage(name)
+        candidate = self.candidate(name)
+        if candidate is not None or "prepared" not in stage:
+            self.transition(name, "prepare", "running")
+            if candidate is not None:
+                job, result = candidate
+                if not result["engine_ready"]:
+                    result = await validate_normalization_candidate(
+                        self.paths,
+                        job,
+                        result,
+                        self.historical,
+                        self.engine(name),
+                        lifecycle=self.on_engine(name),
+                    )
+            else:
+                result = await prepare_batch(
+                    self.paths,
+                    self.recipe.normalization(),
+                    pinned=selection,
+                    allocation_seed=self.report["run_id"],
+                    historical=self.historical,
+                    executable=self.engine(name),
+                    lifecycle=self.on_engine(name),
+                    on_candidate=self.on_candidate(name),
+                )
+            if result["status"] != "prepared" or not result["engine_ready"]:
+                stage["child_report"] = result["report_path"]
+                raise Blocked(
+                    f"Normalization preparation is incomplete; inspect {result['report_path']}."
+                )
+            self.save_preparation(stage, result, "batch_path")
+            self.transition(
+                name,
+                "validate",
+                "prepared",
+                summary=f"{result['prepared_job_count']} validated jobs",
+            )
+        source = self.inspect_preparation(stage)
+        if stop:
+            return None
+        expected = {
+            str(contained(self.paths.raw_dir, item.relative_path).resolve()): (
+                item.local_archive_id,
+                item.sha256,
+            )
+            for item in selection.archives
+        }
+        intent = self.inspect_intent(stage)
+        if intent is not None:
+            if read(intent)["submitted_sha256"] != stage["prepared"]["job_sha256"]:
+                raise Blocked("Normalization intent differs from the retained submitted batch.")
+            document = read(source)
+            outputs = [self.paths.root / job["output"]["dataset_path"] for job in document["jobs"]]
+            if all(output_present(path) for path in outputs):
+                await normalize.pin_raw_inputs(self.paths, document["jobs"], expected=expected)
+                return self.finish(
+                    name,
+                    await normalize.recover(
+                        self.paths, intent, require_all=True, lifecycle=self.on_engine(name)
+                    ),
+                    recovered=True,
+                )
+            if stage["state"] == "complete":
+                raise Blocked("A retained normalized publication is unavailable.")
+            source = await self.retry_normalization(source, stage)
+        elif stage["state"] == "complete":
+            raise Blocked(
+                "Normalization registration recovery requires the original execution intent."
+            )
+        directory = self.start_execution(name)
+        result = await normalize.execute_async(
+            self.paths,
+            source,
+            directory=directory,
+            historical_root=self.historical,
+            executable=self.engine(name),
+            lifecycle=self.on_engine(name),
+            expected_raw=expected,
+        )
+        return self.finish(name, result)
+
+    async def merge(self, files: RegisteredFiles) -> None:
+        name = "merge"
+        stage = self.stage(name)
+        if stage.get("upstream_file_ids", list(files.ids)) != list(files.ids):
+            raise Blocked("Merge dependency differs from the retained normalization selection.")
+        stage["upstream_file_ids"] = list(files.ids)
+        candidate = self.candidate(name)
+        if candidate is not None:
+            job, result = candidate
+            if result["status"] != "prepared":
+                result = await merge.validate_candidate(
+                    self.paths, job, result, self.engine(name), lifecycle=self.on_engine(name)
+                )
+            if result["status"] != "prepared":
+                stage["child_report"] = result["report_path"]
+                raise Blocked(f"Retained merge validation failed; inspect {result['report_path']}.")
+            if sorted(item["database_id"] for item in result["inputs"]) != list(files.ids):
+                raise Blocked("Retained merge candidate differs from its exact upstream file IDs.")
+            if "prepared" in stage:
+                self.inspect_preparation(stage)
+                previous = read(Path(stage["prepared"]["report"]))
+                if not merge.same_inputs(previous["inputs"], result["inputs"]):
+                    raise Blocked("Retained merge inputs changed before a new execution attempt.")
+            self.save_preparation(stage, result, "job_path")
+            self.transition(name, "validate", "prepared", summary="Validated merge job")
+        intent = self.inspect_intent(stage)
+        if intent is not None:
+            prior = read(intent)
+            if prior["submitted_sha256"] != stage["prepared"]["job_sha256"]:
+                raise Blocked("Merge intent differs from the retained submitted job.")
+            if await joined_io(lambda: output_present(Path(prior["path"]))):
+                self.inspect_preparation(stage)
+                self.finish(
+                    name,
+                    await merge.register(
+                        self.paths, intent, lifecycle=self.on_engine(name), require_pinned=True
+                    ),
+                    recovered=True,
+                )
+                return
+        elif stage["state"] == "complete":
+            raise Blocked("Merge registration recovery requires the original execution intent.")
+        if "prepared" not in stage or intent is not None:
+            self.transition(name, "prepare", "running")
+            recipe = self.recipe.merging(list(files.ids))
+            if "prepared" in stage:
+                self.inspect_preparation(stage)
+                previous = read(Path(stage["prepared"]["report"]))
+                recipe = recipe.model_copy(
+                    update={
+                        "stream_ranks": {
+                            item["stream_id"]: item["stream_rank"] for item in previous["streams"]
+                        },
+                        "timeline_ordering": previous["timeline_ordering"],
+                    }
+                )
+            else:
+                previous = None
+            result = await merge.prepare_direct(
+                self.paths,
+                recipe,
+                self.report["name"],
+                historical=self.historical,
+                executable=self.engine(name),
+                lifecycle=self.on_engine(name),
+                on_candidate=self.on_candidate(name),
+            )
+            if result["status"] != "prepared":
+                stage["child_report"] = result["report_path"]
+                raise Blocked(f"Merge preparation failed; inspect {result['report_path']}.")
+            if previous is not None and not merge.same_inputs(previous["inputs"], result["inputs"]):
+                raise Blocked("Retained merge inputs changed before a new execution attempt.")
+            self.save_preparation(stage, result, "job_path")
+            self.transition(name, "validate", "prepared", summary="Validated merge job")
+        source = self.inspect_preparation(stage)
+        directory = self.start_execution(name)
+        result = await merge.execute_async(
+            self.paths,
+            source,
+            execution_directory=directory,
+            historical=self.historical,
+            executable=self.engine(name),
+            lifecycle=self.on_engine(name),
+        )
+        self.finish(name, result)
+
+    async def run(self, *, stop: bool = False) -> dict[str, Any]:
+        self.report.update(state="running", error=None, finished_at=None)
+        self.save()
+        try:
+            identity = await registry_identity(self.paths)
+            if self.report.get("registry_id", identity) != identity:
+                raise Blocked("Resume requires the same verified testing registry.")
+            self.report["registry_id"] = identity
+            self.save()
+            if "engines" not in self.report:
+                await joined_io(self.freeze)
+            for path, digest in self.report["settings_files"].items():
+                retained(Path(path), digest)
+            selection = await self.acquire()
+            files = await self.normalize(selection, stop=stop)
+            if files is not None:
+                await self.merge(files)
+            self.report["state"] = "stopped" if stop else "complete"
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            self.end_error(
+                "interrupted", "Interrupted. Resume this run to reconcile any committed output."
+            )
+        except (Blocked, ArchiveSelectionError, TestingDatabaseError) as error:
+            self.end_error("blocked", str(error))
+        except (MarketForgeError, OSError, ValueError, KeyError, TypeError) as error:
+            self.end_error("failed", str(error))
+        self.interrupting = False
+        self.report["finished_at"] = now()
+        self.save()
+        return self.report
+
+    def end_error(self, state: str, message: str) -> None:
+        self.report.update(state=state, error=message)
+        name = self.report.get("active_stage")
+        if name is not None and self.stage(name)["state"] != "complete":
+            self.transition(name, self.stage(name)["phase"], state)
+
+
+def new(context: ApplicationContext, name: str, submitted: bytes) -> PipelineRun:
+    recipe = load_recipe(submitted)
+    run_id = new_run_id()
+    artifacts = RunArtifacts.for_run(context.paths, run_id)
+    artifacts.steps_dir.mkdir(parents=True, exist_ok=False)
+    artifacts.submitted_config.write_bytes(submitted)
+    resolved: dict[str, Any] = {
+        "schema_version": 1,
+        "recipe": recipe.model_dump(mode="json"),
+        "settings": context.settings.model_dump(mode="json"),
+        "workspace": str(context.paths.root),
+        "storage": str(context.paths.data_root),
+    }
+    write_job(artifacts.resolved_plan, resolved)
+    report: dict[str, Any] = {
+        "schema_version": 1,
+        "kind": "historical_pipeline",
+        "state": "pending",
+        "name": name,
+        "run_id": str(run_id),
+        "environment": "testing",
+        "interval": resolved["recipe"]["interval"],
+        "started_at": now(),
+        "report_path": str(artifacts.report),
+        "resolved_plan": str(artifacts.resolved_plan),
+        "event_log": str(artifacts.events),
+        "submitted_sha256": hashlib.sha256(submitted).hexdigest(),
+        "resolved_sha256": checksum(artifacts.resolved_plan),
+        "stages": {stage: {"state": "pending", "phases": {}} for stage in STAGES},
+        "recent": [],
+    }
+    pipeline = PipelineRun(context, artifacts, report, recipe)
+    pipeline.save()
+    return pipeline
+
+
+def resume(context: ApplicationContext, run_id: str) -> PipelineRun:
+    artifacts = artifacts_for(context.paths, run_id)
+    report = status(context.paths, run_id)
+    retained(artifacts.resolved_plan, report["resolved_sha256"])
+    original = retained(artifacts.submitted_config, report["submitted_sha256"])
+    saved = read(artifacts.resolved_plan)
+    if saved["workspace"] != str(context.paths.root) or saved["storage"] != str(
+        context.paths.data_root
+    ):
+        raise Blocked("Resume requires the original workspace and storage root.")
+    settings = AppSettings.model_validate_json(json.dumps(saved["settings"]))
+    context = ApplicationContext(
+        settings, context.paths, None, context.console, context.error_console
+    )
+    return PipelineRun(context, artifacts, report, load_recipe(original.read_bytes()))

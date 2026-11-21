@@ -11,14 +11,16 @@ import signal
 import subprocess
 import threading
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from forge.historical.engine.managed import checksum, resolve, supervised
+from forge.historical.engine.process import Lifecycle, check, joined_io, supervise
 from forge.historical.normalization.datasets import pin_raw_inputs, register_verified, verify
 from forge.historical.normalization.service import write_job
-from forge.historical.profiles.service import discover
+from forge.historical.profiles.service import discover, inspect
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
@@ -34,6 +36,16 @@ def _capture(stream: Any, path: Path, *, limit: int = 16 * 1024 * 1024) -> None:
     stream.close()
 
 
+def profile_inventory(paths: ProjectPaths, historical: Path | None) -> list[dict[str, Any]]:
+    if historical is None:
+        return discover(paths)
+    return [
+        inspect(file)
+        for kind in ("trades", "depth")
+        for file in sorted((historical / "profiles" / kind).glob("*.toml"))
+    ]
+
+
 def execute(
     paths: ProjectPaths,
     source: Path,
@@ -42,18 +54,31 @@ def execute(
     allow_partial: bool = False,
     recipe: str | None = None,
 ) -> dict[str, Any]:
-    binary = resolve(paths)
-    protocol = supervised([str(binary), "--protocol"], cwd=paths.root)
-    capabilities = json.loads(protocol.stdout) if protocol.returncode == 0 else {}
-    if 4 not in capabilities.get("batch_schema_versions", []) or not capabilities.get(
-        "result_file"
-    ):
-        raise MarketForgeError(
-            "Run mf engine build normalize to install the managed result protocol."
+    return asyncio.run(
+        execute_async(
+            paths, source, tui=tui, allow_partial=allow_partial, recipe=recipe, standalone=True
         )
+    )
+
+
+async def execute_async(
+    paths: ProjectPaths,
+    source: Path,
+    *,
+    tui: bool = False,
+    allow_partial: bool = False,
+    recipe: str | None = None,
+    standalone: bool = False,
+    directory: Path | None = None,
+    historical_root: Path | None = None,
+    executable: Path | None = None,
+    lifecycle: Lifecycle = lambda _: None,
+    expected_raw: dict[str, tuple[int, str]] | None = None,
+) -> dict[str, Any]:
+    binary = executable or resolve(paths)
     if tui and not (os.isatty(0) and os.isatty(1) and os.isatty(2)):
         raise MarketForgeError("--tui requires an interactive terminal.")
-    operation = paths.runs_dir / f"normalize-execute-{uuid4().hex}"
+    operation = directory or paths.runs_dir / f"normalize-execute-{uuid4().hex}"
     operation.mkdir(parents=True, exist_ok=False)
     expected_binary = checksum(binary)
     pinned_binary = operation / "marketforge-normalize"
@@ -62,14 +87,27 @@ def execute(
     if checksum(pinned_binary) != expected_binary:
         raise MarketForgeError("Managed executable changed during execution preparation.")
     binary = pinned_binary
+    protocol_argv = [str(binary), "--protocol"]
+    protocol = (
+        supervised(protocol_argv, cwd=paths.root)
+        if standalone
+        else await check(protocol_argv, paths.root, operation, "protocol")
+    )
+    capabilities: dict[str, Any] = json.loads(protocol.stdout) if protocol.returncode == 0 else {}
+    if 4 not in capabilities.get("batch_schema_versions", []) or not capabilities.get(
+        "result_file"
+    ):
+        raise MarketForgeError(
+            "Run mf engine build normalize to install the managed result protocol."
+        )
     submission = operation / "submitted-batch.json"
     # read_bytes preserves all edits and integer/decimal lexical representations.
-    submission.write_bytes(source.read_bytes())
+    await joined_io(lambda: submission.write_bytes(source.read_bytes()))
     config = operation / "general.toml"
-    shutil.copyfile(paths.config_dir / "historical/general.toml", config)
+    shutil.copyfile((historical_root or paths.config_dir / "historical") / "general.toml", config)
     historical = operation / "historical"
     profile_evidence: list[dict[str, Any]] = []
-    for item in discover(paths):
+    for item in profile_inventory(paths, historical_root):
         original = Path(item["location"])
         target = historical / "profiles" / item["id"].rsplit(".", 1)[1] / original.name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -78,10 +116,13 @@ def execute(
             raise MarketForgeError("Profile changed while freezing execution interpretation.")
         profile_evidence.append({"id": item["id"], "sha256": checksum(target)})
     try:
-        document = json.loads(submission.read_bytes())
+        parsed: object = json.loads(submission.read_bytes())
     except ValueError as error:
         raise MarketForgeError(f"Invalid prepared normalization batch: {error}") from error
-    if not isinstance(document, dict) or document.get("status") != "prepared":
+    if not isinstance(parsed, dict):
+        raise MarketForgeError("Expected a prepared normalization batch object.")
+    document = cast(dict[str, Any], parsed)
+    if document.get("status") != "prepared":
         raise MarketForgeError("Only fully prepared normalization requests can be executed.")
     prepared = source.parent / "prepare-report.json"
     if prepared.is_file():
@@ -106,19 +147,21 @@ def execute(
         "--profiles-root",
         str(historical),
     ]
-    validation = supervised(
-        [
-            str(binary),
-            "--validate-batch",
-            str(submission),
-            "--project-root",
-            str(paths.root),
-            "--config",
-            str(config),
-            "--profiles-root",
-            str(historical),
-        ],
-        cwd=paths.root,
+    validation_argv = [
+        str(binary),
+        "--validate-batch",
+        str(submission),
+        "--project-root",
+        str(paths.root),
+        "--config",
+        str(config),
+        "--profiles-root",
+        str(historical),
+    ]
+    validation = (
+        supervised(validation_argv, cwd=paths.root)
+        if standalone
+        else await check(validation_argv, paths.root, operation, "validation")
     )
     if validation.returncode:
         raise MarketForgeError(f"Production batch validation failed: {validation.stdout}")
@@ -129,7 +172,12 @@ def execute(
                 destination = paths.root / destination
             if destination.exists() or destination.is_symlink():
                 raise MarketForgeError(f"Execution output already exists: {destination}")
-    pinned_raw = asyncio.run(pin_raw_inputs(paths, document["jobs"]))
+    pinned_raw = (
+        await pin_raw_inputs(paths, document["jobs"])
+        if expected_raw is None
+        else await pin_raw_inputs(paths, document["jobs"], expected=expected_raw)
+    )
+    source_path = await joined_io(source.resolve)
     receipt: dict[str, Any] = {
         "schema_version": 1,
         "environment": "testing",
@@ -143,7 +191,7 @@ def execute(
         "report_path": str(operation / "execution-result.json"),
         "engine_result_path": str(operation / "engine-result.json"),
         "submission_path": str(submission),
-        "submitted_source": str(source.resolve()),
+        "submitted_source": str(source_path),
         "submitted_sha256": checksum(submission),
         "configuration_sha256": checksum(config),
         "profiles": profile_evidence,
@@ -156,7 +204,12 @@ def execute(
     write_job(operation / "execution-intent.json", receipt)
     argv.extend(["--result-file", receipt["engine_result_path"]])
     try:
-        code, interrupted = run_process(argv, paths.root, operation, tui=tui)
+        lifecycle("execute")
+        code, interrupted = (
+            run_process(argv, paths.root, operation, tui=tui)
+            if standalone
+            else await supervise(argv, paths.root, operation)
+        )
     except OSError as error:
         receipt.update(status="failed", normalization="failed", error=str(error))
         write_job(operation / "execution-result.json", receipt)
@@ -168,8 +221,8 @@ def execute(
     )
     write_job(operation / "engine-outcome.json", receipt)
     try:
-        finish(paths, document, receipt, binary, operation)
-    except KeyboardInterrupt:
+        await finish_async(paths, document, receipt, binary, operation, lifecycle=lifecycle)
+    except (KeyboardInterrupt, asyncio.CancelledError):
         receipt.update(
             status="interrupted",
             recovery=f"mf normalize register {operation / 'execution-intent.json'} --testing",
@@ -278,6 +331,18 @@ def finish(
     binary: Path,
     directory: Path,
 ) -> None:
+    asyncio.run(finish_async(paths, document, receipt, binary, directory))
+
+
+async def finish_async(
+    paths: ProjectPaths,
+    document: dict[str, Any],
+    receipt: dict[str, Any],
+    binary: Path,
+    directory: Path,
+    *,
+    lifecycle: Lifecycle = lambda _: None,
+) -> None:
     expected = {job["job_id"]: job for job in document["jobs"]}
     receipt.update(
         status="failed",
@@ -290,10 +355,12 @@ def finish(
     if receipt["normalization"] == "interrupted":
         receipt["status"] = "interrupted"
         return
+    lifecycle("verify")
     verified: list[dict[str, Any]] = []
     failures = 0
     try:
-        result = json.loads(Path(receipt["engine_result_path"]).read_bytes())
+        engine_result = Path(receipt["engine_result_path"])
+        result = json.loads(await joined_io(engine_result.read_bytes))
         receipt["engine_result"] = result
         if (
             result["kind"] != "normalization_result"
@@ -325,8 +392,10 @@ def finish(
                 or (Path(job["manifest_path"]) != Path(entry["path"]) / "manifest.json")
             ):
                 raise MarketForgeError("Invalid success evidence in engine job result.")
-            evidence = committed_job(
-                paths, binary, document, submitted, receipt["submitted_sha256"]
+            evidence = await joined_io(
+                partial(
+                    committed_job, paths, binary, document, submitted, receipt["submitted_sha256"]
+                )
             )
             evidence["expected_raw_sha256"] = receipt["source_sha256_by_job"][str(job["job_id"])]
             manifest = evidence["manifest"]
@@ -344,6 +413,7 @@ def finish(
                 verification="verified",
                 instrument_namespace=evidence["instrument_namespace"],
                 integrity_status=manifest["integrity_status"],
+                manifest_sha256=evidence["manifest_sha256"],
                 bytes_written=evidence["bytes_written"],
             )
             verified.append(evidence)
@@ -367,15 +437,14 @@ def finish(
             if job.get("verification") == "verified":
                 job["registration"] = "withheld"
         return
-    registration = asyncio.run(
-        register_verified(
-            paths,
-            verified,
-            receipt_directory=directory,
-            execution={
-                key: receipt[key] for key in ("execution_id", "submitted_sha256", "allow_partial")
-            },
-        )
+    lifecycle("register")
+    registration = await register_verified(
+        paths,
+        verified,
+        receipt_directory=directory,
+        execution={
+            key: receipt[key] for key in ("execution_id", "submitted_sha256", "allow_partial")
+        },
     )
     receipt["registration"] = registration["registration"]
     receipt["registration_receipt"] = registration["registration_receipt"]
@@ -389,6 +458,7 @@ def finish(
             job.update(registration="registered", **publications[job["path"]])
     receipt["counts"].update(registered=len(ids), **registration["counts"])
     receipt["catalogue_dataset_ids"] = ids
+    receipt["publications"] = publications
     receipt["registrations"] = [
         {
             "registration": "registered",
@@ -402,7 +472,13 @@ def finish(
     receipt.pop("recovery")
 
 
-async def recover(paths: ProjectPaths, source: Path) -> dict[str, Any]:
+async def recover(
+    paths: ProjectPaths,
+    source: Path,
+    *,
+    require_all: bool = False,
+    lifecycle: Lifecycle = lambda _: None,
+) -> dict[str, Any]:
     intent = json.loads(await asyncio.to_thread(source.read_bytes))
     if intent.get("operation") != "normalize" or intent.get("environment") != "testing":
         raise MarketForgeError("Expected a managed normalization execution-intent.json receipt.")
@@ -412,6 +488,10 @@ async def recover(paths: ProjectPaths, source: Path) -> dict[str, Any]:
         raise MarketForgeError("Recovery submission fingerprint differs from execution intent.")
     document = json.loads(submission.read_bytes())
     restored = directory / "marketforge-normalize"
+    if require_all and (
+        not restored.is_file() or checksum(restored) != intent["executable_sha256"]
+    ):
+        raise MarketForgeError("Pinned normalization executable changed or is unavailable.")
     binary = (
         restored
         if restored.is_file() and checksum(restored) == intent["executable_sha256"]
@@ -419,7 +499,7 @@ async def recover(paths: ProjectPaths, source: Path) -> dict[str, Any]:
     )
 
     def recover_outputs() -> list[dict[str, Any]]:
-        verified = []
+        verified: list[dict[str, Any]] = []
         for job in document["jobs"]:
             output = paths.root / job["output"]["dataset_path"]
             if output.exists() or output.is_symlink():
@@ -428,12 +508,16 @@ async def recover(paths: ProjectPaths, source: Path) -> dict[str, Any]:
                 verified.append(evidence)
         return verified
 
+    lifecycle("verify")
     try:
-        verified = await asyncio.to_thread(recover_outputs)
+        verified = await joined_io(recover_outputs)
     except (ValueError, KeyError, TypeError) as error:
         raise MarketForgeError(f"Invalid normalization recovery evidence: {error}") from error
-    if not verified:
-        raise MarketForgeError("No committed outputs are available for registration recovery.")
+    if not verified or (require_all and len(verified) != len(document["jobs"])):
+        raise MarketForgeError(
+            "Required committed outputs are unavailable for registration recovery."
+        )
+    lifecycle("register")
     return await register_verified(
         paths,
         verified,

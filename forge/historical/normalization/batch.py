@@ -10,11 +10,26 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, LiteralString, cast
+from uuid import uuid4
 
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
 
 from forge.historical.archives.config import AcquisitionConfig
+from forge.historical.archives.selection import (
+    ArchiveSelection,
+    ArchiveSelectionError,
+    request_key,
+    revision_time,
+)
+from forge.historical.engine.managed import checksum
+from forge.historical.engine.process import (
+    Lifecycle,
+    PreparationObserver,
+    check,
+    ignore_preparation,
+    joined_io,
+)
 from forge.historical.metadata.resolution import FamilyResolutionError
 from forge.historical.normalization.config import (
     NormalizationRecipe,
@@ -177,6 +192,9 @@ async def plan_batch(
     paths: ProjectPaths,
     recipe: AcquisitionConfig | NormalizationRecipe,
     ranking: RankingSelection | None = None,
+    *,
+    pinned: ArchiveSelection | None = None,
+    allocation_seed: str = "",
 ) -> BatchPlan:
     policy = recipe.ranking_policy if isinstance(recipe, NormalizationRecipe) else "turnover"
     snapshot, positions = (
@@ -190,7 +208,7 @@ async def plan_batch(
         else await ranking_positions(c, policy)
     )
     used = await used_ids(c, paths)
-    seed = recipe.model_dump_json()
+    seed = recipe.model_dump_json() + allocation_seed
     groups: SourceGroups = {}
     requests: list[dict[str, object]] = []
     blocked = False
@@ -213,12 +231,55 @@ async def plan_batch(
             end=recipe.interval.end,
         )
         rows: list[dict[str, object]] = []
-        after = 0
-        while page := await scan(
-            c, parameters(paths.raw_dir, filters, include_unusable=True), after
-        ):
-            rows.extend(page)
-            after = max(int(str(row["id"])) for row in page)
+        if pinned is None:
+            after = 0
+            while page := await scan(
+                c, parameters(paths.raw_dir, filters, include_unusable=True), after
+            ):
+                rows.extend(page)
+                after = max(int(str(row["id"])) for row in page)
+        else:
+            wanted = {
+                pin.local_archive_id: pin
+                for pin in pinned.archives
+                if request_key(pin.request) == request_key(request)
+            }
+            if not wanted:
+                raise ArchiveSelectionError(f"No acquired archives for request {index}.")
+            # A discovery request can select native child scopes, such as OKX
+            # option families under a base coin. The acquisition receipt binds
+            # each child to its requested scope. The registry row owns actual
+            # content identity for normalization resolution.
+            pinned_filters = filters.model_copy(
+                update={"instrument": None, "scope_kind": None, "origin": "remote"}
+            )
+            for local_id, pin in sorted(wanted.items()):
+                found = await scan(
+                    c,
+                    parameters(
+                        paths.raw_dir, pinned_filters, archive_id=local_id, include_unusable=True
+                    ),
+                    0,
+                )
+                if len(found) != 1:
+                    raise ArchiveSelectionError(
+                        f"Pinned archive {local_id} is unavailable for request {index}."
+                    )
+                row = found[0]
+                modified = row.get("source_last_modified")
+                if (
+                    row["relative_path"] != pin.relative_path
+                    or row["sha256"] != pin.sha256
+                    or row.get("remote_archive_id") != pin.remote_archive_id
+                    or row.get("source_object_key") != pin.source_object_key
+                    or row.get("source_etag") != pin.source_etag
+                    or revision_time(modified if isinstance(modified, datetime) else None)
+                    != pin.source_last_modified
+                ):
+                    raise ArchiveSelectionError(
+                        f"Pinned archive {pin.local_archive_id} changed after acquisition."
+                    )
+                rows.append(row)
         coverage = CoverageGroup({})
         diagnostics: list[dict[str, object]] = []
         selected: list[dict[str, object]] = []
@@ -591,75 +652,183 @@ async def prepare_batch(
     *,
     dry_run: bool = False,
     http: HttpSettings | None = None,
+    pinned: ArchiveSelection | None = None,
+    allocation_seed: str = "",
+    historical: Path | None = None,
+    executable: Path | None = None,
+    lifecycle: Lifecycle = lambda _: None,
+    on_candidate: PreparationObserver = ignore_preparation,
 ) -> dict[str, object]:
     dsn = testing_dsn(paths.root)
     async with testing_connection(dsn) as c:
         async with c.transaction():
             await c.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-            plan = (
-                await plan_batch(c, paths, recipe)
-                if not isinstance(recipe, PreparationRequest)
-                else await plan_manual_batch(c, paths, recipe)
-            )
+            if isinstance(recipe, PreparationRequest):
+                plan = await plan_manual_batch(c, paths, recipe)
+            elif pinned is None and not allocation_seed:
+                plan = await plan_batch(c, paths, recipe)
+            else:
+                plan = await plan_batch(
+                    c, paths, recipe, pinned=pinned, allocation_seed=allocation_seed
+                )
         report = cast(dict[str, object], json.loads(json.dumps(plan.report, default=str)))
         report["dry_run"] = dry_run
         if not dry_run:
-            publish_batch(paths, plan, report)
+            if historical is None and executable is None:
+                publish_batch(paths, plan, report)
+            else:
+                assert historical is not None and executable is not None
+                await publish_batch_async(
+                    paths,
+                    plan,
+                    report,
+                    historical,
+                    executable,
+                    lifecycle=lifecycle,
+                    on_candidate=on_candidate,
+                )
         return report
 
 
+def stage_batch(
+    paths: ProjectPaths,
+    plan: BatchPlan,
+    report: dict[str, object],
+    directory: Path,
+    historical: Path | None,
+    executable: Path | None,
+) -> list[str] | None:
+    from forge.historical.engine.managed import resolve
+    from forge.historical.normalization.execution import profile_inventory
+
+    for document in plan.jobs.values():
+        output = obj(document["output"])
+        for key in ("staging_path", "dataset_path"):
+            target = Path(str(output[key]))
+            require(
+                not target.exists() and not target.is_symlink(), f"Output already exists: {target}"
+            )
+    source = directory / "normalize-batch.json"
+    write_job(source, plan.batch)
+    report["profile_evidence"] = [
+        {"id": item["id"], "sha256": item["sha256"]}
+        for item in profile_inventory(paths, historical)
+    ]
+    config = (historical or paths.config_dir / "historical") / "general.toml"
+    report["configuration_sha256"] = checksum(config)
+    report["submitted_sha256"] = checksum(source)
+    if plan.batch["status"] != "prepared":
+        return None
+    binary = executable or resolve(paths)
+    report["executable_sha256"] = checksum(binary)
+    return batch_validation_command(paths, binary, source, config)
+
+
+def batch_validation_command(
+    paths: ProjectPaths, binary: Path, source: Path, config: Path
+) -> list[str]:
+    return [
+        str(binary),
+        "--validate-batch",
+        str(source),
+        "--project-root",
+        str(paths.root),
+        "--config",
+        str(config),
+        "--profiles-root",
+        str(config.parent),
+    ]
+
+
+def record_batch_validation(report: dict[str, object], output: str) -> None:
+    report["engine_validation"] = json.loads(output)
+    report["engine_ready"] = True
+    report["engine_compatibility"] = {
+        **obj(report.get("engine_compatibility", {})),
+        "validation": "passed production batch parser",
+    }
+
+
 def publish_batch(paths: ProjectPaths, plan: BatchPlan, report: dict[str, object]) -> None:
+    from forge.historical.engine.managed import supervised
+
     paths.runs_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".prepare-normalize-", dir=paths.runs_dir) as temporary:
         directory = Path(temporary)
-        for document in plan.jobs.values():
-            output = document["output"]
-            assert isinstance(output, dict)
-            output = cast(dict[str, object], output)
-            for key in ("staging_path", "dataset_path"):
-                target = Path(str(output[key]))
-                require(
-                    not target.exists() and not target.is_symlink(),
-                    f"Output already exists: {target}",
-                )
-        write_job(directory / "normalize-batch.json", plan.batch)
-        from forge.historical.engine.managed import checksum, resolve, supervised
-        from forge.historical.profiles.service import discover
-
-        report["profile_evidence"] = [
-            {"id": item["id"], "sha256": item["sha256"]} for item in discover(paths)
-        ]
-        config = paths.config_dir / "historical/general.toml"
-        report["configuration_sha256"] = checksum(config)
-        if plan.batch["status"] == "prepared":
-            binary = resolve(paths)
-            report["executable_sha256"] = checksum(binary)
-            report["submitted_sha256"] = checksum(directory / "normalize-batch.json")
-            response = supervised(
-                [
-                    str(binary),
-                    "--validate-batch",
-                    str(directory / "normalize-batch.json"),
-                    "--project-root",
-                    str(paths.root),
-                    "--config",
-                    str(config),
-                    "--profiles-root",
-                    str(config.parent),
-                ],
-                cwd=paths.root,
-            )
+        argv = stage_batch(paths, plan, report, directory, None, None)
+        if argv is not None:
+            response = supervised(argv, cwd=paths.root)
             require(
                 response.returncode == 0, f"Production batch validation failed: {response.stdout}"
             )
-            report["engine_validation"] = json.loads(response.stdout)
-            report["engine_ready"] = True
-        report["engine_compatibility"] = {
-            **obj(report.get("engine_compatibility", {})),
-            "validation": "passed production batch parser",
-        }
+            record_batch_validation(report, response.stdout)
         write_job(directory / "prepare-report.json", report)
         require(
             not plan.run.exists() and not plan.run.is_symlink(), f"Batch already exists: {plan.run}"
         )
         directory.rename(plan.run)
+
+
+async def validate_candidate(
+    paths: ProjectPaths,
+    source: Path,
+    report: dict[str, object],
+    historical: Path,
+    executable: Path,
+    *,
+    lifecycle: Lifecycle,
+) -> dict[str, object]:
+    config = historical / "general.toml"
+    require(
+        checksum(executable) == report["executable_sha256"]
+        and checksum(config) == report["configuration_sha256"]
+        and checksum(source) == report["submitted_sha256"],
+        "Retained normalization preparation changed before validation.",
+    )
+    directory = source.parent / f"validation-{uuid4().hex}"
+    directory.mkdir()
+    lifecycle("validate")
+    response = await check(
+        batch_validation_command(paths, executable, source, config),
+        paths.root,
+        directory,
+        "validation",
+    )
+    if response.returncode:
+        report.update(
+            status="invalid",
+            validation_error=response.stdout,
+            report_path=str(directory / "prepare-report.json"),
+        )
+    else:
+        record_batch_validation(report, response.stdout)
+        report["report_path"] = str(source.parent / "prepare-report.json")
+    report["validation_logs"] = str(directory)
+    write_job(Path(str(report["report_path"])), report)
+    return report
+
+
+async def publish_batch_async(
+    paths: ProjectPaths,
+    plan: BatchPlan,
+    report: dict[str, object],
+    historical: Path,
+    executable: Path,
+    *,
+    lifecycle: Lifecycle,
+    on_candidate: PreparationObserver,
+) -> None:
+    plan.run.mkdir(parents=True, exist_ok=False)
+    report["engine_ready"] = False
+    report.pop("engine_validation", None)
+    argv = await joined_io(
+        lambda: stage_batch(paths, plan, report, plan.run, historical, executable)
+    )
+    if argv is None:
+        write_job(plan.run / "prepare-report.json", report)
+        return
+    candidate = plan.run / "prepare-candidate.json"
+    write_job(candidate, report)
+    source = plan.run / "normalize-batch.json"
+    on_candidate(source, candidate)
+    await validate_candidate(paths, source, report, historical, executable, lifecycle=lifecycle)

@@ -46,6 +46,8 @@ class AcquisitionResult:
     bytes_written: int
     sha256: str
     external_archive_id: int | None = None
+    source_etag: str | None = None
+    source_last_modified: datetime | None = None
 
 
 def root_key(root: Path) -> str:
@@ -142,6 +144,8 @@ async def reuse_registered(
                 actual[0],
                 actual[1],
                 external_archive_id,
+                local.source_etag,
+                local.source_last_modified,
             )
 
 
@@ -256,7 +260,16 @@ async def acquire(
             on_activity("Publishing validated archive")
         await disk(publish, partial, destination)
         await complete(connection, local_id)
-        return AcquisitionResult(remote.id, local_id, "completed", relative, size, checksum)
+        return AcquisitionResult(
+            remote.id,
+            local_id,
+            "completed",
+            relative,
+            size,
+            checksum,
+            source_etag=remote.source_etag,
+            source_last_modified=remote.source_last_modified,
+        )
     except BaseException:
         if not durable:
             await disk(partial.unlink, missing_ok=True)
