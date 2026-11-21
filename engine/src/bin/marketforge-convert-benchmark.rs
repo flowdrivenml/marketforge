@@ -209,18 +209,10 @@ struct BenchmarkReceipt {
 // Subprocess execution
 // -----------------------------------------------------------------------------
 
-fn execute(
-    binary: &Path,
-    root: &Path,
-    job: &Path,
-    workers: usize,
-    mode: &str,
-) -> Result<(Output, f64), String> {
+fn execute(binary: &Path, job: &Path, workers: usize, mode: &str) -> Result<(Output, f64), String> {
     let started = Instant::now();
 
     let output = Command::new(binary)
-        .arg("--project-root")
-        .arg(root)
         .arg("--job")
         .arg(job)
         .arg(mode)
@@ -275,6 +267,14 @@ fn run_benchmark(config: BenchmarkConfig) -> Result<(), String> {
     source_manifest
         .validate()
         .map_err(|error| error.to_string())?;
+
+    if config
+        .workers
+        .iter()
+        .any(|workers| *workers > original.resources.workers)
+    {
+        return Err("benchmark worker count exceeds prepared conversion limits".into());
+    }
 
     let output_root = if config.output.is_absolute() {
         config.output.clone()
@@ -337,8 +337,6 @@ fn run_benchmark(config: BenchmarkConfig) -> Result<(), String> {
             job.input_merge = input_merge.clone();
             job.output.dataset_path = dataset_path.clone();
 
-            job.resources.workers = workers as _;
-
             fs::write(
                 &benchmark_job_path,
                 serde_json::to_vec_pretty(&job).map_err(|error| error.to_string())?,
@@ -383,13 +381,8 @@ fn run_benchmark(config: BenchmarkConfig) -> Result<(), String> {
                 config.phase,
                 BenchmarkPhase::Materialize | BenchmarkPhase::Publish | BenchmarkPhase::Full
             ) {
-                let (output, elapsed) = execute(
-                    &binary,
-                    &root,
-                    &benchmark_job_path,
-                    workers,
-                    "--materialize",
-                )?;
+                let (output, elapsed) =
+                    execute(&binary, &benchmark_job_path, workers, "--materialize")?;
 
                 run.materialization_seconds = elapsed;
                 run.prepass_seconds =
@@ -405,7 +398,7 @@ fn run_benchmark(config: BenchmarkConfig) -> Result<(), String> {
                 && matches!(config.phase, BenchmarkPhase::Publish | BenchmarkPhase::Full)
             {
                 let (output, elapsed) =
-                    execute(&binary, &root, &benchmark_job_path, workers, "--publish")?;
+                    execute(&binary, &benchmark_job_path, workers, "--publish")?;
 
                 run.publication_seconds = elapsed;
 

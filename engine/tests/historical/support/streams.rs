@@ -272,7 +272,67 @@ fn committed_provenance_supports_merge_and_conversion_without_private_jobs() {
     let catalog_path = run.path.join("instruments.json");
     std::fs::write(&catalog_path,serde_json::to_vec(&json!({"version":1,"instruments":[{"exchange":"binance","symbol":"BTCUSDT","instrument_kind":"spot","contract_kind":null,"base_currency":"BTC","quote_currency":"USDT"}]})).unwrap()).unwrap();
     let catalog = InstrumentCatalog::load(&catalog_path).unwrap();
-    let convert:ConvertJob=serde_json::from_value(json!({"job_id":2,"operation":"convert","input_merge":run.path.join("merge"),"conversion":{"target_quote":"USDT","price_source":"last_trade","max_staleness_ns":1000000},"resources":{"workers":1,"memory_limit_mb":512,"max_open_files":32},"output":{"dataset_path":run.path.join("converted")}})).unwrap();
+    use marketforge_engine::historical::normalize::manifest::{
+        file_sha256, write_publication_checksums,
+    };
+    let mut convert = load_convert_job(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/historical/fixtures/convert.json"),
+    )
+    .unwrap();
+    convert.job_id = 2;
+    convert.input_merge = run.path.join("merge");
+    convert.output.dataset_path = run.path.join("converted");
+    convert.conversion.references.clear();
+    convert.conversion.max_staleness_ns = 1_000_000;
+
+    std::fs::create_dir(&convert.input_merge).unwrap();
+    let manifest_path = convert.input_merge.join("manifest.json");
+    std::fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    write_publication_checksums(&convert.input_merge, ["manifest.json".into()]).unwrap();
+    convert.catalog_sha256 = file_sha256(&catalog_path).unwrap();
+    let stream = &manifest.streams[0];
+    let identity = marketforge_engine::shared::domain::instrument::InstrumentIdentity {
+        exchange: stream.exchange.clone(),
+        symbol: stream.symbol.clone(),
+        instrument_kind: job.tasks[0].instrument.instrument_kind,
+        contract_kind: job.tasks[0].instrument.contract_kind,
+    };
+    let instrument = catalog.resolve(&identity).unwrap();
+    convert.source = PreparedConversionPublication {
+        merge_job_id: manifest.job_id,
+        manifest_sha256: file_sha256(&manifest_path).unwrap(),
+        publication_checksums_sha256: file_sha256(
+            &convert.input_merge.join("publication-checksums.json"),
+        )
+        .unwrap(),
+        normalized_inputs: vec![ConversionNormalizationEvidence {
+            dataset_id: stream.dataset_id,
+            manifest_sha256: None,
+            processing_job_sha256: file_sha256(
+                &job.output.dataset_path.join("processing-job.json"),
+            )
+            .unwrap(),
+        }],
+        streams: vec![PreparedConversionStream {
+            dataset_id: stream.dataset_id,
+            stream_id: stream.stream_id.clone(),
+            stream_rank: stream.stream_rank,
+            kind: ConversionStreamKind::Trade,
+            instrument_id: stream.instrument_id,
+            instrument_namespace: "marketforge-profile-unit-v1".into(),
+            identity,
+            base_currency: instrument.base_currency.clone(),
+            quote_currency: instrument.quote_currency.clone(),
+        }],
+    };
+    assert_eq!(
+        convert::prepare_conversion_execution(&convert)
+            .unwrap()
+            .plan
+            .identity_streams,
+        1
+    );
     let resolved =
         convert::resolve_conversion_catalog(&convert, &manifest, &catalog, &run.path).unwrap();
     assert_eq!(resolved.sources.len(), 1);

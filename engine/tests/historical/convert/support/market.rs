@@ -160,7 +160,7 @@ pub fn create_with_omitted_trades(
         fs::create_dir(&data).unwrap();
         let mut tasks = Vec::new();
         let mut declared = Vec::new();
-        for (symbol, &(symbol_name, _, _)) in SYMBOLS.iter().enumerate() {
+        for (symbol, &(symbol_name, base, quote)) in SYMBOLS.iter().enumerate() {
             let Some(event) = selected
                 .iter()
                 .copied()
@@ -182,8 +182,8 @@ pub fn create_with_omitted_trades(
                 symbol: symbol_name.into(),
                 instrument_id,
                 stream_id: id.clone(),
-                base_currency: None,
-                quote_currency: None,
+                base_currency: Some(base.into()),
+                quote_currency: Some(quote.into()),
             });
             declared.push(json!({"stream_id": id, "stream_rank": symbol}));
             let raw = data.join(format!("{symbol_name}.csv"));
@@ -429,4 +429,78 @@ pub fn create_with_omitted_trades(
     )
     .unwrap();
     manifest
+}
+
+/// Pin a generated complete publication with the same evidence the CLI consumes.
+pub fn prepared_binding(
+    directory: &Path,
+    manifest: &PhysicalMergeManifest,
+) -> marketforge_engine::historical::job::PreparedConversionPublication {
+    use marketforge_engine::historical::job::{
+        ConversionNormalizationEvidence, ConversionStreamKind, PreparedConversionPublication,
+        PreparedConversionStream,
+    };
+    use marketforge_engine::historical::normalize::manifest::write_publication_checksums;
+    use marketforge_engine::shared::domain::instrument::{Currency, InstrumentIdentity};
+
+    write_publication_checksums(
+        directory,
+        std::iter::once("manifest.json".into())
+            .chain(manifest.files.iter().map(|file| file.path.clone().into())),
+    )
+    .unwrap();
+    let streams = manifest
+        .streams
+        .iter()
+        .map(|stream| {
+            let (_, base, quote) = SYMBOLS
+                .iter()
+                .find(|(symbol, _, _)| *symbol == stream.symbol)
+                .unwrap();
+            PreparedConversionStream {
+                dataset_id: stream.dataset_id,
+                stream_id: stream.stream_id.clone(),
+                stream_rank: stream.stream_rank,
+                kind: match stream.kind {
+                    UnifiedMergeStreamKind::Trade => ConversionStreamKind::Trade,
+                    UnifiedMergeStreamKind::Depth => ConversionStreamKind::Depth,
+                },
+                instrument_id: stream.instrument_id,
+                instrument_namespace: "conversion-test-v1".into(),
+                identity: InstrumentIdentity {
+                    exchange: stream.exchange.clone(),
+                    symbol: stream.symbol.clone(),
+                    instrument_kind: marketforge_engine::historical::job::InstrumentKind::Spot,
+                    contract_kind: None,
+                },
+                base_currency: Currency::new(*base).unwrap(),
+                quote_currency: Currency::new(*quote).unwrap(),
+            }
+        })
+        .collect();
+    PreparedConversionPublication {
+        merge_job_id: manifest.job_id,
+        manifest_sha256: file_sha256(&directory.join("manifest.json")).unwrap(),
+        publication_checksums_sha256: file_sha256(&directory.join("publication-checksums.json"))
+            .unwrap(),
+        normalized_inputs: manifest
+            .input_datasets
+            .iter()
+            .map(|input| ConversionNormalizationEvidence {
+                dataset_id: input.dataset_id,
+                manifest_sha256: None,
+                processing_job_sha256: file_sha256(
+                    &Path::new(&input.dataset_path).join("processing-job.json"),
+                )
+                .unwrap(),
+            })
+            .collect(),
+        streams,
+    }
+}
+
+pub fn remove_preparation_inputs(manifest: &PhysicalMergeManifest) {
+    for input in &manifest.input_datasets {
+        fs::remove_dir_all(&input.dataset_path).unwrap();
+    }
 }

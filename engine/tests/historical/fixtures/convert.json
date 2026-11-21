@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "job_id": 265083950276773788,
   "operation": "convert",
   "input_merge": "/home/pasha/projects/marketforge/data/datasets/merged/2079541492669036539",
@@ -32,5 +33,159 @@
   },
   "output": {
     "dataset_path": "/home/pasha/projects/marketforge/data/datasets/converted/265083950276773788"
+  },
+  "source": {
+    "merge_job_id": 2079541492669036539,
+    "manifest_sha256": "a23e917fd6f5f69bdff7a506ff8a2775a0f15ea1c373ed080edbbf2ec7c34c91",
+    "publication_checksums_sha256": "bc68f19ef3e62d0ac6cbc5de3750e6f145083df4894dcc44c2f7c68b13e899bd",
+    "normalized_inputs": [
+      {
+        "dataset_id": 2974518619182265459,
+        "manifest_sha256": "246b7d4c57d62f1783487bfb8e8eb8627ad8f393d259c5e73a019eaf2a928d9b",
+        "processing_job_sha256": "8ad67494e1fa7fd14172c87fb52966b252aee5909d8744c5cf8356630635bec3"
+      },
+      {
+        "dataset_id": 4968760985013963110,
+        "manifest_sha256": "1db81b77aa1dc741e17db7fd27e0a6002a504a0dc657a8d6a81624dc8b223906",
+        "processing_job_sha256": "4db47e1a6ee0483b7b91a63f81e8d02798008b3792c65a8025e531b0a5902968"
+      }
+    ],
+    "streams": [
+      {
+        "dataset_id": 4968760985013963110,
+        "stream_id": "bybit.spot.spot.BTCUSDT.trades",
+        "stream_rank": 0,
+        "kind": "trade",
+        "instrument_id": 1,
+        "instrument_namespace": "marketforge:testing:historical:v1",
+        "identity": {
+          "exchange": "bybit",
+          "symbol": "BTCUSDT",
+          "instrument_kind": "spot",
+          "contract_kind": null
+        },
+        "base_currency": "BTC",
+        "quote_currency": "USDT"
+      },
+      {
+        "dataset_id": 2974518619182265459,
+        "stream_id": "bybit.spot.spot.BTCUSDT.depth",
+        "stream_rank": 1,
+        "kind": "depth",
+        "instrument_id": 1,
+        "instrument_namespace": "marketforge:testing:historical:v1",
+        "identity": {
+          "exchange": "bybit",
+          "symbol": "BTCUSDT",
+          "instrument_kind": "spot",
+          "contract_kind": null
+        },
+        "base_currency": "BTC",
+        "quote_currency": "USDT"
+      },
+      {
+        "dataset_id": 4968760985013963110,
+        "stream_id": "bybit.spot.spot.BTCUSDC.trades",
+        "stream_rank": 2,
+        "kind": "trade",
+        "instrument_id": 65,
+        "instrument_namespace": "marketforge:testing:historical:v1",
+        "identity": {
+          "exchange": "bybit",
+          "symbol": "BTCUSDC",
+          "instrument_kind": "spot",
+          "contract_kind": null
+        },
+        "base_currency": "BTC",
+        "quote_currency": "USDC"
+      },
+      {
+        "dataset_id": 2974518619182265459,
+        "stream_id": "bybit.spot.spot.BTCUSDC.depth",
+        "stream_rank": 3,
+        "kind": "depth",
+        "instrument_id": 65,
+        "instrument_namespace": "marketforge:testing:historical:v1",
+        "identity": {
+          "exchange": "bybit",
+          "symbol": "BTCUSDC",
+          "instrument_kind": "spot",
+          "contract_kind": null
+        },
+        "base_currency": "BTC",
+        "quote_currency": "USDC"
+      },
+      {
+        "dataset_id": 4968760985013963110,
+        "stream_id": "bybit.spot.spot.ETHUSDT.trades",
+        "stream_rank": 4,
+        "kind": "trade",
+        "instrument_id": 2,
+        "instrument_namespace": "marketforge:testing:historical:v1",
+        "identity": {
+          "exchange": "bybit",
+          "symbol": "ETHUSDT",
+          "instrument_kind": "spot",
+          "contract_kind": null
+        },
+        "base_currency": "ETH",
+        "quote_currency": "USDT"
+      },
+      {
+        "dataset_id": 2974518619182265459,
+        "stream_id": "bybit.spot.spot.ETHUSDT.depth",
+        "stream_rank": 5,
+        "kind": "depth",
+        "instrument_id": 2,
+        "instrument_namespace": "marketforge:testing:historical:v1",
+        "identity": {
+          "exchange": "bybit",
+          "symbol": "ETHUSDT",
+          "instrument_kind": "spot",
+          "contract_kind": null
+        },
+        "base_currency": "ETH",
+        "quote_currency": "USDT"
+      },
+      {
+        "dataset_id": 4968760985013963110,
+        "stream_id": "bybit.spot.spot.ETHBTC.trades",
+        "stream_rank": 6,
+        "kind": "trade",
+        "instrument_id": 4,
+        "instrument_namespace": "marketforge:testing:historical:v1",
+        "identity": {
+          "exchange": "bybit",
+          "symbol": "ETHBTC",
+          "instrument_kind": "spot",
+          "contract_kind": null
+        },
+        "base_currency": "ETH",
+        "quote_currency": "BTC"
+      },
+      {
+        "dataset_id": 2974518619182265459,
+        "stream_id": "bybit.spot.spot.ETHBTC.depth",
+        "stream_rank": 7,
+        "kind": "depth",
+        "instrument_id": 4,
+        "instrument_namespace": "marketforge:testing:historical:v1",
+        "identity": {
+          "exchange": "bybit",
+          "symbol": "ETHBTC",
+          "instrument_kind": "spot",
+          "contract_kind": null
+        },
+        "base_currency": "ETH",
+        "quote_currency": "BTC"
+      }
+    ]
+  },
+  "external_reference": null,
+  "catalog_sha256": "434edc4f3012ccfcb36264b2d72d1d863e9476b995358ee7bee22fa6fd998f25",
+  "parquet": {
+    "row_group_target_mb": 256,
+    "file_target_mb": 2048,
+    "compression_level": 3
   }
 }

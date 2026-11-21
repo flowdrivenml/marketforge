@@ -8,6 +8,7 @@ from typing import Any
 
 from forge.historical.conversion import recipes, service
 from forge.historical.conversion.execution import execute
+from forge.historical.engine.managed import resolve
 from forge.shared.config.library import ConfigurationNameError, resolve_config_file, run_reference
 from forge.shared.errors import MarketForgeError
 from forge.startup.context import ApplicationContext
@@ -61,9 +62,16 @@ def run(args: argparse.Namespace, context: ApplicationContext) -> int:
                     raise
         source, submitted = run_reference(reference, managed)
         if submitted:
-            if action != "run":
+            if action == "validate":
+                result = {
+                    "status": "valid",
+                    "path": str(source),
+                    "validation": service.validate_prepared_job(resolve(paths, "convert"), source),
+                }
+            elif action == "run":
+                result = asyncio.run(execute(paths, source, tui=tui))
+            else:
                 raise MarketForgeError(f"convert {action} requires a conversion TOML recipe.")
-            result = asyncio.run(execute(paths, source, tui=tui))
         elif action == "validate":
             recipe, _, _ = recipes.load_recipe(paths, source)
             result = {
@@ -99,13 +107,8 @@ def render(context: ApplicationContext, result: dict[str, Any]) -> None:
             markup=False,
         )
     for job in result.get("jobs", []):
-        routes = {
-            tuple([record["native_quote"], *[edge["to"] for edge in route]])
-            for record in job.get("routes", [])
-            for route in record["routes"]
-        }
-        for route in sorted(routes):
-            console.print(" → ".join(route), markup=False)
+        if validation := job.get("validation_output"):
+            console.print(str(validation).strip(), markup=False)
         if path := job.get("result_path"):
             console.print(path, markup=False)
     for message in [*result.get("blockers", []), *result.get("compatibility_blockers", [])]:

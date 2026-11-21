@@ -2,7 +2,11 @@
 
 import asyncio
 import json
+import os
+import shutil
+import subprocess
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
 
@@ -14,9 +18,16 @@ from forge.datasets.parquet import arrow_modules
 from forge.historical.archives.config import AcquisitionConfig
 from forge.historical.archives.models import archive_scope_document, archive_scope_key
 from forge.historical.conversion import discovery, execution, recipes, registry, service
-from forge.historical.conversion.contract import Identity, Job, Policy, Resources, build_job
+from forge.historical.conversion.contract import (
+    Identity,
+    Job,
+    Parquet,
+    Policy,
+    Resources,
+    build_job,
+)
 from forge.historical.conversion.evidence import stream_metadata, verify_merge_inventory
-from forge.historical.conversion.planning import reachable, references, static_blockers
+from forge.historical.conversion.planning import references
 from forge.historical.engine.managed import checksum, plan, select
 from forge.historical.normalization.config import NormalizationRecipe
 from forge.shared.errors import MarketForgeError
@@ -114,7 +125,10 @@ def test_recipe_cli_rejects_conflicting_arguments_and_legacy(
     assert "Legacy archive-ID" in capsys.readouterr().err
 
 
-def test_exact_single_job_contract(tmp_path: Path) -> None:
+def test_exact_single_job_contract(paths: ProjectPaths, tmp_path: Path) -> None:
+    source = publication(paths, combined=False)
+    write_trade_publication(source)
+    binding = service.prepared_binding(source)
     policy = Policy(target_quote="USDT", max_staleness_ns=60_000_000_000, max_hops=2)
     job = build_job(
         int(ENGINE_ID),
@@ -124,9 +138,18 @@ def test_exact_single_job_contract(tmp_path: Path) -> None:
         Resources(),
         [Identity(exchange="bybit", symbol="BTCUSDT", instrument_kind="spot")],
         tmp_path / "trade-reference",
+        source_binding=binding,
+        external_binding=binding,
+        catalog_sha256=checksum(Path(source["root"]) / "manifest.json"),
+        parquet=Parquet(row_group_target_mb=1, file_target_mb=4, compression_level=3),
     )
     engine = json.loads(job.model_dump_json())
     assert set(engine) == {
+        "schema_version",
+        "source",
+        "external_reference",
+        "catalog_sha256",
+        "parquet",
         "job_id",
         "operation",
         "input_merge",
@@ -153,8 +176,10 @@ def test_exact_single_job_contract(tmp_path: Path) -> None:
     ]
     assert config["price_source"] == "last_trade"
     assert Job.model_validate(engine) == job
-    with pytest.raises(ValidationError, match="Extra inputs"):
+    with pytest.raises(ValidationError):
         Job.model_validate({**engine, "schema_version": 3})
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        Job.model_validate({**engine, "unexpected": True})
     with pytest.raises(ValidationError):
         Policy(target_quote="USDT", max_staleness_ns=0, max_hops=5)
     with pytest.raises(ValidationError):
@@ -165,6 +190,9 @@ def stream(symbol: str, base: str, quote: str, rank: int, kind: str = "trade") -
     return {
         "stream_id": f"bybit.{symbol}.{kind}",
         "stream_rank": rank,
+        "dataset_id": "4968760985013963110",
+        "instrument_namespace": "test:conversion",
+        "instrument_id": {"BTCUSDT": 1, "BTCUSDC": 65, "ETHUSDT": 2, "ETHBTC": 4}[symbol],
         "kind": kind,
         "identity": Identity(exchange="bybit", symbol=symbol, instrument_kind="spot").model_dump(),
         "base_currency": base,
@@ -172,7 +200,6 @@ def stream(symbol: str, base: str, quote: str, rank: int, kind: str = "trade") -
         "instrument_type": "spot",
         "market_observed": True,
         "observed": True,
-        "engine_first_task_matches": True,
     }
 
 
@@ -199,60 +226,142 @@ def publication(paths: ProjectPaths, *, combined: bool, key: int = 60) -> dict[s
     }
 
 
-def test_explicit_trade_reference_routing(paths: ProjectPaths) -> None:
-    source = publication(paths, combined=True)
-    chosen = references(source, None, ["bybit.BTCUSDT.trade", "bybit.BTCUSDC.trade"])
-    policy = Policy(target_quote="USDT", max_staleness_ns=60_000_000_000, max_hops=2)
-    routes = {r["stream_id"]: r for r in reachable(source, chosen, policy)}
-    assert routes["bybit.ETHUSDT.trade"]["status"] == "identity"
-    assert routes["bybit.BTCUSDT.depth"]["routes"] == [[]]
-    assert routes["bybit.ETHBTC.depth"]["routes"] == [
-        [
-            {
-                "from": "BTC",
-                "to": "USDT",
-                "direction": "direct",
-                "stream_id": "bybit.BTCUSDT.trade",
-            }
-        ]
+def write_trade_publication(publication: dict[str, Any]) -> None:
+    """One complete physical trade with known Arrow types and committed pins."""
+    pa, pq = arrow_modules()
+    root = Path(publication["root"])
+    relative = "timeline/partition-000000/part-000000.parquet"
+    file = root / relative
+    file.parent.mkdir(parents=True, exist_ok=True)
+    row = publication["streams"][0]
+    decimal = pa.decimal256(76, 28)
+    fields = [
+        ("event_timestamp_ns", pa.int64(), False, START),
+        ("system_timestamp_ns", pa.int64(), True, None),
+        ("exchange", pa.string(), False, "bybit"),
+        ("instrument_id", pa.int64(), False, row["instrument_id"]),
+        ("symbol", pa.string(), False, "BTCUSDT"),
+        ("stream_id", pa.string(), False, row["stream_id"]),
+        ("trade_id", pa.string(), True, "trade-1"),
+        ("sequence", pa.uint64(), True, None),
+        ("side", pa.string(), False, "buy"),
+        ("price", decimal, False, Decimal("100")),
+        ("quantity_base", decimal, True, Decimal("2")),
+        ("quantity_quote", decimal, True, Decimal("200")),
+        ("quantity_contracts", decimal, True, None),
+        ("is_rpi", pa.bool_(), True, None),
+        *(
+            (name, decimal, True, None)
+            for name in ("trade_iv", "mark_iv", "index_price", "mark_price")
+        ),
+        ("stream_rank", pa.uint32(), False, row["stream_rank"]),
+        ("dataset_id", pa.uint64(), False, int(row["dataset_id"])),
+        ("task_id", pa.uint64(), False, 1),
+        ("event_ordinal", pa.uint64(), False, 0),
+        ("canonical_row_offset", pa.uint64(), False, 0),
+        ("canonical_row_count", pa.uint64(), False, 1),
     ]
-    assert [edge["to"] for edge in routes["bybit.BTCUSDC.trade"]["routes"][0]] == ["BTC", "USDT"]
-    assert routes["bybit.BTCUSDC.trade"]["routes"][0][0]["direction"] == "inverse"
-    assert any(
-        "also has a depth stream" in message
-        for message in static_blockers(
-            source,
-            None,
-            chosen,
-            list(routes.values()),
+    schema = pa.schema([pa.field(name, kind, nullable) for name, kind, nullable, _ in fields])
+    pq.write_table(
+        pa.Table.from_pylist([{name: value for name, _, _, value in fields}], schema), file
+    )
+
+    normalized = root.parent / f"normalized-{root.name}"
+    normalized.mkdir(exist_ok=True)
+    (normalized / "manifest.json").write_text(json.dumps({"dataset_id": int(row["dataset_id"])}))
+    (normalized / "processing-job.json").write_text(json.dumps({"job_id": 1}))
+    normalized_pin = checksum(normalized / "manifest.json")
+    publication["normalized_inputs"] = [
+        {
+            "root": str(normalized),
+            "engine_publication_id": row["dataset_id"],
+            "manifest_sha256": normalized_pin,
+            "processing_job_sha256": checksum(normalized / "processing-job.json"),
+        }
+    ]
+    (root / "merge-input-checksums.json").write_text(json.dumps([normalized_pin]))
+    (root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "protocol_version": 1,
+                "physical_schema_version": 1,
+                "timeline_ordering": "chronological",
+                "job_id": int(publication["engine_publication_id"]),
+                "mode": "trades",
+                "input_datasets": [
+                    {
+                        "dataset_id": int(row["dataset_id"]),
+                        "dataset_path": str(normalized),
+                        "manifest_version": 5,
+                    }
+                ],
+                "time_range": {"start_ns": START, "end_ns": END},
+                "streams": [
+                    {
+                        **{
+                            name: row[name]
+                            for name in (
+                                "stream_id",
+                                "stream_rank",
+                                "kind",
+                                "instrument_id",
+                                "base_currency",
+                                "quote_currency",
+                            )
+                        },
+                        "exchange": "bybit",
+                        "symbol": "BTCUSDT",
+                        "dataset_id": int(row["dataset_id"]),
+                    }
+                ],
+                "events_written": 1,
+                "trade_events": 1,
+                "depth_events": 0,
+                "canonical_rows": 1,
+                "files_written": 1,
+                "row_groups": 1,
+                "start_timestamp_ns": START,
+                "end_timestamp_ns": START,
+                "files": [
+                    {
+                        "path": relative,
+                        "size_bytes": file.stat().st_size,
+                        "rows": 1,
+                        "partition_id": 0,
+                        "start_timestamp_ns": START,
+                        "end_timestamp_ns": START,
+                    }
+                ],
+                "boundary_links": [],
+                "skipped_initializations": [],
+                "checkpoints": [],
+                "initial_reconstruction": [],
+            }
         )
     )
-    with pytest.raises(MarketForgeError, match="No metadata route from USDC"):
-        reachable(source, chosen[:1], policy)
+    publication["fingerprints"] = {
+        name: checksum(root / name)
+        for name in ("manifest.json", "merge-input-checksums.json", relative)
+    }
+    (root / "publication-checksums.json").write_text(json.dumps(publication["fingerprints"]))
+
+
+def test_explicit_trade_reference_selection(paths: ProjectPaths) -> None:
+    source = publication(paths, combined=True)
+    chosen = references(source, None, ["bybit.BTCUSDT.trade", "bybit.BTCUSDC.trade"])
+    assert [item["stream_id"] for item in chosen] == ["bybit.BTCUSDT.trade", "bybit.BTCUSDC.trade"]
+    assert all(item["provider"] == "internal" for item in chosen)
     with pytest.raises(MarketForgeError, match="No observed trade reference"):
         references(source, None, ["bybit.BTCUSDT.depth"])
-    with pytest.raises(MarketForgeError, match="No metadata route"):
-        reachable(source, chosen, policy.model_copy(update={"max_hops": 1}))
 
 
-def test_trade_only_external_reference(paths: ProjectPaths) -> None:
+def test_external_trade_reference_selection(paths: ProjectPaths) -> None:
     source = publication(paths, combined=False)
     source.update(mode="depth", streams=[stream("ETHBTC", "ETH", "BTC", 0, "depth")])
     external = publication(paths, combined=False, key=61)
     picked = references(source, external, ["bybit.BTCUSDT.trade"])
     assert picked[0]["provider"] == "external"
     assert picked[0]["merge_registry_publication_id"] == 61
-    routes = reachable(source, picked, Policy(target_quote="USDT", max_staleness_ns=1))
-    assert static_blockers(source, external, picked, routes) == []
-    assert any(
-        "external" in message
-        for message in static_blockers(
-            source | {"mode": "trades"},
-            external,
-            picked,
-            routes,
-        )
-    )
 
 
 @pytest.mark.asyncio
@@ -360,6 +469,7 @@ def test_historical_instrument_matches_exact_task() -> None:
         "evidence": {
             "resolved_job": {"tasks": [task | {"symbol": "ETHBTC"}, task]},
             "manifest": {
+                "instrument_namespace": "namespace",
                 "resolved_instruments": [
                     {
                         "instrument": {
@@ -372,17 +482,16 @@ def test_historical_instrument_matches_exact_task() -> None:
                         },
                         "metadata_origin": "exact_catalog",
                     }
-                ]
+                ],
             },
         },
     }
     declared = {**identity, "dataset_id": int(ENGINE_ID), "stream_id": task["stream_id"]}
-    metadata = stream_metadata(declared, parent, task | {"symbol": "ETHBTC"})
+    metadata = stream_metadata(declared, parent)
     assert metadata["quote_currency"] == "USDC"
     assert metadata["instrument_namespace"] == "namespace"
-    assert not metadata["engine_first_task_matches"]
     with pytest.raises(MarketForgeError, match="Conflicting historical"):
-        stream_metadata(declared | {"quote_currency": "USDT"}, parent, task)
+        stream_metadata(declared | {"quote_currency": "USDT"}, parent)
 
 
 def test_whole_scope_and_competing_publications(paths: ProjectPaths) -> None:
@@ -503,6 +612,7 @@ def test_dry_run_and_generated_compatibility(
 ) -> None:
     prepare_fixture(paths)
     source = publication(paths, combined=False)
+    write_trade_publication(source)
 
     async def select_source(*_args: object) -> dict[str, Any]:
         return {"sources": [source], "external_reference": None, "candidates": [], "blockers": []}
@@ -536,11 +646,15 @@ async def test_collection_submits_original_single_job_bytes(
         publication(paths, combined=False, key=61),
     ]
 
+    for source in candidates:
+        write_trade_publication(source)
+
     async def select_sources(*_args: object) -> dict[str, Any]:
         return {"sources": candidates, "external_reference": None, "candidates": [], "blockers": []}
 
     binary = paths.root / "converter"
-    binary.write_bytes(b"fixture executable")
+    binary.write_text('#!/bin/sh\n[ "$3" = --validate ]\n')
+    binary.chmod(0o755)
     monkeypatch.setattr(service, "discover", select_sources)
 
     def resolve_fake(_paths: ProjectPaths, _target: str) -> Path:
@@ -553,17 +667,14 @@ async def test_collection_submits_original_single_job_bytes(
     catalog.write_text(service.catalog_snapshot(candidates).model_dump_json())
     report = await service.prepare(paths, recipe)
     assert report["compatibility_blockers"] == []
-    assert report["status"] == "generated"  # Python preflight is not engine validation.
+    assert report["status"] == "generated" and report["compatibility"] == "validated"
     submitted = [await asyncio.to_thread(Path(job["path"]).read_bytes) for job in report["jobs"]]
     recipe.unlink()
     observed: list[bytes] = []
 
-    async def recheck(*_args: object) -> None:
-        return None
-
     def supervise(argv: list[str], *_args: object, tui: bool) -> tuple[int, bool]:
         assert not tui
-        assert "--validate-job" not in argv and "--result-file" not in argv
+        assert argv[1:] == ["--job", argv[2], "--run"]
         document = Path(argv[argv.index("--job") + 1]).read_bytes()
         Job.model_validate_json(document)
         observed.append(document)
@@ -573,7 +684,6 @@ async def test_collection_submits_original_single_job_bytes(
         assert job.input_merge == pinned["root"]
         return {"fixture": True}
 
-    monkeypatch.setattr(execution, "verify_pins", recheck)
     monkeypatch.setattr(execution, "run_process", supervise)
     monkeypatch.setattr(execution, "verify_output", output)
     result = await execution.execute(paths, Path(report["job_path"]))
@@ -666,3 +776,77 @@ async def test_parent_namespaces_must_match(
     )
     with pytest.raises(MarketForgeError, match="cross instrument namespaces"):
         await registry.parents(cast(registry.Connection, object()), pub)
+
+
+@pytest.mark.parametrize("kind", ["merge", "normalize", "acquisition"])
+def test_forge_prepared_job_runs_in_real_engine(
+    paths: ProjectPaths,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    kind: recipes.SourceKind,
+) -> None:
+    configured = os.environ.get("MARKETFORGE_TEST_CONVERT_BINARY")
+    if not configured:
+        pytest.skip("set MARKETFORGE_TEST_CONVERT_BINARY to the freshly built converter")
+    binary = Path(configured).resolve(strict=True)
+    prepare_fixture(paths)
+    recipe = Path(str(recipes.create(paths, f"from-{kind}", kind, "example", "USDT")["path"]))
+    source = publication(paths, combined=False)
+    write_trade_publication(source)
+
+    async def select_source(
+        _paths: ProjectPaths, candidate: recipes.Recipe, _upstream: object
+    ) -> dict[str, Any]:
+        assert candidate.source.kind == kind
+        return {"sources": [source], "external_reference": None, "blockers": []}
+
+    monkeypatch.setattr(service, "discover", select_source)
+
+    def resolve_binary(_paths: ProjectPaths, _target: str) -> Path:
+        return binary
+
+    monkeypatch.setattr(service, "resolve", resolve_binary)
+    monkeypatch.setattr(execution, "resolve", resolve_binary)
+    first = asyncio.run(service.prepare(paths, recipe))
+    second = asyncio.run(service.prepare(paths, recipe))
+    for report in (first, second):
+        assert report["compatibility"] == "validated", report.get("compatibility_blockers")
+    first_path = Path(first["jobs"][0]["path"])
+    first_job = Job.model_validate_json(first_path.read_bytes())
+    second_job = Job.model_validate_json(Path(second["jobs"][0]["path"]).read_bytes())
+    assert first_job.model_dump(exclude={"job_id", "output"}) == second_job.model_dump(
+        exclude={"job_id", "output"}
+    )
+    assert first_job.source.merge_job_id == int(ENGINE_ID)
+    assert first_job.source.streams[0].dataset_id == 4968760985013963110
+
+    for artifact in ("catalog_snapshot", "runtime", "recipe_snapshot", "upstream_snapshot"):
+        Path(first["artifacts"][artifact]["path"]).unlink()
+    for parent in source["normalized_inputs"]:
+        shutil.rmtree(parent["root"])
+    workspace = tmp_path / "unrelated"
+    workspace.mkdir()
+    output = Path(first_job.output.dataset_path)
+    validated = subprocess.run(
+        [str(binary), "--job", str(first_path), "--validate"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=20,
+    )
+    assert validated.returncode == 0, validated.stderr
+    assert not output.exists() and not output.with_suffix(".staging").exists()
+
+    result = asyncio.run(execution.execute(paths, first_path))
+    assert result["status"] == "complete", result
+    assert output.is_dir()
+    assert result["jobs"][0]["argv"][1::2] == ["--job", "--run"]
+    assert result["jobs"][0]["publication"]["events"] == 1
+
+    manifest = Path(source["root"]) / "manifest.json"
+    manifest.write_text(manifest.read_text() + " ")
+    failure = asyncio.run(execution.execute(paths, Path(second["jobs"][0]["path"])))
+    assert failure["status"] == "blocked" and failure["execution"] == "not_started"
+    assert "pin mismatch" in failure["jobs"][0]["error"]
+    assert not Path(second_job.output.dataset_path).exists()

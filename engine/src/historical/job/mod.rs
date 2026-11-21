@@ -17,8 +17,9 @@ mod task;
 mod validate;
 
 pub use convert::{
-    ConversionConfig, ConversionPathPolicy, ConversionPriceSource, ConvertJob, ConvertOperation,
-    ConvertOutput,
+    CONVERT_JOB_SCHEMA_VERSION, ConversionConfig, ConversionNormalizationEvidence,
+    ConversionPathPolicy, ConversionPriceSource, ConversionStreamKind, ConvertJob,
+    ConvertOperation, ConvertOutput, PreparedConversionPublication, PreparedConversionStream,
 };
 
 pub use convert_load::load_convert_job;

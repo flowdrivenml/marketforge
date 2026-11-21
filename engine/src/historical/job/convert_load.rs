@@ -16,7 +16,7 @@ pub fn load_convert_job(path: impl AsRef<Path>) -> Result<ConvertJob> {
 
     let job: ConvertJob = serde_json::from_reader(BufReader::new(file)).map_err(|error| {
         MarketForgeError::InvalidConfiguration(format!(
-            "failed to parse conversion job {}: {error}",
+            "failed to parse prepared conversion job {}: {error}; re-prepare incomplete or legacy jobs with Forge",
             path.display()
         ))
     })?;

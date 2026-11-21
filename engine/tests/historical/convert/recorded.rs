@@ -2,39 +2,25 @@
 #[path = "../support/conversion_fixture.rs"]
 mod conversion_fixture;
 
-use std::{
-    env, fs,
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::{env, fs, path::PathBuf, process::Command};
 
 use marketforge_engine::historical::{
-    convert::{execution::validate_conversion_input, output::ConversionManifest},
+    convert::output::ConversionManifest,
     job::{ConvertJob, MergeTimelineOrdering},
-    merge::{PhysicalMergeManifest, UnifiedMergeMode},
-    normalize::manifest::file_sha256,
+    merge::UnifiedMergeMode,
 };
 
-fn recorded_input() -> (ConvertJob, PhysicalMergeManifest, PathBuf) {
+fn recorded_input() -> (
+    ConvertJob,
+    marketforge_engine::historical::convert::PreparedConversion,
+) {
     let mut job = conversion_fixture::canonical_job();
     if let Some(path) = env::var_os("MARKETFORGE_RECORDED_CONVERT_INPUT") {
         job.input_merge = PathBuf::from(path);
     }
-    assert!(
-        job.input_merge.is_absolute(),
-        "MARKETFORGE_RECORDED_CONVERT_INPUT must be absolute"
-    );
-    let catalog = PathBuf::from(env::var_os("MARKETFORGE_RECORDED_CONVERT_CATALOG").expect(
-        "Set MARKETFORGE_RECORDED_CONVERT_CATALOG to the verified conversion catalog snapshot",
-    ));
-    assert!(
-        catalog.is_absolute() && catalog.is_file(),
-        "Supply an absolute catalog file via MARKETFORGE_RECORDED_CONVERT_CATALOG"
-    );
-    let manifest_path = job.input_merge.join("manifest.json");
-    let source: PhysicalMergeManifest = serde_json::from_reader(fs::File::open(&manifest_path).unwrap_or_else(|error| {
-        panic!("{}: {error}. Set MARKETFORGE_RECORDED_CONVERT_INPUT to engine publication 2079541492669036539 (registry publication 60, primary dataset 360)", manifest_path.display())
-    })).unwrap();
+    let prepared = marketforge_engine::historical::convert::prepare_conversion_execution(&job)
+        .expect("Supply the complete committed merge 2079541492669036539 or set MARKETFORGE_RECORDED_CONVERT_INPUT to its absolute location");
+    let source = &prepared.source;
     assert_eq!(source.job_id, 2079541492669036539);
     assert_eq!(source.mode, UnifiedMergeMode::Combined);
     assert_eq!(source.timeline_ordering, MergeTimelineOrdering::Causal);
@@ -52,52 +38,22 @@ fn recorded_input() -> (ConvertJob, PhysicalMergeManifest, PathBuf) {
         (12_477_919, 5_233_312, 7_244_607)
     );
     assert_eq!(source.streams.len(), 8);
-    let checksums: serde_json::Value = serde_json::from_reader(
-        fs::File::open(job.input_merge.join("publication-checksums.json"))
-            .expect("Copy publication-checksums.json from the committed merge"),
-    )
-    .unwrap();
-    assert_eq!(
-        checksums["manifest.json"],
-        file_sha256(&manifest_path).unwrap()
-    );
-    validate_conversion_input(&job.input_merge, &source).expect(
-        "Copy the complete committed merge inventory to MARKETFORGE_RECORDED_CONVERT_INPUT",
-    );
-
-    (job, source, catalog)
+    (job, prepared)
 }
 
 #[test]
 fn validates_canonical_recorded_prefix_with_causal_prehistory() {
-    use marketforge_engine::{
-        historical::convert::{
-            execution::materialize_combined_conversion, plan_conversion,
-            resolve_conversion_catalog_with_normalization_root,
-        },
-        shared::domain::instrument::InstrumentCatalog,
-    };
+    use marketforge_engine::historical::convert::execution::materialize_combined_conversion;
 
     let started = std::time::Instant::now();
-    let (mut job, source, catalog) = recorded_input();
-    let normalization_root =
-        env::var_os("MARKETFORGE_RECORDED_CONVERT_NORMALIZED").map(PathBuf::from);
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    let catalog = InstrumentCatalog::load(&catalog).unwrap();
-    let resolved = resolve_conversion_catalog_with_normalization_root(
-        &job,
-        &source,
-        &catalog,
-        root,
-        normalization_root.as_deref(),
-    )
-    .expect("Supply committed normalized provenance or MARKETFORGE_RECORDED_CONVERT_NORMALIZED");
+    let (mut job, prepared) = recorded_input();
+    let source = prepared.source;
+    let plan = prepared.plan;
     eprintln!(
         "Recorded input inventory and provenance checked in {:?}",
         started.elapsed()
     );
     let started = std::time::Instant::now();
-    let plan = plan_conversion(&job, &resolved).unwrap();
     let temp = tempfile::tempdir().unwrap();
     job.output.dataset_path = temp.path().join("converted");
     let staging = temp.path().join("prefix");
@@ -193,38 +149,17 @@ fn validates_canonical_recorded_prefix_with_causal_prehistory() {
 #[test]
 #[ignore = "opt-in full recorded conversion publication"]
 fn publishes_canonical_recorded_conversion() {
-    let (mut job, source, catalog) = recorded_input();
+    let (mut job, prepared) = recorded_input();
+    let source = prepared.source;
     let temp = tempfile::tempdir().unwrap();
     job.output.dataset_path = temp.path().join("converted");
     let derived_path = temp.path().join("job.json");
     serde_json::to_writer(fs::File::create(&derived_path).unwrap(), &job).unwrap();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_marketforge-convert"));
-    command
-        .args(["--project-root"])
-        .arg(root)
-        .arg("--job")
-        .arg(derived_path)
-        .arg("--catalog")
-        .arg(catalog)
-        .arg("--run");
-    if let Some(path) = env::var_os("MARKETFORGE_RECORDED_CONVERT_CONFIG") {
-        assert!(
-            Path::new(&path).is_absolute(),
-            "Recorded runtime config must be absolute"
-        );
-        command.arg("--config").arg(path);
-    }
-    if let Some(path) = env::var_os("MARKETFORGE_RECORDED_CONVERT_NORMALIZED") {
-        assert!(
-            Path::new(&path).is_absolute(),
-            "Normalized provenance root must be absolute"
-        );
-        command.arg("--normalization-root").arg(path);
-    }
+    command.arg("--job").arg(derived_path).arg("--run");
     assert!(
         command.status().unwrap().success(),
-        "Check the supplied catalog, committed normalization directories (or MARKETFORGE_RECORDED_CONVERT_NORMALIZED), and temporary disk space"
+        "Check the declared committed merge publication and temporary disk space"
     );
     let output: ConversionManifest = serde_json::from_reader(
         fs::File::open(job.output.dataset_path.join("manifest.json")).unwrap(),

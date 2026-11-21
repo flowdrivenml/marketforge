@@ -20,6 +20,11 @@ fn production_loader_reads_canonical_combined_job() {
             "/home/pasha/projects/marketforge/data/datasets/converted/265083950276773788"
         )
     );
+    assert_eq!(job.schema_version, 1);
+    assert_eq!(job.source.merge_job_id, 2079541492669036539);
+    assert_eq!(job.source.streams.len(), 8);
+    assert_eq!(job.source.normalized_inputs.len(), 2);
+    assert!(job.external_reference.is_none());
     let conversion = job.conversion;
     assert_eq!(conversion.target_quote, "USDT");
     assert_eq!(conversion.price_source, ConversionPriceSource::LastTrade);
@@ -124,4 +129,20 @@ fn rejects_invalid_reference_identity() {
     job.conversion.references[0].exchange.clear();
 
     assert!(job.validate().is_err());
+}
+
+#[test]
+fn rejects_incomplete_and_unsupported_prepared_documents() {
+    let mut value = serde_json::to_value(canonical_job()).unwrap();
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let verify = |value: &serde_json::Value, message: &str| {
+        std::fs::write(file.path(), serde_json::to_vec(value).unwrap()).unwrap();
+        let error = load_convert_job(file.path()).unwrap_err().to_string();
+        assert!(error.contains(message), "{error}");
+    };
+    value["schema_version"] = 77.into();
+    verify(&value, "unsupported prepared conversion schema version");
+    value["schema_version"] = 1.into();
+    value.as_object_mut().unwrap().remove("source");
+    verify(&value, "re-prepare");
 }

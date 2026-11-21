@@ -264,6 +264,28 @@ pub fn resolve_conversion_catalog_with_normalization_root(
         })
         .transpose()?;
 
+    select_prepared_references(
+        job,
+        manifest,
+        sources,
+        external
+            .as_ref()
+            .map(|(manifest, streams)| (manifest, streams.as_slice())),
+    )
+}
+
+pub(super) fn select_prepared_references(
+    job: &ConvertJob,
+    manifest: &PhysicalMergeManifest,
+    sources: Vec<ResolvedConversionInstrument>,
+    external: Option<(&PhysicalMergeManifest, &[ResolvedConversionInstrument])>,
+) -> Result<ResolvedConversionCatalog> {
+    if manifest.mode == UnifiedMergeMode::Trades && external.is_some() {
+        return invalid("trade-only conversion uses internal reference trades");
+    }
+    if external.is_some_and(|(manifest, _)| manifest.mode != UnifiedMergeMode::Trades) {
+        return invalid("external last-trade references require a trade-only physical merge");
+    }
     let mut references = Vec::new();
     for requested in &job.conversion.references {
         let before = references.len();
@@ -273,7 +295,19 @@ pub fn resolve_conversion_catalog_with_normalization_root(
         if references.len() == before
             && let Some((external, instruments)) = &external
         {
-            references.extend(matching_trades(external, instruments, requested).cloned());
+            for reference in matching_trades(external, instruments, requested) {
+                if manifest.mode == UnifiedMergeMode::Combined
+                    && manifest.streams.iter().any(|stream| {
+                        stream.kind == UnifiedMergeStreamKind::Trade
+                            && stream.stream_id == reference.stream_id
+                    })
+                {
+                    return invalid(
+                        "external reference stream is ambiguous with an internal trade stream",
+                    );
+                }
+                references.push(reference.clone());
+            }
         }
         if references.len() == before {
             return invalid(format!(

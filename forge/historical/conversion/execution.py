@@ -2,23 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from pydantic import ValidationError
+
 from forge.datasets.discovery import read_object
 from forge.datasets.parquet import footer
 from forge.historical.conversion.contract import Conversion, Job
-from forge.historical.conversion.evidence import verify_publication
-from forge.historical.conversion.planning import output_available, static_blockers
-from forge.historical.conversion.registry import parents, publications, raw_for_files
-from forge.historical.conversion.service import Catalog, catalog_pin, file_pin, retained_collection
+from forge.historical.conversion.planning import output_available
+from forge.historical.conversion.service import file_pin, retained_collection, validate_prepared_job
 from forge.historical.engine.managed import checksum, inventory, resolve
 from forge.historical.normalization.execution import run_process, sync_submission
 from forge.historical.normalization.service import write_job
-from forge.shared.database.testing import testing_connection, testing_dsn
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
 
@@ -40,56 +41,6 @@ def read_pin(
     return path, data
 
 
-async def verify_pins(paths: ProjectPaths, pins: list[dict[str, Any]]) -> None:
-    ids = [pin["registry_publication_id"] for pin in pins]
-    async with testing_connection(testing_dsn(paths.root)) as connection, connection.transaction():
-        await connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-        found = {pub.id: pub for pub in await publications(connection, ids=ids)}
-        for pin in pins:
-            pub = found[pin["registry_publication_id"]]
-            current_parents = await parents(connection, pub)
-            now = await verify_publication(connection, paths, pub, current_parents)
-            if now != {key: value for key, value in pin.items() if key != "lineage"}:
-                raise MarketForgeError(
-                    f"Pinned merge publication {pub.id} changed since preparation."
-                )
-            lineage: dict[str, Any] = pin.get("lineage", {})
-            if matched := lineage.get("matched_parents"):
-                parent_records = {parent["id"]: parent for parent in current_parents}
-                raw = await raw_for_files(connection, paths, list(parent_records))
-                for proof in matched:
-                    file_id = proof["file_dataset_id"]
-                    if proof["normalization_execution"] != parent_records[file_id]["evidence"].get(
-                        "execution"
-                    ):
-                        raise MarketForgeError(
-                            f"Normalization execution evidence changed for file {file_id}."
-                        )
-                    for archive in proof["raw_archives"]:
-                        record = raw.get(file_id, {}).get(archive["path"])
-                        if record is None or any(
-                            (
-                                record[key].isoformat()
-                                if key in {"start_at", "end_at"}
-                                else record[key]
-                            )
-                            != value
-                            for key, value in archive.items()
-                            if key != "path"
-                        ):
-                            raise MarketForgeError(
-                                f"Raw input provenance changed for normalized file {file_id}."
-                            )
-            for artifact in ("merge_submission", "merge_prepare_report"):
-                if (
-                    artifact in lineage
-                    and checksum(Path(lineage[artifact])) != lineage[f"{artifact}_sha256"]
-                ):
-                    raise MarketForgeError(
-                        f"Pinned upstream evidence changed: {lineage[artifact]}."
-                    )
-
-
 def verify_output(job: Job, pinned: dict[str, Any]) -> dict[str, Any]:
     output = Path(job.output.dataset_path)
     if output.resolve() != output or output.with_suffix(".staging").exists():
@@ -97,6 +48,12 @@ def verify_output(job: Job, pinned: dict[str, Any]) -> dict[str, Any]:
     manifest_path = output / "manifest.json"
     manifest = read_object(manifest_path)
     receipt = read_object(output / "execution.json")
+    effective = read_object(output / "conversion-runtime.json")
+    if Job.model_validate(effective["job"]) != job or effective["runtime"] != {
+        "workers": job.resources.workers,
+        "parquet": job.parquet.model_dump(),
+    }:
+        raise MarketForgeError("Effective conversion job or runtime differs from the submission.")
     stats, out, integrity = (manifest[key] for key in ("statistics", "output", "integrity"))
     if (
         (manifest["protocol_version"], manifest["conversion_schema_version"], receipt["version"])
@@ -133,6 +90,7 @@ def verify_output(job: Job, pinned: dict[str, Any]) -> dict[str, Any]:
     fingerprints = {
         "manifest.json": checksum(manifest_path),
         "execution.json": checksum(output / "execution.json"),
+        "conversion-runtime.json": checksum(output / "conversion-runtime.json"),
     }
     total_rows = total_groups = 0
     for entry in out["files"]:
@@ -185,11 +143,17 @@ async def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> di
     external = document["external_reference"]
     for entry in entries:
         _, submitted = read_pin(entry, collection.parent, expected=f"job-{entry['job_id']}.json")
-        job = Job.model_validate_json(submitted)
+        try:
+            job = Job.model_validate_json(submitted)
+        except ValidationError as error:
+            raise MarketForgeError(
+                f"Invalid prepared conversion job {entry['path']}; re-prepare with Forge: {error}"
+            ) from error
         pinned = sources[entry["source_registry_publication_id"]]
         if (
             job.job_id != entry["job_id"]
             or job.input_merge != pinned["root"]
+            or job.source.merge_job_id != int(pinned["engine_publication_id"])
             or job.output.dataset_path != entry["output"]
             or Path(job.output.dataset_path) != paths.datasets_dir / "converted" / str(job.job_id)
             or job.conversion.reference_merge != (external["root"] if external else None)
@@ -198,14 +162,6 @@ async def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> di
                 "Submitted conversion job disagrees with its pinned inputs and destination."
             )
         output_available(Path(job.output.dataset_path))
-        result["blockers"] = list(
-            dict.fromkeys(
-                [
-                    *result["blockers"],
-                    *static_blockers(pinned, external, entry["references"], entry["routes"]),
-                ]
-            )
-        )
         prepared.append((job, submitted, pinned))
     if result["blockers"]:
         return result
@@ -222,10 +178,6 @@ async def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> di
         )
         if "monitor-tui" not in installation["installation"].get("features", []):
             raise MarketForgeError("This managed converter was built without monitor-tui.")
-    _, runtime = read_pin(pins["runtime"], collection.parent, expected="general.toml")
-    _, data = read_pin(pins["catalog_snapshot"], collection.parent, expected="instruments.json")
-    snapshot = Catalog.model_validate_json(data)
-    await verify_pins(paths, [item[2] for item in prepared] + ([external] if external else []))
     completed: list[dict[str, Any]] = []
     for job, submitted, pinned in prepared:
         directory = paths.runs_dir / f"convert-execute-{uuid4().hex}"
@@ -235,30 +187,18 @@ async def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> di
         executable.chmod(0o755)
         if checksum(executable) != pins["executable"]["sha256"]:
             raise MarketForgeError("Managed converter changed while being pinned.")
-        submission, config = directory / "submitted-job.json", directory / "general.toml"
+        submission = directory / "submitted-job.json"
         submission.write_bytes(submitted)
-        config.write_bytes(runtime)
         sync_submission(submission)
-        argv = [
-            str(executable),
-            "--job",
-            str(submission),
-            "--project-root",
-            str(paths.root),
-            "--config",
-            str(config),
-            "--run",
-        ]
+        argv = [str(executable), "--job", str(submission), "--run"]
         receipt: dict[str, Any] = {
             "status": "blocked",
             "execution": "not_started",
             "job_id": job.job_id,
             "submission": file_pin(submission, submitted),
-            "runtime": file_pin(config, runtime),
             "input": pinned,
             "external_reference": external,
             "executable_sha256": pins["executable"]["sha256"],
-            "fixed_catalog": pins["fixed_catalog"],
             "collection_path": str(collection),
             "argv": [*argv, *(["--tui"] if tui else [])],
             "registration": "not_available",
@@ -266,16 +206,13 @@ async def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> di
         }
         write_job(directory / "execution-intent.json", receipt)
         try:
-            if completed:
-                await verify_pins(paths, [pinned, *([external] if external else [])])
-            if catalog_pin(paths, snapshot) != pins["fixed_catalog"]:
-                raise MarketForgeError("Fixed engine catalog changed since preparation.")
             output_available(Path(job.output.dataset_path))
-            if (
-                checksum(submission) != receipt["submission"]["sha256"]
-                or checksum(config) != receipt["runtime"]["sha256"]
-            ):
-                raise MarketForgeError("Local submitted job or runtime changed before execution.")
+            if checksum(submission) != receipt["submission"]["sha256"]:
+                raise MarketForgeError("Local submitted job changed before execution.")
+            receipt["validation_output"] = await asyncio.to_thread(
+                validate_prepared_job, executable, submission
+            )
+            receipt["compatibility"] = "validated"
             receipt.update(status="failed", execution="running")
             code, interrupted = run_process(argv, paths.root, directory, tui=tui)
             receipt.update(
@@ -285,8 +222,6 @@ async def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> di
             if interrupted:
                 receipt.update(status="interrupted")
             elif not code:
-                if catalog_pin(paths, snapshot) != pins["fixed_catalog"]:
-                    raise MarketForgeError("Fixed engine catalog changed during execution.")
                 receipt.update(status="complete", publication=verify_output(job, pinned))
             else:
                 receipt["error"] = (
@@ -294,7 +229,14 @@ async def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> di
                 )
         except KeyboardInterrupt:
             receipt.update(status="interrupted", execution="interrupted")
-        except (MarketForgeError, OSError, ValueError, KeyError, TypeError) as error:
+        except (
+            MarketForgeError,
+            OSError,
+            ValueError,
+            KeyError,
+            TypeError,
+            subprocess.TimeoutExpired,
+        ) as error:
             receipt["error"] = str(error)
         write_job(directory / "execution-result.json", receipt)
         completed.append(receipt)
@@ -305,4 +247,5 @@ async def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> di
         "status": completed[-1]["status"],
         "execution": completed[-1]["execution"],
         "jobs": completed,
+        "compatibility": completed[-1].get("compatibility", "not_validated"),
     }

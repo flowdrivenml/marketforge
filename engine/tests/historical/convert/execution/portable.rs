@@ -11,10 +11,14 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
 use crate::{arrow_comparison::compare_datasets, conversion_fixture::canonical_job, market};
 
-fn plan(job: &ConvertJob, source: &PhysicalMergeManifest, directory: &Path) -> ConversionPlan {
-    let catalog = market::catalog(directory);
-    let resolved = resolve_conversion_catalog(job, source, &catalog, directory).unwrap();
-    plan_conversion(job, &resolved).unwrap()
+fn plan(job: &mut ConvertJob, source: &PhysicalMergeManifest) -> ConversionPlan {
+    job.source = market::prepared_binding(&job.input_merge, source);
+    job.external_reference = job.conversion.reference_merge.as_ref().map(|path| {
+        let manifest =
+            serde_json::from_slice(&fs::read(path.join("manifest.json")).unwrap()).unwrap();
+        market::prepared_binding(path, &manifest)
+    });
+    prepare_conversion_execution(job).unwrap().plan
 }
 
 fn combined_manifest(directory: &Path) -> ConversionManifest {
@@ -31,7 +35,7 @@ fn canonical_market_plan_resolves_every_stream_and_only_two_trade_references() {
     let mut job = canonical_job();
     job.input_merge = directory.path().join("source");
     let source = market::create(&job.input_merge, UnifiedMergeMode::Combined, true);
-    let plan = plan(&job, &source, directory.path());
+    let plan = plan(&mut job, &source);
     assert_eq!(
         (
             plan.source_streams,
@@ -116,7 +120,7 @@ fn causal_combined_publications_agree_across_checkpoint_and_file_boundaries() {
     job.conversion.max_staleness_ns = 30;
     let source = market::create(&job.input_merge, UnifiedMergeMode::Combined, true);
     validate_conversion_input(&job.input_merge, &source).unwrap();
-    let plan = plan(&job, &source, root);
+    let plan = plan(&mut job, &source);
     let sequential_staging = root.join("sequential-staging");
     let metrics = materialize_combined_conversion(
         &job,
@@ -282,7 +286,7 @@ fn trade_only_reader_progress_and_publication() {
     job.output.dataset_path = root.join("output");
     job.resources.workers = 2;
     let source = market::create(&job.input_merge, UnifiedMergeMode::Trades, false);
-    let plan = plan(&job, &source, root);
+    let plan = plan(&mut job, &source);
     let mut reader = PhysicalReferenceReader::new(&job.input_merge, &source, 2).unwrap();
     let first = reader.next_observation().unwrap().unwrap();
     assert_eq!(first.stream_id, market::stream_id(0, false));
@@ -337,7 +341,7 @@ fn depth_only_with_external_trade_references() {
     job.conversion.reference_merge = Some(external_path.clone());
     let source = market::create(&job.input_merge, UnifiedMergeMode::Depth, false);
     let external = market::create(&external_path, UnifiedMergeMode::Trades, false);
-    let plan = plan(&job, &source, root);
+    let plan = plan(&mut job, &source);
     let (sender, _receiver) = mpsc::channel();
     let reporter = ConversionProgressReporter::new(sender);
     let staging = root.join("stage");
@@ -380,7 +384,7 @@ fn instrument_selection_keeps_original_rows_and_marks_skipped() {
     job.output.dataset_path = root.join("output");
     job.conversion.instrument_kinds = Some(vec![InstrumentKind::Future]);
     let source = market::create(&job.input_merge, UnifiedMergeMode::Combined, true);
-    let plan = plan(&job, &source, root);
+    let plan = plan(&mut job, &source);
     let stage = root.join("stage");
     let metrics = materialize_combined_conversion(
         &job,
@@ -424,7 +428,7 @@ fn path_policy_all_tries_alternatives_and_emits_one_value() {
         (ConversionPathPolicy::Primary, CONVERSION_STATUS_UNAVAILABLE),
     ] {
         job.conversion.path_policy = policy;
-        let plan = self::plan(&job, &source, root);
+        let plan = self::plan(&mut job, &source);
         let kernel = CombinedConversionKernel::new(&job, &plan).unwrap();
         let selection = CombinedReferenceSelection::resolve(&plan, &source, None).unwrap();
         let mut alignment = CombinedReferenceAlignment::new(selection, None).unwrap();
@@ -464,33 +468,27 @@ fn dashboard_pty_restores_terminal_and_matches_plain_cli() {
 
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
-    let project = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
     let mut job = canonical_job();
     job.input_merge = root.join("source");
     job.output.dataset_path = root.join("dashboard");
     let dashboard = job.output.dataset_path.clone();
-    market::create(&job.input_merge, UnifiedMergeMode::Combined, true);
-    let catalog = market::write_catalog(root);
+    let source = market::create(&job.input_merge, UnifiedMergeMode::Combined, true);
+    job.source = market::prepared_binding(&job.input_merge, &source);
+    job.parquet = market::parquet();
+    job.resources.workers = 2;
+    market::remove_preparation_inputs(&source);
     let job_file = root.join("job.json");
     fs::write(&job_file, serde_json::to_vec(&job).unwrap()).unwrap();
-    let config = root.join("runtime.toml");
-    fs::write(
-        &config,
-        include_str!("../../../../src/shared/historical/config/fixtures/runtime.toml")
-            .replace("workers = 1", "workers = 2"),
-    )
-    .unwrap();
     let binary = env!("CARGO_BIN_EXE_marketforge-convert");
     let pty = Command::new("python3")
+        .current_dir(cwd.path())
         .arg(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("tests/historical/convert/support/pty_conversion.py"),
         )
         .arg(binary)
-        .arg(project)
         .arg(&job_file)
-        .arg(&catalog)
-        .arg(&config)
         .output()
         .unwrap();
     assert!(
@@ -503,14 +501,9 @@ fn dashboard_pty_restores_terminal_and_matches_plain_cli() {
     job.resources.workers = 2;
     fs::write(&job_file, serde_json::to_vec(&job).unwrap()).unwrap();
     let plain = Command::new(binary)
-        .arg("--project-root")
-        .arg(project)
+        .current_dir(cwd.path())
         .arg("--job")
         .arg(job_file)
-        .arg("--catalog")
-        .arg(catalog)
-        .arg("--config")
-        .arg(config)
         .arg("--workers")
         .arg("2")
         .arg("--run")
@@ -535,7 +528,7 @@ fn causal_depth_checkpoints_preserve_external_updates_and_publication() {
     job.conversion.reference_merge = Some(references.clone());
     let source = market::create(&job.input_merge, UnifiedMergeMode::Depth, true);
     let external = market::create(&references, UnifiedMergeMode::Trades, false);
-    let plan = plan(&job, &source, root);
+    let plan = plan(&mut job, &source);
     let sequential_staging = root.join("sequential-stage");
     let sequential = materialize_depth_conversion(
         &job,
@@ -618,7 +611,7 @@ fn cancellation_prevents_publication_of_staged_output() {
     job.input_merge = root.join("source");
     job.output.dataset_path = root.join("output");
     let source = market::create(&job.input_merge, UnifiedMergeMode::Combined, true);
-    let plan = plan(&job, &source, root);
+    let plan = plan(&mut job, &source);
     let stage = root.join("stage");
     let metrics = materialize_combined_conversion(
         &job,
@@ -664,7 +657,7 @@ fn combined_uses_external_trades_only_for_missing_internal_references() {
         &[1],
     );
     let external = market::create(&references, UnifiedMergeMode::Trades, false);
-    let plan = plan(&job, &source, root);
+    let plan = plan(&mut job, &source);
     let selection = CombinedReferenceSelection::resolve(&plan, &source, Some(&external)).unwrap();
     assert_eq!(
         selection.internal_streams,
@@ -722,36 +715,186 @@ fn validation_cli_checks_inventory_and_planning_without_writing() {
     job.input_merge = root.join("source");
     job.output.dataset_path = root.join("output");
     let manifest = market::create(&job.input_merge, UnifiedMergeMode::Combined, true);
-    let catalog = market::write_catalog(root);
+    job.source = market::prepared_binding(&job.input_merge, &manifest);
+    job.parquet = market::parquet();
+    market::remove_preparation_inputs(&manifest);
+    let unrelated = tempfile::tempdir().unwrap();
     let job_path = root.join("job.json");
-    fs::write(&job_path, serde_json::to_vec(&job).unwrap()).unwrap();
-    let config = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/shared/historical/config/fixtures/runtime.toml");
-    let run = || {
+    let save = |job: &ConvertJob| {
+        fs::write(&job_path, serde_json::to_vec(job).unwrap()).unwrap();
+    };
+    save(&job);
+    let run = |mode| {
         Command::new(env!("CARGO_BIN_EXE_marketforge-convert"))
-            .arg("--project-root")
-            .arg(root)
+            .current_dir(unrelated.path())
             .arg("--job")
             .arg(&job_path)
-            .arg("--config")
-            .arg(&config)
-            .arg("--catalog")
-            .arg(&catalog)
-            .arg("--validate")
+            .arg(mode)
             .output()
             .unwrap()
     };
-    let valid = run();
-    assert!(
-        valid.status.success(),
-        "{}",
-        String::from_utf8_lossy(&valid.stderr)
-    );
+    let success = |mode| {
+        let output = run(mode);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output
+    };
+    let valid = success("--validate");
     assert!(String::from_utf8_lossy(&valid.stdout).contains("8 streams · 2 references"));
-    fs::remove_file(job.input_merge.join(&manifest.files[0].path)).unwrap();
-    let missing = run();
+    let staging = job.output.dataset_path.with_extension("staging");
+    assert!(!job.output.dataset_path.exists());
+    assert!(!staging.exists());
+    success("--materialize");
+    assert!(staging.is_dir());
+    let mut changed = job.clone();
+    changed.catalog_sha256 = "a".repeat(64);
+    save(&changed);
+    let incompatible = run("--publish");
+    assert!(!incompatible.status.success());
+    assert!(String::from_utf8_lossy(&incompatible.stderr).contains("differs from materialization"));
+    assert!(!job.output.dataset_path.exists());
+    save(&job);
+    success("--publish");
+    assert!(
+        job.output
+            .dataset_path
+            .join("conversion-runtime.json")
+            .is_file()
+    );
+    changed.output.dataset_path = root.join("standalone-run");
+    changed.catalog_sha256 = job.catalog_sha256.clone();
+    save(&changed);
+    success("--run");
+    compare_datasets(&job.output.dataset_path, &changed.output.dataset_path);
+
+    let primary = job.input_merge.join(&manifest.files[0].path);
+    let mut bytes = fs::read(&primary).unwrap();
+    bytes[4] ^= 1;
+    fs::write(&primary, bytes).unwrap();
+    let changed_input = run("--validate");
+    assert!(!changed_input.status.success());
+    assert!(String::from_utf8_lossy(&changed_input.stderr).contains("content checksum mismatch"));
+    fs::remove_file(primary).unwrap();
+    let missing = run("--validate");
     assert!(!missing.status.success());
     assert!(String::from_utf8_lossy(&missing.stderr).contains("cannot open"));
-    assert!(!job.output.dataset_path.exists());
-    assert!(!job.output.dataset_path.with_extension("staging").exists());
+}
+
+#[test]
+fn prepared_job_rejects_binding_errors_before_writing() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let mut job = canonical_job();
+    job.input_merge = root.join("source");
+    job.output.dataset_path = root.join("output");
+    let source = market::create(&job.input_merge, UnifiedMergeMode::Combined, true);
+    job.source = market::prepared_binding(&job.input_merge, &source);
+    let assert_invalid = |invalid: &ConvertJob, reason: &str| {
+        let error = prepare_conversion_execution(invalid)
+            .err()
+            .expect("expected invalid job");
+        assert!(error.to_string().contains(reason), "{error}");
+        assert!(!invalid.output.dataset_path.exists());
+        assert!(
+            !invalid
+                .output
+                .dataset_path
+                .with_extension("staging")
+                .exists()
+        );
+    };
+    let mut invalid = job.clone();
+    invalid.source.streams.pop();
+    assert_invalid(&invalid, "do not cover");
+    invalid = job.clone();
+    invalid
+        .source
+        .streams
+        .push(invalid.source.streams[0].clone());
+    assert_invalid(&invalid, "duplicate prepared");
+    invalid = job.clone();
+    invalid.source.streams[0].instrument_id += 100;
+    assert_invalid(&invalid, "metadata mismatch");
+    invalid = job.clone();
+    invalid.source.streams[0].dataset_id = invalid.source.normalized_inputs[1].dataset_id;
+    assert_invalid(&invalid, "metadata mismatch");
+    invalid = job.clone();
+    invalid.source.streams[0].quote_currency.0 = "DAI".into();
+    assert_invalid(&invalid, "conflicting prepared metadata");
+    invalid = job.clone();
+    for binding in invalid
+        .source
+        .streams
+        .iter_mut()
+        .filter(|item| item.instrument_id == job.source.streams[0].instrument_id)
+    {
+        binding.quote_currency.0 = "DAI".into();
+    }
+    assert_invalid(&invalid, "metadata mismatch");
+    invalid = job.clone();
+    invalid.source.merge_job_id += 1;
+    assert_invalid(&invalid, "identity");
+    invalid = job.clone();
+    invalid.source.manifest_sha256 = "0".repeat(64);
+    assert_invalid(&invalid, "pin mismatch");
+    invalid = job.clone();
+    invalid.conversion.reference_merge = Some(root.join("external"));
+    assert_invalid(&invalid, "must both be present");
+    invalid.external_reference = Some(job.source.clone());
+    assert_invalid(&invalid, "cannot read");
+    invalid = job.clone();
+    invalid.parquet.file_target_mb = 0;
+    assert_invalid(&invalid, "Parquet settings");
+}
+
+#[test]
+fn standalone_cli_uses_only_the_declared_external_trade_publication() {
+    use std::process::Command;
+
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let mut job = canonical_job();
+    job.input_merge = root.join("depth");
+    job.output.dataset_path = root.join("output");
+    job.parquet = market::parquet();
+    let reference = root.join("reference");
+    let depth = market::create(&job.input_merge, UnifiedMergeMode::Depth, true);
+    let trades = market::create(&reference, UnifiedMergeMode::Trades, true);
+    job.source = market::prepared_binding(&job.input_merge, &depth);
+    let mut depth_as_reference = job.clone();
+    depth_as_reference.conversion.reference_merge = Some(job.input_merge.clone());
+    depth_as_reference.external_reference = Some(job.source.clone());
+    let error = prepare_conversion_execution(&depth_as_reference)
+        .err()
+        .unwrap();
+    assert!(error.to_string().contains("trade-only"));
+    job.external_reference = Some(market::prepared_binding(&reference, &trades));
+    job.conversion.reference_merge = Some(reference);
+    market::remove_preparation_inputs(&depth);
+    market::remove_preparation_inputs(&trades);
+    let path = root.join("job.json");
+    fs::write(&path, serde_json::to_vec(&job).unwrap()).unwrap();
+    for flag in ["--validate", "--run"] {
+        let result = Command::new(env!("CARGO_BIN_EXE_marketforge-convert"))
+            .current_dir("/")
+            .arg("--job")
+            .arg(&path)
+            .arg(flag)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+    assert_eq!(
+        combined_manifest(&job.output.dataset_path)
+            .statistics
+            .events_written,
+        depth.events_written
+    );
 }

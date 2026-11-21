@@ -22,7 +22,6 @@ from forge.shared.paths import ProjectPaths
 def stream_metadata(
     stream: dict[str, Any],
     parent: dict[str, Any],
-    engine_first: dict[str, Any],
 ) -> dict[str, Any]:
     evidence = parent["evidence"]
     manifest = evidence["manifest"]
@@ -37,6 +36,8 @@ def stream_metadata(
         for task in evidence["resolved_job"]["tasks"]
         if all(task[key] == stream[key] for key in (*fields, "stream_id"))
     ]
+    if manifest.get("instrument_namespace") != parent["instrument_namespace"]:
+        raise MarketForgeError(f"Conflicting instrument namespace for {stream['stream_id']}.")
     if len(metadata) != 1 or not tasks:
         raise MarketForgeError(
             f"Missing historical instrument specification for {stream['stream_id']}."
@@ -79,10 +80,6 @@ def stream_metadata(
         "instrument_type": instrument["instrument_type"],
         "specification": specification,
         "metadata_origin": metadata[0]["metadata_origin"],
-        "engine_first_task_matches": all(
-            engine_first.get(key) == stream[key] for key in (*fields, "stream_id")
-        )
-        and engine_first["instrument"] == specification,
     }
 
 
@@ -292,9 +289,7 @@ async def verify_publication(
             raise MarketForgeError(
                 "Merge stream is missing a unique registered normalized source identity."
             )
-        declarations[key] = stream_metadata(
-            stream, parent, parent["evidence"]["resolved_job"]["tasks"][0]
-        )
+        declarations[key] = stream_metadata(stream, parent)
     for file in files:
         for member in file["summary"]["memberships"]:
             key = (member["source_publication_id"], member["stream_rank"])

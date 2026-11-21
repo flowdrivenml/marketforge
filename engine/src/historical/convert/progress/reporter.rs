@@ -15,8 +15,6 @@ use std::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ConversionPhase {
     SourceValidation,
-    CatalogResolution,
-    ConversionPlanning,
     PartitionPlanning,
     ReferencePrepass,
     PhysicalConversion,
@@ -33,8 +31,6 @@ impl ConversionPhase {
     pub fn label(self) -> &'static str {
         match self {
             Self::SourceValidation => "SOURCE VALIDATION",
-            Self::CatalogResolution => "CATALOG RESOLUTION",
-            Self::ConversionPlanning => "CONVERSION PLANNING",
             Self::PartitionPlanning => "PARTITION PLANNING",
             Self::ReferencePrepass => "REFERENCE PREPASS",
             Self::PhysicalConversion => "PHYSICAL CONVERSION",

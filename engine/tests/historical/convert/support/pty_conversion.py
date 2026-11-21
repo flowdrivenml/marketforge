@@ -74,20 +74,11 @@ def run(args, expected, *, on_screen=None, release=None):
         os.close(slave)
 
 
-binary, project, job_path, catalog, config = map(Path, sys.argv[1:])
+binary, job_path = map(Path, sys.argv[1:])
 job = json.loads(job_path.read_text())
 output = Path(job["output"]["dataset_path"])
 assert output.parent == job_path.parent
-base = [
-    str(binary),
-    "--project-root",
-    str(project),
-    "--job",
-    str(job_path),
-    "--config",
-    str(config),
-]
-args = [*base, "--catalog", str(catalog), "--tui"]
+args = [str(binary), "--job", str(job_path), "--tui"]
 screen = run([*args, "--materialize"], 0)
 assert b"MATERIALIZED (UNPUBLISHED)" in screen
 assert b"\r\nPUBLISHED" not in screen
@@ -98,27 +89,30 @@ assert (output / "manifest.json").is_file()
 
 job["output"]["dataset_path"] = str(output.parent / "rejected")
 job_path.write_text(json.dumps(job))
-screen = run([*base, "--catalog", str(catalog.with_name("missing.json")), "--tui"], 1)
-assert b"FAILED" in screen and b"missing.json" in screen
+inventory = Path(job["input_merge"]) / "publication-checksums.json"
+evidence = inventory.read_bytes()
+inventory.write_bytes(b"{}")
+screen = run(args, 1)
+assert b"FAILED" in screen and b"pin mismatch" in screen
 assert not Path(job["output"]["dataset_path"]).exists()
 
-fifo = output.parent / "catalog.fifo"
-os.mkfifo(fifo)
-gate = os.open(fifo, os.O_RDWR | os.O_NONBLOCK)
+inventory.unlink()
+os.mkfifo(inventory)
+gate = os.open(inventory, os.O_RDWR | os.O_NONBLOCK)
 
 
 def release_catalog():
     global gate
-    os.write(gate, catalog.read_bytes())
+    os.write(gate, evidence)
     os.close(gate)
     gate = None
 
 
 try:
     screen = run(
-        [*base, "--catalog", str(fifo), "--tui"],
+        args,
         130,
-        on_screen=b"CATALOG RESOLUTION",
+        on_screen=b"SOURCE VALIDATION",
         release=release_catalog,
     )
     assert b"Conversion interrupted" in screen
@@ -126,6 +120,8 @@ try:
 finally:
     if gate is not None:
         os.close(gate)
+    inventory.unlink()
+    inventory.write_bytes(evidence)
 
 # Terminal setup failure must abort before any conversion writes.
 failed_setup = subprocess.run(

@@ -62,15 +62,12 @@ below.
 ## Recorded smoke tests
 
 Run these commands from the repository root. Keep source publications and raw
-archives read-only. Point the conversion variables at the complete merge
-publication, its verified retained preparation catalog, and committed
-normalized provenance. Set absolute paths when the data is relocated.
+archives read-only. The conversion fixture declares its source publication and
+prepared evidence. Set `MARKETFORGE_RECORDED_CONVERT_INPUT` to the absolute
+location of an exact copy only if the source publication was relocated.
 
 ```sh
 set -o pipefail
-export MARKETFORGE_RECORDED_CONVERT_INPUT="$PWD/data/datasets/merged/2079541492669036539"
-export MARKETFORGE_RECORDED_CONVERT_CATALOG="$PWD/data/runs/convert-prepare-832284dd5c254a388e6bbdff0a990fbf/instruments.json"
-export MARKETFORGE_RECORDED_CONVERT_NORMALIZED="$PWD/data/datasets/normalized"
 cargo test --manifest-path engine/Cargo.toml --features historical-real-tests \
   --test historical_recorded_convert validates_canonical_recorded_prefix_with_causal_prehistory \
   -- --exact --nocapture 2>&1 | cpout

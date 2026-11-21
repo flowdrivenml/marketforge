@@ -25,4 +25,5 @@ pub use executor::{
 };
 pub use graph::{ConversionDirection, ConversionEdge, ConversionGraph, ConversionPath};
 pub use planner::{ConversionPlan, DEFAULT_MAX_PATHS, PlannedConversionStream, plan_conversion};
+pub use planning::prepared::{PreparedConversion, prepare_conversion_execution};
 pub use trade::{ConvertedTradeValues, convert_trade_values};

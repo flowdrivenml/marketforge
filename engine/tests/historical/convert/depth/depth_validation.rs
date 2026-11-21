@@ -21,6 +21,8 @@ fn converted_fixture() -> tempfile::TempDir {
     job.conversion.reference_merge = Some(reference.clone());
     let source = crate::market::create(&job.input_merge, UnifiedMergeMode::Depth, false);
     let external = crate::market::create(&reference, UnifiedMergeMode::Trades, false);
+    job.source = crate::market::prepared_binding(&job.input_merge, &source);
+    job.external_reference = Some(crate::market::prepared_binding(&reference, &external));
     let catalog = crate::market::catalog(root);
     let resolved = resolve_conversion_catalog(&job, &source, &catalog, root).unwrap();
     let plan = plan_conversion(&job, &resolved).unwrap();
