@@ -69,7 +69,7 @@ async def list_archives(
         "archives": [archive_document(row, root) for row in rows],
         "pagination": pagination(int(str(totals["total"])), filters, len(rows)),
         "totals": totals,
-        "filters": filters.model_dump(mode="json"),
+        "filters": filters.model_dump(mode="json", exclude={"sort", "descending", "search"}),
         "verification": "Stored registry records; not reverified during browsing.",
         "semantics": SEMANTICS,
     }
@@ -102,7 +102,7 @@ async def coverage(
         "coverage": [group.document(selected, include_gaps=include_gaps) for group in shown],
         "pagination": pagination(len(ordered), selected, len(shown)),
         "totals": totals,
-        "filters": selected.model_dump(mode="json"),
+        "filters": selected.model_dump(mode="json", exclude={"sort", "descending", "search"}),
         "gaps_included": include_gaps,
         "range_semantics": "Missing bounds use each group's observed envelope. One supplied bound never implies coverage beyond the observed opposite bound. Groups require matching local records; absent scopes are not inferred.",
         "semantics": SEMANTICS,

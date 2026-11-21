@@ -5,7 +5,7 @@ import re
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, LiteralString
 
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -374,11 +374,26 @@ async def publications(
     offset: int = 0,
     identity: int | None = None,
     file_offset: int = 0,
+    filters: DatasetRequest | None = None,
+    search: str = "",
+    sort: str = "",
+    descending: bool = True,
 ) -> dict[str, Any]:
     """List retained publication evidence once per registry publication."""
     if not 1 <= limit <= 100 or offset < 0 or file_offset < 0:
         raise MarketForgeError("Invalid publication page.")
+    query = filters or DatasetRequest("list")
+    orders: dict[str, LiteralString] = {
+        "Publication": "CASE WHEN p.engine_dataset_id ~ '^[0-9]+$' THEN p.engine_dataset_id::numeric END",
+        "Recorded size": "files.bytes",
+        "Files": "files.primary_file_count",
+        "Observed UTC": "files.latest",
+        "Operation": "p.operation",
+    }
+    order = orders.get(sort, "p.id")
+    direction: LiteralString = " DESC" if descending else " ASC"
     async with testing_connection(testing_dsn(paths.root)) as connection:
+        await connection.execute("SET statement_timeout = '5s'")
         async with connection.cursor(row_factory=dict_row) as cursor:
             await cursor.execute(
                 """
@@ -387,30 +402,65 @@ async def publications(
                     p.evidence->>'manifest_sha256' AS manifest_sha256,
                     p.evidence->'manifest'->'streams' AS streams,
                     p.evidence->'manifest'->'time_range' AS requested_interval,
-                    p.evidence->'manifest'->'start_timestamp_ns' AS first_observed_ns,
-                    p.evidence->'manifest'->'end_timestamp_ns' AS last_observed_ns,
+                    files.earliest AS first_observed_ns,
+                    files.latest AS last_observed_ns,
                     p.evidence->'execution' AS execution,
                     p.evidence->'manifest'->'events_written' AS events,
-                    p.evidence->'bytes_written' AS bytes_written,
+                    files.bytes AS bytes_written,
                     files.primary_file_count,
                     files.first_file_id AS representative_file_id
                 FROM historical.dataset_publications p
                 JOIN LATERAL (
-                    SELECT COUNT(*) AS primary_file_count, MIN(d.id) AS first_file_id
-                    FROM historical.datasets d WHERE d.publication_id=p.id AND d.primary_file IS NOT NULL
+                    SELECT COUNT(*) AS primary_file_count, MIN(d.id) AS first_file_id,
+                        MIN(d.start_timestamp_ns) AS earliest,MAX(d.end_timestamp_ns) AS latest,
+                        SUM(CASE WHEN d.operation_details->>'size_bytes' ~ '^[0-9]+$' THEN
+                            (d.operation_details->>'size_bytes')::numeric END) AS bytes
+                    FROM historical.datasets d WHERE d.publication_id=p.id AND d.primary_file IS NOT NULL AND d.status='complete'
                 ) files ON files.primary_file_count>0
                 WHERE (%(identity)s::bigint IS NULL OR p.id=%(identity)s)
-                    AND (%(instrument)s::text IS NULL OR EXISTS (
+                    AND (%(operation)s::text IS NULL OR p.operation=%(operation)s)
+                    AND (%(publication)s::text IS NULL OR p.engine_dataset_id=%(publication)s OR p.id::text=%(publication)s)
+                    AND EXISTS (
                         SELECT 1 FROM historical.datasets d
-                        CROSS JOIN LATERAL jsonb_array_elements(d.operation_details->'memberships') item
-                        WHERE d.publication_id=p.id AND (
-                            lower(item->>'symbol')=lower(%(instrument)s)
-                            OR item->>'instrument_id'=%(instrument)s)))
-                ORDER BY p.id DESC LIMIT %(limit)s OFFSET %(offset)s
-            """,
+                        WHERE d.publication_id=p.id AND d.primary_file IS NOT NULL AND d.status='complete'
+                          AND (%(start)s::bigint IS NULL OR d.end_timestamp_ns >= %(start)s)
+                          AND (%(end)s::bigint IS NULL OR d.start_timestamp_ns < %(end)s)
+                          AND (
+                            (p.engine_dataset_id ILIKE %(search)s OR p.id::text ILIKE %(search)s OR %(search)s='%%')
+                            AND %(instrument)s::text IS NULL AND %(exchange)s::text IS NULL
+                            AND %(type)s::text IS NULL AND %(market)s::text IS NULL
+                            AND (%(data_type)s::text IS NULL OR d.data_type=%(data_type)s)
+                            OR EXISTS (
+                                SELECT 1 FROM jsonb_array_elements(COALESCE(d.operation_details->'memberships','[]')) m
+                                WHERE (%(instrument)s::text IS NULL OR lower(m->>'symbol')=lower(%(instrument)s)
+                                       OR m->>'instrument_id'=%(instrument)s)
+                                  AND (%(exchange)s::text IS NULL OR m->>'exchange'=%(exchange)s)
+                                  AND (%(data_type)s::text IS NULL OR d.data_type=%(data_type)s
+                                       OR (%(data_type)s='trade' AND m->>'kind'='trade')
+                                       OR (%(data_type)s='l2' AND m->>'kind'='depth'))
+                                  AND (%(type)s::text IS NULL OR m->>'instrument_type'=%(type)s)
+                                  AND (%(market)s::text IS NULL OR m->>'market_category'=%(market)s)
+                                  AND (p.engine_dataset_id ILIKE %(search)s OR p.id::text ILIKE %(search)s
+                                       OR m->>'symbol' ILIKE %(search)s OR m->>'exchange' ILIKE %(search)s)
+                            )
+                          )
+                    )
+                ORDER BY """
+                + order
+                + direction
+                + " NULLS LAST,p.id LIMIT %(limit)s OFFSET %(offset)s",
                 {
                     "identity": identity,
-                    "instrument": instrument,
+                    "instrument": query.instrument or instrument,
+                    "operation": query.operation,
+                    "publication": query.publication,
+                    "data_type": query.data_type,
+                    "start": query.start,
+                    "end": query.end,
+                    "exchange": query.exchange,
+                    "type": query.instrument_type,
+                    "market": query.market_category,
+                    "search": "%" + search + "%",
                     "limit": limit + 1,
                     "offset": offset,
                 },

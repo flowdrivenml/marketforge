@@ -5,8 +5,11 @@ from dataclasses import dataclass
 from typing import Literal, cast
 
 from rich.text import Text
+from textual import events
+from textual.message import Message
 from textual.widgets import DataTable
 
+from forge.orchestration.run_summary import when
 from forge.tui.actions import Action, Values
 from forge.tui.controller import document
 
@@ -119,22 +122,53 @@ class Cell:
     state: bool = False
 
 
+def str_values(value: object) -> tuple[str, ...]:
+    return (
+        tuple(str(item) for item in cast(tuple[object, ...], value))
+        if isinstance(value, tuple)
+        else ()
+    )
+
+
 def columns(view: str, name: str, kind: str, state: str, value: object) -> tuple[Cell, ...]:
     r = document(value)
     group = members(r)
-    span = document(r.get("requested_interval"))
     c = Cell
-    if view == "Publications":
+    if view in {"Publications", "Merged", "Normalized"}:
+        symbols = membership(group, "symbol")
+        identities = {
+            (entry.get("exchange"), entry.get("instrument_id"), entry.get("symbol"))
+            for entry in group
+            if entry.get("symbol")
+        }
+        if len(symbols) > 23 or len(identities) > len({entry.get("symbol") for entry in group}):
+            symbols = f"{len(identities)} instruments"
+        venue = membership(group, "exchange")
+        if len(venue) > 12:
+            venue = f"{len({entry.get('exchange') for entry in group if entry.get('exchange')})} exchanges"
+        kinds = {entry.get("kind") or entry.get("data_type") for entry in group}
+        recognized = [
+            label
+            for label, possible in (
+                ("Trade", {"trade", "trades"}),
+                ("depth", {"depth", "l2", "order_book_l2"}),
+            )
+            if kinds & possible
+        ]
         return (
-            c("Instruments", membership(group, "symbol"), 34),
-            c("Operation", r.get("operation"), 10),
-            c("Streams", len(group) if r.get("streams") is not None else None, 7, number=True),
-            c("Evidence", "Registered", 12, state=True),
-            c("Exchange", membership(group, "exchange"), 13, 1),
-            c("Requested UTC", interval(span.get("start_ns"), span.get("end_ns")), 25, 1),
-            c("Files", r.get("primary_file_count"), 6, 1, True),
-            c("Events", r.get("events"), 12, 2, True),
-            c("Bytes", r.get("bytes_written"), 14, 2, True),
+            c("Instruments", symbols, 23),
+            c("Exchange", venue, 12),
+            c("Stream kinds", " + ".join(recognized) or None, 13),
+            c("Files", r.get("primary_file_count"), 6, 0, True),
+            c("Recorded size", r.get("bytes_written"), 13, 0, True),
+            c(
+                "Observed UTC",
+                interval(r.get("first_observed_ns"), r.get("last_observed_ns")),
+                24,
+                1,
+            ),
+            c("Publication", r.get("engine_dataset_id"), 20, 1),
+            c("Evidence", "Registered", 10, 1, state=True),
         )
     if view == "Primary files":
         return (
@@ -151,7 +185,23 @@ def columns(view: str, name: str, kind: str, state: str, value: object) -> tuple
             c("Rows", document(r.get("summary")).get("rows"), 12, 2, True),
             c("Bytes", document(r.get("summary")).get("size_bytes"), 12, 2, True),
         )
-    if view == "Raw storage":
+    if view == "Converted":
+        return (
+            c("Output", name, 24),
+            c("State", state, 18, state=True),
+            c("Registration", r.get("registration"), 16),
+            c("Physical rows", document(r.get("publication")).get("events"), 15, 1, True),
+            c("Stream kinds", r.get("content_type"), 16, 1),
+            c(
+                "Observed UTC",
+                interval(r.get("first_observed_ns"), r.get("last_observed_ns")),
+                22,
+                1,
+            ),
+            c("Recorded size", r.get("bytes_written"), 13, 1, True),
+            c("Manifest", r.get("manifest"), 35, 2),
+        )
+    if view in {"Raw", "Raw storage"}:
         return (
             c("Scope", r.get("scope_identifier") or r.get("instrument") or name, 28),
             c("Source", r.get("exchange") or r.get("origin"), 12),
@@ -159,6 +209,7 @@ def columns(view: str, name: str, kind: str, state: str, value: object) -> tuple
             c("Local state", state, 12, state=True),
             c("Archive UTC", interval(r.get("start_at"), r.get("end_at")), 25, 1),
             c("Bytes", r.get("bytes_written"), 14, 1, True),
+            c("Archive", r.get("relative_path", name), 25, 2),
             c("Origin", r.get("origin"), 12, 2),
         )
     if view == "Instruments" and kind == "Instruments":
@@ -186,12 +237,24 @@ def columns(view: str, name: str, kind: str, state: str, value: object) -> tuple
         )
     if view in {"Retained", "Owned"} or kind == "Retained run":
         active = document(document(r.get("stages")).get(str(r.get("active_stage", ""))))
+        info = document(r.get("run_context"))
+        start, finish = when(r.get("started_at")), when(r.get("finished_at"))
+        elapsed = finish - start if start and finish else None
         return (
-            c("Operation / recipe", name, 28),
-            c("Phase", active.get("phase") or r.get("phase"), 20),
-            c("Outcome", state, 23, state=True),
-            c("Started UTC", date(r.get("started_at")), 14, 1),
-            c("Output", active.get("summary") or r.get("registered"), 28, 2),
+            c("Operation", info.get("operation") or r.get("operation") or name, 12),
+            c("Exchange", ", ".join(str_values(info.get("exchanges"))) or None, 11),
+            c("Scope", ", ".join(str_values(info.get("scope"))) or None, 15),
+            c("Outcome", state, 16, state=True),
+            c(
+                "Result",
+                info.get("result")
+                or active.get("summary")
+                or ("Output recorded" if info.get("output") else None),
+                17,
+            ),
+            c("Recipe", info.get("recipe"), 18, 1),
+            c("Started UTC", start.strftime("%m-%d %H:%M") if start else None, 13, 1),
+            c("Duration", str(elapsed).split(".")[0] if elapsed is not None else None, 10, 1),
         )
     if view == "Rankings":
         return (
@@ -219,7 +282,8 @@ def columns(view: str, name: str, kind: str, state: str, value: object) -> tuple
             c("Recipe", name, 29),
             c("Workflow", kind, 23),
             c("State", state, 13, state=True),
-            c("Source", r.get("path"), 35, 1),
+            c("Requested interval", r.get("interval"), 36, 1),
+            c("Source", r.get("path"), 35, 2),
         )
     if r.get("symbol") or r.get("code"):
         return (
@@ -249,6 +313,30 @@ def visible(cells: tuple[Cell, ...], width: int) -> tuple[Cell, ...]:
 
 class Results(DataTable[Text]):
     """Single-line resource table with keyboard and pointer selection."""
+
+    recipe_links = False
+
+    class ContextRequested(Message):
+        def __init__(self, identity: str) -> None:
+            super().__init__()
+            self.identity = identity
+
+    async def _on_click(self, event: events.Click) -> None:
+        metadata = event.style.meta
+        row, column = metadata.get("row"), metadata.get("column")
+        if isinstance(row, int) and isinstance(column, int) and 0 <= row < self.row_count:
+            key = self.ordered_rows[row].key
+            if event.button == 3 and key.value is not None:
+                self.move_cursor(row=row)
+                self.post_message(self.ContextRequested(key.value))
+                event.stop()
+                return
+            if self.recipe_links and event.button == 1:
+                self.move_cursor(row=row)
+                if self.ordered_columns[column].key.value == "Recipe":
+                    self.post_message(self.RowSelected(self, row, key))
+                event.stop()
+                return
 
     def mark(self, previous: str | None, selected: str | None) -> None:
         for key in dict.fromkeys(x for x in (previous, selected) if x is not None):

@@ -146,6 +146,18 @@ async def test_file_search_and_inspection(
     }
     assert len({item["symbol"] for item in retained["streams"]}) == 4
     assert len(retained["streams"]) == 8
+    matched = await query.publications(
+        paths,
+        identity=publication,
+        filters=query.DatasetRequest("list", exchange="bybit", instrument="BTCUSDT"),
+    )
+    assert len(matched["publications"]) == 1
+    unrelated = await query.publications(
+        paths,
+        identity=publication,
+        filters=query.DatasetRequest("list", exchange="bybit", instrument=str(okx["symbol"])),
+    )
+    assert unrelated["publications"] == []
 
     async def search(*args: str, action: str = "find") -> tuple[list[int], bool]:
         result = await invoke(action, "--publication", engine, *args, as_json=False)

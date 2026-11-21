@@ -24,25 +24,46 @@ processing, verification, and storage mutation are explicit actions.
 | Area | Contents |
 | --- | --- |
 | Overview | Data inventory, workspace status, current operation, attention, and recent results |
-| Workflows | Pipeline, acquisition, normalization, merge, conversion, import, and raw registration |
-| Data | Registry publications, registered primary files, and raw archives |
+| Workflows | Pipeline, acquisition, normalization, merge, conversion, and import |
+| Data | Merged, Converted, Normalized, and Raw |
 | Markets | Instruments, observations, policies, and ranking snapshots |
 | Catalog | Manual exchange, instrument, and specification declarations |
 | Recipes & Profiles | Saved TOML recipes, declarations, and installed normalization profiles |
 | Runs | Retained reports and operations owned by this application |
 | System | Engine installations, the testing registry, and application settings |
 
-Press Ctrl+P to find actions such as `pipeline resume`, `merge prepare`,
-`storage coverage`, or `dataset lineage`. Use the arrow keys to select rows
-and Enter to open details. The active area stays highlighted as focus moves.
-Press F2 for actions scoped to the selected item and F3 in details for raw evidence. Tab and Shift+Tab move focus. Escape closes forms
-and details. Use `/` to focus the filter, Ctrl+R to reload retained data,
-Page Up and Page Down to move between available result pages, and Ctrl+N
-to toggle navigation. The application also supports mouse selection and
-scrolling. The strip below the filter identifies whether it searches registered
-resources, retained artifacts, or the loaded resources. Wider terminals show
-a selected-item inspector beside the table. Detail views retain full values
-and sample tables scroll horizontally.
+Press Ctrl+P to find actions. Registration commands remain in the palette,
+including raw registration and supported recovery. Workflows has no separate
+Registration tab.
+
+Arrow keys change selection. Enter opens the selected object. For an editable
+recipe, Enter or a click on its name opens the configured editor. The table
+uses the full width. Escape returns from explicit details while retaining the
+list state. Right-click a row, use **F2**, or press Shift+F10 to open its
+actions. **F3** in details opens raw evidence. Tab and Shift+Tab move focus.
+Use `/` for search, Ctrl+R to reload, Page Up and Page Down to change pages,
+and Ctrl+N to toggle navigation.
+
+Use **Filters** for structured constraints and **Reset** to clear them. Click
+a supported heading or choose a sort in the filter form. The arrow indicates
+direction, and a second click reverses it. Registry sorting and filtering
+happen before pagination. Turnover ordering keeps native denominations
+separate. Missing numeric and time values sort last. The result strip displays
+the current page and applied criteria.
+
+| Inventory | Structured filters |
+| --- | --- |
+| Merged and Normalized | Publication ID, exchange, instrument identity, instrument type, market, trade or depth content, observed interval |
+| Raw | Archive ID, origin and raw source, exchange, type and market, instrument or scope, feed, assets, status, and interval |
+| Markets instruments | Exchange and market lists, exact symbol and symbol pattern, base, quote and settlement, instrument type, status, observation availability |
+| Ranking snapshots | Comparison currency and complete or partial universe, with policy and snapshot search |
+| Converted | Manifest availability and recorded stream kinds |
+| Catalog instruments | Exchange, symbol, type, market, assets, status |
+| Retained runs | Run ID, operation, recipe, recorded state, exchange, scope, started interval, minimum duration, recorded outputs |
+
+Publication member constraints match the same constituent. Retained run
+context comes from retained reports and plans. Older records can lack scope
+or duration. A recorded running state has unconfirmed liveness.
 
 Forms include selectors and optional Advanced fields. Copy command displays
 the equivalent quoted CLI invocation for use outside the app. Copy value
@@ -120,9 +141,32 @@ To edit a recipe directly from a shell, use nvim.
 nvim data/.config/pipeline/bybit_spot.toml
 ```
 
+## Author recipes
+
+**New recipe** uses the workflow tab's creator and opens the new source in the
+configured editor. The pipeline creator also supports `mf pipeline new NAME`.
+Review draft fields before planning or running. A successful editor exit
+triggers a reload and local validation. Removing or invalidating the source
+produces an error. Retained submissions remain immutable.
+
+From a Markets or Catalog instrument, choose **Add to acquisition…** or
+**Add to pipeline…**. Select an existing recipe or supply a name and explicit
+UTC interval for a new one, then choose trades, depth, or both. The review
+identifies the exact file and interval. Apply writes the supported TOML
+requests while preserving unrelated settings and comments. An exact duplicate
+is a no-op. Forge coordinates its writers and editor sessions, and changes
+observed after review require a reload. Pipeline requests are embedded in the
+selected pipeline TOML.
+
+Acquisition recipes can seed normalization and conversion. Normalization
+recipes can seed merge or conversion, or replace the single source of a
+compatible derived merge that has no pinned publication IDs. Merge recipes
+can seed conversion. Conversion source routes still resolve committed merge
+inputs during preparation. Creating or editing a recipe does not execute it.
+
 ## Data and maintenance
 
-The Publications view lists a registry publication once. It retains the
+Merged and Normalized each list registered publications once. It retains the
 engine publication ID, registry publication ID, full published stream
 membership, and a separate page of primary-file identities. Open registered
 files to inspect lineage, schema, or a bounded Parquet sample. The publication
@@ -134,7 +178,13 @@ Execution and verification evidence retain original timestamps and units.
 Observed event endpoints are inclusive and do not establish continuity for
 the requested half-open interval.
 
-Raw Storage uses local archive registry identities. Reloading reads retained
+Converted browses known commits from the newest 100 converter execution
+receipts. Forge reads metadata from their known managed manifests. Missing or
+invalid manifests remain identifiable from the retained receipt. This source
+does not enumerate every local conversion and does not infer registry
+registration. The Overview keeps its separate shorter evidence window.
+
+Raw uses local archive registry identities. Reloading reads retained
 metadata. Archive verification and reconciliation can update registry state,
 and dataset verification hashes the requested file and shared manifest.
 These actions run only when selected.

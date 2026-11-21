@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, LiteralString
 from uuid import UUID, uuid4
 
 from psycopg import AsyncConnection
@@ -482,14 +482,38 @@ async def build(
 
 
 async def list_snapshots(
-    c: AsyncConnection[TupleRow], limit: int = 50, *, offset: int = 0, search: str = ""
+    c: AsyncConnection[TupleRow],
+    limit: int = 50,
+    *,
+    offset: int = 0,
+    search: str = "",
+    currency: str | None = None,
+    universe: str | None = None,
+    sort: str = "",
+    descending: bool = True,
 ) -> list[dict[str, object]]:
     if not 1 <= limit <= 10001:
         raise MarketDataError("Ranking limit must be 1..10001.")
+    orders: dict[str, LiteralString] = {
+        "Policy": "policy_name",
+        "Currency": "comparison_currency",
+        "Ranked": "included_count",
+        "Published UTC": "created_at",
+        "Universe": "universe_count",
+    }
+    direction: LiteralString = " DESC" if descending else " ASC"
+    order = orders.get(sort, "created_at")
     async with c.cursor(row_factory=dict_row) as cur:
         await cur.execute(
-            "SELECT id,policy_name,created_at,comparison_currency,partial_universe,universe_count,included_count FROM ranking.snapshots WHERE status='published' AND (policy_name ILIKE %s OR id::text ILIKE %s) ORDER BY created_at DESC,id LIMIT %s OFFSET %s",
-            (f"%{search}%", f"%{search}%", limit, offset),
+            """SELECT id,policy_name,created_at,comparison_currency,partial_universe,universe_count,included_count
+            FROM ranking.snapshots WHERE status='published' AND (policy_name ILIKE %s OR id::text ILIKE %s)
+              AND (%s::text IS NULL OR lower(comparison_currency)=lower(%s))
+              AND (%s::text IS NULL OR partial_universe=(%s='partial'))
+            ORDER BY """
+            + order
+            + direction
+            + " NULLS LAST,id LIMIT %s OFFSET %s",
+            (f"%{search}%", f"%{search}%", currency, currency, universe, universe, limit, offset),
         )
         return list(await cur.fetchall())
 

@@ -3,9 +3,12 @@
 import json
 import os
 import re
+from dataclasses import asdict
+from functools import lru_cache
 from pathlib import Path
 from uuid import UUID
 
+from forge.orchestration.run_summary import RunSummary, matches, summarize, value_for_sort
 from forge.shared.errors import MarketForgeError
 
 
@@ -113,6 +116,37 @@ def read_managed_report(root: Path, run_id: str) -> dict[str, object]:
     return {"run_id": run_id, "status": "report_missing_or_interrupted"}
 
 
+def run_signatures(root: Path, name: str, managed: bool) -> tuple[tuple[str, int, int], ...]:
+    files = (
+        (
+            "execution-result.json",
+            "registration-result.json",
+            "prepare-report.json",
+            "execution-intent.json",
+        )
+        if managed
+        else ("report.json", "resolved-plan.json")
+    )
+    signatures: list[tuple[str, int, int]] = []
+    for label in files:
+        try:
+            entry = (root / name / label).lstat()
+        except OSError:
+            continue
+        signatures.append((label, entry.st_size, entry.st_mtime_ns))
+    return tuple(signatures)
+
+
+@lru_cache(maxsize=2048)
+def indexed_run(
+    root: Path, name: str, managed: bool, _signatures: tuple[tuple[str, int, int], ...]
+) -> tuple[dict[str, object], RunSummary]:
+    report = read_managed_report(root, name) if managed else read_report(root, name)
+    summary = summarize(report, root / name)
+    fields = ("kind", "operation", "name", "recipe", "state", "status", "started_at", "finished_at")
+    return {key: report[key] for key in fields if key in report}, summary
+
+
 def run_page(
     root: Path,
     limit: int,
@@ -122,6 +156,9 @@ def run_page(
     pipeline_only: bool = False,
     include_managed: bool = False,
     managed_prefix: str | None = None,
+    filters: dict[str, str] | None = None,
+    sort: str = "",
+    descending: bool = False,
 ) -> tuple[list[dict[str, object]], bool]:
     """Search retained report identities before applying a bounded result page."""
     if not 1 <= limit <= 100 or offset < 0:
@@ -145,26 +182,58 @@ def run_page(
                 continue
     result: list[dict[str, object]] = []
     matched = 0
+    full = bool(filters or sort)
+    sort_keys: dict[str, str | float] = {}
     for _, name in sorted(candidates, reverse=True)[
-        offset if not search and not pipeline_only else 0 :
+        offset if not search and not pipeline_only and not full else 0 :
     ]:
+        summary: RunSummary | None = None
         try:
-            report = read_managed_report(root, name) if include_managed else read_report(root, name)
+            if full:
+                managed = include_managed and bool(MANAGED_RUN.fullmatch(name))
+                report, summary = indexed_run(
+                    root, name, managed, run_signatures(root, name, managed)
+                )
+            else:
+                report = (
+                    read_managed_report(root, name) if include_managed else read_report(root, name)
+                )
         except (MarketForgeError, OSError, ValueError) as error:
             report = {"status": "unavailable", "error": str(error)}
+            if full:
+                summary = summarize(report)
         if pipeline_only and report.get("kind") != "historical_pipeline":
+            continue
+        if summary is not None and not matches(summary, name, filters or {}):
             continue
         haystack = " ".join(
             str(report.get(key, "")) for key in ("name", "kind", "operation", "state", "status")
         )
         if search.casefold() not in f"{name} {haystack}".casefold():
             continue
-        if (search or pipeline_only) and matched < offset:
+        if not full and (search or pipeline_only) and matched < offset:
             matched += 1
             continue
-        result.append({**report, "run_id": name})
-        if len(result) > limit:
+        if summary is not None:
+            if (sort_value := value_for_sort(summary, sort)) is not None:
+                sort_keys[name] = sort_value
+            result.append({**report, "run_id": name, "run_context": asdict(summary)})
+        else:
+            result.append({**report, "run_id": name})
+        if not full and len(result) > limit:
             break
+    if full:
+        if sort:
+
+            def key(item: dict[str, object]) -> str | float:
+                return sort_keys.get(str(item["run_id"]), "")
+
+            present = [item for item in result if key(item) != ""]
+            missing = [item for item in result if key(item) == ""]
+            present.sort(key=lambda item: str(item["run_id"]))
+            present.sort(key=key, reverse=descending)
+            result = present + missing
+        return result[offset : offset + limit], len(result) > offset + limit
     return result[:limit], len(result) > limit
 
 

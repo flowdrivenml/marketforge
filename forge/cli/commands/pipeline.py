@@ -11,6 +11,7 @@ from typing import Any
 from rich.console import Console
 from rich.text import Text
 
+from forge.historical.authoring import create_pipeline
 from forge.historical.pipelines import service
 from forge.historical.pipelines.config import load_recipe
 from forge.historical.pipelines.dashboard import present
@@ -23,7 +24,7 @@ from forge.startup.context import ApplicationContext
 
 def configure(parser: argparse.ArgumentParser) -> None:
     commands = parser.add_subparsers(dest="pipeline_action", required=True)
-    for action in ("validate", "plan", "run", "resume", "status"):
+    for action in ("new", "validate", "plan", "run", "resume", "status"):
         child = commands.add_parser(action, allow_abbrev=False)
         child.add_argument(
             "reference", metavar="RUN_ID" if action in {"resume", "status"} else "NAME"
@@ -141,6 +142,13 @@ async def run_pipeline(
 
 def command(args: argparse.Namespace, context: ApplicationContext) -> int:
     action = args.pipeline_action
+    if action == "new":
+        path = create_pipeline(context.paths.pipeline_config_dir, args.reference)
+        if args.as_json:
+            print(json.dumps({"status": "draft_created", "path": str(path)}))
+        else:
+            context.console.print(Text(f"Created pipeline draft {path}"))
+        return 0
     tui = getattr(args, "tui", False)
     if args.as_json and tui:
         raise MarketForgeError("--tui is incompatible with global --json.")

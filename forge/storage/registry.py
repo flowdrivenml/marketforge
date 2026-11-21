@@ -91,6 +91,8 @@ WITH identities AS (
    AND (%(instrument_type)s::text IS NULL OR instrument_type=%(instrument_type)s)
    AND (%(instrument)s::text IS NULL OR scope_identifier=%(instrument)s)
    AND (%(scope_kind)s::text IS NULL OR scope_kind=%(scope_kind)s)
+   AND (%(search)s::text IS NULL OR id::text=%(search)s
+       OR strpos(lower(concat_ws(' ', relative_path, scope_identifier, exchange)),lower(%(search)s))>0)
    AND (%(pattern)s::text IS NULL OR scope_identifier ILIKE %(pattern)s ESCAPE '!')
    AND (%(base_asset)s::text IS NULL OR lower(base_asset)=lower(%(base_asset)s))
    AND (%(quote_asset)s::text IS NULL OR lower(quote_asset)=lower(%(quote_asset)s))
@@ -144,9 +146,22 @@ async def counts(c: AsyncConnection[TupleRow], params: dict[str, object]) -> dic
 
 
 async def page(c: AsyncConnection[TupleRow], params: dict[str, object]) -> list[dict[str, object]]:
+    orders: dict[str, LiteralString] = {
+        "id": "id",
+        "relative_path": "relative_path",
+        "bytes_written": "bytes_written",
+        "start_at": "start_at",
+        "status": "status",
+    }
+    order = orders.get(str(params.get("sort")), "id")
+    direction: LiteralString = " DESC" if params.get("descending", True) else " ASC"
     async with c.cursor(row_factory=dict_row) as cur:
         await cur.execute(
-            REGISTRY + "SELECT * FROM matching ORDER BY id DESC LIMIT %(limit)s OFFSET %(offset)s",
+            REGISTRY
+            + "SELECT * FROM matching ORDER BY "
+            + order
+            + direction
+            + " NULLS LAST,id LIMIT %(limit)s OFFSET %(offset)s",
             params,
         )
         return list(await cur.fetchall())

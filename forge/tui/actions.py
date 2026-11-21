@@ -163,6 +163,7 @@ APPLY = flag("apply", "Apply reviewed selection")
 ACT = Action
 
 ACTIONS = (
+    ACT("pipeline new", "Workflows", (NAME,), "write"),
     ACT("pipeline validate", "Workflows", (NAME,)),
     ACT("pipeline plan", "Workflows", (NAME,), testing=True),
     ACT(

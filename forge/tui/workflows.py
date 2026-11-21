@@ -10,6 +10,7 @@ from forge.historical.archives.operation import run_acquisition
 from forge.historical.archives.planning import plan as acquisition_plan
 from forge.historical.archives.storage.files import disk
 from forge.historical.archives.templates import write_acquisition_template
+from forge.historical.authoring import create_pipeline
 from forge.historical.conversion import recipes as conversion_recipes
 from forge.historical.conversion import service as conversion
 from forge.historical.conversion.execution import execute as execute_conversion
@@ -57,6 +58,9 @@ async def workflow(
     action = parts[-1]
     dry = bool(v.get("dry_run"))
     if family == "pipeline":
+        if action == "new":
+            path = await disk(create_pipeline, paths.pipeline_config_dir, reference)
+            return {"status": "draft_created", "path": str(path)}
         if action == "status":
             return await disk(pipeline.status, paths, reference)
         if action == "resume":

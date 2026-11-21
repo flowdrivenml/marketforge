@@ -19,8 +19,15 @@ from textual.widgets import Button, DataTable, Footer, Input, Static
 
 from forge.datasets import inventory as inventory_query
 from forge.datasets.query import publications, utc
+from forge.historical.archives.config import ArchiveRequest
 from forge.historical.archives.progress import ProgressSnapshot
 from forge.historical.archives.storage.files import disk
+from forge.historical.authoring import (
+    add_requests,
+    create_with_requests,
+    recipe_writer,
+    replace_merge_source,
+)
 from forge.historical.pipelines.progress import PipelineSnapshot
 from forge.orchestration.inspection import (
     MANAGED_RUN,
@@ -32,9 +39,9 @@ from forge.shared.config.library import list_config_names
 from forge.shared.terminal.editor import edit_file
 from forge.startup.context import ApplicationContext
 from forge.tui import overview
-from forge.tui.actions import ACTIONS, BY_KEY, Action, Values, read_only
+from forge.tui.actions import ACTIONS, BY_KEY, Action, Field, Values, read_only
 from forge.tui.controller import Controller, Invoke, Operation, document, outcome
-from forge.tui.inspection import ActionMenu, Inspection, fields
+from forge.tui.inspection import ActionMenu, Inspection
 from forge.tui.inventory import (
     Converted,
     InventoryPanels,
@@ -76,9 +83,8 @@ VIEWS = {
         "Merge",
         "Conversion",
         "Import",
-        "Registration",
     ),
-    "Data": ("Publications", "Primary files", "Raw storage"),
+    "Data": ("Merged", "Converted", "Normalized", "Raw"),
     "Markets": ("Instruments", "Rankings", "Policies"),
     "Catalog": ("Exchanges", "Instruments", "Specifications"),
     "Recipes & Profiles": ("Recipes", "Profiles"),
@@ -91,6 +97,9 @@ VIEWS = {
 class ViewState:
     filter: str = ""
     offset: int = 0
+    filters: Values = field(default_factory=Values)
+    sort: str = ""
+    descending: bool = False
     selection: str | None = None
     rows: dict[str, Row] = field(default_factory=dict[str, Row])
     more: bool = False
@@ -126,6 +135,7 @@ class ForgeApp(App[None]):
         Binding("pagedown", "next", "Next page", show=False, priority=True),
         Binding("ctrl+o", "operation", "Run"),
         Binding("f2", "context", "Actions"),
+        Binding("shift+f10", "context", "Context menu", show=False),
         Binding("ctrl+c", "interrupt", "Interrupt", priority=True),
         Binding("ctrl+q", "quit_forge", "Quit", priority=True),
     ]
@@ -140,6 +150,7 @@ class ForgeApp(App[None]):
         self.version = 0
         self.root_screen = self.screen_stack[0] if self.screen_stack else None
         self.editor_open = False
+        self.recipe_activation = False
         self.inventory_generation = 0
         self.inventory_pending = False
         self.inventory_lock = asyncio.Lock()
@@ -177,10 +188,11 @@ class ForgeApp(App[None]):
                     yield Button(area, id=f"area-{index}")
             with Vertical(id="main"):
                 yield Horizontal(id="views")
-                yield Input(
-                    placeholder="Filter visible results or enter an exact registry symbol",
-                    id="filter",
-                )
+                with Horizontal(id="browse-tools"):
+                    yield Input(placeholder="Search", id="filter")
+                    yield Button("Filters", id="browse-filters")
+                    yield Button("Reset", id="browse-reset")
+                    yield Button("New recipe", id="recipe-new")
                 yield Static("", id="query-state", markup=False)
                 yield Static(id="overview-status", classes="overview-only", markup=False)
                 with VerticalScroll(id="overview-scroll"):
@@ -191,7 +203,6 @@ class ForgeApp(App[None]):
                     yield Results(cursor_type="row", id="overview-results")
                 with Horizontal(id="resource-body"):
                     yield Results(cursor_type="row", id="results")
-                    yield Static("Select a resource", id="inspector")
                 with Horizontal(id="context-actions"):
                     yield Button("Enter Inspect", id="inspect-selected", classes="compact")
                     yield Button(
@@ -255,6 +266,8 @@ class ForgeApp(App[None]):
                 and self.area != "Overview"
                 and not isinstance(self.focused, Input)
             )
+        if action == "context" and isinstance(self.focused, Input):
+            return False
         if action == "filter" and self.area == "Overview" and self.screen == self.root_screen:
             return False
         return super().check_action(action, parameters)
@@ -303,7 +316,22 @@ class ForgeApp(App[None]):
             self.query_one(f"#area-{index}", Button).set_class(name == area, "active")
         field = self.query_one("#filter", Input)
         field.value = self.state.filter
-        field.placeholder = self.search_scope() + " · enter a filter"
+        field.placeholder = {
+            "Workflows": "Find recipe",
+            "Data": "Find data",
+            "Markets": "Search instruments",
+            "Catalog": "Search catalogue",
+            "Runs": "Find retained run",
+            "Recipes & Profiles": "Find recipe or profile",
+        }.get(area, "Search")
+        self.query_one("#recipe-new", Button).display = area == "Workflows" or self.view in {
+            "Recipes",
+            "Policies",
+        }
+        self.query_one("#browse-filters", Button).display = bool(
+            self.filter_fields() or self.sort_fields()
+        )
+
         group = self.query_one("#views", Horizontal)
         await group.remove_children()
         await group.mount(
@@ -382,10 +410,17 @@ class ForgeApp(App[None]):
         page.more = more
         self.render_rows()
         state.update(
-            f"{self.search_scope()}  ·  {len(rows)} shown  ·  offset {offset}"
+            f"{self.search_scope()}  ·  {len(rows)} results · Page {offset // 50 + 1}"
+            + (f" · {page.sort} {'↓' if page.descending else '↑'}" if page.sort else "")
+            + (
+                " · "
+                + ", ".join(
+                    f"{key.replace('_', ' ')}={value}" for key, value in page.filters.items()
+                )
+                if page.filters
+                else ""
+            )
             + ("  ·  PgDn next page" if more else "")
-            if rows
-            else "No matching records."
         )
         await self.refresh_context()
 
@@ -521,7 +556,7 @@ class ForgeApp(App[None]):
 
     @work(exit_on_error=False)
     async def open_raw_inventory(self) -> None:
-        await self.switch("Data", "Raw storage", raw_complete=True)
+        await self.switch("Data", "Raw", raw_complete=True)
 
     def show_inventory_evidence(self) -> None:
         data = self.inventory_data
@@ -899,18 +934,22 @@ class ForgeApp(App[None]):
             self.open_managed_run(row.id)
 
     def search_scope(self) -> str:
-        if self.area == "Data" and self.view == "Raw storage" and self.raw_complete:
+        if self.area == "Data" and self.view in {"Raw", "Raw storage"} and self.raw_complete:
             return "Recorded complete local archives"
         if self.area == "Runs" and self.view == "Retained":
             return "Retained artifacts"
-        if self.area in {"Data", "Catalog"} or self.view in {"Instruments", "Rankings"}:
+        if (self.area in {"Data", "Catalog"} and self.view != "Converted") or self.view in {
+            "Instruments",
+            "Rankings",
+        }:
             return "Registry search"
-        return "Loaded resources"
+        return "Retained converter receipts · latest 100" if self.view == "Converted" else self.view
 
     def render_rows(self) -> None:
         table = self.resource_table()
         table.border_title = "Recent runs · UTC" if self.area == "Overview" else self.view
         page = self.state
+        table.recipe_links = self.area == "Workflows" or self.view in {"Recipes", "Policies"}
         table.clear(columns=True)
         table.display = self.area != "Overview" or bool(page.rows)
         first = next(iter(page.rows.values()), None)
@@ -925,7 +964,8 @@ class ForgeApp(App[None]):
         layout = visible(row_columns(first), table.size.width or self.size.width - 4)
         table.add_column("", width=1, key="mark")
         for cell in layout:
-            table.add_column(cell.label, width=cell.width, key=cell.label)
+            indicator = (" ↓" if page.descending else " ↑") if cell.label == page.sort else ""
+            table.add_column(cell.label + indicator, width=cell.width, key=cell.label)
         if page.selection not in page.rows:
             page.selection = first.id
         for row in page.rows.values():
@@ -949,18 +989,26 @@ class ForgeApp(App[None]):
         self, area: str, view: str, search: str, offset: int
     ) -> tuple[list[Row], bool]:
         return await load_rows(
-            self.controller, area, view, search, offset, raw_complete=self.raw_complete
+            self.controller,
+            area,
+            view,
+            search,
+            offset,
+            raw_complete=self.raw_complete,
+            filters=self.state.filters,
+            sort=self.state.sort,
+            descending=self.state.descending,
         )
 
     def related(self, row: Row | None) -> tuple[str, ...]:
         if self.area == "Overview":
             return ("doctor", "pipeline run", "runs list")
         if self.area == "Data":
-            if self.view == "Publications":
+            if self.view in {"Merged", "Normalized", "Publications"}:
                 return ()
             return (
                 ("storage show", "storage verify", "storage coverage", "storage delete")
-                if self.view == "Raw storage"
+                if self.view in {"Raw", "Raw storage"}
                 else (
                     "datasets show",
                     "datasets streams",
@@ -1010,14 +1058,18 @@ class ForgeApp(App[None]):
 
     async def refresh_context(self) -> None:
         row = self.state.rows.get(self.state.selection or "")
-        self.query_one("#inspect-selected", Button).disabled = row is None
+        inspect_button = self.query_one("#inspect-selected", Button)
+        inspect_button.disabled = row is None
+        inspect_button.label = (
+            "Enter Edit" if row and row.path and row.kind != "Profile" else "Enter Inspect"
+        )
         self.query_one("#edit-source", Button).display = bool(row and row.path)
         self.query_one("#context-menu", Button).disabled = self.area != "Overview" and not bool(
             self.related(row)
         )
-        inspector = self.query_one("#inspector", Static)
-        inspector.border_title = row.name if row else "Selection"
-        inspector.update(fields(row.value) if row else Text("Select a resource"))
+        self.query_one("#context-menu", Button).disabled = self.area != "Overview" and not (
+            row or self.related(row)
+        )
 
     @on(DataTable.RowHighlighted, "#results, #overview-results")
     async def highlighted(self, event: DataTable.RowHighlighted) -> None:
@@ -1034,6 +1086,24 @@ class ForgeApp(App[None]):
             await self.inspect_row(row)
 
     async def inspect_row(self, row: Row) -> None:
+        if row.path and row.kind != "Profile":
+            self.edit_selected(row)
+            return
+        if row.kind == "Converted output":
+            self.push_screen(
+                Inspection(
+                    f"Converted output · {row.name}",
+                    row.value,
+                    actions={
+                        "Execution report": partial(self.open_managed_run, row.id),
+                        "View logs": partial(self.open_overview_logs, row.id),
+                    },
+                )
+            )
+            return
+        if self.area == "Runs" and not isinstance(row.value, Operation):
+            self.open_managed_run(row.id)
+            return
         if isinstance(row.value, Operation):
             self.show_operation(row.value)
             return
@@ -1320,6 +1390,26 @@ class ForgeApp(App[None]):
             await self.switch(AREAS[int(key.split("-")[1])])
         elif key.startswith("view-"):
             await self.switch(self.area, VIEWS[self.area][int(key.split("-")[1])])
+        elif key == "browse-filters":
+            self.open_filters()
+        elif key == "browse-reset":
+            self.state.filters.clear()
+            self.state.sort = ""
+            self.state.offset = 0
+            self.state.filter = ""
+            self.query_one("#filter", Input).value = ""
+            self.request_query()
+        elif key == "recipe-new":
+            if self.view == "Recipes":
+                names = tuple(family for family in FAMILIES if FAMILIES[family] + " new" in BY_KEY)
+
+                def choose_recipe(family: str | None) -> None:
+                    if family is not None:
+                        self.open_action(BY_KEY[FAMILIES[family] + " new"])
+
+                self.push_screen(ActionMenu("New recipe type", names), choose_recipe)
+            else:
+                self.open_action(BY_KEY[FAMILIES[self.view] + " new"])
         elif key == "context-menu":
             self.action_context()
         elif key == "overview-markets":
@@ -1352,14 +1442,343 @@ class ForgeApp(App[None]):
 
             self.push_screen(ActionMenu("Overview actions", tuple(choices)), choose_overview)
             return
-        keys = self.related(row)
-        if keys:
+        self.row_menu(row)
+
+    @on(Results.ContextRequested)
+    def context_requested(self, event: Results.ContextRequested) -> None:
+        self.row_menu(self.state.rows.get(event.identity))
+
+    def row_menu(self, row: Row | None) -> None:
+        choices: dict[str, Callable[[], object]] = {
+            key: partial(self.open_action, BY_KEY[key], row) for key in self.related(row)
+        }
+        if row:
+            choices["Inspect" if not row.path else "Open in editor"] = partial(self.open_row, row)
+            if (self.area == "Markets" and self.view == "Instruments") or row.kind == "instrument":
+                for destination in ("acquisition", "pipeline"):
+                    choices[f"Add to {destination}…"] = partial(
+                        self.add_to_recipe, row, destination
+                    )
+            if row.path and row.kind == "acquisition":
+                choices["Create normalization recipe…"] = partial(
+                    self.open_action,
+                    BY_KEY["normalize new"],
+                    None,
+                    {"from_acquisition": row.reference},
+                )
+            if row.path and row.kind == "normalize":
+                choices["Create merge recipe…"] = partial(
+                    self.open_action, BY_KEY["merge new"], None, {"from_normalize": row.reference}
+                )
+            if row.path and row.kind == "normalize":
+                choices["Replace source in a derived merge…"] = partial(
+                    self.update_merge_source, row
+                )
+            if row.path and row.kind in {"acquisition", "normalize", "merge"}:
+                choices["Create conversion recipe…"] = partial(
+                    self.open_action,
+                    BY_KEY["convert new"],
+                    None,
+                    {"route": row.kind, "source": row.reference},
+                )
+        if choices:
 
             def choose(key: str | None) -> None:
                 if key is not None:
-                    self.open_action(BY_KEY[key], row)
+                    choices[key]()
 
-            self.push_screen(ActionMenu(row.name if row else self.view, keys), choose)
+            self.push_screen(ActionMenu(row.name if row else self.view, tuple(choices)), choose)
+
+    @work(exit_on_error=False)
+    async def open_row(self, row: Row) -> None:
+        await self.inspect_row(row)
+
+    def filter_fields(self) -> tuple[Field, ...]:
+        key = None
+        if self.area == "Data":
+            if self.view == "Converted":
+                return (
+                    Field(
+                        "metadata_state",
+                        "Manifest availability",
+                        "choice",
+                        ("Retained commit", "Manifest unavailable"),
+                    ),
+                    Field(
+                        "content_type", "Stream kinds", "choice", ("trades", "depth", "combined")
+                    ),
+                )
+            key = (
+                "storage list"
+                if self.view in {"Raw", "Raw storage"}
+                else "datasets list"
+                if self.view in {"Merged", "Normalized", "Publications"}
+                else None
+            )
+        elif self.area == "Markets" and self.view == "Instruments":
+            key = "markets list"
+        elif self.area == "Markets" and self.view == "Rankings":
+            return (
+                Field("currency", "Comparison currency"),
+                Field("universe", "Universe", "choice", ("complete", "partial")),
+            )
+        if self.area == "Catalog" and self.view == "Instruments":
+            return tuple(
+                Field(key, label)
+                for key, label in (
+                    ("exchange", "Exchange"),
+                    ("instrument", "Exact symbol"),
+                    ("instrument_type", "Instrument type"),
+                    ("market_category", "Market category"),
+                    ("base_asset", "Base asset"),
+                    ("quote_asset", "Quote asset"),
+                    ("settlement_asset", "Settlement asset"),
+                    ("status", "Status"),
+                )
+            )
+        if self.area == "Runs" and self.view == "Retained":
+            return tuple(
+                Field(key, label)
+                for key, label in (
+                    ("exchange", "Exchange"),
+                    ("operation", "Operation"),
+                    ("recipe", "Recipe"),
+                    ("state", "Recorded state"),
+                    ("scope", "Instrument or scope"),
+                    ("identity", "Run ID"),
+                    ("start", "Started at or after (UTC)"),
+                    ("end", "Started before (UTC)"),
+                )
+            ) + (
+                Field("minimum_duration", "Minimum duration in seconds", "number"),
+                Field("output", "Output evidence", "choice", ("present", "absent")),
+            )
+        excluded = {"limit", "offset", "operation", "sort"}
+        if key == "datasets list":
+            excluded.add("status")
+        common = (
+            tuple(field for field in BY_KEY[key].fields if field.key not in excluded) if key else ()
+        )
+        if key == "markets list":
+            return common + (
+                Field("instrument_type", "Instrument type"),
+                Field("settlement_asset", "Settlement asset"),
+                Field("status", "Instrument status"),
+                Field("availability", "Observations", "choice", ("available", "missing")),
+            )
+        return common
+
+    def sort_fields(self) -> tuple[str, ...]:
+        if self.area in {"Workflows", "Recipes & Profiles"}:
+            return ("Recipe", "Workflow", "State")
+        if self.area == "Data":
+            if self.view == "Converted":
+                return ("Output", "State", "Physical rows", "Recorded size", "Observed UTC")
+            if self.view in {"Merged", "Normalized", "Publications"}:
+                return ("Publication", "Recorded size", "Files", "Observed UTC", "Operation")
+            if self.view in {"Raw", "Raw storage"}:
+                return ("Archive", "Bytes", "Archive UTC", "Local state")
+        if self.area == "Markets" and self.view == "Rankings":
+            return ("Policy", "Currency", "Ranked", "Published UTC", "Universe")
+        if self.area == "Markets" and self.view == "Instruments":
+            return ("Symbol", "Exchange", "Turnover 24h", "Observed UTC")
+        if self.area == "Catalog" and self.view == "Instruments":
+            return ("Declaration", "Exchange", "Type", "State")
+        if self.area == "Runs" and self.view == "Retained":
+            return (
+                "Operation",
+                "Exchange",
+                "Scope",
+                "Outcome",
+                "Recipe",
+                "Started UTC",
+                "Duration",
+            )
+        return ()
+
+    @on(DataTable.HeaderSelected, "#results")
+    def sort_header(self, event: DataTable.HeaderSelected) -> None:
+        label = event.column_key.value
+        if label in self.sort_fields():
+            self.state.descending = not self.state.descending if self.state.sort == label else False
+            self.state.sort = label
+            self.state.offset = 0
+            self.request_query()
+
+    @work(exit_on_error=False)
+    async def open_filters(self) -> None:
+        sorts = self.sort_fields()
+        fields = self.filter_fields() + (
+            (
+                Field("_sort", "Sort column", "choice", sorts),
+                Field("_descending", "Descending", "check"),
+            )
+            if sorts
+            else ()
+        )
+        if not fields:
+            return
+        values = await self.push_screen_wait(
+            Form(
+                Action("Filters", self.area, fields),
+                {
+                    **self.state.filters,
+                    "_sort": self.state.sort,
+                    "_descending": self.state.descending,
+                },
+                (),
+                self.context.paths.root,
+                local=True,
+            )
+        )
+        if values is not None:
+            self.state.sort = str(values.pop("_sort", ""))
+            self.state.descending = bool(values.pop("_descending", False))
+            self.state.filters = {key: value for key, value in values.items() if value != ""}
+            self.state.offset = 0
+            self.request_query()
+
+    @work(exit_on_error=False)
+    async def update_merge_source(self, row: Row) -> None:
+        from forge.shared.config.library import resolve_config_file
+
+        if not row.path:
+            return
+        directory = library(self.context, "merge")
+        values = await self.push_screen_wait(
+            Form(
+                Action(
+                    "Replace a derived merge source",
+                    "Workflows",
+                    (Field("reference", "Merge recipe", required=True),),
+                ),
+                {},
+                await disk(list_config_names, directory),
+                self.context.paths.root,
+                local=True,
+            )
+        )
+        if values is None:
+            return
+        name = str(values["reference"])
+        try:
+            destination = resolve_config_file(directory, name)
+            expected = await disk(destination.read_bytes)
+            if not await self.push_screen_wait(
+                Confirm(
+                    "Replace the single normalization source",
+                    f"{destination}\nNew source · {row.reference}",
+                )
+            ):
+                return
+            path = await disk(
+                replace_merge_source, self.context.paths, name, row.reference, expected
+            )
+            self.notify(f"Updated {path.name}")
+            self.request_query()
+        except Exception as error:
+            self.notify(str(error), severity="error")
+
+    @work(exit_on_error=False)
+    async def add_to_recipe(self, row: Row, family: str) -> None:
+        import tomllib
+
+        from forge.shared.config.library import resolve_config_file
+
+        directory = library(self.context, family)
+        choices = await disk(list_config_names, directory)
+        item = document(row.value)
+        values = await self.push_screen_wait(
+            Form(
+                Action(
+                    f"Add {row.name} to {family}",
+                    self.area,
+                    (
+                        Field("reference", "Destination recipe", required=True),
+                        Field("new", "Create a new recipe", "check", default=not choices),
+                        Field("start", "New recipe start (UTC)"),
+                        Field("end", "New recipe end (UTC, exclusive)"),
+                        Field("trades", "Trades", "check", default=True),
+                        Field("depth", "Depth", "check"),
+                    ),
+                ),
+                {},
+                choices,
+                self.context.paths.root,
+            )
+        )
+        if values is None:
+            return
+        name = str(values["reference"])
+        try:
+            destination = resolve_config_file(directory, name)
+            creating = bool(values.get("new"))
+            expected = b"" if creating else await disk(destination.read_bytes)
+            dates = (
+                values if creating else document(tomllib.loads(expected.decode()).get("interval"))
+            )
+            interval = f"{dates.get('start', '—')} → {dates.get('end', '—')} (exclusive)"
+            requests = tuple(
+                ArchiveRequest.model_validate(
+                    {
+                        key: item.get(key)
+                        for key in ("exchange", "instrument_type", "market_category")
+                    }
+                    | {
+                        "data_type": kind,
+                        "scope": {"kind": "instrument", "identifier": item.get("symbol")},
+                    }
+                )
+                for field, kind in (("trades", "trades"), ("depth", "order_book_l2"))
+                if values.get(field)
+            )
+            if not requests:
+                self.notify("Choose trades, depth, or both.", severity="warning")
+                return
+            if not await self.push_screen_wait(
+                Confirm(
+                    "Apply recipe addition",
+                    f"{destination}\n{interval}\n{row.name} · "
+                    + ", ".join(r.data_type for r in requests),
+                )
+            ):
+                return
+            if creating:
+                change = await disk(
+                    create_with_requests,
+                    directory,
+                    name,
+                    requests,
+                    pipeline=family == "pipeline",
+                    start=str(values.get("start", "")),
+                    end=str(values.get("end", "")),
+                )
+            else:
+                change = await disk(
+                    add_requests,
+                    directory,
+                    name,
+                    requests,
+                    pipeline=family == "pipeline",
+                    expected=expected,
+                )
+            self.push_screen(
+                Inspection(
+                    "Recipe updated",
+                    {
+                        "Path": str(change.path),
+                        "Added": change.added,
+                        "Already included": change.already_present,
+                    },
+                    actions={
+                        "Open in editor": partial(
+                            self.edit_selected, Row(name, name, family, "", {}, name, change.path)
+                        )
+                    },
+                )
+            )
+        except Exception as error:
+            self.notify(str(error), severity="error")
 
     def selection(self, row: Row) -> Selection:
         item = document(row.value)
@@ -1367,7 +1786,7 @@ class ForgeApp(App[None]):
             return Selection("publication", row.id)
         if row.reference.isdecimal() and (row.kind == "File" or self.view == "Primary files"):
             return Selection("file", row.reference)
-        if row.reference.isdecimal() and self.view == "Raw storage":
+        if row.reference.isdecimal() and self.view in {"Raw", "Raw storage"}:
             return Selection("archive", row.reference)
         if row.kind == "Instruments" and item.get("symbol"):
             return Selection(
@@ -1435,12 +1854,39 @@ class ForgeApp(App[None]):
                 return
         else:
             values = {}
+        if action.key.endswith(" new") and family in FAMILIES.values():
+            await self.create_recipe(action, values)
+            return
         if action.effect in {"engine", "network", "write"} and not read_only(action, values):
             if not await self.push_screen_wait(
                 Confirm(action.key, await self.review_scope(action, values))
             ):
                 return
         await self.start_action(action, values)
+
+    async def create_recipe(self, action: Action, values: Values) -> None:
+        async def deferred_editor(_: Path) -> None:
+            return
+
+        try:
+            result = document(
+                await self.controller.invoke(
+                    action.key, values, self.context, lambda _: None, deferred_editor
+                )
+            )
+            family = action.key.rsplit(" ", 1)[0]
+            name = str(values["reference"]).removesuffix(".toml")
+            if self.area == "Workflows" and FAMILIES.get(self.view) == family:
+                self.state.selection = name
+            elif self.view == "Recipes":
+                self.state.selection = f"{family}:{name}"
+            path = result.get("path")
+            if isinstance(path, str):
+                self.edit_selected(Row(name, name, family, "", {}, name, Path(path)))
+            else:
+                self.request_query()
+        except Exception as error:
+            self.notify(str(error), severity="error")
 
     async def review_scope(self, action: Action, values: Values) -> str:
         text = review_text(values)
@@ -1559,7 +2005,7 @@ class ForgeApp(App[None]):
             raise ValueError("An editor is already open.")
         self.editor_open = True
         try:
-            with self.suspend():
+            with recipe_writer(path), self.suspend():
                 await disk(
                     edit_file, path, editor=self.context.settings.presentation.editor or "nvim"
                 )
@@ -1568,14 +2014,18 @@ class ForgeApp(App[None]):
 
     @work(exit_on_error=False)
     async def edit_selected(self, row: Row) -> None:
-        assert row.path is not None
+        if self.recipe_activation or self.editor_open or row.path is None:
+            return
+        self.recipe_activation = True
         try:
+            original = await disk(row.path.read_bytes)
             await self.edit_recipe(row.path)
+            updated = await disk(row.path.read_bytes)
             key = (
                 "acquisition profiles validate" if row.kind == "Profile" else f"{row.kind} validate"
             )
             if key in BY_KEY:
-                result = await self.controller.invoke(
+                await self.controller.invoke(
                     key,
                     {"reference": row.reference},
                     self.context,
@@ -1583,11 +2033,17 @@ class ForgeApp(App[None]):
                     self.edit_recipe,
                 )
             else:
-                result = await disk(read_source, row.path)
-            self.push_screen(Detail("Saved source", result))
+                import tomllib
+
+                tomllib.loads(updated.decode())
+            self.notify(
+                "Recipe unchanged" if original == updated else "Recipe reloaded and validated"
+            )
         except Exception as error:
             self.push_screen(Detail("Editor or validation error", str(error), raw=True))
-        self.request_query()
+        finally:
+            self.recipe_activation = False
+            self.request_query()
 
     def render_operation(self) -> None:
         if self.root_screen is None:

@@ -14,6 +14,7 @@ class StorageFilters(BaseModel):
     instrument: str | None = None
     scope_kind: Literal["instrument", "family", "base_coin"] | None = None
     match: str | None = None
+    search: str | None = None
     base_asset: str | None = None
     quote_asset: str | None = None
     data_type: Literal["trades", "order_book_l2"] | None = None
@@ -24,6 +25,8 @@ class StorageFilters(BaseModel):
     start: AwareDatetime | None = None
     end: AwareDatetime | None = None
     limit: int = Field(default=100, ge=1, le=10000)
+    sort: Literal["id", "relative_path", "bytes_written", "start_at", "status"] = "id"
+    descending: bool = True
     offset: int = Field(default=0, ge=0, le=2**63 - 1)
 
     @model_validator(mode="after")

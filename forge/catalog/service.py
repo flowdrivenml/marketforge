@@ -231,10 +231,21 @@ async def browse(
     limit: int | None = None,
     offset: int = 0,
     search: str = "",
+    filters: dict[str, str] | None = None,
+    sort: str = "",
+    descending: bool = False,
 ) -> dict[str, Any]:
     if limit is not None and (not 1 <= limit <= 1000 or offset < 0):
         raise MarketForgeError("Invalid catalogue page.")
     pattern = f"%{search}%"
+    direction: LiteralString = " DESC" if descending else " ASC"
+    options = filters or {}
+    orders: dict[str, LiteralString] = {
+        "Declaration": "i.symbol",
+        "Exchange": "e.code",
+        "Type": "i.instrument_type",
+        "State": "i.status",
+    }
 
     if kind == "exchange":
         return (
@@ -273,11 +284,35 @@ async def browse(
             "evidence": await rows(c, SPECS, (NAMESPACE, entry["historical_instrument_id"])),
         }
     if kind == "instrument":
+        order = orders.get(sort)
+        where: LiteralString = """ WHERE (e.code || i.symbol) ILIKE %s
+          AND (%s::text IS NULL OR e.code=%s) AND (%s::text IS NULL OR i.instrument_type=%s)
+          AND (%s::text IS NULL OR i.market_category=%s) AND (%s::text IS NULL OR i.symbol=%s)
+          AND (%s::text IS NULL OR lower(i.base_asset)=lower(%s))
+          AND (%s::text IS NULL OR lower(i.quote_asset)=lower(%s))
+          AND (%s::text IS NULL OR lower(i.settlement_asset)=lower(%s))
+          AND (%s::text IS NULL OR i.status=%s) ORDER BY """
+        filters_values = tuple(
+            options.get(key)
+            for key in (
+                "exchange",
+                "instrument_type",
+                "market_category",
+                "instrument",
+                "base_asset",
+                "quote_asset",
+                "settlement_asset",
+                "status",
+            )
+            for _ in range(2)
+        )
+        ordering: LiteralString = (
+            order + direction + " NULLS LAST," if order else ""
+        ) + "e.code,i.instrument_type,i.market_category,i.symbol,i.id"
         entries = await rows(
             c,
-            IDENTITIES
-            + " WHERE (e.code || i.symbol) ILIKE %s ORDER BY e.code,i.instrument_type,i.market_category,i.symbol LIMIT %s OFFSET %s",
-            (NAMESPACE, pattern, limit, offset),
+            IDENTITIES + where + ordering + " LIMIT %s OFFSET %s",
+            (NAMESPACE, pattern, *filters_values, limit, offset),
         )
         for entry in entries:
             entry.pop("authority")

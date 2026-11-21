@@ -54,11 +54,6 @@ DataTable:focus > .datatable--header-cursor { color: $forge-cyan; }
 #filter { height: 1; }
 #results { height: 1fr; width: 1fr; border: solid $forge-muted; }
 #results:focus { border: solid $forge-blue; }
-#inspector {
-    display: none; width: 32; height: 1fr; border: solid $forge-muted;
-    padding: 0 1; overflow: auto;
-}
-.wide #inspector { display: block; }
 #query-state, #operation { height: 1; padding: 0 1; }
 #operation { color: $forge-cyan; background: $forge-surface; }
 #operation.failed, #query-state.-error, #form-error { color: $forge-red; }
@@ -90,7 +85,7 @@ ModalScreen { align: center middle; background: #11111b 75%; }
 
 .overview-only { display: none; }
 .overview .overview-only { display: block; }
-.overview #views, .overview #filter, .overview #query-state, .overview #resource-body, .overview #operation { display: none; }
+.overview #views, .overview #browse-tools, .overview #query-state, .overview #resource-body, .overview #operation { display: none; }
 #overview-scroll { display: none; height: 1fr; }
 .overview #overview-scroll { display: block; }
 #overview-status, #overview-history-note, #inventory-scope { height: 1; padding: 0 1; }
@@ -115,3 +110,8 @@ ModalScreen { align: center middle; background: #11111b 75%; }
 .wide #inventory-markets { width: 45%; }
 
 .overview #context-menu { width: 15; }
+
+#browse-tools { height: 1; }
+#browse-tools #filter { width: 1fr; }
+
+#query-state { height: auto; max-height: 2; }

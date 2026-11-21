@@ -172,10 +172,16 @@ async def markets(
             limit=2 if action == "show" else limit + 1,
             offset=int(v.get("offset", 0)),
             sort=optional(v, "sort") or "identity",
+            descending=bool(v["descending"]) if "descending" in v else None,
             reference=optional(v, "reference"),
             base_asset=optional(v, "base_asset"),
             quote_asset=optional(v, "quote_asset"),
             match=optional(v, "match"),
+            search=optional(v, "search"),
+            instrument_type=optional(v, "instrument_type"),
+            settlement_asset=optional(v, "settlement_asset"),
+            status=optional(v, "status"),
+            availability=optional(v, "availability"),
         )
     if action == "show" and not rows:
         raise MarketForgeError("Instrument reference was not found.")
@@ -236,7 +242,14 @@ async def ranks(
             limit = int(v.get("limit", 50))
             if action == "list":
                 rows = await ranking.list_snapshots(
-                    connection, limit + 1, offset=int(v.get("offset", 0)), search=value(v, "search")
+                    connection,
+                    limit + 1,
+                    offset=int(v.get("offset", 0)),
+                    search=value(v, "search"),
+                    currency=optional(v, "currency"),
+                    universe=optional(v, "universe"),
+                    sort=value(v, "sort"),
+                    descending=bool(v.get("descending", True)),
                 )
                 return {"rankings": rows[:limit], "has_more": len(rows) > limit}
             try:
@@ -295,6 +308,24 @@ async def catalogue(model: str, action: str, v: Values, context: ApplicationCont
                 limit=int(v.get("limit", 50)),
                 offset=int(v.get("offset", 0)),
                 search=value(v, "search"),
+                filters={
+                    key: str(item)
+                    for key, item in v.items()
+                    if key
+                    in {
+                        "exchange",
+                        "instrument_type",
+                        "market_category",
+                        "instrument",
+                        "base_asset",
+                        "quote_asset",
+                        "settlement_asset",
+                        "status",
+                    }
+                    and item != ""
+                },
+                sort=value(v, "sort"),
+                descending=bool(v.get("descending")),
             )
         )
 

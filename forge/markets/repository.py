@@ -318,8 +318,14 @@ async def browse(
     base_asset: str | None = None,
     quote_asset: str | None = None,
     match: str | None = None,
+    search: str | None = None,
+    instrument_type: str | None = None,
+    settlement_asset: str | None = None,
+    status: str | None = None,
+    availability: str | None = None,
     limit: int = 50,
     sort: str = "identity",
+    descending: bool | None = None,
     reference: str | None = None,
     offset: int = 0,
 ) -> list[dict[str, object]]:
@@ -331,8 +337,21 @@ async def browse(
         "freshness": "m.measured_at DESC NULLS LAST,e.code,i.market_category,i.symbol",
     }
     order = orders.get(sort)
-    if order is None:
+    if order is None and descending is None:
         raise MarketDataError("Unknown market sort.")
+    if descending is not None:
+        direction: LiteralString = " DESC NULLS LAST" if descending else " ASC NULLS LAST"
+        directed: dict[str, LiteralString] = {
+            "symbol": "i.symbol" + direction,
+            "exchange": "e.code" + direction,
+            "measured": "m.measured_at" + direction,
+            "turnover": "m.turnover_denomination, m.turnover_24h" + direction,
+            "identity": "e.code" + direction + ",i.market_category,i.symbol",
+        }
+        order = directed.get(sort)
+        if order is None:
+            raise MarketDataError("Unknown market sort.")
+    assert order is not None
     async with c.cursor(row_factory=dict_row) as cur:
         await cur.execute(
             """SELECT i.id,e.code AS exchange,i.instrument_type,i.market_category,i.symbol,
@@ -354,6 +373,11 @@ async def browse(
               AND (%s::text IS NULL OR lower(i.base_asset)=lower(%s))
               AND (%s::text IS NULL OR lower(i.quote_asset)=lower(%s))
               AND (%s::text IS NULL OR i.symbol ILIKE %s ESCAPE '!')
+              AND (%s::text IS NULL OR strpos(lower(concat_ws(' ',e.code,i.symbol)),lower(%s))>0)
+              AND (%s::text IS NULL OR i.instrument_type=%s)
+              AND (%s::text IS NULL OR lower(i.settlement_asset)=lower(%s))
+              AND (%s::text IS NULL OR i.status=%s)
+              AND (%s::text IS NULL OR (m.observation_id IS NOT NULL)=(%s='available'))
             ORDER BY """
             + order
             + ",i.id LIMIT %s OFFSET %s",
@@ -377,6 +401,16 @@ async def browse(
                 quote_asset,
                 match,
                 symbol_pattern(match),
+                search,
+                search,
+                instrument_type,
+                instrument_type,
+                settlement_asset,
+                settlement_asset,
+                status,
+                status,
+                availability,
+                availability,
                 limit,
                 offset,
             ),

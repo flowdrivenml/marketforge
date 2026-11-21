@@ -48,12 +48,15 @@ class Form(ModalScreen[Values | None]):
         preset: Values | None = None,
         choices: tuple[str, ...] = (),
         root: Path | None = None,
+        *,
+        local: bool = False,
     ) -> None:
         super().__init__()
         self.spec = action
         self.preset = preset or {}
         self.choices = choices
         self.root = root or Path.cwd()
+        self.local = local
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog"):
@@ -89,8 +92,13 @@ class Form(ModalScreen[Values | None]):
                     id="submit",
                     variant="primary",
                 )
-                yield Button("Copy command", id="copy-command")
+                if not self.local:
+                    yield Button("Copy command", id="copy-command")
                 yield Button("Back", id="back")
+
+    def on_mount(self) -> None:
+        for field in self.query("#field-reference").results(Input):
+            field.focus()
 
     def render_field(self, field: Field) -> ComposeResult:
         field_value = self.preset.get(field.key, field.default)
