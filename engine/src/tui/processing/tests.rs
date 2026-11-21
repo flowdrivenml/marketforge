@@ -1,16 +1,18 @@
 use super::*;
-use crate::historical::config::normalization_fixture::bybit_spot_trade_job;
+use crate::normalization_fixture::bybit_spot_trade_job;
 static DIAGNOSTIC_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 use ratatui::backend::TestBackend;
+fn dashboard_runtime() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src/shared/historical/config/fixtures/runtime.toml")
+}
+
 fn dashboard(count: usize) -> ProcessingDashboard {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap();
-    let config = crate::historical::normalize::load_processing_config(
-        root.join("data/.config/historical/general.toml"),
-        root,
-    )
-    .unwrap();
+    let config =
+        crate::historical::normalize::load_processing_config(dashboard_runtime(), root).unwrap();
     let mut job = bybit_spot_trade_job(&config).unwrap();
     job.job_id.0 = 1001;
     let template = job.tasks[0].clone();
@@ -368,21 +370,11 @@ fn production_replay_can_pause_without_record_updates_and_matches_non_tui_output
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap();
-    let mut config = crate::historical::normalize::load_processing_config(
-        "data/.config/historical/general.toml",
-        root,
-    )
-    .unwrap();
+    let mut config =
+        crate::historical::normalize::load_processing_config(dashboard_runtime(), root).unwrap();
     let mut job = bybit_spot_trade_job(&config).unwrap();
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let path = root.join(format!(
-        "data/tests/historical/normalize/stabilization/{stamp}-{}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&path).unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let path = workspace.path().to_owned();
     config.resources.scratch_path = path.join("scratch");
     let template = job.tasks[0].clone();
     job.tasks = (0..48)
@@ -525,11 +517,8 @@ fn pty_production_loop_harness() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap();
-    let mut config = crate::historical::normalize::load_processing_config(
-        "data/.config/historical/general.toml",
-        root,
-    )
-    .unwrap();
+    let mut config =
+        crate::historical::normalize::load_processing_config(dashboard_runtime(), root).unwrap();
     let mut job = bybit_spot_trade_job(&config).unwrap();
     config.resources.scratch_path = path.join("scratch");
     let template = job.tasks[0].clone();
@@ -598,20 +587,11 @@ fn concurrent_report_quota_failure_drains_without_deadlock_and_keeps_metrics() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap();
-    let mut config = crate::historical::normalize::load_processing_config(
-        "data/.config/historical/general.toml",
-        root,
-    )
-    .unwrap();
+    let mut config =
+        crate::historical::normalize::load_processing_config(dashboard_runtime(), root).unwrap();
     let mut job = bybit_spot_trade_job(&config).unwrap();
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let path = root.join(format!(
-        "data/tests/historical/normalize/stabilization/quota-{stamp}"
-    ));
-    std::fs::create_dir_all(&path).unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let path = workspace.path().to_owned();
     config.resources.scratch_path = path.join("scratch");
     config.resources.scratch_budget_bytes = 1;
     config.resources.workers = 2;
@@ -699,24 +679,15 @@ fn stream_rejection_evidence(block_failure_report: bool) {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap();
-    let mut config = crate::historical::normalize::load_processing_config(
-        "data/.config/historical/general.toml",
-        root,
-    )
-    .unwrap();
+    let mut config =
+        crate::historical::normalize::load_processing_config(dashboard_runtime(), root).unwrap();
     // This is a strict rejection/lifecycle fixture. Do not inherit a user's
     // experimental source-preference setting from the deployment configuration.
     config.reconciliation.trades.overlap_policy =
         crate::shared::historical::policies::TradeOverlap::Strict;
     let mut job = bybit_spot_trade_job(&config).unwrap();
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let path = root.join(format!(
-        "data/tests/historical/normalize/completion/bitget-reconciliation/dashboard-overlap-{stamp}"
-    ));
-    std::fs::create_dir_all(&path).unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let path = workspace.path().to_owned();
     config.resources.scratch_path = path.join("scratch");
     let template = job.tasks[0].clone();
     job.tasks = (0..2)

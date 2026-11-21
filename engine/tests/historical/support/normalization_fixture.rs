@@ -64,6 +64,10 @@ pub(crate) fn select_normalization_sample(
     Ok(subset)
 }
 
+#[allow(
+    dead_code,
+    reason = "used by library normalization tests but not every integration target"
+)]
 pub(crate) fn bitget_trade_sources(spot: bool, count: usize) -> Result<PreparedBatch, String> {
     let stream = if spot {
         "bitget.spot.spot.BTCUSDT.trades"

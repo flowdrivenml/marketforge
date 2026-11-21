@@ -1,31 +1,127 @@
-# Bounded Rust test execution
+# Bounded Rust verification
 
-Run commands from `engine/`. Compile separately, keeping Cargo's JSON artifact output:
+Run the portable integration suite from the repository root. Run different feature
+configurations in sequence when sharing a Cargo target directory, since CLI tests
+launch the executable at Cargo's stable binary path.
 
 ```sh
-mkdir -p target/refactor-validation
-cargo test --locked --offline --features parquet --no-run --message-format=json > target/refactor-validation/parquet-artifacts.jsonl 2> target/refactor-validation/parquet-build.log
-python3 scripts/bounded_tests.py target/refactor-validation/parquet-artifacts.jsonl target/refactor-validation/parquet-discovery
-python3 scripts/bounded_tests.py target/refactor-validation/parquet-artifacts.jsonl target/refactor-validation/parquet-run-1 --run --targets 'parquet_(decimal|depth_batch|depth_events|depth_segments|depth_writer|trade_batch|writer)'
+set -o pipefail
+cargo test --manifest-path engine/Cargo.toml --features historical,monitor-tui --tests --no-run 2>&1 | cpout
+cargo test --manifest-path engine/Cargo.toml --features historical,monitor-tui --tests 2>&1 | cpout
+cargo test --manifest-path engine/Cargo.toml --features historical --tests 2>&1 | cpout
+cargo test --manifest-path engine/Cargo.toml --features historical,monitor-tui,normalization-test-hooks --test normalization_dashboard 2>&1 | cpout
+cargo test --manifest-path engine/Cargo.toml --features historical,monitor-tui,normalization-test-hooks --lib tui::processing::tests:: 2>&1 | cpout
 ```
 
-Use a fresh output directory for each execution. `--targets` and `--cases` are full-match regular expressions; use `--cases 'namespace::exact_test_name'` for one case. The default discovery command only lists tests. Review a target's fixture and output requirements before selecting it: some existing Historical tests generate persistent datasets outside temporary directories and must remain excluded from this workflow.
+Cargo honors each target's required features. Use the following to compile and
+run the additional live, stream, and management targets. Ignored network,
+database, and performance cases require explicit opt-in.
 
-Each selected libtest case gets its own sequential process and 30-second monotonic deadline, including setup. On expiry the runner terminates its process group, waits a 0.2-second grace period, then kills surviving owned processes. Cargo compilation/linking is outside that deadline. The runner preserves the package working directory, inherited environment, Cargo manifest variables, compiler-artifact library directories, and Rust sysroot library path on Linux.
+```sh
+set -o pipefail
+cargo test --manifest-path engine/Cargo.toml --features management-api,management-tui,stream-client --tests --no-run 2>&1 | cpout
+cargo test --manifest-path engine/Cargo.toml --features management-api,management-tui,stream-client --no-fail-fast \
+  --test live_application --test live_config --test live_derived --test live_exchange_contracts \
+  --test live_integrity --test live_metrics --test live_network --test live_normalization \
+  --test live_processing --test live_recovery --test live_rest --test live_router \
+  --test live_source --test live_websocket --test management --test management_client \
+  --test management_tui --test stream_client --test stream_performance --test stream_protocol \
+  --test stream_transport 2>&1 | cpout
+```
 
-Results contain full identities, ignore status, raw exit codes, elapsed times, and individual logs. Exactly one passed case is required for `PASS`; zero-test and ignored-only invocations cannot pass. Existing ignored tests and network suites are excluded; benchmark execution is excluded. `should_panic` retains libtest behavior. Doctests and non-libtest/custom harnesses need separate supervision and are not run here.
+## Per-case deadlines
 
-Execution exits nonzero if any discovered case is failed, timed out, blocked, or unexecuted. A selective run therefore normally exits 1 even when every selected case passed. Inspect `results.json`, `results.jsonl`, and `discovery.json`; a non-success result is not suppressed. Empty artifact discovery also returns an explicit incomplete result. Missing fixtures and sandbox denials should be reviewed with the raw failure preserved, rather than inferred from arbitrary assertions.
+Use the supervisor from `engine/` for a 30-second deadline per selected test,
+including setup. It stops the test's process group on expiry. Use a fresh
+temporary directory for each execution.
 
-See [the shared refactor report](../../docs/architecture/SHARED_REFACTOR_REPORT.md) for the exact migration commands, exclusions, identity maps, and recorded results.
+```sh
+cd engine
+set -o pipefail
+run_dir=$(mktemp -d)
+export CARGO_TARGET_DIR="$run_dir/target"
+(
+  for features in historical,monitor-tui historical management-api,management-tui,stream-client; do
+    artifacts="$run_dir/$features.jsonl"
+    cargo test --locked --offline --features "$features" --tests --no-run \
+      --message-format=json > "$artifacts" || exit 1
+    python3 scripts/bounded_tests.py "$artifacts" "$run_dir/$features" --run 2>&1 | cpout || exit 1
+  done
+)
+```
 
-The [focused follow-up report](../../docs/architecture/SHARED_REFACTOR_FOLLOWUP_REPORT.md) records the subsequent storage-directory removal and validation under `target/refactor-followup-validation/`.
+Without `--run` the supervisor only lists tests. `--targets` and `--cases` are
+full-match regular expressions. It runs exactly one case per invocation, records
+filtered and ignored cases, and exits nonzero on failures, timeouts, discovery
+errors, or an empty runnable selection. It requires successful Cargo artifact
+output for execution. The benchmark integration target's synthetic and dry-run
+contract cases run normally. Retained test diagnostics from generated
+normalization workloads live under the system temporary directory. Recorded selections use the exact Cargo commands
+below.
 
-## Historical grouped verification
+## Recorded smoke tests
 
-See the [conversion workflow](../../docs/content/workflows/conversion.md#verify-conversion-changes)
-for the ordinary portable targets. Compile them with `historical` and optionally
-`monitor-tui` before passing the Cargo JSON artifacts to `bounded_tests.py`.
-The separate `historical_recorded_convert` target requires `historical-real-tests`.
-Keep its full-recording test out of a bounded run and select it by name when needed.
-Use a fresh output directory for each bounded execution.
+Run these commands from the repository root. Keep source publications and raw
+archives read-only. Point the conversion variables at the complete merge
+publication, its verified retained preparation catalog, and committed
+normalized provenance. Set absolute paths when the data is relocated.
+
+```sh
+set -o pipefail
+export MARKETFORGE_RECORDED_CONVERT_INPUT="$PWD/data/datasets/merged/2079541492669036539"
+export MARKETFORGE_RECORDED_CONVERT_CATALOG="$PWD/data/runs/convert-prepare-832284dd5c254a388e6bbdff0a990fbf/instruments.json"
+export MARKETFORGE_RECORDED_CONVERT_NORMALIZED="$PWD/data/datasets/normalized"
+cargo test --manifest-path engine/Cargo.toml --features historical-real-tests \
+  --test historical_recorded_convert validates_canonical_recorded_prefix_with_causal_prehistory \
+  -- --exact --nocapture 2>&1 | cpout
+
+(
+set -e
+for case in representative_trade representative_depth; do
+  cargo test --manifest-path engine/Cargo.toml --features historical-real-tests \
+    --test historical_normalize_support "$case" -- --exact --nocapture 2>&1 | cpout || exit $?
+done
+for case in exchanges::binance::perpetual_linear_archive_prefix trade_real_archives::normalize_real_trade_archives; do
+  cargo test --manifest-path engine/Cargo.toml --features historical-real-tests \
+    --test historical_normalize "$case" -- --exact --nocapture 2>&1 | cpout || exit $?
+done
+
+for case in \
+  bounded_recorded::bounded_v5_trade_matches_normalized_rows_and_commits_with_one_or_two_workers \
+  bounded_recorded::bounded_v5_depth_commits_real_regression \
+  bounded_recorded::bounded_v5_combined_commits_real_regression \
+  bounded_recorded::bounded_v5_trade_streams_from_one_publication_commit \
+  bounded_recorded::adjacent_depth_parts_preserve_stream_rows_without_opening_primary_files \
+  merge_trade_kway_real::merges_two_bounded_recorded_trade_streams \
+  merge_unified_reference_integrity::validates_real_trade_stream \
+  merge_unified_reference_integrity::validates_real_depth_stream; do
+  cargo test --manifest-path engine/Cargo.toml --features historical \
+    --test historical_merge "$case" -- --ignored --exact --nocapture 2>&1 | cpout || exit $?
+done
+)
+```
+
+The conversion smoke checks source inventory footers and committed provenance,
+then reads a causal 4,096-event prefix for the timestamp regression prepass
+and materialization. Internal reference observations in that prefix remain in
+timeline order. Parquet readers can decode more data at page boundaries. The
+test inspects the staged streams and routes and never publishes the prefix.
+
+Recorded normalization checks use whole logical events from selected archives
+through the canonical batch and profiles. Recorded merge windows retain depth
+initialization and reconstruction context, including events before the window.
+Merge still verifies the selected normalized files and sidecars against their
+committed metadata. Set `MARKETFORGE_MERGE_FIXTURE_FROM` and
+`MARKETFORGE_MERGE_FIXTURE_TO` to absolute prefix paths when relocating those
+publications.
+
+Full archives and the large parallel workload require `historical-full-tests`.
+The full conversion CLI publication additionally requires an explicit exact
+ignored-test invocation of `publishes_canonical_recorded_conversion` in
+`historical_recorded_convert`. For compile-only coverage of these cases use:
+
+```sh
+set -o pipefail
+cargo test --manifest-path engine/Cargo.toml --features historical-full-tests --no-run \
+  --test historical_normalize --test historical_normalize_support --test historical_recorded_convert 2>&1 | cpout
+```

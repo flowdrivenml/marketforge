@@ -124,6 +124,7 @@ impl MergeJobDocument {
         Ok(())
     }
 
+    #[cfg(feature = "historical")]
     pub fn with_runtime(
         self,
         runtime: crate::shared::historical::config::MergeRuntimeSettings,

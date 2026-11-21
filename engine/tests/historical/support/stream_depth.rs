@@ -410,6 +410,9 @@ fn production_depth_execution_preserves_degraded_sequence_order() {
         .unwrap()
         .replace("1201", "1199");
     std::fs::write(&task.input_path, bytes).unwrap();
+    config.timestamp_regression.depth.policy =
+        marketforge_engine::shared::historical::policies::DepthTimestamp::Preserve;
+    config.timestamp_regression.depth.max_regression_ms = 1;
     config.integrity_policy.timestamp_regression.action = IntegrityAction::Degrade;
     config.integrity_policy.timestamp_regression.max_count = Some(10);
     config.integrity_policy.timestamp_regression.max_rate = None;

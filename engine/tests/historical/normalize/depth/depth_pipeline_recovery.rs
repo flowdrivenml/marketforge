@@ -119,9 +119,12 @@ fn depth_pipeline_recovers_after_sequence_gap() {
 
     let mut task = job.tasks[0].clone();
 
-    let mut config =
-        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
-            .expect("load processing configuration");
+    let mut config = load_processing_config(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/shared/historical/config/fixtures/runtime.toml"),
+        &root,
+    )
+    .expect("load processing configuration");
 
     // Allow integrity violations to be recorded without aborting.
     config.integrity_policy.enabled = false;
@@ -267,9 +270,12 @@ fn depth_pipeline_invalidates_final_book_after_unrecovered_gap() {
 
     let mut task = job.tasks[0].clone();
 
-    let mut config =
-        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
-            .expect("load processing configuration");
+    let mut config = load_processing_config(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/shared/historical/config/fixtures/runtime.toml"),
+        &root,
+    )
+    .expect("load processing configuration");
 
     // Record integrity violations without aborting processing.
     config.integrity_policy.enabled = false;

@@ -482,14 +482,14 @@ fn merges_two_explicit_v5_streams_and_preserves_selected_part_offsets() {
         run.output.dataset_path = root.join(format!("output-{workers}"));
         let document = root.join("merge.json");
         std::fs::write(&document, serde_json::to_vec(&run).unwrap()).unwrap();
-        let config = include_str!("../../../../../data/.config/historical/general.toml")
-            .replace("workers = 8", &format!("workers = {workers}"))
+        let config = include_str!("../../../../src/shared/historical/config/fixtures/runtime.toml")
+            .replace("workers = 1", &format!("workers = {workers}"))
             .replace(
-                "row_group_target_bytes = 268435456",
+                "row_group_target_bytes = 67108864",
                 "row_group_target_bytes = 1048576",
             )
             .replace(
-                "file_target_bytes = 2147483648",
+                "file_target_bytes = 268435456",
                 "file_target_bytes = 4194304",
             );
         std::fs::write(root.join("runtime.toml"), config).unwrap();

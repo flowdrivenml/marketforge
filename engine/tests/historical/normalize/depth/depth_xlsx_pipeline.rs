@@ -376,9 +376,12 @@ fn processes_bitget_xlsx_pipeline() {
 
     let mut task = job.tasks[0].clone();
 
-    let mut config =
-        load_processing_config(root.join("data/.config/historical/general.toml"), &root)
-            .expect("load processing configuration");
+    let mut config = load_processing_config(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/shared/historical/config/fixtures/runtime.toml"),
+        &root,
+    )
+    .expect("load processing configuration");
 
     config.integrity_policy.enabled = false;
 

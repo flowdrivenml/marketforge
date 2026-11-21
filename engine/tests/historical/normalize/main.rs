@@ -44,47 +44,47 @@ mod depth_pipeline_recovery;
 mod exchanges;
 mod profiles;
 
-#[cfg(feature = "historical-real-tests")]
+#[cfg(feature = "historical-full-tests")]
 #[path = "depth/depth_archive_continuity.rs"]
 mod depth_archive_continuity;
 
-#[cfg(feature = "historical-real-tests")]
+#[cfg(feature = "historical-full-tests")]
 #[path = "depth/depth_parquet_replay.rs"]
 mod depth_parquet_replay;
 
-#[cfg(feature = "historical-real-tests")]
+#[cfg(feature = "historical-full-tests")]
 #[path = "depth/depth_real_archive.rs"]
 mod depth_real_archive;
 
-#[cfg(feature = "historical-real-tests")]
+#[cfg(feature = "historical-full-tests")]
 #[path = "parquet/parquet_depth_real_archive.rs"]
 mod parquet_depth_real_archive;
 
-#[cfg(feature = "historical-real-tests")]
+#[cfg(feature = "historical-full-tests")]
 #[path = "parquet/parquet_discovery.rs"]
 mod parquet_discovery;
 
-#[cfg(feature = "historical-real-tests")]
+#[cfg(feature = "historical-full-tests")]
 #[path = "execution/process_executor.rs"]
 mod process_executor;
 
-#[cfg(feature = "historical-real-tests")]
+#[cfg(feature = "historical-full-tests")]
 #[path = "execution/process_executor_failure.rs"]
 mod process_executor_failure;
 
-#[cfg(feature = "historical-real-tests")]
+#[cfg(feature = "historical-full-tests")]
 #[path = "execution/process_parallel_consistency.rs"]
 mod process_parallel_consistency;
 
-#[cfg(feature = "historical-real-tests")]
+#[cfg(feature = "historical-full-tests")]
 #[path = "execution/process_session.rs"]
 mod process_session;
 
-#[cfg(feature = "historical-real-tests")]
+#[cfg(feature = "historical-full-tests")]
 #[path = "execution/process_session_finalization.rs"]
 mod process_session_finalization;
 
-#[cfg(feature = "historical-real-tests")]
+#[cfg(feature = "historical-full-tests")]
 #[path = "execution/process_task.rs"]
 mod process_task;
 
@@ -92,11 +92,11 @@ mod process_task;
 #[path = "trades/trade_all_archives.rs"]
 mod trade_all_archives;
 
-#[cfg(feature = "historical-real-tests")]
+#[cfg(feature = "historical-full-tests")]
 #[path = "trades/trade_worker.rs"]
 mod trade_worker;
 
-#[cfg(feature = "historical-real-tests")]
+#[cfg(feature = "historical-full-tests")]
 #[path = "trades/trade_worker_metrics.rs"]
 mod trade_worker_metrics;
 

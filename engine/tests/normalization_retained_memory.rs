@@ -504,8 +504,7 @@ fn finalization_reserves_one_boundary_workspace_and_keeps_report_admission_hones
         normalize::{load_processing_config, resources::inspect_admission},
     };
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    let mut config =
-        load_processing_config(root.join("data/.config/historical/general.toml"), root).unwrap();
+    let mut config = load_processing_config(runtime_fixture(), root).unwrap();
     let canonical = normalization_fixture::canonical_normalization_batch().unwrap();
     let stream = "bitget.linear.perpetual.BTCUSDT.depth";
     let batch = normalization_fixture::select_normalization_sample(
@@ -621,11 +620,9 @@ fn book_vector_growth_stays_inside_the_admitted_capacity() {
 #[test]
 fn completed_sources_keep_only_summaries_and_stream_exact_details() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    let mut config = marketforge_engine::historical::normalize::load_processing_config(
-        "data/.config/historical/general.toml",
-        root,
-    )
-    .unwrap();
+    let mut config =
+        marketforge_engine::historical::normalize::load_processing_config(runtime_fixture(), root)
+            .unwrap();
     let temp = tempfile::tempdir().unwrap();
     config.resources.scratch_path = temp.path().into();
     let mut aggregate = ProcessingMetricsReport::default();
@@ -713,11 +710,9 @@ fn completed_sources_keep_only_summaries_and_stream_exact_details() {
 #[test]
 fn failed_report_spill_preserves_observations_and_shared_quota() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    let mut config = marketforge_engine::historical::normalize::load_processing_config(
-        "data/.config/historical/general.toml",
-        root,
-    )
-    .unwrap();
+    let mut config =
+        marketforge_engine::historical::normalize::load_processing_config(runtime_fixture(), root)
+            .unwrap();
     let temp = tempfile::tempdir().unwrap();
     config.resources.scratch_path = temp.path().into();
     config.resources.scratch_budget_bytes = 1;
@@ -751,11 +746,9 @@ fn failed_report_spill_preserves_observations_and_shared_quota() {
 #[test]
 fn truncated_retained_observations_reject_serialization_instead_of_claiming_a_complete_report() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    let mut config = marketforge_engine::historical::normalize::load_processing_config(
-        "data/.config/historical/general.toml",
-        root,
-    )
-    .unwrap();
+    let mut config =
+        marketforge_engine::historical::normalize::load_processing_config(runtime_fixture(), root)
+            .unwrap();
     let temp = tempfile::tempdir().unwrap();
     config.resources.scratch_path = temp.path().into();
     let mut metrics = ScopedIntegrityMetrics::default();
@@ -788,11 +781,9 @@ fn truncated_retained_observations_reject_serialization_instead_of_claiming_a_co
 #[test]
 fn report_frame_capacity_follows_scope_identity_without_lowering_metric_limits() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    let mut config = marketforge_engine::historical::normalize::load_processing_config(
-        "data/.config/historical/general.toml",
-        root,
-    )
-    .unwrap();
+    let mut config =
+        marketforge_engine::historical::normalize::load_processing_config(runtime_fixture(), root)
+            .unwrap();
     let temp = tempfile::tempdir().unwrap();
     config.resources.scratch_path = temp.path().into();
     let scope = IntegrityScope {
@@ -808,4 +799,8 @@ fn report_frame_capacity_follows_scope_identity_without_lowering_metric_limits()
     metrics.spill(8, 7, &config).unwrap();
     serde_json::to_writer(std::io::sink(), &metrics).unwrap();
     assert_eq!(metrics, expected);
+}
+
+fn runtime_fixture() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/shared/historical/config/fixtures/runtime.toml")
 }

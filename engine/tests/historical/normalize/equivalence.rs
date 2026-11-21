@@ -177,7 +177,8 @@ fn committed_configuration_preserves_effective_runtime_settings_and_checksum() {
         job.output.staging_path = temp.0.join("staging");
         job.output.dataset_path = temp.0.join("dataset");
         let mut config = marketforge_engine::shared::historical::load_processing_config(
-            "data/.config/historical/general.toml",
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/shared/historical/config/fixtures/runtime.toml"),
             root(),
         )
         .unwrap();

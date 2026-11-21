@@ -60,9 +60,13 @@ fn load_job() -> ProcessingJob {
 fn load_policy() -> IntegrityPolicy {
     let root = project_root();
 
-    load_processing_config(root.join("data/.config/historical/general.toml"), &root)
-        .expect("load processing configuration")
-        .integrity_policy
+    load_processing_config(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/shared/historical/config/fixtures/runtime.toml"),
+        &root,
+    )
+    .expect("load processing configuration")
+    .integrity_policy
 }
 
 // -----------------------------------------------------------------------------

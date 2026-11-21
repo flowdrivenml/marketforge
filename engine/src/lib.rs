@@ -1,4 +1,6 @@
 pub mod historical;
+#[cfg(all(test, feature = "historical", feature = "monitor-tui"))]
+pub(crate) use historical::config::normalization_fixture;
 pub mod shared;
 pub use historical::job;
 pub use shared::domain::book;

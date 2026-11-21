@@ -16,6 +16,8 @@ use marketforge_engine::{
 };
 
 const SAMPLE_SIZE: usize = 5;
+const MAX_PREFIX_RECORDS: usize = 1024;
+const MAX_PREFIX_BYTES: u64 = 1024 * 1024;
 // Concrete-instrument configurations in the prepared fixture.
 // OKX family sources require separate member-resolution coverage.
 
@@ -192,7 +194,9 @@ fn normalize_real_trade_archives() {
             Ok(count) => {
                 failed += 1;
 
-                let message = format!("expected {SAMPLE_SIZE} records, processed {count}");
+                let message = format!(
+                    "expected {SAMPLE_SIZE} records, processed {count} within {MAX_PREFIX_RECORDS} records and {MAX_PREFIX_BYTES} decoded bytes"
+                );
 
                 println!("\nRESULT: FAIL — {message}");
 
@@ -321,7 +325,10 @@ fn process_sample(task: &WorkTask) -> Result<usize, String> {
         task.archive_member.as_deref(),
         |reader| {
             // Initialize the CSV decoder.
-            let mut decoder = CsvDecoder::with_headers(reader, has_headers);
+            let mut decoder = CsvDecoder::with_headers(
+                std::io::Read::take(reader, MAX_PREFIX_BYTES),
+                has_headers,
+            );
 
             // Read actual CSV headers when present.
             let actual_headers = if has_headers {
@@ -348,7 +355,7 @@ fn process_sample(task: &WorkTask) -> Result<usize, String> {
 
             let mut count = 0usize;
 
-            for record in decoder.records() {
+            for record in decoder.records().take(MAX_PREFIX_RECORDS) {
                 let record = record.map_err(|error| {
                     MarketForgeError::InvalidCanonical(format!("CSV record error: {error}"))
                 })?;

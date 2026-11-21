@@ -9,6 +9,7 @@ use marketforge_engine::historical::convert::progress::{
     ConversionOutcome, ConversionPhase, ConversionProgressReporter,
 };
 use std::cell::Cell;
+use std::io::IsTerminal;
 use std::{
     env, fs,
     io::Write,
@@ -295,6 +296,10 @@ fn run() -> Result<(), String> {
     let output = job.output.dataset_path.clone();
     let staging = output.with_extension("staging");
     if args.tui {
+        if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
+            return Err("dashboard error: --tui requires an interactive terminal".to_owned());
+        }
+
         #[cfg(feature = "monitor-tui")]
         {
             return run_conversion_tui(job, source_manifest, root, staging, runtime, args.mode);

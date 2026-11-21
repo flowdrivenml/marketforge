@@ -496,9 +496,12 @@ mod tests {
             .parent()
             .unwrap()
             .to_path_buf();
-        let config =
-            super::super::load_processing_config("data/.config/historical/general.toml", &root)
-                .unwrap();
+        let config = super::super::load_processing_config(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/shared/historical/config/fixtures/runtime.toml"),
+            &root,
+        )
+        .unwrap();
         let mut job = bybit_spot_trade_job(&config).unwrap();
         let mut next = job.tasks[0].clone();
         next.task_id = TaskId(2);

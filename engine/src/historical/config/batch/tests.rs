@@ -20,7 +20,8 @@ fn catalog() -> FormatCatalog {
 }
 fn runtime() -> ProcessingConfig {
     crate::shared::historical::load_processing_config(
-        "data/.config/historical/general.toml",
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/shared/historical/config/fixtures/runtime.toml"),
         root(),
     )
     .unwrap()

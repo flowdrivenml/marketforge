@@ -119,7 +119,7 @@ Use the bounded runner from `engine/`. Compiling separately keeps each case with
 set -o pipefail
 run_dir=$(mktemp -d)
 cargo test --locked --offline --features historical,monitor-tui \
-  --test historical_convert --bin marketforge-convert --no-run --message-format=json > "$run_dir/artifacts.jsonl"
+  --test historical_convert --bin marketforge-convert --no-run --message-format=json > "$run_dir/artifacts.jsonl" && \
 python3 scripts/bounded_tests.py "$run_dir/artifacts.jsonl" "$run_dir/results" \
   --run --targets 'historical_convert|marketforge-convert' 2>&1 | cpout
 ```
@@ -138,6 +138,7 @@ cargo test --locked --offline --features historical-real-tests --test historical
 Select the full recorded conversion deliberately. It reads and validates the entire 12,477,919-row publication and needs temporary disk space for the conversion and validation. The test publishes only under its temporary directory.
 
 ```bash
+set -o pipefail
 cargo test --locked --offline --features historical-real-tests --test historical_recorded_convert \
-  -- publishes_canonical_recorded_conversion --exact 2>&1 | cpout
+  -- publishes_canonical_recorded_conversion --exact --ignored 2>&1 | cpout
 ```

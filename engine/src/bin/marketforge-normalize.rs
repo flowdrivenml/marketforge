@@ -448,7 +448,7 @@ mod runtime_cli_tests {
     use tempfile::TempDir;
 
     const EXAMPLE: &str = include_str!("../../../docs/historical/normalize-job-v3.example.json");
-    const RUNTIME: &str = include_str!("../../../data/.config/historical/general.toml");
+    const RUNTIME: &str = include_str!("../shared/historical/config/fixtures/runtime.toml");
 
     #[test]
     fn family_resolution_is_an_exclusive_nonprocessing_input() {

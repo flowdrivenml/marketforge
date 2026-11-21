@@ -43,7 +43,11 @@ impl TestRun {
         {
             return Err("test name must contain safe nonempty relative components".into());
         }
-        let base = root().join("data/tests/historical/normalize").join(name);
+        let base = std::env::temp_dir()
+            .canonicalize()
+            .map_err(|error| error.to_string())?
+            .join("marketforge-historical-tests")
+            .join(name);
         let mut ancestor = PathBuf::new();
         for component in base.components() {
             ancestor.push(component);
@@ -144,8 +148,12 @@ impl TestRun {
     /// Explicit small-workload settings for synthetic tests only. Real archives
     /// use `runtime_from_general` without execution-resource overrides.
     pub fn runtime(&self, overrides: Overrides) -> TestResult<ProcessingConfig> {
-        let mut c = load_processing_config("data/.config/historical/general.toml", root())
-            .map_err(|e| e.to_string())?;
+        let mut c = load_processing_config(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/shared/historical/config/fixtures/runtime.toml"),
+            root(),
+        )
+        .map_err(|e| e.to_string())?;
         c.resources.normalization_limits = Default::default();
         c.resources.workers = overrides.workers.unwrap_or(1);
         c.resources.memory_budget_bytes = overrides.memory.unwrap_or(1 << 30);
@@ -239,7 +247,8 @@ pub fn sample_prefix(run: &mut TestRun, batch: &mut PreparedBatch, lines: usize)
                 task.source_compression,
                 task.archive_member.as_deref(),
                 |reader| {
-                    let mut reader = std::io::BufReader::new(reader);
+                    const MAX_BYTES: usize = 1024 * 1024;
+                    let mut reader = std::io::BufReader::new(std::io::Read::take(reader, (MAX_BYTES + 1) as u64));
                     let mut bytes = vec![];
                     for _ in 0..lines {
                         let n = std::io::BufRead::read_until(&mut reader, b'\n', &mut bytes)
@@ -249,8 +258,10 @@ pub fn sample_prefix(run: &mut TestRun, batch: &mut PreparedBatch, lines: usize)
                                     source,
                                 }
                             })?;
-                        if n == 0 {
-                            break;
+                        if n == 0 || bytes.len() > MAX_BYTES || bytes.last() != Some(&b'\n') {
+                            return Err(marketforge_engine::shared::error::MarketForgeError::InvalidConfiguration(
+                                format!("expected {lines} complete prefix records within {MAX_BYTES} bytes"),
+                            ));
                         }
                     }
                     Ok(bytes)

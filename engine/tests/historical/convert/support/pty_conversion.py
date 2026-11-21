@@ -1,9 +1,9 @@
 """Bounded Linux/macOS PTY exercise for the conversion CLI."""
+
 import errno
 import fcntl
 import json
 import os
-from pathlib import Path
 import pty
 import select
 import struct
@@ -11,6 +11,7 @@ import subprocess
 import sys
 import termios
 import time
+from pathlib import Path
 
 
 def run(args, expected, *, on_screen=None, release=None):
@@ -20,7 +21,11 @@ def run(args, expected, *, on_screen=None, release=None):
     env = {**os.environ, "TERM": "xterm-256color"}
     env.pop("MARKETFORGE_TUI_HOLD", None)
     process = subprocess.Popen(
-        args, stdin=slave, stdout=slave, stderr=slave, start_new_session=True,
+        args,
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        start_new_session=True,
         env=env,
     )
     output = bytearray()
@@ -49,7 +54,9 @@ def run(args, expected, *, on_screen=None, release=None):
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 16, 65, 0, 0))
             os.write(master, b"d\x1b[B\x03")
             pump(lambda: b"INTERRUPT" in output)
-            assert process.poll() is None, "conversion returned before the blocked worker was released"
+            assert process.poll() is None, (
+                "conversion returned before the blocked worker was released"
+            )
             release()
         pump(lambda: process.poll() is not None)
         while drain(0.05):
@@ -71,7 +78,15 @@ binary, project, job_path, catalog, config = map(Path, sys.argv[1:])
 job = json.loads(job_path.read_text())
 output = Path(job["output"]["dataset_path"])
 assert output.parent == job_path.parent
-base = [str(binary), "--project-root", str(project), "--job", str(job_path), "--config", str(config)]
+base = [
+    str(binary),
+    "--project-root",
+    str(project),
+    "--job",
+    str(job_path),
+    "--config",
+    str(config),
+]
 args = [*base, "--catalog", str(catalog), "--tui"]
 screen = run([*args, "--materialize"], 0)
 assert b"MATERIALIZED (UNPUBLISHED)" in screen
@@ -101,8 +116,10 @@ def release_catalog():
 
 try:
     screen = run(
-        [*base, "--catalog", str(fifo), "--tui"], 130,
-        on_screen=b"CATALOG RESOLUTION", release=release_catalog,
+        [*base, "--catalog", str(fifo), "--tui"],
+        130,
+        on_screen=b"CATALOG RESOLUTION",
+        release=release_catalog,
     )
     assert b"Conversion interrupted" in screen
     assert not Path(job["output"]["dataset_path"]).with_suffix(".staging").exists()
@@ -112,8 +129,17 @@ finally:
 
 # Terminal setup failure must abort before any conversion writes.
 failed_setup = subprocess.run(
-    [*args, "--run"], stdin=subprocess.DEVNULL,
-    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
+    [*args, "--run"],
+    stdin=subprocess.DEVNULL,
+    check=False,
+    capture_output=True,
+    text=True,
+    timeout=5,
 )
-assert failed_setup.returncode == 1 and b"dashboard error" in failed_setup.stderr
-assert not Path(job["output"]["dataset_path"]).with_suffix(".staging").exists()
+assert failed_setup.returncode == 1 and "dashboard error" in failed_setup.stderr, (
+    f"Expected dashboard error (exit 1), got {failed_setup.returncode}\n"
+    f"stdout: {failed_setup.stdout}\nstderr: {failed_setup.stderr}"
+)
+rejected = Path(job["output"]["dataset_path"])
+assert not rejected.exists()
+assert not rejected.with_suffix(".staging").exists()

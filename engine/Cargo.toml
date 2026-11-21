@@ -293,10 +293,12 @@ path = "tests/shared/contracts/depth/depth_json.rs"
 [[test]]
 name = "depth_outcome"
 path = "tests/shared/contracts/depth/depth_outcome.rs"
+required-features = ["historical"]
 
 [[test]]
 name = "depth_processor"
 path = "tests/shared/contracts/depth/depth_processor.rs"
+required-features = ["historical"]
 
 [[test]]
 name = "depth_relative"
@@ -321,6 +323,7 @@ path = "tests/shared/contracts/depth/depth_source_metadata.rs"
 [[test]]
 name = "depth_spec"
 path = "tests/shared/contracts/depth/depth_spec.rs"
+required-features = ["historical"]
 
 [[test]]
 name = "depth_transforms"

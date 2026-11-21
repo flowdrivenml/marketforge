@@ -154,13 +154,13 @@ fn required_sections_nested_unknown_fields_and_scratch_files_fail() {
 }
 
 #[test]
-fn authoritative_config_preserves_effective_settings() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    let text = fs::read_to_string(root.join("data/.config/historical/general.toml")).unwrap();
-    let document: RuntimeDocument = toml::from_str(&text).unwrap();
-    let config = load_processing_config("data/.config/historical/general.toml", root).unwrap();
+fn runtime_document_preserves_effective_settings() {
+    let document: RuntimeDocument = toml::from_str(TOML).unwrap();
+    let temp = TempDir::new().unwrap();
+    fs::write(temp.path().join("runtime.toml"), TOML).unwrap();
+    let config = load_processing_config("runtime.toml", temp.path()).unwrap();
     let mut expected = document.resources;
-    expected.scratch_path = root.join(expected.scratch_path);
+    expected.scratch_path = temp.path().join(expected.scratch_path);
     assert_eq!(config.resources, expected);
     assert_eq!(config.integrity_policy, document.integrity_policy);
 }

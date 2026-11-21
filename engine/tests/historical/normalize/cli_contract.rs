@@ -53,7 +53,7 @@ fn fixture(multi: bool) -> (TestRun, PreparedBatch) {
     config.resources.normalization_limits.depth_levels = 4096;
     config.resources.normalization_limits.reconciliation_bytes = 8 * 1024 * 1024;
     let mut value: toml::Value = toml::from_str(include_str!(
-        "../../../../data/.config/historical/general.toml"
+        "../../../src/shared/historical/config/fixtures/runtime.toml"
     ))
     .unwrap();
     value["resources"] = toml::Value::try_from(&config.resources).unwrap();
@@ -73,10 +73,15 @@ fn fixture(multi: bool) -> (TestRun, PreparedBatch) {
     (run, b)
 }
 fn invoke(run: &TestRun, args: &[&str]) -> (std::process::Output, Value) {
+    invoke_at(run, &support::root(), args)
+}
+fn invoke_at(run: &TestRun, project: &Path, args: &[&str]) -> (std::process::Output, Value) {
     let output = Command::new(env!("CARGO_BIN_EXE_marketforge-normalize"))
         .current_dir("/")
         .arg("--project-root")
-        .arg(support::root())
+        .arg(project)
+        .arg("--profiles-root")
+        .arg(support::root().join("data/.config/historical"))
         .arg("--config")
         .arg(run.path.join("runtime.toml"))
         .args(args)
@@ -207,18 +212,11 @@ fn invalid_inputs_and_runtime_return_nonzero_without_fabricated_jobs() {
 #[test]
 fn relative_batch_input_and_existing_dataset_protection() {
     let (mut run, b) = fixture(false);
-    let relative = run
-        .path
-        .join("selected-batch.json")
-        .strip_prefix(support::root())
-        .unwrap()
-        .to_string_lossy()
-        .into_owned();
-    let (o, v) = invoke(&run, &["--batch", &relative]);
+    let (o, v) = invoke_at(&run, &run.path, &["--batch", "selected-batch.json"]);
     assert!(o.status.success());
     let manifest = v["jobs"][0]["manifest_path"].as_str().unwrap();
     let before = fs::read(manifest).unwrap();
-    let (o, v) = invoke(&run, &["--batch", &relative]);
+    let (o, v) = invoke_at(&run, &run.path, &["--batch", "selected-batch.json"]);
     assert!(!o.status.success());
     assert_eq!(v["status"], "failed");
     assert_eq!(fs::read(manifest).unwrap(), before);
@@ -305,13 +303,16 @@ fn batch_cli_diagnostics_keep_stdout_structured() {
     let (mut run, batch) = fixture(false);
     let path = run.path.join("runtime.toml");
     let mut value: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    value["diagnostics"] = toml::Value::try_from(
-        marketforge_engine::shared::historical::config::DiagnosticsConfig {
-            mode: marketforge_engine::shared::historical::config::DiagnosticsMode::Basic,
-            interval_ms: 100,
-        },
-    )
-    .unwrap();
+    value.as_table_mut().unwrap().insert(
+        "diagnostics".into(),
+        toml::Value::try_from(
+            marketforge_engine::shared::historical::config::DiagnosticsConfig {
+                mode: marketforge_engine::shared::historical::config::DiagnosticsMode::Basic,
+                interval_ms: 100,
+            },
+        )
+        .unwrap(),
+    );
     fs::write(&path, toml::to_string(&value).unwrap()).unwrap();
     let (output, response) = invoke(&run, &["--batch", &batch_path(&run)]);
     assert!(

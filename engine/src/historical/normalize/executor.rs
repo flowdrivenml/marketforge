@@ -731,7 +731,12 @@ mod failure_path_tests {
             .parent()
             .unwrap()
             .to_path_buf();
-        let config = load_processing_config("data/.config/historical/general.toml", &root).unwrap();
+        let config = load_processing_config(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/shared/historical/config/fixtures/runtime.toml"),
+            &root,
+        )
+        .unwrap();
         let mut job = bybit_spot_trade_job(&config).unwrap();
         let temp = tempfile::tempdir().unwrap();
         job.output.staging_path = temp.path().join("not-created");

@@ -1,4 +1,4 @@
-#[cfg(feature = "historical-real-tests")]
+#[cfg(feature = "historical-full-tests")]
 mod prepared_real_depth {
     use crate::support::depth_assertions::run_prepared_real_depth_test;
     use marketforge_engine::shared::domain::canonical::Exchange;

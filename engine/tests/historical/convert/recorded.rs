@@ -1,4 +1,4 @@
-//! Full recorded publication. This target requires historical-real-tests.
+//! Bounded recorded materialization and opt-in full publication.
 #[path = "../support/conversion_fixture.rs"]
 mod conversion_fixture;
 
@@ -78,6 +78,7 @@ fn validates_canonical_recorded_prefix_with_causal_prehistory() {
         shared::domain::instrument::InstrumentCatalog,
     };
 
+    let started = std::time::Instant::now();
     let (mut job, source, catalog) = recorded_input();
     let normalization_root =
         env::var_os("MARKETFORGE_RECORDED_CONVERT_NORMALIZED").map(PathBuf::from);
@@ -91,6 +92,11 @@ fn validates_canonical_recorded_prefix_with_causal_prehistory() {
         normalization_root.as_deref(),
     )
     .expect("Supply committed normalized provenance or MARKETFORGE_RECORDED_CONVERT_NORMALIZED");
+    eprintln!(
+        "Recorded input inventory and provenance checked in {:?}",
+        started.elapsed()
+    );
+    let started = std::time::Instant::now();
     let plan = plan_conversion(&job, &resolved).unwrap();
     let temp = tempfile::tempdir().unwrap();
     job.output.dataset_path = temp.path().join("converted");
@@ -107,10 +113,85 @@ fn validates_canonical_recorded_prefix_with_causal_prehistory() {
     assert!(metrics.trade_events > 0 && metrics.depth_events > 0);
     assert!(metrics.internal_reference_updates > 0);
     assert!(metrics.identity_events > 0 && metrics.converted_events > 0);
+    eprintln!(
+        "Recorded prefix materialized in {:?}: {metrics:?}",
+        started.elapsed()
+    );
+    use arrow_array::{Array, BooleanArray, ListArray, StringArray};
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut streams = BTreeMap::new();
+    let mut routes = BTreeSet::new();
+    let mut reconstruction = 0;
+    for path in marketforge_engine::historical::convert::output::discover_conversion_files(&staging)
+        .unwrap()
+    {
+        let batches = ParquetRecordBatchReaderBuilder::try_new(fs::File::open(path).unwrap())
+            .unwrap()
+            .build()
+            .unwrap();
+        for batch in batches {
+            let batch = batch.unwrap();
+            let ids = batch
+                .column_by_name("stream_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let paths = batch
+                .column_by_name("conversion_path")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<ListArray>()
+                .unwrap();
+            let context = batch
+                .column_by_name("reconstruction_only")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .unwrap();
+            reconstruction += context.values().count_set_bits();
+            for row in 0..batch.num_rows() {
+                *streams.entry(ids.value(row).to_owned()).or_insert(0) += 1;
+                if !paths.is_null(row) {
+                    let values = paths.value(row);
+                    let values = values.as_any().downcast_ref::<StringArray>().unwrap();
+                    routes.insert(
+                        values
+                            .iter()
+                            .map(Option::unwrap)
+                            .collect::<Vec<_>>()
+                            .join(" -> "),
+                    );
+                }
+            }
+        }
+    }
+    assert_eq!(streams.values().sum::<u64>(), 4096);
+    assert_eq!(
+        streams.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+        source
+            .streams
+            .iter()
+            .map(|stream| stream.stream_id.as_str())
+            .collect(),
+    );
+    assert_eq!(
+        routes,
+        BTreeSet::from([
+            "USDT".to_owned(),
+            "BTC -> USDT".to_owned(),
+            "USDC -> BTC -> USDT".to_owned(),
+        ])
+    );
+    println!(
+        "Recorded prefix streams {streams:?}; valued routes {routes:?}; reconstruction events {reconstruction}"
+    );
     assert!(!job.output.dataset_path.exists());
 }
 
 #[test]
+#[ignore = "opt-in full recorded conversion publication"]
 fn publishes_canonical_recorded_conversion() {
     let (mut job, source, catalog) = recorded_input();
     let temp = tempfile::tempdir().unwrap();

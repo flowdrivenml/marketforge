@@ -1,33 +1,18 @@
 #[path = "../../../historical/support/mod.rs"]
 mod support;
-use std::path::{Path, PathBuf};
 
 use marketforge_engine::shared::formats::depth::{
     DepthEventBoundary, DepthProcessingOutcome, DepthSourceOperation,
 };
 use marketforge_engine::{
-    shared::domain::book::SequencePolicy,
     shared::domain::canonical::Exchange,
     shared::formats::depth::{DepthContext, DepthProcessor},
 };
 
 use serde_json::json;
 
-fn project_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
 fn processor() -> DepthProcessor {
-    let root = project_root();
-
-    let job = support::migration::template(
-        root.join("retained-cases/bybit-spot-spot-BTCUSDT-l2-20260901-20260904-d105.json"),
-    )
-    .unwrap();
-
+    let job = support::migration::template("bybit.spot.spot.depth:BTCUSDT").unwrap();
     let task = &job.tasks[0];
 
     DepthProcessor::new(

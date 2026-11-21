@@ -264,8 +264,19 @@ fn verify_recorded_causal(combined: bool) {
         .find(|file| file.dataset_id == 119)
         .unwrap()
         .clone();
-    assert!(depth.path.metadata().unwrap().len() < 24 * 1024 * 1024);
-    assert!(trade.path.metadata().unwrap().len() < 1024 * 1024);
+    let source_size = |path: &Path| {
+        path.metadata()
+            .unwrap_or_else(|error| panic!(
+                "required recorded merge input {}: {error}. Set MARKETFORGE_MERGE_FIXTURE_FROM and MARKETFORGE_MERGE_FIXTURE_TO if the publications were relocated",
+                path.display()
+            ))
+            .len()
+    };
+    let depth_bytes = source_size(&depth.path);
+    assert!(depth_bytes < 24 * 1024 * 1024);
+    if combined {
+        assert!(source_size(&trade.path) < 1024 * 1024);
+    }
     assert_eq!(job.timeline_ordering, Some(MergeTimelineOrdering::Causal));
     job.inputs = if combined {
         vec![trade, depth.clone()]
@@ -282,13 +293,31 @@ fn verify_recorded_causal(combined: bool) {
     job.time_range.end_ns = end;
     job.output.dataset_path = workspace.path().join("merged");
 
+    let setup_started = std::time::Instant::now();
     let directory = depth.path.parent().unwrap();
+    let boundary_path = directory.join("boundary.json");
+    assert!(source_size(&boundary_path) < 1024 * 1024);
     let boundaries: DepthStreamBoundaries =
-        serde_json::from_reader(File::open(directory.join("boundary.json")).unwrap()).unwrap();
+        serde_json::from_reader(File::open(boundary_path).unwrap()).unwrap();
     let index = directory.join("events.parquet");
-    assert!(index.metadata().unwrap().len() < 12 * 1024 * 1024);
-    let mut index_rows = Vec::new();
-    for batch in read(&index) {
+    let index_bytes = source_size(&index);
+    assert!(index_bytes < 12 * 1024 * 1024);
+    // Read the complete source hour containing the window so a regression
+    // cannot hide an eligible event and each selected segment keeps its snapshot.
+    let source = boundaries
+        .sources
+        .iter()
+        .find(|source| source.task_id == 107)
+        .expect("missing Gate.io BTC_USD source hour for the causal regression window");
+    let source_rows = source.start_event as usize..source.end_event as usize;
+    assert!(source_rows.len() <= 4000);
+    let builder = ParquetRecordBatchReaderBuilder::try_new(File::open(&index).unwrap()).unwrap();
+    let total = builder.metadata().file_metadata().num_rows() as usize;
+    let selection =
+        RowSelection::from_consecutive_ranges(std::iter::once(source_rows.clone()), total);
+    let mut index_rows = Vec::with_capacity(source_rows.len());
+    for batch in builder.with_row_selection(selection).build().unwrap() {
+        let batch = batch.unwrap();
         let u64s = |name| {
             batch
                 .column_by_name(name)
@@ -329,44 +358,43 @@ fn verify_recorded_causal(combined: bool) {
 
     let mut expected = Vec::new();
     let mut canonical_ranges: Vec<std::ops::Range<usize>> = Vec::new();
-    for source in &boundaries.sources {
-        let rows = &index_rows[source.start_event as usize..source.end_event as usize];
-        {
-            let starts = rows
+    assert_eq!(index_rows.len(), source_rows.len());
+    {
+        let rows = index_rows.as_slice();
+        let starts = rows
+            .iter()
+            .enumerate()
+            .filter_map(|(i, row)| (row.4 == 1).then_some(i))
+            .chain(std::iter::once(rows.len()))
+            .collect::<Vec<_>>();
+        for pair in starts.windows(2) {
+            let segment = &rows[pair[0]..pair[1]];
+            let Some(last) = segment
                 .iter()
-                .enumerate()
-                .filter_map(|(i, row)| (row.4 == 1).then_some(i))
-                .chain(std::iter::once(rows.len()))
-                .collect::<Vec<_>>();
-            for pair in starts.windows(2) {
-                let segment = &rows[pair[0]..pair[1]];
-                let Some(last) = segment
-                    .iter()
-                    .rposition(|row| (start..end).contains(&row.0))
-                else {
-                    continue;
-                };
-                for &(time, ordinal, offset, count, boundary, operation) in &segment[..=last] {
-                    expected.push((
-                        time,
-                        source.task_id,
-                        ordinal,
-                        offset - source.start_row,
-                        count,
-                        boundary,
-                        operation,
-                        !(start..end).contains(&time),
-                    ));
-                    if count > 0 {
-                        let range = offset as usize..(offset + count) as usize;
-                        if let Some(previous) = canonical_ranges
-                            .last_mut()
-                            .filter(|previous| previous.end == range.start)
-                        {
-                            previous.end = range.end;
-                        } else {
-                            canonical_ranges.push(range);
-                        }
+                .rposition(|row| (start..end).contains(&row.0))
+            else {
+                continue;
+            };
+            for &(time, ordinal, offset, count, boundary, operation) in &segment[..=last] {
+                expected.push((
+                    time,
+                    source.task_id,
+                    ordinal,
+                    offset - source.start_row,
+                    count,
+                    boundary,
+                    operation,
+                    !(start..end).contains(&time),
+                ));
+                if count > 0 {
+                    let range = offset as usize..(offset + count) as usize;
+                    if let Some(previous) = canonical_ranges
+                        .last_mut()
+                        .filter(|previous| previous.end == range.start)
+                    {
+                        previous.end = range.end;
+                    } else {
+                        canonical_ranges.push(range);
                     }
                 }
             }
@@ -390,6 +418,12 @@ fn verify_recorded_causal(combined: bool) {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     let payload = arrow_select::concat::concat_batches(&schema, &payload_batches).unwrap();
+    eprintln!(
+        "Recorded merge oracle: index_events={}, payload_rows={}, setup={:?}",
+        index_rows.len(),
+        payload.num_rows(),
+        setup_started.elapsed()
+    );
 
     let result =
         execute_unified_merge_job(&bounded_runtime(job.clone()), workspace.path()).unwrap();
@@ -402,6 +436,15 @@ fn verify_recorded_causal(combined: bool) {
     assert_eq!(
         manifest.reconstruction_events as usize,
         expected.iter().filter(|row| row.7).count()
+    );
+    println!(
+        "Recorded merge emitted {} physical rows ({} depth, {} trade, {} reconstruction); selected depth primary {} bytes, event index {} bytes",
+        manifest.events_written,
+        manifest.depth_events,
+        manifest.trade_events,
+        manifest.reconstruction_events,
+        depth_bytes,
+        index_bytes,
     );
     let mut sequence = 0;
     let mut depth_index = 0;
