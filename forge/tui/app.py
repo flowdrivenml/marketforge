@@ -13,10 +13,11 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.command import Hit, Hits, Provider
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.events import Resize
 from textual.widgets import Button, DataTable, Footer, Input, Static
 
+from forge.datasets import inventory as inventory_query
 from forge.datasets.query import publications, utc
 from forge.historical.archives.progress import ProgressSnapshot
 from forge.historical.archives.storage.files import disk
@@ -34,6 +35,13 @@ from forge.tui import overview
 from forge.tui.actions import ACTIONS, BY_KEY, Action, Values, read_only
 from forge.tui.controller import Controller, Invoke, Operation, document, outcome
 from forge.tui.inspection import ActionMenu, Inspection, fields
+from forge.tui.inventory import (
+    Converted,
+    InventoryPanels,
+    converted_from_reports,
+    market_key,
+    market_values,
+)
 from forge.tui.operation_view import OperationView
 from forge.tui.presentation import (
     Cell,
@@ -132,6 +140,14 @@ class ForgeApp(App[None]):
         self.version = 0
         self.root_screen = self.screen_stack[0] if self.screen_stack else None
         self.editor_open = False
+        self.inventory_generation = 0
+        self.inventory_pending = False
+        self.inventory_lock = asyncio.Lock()
+        self.inventory_data: inventory_query.Inventory | None = None
+        self.inventory_raw: tuple[int, int | None] | None = None
+        self.inventory_converted: Converted | None = None
+        self.inventory_errors: set[str] = set()
+        self.raw_complete = False
         self.overview_probe: Invoke = execute
         self.overview_history_lock = asyncio.Lock()
         self.overview_status_lock = asyncio.Lock()
@@ -146,7 +162,8 @@ class ForgeApp(App[None]):
 
     @property
     def state(self) -> ViewState:
-        return self.states.setdefault((self.area, self.view), ViewState())
+        scope = self.view + " (recorded complete)" if self.raw_complete else self.view
+        return self.states.setdefault((self.area, scope), ViewState())
 
     def compose(self) -> ComposeResult:
         yield Static(
@@ -166,10 +183,12 @@ class ForgeApp(App[None]):
                 )
                 yield Static("", id="query-state", markup=False)
                 yield Static(id="overview-status", classes="overview-only", markup=False)
-                with Container(id="overview-upper", classes="overview-only"):
+                with VerticalScroll(id="overview-scroll"):
                     yield Static(id="overview-current")
+                    yield InventoryPanels(id="inventory-panels")
                     yield Static(id="overview-attention")
-                yield Static(id="overview-history-note", classes="overview-only", markup=False)
+                    yield Static(id="overview-history-note", markup=False)
+                    yield Results(cursor_type="row", id="overview-results")
                 with Horizontal(id="resource-body"):
                     yield Results(cursor_type="row", id="results")
                     yield Static("Select a resource", id="inspector")
@@ -178,19 +197,22 @@ class ForgeApp(App[None]):
                     yield Button(
                         "Run pipeline", id="overview-primary", classes="overview-only compact"
                     )
+                    yield Button("Markets", id="overview-markets", classes="overview-only compact")
                     yield Button("F2 Actions", id="context-menu", classes="compact")
                     yield Button("Edit TOML", id="edit-source", classes="compact")
         yield Static("Idle", id="operation", markup=False)
         yield Footer()
 
+    def resource_table(self) -> Results:
+        return self.query_one(
+            "#overview-results" if self.area == "Overview" else "#results", Results
+        )
+
     async def on_mount(self) -> None:
         self.root_screen = self.screen
         self.set_interval(0.25, self.render_operation)
         await self.switch(AREAS[0])
-        if self.state.rows:
-            self.query_one("#results", Results).focus()
-        else:
-            self.query_one("#overview-primary", Button).focus()
+        self.query_one("#overview-primary", Button).focus()
 
     def on_resize(self, event: Resize) -> None:
         if self.root_screen is not None:
@@ -199,6 +221,8 @@ class ForgeApp(App[None]):
             if self.screen == self.root_screen and self.state.rows:
                 self.call_later(self.render_rows)
             self.root_screen.set_class(event.size.height < 18, "short")
+            if self.area == "Overview":
+                self.call_after_refresh(self.paint_inventory)
 
     def action_navigation(self) -> None:
         if self.root_screen is not None:
@@ -245,14 +269,21 @@ class ForgeApp(App[None]):
             self.state.offset = max(0, self.state.offset - 50)
             self.request_query()
 
-    async def switch(self, area: str, view: str | None = None) -> None:
-        results = self.query_one("#results", Results)
+    async def switch(
+        self, area: str, view: str | None = None, *, raw_complete: bool = False
+    ) -> None:
+        results = self.resource_table()
         self.state.scroll = (results.scroll_x, results.scroll_y)
         if self.area == "Overview" and area != "Overview":
             self.overview_generation += 1
+            self.inventory_generation += 1
+            self.inventory_pending = False
         self.area, self.view = area, view or VIEWS[area][0]
-        results.display = area != "Overview" or bool(self.state.rows)
+        self.raw_complete = raw_complete
+        if area == "Overview":
+            self.paint_inventory()
         self.screen.set_class(area == "Overview", "overview")
+        self.query_one("#context-menu", Button).label = "F2 Actions"
         self.query_one("#overview-history-note", Static).display = area == "Overview" and bool(
             self.overview_history_note
         )
@@ -289,16 +320,31 @@ class ForgeApp(App[None]):
 
     def request_query(self) -> None:
         self.version += 1
-        groups = {"query"} if self.area == "Overview" else {"overview-history", "overview-status"}
+        groups = (
+            {"query"}
+            if self.area == "Overview"
+            else {"overview-history", "overview-status", "overview-inventory"}
+        )
         for worker in self.workers:
             if worker.group in groups:
                 worker.cancel()
         if self.area == "Overview":
             self.load_overview_history(self.version)
+            self.request_inventory()
         else:
             self.query_view(
                 self.version, self.area, self.view, self.state.filter, self.state.offset
             )
+
+    def request_inventory(self) -> None:
+        if any(
+            worker.group == "overview-inventory" and worker.is_running and not worker.is_cancelled
+            for worker in self.workers
+        ):
+            self.inventory_pending = True
+            return
+        self.inventory_generation += 1
+        self.refresh_inventory(self.inventory_generation)
 
     def refresh_overview_status(self) -> None:
         if any(
@@ -324,7 +370,7 @@ class ForgeApp(App[None]):
         except Exception as error:
             if version == self.version:
                 self.state.rows = {}
-                self.query_one("#results", Results).clear()
+                self.resource_table().clear()
                 state.add_class("-error")
                 state.update(f"Query failed · {error}")
                 await self.refresh_context()
@@ -367,14 +413,14 @@ class ForgeApp(App[None]):
         )
         rows = overview.recent_rows(retained, self.controller.history)
         page = self.state
-        table = self.query_one("#results", Results)
+        table = self.resource_table()
         page.scroll = (table.scroll_x, table.scroll_y)
         ordered = sorted(rows.values(), key=lambda row: overview.run_started(row), reverse=True)
-        page.rows = {row.id: row for row in ordered[:8]}
+        page.rows = {row.id: row for row in ordered[: (3 if self.size.width < 100 else 5)]}
+        table.styles.height = len(page.rows) + 3
         if page.selection in rows and page.selection not in page.rows:
             page.rows.pop(next(reversed(page.rows)))
             page.rows[page.selection] = rows[page.selection]
-        first_load = self.overview_history_note == "Loading recent runs…"
         self.overview_history_note = (
             "Retained history unavailable · showing cached and owned runs"
             if failed and retained
@@ -385,16 +431,240 @@ class ForgeApp(App[None]):
             else "No recent runs"
         )
         self.render_rows()
-        if (
-            first_load
-            and rows
-            and self.screen == self.root_screen
-            and self.focused is not None
-            and self.focused.id == "overview-primary"
-        ):
-            table.focus()
         await self.refresh_context()
         self.paint_overview()
+
+    @work(exclusive=True, group="overview-inventory", exit_on_error=False)
+    async def refresh_inventory(self, generation: int) -> None:
+        async def load(key: str) -> None:
+            try:
+                if key == "registry":
+                    value = await inventory_query.inventory(self.context.paths)
+                elif key == "raw":
+                    value = await inventory_query.raw_inventory(self.context.paths)
+                else:
+                    reports, _ = await disk(
+                        run_page,
+                        self.context.paths.runs_dir,
+                        8,
+                        0,
+                        include_managed=True,
+                        managed_prefix="convert-execute-",
+                    )
+                    value = converted_from_reports(reports)
+            except Exception:
+                if self.area == "Overview" and generation == self.inventory_generation:
+                    self.inventory_errors.add(key)
+                    self.paint_inventory()
+                return
+            if self.area != "Overview" or generation != self.inventory_generation:
+                return
+            self.inventory_errors.discard(key)
+            if isinstance(value, inventory_query.Inventory):
+                self.inventory_data = value
+            elif isinstance(value, Converted):
+                self.inventory_converted = value
+            else:
+                self.inventory_raw = value
+            self.paint_inventory()
+
+        async with self.inventory_lock:
+            if generation == self.inventory_generation:
+                await asyncio.gather(*(load(key) for key in ("registry", "raw", "converted")))
+                if (
+                    self.inventory_pending
+                    and self.area == "Overview"
+                    and generation == self.inventory_generation
+                ):
+                    self.inventory_pending = False
+                    self.call_after_refresh(self.request_inventory)
+
+    def paint_inventory(self) -> None:
+        if self.area != "Overview" or self.root_screen is None:
+            return
+        self.root_screen.query_one(InventoryPanels).render_inventory(
+            self.inventory_data,
+            self.inventory_raw,
+            self.inventory_converted,
+            ("Stale" if self.inventory_data else "Unavailable")
+            if "registry" in self.inventory_errors
+            else "",
+            ("Stale" if self.inventory_raw else "Unavailable")
+            if "raw" in self.inventory_errors
+            else "",
+            "converted" in self.inventory_errors,
+        )
+
+    @on(DataTable.RowSelected, "#inventory-stages")
+    def choose_inventory_stage(self, event: DataTable.RowSelected) -> None:
+        stage = event.row_key.value
+        if stage == "Raw":
+            self.open_raw_inventory()
+        elif stage == "Converted":
+            self.open_converted_inventory()
+        elif stage in {"Normalized", "Merged"}:
+            self.open_inventory_publications("normalize" if stage == "Normalized" else "merge")
+
+    @on(DataTable.RowSelected, "#inventory-markets")
+    def choose_inventory_market(self, event: DataTable.RowSelected) -> None:
+        if self.inventory_data is not None:
+            selected = next(
+                (
+                    item
+                    for item in self.inventory_data.markets
+                    if market_key(item) == event.row_key.value
+                ),
+                None,
+            )
+            if selected is not None:
+                self.open_inventory_publications(None, selected)
+
+    @work(exit_on_error=False)
+    async def open_raw_inventory(self) -> None:
+        await self.switch("Data", "Raw storage", raw_complete=True)
+
+    def show_inventory_evidence(self) -> None:
+        data = self.inventory_data
+        summary = {
+            "Scope": "Registered normalized and merged publications with completed primary files",
+            "Checked UTC": data.checked.isoformat() if data else None,
+            "Recorded primary-file bytes": data.size if data else None,
+            "Files without recorded sizes": data.missing_sizes if data else None,
+            "Files without resolved stream evidence": data.unresolved_files if data else None,
+        }
+        self.push_screen(Inspection("Registry inventory evidence", summary))
+
+    def open_converted_inventory(self) -> None:
+        local = self.inventory_converted
+        evidence = {
+            "Scope": "Latest eight converter execution receipts. Local output inventory is not exhaustive.",
+            "Receipts checked": local.checked_reports if local else None,
+        }
+        actions: dict[str, Callable[[], object]] = (
+            {
+                f"Execution {item['run_id']}": partial(self.open_managed_run, str(item["run_id"]))
+                for item in local.records
+            }
+            if local
+            else {}
+        )
+        self.push_screen(
+            Inspection(
+                "Converted · retained local outputs",
+                evidence,
+                actions=actions,
+                sections={
+                    "Summary": evidence,
+                    "Outputs": [
+                        {
+                            "Execution": item["run_id"],
+                            "Manifest": document(item.get("publication")).get("manifest"),
+                            "Physical rows": document(item.get("publication")).get("events"),
+                        }
+                        for item in local.records
+                    ]
+                    if local
+                    else [],
+                },
+                choose=None,
+            )
+        )
+
+    @work(exit_on_error=False)
+    async def open_inventory_publications(
+        self,
+        operation: str | None = None,
+        market: inventory_query.Market | None = None,
+        offset: int = 0,
+    ) -> None:
+        try:
+            rows, more = await inventory_query.publication_page(
+                self.context.paths, offset, operation, market
+            )
+        except Exception as error:
+            self.push_screen(
+                Inspection("Registered publications unavailable", {"error": str(error)})
+            )
+            return
+        summary: dict[str, object] = {
+            "Operation": operation or "Normalize and merge",
+            "Offset": offset,
+        }
+        if market:
+            summary.update(
+                Exchange=market.exchange,
+                Instrument=market.symbol,
+                Namespace=market.namespace,
+                Instrument_ID=market.identity,
+                Type=market.instrument_type,
+                Category=market.category,
+                Trades=market.trades,
+                Depth=market.depth,
+            )
+        actions: dict[str, Callable[[], object]] = {}
+        if offset:
+            actions["Previous page"] = partial(
+                self.open_inventory_publications, operation, market, max(0, offset - 25)
+            )
+        if more:
+            actions["Next page"] = partial(
+                self.open_inventory_publications, operation, market, offset + 25
+            )
+        for row in rows:
+            identity = int(str(row["Registry publication"]))
+            actions[f"Open publication {identity}"] = partial(
+                self.open_overview_publication, identity
+            )
+
+        def select(_: str, item: Mapping[str, object]) -> None:
+            self.open_overview_publication(int(str(item["Registry publication"])))
+
+        self.push_screen(
+            Inspection(
+                "Registered inventory · " + (market.symbol if market else operation or "All"),
+                summary,
+                actions=actions,
+                sections={"Publications": rows, "Scope": summary},
+                choose=select,
+            )
+        )
+
+    @work(exit_on_error=False)
+    async def open_inventory_markets(self, offset: int = 0) -> None:
+        try:
+            items, more = await inventory_query.market_page(self.context.paths, offset)
+        except Exception as error:
+            self.push_screen(Inspection("Market inventory unavailable", {"error": str(error)}))
+            return
+        rows = [
+            dict(
+                zip(
+                    ("Market", "Trades", "Depth", "Latest observed UTC"),
+                    market_values(item),
+                    strict=True,
+                )
+            )
+            | {"Index": index}
+            for index, item in enumerate(items)
+        ]
+        actions: dict[str, Callable[[], object]] = {}
+        if offset:
+            actions["Previous page"] = partial(self.open_inventory_markets, offset - 25)
+        if more:
+            actions["Next page"] = partial(self.open_inventory_markets, offset + 25)
+
+        def choose(_: str, row: Mapping[str, object]) -> None:
+            self.open_inventory_publications(None, items[int(str(row["Index"]))])
+
+        self.push_screen(
+            Inspection(
+                "Markets with registered data",
+                {"Offset": offset},
+                actions=actions,
+                sections={"Markets": rows},
+                choose=choose,
+            )
+        )
 
     @work(exclusive=True, group="overview-status", exit_on_error=False)
     async def check_overview(self, generation: int) -> None:
@@ -558,9 +828,13 @@ class ForgeApp(App[None]):
             )
         else:
             update_static(label, "Idle · run a pipeline or open recipes")
+        label.display = bool(op and (active or op.id != self.overview_dismissed))
         attention = self.root_screen.query_one("#overview-attention", Static)
         items = self.overview_attention()
         attention.display = bool(items)
+        self.root_screen.query_one("#context-menu", Button).label = (
+            "F2 Alerts" if items else "F2 Actions"
+        )
         update_static(
             attention,
             Text("\n".join(list(items)[:3]), style="#e0af68", no_wrap=True, overflow="ellipsis"),
@@ -600,6 +874,9 @@ class ForgeApp(App[None]):
             {
                 "Open recipes": partial(self.open_overview_area, "Recipes & Profiles"),
                 "Browse data": partial(self.open_overview_area, "Data"),
+                "All matching markets": self.open_inventory_markets,
+                "All registered publications": self.open_inventory_publications,
+                "Inventory evidence": self.show_inventory_evidence,
                 "All runs": partial(self.open_overview_area, "Runs"),
                 "Workspace status details": self.show_overview_status,
             }
@@ -622,6 +899,8 @@ class ForgeApp(App[None]):
             self.open_managed_run(row.id)
 
     def search_scope(self) -> str:
+        if self.area == "Data" and self.view == "Raw storage" and self.raw_complete:
+            return "Recorded complete local archives"
         if self.area == "Runs" and self.view == "Retained":
             return "Retained artifacts"
         if self.area in {"Data", "Catalog"} or self.view in {"Instruments", "Rankings"}:
@@ -629,7 +908,7 @@ class ForgeApp(App[None]):
         return "Loaded resources"
 
     def render_rows(self) -> None:
-        table = self.query_one("#results", Results)
+        table = self.resource_table()
         table.border_title = "Recent runs · UTC" if self.area == "Overview" else self.view
         page = self.state
         table.clear(columns=True)
@@ -669,7 +948,9 @@ class ForgeApp(App[None]):
     async def load_rows(
         self, area: str, view: str, search: str, offset: int
     ) -> tuple[list[Row], bool]:
-        return await load_rows(self.controller, area, view, search, offset)
+        return await load_rows(
+            self.controller, area, view, search, offset, raw_complete=self.raw_complete
+        )
 
     def related(self, row: Row | None) -> tuple[str, ...]:
         if self.area == "Overview":
@@ -738,15 +1019,15 @@ class ForgeApp(App[None]):
         inspector.border_title = row.name if row else "Selection"
         inspector.update(fields(row.value) if row else Text("Select a resource"))
 
-    @on(DataTable.RowHighlighted, "#results")
+    @on(DataTable.RowHighlighted, "#results, #overview-results")
     async def highlighted(self, event: DataTable.RowHighlighted) -> None:
         if event.row_key.value in self.state.rows:
             old = self.state.selection
             self.state.selection = event.row_key.value
-            self.query_one("#results", Results).mark(old, self.state.selection)
+            self.resource_table().mark(old, self.state.selection)
             await self.refresh_context()
 
-    @on(DataTable.RowSelected, "#results")
+    @on(DataTable.RowSelected, "#results, #overview-results")
     async def selected(self, event: DataTable.RowSelected) -> None:
         row = self.state.rows.get(event.row_key.value or "")
         if row is not None:
@@ -1041,6 +1322,8 @@ class ForgeApp(App[None]):
             await self.switch(self.area, VIEWS[self.area][int(key.split("-")[1])])
         elif key == "context-menu":
             self.action_context()
+        elif key == "overview-markets":
+            self.open_inventory_markets()
         elif key == "overview-primary":
             op = self.controller.current
             if op and (self.controller.active() or op.id != self.overview_dismissed):

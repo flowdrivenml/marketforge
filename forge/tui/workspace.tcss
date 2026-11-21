@@ -90,15 +90,28 @@ ModalScreen { align: center middle; background: #11111b 75%; }
 
 .overview-only { display: none; }
 .overview .overview-only { display: block; }
-.overview #views, .overview #filter, .overview #query-state, .overview #inspector, .overview #operation { display: none; }
-#overview-status, #overview-history-note { height: 1; padding: 0 1; }
+.overview #views, .overview #filter, .overview #query-state, .overview #resource-body, .overview #operation { display: none; }
+#overview-scroll { display: none; height: 1fr; }
+.overview #overview-scroll { display: block; }
+#overview-status, #overview-history-note, #inventory-scope { height: 1; padding: 0 1; }
 #overview-status { background: $forge-surface; }
-#overview-upper { height: auto; layout: vertical; }
-.wide #overview-upper { layout: horizontal; }
-#overview-current, #overview-attention { border: solid $forge-muted; padding: 0 1; height: auto; }
-#overview-current { width: 1fr; max-height: 7; }
-#overview-attention { width: 1fr; max-height: 5; }
-.wide #overview-attention { width: 46; }
-.short #overview-current { max-height: 5; }
-.short #overview-attention { max-height: 3; }
+#overview-current, #overview-attention, .inventory-stat, #overview-results, #inventory-stages, #inventory-markets {
+    border: solid $forge-muted; height: auto;
+}
+#overview-results:focus, #inventory-stages:focus, #inventory-markets:focus { border: solid $forge-blue; }
+#overview-current, #overview-attention, .inventory-stat { padding: 0 1; }
+#overview-current { max-height: 5; }
+#overview-attention { max-height: 5; }
 #overview-primary { width: 16; }
+#inventory-panels { height: auto; }
+#inventory-stats { layout: grid; grid-size: 4 1; grid-rows: 4; height: 4; }
+.narrow #inventory-stats { grid-size: 2 2; grid-rows: 3; height: 6; }
+.narrow .inventory-stat { height: 3; }
+.inventory-stat { height: 4; }
+#inventory-body { layout: vertical; height: auto; }
+.wide #inventory-body { layout: horizontal; }
+#inventory-stages, #inventory-markets { width: 1fr; height: auto; }
+.wide #inventory-stages { width: 55%; }
+.wide #inventory-markets { width: 45%; }
+
+.overview #context-menu { width: 15; }

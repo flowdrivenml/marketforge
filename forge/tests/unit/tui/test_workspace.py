@@ -175,7 +175,7 @@ async def test_query_versions_and_page_selection(context: ApplicationContext) ->
     async with app.run_test(size=(100, 25)) as pilot:
         await app.switch("Data", "Primary files")
         await pilot.pause(0.3)
-        assert app.query_one(Results).row_count == 1
+        assert app.query_one("#results", Results).row_count == 1
         field = app.query_one("#filter", Input)
         field.value = "A"
         field.value = "BTCUSDT"
@@ -302,9 +302,9 @@ async def test_publication_actions_require_explicit_file_scope(
     async with app.run_test(size=(80, 24)) as pilot:
         await app.switch("Data", "Publications")
         await pilot.pause(0.3)
-        assert app.query_one(Results).size.height >= 15
+        assert app.query_one("#results", Results).size.height >= 15
         assert app.query_one("#area-2").has_class("active")
-        app.query_one(Results).focus()
+        app.query_one("#results", Results).focus()
         await pilot.press("enter")
         await pilot.pause()
         screen = app.screen

@@ -121,6 +121,7 @@ def run_page(
     *,
     pipeline_only: bool = False,
     include_managed: bool = False,
+    managed_prefix: str | None = None,
 ) -> tuple[list[dict[str, object]], bool]:
     """Search retained report identities before applying a bounded result page."""
     if not 1 <= limit <= 100 or offset < 0:
@@ -133,6 +134,8 @@ def run_page(
             if index >= 100000:
                 raise MarketForgeError("Run inventory exceeds bounded scan limit.")
             if not entry.is_dir(follow_symlinks=False):
+                continue
+            if managed_prefix is not None and not entry.name.startswith(managed_prefix):
                 continue
             try:
                 if not (include_managed and MANAGED_RUN.fullmatch(entry.name)):

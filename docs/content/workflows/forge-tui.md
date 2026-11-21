@@ -23,7 +23,7 @@ processing, verification, and storage mutation are explicit actions.
 
 | Area | Contents |
 | --- | --- |
-| Overview | Workspace status, current operation, attention, and recent results |
+| Overview | Data inventory, workspace status, current operation, attention, and recent results |
 | Workflows | Pipeline, acquisition, normalization, merge, conversion, import, and raw registration |
 | Data | Registry publications, registered primary files, and raw archives |
 | Markets | Instruments, observations, policies, and ranking snapshots |
@@ -51,10 +51,34 @@ forwarding is disabled, the displayed text remains selectable.
 
 ## Overview
 
+Overview puts registered data ahead of run history. Its headline statistics
+cover completed primary files of registered normalized and merged publications.
+Instrument identities include their canonical namespace and venue. Logical stream
+IDs retain feed distinctions and are deduplicated across stages. Publication IDs
+and primary files are counted separately. Recorded primary-file size excludes
+sidecars and shows how many file sizes are missing. It is distinct from free
+filesystem capacity. **F2 → Inventory evidence** shows the exact recorded
+bytes, the check time, and missing size or stream evidence counts.
+
+The stage table counts raw archives recorded complete for this workspace's raw
+root, registered normalizations and merges, and known local conversion outputs
+from the latest eight converter execution receipts. Conversion receipts can
+establish committed outputs and physical rows. They do not provide recorded
+file sizes or an exhaustive inventory. Overview does not reverify files.
+Physical rows describe stored representations, which can overlap.
+
+Select a stage or market with Enter. The market list shows trade and depth
+membership and the latest recorded observed event time in UTC. Presence does
+not establish continuous interval coverage or current market freshness. Use
+**Markets** in the footer to page through the complete matching registry
+inventory. Each market opens publications for its exact canonical identity.
+Recent runs are limited to three on narrow screens and five otherwise. F2
+opens the full Runs area.
+
 The status strip shows the observed testing registry connection, verified
 managed installations, and filesystem free space. Use **F2 → Workspace status
 details** for each source’s check time. Ctrl+R refreshes these read-only checks
-and recent history. Returning to Overview reloads history and rechecks expired
+as well as inventory and recent history. Returning to Overview reloads inventory and history and rechecks expired
 observations. Registry outages leave local history and owned operations usable.
 
 The current operation shows the latest reported phase and any measured work.

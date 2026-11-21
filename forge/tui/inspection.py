@@ -131,6 +131,8 @@ class Inspection(Screen[None]):
             "Selected files",
             "Raw inputs",
             "Selected archives",
+            "Markets",
+            "Publications",
         }:
             self.choose(self.section, item)
         else:

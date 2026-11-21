@@ -4,6 +4,7 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
 from pytest import mark
 from rich.console import Console
 from textual.widgets import Input, Static
@@ -96,7 +97,7 @@ async def test_overview_owned_cancel_registry_failure_and_retained_selection(
     app.overview_probe = status
     async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
-        assert app.query_one(Results).row_count == 0
+        assert app.query_one("#overview-results", Results).row_count == 0
         assert "Idle" in str(app.query_one("#overview-current", Static).content)
         report(
             ctx.paths.runs_dir,
@@ -244,3 +245,113 @@ async def test_status_generation_rejects_late_results(tmp_path: Path) -> None:
         assert registry.text == "connected"
         app.render_operation()
         assert app.overview_status["Registry"].checked == registry.checked
+
+
+@mark.asyncio
+async def test_inventory_dashboard_exact_routes_and_cached_outage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    from forge.datasets import inventory as source
+
+    ctx = context(tmp_path)
+    market = source.Market(
+        "fixture:canonical", "bybit", "711", "SAME", "spot", "spot", True, True, 1700000000000000000
+    )
+    alternative = source.Market(
+        "fixture:canonical", "okx", "711", "SAME", "spot", "spot", True, False, None
+    )
+    unavailable = False
+    page_offsets: list[int] = []
+    sorted_markets = (market, alternative)
+    target: list[tuple[str | None, source.Market | None]] = []
+
+    async def registry(_: ProjectPaths) -> source.Inventory:
+        if unavailable:
+            raise OSError("offline")
+        return source.Inventory(
+            (source.Stage("normalize", 2, 3, 2048, 1, 11, 3),),
+            2,
+            2,
+            3,
+            2,
+            1,
+            2048,
+            1,
+            sorted_markets,
+            datetime.now(UTC),
+        )
+
+    async def raw(_: ProjectPaths) -> tuple[int, int]:
+        return 7, 512
+
+    async def markets(_: ProjectPaths, offset: int) -> tuple[tuple[source.Market, ...], bool]:
+        page_offsets.append(offset)
+        return (sorted_markets if offset == 0 else (alternative,)), offset == 0
+
+    async def publications(
+        _: ProjectPaths, __: int, operation: str | None, item: source.Market | None
+    ) -> tuple[list[dict[str, object]], bool]:
+        target.append((operation, item))
+        return [], False
+
+    monkeypatch.setattr(source, "inventory", registry)
+    monkeypatch.setattr(source, "raw_inventory", raw)
+    monkeypatch.setattr(source, "market_page", markets)
+    monkeypatch.setattr(source, "publication_page", publications)
+    app = ForgeApp(ctx)
+    async with app.run_test(size=(120, 32)) as pilot:
+        await pilot.pause()
+        assert "partial" in str(app.query_one("#stat-bytes", Static).content)
+        table = app.query_one("#inventory-markets", Results)
+        table.focus()
+        table.move_cursor(row=1)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert target[-1] == (None, alternative)
+        await pilot.press("escape")
+        unavailable = True
+        app.action_reload()
+        await pilot.pause()
+        assert "Stale" in str(app.query_one("#inventory-scope", Static).content)
+        assert table.cursor_row == 1
+        assert app.inventory_raw == (7, 512)
+        stages = app.query_one("#inventory-stages", Results)
+        stages.focus()
+        stages.move_cursor(row=1)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert target[-1] == ("normalize", None)
+        await pilot.press("escape")
+        app.open_inventory_markets()
+        await pilot.pause()
+        visible = app.screen
+        assert isinstance(visible, Inspection)
+        visible.links["Next page"]()
+        await pilot.pause()
+        assert page_offsets == [0, 25]
+
+
+def test_conversion_inventory_counts_only_unique_retained_commits() -> None:
+    from forge.tui.inventory import converted_from_reports
+
+    complete: dict[str, object] = {
+        "status": "complete",
+        "publication": {
+            "manifest": "/fixture/converted/manifest.json",
+            "events": 300,
+        },
+    }
+    result = converted_from_reports(
+        [
+            complete,
+            {**complete, "run_id": "duplicate"},
+            {**complete, "status": "failed"},
+            {"status": "prepared"},
+            {"status": "complete", "output_path": "/fixture/staging"},
+        ]
+    )
+    assert result.records == (complete,)
+    assert result.rows == 300
+    assert result.checked_reports == 5

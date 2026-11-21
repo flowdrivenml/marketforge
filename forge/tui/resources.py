@@ -54,7 +54,13 @@ def value_at(item: Mapping[str, object], key: str, default: str = "—") -> str:
 
 
 async def load_rows(
-    controller: Controller, area: str, view: str, search: str, offset: int
+    controller: Controller,
+    area: str,
+    view: str,
+    search: str,
+    offset: int,
+    *,
+    raw_complete: bool = False,
 ) -> tuple[list[Row], bool]:
     context = controller.context
     paths = context.paths
@@ -106,7 +112,12 @@ async def load_rows(
         if view == "Raw storage":
             result = await inspect(
                 "storage list",
-                {"limit": 50, "offset": offset, **({"match": search} if search else {})},
+                {
+                    "limit": 50,
+                    "offset": offset,
+                    **({"match": search} if search else {}),
+                    **({"status": "complete"} if raw_complete else {}),
+                },
             )
             for item in records(result, "archives"):
                 ident = value_at(item, "id", value_at(item, "local_id"))
