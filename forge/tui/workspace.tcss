@@ -1,40 +1,89 @@
-Screen { background: #1a1b26; color: #c0caf5; }
-#workspace-header { height: 2; padding: 0 1; background: #24283b; color: #7aa2f7; text-style: bold; }
-#workspace-body { height: 1fr; }
-#navigation { width: 22; background: #24283b; padding: 0 1; }
-#navigation Button { width: 100%; min-width: 0; border: none; height: 2; background: #24283b; color: #c0caf5; text-align: left; content-align: left middle; }
-#navigation Button:focus { background: #33467c; color: #ffffff; }
-#main { width: 1fr; padding: 0 1; }
-#section-title { height: 1; color: #7dcfff; text-style: bold; }
-#views { height: 3; overflow-x: auto; }
-#views Button { min-width: 0; width: auto; padding: 0 1; }
-#filter { height: 3; }
-#results { height: 1fr; border: none; border-top: solid #565f89; background: #1a1b26; color: #c0caf5; }
-#results > .datatable--header { color: #7aa2f7; background: #24283b; }
-#results > .datatable--cursor { color: #c0caf5; background: #33467c; }
-#context-actions { height: 3; overflow-x: auto; }
-#context-actions Button { width: auto; min-width: 0; padding: 0 1; }
-#query-state, #operation { height: 1; padding: 0 1; }
-#operation { color: #7dcfff; background: #24283b; }
-#query-state.-error, #form-error { color: #f7768e; }
-.narrow #navigation { display: none; }
-.narrow.nav-open #navigation { display: block; }
-ModalScreen { align: center middle; background: #11111b 75%; }
-.dialog { width: 84%; height: 91%; max-height: 94%; border: round #565f89; padding: 0 1; background: #1a1b26; }
-.dialog-title { color: #7dcfff; text-style: bold; height: 2; }
-.fields { height: 1fr; }
-#form-error { height: auto; max-height: 2; }
-.form-field { height: auto; margin-bottom: 1; }
-.buttons { height: 3; overflow-x: auto; }
-.buttons Button { width: auto; min-width: 0; margin-right: 1; }
-.detail { height: 88%; }
-#detail-text { height: 1fr; border: solid #565f89; }
-.confirmation { width: 72%; height: auto; padding: 1 2; }
+$forge-bg: #1a1b26;
+$forge-fg: #c0caf5;
+$forge-blue: #7aa2f7;
+$forge-cyan: #7dcfff;
+$forge-green: #9ece6a;
+$forge-yellow: #e0af68;
+$forge-red: #f7768e;
+$forge-muted: #565f89;
+$forge-selected: #292f44;
+$forge-surface: #212333;
 
-.nav-hidden #navigation { display: none; }
-.short #workspace-header, .short #section-title { height: 1; }
-.path-field { height: 3; }
+Screen { background: $forge-bg; color: $forge-fg; }
+Button {
+    color: $forge-fg;
+    background: $forge-surface;
+    border: none;
+    height: 1;
+    min-width: 0;
+    width: auto;
+    padding: 0 1;
+}
+Button:hover, Button:focus { background: $forge-selected; color: $forge-cyan; }
+Button:focus { text-style: underline; }
+Button:disabled { color: $forge-muted; }
+Button.-primary, Button.active { color: $forge-blue; background: $forge-selected; text-style: bold; }
+Button.-warning, Button.-error { color: $forge-yellow; background: $forge-selected; }
+Button.-error { color: $forge-red; }
+Input, Select, SelectCurrent, SelectOverlay, OptionList, Checkbox, TextArea, Collapsible {
+    color: $forge-fg; background: $forge-surface;
+}
+Input { border: none; height: 1; padding: 0 1; }
+Input:focus, Select:focus, Checkbox:focus { color: $forge-cyan; background: $forge-selected; }
+Input > .input--placeholder { color: $forge-muted; }
+Input > .input--selection, TextArea > .text-area--selection { background: $forge-selected; }
+OptionList > .option-list--option-highlighted { color: $forge-cyan; background: $forge-selected; }
+Checkbox { height: 1; border: none; }
+Checkbox > .toggle--button { color: $forge-cyan; background: $forge-surface; }
+Footer, FooterKey { background: $forge-surface; color: $forge-fg; }
+FooterKey > .footer-key--key { color: $forge-cyan; background: $forge-surface; }
+Toast { background: $forge-surface; color: $forge-fg; border: solid $forge-muted; }
+DataTable { color: $forge-fg; background: $forge-bg; }
+DataTable > .datatable--header { color: $forge-blue; background: $forge-surface; text-style: bold; }
+DataTable > .datatable--cursor { color: $forge-fg; background: $forge-selected; }
+DataTable:focus > .datatable--header-cursor { color: $forge-cyan; }
+
+#workspace-header, .screen-heading { height: 1; padding: 0 1; background: $forge-surface; color: $forge-blue; text-style: bold; }
+#workspace-body, #resource-body { height: 1fr; }
+#navigation { width: 19; background: $forge-surface; padding: 0 1; }
+#navigation Button { width: 100%; content-align: left middle; }
+#main { width: 1fr; padding: 0 1; }
+#views, #context-actions, .section-tabs, .screen-footer { height: 1; }
+#views, .section-tabs { overflow-x: auto; }
+#context-actions, .screen-footer { background: $forge-surface; }
+#filter { height: 1; }
+#results { height: 1fr; width: 1fr; border: solid $forge-muted; }
+#results:focus { border: solid $forge-blue; }
+#inspector {
+    display: none; width: 32; height: 1fr; border: solid $forge-muted;
+    padding: 0 1; overflow: auto;
+}
+.wide #inspector { display: block; }
+#query-state, #operation { height: 1; padding: 0 1; }
+#operation { color: $forge-cyan; background: $forge-surface; }
+#operation.failed, #query-state.-error, #form-error { color: $forge-red; }
+#operation.complete { color: $forge-green; }
+#operation.warning { color: $forge-yellow; }
+.narrow #navigation, .nav-hidden #navigation { display: none; }
+.narrow.nav-open #navigation { display: block; }
+#inspection-scroll, #inspection-rows, #operation-scroll { height: 1fr; padding: 0 1; }
+#inspection-fields { border: solid $forge-muted; padding: 0 1; }
+#operation-dashboard { height: auto; }
+ModalScreen { align: center middle; background: #11111b 75%; }
+.dialog, .menu { width: 66; max-width: 96%; height: auto; max-height: 92%; border: solid $forge-muted; padding: 0 1; background: $forge-bg; }
+.dialog-title, .section-title { color: $forge-blue; text-style: bold; height: 1; }
+.fields { height: auto; max-height: 65vh; }
+#form-error { height: auto; max-height: 2; }
+.form-field { height: auto; }
+.buttons { height: 1; }
+.buttons Button { margin-right: 1; }
+.detail { height: 88%; width: 93%; }
+#detail-text { height: 1fr; border: solid $forge-muted; }
+.confirmation { width: 58; height: auto; padding: 0 1; }
+.path-field { height: 1; }
 .path-field Input { width: 1fr; }
-.path-field Button { width: auto; min-width: 0; }
 #path-tree { height: 1fr; }
 #path-selection { height: 1; }
+.menu Button { width: 100%; content-align: left middle; }
+
+.inspect-operation { display: none; height: 1; padding: 0 1; color: $forge-cyan; background: $forge-surface; }

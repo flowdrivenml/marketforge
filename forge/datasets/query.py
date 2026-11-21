@@ -373,9 +373,10 @@ async def publications(
     limit: int = 50,
     offset: int = 0,
     identity: int | None = None,
+    file_offset: int = 0,
 ) -> dict[str, Any]:
     """List retained publication evidence once per registry publication."""
-    if not 1 <= limit <= 100 or offset < 0:
+    if not 1 <= limit <= 100 or offset < 0 or file_offset < 0:
         raise MarketForgeError("Invalid publication page.")
     async with testing_connection(testing_dsn(paths.root)) as connection:
         async with connection.cursor(row_factory=dict_row) as cursor:
@@ -389,6 +390,8 @@ async def publications(
                     p.evidence->'manifest'->'start_timestamp_ns' AS first_observed_ns,
                     p.evidence->'manifest'->'end_timestamp_ns' AS last_observed_ns,
                     p.evidence->'execution' AS execution,
+                    p.evidence->'manifest'->'events_written' AS events,
+                    p.evidence->'bytes_written' AS bytes_written,
                     files.primary_file_count,
                     files.first_file_id AS representative_file_id
                 FROM historical.dataset_publications p
@@ -419,9 +422,9 @@ async def publications(
                     SELECT id AS registry_primary_file_id,primary_file,file_sha256,data_type,
                            start_timestamp_ns AS first_observed_ns,end_timestamp_ns AS last_observed_ns
                     FROM historical.datasets WHERE publication_id=%s AND primary_file IS NOT NULL
-                    ORDER BY id LIMIT 51
+                    ORDER BY id LIMIT 51 OFFSET %s
                 """,
-                    (identity,),
+                    (identity, file_offset),
                 )
                 files = await cursor.fetchall()
                 rows[0]["primary_files"] = list(files[:50])

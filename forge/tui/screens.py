@@ -60,19 +60,32 @@ class Form(ModalScreen[Values | None]):
             yield Label(self.spec.key, classes="dialog-title")
             with VerticalScroll(classes="fields"):
                 if self.choices and self.spec.fields and self.spec.fields[0].key == "reference":
-                    yield Label("Saved recipe or object")
+                    yield Label(
+                        "Retained runs"
+                        if self.spec.key
+                        in {
+                            "pipeline resume",
+                            "pipeline status",
+                            "runs show",
+                            "runs report",
+                            "runs logs",
+                        }
+                        else "Saved recipes"
+                    )
                     yield Select([(x, x) for x in self.choices], id="saved")
-                advanced = self.spec.fields[4:]
-                for field in self.spec.fields[:4]:
-                    yield from self.render_field(field)
-                if advanced:
-                    with Collapsible(title="Advanced", collapsed=True):
-                        for field in advanced:
+                groups = grouped_fields(self.spec.fields)
+                for heading, items in groups.items():
+                    if heading == "Advanced":
+                        with Collapsible(title=heading, collapsed=True):
+                            for field in items:
+                                yield from self.render_field(field)
+                    else:
+                        for field in items:
                             yield from self.render_field(field)
             yield Static("", id="form-error", markup=False)
             with Horizontal(classes="buttons"):
                 yield Button(
-                    "Preview" if self.spec.effect == "guarded" else "Continue",
+                    primary_label(self.spec),
                     id="submit",
                     variant="primary",
                 )
@@ -82,7 +95,8 @@ class Form(ModalScreen[Values | None]):
     def render_field(self, field: Field) -> ComposeResult:
         field_value = self.preset.get(field.key, field.default)
         with Vertical(classes="form-field"):
-            yield Label(field.label + (" *" if field.required else ""))
+            if field.kind != "check":
+                yield Label(field.label + (" *" if field.required else ""))
             if field.kind == "check":
                 yield Checkbox(field.label, value=bool(field_value), id=f"field-{field.key}")
             elif field.kind == "choice":
@@ -346,3 +360,53 @@ class RunDetail(Detail):
         content = self.sections[name]
         self.value_text = pretty(content) if content else f"No retained {name.lower()} fields."
         self.query_one(TextArea).load_text(self.value_text)
+
+
+def primary_label(action: Action) -> str:
+    if action.effect == "guarded":
+        return "Preview selection"
+    if action.key in {"pipeline run", "pipeline resume", "pipeline plan", "normalize prepare"}:
+        return {
+            "pipeline run": "Run pipeline",
+            "pipeline resume": "Resume pipeline",
+            "pipeline plan": "Plan pipeline",
+            "normalize prepare": "Prepare normalization",
+        }[action.key]
+    word = action.key.rsplit(" ", 1)[-1]
+    return {
+        "validate": "Validate",
+        "refresh": "Refresh selection",
+        "verify": "Verify selected input",
+    }.get(word, word.capitalize())
+
+
+def grouped_fields(items: tuple[Field, ...]) -> dict[str, list[Field]]:
+    groups: dict[str, list[Field]] = {}
+    for field in items:
+        key = field.key
+        category = (
+            "Interval"
+            if key in {"start", "end"}
+            else "Source"
+            if key in {"source", "file", "route", "from_acquisition", "from_normalize"}
+            else "Advanced"
+            if key
+            in {
+                "limit",
+                "offset",
+                "rate",
+                "jobs",
+                "offline",
+                "precise",
+                "wide",
+                "checksums",
+                "refresh",
+                "overlap",
+                "allow_partial",
+            }
+            else "Selection"
+            if key in {"id", "reference", "archive", "exchanges", "markets", "instrument"}
+            else "Options"
+        )
+        groups.setdefault(category, []).append(field)
+    return groups

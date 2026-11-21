@@ -481,13 +481,15 @@ async def build(
         return snapshot
 
 
-async def list_snapshots(c: AsyncConnection[TupleRow], limit: int = 50) -> list[dict[str, object]]:
+async def list_snapshots(
+    c: AsyncConnection[TupleRow], limit: int = 50, *, offset: int = 0, search: str = ""
+) -> list[dict[str, object]]:
     if not 1 <= limit <= 10001:
         raise MarketDataError("Ranking limit must be 1..10001.")
     async with c.cursor(row_factory=dict_row) as cur:
         await cur.execute(
-            "SELECT id,policy_name,created_at,comparison_currency,partial_universe,universe_count,included_count FROM ranking.snapshots WHERE status='published' ORDER BY created_at DESC,id LIMIT %s",
-            (limit,),
+            "SELECT id,policy_name,created_at,comparison_currency,partial_universe,universe_count,included_count FROM ranking.snapshots WHERE status='published' AND (policy_name ILIKE %s OR id::text ILIKE %s) ORDER BY created_at DESC,id LIMIT %s OFFSET %s",
+            (f"%{search}%", f"%{search}%", limit, offset),
         )
         return list(await cur.fetchall())
 

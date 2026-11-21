@@ -34,12 +34,15 @@ processing, verification, and storage mutation are explicit actions.
 
 Press Ctrl+P to find actions such as `pipeline resume`, `merge prepare`,
 `storage coverage`, or `dataset lineage`. Use the arrow keys to select rows
-and Enter to open details. Tab and Shift+Tab move focus. Escape closes forms
+and Enter to open details. The active area stays highlighted as focus moves.
+Press F2 for actions scoped to the selected item and F3 in details for raw evidence. Tab and Shift+Tab move focus. Escape closes forms
 and details. Use `/` to focus the filter, Ctrl+R to reload retained data,
 Page Up and Page Down to move between available result pages, and Ctrl+N
 to toggle navigation. The application also supports mouse selection and
-scrolling. Data tables scroll horizontally and detail views retain full
-values.
+scrolling. The strip below the filter identifies whether it searches registered
+resources, retained artifacts, or the loaded resources. Wider terminals show
+a selected-item inspector beside the table. Detail views retain full values
+and sample tables scroll horizontally.
 
 Forms include selectors and optional Advanced fields. Copy command displays
 the equivalent quoted CLI invocation for use outside the app. Copy value
@@ -53,7 +56,7 @@ Plan reads retained evidence in the testing registry. Run begins acquisition
 and continues through publication and registration. Choose **Stop after**
 `normalize.prepare` to inspect validated jobs before execution. Open the run
 report and use Pipeline Resume to continue with its retained inputs, ranking,
-settings, and jobs.
+settings, and jobs. Pipeline Resume and Status select retained run IDs.
 
 Standalone workflows accept the same saved recipes and applicable submitted
 paths as their CLI counterparts. Preparation, execution, verification,
@@ -77,7 +80,11 @@ nvim data/.config/pipeline/bybit_spot.toml
 The Publications view lists a registry publication once. It retains the
 engine publication ID, registry publication ID, full published stream
 membership, and a separate page of primary-file identities. Open registered
-files to inspect coverage, lineage, schema, or a bounded Parquet sample.
+files to inspect lineage, schema, or a bounded Parquet sample. The publication
+view provides publication lineage and complete stream membership. File
+verification checks the named primary file and shared manifest checksum.
+Its result explicitly identifies the scope and whether the whole publication
+was verified.
 Execution and verification evidence retain original timestamps and units.
 Observed event endpoints are inclusive and do not establish continuity for
 the requested half-open interval.
@@ -98,7 +105,9 @@ database. Existing storage and database safeguards remain in force.
 Ctrl+O opens the owned operation and its current activity. Pipeline and
 acquisition progress comes from their typed snapshots. Processing shows
 phases and retained results. Inner-engine throughput, ETA, and row progress
-are unavailable in Forge.
+are unavailable in Forge. An open operation gains report, output, and recovery
+actions as evidence becomes available. When the operation finishes while you
+browse elsewhere, Forge shows a notification and keeps your current view.
 
 Changing screens leaves owned work running. Workspace ownership lasts for
 the mutation, including child and reader cleanup. Ctrl+C opens interruption

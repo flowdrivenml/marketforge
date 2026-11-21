@@ -110,3 +110,48 @@ def read_managed_report(root: Path, run_id: str) -> dict[str, object]:
             result = obj(json.loads(path.read_bytes()))
             return {**result, "run_id": run_id, "resolved_report": str(path), "liveness": "unknown"}
     return {"run_id": run_id, "status": "report_missing_or_interrupted"}
+
+
+def run_page(
+    root: Path, limit: int, offset: int, search: str = "", *, pipeline_only: bool = False
+) -> tuple[list[dict[str, object]], bool]:
+    """Search retained report identities before applying a bounded result page."""
+    if not 1 <= limit <= 100 or offset < 0:
+        raise MarketForgeError("Invalid retained run page.")
+    if not root.is_dir():
+        return [], False
+    candidates: list[tuple[float, str]] = []
+    with os.scandir(root) as items:
+        for index, entry in enumerate(items):
+            if index >= 100000:
+                raise MarketForgeError("Run inventory exceeds bounded scan limit.")
+            if not entry.is_dir(follow_symlinks=False):
+                continue
+            try:
+                UUID(entry.name)
+                candidates.append((entry.stat().st_mtime, entry.name))
+            except (ValueError, FileNotFoundError):
+                continue
+    result: list[dict[str, object]] = []
+    matched = 0
+    for _, name in sorted(candidates, reverse=True)[
+        offset if not search and not pipeline_only else 0 :
+    ]:
+        try:
+            report = read_report(root, name)
+        except (MarketForgeError, OSError) as error:
+            report = {"status": "unavailable", "error": str(error)}
+        if pipeline_only and report.get("kind") != "historical_pipeline":
+            continue
+        haystack = " ".join(
+            str(report.get(key, "")) for key in ("name", "kind", "operation", "state", "status")
+        )
+        if search.casefold() not in f"{name} {haystack}".casefold():
+            continue
+        if (search or pipeline_only) and matched < offset:
+            matched += 1
+            continue
+        result.append({**report, "run_id": name})
+        if len(result) > limit:
+            break
+    return result[:limit], len(result) > limit

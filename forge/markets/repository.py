@@ -321,8 +321,9 @@ async def browse(
     limit: int = 50,
     sort: str = "identity",
     reference: str | None = None,
+    offset: int = 0,
 ) -> list[dict[str, object]]:
-    if not 1 <= limit <= 10001:
+    if not 1 <= limit <= 10001 or offset < 0:
         raise MarketDataError("Result limit must be 1..10001.")
     orders: dict[str, LiteralString] = {
         "identity": "e.code,i.market_category,i.symbol",
@@ -355,7 +356,7 @@ async def browse(
               AND (%s::text IS NULL OR i.symbol ILIKE %s ESCAPE '!')
             ORDER BY """
             + order
-            + " LIMIT %s",
+            + ",i.id LIMIT %s OFFSET %s",
             (
                 exchange,
                 exchange,
@@ -377,6 +378,7 @@ async def browse(
                 match,
                 symbol_pattern(match),
                 limit,
+                offset,
             ),
         )
         result = list(await cur.fetchall())

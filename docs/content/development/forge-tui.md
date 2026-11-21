@@ -25,6 +25,14 @@ async historical supervisor and retained diagnostic logs. Synchronous tooling
 with subprocesses uses a joined process-group bridge. Textual owns the terminal
 while rendering.
 
+The shell handles navigation, selection, and query generations. `resources.py`
+adapts bounded query results to typed selections and `presentation.py` defines
+resource-specific columns and contextual argument bindings. `inspection.py`
+presents subject sections and tables with a separate raw evidence view.
+`operation_view.py` renders structured snapshots and updates available actions
+as the controller records results. Shared Tokyo Night styling lives in
+`workspace.tcss`.
+
 To add an action, define its fields, workspace area, and side-effect class in
 `forge/tui/actions.py`. Connect it to a service in `workflows.py` or
 `services.py`. Reuse existing request models and receipts. Add a parser

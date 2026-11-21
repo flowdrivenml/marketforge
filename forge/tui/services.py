@@ -170,6 +170,7 @@ async def markets(
             markets=categories or None,
             symbol=instrument,
             limit=2 if action == "show" else limit + 1,
+            offset=int(v.get("offset", 0)),
             sort=optional(v, "sort") or "identity",
             reference=optional(v, "reference"),
             base_asset=optional(v, "base_asset"),
@@ -234,7 +235,9 @@ async def ranks(
         async with ranking_lock(connection, shared=True):
             limit = int(v.get("limit", 50))
             if action == "list":
-                rows = await ranking.list_snapshots(connection, limit + 1)
+                rows = await ranking.list_snapshots(
+                    connection, limit + 1, offset=int(v.get("offset", 0)), search=value(v, "search")
+                )
                 return {"rankings": rows[:limit], "has_more": len(rows) > limit}
             try:
                 identity = UUID(str(reference))

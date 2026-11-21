@@ -7,6 +7,7 @@ from functools import partial
 from pathlib import Path
 from typing import cast
 
+from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -15,19 +16,21 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.events import Resize
 from textual.widgets import Button, DataTable, Footer, Input, Static
 
-from forge.datasets.query import publications
+from forge.datasets.query import publications, utc
 from forge.historical.archives.progress import ProgressSnapshot
 from forge.historical.archives.storage.files import disk
-from forge.historical.conversion.recipes import library as conversion_library
 from forge.historical.pipelines.progress import PipelineSnapshot
-from forge.historical.profiles.service import discover
-from forge.orchestration.inspection import list_runs, read_managed_report
+from forge.orchestration.inspection import read_managed_report, run_page
 from forge.shared.config.library import list_config_names
 from forge.shared.terminal.editor import edit_file
 from forge.startup.context import ApplicationContext
 from forge.tui.actions import ACTIONS, BY_KEY, Action, Values, read_only
 from forge.tui.controller import Controller, Invoke, Operation, document, outcome
-from forge.tui.screens import Confirm, Detail, Form, LiveDetail, RunDetail
+from forge.tui.inspection import ActionMenu, Inspection, fields
+from forge.tui.operation_view import OperationView
+from forge.tui.presentation import Results, Selection, bind, cell_text, columns, membership, visible
+from forge.tui.resources import CATALOG, FAMILIES, Row, library, load_rows, records, value_at
+from forge.tui.screens import Confirm, Detail, Form
 from forge.tui.services import apply_cleanup, execute, ranks
 
 AREAS = (
@@ -58,28 +61,6 @@ VIEWS = {
     "Runs": ("Retained", "Owned"),
     "System": ("Engines", "Database", "Settings"),
 }
-FAMILIES = {
-    "Pipeline": "pipeline",
-    "Acquisition": "acquisition",
-    "Normalization": "normalize",
-    "Merge": "merge",
-    "Conversion": "convert",
-    "Import": "acquisition import",
-    "Registration": "acquisition register",
-    "Policies": "markets rank",
-}
-CATALOG = {"Exchanges": "exchange", "Instruments": "instrument", "Specifications": "specs"}
-
-
-@dataclass(frozen=True, slots=True)
-class Row:
-    id: str
-    name: str
-    kind: str
-    state: str
-    value: object
-    reference: str = ""
-    path: Path | None = None
 
 
 @dataclass(slots=True)
@@ -90,20 +71,6 @@ class ViewState:
     rows: dict[str, Row] = field(default_factory=dict[str, Row])
     more: bool = False
     scroll: tuple[float, float] = (0, 0)
-
-
-def records(value: object, key: str) -> list[Mapping[str, object]]:
-    items = document(value).get(key)
-    return (
-        [document(item) for item in cast(list[object], items) if document(item)]
-        if isinstance(items, list)
-        else []
-    )
-
-
-def value_at(item: Mapping[str, object], key: str, default: str = "—") -> str:
-    value = item.get(key)
-    return str(value) if value is not None else default
 
 
 class Commands(Provider):
@@ -122,10 +89,6 @@ class Commands(Provider):
                 )
 
 
-class Results(DataTable[str]):
-    """Table with stable textual cell values."""
-
-
 class ForgeApp(App[None]):
     TITLE = "MarketForge / Forge"
     CSS_PATH = "workspace.tcss"
@@ -135,9 +98,10 @@ class ForgeApp(App[None]):
         Binding("ctrl+n", "navigation", "Navigation"),
         Binding("/", "filter", "Filter"),
         Binding("ctrl+r", "reload", "Reload"),
-        Binding("pageup", "previous", "Prev page", show=False),
-        Binding("pagedown", "next", "Next page", show=False),
-        Binding("ctrl+o", "operation", "Run details"),
+        Binding("pageup", "previous", "Prev page", show=False, priority=True),
+        Binding("pagedown", "next", "Next page", show=False, priority=True),
+        Binding("ctrl+o", "operation", "Run"),
+        Binding("f2", "context", "Actions"),
         Binding("ctrl+c", "interrupt", "Interrupt", priority=True),
         Binding("ctrl+q", "quit_forge", "Quit", priority=True),
     ]
@@ -168,33 +132,39 @@ class ForgeApp(App[None]):
                 for index, area in enumerate(AREAS):
                     yield Button(area, id=f"area-{index}")
             with Vertical(id="main"):
-                yield Static("", id="section-title", markup=False)
                 yield Horizontal(id="views")
                 yield Input(
                     placeholder="Filter visible results or enter an exact registry symbol",
                     id="filter",
                 )
                 yield Static("", id="query-state", markup=False)
-                yield Results(cursor_type="row", id="results")
-                yield Horizontal(id="context-actions")
+                with Horizontal(id="resource-body"):
+                    yield Results(cursor_type="row", id="results")
+                    yield Static("Select a resource", id="inspector")
+                with Horizontal(id="context-actions"):
+                    yield Button("Enter Inspect", id="inspect-selected", classes="compact")
+                    yield Button("F2 Actions", id="context-menu", classes="compact")
+                    yield Button("Edit TOML", id="edit-source", classes="compact")
         yield Static("Idle", id="operation", markup=False)
         yield Footer()
 
     async def on_mount(self) -> None:
         self.root_screen = self.screen
-        self.query_one("#results", Results).add_columns("Identity", "Kind", "State", "Reference")
         self.set_interval(0.25, self.render_operation)
         await self.switch(AREAS[0])
         self.query_one("#results", Results).focus()
 
     def on_resize(self, event: Resize) -> None:
         if self.root_screen is not None:
-            self.root_screen.set_class(event.size.width < 83, "narrow")
+            self.root_screen.set_class(event.size.width < 93, "narrow")
+            self.root_screen.set_class(event.size.width >= 146, "wide")
+            if self.screen == self.root_screen and self.state.rows:
+                self.call_later(self.render_rows)
             self.root_screen.set_class(event.size.height < 18, "short")
 
     def action_navigation(self) -> None:
         if self.root_screen is not None:
-            if self.size.width < 83:
+            if self.size.width < 93:
                 self.root_screen.toggle_class("nav-open")
                 visible = self.root_screen.has_class("nav-open")
             else:
@@ -210,6 +180,11 @@ class ForgeApp(App[None]):
     def action_reload(self) -> None:
         self.request_query()
 
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action in {"previous", "next"}:
+            return self.screen == self.root_screen and not isinstance(self.focused, Input)
+        return super().check_action(action, parameters)
+
     def action_next(self) -> None:
         if self.screen == self.root_screen and self.state.more:
             self.state.offset += 50
@@ -224,11 +199,14 @@ class ForgeApp(App[None]):
         results = self.query_one("#results", Results)
         self.state.scroll = (results.scroll_x, results.scroll_y)
         self.area, self.view = area, view or VIEWS[area][0]
-        self.query_one("#section-title", Static).update(
-            f"{area} / {self.view}" if len(VIEWS[area]) > 1 else area
+        self.query_one("#workspace-header", Static).update(
+            f"MarketForge / Forge  ·  {self.context.paths.root.name}  ·  TESTING  /  {area}"
         )
+        for index, name in enumerate(AREAS):
+            self.query_one(f"#area-{index}", Button).set_class(name == area, "active")
         field = self.query_one("#filter", Input)
         field.value = self.state.filter
+        field.placeholder = self.search_scope() + " · enter a filter"
         group = self.query_one("#views", Horizontal)
         await group.remove_children()
         await group.mount(
@@ -236,7 +214,7 @@ class ForgeApp(App[None]):
                 Button(
                     label,
                     id=f"view-{index}",
-                    variant="primary" if label == self.view else "default",
+                    classes="compact active" if label == self.view else "compact",
                 )
                 for index, label in enumerate(VIEWS[area])
             )
@@ -272,19 +250,51 @@ class ForgeApp(App[None]):
         page = self.state
         page.rows = {row.id: row for row in rows}
         page.more = more
-        table = self.query_one("#results", Results)
-        table.clear()
-        for row in rows:
-            table.add_row(row.name, row.kind, row.state, row.reference, key=row.id)
-        if page.selection in page.rows:
-            table.move_cursor(row=tuple(page.rows).index(page.selection), scroll=False)
-            table.scroll_to(*page.scroll, animate=False, immediate=True)
+        self.render_rows()
         state.update(
-            f"{len(rows)} shown · offset {offset}" + (" · PgDn next page" if more else "")
+            f"{self.search_scope()}  ·  {len(rows)} shown  ·  offset {offset}"
+            + ("  ·  PgDn next page" if more else "")
             if rows
             else "No matching records."
         )
         await self.refresh_context()
+
+    def search_scope(self) -> str:
+        if self.area == "Runs" and self.view == "Retained":
+            return "Retained artifacts"
+        if self.area in {"Data", "Catalog"} or self.view in {"Instruments", "Rankings"}:
+            return "Registry search"
+        return "Loaded resources"
+
+    def render_rows(self) -> None:
+        table = self.query_one("#results", Results)
+        table.border_title = self.view
+        page = self.state
+        table.clear(columns=True)
+        first = next(iter(page.rows.values()), None)
+        if first is None:
+            return
+        layout = visible(
+            columns(self.view, first.name, first.kind, first.state, first.value),
+            table.size.width or self.size.width - 4,
+        )
+        table.add_column("", width=1, key="mark")
+        for cell in layout:
+            table.add_column(cell.label, width=cell.width, key=cell.label)
+        if page.selection not in page.rows:
+            page.selection = first.id
+        for row in page.rows.values():
+            by_name = {
+                cell.label: cell
+                for cell in columns(self.view, row.name, row.kind, row.state, row.value)
+            }
+            table.add_row(
+                Text("›" if page.selection == row.id else "", style="#7dcfff"),
+                *(cell_text(by_name[c.label]) if c.label in by_name else Text("—") for c in layout),
+                key=row.id,
+            )
+        table.move_cursor(row=tuple(page.rows).index(page.selection), scroll=False)
+        table.scroll_to(*page.scroll, animate=False, immediate=True)
 
     @on(Input.Changed, "#filter")
     def filter_changed(self, event: Input.Changed) -> None:
@@ -296,252 +306,14 @@ class ForgeApp(App[None]):
     async def load_rows(
         self, area: str, view: str, search: str, offset: int
     ) -> tuple[list[Row], bool]:
-        context = self.context
-        paths = context.paths
-        normalized = search.casefold().strip()
-        rows: list[Row] = []
-        more = False
-
-        async def inspect(key: str, values: Values) -> object:
-            return await self.controller.invoke(
-                key, values, context, lambda _: None, self.edit_recipe
-            )
-
-        if area == "Overview":
-            rows = [
-                Row(
-                    "project",
-                    paths.root.name,
-                    "Workspace",
-                    "Local",
-                    {
-                        "workspace": str(paths.root),
-                        "storage": str(paths.data_root),
-                        "registry": "Explicit testing route",
-                    },
-                ),
-                Row(
-                    "doctor",
-                    "Check prerequisites",
-                    "Diagnostics",
-                    "Unchecked",
-                    {"action": "doctor"},
-                ),
-            ]
-            for index, item in enumerate(await disk(list_runs, paths.runs_dir, 8)):
-                run_id = value_at(item, "run_id", str(index))
-                state = value_at(item, "state", value_at(item, "status"))
-                rows.append(
-                    Row(
-                        run_id,
-                        value_at(item, "name", run_id[:8]),
-                        "Retained run",
-                        "Last recorded " + state,
-                        item,
-                        run_id,
-                    )
-                )
-        elif (family := FAMILIES.get(view)) is not None and area in {"Workflows", "Markets"}:
-            directory = self.library(family)
-            rows = [
-                Row(
-                    name,
-                    name,
-                    family,
-                    "Saved",
-                    {"path": str(directory / f"{name}.toml")},
-                    name,
-                    directory / f"{name}.toml",
-                )
-                for name in await disk(list_config_names, directory)
-            ]
-        elif area == "Recipes & Profiles":
-            if view == "Profiles":
-                for item in await disk(discover, paths):
-                    row = str(item["id"])
-                    rows.append(
-                        Row(row, row, "Profile", "Installed", item, row, Path(item["location"]))
-                    )
-            else:
-                for family in FAMILIES.values():
-                    directory = self.library(family)
-                    for name in await disk(list_config_names, directory):
-                        path = directory / f"{name}.toml"
-                        rows.append(
-                            Row(
-                                f"{family}:{name}",
-                                name,
-                                family,
-                                "Saved",
-                                {"path": str(path)},
-                                name,
-                                path,
-                            )
-                        )
-        elif area == "Data":
-            if view == "Raw storage":
-                result = await inspect(
-                    "storage list",
-                    {"limit": 50, "offset": offset, **({"match": search} if search else {})},
-                )
-                for item in records(result, "archives"):
-                    ident = value_at(item, "id", value_at(item, "local_id"))
-                    rows.append(
-                        Row(
-                            ident,
-                            value_at(item, "filename", ident),
-                            value_at(item, "data_type"),
-                            value_at(item, "status"),
-                            item,
-                            ident,
-                        )
-                    )
-                more = len(rows) == 50
-            elif view == "Publications":
-                result = await publications(paths, instrument=search or None, offset=offset)
-                for item in records(result, "publications"):
-                    ident = value_at(item, "registry_publication_id")
-                    rows.append(
-                        Row(
-                            ident,
-                            value_at(item, "engine_dataset_id"),
-                            "Publication",
-                            value_at(item, "operation"),
-                            item,
-                            value_at(item, "representative_file_id"),
-                        )
-                    )
-                more = bool(result["has_more"])
-            else:
-                result = await inspect(
-                    "datasets list",
-                    {"limit": 50, "offset": offset, **({"instrument": search} if search else {})},
-                )
-                for item in records(result, "datasets"):
-                    ident = value_at(item, "id")
-                    rows.append(
-                        Row(
-                            ident,
-                            ident,
-                            value_at(item, "data_type"),
-                            value_at(item, "status"),
-                            item,
-                            ident,
-                        )
-                    )
-                more = bool(document(result).get("has_more"))
-            return rows, more
-        elif area == "Markets":
-            key = "markets rank list" if view == "Rankings" else "markets list"
-            payload: Values = {"limit": 50}
-            if search and view == "Instruments":
-                payload["match"] = search
-            result = await inspect(key, payload)
-            for index, item in enumerate(
-                records(result, "rankings" if view == "Rankings" else "instruments")
-            ):
-                ident = value_at(item, "instrument_reference", value_at(item, "id", str(index)))
-                rows.append(
-                    Row(
-                        ident,
-                        value_at(item, "symbol", value_at(item, "policy_name", ident)),
-                        view,
-                        value_at(item, "status"),
-                        item,
-                        ident,
-                    )
-                )
-        elif area == "Catalog":
-            entity = CATALOG[view]
-            payload: Values = {"limit": 51, "offset": offset, "search": search}
-            result = document(await inspect(f"catalog {entity} list", payload))
-            for key in result:
-                entries = records(result, key)
-                more |= len(entries) > 50
-                for index, item in enumerate(entries[:50]):
-                    ident = value_at(item, "id", str(index))
-                    reference = value_at(item, "code", value_at(item, "identity_key", "")).replace(
-                        "/", "."
-                    )
-                    if not reference:
-                        reference = ".".join(
-                            value_at(item, field)
-                            for field in (
-                                "exchange",
-                                "instrument_type",
-                                "market_category",
-                                "symbol",
-                            )
-                        )
-                    rows.append(
-                        Row(
-                            f"{key}:{ident}",
-                            value_at(item, "symbol", reference),
-                            entity,
-                            value_at(item, "status"),
-                            item,
-                            reference,
-                        )
-                    )
-            return rows, more
-        elif area == "Runs":
-            if view == "Owned":
-                for op in [
-                    *self.controller.history,
-                    *([self.controller.current] if self.controller.active() else []),
-                ]:
-                    if op is not None:
-                        rows.append(Row(op.id, op.title, "Owned", op.state, op, op.id))
-            else:
-                for index, item in enumerate(await disk(list_runs, paths.runs_dir, 50)):
-                    ident = value_at(item, "run_id", str(index))
-                    rows.append(
-                        Row(
-                            ident,
-                            value_at(item, "name", ident[:8]),
-                            value_at(item, "kind", "Retained"),
-                            "Last recorded " + value_at(item, "state", value_at(item, "status")),
-                            item,
-                            ident,
-                        )
-                    )
-        elif area == "System":
-            key = {
-                "Engines": "engine status",
-                "Database": "database status",
-                "Settings": "config show",
-            }[view]
-            if view == "Engines":
-                for item in records(await inspect(key, {}), "targets"):
-                    ident = value_at(item, "target")
-                    rows.append(
-                        Row(ident, ident, "Managed engine", value_at(item, "status"), item, ident)
-                    )
-            else:
-                result = await inspect(key, {})
-                for name, item in document(result).items():
-                    rows.append(Row(name, name, view, "Retained", item))
-        return [
-            row for row in rows if normalized in f"{row.name} {row.kind} {row.reference}".casefold()
-        ][:100], more
-
-    def library(self, family: str) -> Path:
-        paths = self.context.paths
-        return {
-            "pipeline": paths.pipeline_config_dir,
-            "acquisition": paths.acquisition_config_dir,
-            "normalize": paths.normalization_recipe_dir,
-            "merge": paths.config_dir / "historical/merge",
-            "convert": conversion_library(paths),
-            "acquisition import": paths.acquisition_config_dir / "import",
-            "acquisition register": paths.config_dir / "historical/registration",
-            "markets rank": paths.config_dir / "markets/rankings",
-        }[family]
+        return await load_rows(self.controller, area, view, search, offset)
 
     def related(self, row: Row | None) -> tuple[str, ...]:
         if self.area == "Overview":
             return ("doctor", "pipeline run", "runs list")
         if self.area == "Data":
+            if self.view == "Publications":
+                return ()
             return (
                 ("storage show", "storage verify", "storage coverage", "storage delete")
                 if self.view == "Raw storage"
@@ -593,29 +365,29 @@ class ForgeApp(App[None]):
         return ()
 
     async def refresh_context(self) -> None:
-        group = self.query_one("#context-actions", Horizontal)
-        await group.remove_children()
         row = self.state.rows.get(self.state.selection or "")
-        keys = self.related(row)
-        await group.mount(
-            *(
-                Button(key.rsplit(" ", 1)[-1].title(), id=f"context-{index}")
-                for index, key in enumerate(keys)
-            ),
-            *([Button("Edit TOML", id="edit-source")] if row and row.path else []),
-        )
+        self.query_one("#inspect-selected", Button).disabled = row is None
+        self.query_one("#edit-source", Button).display = bool(row and row.path)
+        self.query_one("#context-menu", Button).disabled = not bool(self.related(row))
+        inspector = self.query_one("#inspector", Static)
+        inspector.border_title = row.name if row else "Selection"
+        inspector.update(fields(row.value) if row else Text("Select a resource"))
 
     @on(DataTable.RowHighlighted, "#results")
     async def highlighted(self, event: DataTable.RowHighlighted) -> None:
         if event.row_key.value in self.state.rows:
+            old = self.state.selection
             self.state.selection = event.row_key.value
+            self.query_one("#results", Results).mark(old, self.state.selection)
             await self.refresh_context()
 
     @on(DataTable.RowSelected, "#results")
     async def selected(self, event: DataTable.RowSelected) -> None:
         row = self.state.rows.get(event.row_key.value or "")
-        if row is None:
-            return
+        if row is not None:
+            await self.inspect_row(row)
+
+    async def inspect_row(self, row: Row) -> None:
         if isinstance(row.value, Operation):
             self.show_operation(row.value)
             return
@@ -633,39 +405,190 @@ class ForgeApp(App[None]):
             )
         detail = row.value
         if row.kind == "Publication":
-            actions.pop("Copy ID", None)
-            actions["Copy registry publication ID"] = partial(self.copy_value, row.id)
-            actions["Copy engine publication ID"] = partial(self.copy_value, row.name)
-            try:
-                publication = await publications(self.context.paths, identity=int(row.id))
-                rows = records(publication, "publications")
-                detail = rows[0] if rows else {"state": "unavailable", "retained": row.value}
-                actions["Browse primary files"] = partial(self.open_publication_files, row.name)
-                execution = document(document(detail).get("execution"))
-                if execution.get("execution_id"):
-                    actions["Related execution"] = partial(
-                        self.open_managed_run, str(execution["execution_id"])
-                    )
-            except Exception as error:
-                detail = {"error": str(error), "retained": row.value}
+            await self.inspect_publication(int(row.id))
+            return
         if row.path:
             try:
                 detail = {**document(row.value), "source_toml": await disk(read_source, row.path)}
             except OSError as error:
                 detail = {"error": str(error), "path": str(row.path)}
-        screen = RunDetail if self.area == "Runs" else Detail
-        self.push_screen(screen(row.name, detail, actions=actions))
+        selected = self.selection(row)
+        if selected.kind == "file":
+            actions.update(self.file_links(int(selected.identity)))
+        self.push_screen(Inspection(row.name, detail, actions=actions))
+
+    async def inspect_publication(
+        self, identity: int, offset: int = 0, *, section: str = "Summary"
+    ) -> None:
+        try:
+            value = await publications(self.context.paths, identity=identity, file_offset=offset)
+            matches = records(value, "publications")
+            if not matches:
+                raise ValueError("The retained publication is unavailable.")
+            publication = matches[0]
+        except Exception as error:
+            self.push_screen(Inspection("Publication evidence", {"error": str(error)}))
+            return
+        engine = value_at(publication, "engine_dataset_id")
+
+        def choose(section: str, item: Mapping[str, object]) -> None:
+            if section == "Streams":
+                stream = Selection("stream", value_at(item, "stream_id", value_at(item, "id")))
+                self.push_screen(
+                    Inspection(
+                        f"Stream {stream.identity}",
+                        item,
+                        actions={"Copy stream ID": partial(self.copy_value, stream.identity)},
+                    )
+                )
+                return
+            if section != "Files":
+                return
+            file_id = value_at(item, "registry_primary_file_id")
+            if file_id.isdecimal():
+                self.inspect_file(int(file_id), value_at(item, "primary_file"))
+
+        links: dict[str, Callable[[], object]] = {
+            "Copy registry publication ID": partial(self.copy_value, str(identity)),
+            "Copy engine publication ID": partial(self.copy_value, engine),
+        }
+        if publication.get("primary_files_truncated"):
+            links["Next file page"] = partial(self.publication_page, identity, offset + 50)
+        if offset:
+            links["Previous file page"] = partial(
+                self.publication_page, identity, max(0, offset - 50)
+            )
+        files = records(publication, "primary_files")
+        if files:
+            anchor = int(value_at(files[0], "registry_primary_file_id"))
+            links["Publication lineage"] = partial(
+                self.inspect_publication_lineage, anchor, identity
+            )
+        execution = document(publication.get("execution"))
+        if execution.get("execution_id"):
+            links["Related execution"] = partial(
+                self.open_managed_run, str(execution["execution_id"])
+            )
+        summary = {
+            key: val
+            for key, val in publication.items()
+            if key not in {"streams", "primary_files", "execution"}
+        }
+        streams = records(publication, "streams")
+        summary["Instruments"] = membership(streams, "symbol")
+        summary["Stream count"] = len(streams) if publication.get("streams") is not None else None
+        requested = document(publication.get("requested_interval"))
+        for key, label in (
+            ("start_ns", "Requested start UTC"),
+            ("end_ns", "Requested end UTC (exclusive)"),
+        ):
+            bound = requested.get(key)
+            summary[label] = utc(bound) if isinstance(bound, int) else bound
+        summary["File offset"] = offset
+        summary["Scope"] = (
+            "Registry publication. Choose a primary file for schema, sampling, or verification."
+        )
+        self.push_screen(
+            Inspection(
+                f"Publication {identity}  ·  Engine {engine}",
+                publication,
+                actions=links,
+                sections={
+                    "Summary": summary,
+                    "Streams": publication.get("streams"),
+                    "Files": files,
+                    "Evidence": {
+                        "manifest_path": publication.get("manifest_path"),
+                        "manifest_sha256": publication.get("manifest_sha256"),
+                    },
+                },
+                choose=choose,
+                section=section,
+            )
+        )
 
     @work(exit_on_error=False)
-    async def open_publication_files(self, engine_id: str) -> None:
-        values: Values = {"publication": engine_id, "limit": 50, "offset": 0}
-        await self.start_action(BY_KEY["datasets list"], values)
+    async def publication_page(self, identity: int, offset: int) -> None:
+        if isinstance(self.screen, Inspection):
+            self.pop_screen()
+        await self.inspect_publication(identity, offset, section="Files")
+
+    @work(exit_on_error=False)
+    async def inspect_publication_lineage(self, file_id: int, publication: int) -> None:
+        await self.inspect_request(
+            "datasets lineage",
+            {"id": file_id, "publication": True, "checksums": False, "limit": 25},
+            f"Publication {publication} / Lineage",
+        )
+
+    @work(exit_on_error=False)
+    async def inspect_file(self, identity: int, name: str) -> None:
+        await self.inspect_request(
+            "datasets show",
+            {"id": identity},
+            f"Primary file {identity}  ·  {name}",
+            self.file_links(identity),
+        )
+
+    def file_links(self, identity: int) -> dict[str, Callable[[], object]]:
+        selection = Row(str(identity), str(identity), "File", "", {}, str(identity))
+        return {
+            label: partial(self.open_action, BY_KEY[key], selection)
+            for label, key in (
+                ("File schema", "datasets schema"),
+                ("Bounded file sample", "datasets head"),
+                ("File lineage", "datasets lineage"),
+                ("Verify primary file", "datasets verify"),
+            )
+        }
+
+    async def inspect_request(
+        self,
+        key: str,
+        values: Values,
+        label: str,
+        links: dict[str, Callable[[], object]] | None = None,
+    ) -> None:
+        try:
+            result = await self.controller.invoke(
+                key, values, self.context, lambda _: None, self.edit_recipe
+            )
+            if key == "datasets verify":
+                result = {
+                    **document(result),
+                    "verification_scope": "Selected primary file and shared manifest",
+                }
+            self.push_screen(
+                Inspection(
+                    label,
+                    result,
+                    actions=links,
+                    choose=self.follow_lineage if key == "datasets lineage" else None,
+                )
+            )
+        except Exception as error:
+            self.push_screen(Inspection(label, {"error": str(error)}))
+
+    def follow_lineage(self, section: str, item: Mapping[str, object]) -> None:
+        identity = value_at(item, "id")
+        if not identity.isdecimal():
+            return
+        if section in {"Raw inputs", "Selected archives"}:
+            self.inspect_archive(identity)
+        else:
+            self.inspect_file(int(identity), value_at(item, "primary_file"))
+
+    @work(exit_on_error=False)
+    async def inspect_archive(self, identity: str) -> None:
+        await self.inspect_request(
+            "storage show", {"archive": identity}, f"Local archive {identity}"
+        )
 
     @work(exit_on_error=False)
     async def open_managed_run(self, identity: str) -> None:
         try:
             item = await disk(read_managed_report, self.context.paths.runs_dir, identity)
-            self.push_screen(Detail(identity, item))
+            self.push_screen(Inspection(identity, item))
         except Exception as error:
             self.push_screen(Detail(identity, str(error), raw=True))
 
@@ -681,26 +604,53 @@ class ForgeApp(App[None]):
             await self.switch(AREAS[int(key.split("-")[1])])
         elif key.startswith("view-"):
             await self.switch(self.area, VIEWS[self.area][int(key.split("-")[1])])
-        elif key.startswith("context-"):
+        elif key == "context-menu":
+            self.action_context()
+        elif key == "inspect-selected":
             row = self.state.rows.get(self.state.selection or "")
-            keys = self.related(row)
-            index = int(key.split("-")[1])
-            if index < len(keys):
-                self.open_action(BY_KEY[keys[index]], row)
+            if row:
+                await self.inspect_row(row)
         elif key == "edit-source":
             row = self.state.rows.get(self.state.selection or "")
             if row and row.path:
                 self.edit_selected(row)
 
+    def action_context(self) -> None:
+        if self.screen != self.root_screen:
+            return
+        row = self.state.rows.get(self.state.selection or "")
+        keys = self.related(row)
+        if keys:
+
+            def choose(key: str | None) -> None:
+                if key is not None:
+                    self.open_action(BY_KEY[key], row)
+
+            self.push_screen(ActionMenu(row.name if row else self.view, keys), choose)
+
+    def selection(self, row: Row) -> Selection:
+        item = document(row.value)
+        if row.kind == "Publication":
+            return Selection("publication", row.id)
+        if row.reference.isdecimal() and (row.kind == "File" or self.view == "Primary files"):
+            return Selection("file", row.reference)
+        if row.reference.isdecimal() and self.view == "Raw storage":
+            return Selection("archive", row.reference)
+        if row.kind == "Instruments" and item.get("symbol"):
+            return Selection(
+                "instrument",
+                row.id,
+                value_at(item, "reference", row.reference),
+                value_at(item, "exchange", ""),
+                value_at(item, "market_category", ""),
+                value_at(item, "symbol", ""),
+            )
+        if self.area == "Runs" or row.kind in {"Run", "Retained run"}:
+            return Selection("run", row.id)
+        return Selection("recipe" if row.path else "other", row.id, row.reference)
+
     def preset(self, action: Action, row: Row | None) -> Values:
-        if row is None or not action.fields:
-            return {}
-        name = action.fields[0].key
-        if name == "id" and row.reference.isdecimal():
-            return {"id": int(row.reference)}
-        if name in {"reference", "archive"}:
-            return {name: row.reference}
-        return {}
+        return bind(action, self.selection(row)) if row else {}
 
     @work(exit_on_error=False)
     async def open_action(
@@ -708,20 +658,76 @@ class ForgeApp(App[None]):
     ) -> None:
         choices: tuple[str, ...] = ()
         family = action.key.rsplit(" ", 1)[0]
-        if family in FAMILIES.values() and not action.key.endswith((" new", " register")):
-            choices = await disk(list_config_names, self.library(family))
+        values_from_context = preset or self.preset(action, row)
+        direct = {
+            "datasets show",
+            "datasets schema",
+            "datasets verify",
+            "datasets streams",
+            "storage show",
+            "markets show",
+            "runs report",
+            "pipeline status",
+        }
+        if values_from_context and action.key in direct:
+            scope = (
+                f" / Primary file {values_from_context['id']}"
+                if "id" in values_from_context
+                else ""
+            )
+            await self.inspect_request(action.key, values_from_context, action.key + scope)
+            return
+        if action.key in {
+            "pipeline resume",
+            "pipeline status",
+            "runs show",
+            "runs report",
+            "runs logs",
+        }:
+            listing, _ = await disk(
+                run_page,
+                self.context.paths.runs_dir,
+                100,
+                0,
+                pipeline_only=action.key.startswith("pipeline "),
+            )
+            choices = tuple(str(item["run_id"]) for item in listing)
+        elif family in FAMILIES.values() and not action.key.endswith((" new", " register")):
+            choices = await disk(list_config_names, library(self.context, family))
         if action.fields:
             values = await self.push_screen_wait(
-                Form(action, preset or self.preset(action, row), choices, self.context.paths.root)
+                Form(action, values_from_context, choices, self.context.paths.root)
             )
             if values is None:
                 return
         else:
             values = {}
         if action.effect in {"engine", "network", "write"} and not read_only(action, values):
-            if not await self.push_screen_wait(Confirm(action.key, action.command(values))):
+            if not await self.push_screen_wait(
+                Confirm(action.key, await self.review_scope(action, values))
+            ):
                 return
         await self.start_action(action, values)
+
+    async def review_scope(self, action: Action, values: Values) -> str:
+        text = review_text(values)
+        family = action.key.rsplit(" ", 1)[0]
+        reference = values.get("reference")
+        if family not in FAMILIES.values() or not isinstance(reference, str) or "/" in reference:
+            return text
+        import tomllib
+
+        try:
+            data = await disk(
+                read_source,
+                library(self.context, family) / (reference.removesuffix(".toml") + ".toml"),
+            )
+            interval = document(tomllib.loads(data).get("interval"))
+        except (OSError, ValueError):
+            return text
+        if interval.get("start") and interval.get("end"):
+            text += f"\nRequested interval  {interval['start']} → {interval['end']} (end exclusive)"
+        return text
 
     async def start_action(self, action: Action, values: Values) -> None:
         if action.effect == "editor":
@@ -762,10 +768,10 @@ class ForgeApp(App[None]):
             return
         if action.effect == "guarded" and op.error is None:
             await self.review_action(action, values, op)
-        elif self.screen == self.root_screen:
+        elif read_only(action, values) and self.screen == self.root_screen:
             self.show_operation(op, action, values)
         else:
-            self.notify(f"{op.title} · {op.state}. Open owned runs for details.")
+            self.notify(f"{op.title} · {op.state}. Ctrl+O opens the result.")
 
     async def review_action(self, action: Action, values: Values, op: Operation) -> None:
         reviewed = dict(document(op.result))
@@ -798,7 +804,7 @@ class ForgeApp(App[None]):
 
                 apply = partial(self.apply_review, action, values, apply_ranks)
         self.push_screen(
-            Detail(
+            Inspection(
                 "Review exact selection",
                 op.result,
                 actions={"Apply reviewed selection": apply} if apply else None,
@@ -870,21 +876,54 @@ class ForgeApp(App[None]):
         elif self.controller.active() and isinstance(phase, str):
             label += f" · {phase}"
         widget.update(label)
+        for indicator in self.screen.query("#inspection-operation").results(Static):
+            indicator.update(label)
+            indicator.display = True
+        widget.set_class(op.state == "failed", "failed")
+        widget.set_class(op.state in {"complete", "registered"}, "complete")
+        widget.set_class(op.state in {"stopped", "blocked", "interrupted"}, "warning")
 
     def show_operation(
         self, op: Operation, action: Action | None = None, values: Values | None = None
     ) -> None:
+        if action is not None and read_only(action, values or {}):
+            result = {"error": op.error} if op.error else op.result
+            self.push_screen(
+                Inspection(op.title, result, actions=self.operation_links(op, action, values))
+            )
+        else:
+            self.push_screen(OperationView(op, partial(self.operation_links, op, action, values)))
+
+    def operation_links(
+        self, op: Operation, action: Action | None, values: Values | None
+    ) -> dict[str, Callable[[], object]]:
         result = document(op.result)
         links: dict[str, Callable[[], object]] = {}
+        if (
+            result.get("run_id")
+            and result.get("kind") == "historical_pipeline"
+            and op.state in {"stopped", "blocked", "interrupted", "failed"}
+        ):
+            identity = str(result["run_id"])
+            links["Resume retained pipeline"] = partial(
+                self.open_action, BY_KEY["pipeline resume"], None, {"reference": identity}
+            )
         if result.get("run_id"):
             ref = str(result["run_id"])
             links["Open report"] = lambda: self.open_action(
                 BY_KEY["runs report"], Row(ref, ref, "Run", "", {}, ref)
             )
-        if result.get("execution_receipt") and (key := op.title.split()[0] + " register") in BY_KEY:
+        if (
+            result.get("execution_receipt")
+            and result.get("registration") != "registered"
+            and (key := op.title.split()[0] + " register") in BY_KEY
+        ):
             ref = str(result["execution_receipt"])
             links["Recover registration"] = lambda: self.open_action(
                 BY_KEY[key], Row(ref, ref, "Intent", "", {}, ref)
+            )
+            links["Run logs"] = partial(
+                self.open_action, BY_KEY["runs logs"], None, {"reference": ref}
             )
         ids = dict.fromkeys(
             str(value) for value in document(result.get("catalogue_dataset_ids")).values()
@@ -906,19 +945,7 @@ class ForgeApp(App[None]):
         ):
             links["Edit request"] = partial(self.open_action, action, None, values)
 
-        def display() -> object:
-            from dataclasses import asdict
-
-            phase = op.snapshot()
-            if isinstance(phase, (PipelineSnapshot, ProgressSnapshot)):
-                phase = asdict(phase)
-            return {"state": op.state, "activity": phase, "error": op.error, "result": op.result}
-
-        if op.state in {"running", "interrupting"}:
-            self.push_screen(LiveDetail(op.title, display))
-        else:
-            detail = RunDetail if result.get("run_id") or result.get("execution_id") else Detail
-            self.push_screen(detail(op.title, display(), actions=links))
+        return links
 
     def action_operation(self) -> None:
         if self.controller.current:
@@ -953,3 +980,12 @@ class ForgeApp(App[None]):
 def read_source(path: Path) -> str:
     with path.open("rb") as stream:
         return stream.read(256 * 1024).decode("utf-8", errors="replace")
+
+
+def review_text(values: Values) -> str:
+    selected = "\n".join(
+        f"{key.replace('_', ' ').capitalize()}  {value}"
+        for key, value in values.items()
+        if value not in ("", False)
+    )
+    return "Environment  Testing" + ("\n" + selected if selected else "")

@@ -8,7 +8,7 @@ from typing import cast
 
 import pytest
 from rich.console import Console
-from textual.widgets import Input, Static, TextArea
+from textual.widgets import Input, Static
 
 from forge.cli.main import build_parser, main
 from forge.shared.config.models import AppSettings
@@ -18,7 +18,8 @@ from forge.startup.context import ApplicationContext
 from forge.tui.actions import BY_KEY, Values
 from forge.tui.app import ForgeApp, Results
 from forge.tui.controller import Controller
-from forge.tui.screens import Confirm, Detail, Form
+from forge.tui.operation_view import OperationView
+from forge.tui.screens import Confirm, Form
 from forge.tui.workflows import Edit, Progress
 
 
@@ -100,7 +101,7 @@ async def test_palette_and_navigation_while_owned_operation_runs(
             progress("normalize prepare")
             started.set()
             await finish.wait()
-            return {"state": "stopped"}
+            return {"state": "stopped", "kind": "historical_pipeline", "run_id": "abc"}
         return {"runs": []}
 
     app = ForgeApp(context, invoke=invoke)
@@ -125,17 +126,25 @@ async def test_palette_and_navigation_while_owned_operation_runs(
         assert app.area == "Runs"
         assert app.controller.active()
         assert calls[0] == ("pipeline run", {"reference": "tiny", "stop_after": ""})
-        finish.set()
+        await pilot.press("ctrl+o")
         await pilot.pause()
+        live = app.screen
+        assert isinstance(live, OperationView)
+        assert live.query_one("#op-actions").disabled
+        finish.set()
+        await pilot.pause(0.4)
+        assert app.screen is live
         assert app.controller.current is not None
         assert app.controller.current.state == "stopped"
-        assert isinstance(app.screen, Detail)
-        assert '"stopped"' in app.screen.query_one(TextArea).text
+        assert not live.query_one("#op-actions").disabled
+        assert "Resume retained pipeline" in live.choices()
 
 
 @pytest.mark.asyncio
 async def test_query_versions_and_page_selection(context: ApplicationContext) -> None:
     requests: list[Values] = []
+    slow_started = asyncio.Event()
+    release_stale = asyncio.Event()
 
     async def invoke(
         key: str, values: Values, _: ApplicationContext, progress: Progress, editor: Edit
@@ -143,9 +152,20 @@ async def test_query_versions_and_page_selection(context: ApplicationContext) ->
         if key == "datasets list":
             requests.append(dict(values))
             symbol = values.get("instrument", "all")
+            if symbol == "obsolete":
+                slow_started.set()
+                try:
+                    await release_stale.wait()
+                except asyncio.CancelledError:
+                    await release_stale.wait()
             return {
                 "datasets": [
-                    {"id": 12, "status": "complete", "symbol": symbol, "data_type": "trade"}
+                    {
+                        "id": 99 if symbol == "obsolete" else 12,
+                        "status": "complete",
+                        "symbol": symbol,
+                        "data_type": "trade",
+                    }
                 ],
                 "has_more": True,
             }
@@ -162,6 +182,13 @@ async def test_query_versions_and_page_selection(context: ApplicationContext) ->
         await pilot.pause(0.3)
         assert not any(request.get("instrument") == "A" for request in requests)
         assert requests[-1]["instrument"] == "BTCUSDT"
+        field.value = "obsolete"
+        await asyncio.wait_for(slow_started.wait(), timeout=2)
+        field.value = "BTCUSDT"
+        await pilot.pause(0.4)
+        release_stale.set()
+        await pilot.pause()
+        assert list(app.state.rows) == ["12"]
         app.action_next()
         await pilot.pause(0.3)
         assert requests[-1]["offset"] == 50
@@ -234,3 +261,153 @@ async def test_quit_confirmation_and_copy_fallback(context: ApplicationContext) 
         await pilot.click("#confirm")
         assert (await task).state == "interrupted"
         assert cleaned.is_set()
+
+
+@pytest.mark.asyncio
+async def test_publication_actions_require_explicit_file_scope(
+    context: ApplicationContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from forge.tui import app as shell
+    from forge.tui import resources
+    from forge.tui.inspection import Inspection, RecordTable
+
+    calls: list[tuple[str, Values]] = []
+    fixture: dict[str, object] = {
+        "registry_publication_id": 7,
+        "engine_dataset_id": "700",
+        "operation": "merge",
+        "representative_file_id": 11,
+        "primary_file_count": 2,
+        "streams": [{"symbol": "BTCUSDT", "kind": "trade"}, {"symbol": "ETHBTC", "kind": "depth"}],
+        "primary_files": [
+            {"registry_primary_file_id": 11, "primary_file": "trades.parquet"},
+            {"registry_primary_file_id": 12, "primary_file": "depth.parquet"},
+        ],
+    }
+
+    async def publications(*args: object, **kwargs: object) -> dict[str, object]:
+        return {"publications": [fixture], "has_more": False}
+
+    async def invoke(
+        key: str, values: Values, _: ApplicationContext, progress: Progress, editor: Edit
+    ) -> object:
+        calls.append((key, values))
+        if key == "datasets verify":
+            return {"status": "verified", "entire_publication_verified": False}
+        return {"file": {"id": values["id"]}}
+
+    monkeypatch.setattr(shell, "publications", publications)
+    monkeypatch.setattr(resources, "publications", publications)
+    app = ForgeApp(context, invoke=invoke)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await app.switch("Data", "Publications")
+        await pilot.pause(0.3)
+        assert app.query_one(Results).size.height >= 15
+        assert app.query_one("#area-2").has_class("active")
+        app.query_one(Results).focus()
+        await pilot.press("enter")
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, Inspection)
+        assert "Verify primary file" not in screen.links
+        await pilot.click("#section-1")
+        assert screen.query_one(RecordTable).row_count == 2
+        await pilot.click("#section-2")
+        screen.query_one(RecordTable).move_cursor(row=1, column=0)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert calls == [("datasets show", {"id": 12})]
+        child = app.screen
+        assert isinstance(child, Inspection)
+        child.links["Verify primary file"]()
+        await pilot.pause()
+        assert calls[-1] == ("datasets verify", {"id": 12})
+        assert isinstance(app.screen, Inspection)
+        evidence = cast(dict[str, object], app.screen.evidence)
+        assert evidence["entire_publication_verified"] is False
+        await pilot.press("escape", "escape", "escape")
+        assert app.state.selection == "7"
+
+
+@pytest.mark.asyncio
+async def test_instrument_binding_run_selector_and_market_next_page(
+    context: ApplicationContext,
+) -> None:
+    import json
+    from uuid import uuid4
+
+    from forge.tui.resources import Row
+
+    saved = str(uuid4())
+    directory = context.paths.runs_dir / saved
+    directory.mkdir(parents=True)
+    (directory / "report.json").write_text(
+        json.dumps({"kind": "historical_pipeline", "name": "old recipe"})
+    )
+    pages: list[int] = []
+
+    async def invoke(
+        key: str, values: Values, _: ApplicationContext, progress: Progress, editor: Edit
+    ) -> object:
+        if key != "markets list":
+            return {}
+        offset = int(values.get("offset", 0))
+        pages.append(offset)
+        return {
+            "instruments": [
+                {
+                    "id": offset + 2,
+                    "symbol": "ETHBTC",
+                    "reference": "bybit.spot.ETHBTC",
+                    "exchange": "bybit",
+                    "market_category": "spot",
+                    "instrument_type": "spot",
+                }
+            ],
+            "has_more": offset == 0,
+        }
+
+    app = ForgeApp(context, invoke=invoke)
+    async with app.run_test(size=(120, 32)) as pilot:
+        app.open_action(BY_KEY["pipeline resume"])
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, Form)
+        assert form.choices == (saved,)
+        await pilot.press("escape")
+        await app.switch("Markets", "Instruments")
+        await pilot.pause(0.3)
+        row = app.state.rows["bybit.spot.ETHBTC"]
+        assert isinstance(row, Row)
+        assert app.preset(BY_KEY["markets refresh"], row) == {
+            "exchanges": "bybit",
+            "markets": "spot",
+            "instrument": "ETHBTC",
+        }
+        await pilot.press("pagedown")
+        await pilot.pause(0.3)
+        assert pages[-2:] == [0, 50]
+        item = app.state.rows["bybit.spot.ETHBTC"].value
+        assert isinstance(item, dict) and item["id"] == 52
+
+
+def test_retained_search_precedes_page_limit(context: ApplicationContext) -> None:
+    import json
+    import os
+    from uuid import UUID
+
+    from forge.orchestration.inspection import run_page
+
+    for index in range(71):
+        directory = context.paths.runs_dir / str(UUID(int=index + 1))
+        directory.mkdir(parents=True)
+        (directory / "report.json").write_text(
+            json.dumps({"name": "Rare target" if index == 0 else "Other"})
+        )
+        os.utime(directory, (100 + index, 100 + index))
+    first, more = run_page(context.paths.runs_dir, 50, 0)
+    second, rest = run_page(context.paths.runs_dir, 50, 50)
+    match, _ = run_page(context.paths.runs_dir, 50, 0, "rare")
+    assert more and not rest
+    assert len(first) == 50 and len(second) == 21
+    assert match[0]["name"] == "Rare target"
