@@ -70,6 +70,7 @@ def recipe_path_if_valid(context: ApplicationContext, reference: str) -> Path | 
 
 def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
     action = arguments.normalization_action
+    supplied: Path | None = None
 
     if action == "run":
         reference = arguments.reference
@@ -85,7 +86,7 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
             execute(
                 context.paths, supplied, tui=arguments.tui, allow_partial=arguments.allow_partial
             )
-            if action == "run"
+            if supplied is not None and action == "run"
             else asyncio.run(
                 (
                     recover
@@ -118,6 +119,8 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
             source = create_recipe(context.paths, arguments.configuration_name, acquisition)
         # Editors are interactive subprocesses; never hold the workspace lock while editing.
         edit_file(source, editor=context.settings.presentation.editor)
+    if not source.is_file():
+        raise MarketForgeError(f"Normalization recipe file is unavailable: {source}")
     request = load_configuration(source)
     result: dict[str, object]
     if action in {"new", "validate"}:

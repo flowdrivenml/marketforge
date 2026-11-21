@@ -39,8 +39,16 @@ format_profile = "explicit-profile"
 """)
     assert main([*args, "validate", "example.toml"]) == 0
     assert json.loads(capsys.readouterr().out)["status"] == "valid"
-    assert main([*args, "validate", "../escape"]) == 2
-    assert "Directory paths" in capsys.readouterr().err
+    explicit = workspace.parent / "explicit.toml"
+    explicit.write_bytes(path.read_bytes())
+    monkeypatch.chdir(workspace)
+    assert main([*args, "validate", "../explicit.toml"]) == 0
+    assert json.loads(capsys.readouterr().out)["path"] == str(explicit)
+
+    missing = workspace.parent / "unavailable.toml"
+    assert main([*args, "validate", "../unavailable.toml"]) == 2
+    error = json.loads(capsys.readouterr().err)["error"]["message"]
+    assert error == f"Normalization recipe file is unavailable: {missing}"
 
 
 def test_prepare_requires_testing(workspace: Path) -> None:
