@@ -28,14 +28,19 @@ from forge.shared.database.testing import testing_connection as registry_connect
 from forge.shared.database.testing import testing_dsn as registry_dsn
 from forge.shared.http.client import open_http_client
 from forge.shared.paths import ProjectPaths
+from forge.startup.context import build_context
+from forge.tui.actions import BY_KEY
+from forge.tui.app import ForgeApp
 
 from .test_acquisition_execution import ImmediateLimiter, install_http
 
 pytestmark = [pytest.mark.integration, pytest.mark.database]
 
 
+@pytest.mark.parametrize("interface", ["cli", "tui"])
 def test_prepared_stop_resume_and_new_run(
     workspace: Path,
+    interface: str,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -172,7 +177,32 @@ scope = { kind = "instrument", identifier = "BTCUSDT" }
         return result.local_archive_id
 
     unrelated = asyncio.run(register_unrelated())
-    code, stopped = invoke("run", "tiny", "--testing", "--stop-after", "normalize.prepare")
+    from textual.widgets import Input, Select
+
+    async def interact(stop: bool) -> dict[str, Any]:
+        app = ForgeApp(build_context(project_root=workspace))
+        async with app.run_test(size=(105, 28)) as pilot:
+            app.open_action(BY_KEY["pipeline run"])
+            await pilot.pause()
+            app.screen.query_one("#field-reference", Input).value = "tiny"
+            if stop:
+                cast(
+                    Select[str], app.screen.query_one("#field-stop_after")
+                ).value = "normalize.prepare"
+            await pilot.click("#submit")
+            await pilot.click("#confirm")
+            async with asyncio.timeout(30):
+                while app.controller.current is None:
+                    await pilot.pause()
+            assert app.controller.task is not None
+            operation = await asyncio.wait_for(asyncio.shield(app.controller.task), timeout=30)
+            assert not operation.error
+            return cast(dict[str, Any], operation.result)
+
+    if interface == "tui":
+        stopped, code = asyncio.run(interact(stop=True)), 0
+    else:
+        code, stopped = invoke("run", "tiny", "--testing", "--stop-after", "normalize.prepare")
     assert code == 0, stopped.get("error")
     assert stopped["state"] == "stopped"
     run_id = str(stopped["run_id"])
@@ -237,7 +267,10 @@ scope = { kind = "instrument", identifier = "BTCUSDT" }
     assert json.loads((merged_path / "manifest.json").read_text())["events_written"] == 2
     recipe.write_bytes(original_recipe)
     shutil.copyfile(original / "general.toml", historical / "general.toml")
-    code, second = invoke("run", "tiny", "--testing")
+    if interface == "tui":
+        second, code = asyncio.run(interact(stop=False)), 0
+    else:
+        code, second = invoke("run", "tiny", "--testing")
     assert code == 0, second.get("error")
     assert second["run_id"] != run_id
     new_stages = cast(dict[str, dict[str, Any]], second["stages"])

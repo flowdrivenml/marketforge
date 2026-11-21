@@ -95,6 +95,8 @@ async def delete_snapshots(
     *,
     all_snapshots: bool = False,
     apply: bool = False,
+    expected: frozenset[str] | None = None,
+    expected_eligible: frozenset[str] | None = None,
 ) -> dict[str, object]:
     identity, policy = selection(selector, all_snapshots)
     owned = c.info.transaction_status == TransactionStatus.IDLE
@@ -113,7 +115,19 @@ async def delete_snapshots(
                     (all_snapshots, identity, identity, policy, policy),
                 )
                 rows = list(await cursor.fetchall())
+            if expected is not None and frozenset(str(row["id"]) for row in rows) != expected:
+                raise MarketForgeError(
+                    "Ranking selection changed after review; create a new preview."
+                )
             references = await dependencies(c, paths)
+            if (
+                expected_eligible is not None
+                and frozenset(str(row["id"]) for row in rows if not references.get(str(row["id"])))
+                != expected_eligible
+            ):
+                raise MarketForgeError(
+                    "Ranking dependency evidence changed after review; create a new preview."
+                )
             results: list[dict[str, object]] = []
             for row in rows:
                 snapshot = str(row["id"])

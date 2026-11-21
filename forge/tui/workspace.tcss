@@ -1,0 +1,40 @@
+Screen { background: #1a1b26; color: #c0caf5; }
+#workspace-header { height: 2; padding: 0 1; background: #24283b; color: #7aa2f7; text-style: bold; }
+#workspace-body { height: 1fr; }
+#navigation { width: 22; background: #24283b; padding: 0 1; }
+#navigation Button { width: 100%; min-width: 0; border: none; height: 2; background: #24283b; color: #c0caf5; text-align: left; content-align: left middle; }
+#navigation Button:focus { background: #33467c; color: #ffffff; }
+#main { width: 1fr; padding: 0 1; }
+#section-title { height: 1; color: #7dcfff; text-style: bold; }
+#views { height: 3; overflow-x: auto; }
+#views Button { min-width: 0; width: auto; padding: 0 1; }
+#filter { height: 3; }
+#results { height: 1fr; border: none; border-top: solid #565f89; background: #1a1b26; color: #c0caf5; }
+#results > .datatable--header { color: #7aa2f7; background: #24283b; }
+#results > .datatable--cursor { color: #c0caf5; background: #33467c; }
+#context-actions { height: 3; overflow-x: auto; }
+#context-actions Button { width: auto; min-width: 0; padding: 0 1; }
+#query-state, #operation { height: 1; padding: 0 1; }
+#operation { color: #7dcfff; background: #24283b; }
+#query-state.-error, #form-error { color: #f7768e; }
+.narrow #navigation { display: none; }
+.narrow.nav-open #navigation { display: block; }
+ModalScreen { align: center middle; background: #11111b 75%; }
+.dialog { width: 84%; height: 91%; max-height: 94%; border: round #565f89; padding: 0 1; background: #1a1b26; }
+.dialog-title { color: #7dcfff; text-style: bold; height: 2; }
+.fields { height: 1fr; }
+#form-error { height: auto; max-height: 2; }
+.form-field { height: auto; margin-bottom: 1; }
+.buttons { height: 3; overflow-x: auto; }
+.buttons Button { width: auto; min-width: 0; margin-right: 1; }
+.detail { height: 88%; }
+#detail-text { height: 1fr; border: solid #565f89; }
+.confirmation { width: 72%; height: auto; padding: 1 2; }
+
+.nav-hidden #navigation { display: none; }
+.short #workspace-header, .short #section-title { height: 1; }
+.path-field { height: 3; }
+.path-field Input { width: 1fr; }
+.path-field Button { width: auto; min-width: 0; }
+#path-tree { height: 1fr; }
+#path-selection { height: 1; }

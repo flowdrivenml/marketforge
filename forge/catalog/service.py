@@ -223,14 +223,28 @@ async def add_specification(c: Connection, declaration: Specification) -> dict[s
     )[0]
 
 
-async def browse(c: Connection, kind: str, key: str | None) -> dict[str, Any]:
+async def browse(
+    c: Connection,
+    kind: str,
+    key: str | None,
+    *,
+    limit: int | None = None,
+    offset: int = 0,
+    search: str = "",
+) -> dict[str, Any]:
+    if limit is not None and (not 1 <= limit <= 1000 or offset < 0):
+        raise MarketForgeError("Invalid catalogue page.")
+    pattern = f"%{search}%"
+
     if kind == "exchange":
         return (
             await exchange(c, key)
             if key
             else {
                 "exchanges": await rows(
-                    c, "SELECT id,code,name FROM catalog.exchanges ORDER BY code"
+                    c,
+                    "SELECT id,code,name FROM catalog.exchanges WHERE (code || name) ILIKE %s ORDER BY code LIMIT %s OFFSET %s",
+                    (pattern, limit, offset),
                 )
             }
         )
@@ -261,8 +275,9 @@ async def browse(c: Connection, kind: str, key: str | None) -> dict[str, Any]:
     if kind == "instrument":
         entries = await rows(
             c,
-            IDENTITIES + " ORDER BY e.code,i.instrument_type,i.market_category,i.symbol",
-            (NAMESPACE,),
+            IDENTITIES
+            + " WHERE (e.code || i.symbol) ILIKE %s ORDER BY e.code,i.instrument_type,i.market_category,i.symbol LIMIT %s OFFSET %s",
+            (NAMESPACE, pattern, limit, offset),
         )
         for entry in entries:
             entry.pop("authority")
@@ -273,14 +288,16 @@ async def browse(c: Connection, kind: str, key: str | None) -> dict[str, Any]:
             """SELECT e.code AS exchange,i.instrument_type,i.market_category,i.symbol,s.*
             FROM catalog.instrument_specs s JOIN catalog.instruments i ON i.id=s.instrument_id
             JOIN catalog.exchanges e ON e.id=i.exchange_id
-            ORDER BY e.code,i.instrument_type,i.market_category,i.symbol""",
+            WHERE (e.code || i.symbol) ILIKE %s
+            ORDER BY e.code,i.instrument_type,i.market_category,i.symbol LIMIT %s OFFSET %s""",
+            (pattern, limit, offset),
         ),
         "specifications": await rows(
             c,
             """SELECT a.identity_key,s.id,s.fingerprint,s.evidence_kind,s.definition
         FROM historical.specification_evidence s JOIN historical.instrument_authority a
         ON (a.namespace,a.instrument_id)=(s.namespace,s.instrument_id)
-        WHERE s.namespace=%s ORDER BY a.identity_key,s.id""",
-            (NAMESPACE,),
+        WHERE s.namespace=%s AND a.identity_key ILIKE %s ORDER BY a.identity_key,s.id LIMIT %s OFFSET %s""",
+            (NAMESPACE, pattern, limit, offset),
         ),
     }

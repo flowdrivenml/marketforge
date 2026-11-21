@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import json
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,7 @@ from forge.historical.conversion.execution import execute
 from forge.historical.engine.managed import resolve
 from forge.shared.config.library import ConfigurationNameError, resolve_config_file, run_reference
 from forge.shared.errors import MarketForgeError
+from forge.shared.ownership import WorkspaceOwnership
 from forge.startup.context import ApplicationContext
 
 
@@ -69,7 +71,8 @@ def run(args: argparse.Namespace, context: ApplicationContext) -> int:
                     "validation": service.validate_prepared_job(resolve(paths, "convert"), source),
                 }
             elif action == "run":
-                result = asyncio.run(execute(paths, source, tui=tui))
+                with WorkspaceOwnership(paths):
+                    result = asyncio.run(execute(paths, source, tui=tui))
             else:
                 raise MarketForgeError(f"convert {action} requires a conversion TOML recipe.")
         elif action == "validate":
@@ -81,11 +84,11 @@ def run(args: argparse.Namespace, context: ApplicationContext) -> int:
                 "recipe": recipe.model_dump(exclude_none=True),
             }
         else:
-            result = asyncio.run(
-                service.prepare(paths, source, dry_run=getattr(args, "dry_run", False))
-            )
-            if action == "run" and result["status"] == "generated":
-                result = asyncio.run(execute(paths, Path(result["job_path"]), tui=tui))
+            dry_run = getattr(args, "dry_run", False)
+            with nullcontext() if dry_run else WorkspaceOwnership(paths):
+                result = asyncio.run(service.prepare(paths, source, dry_run=dry_run))
+                if action == "run" and result["status"] == "generated":
+                    result = asyncio.run(execute(paths, Path(result["job_path"]), tui=tui))
     if args.as_json:
         print(json.dumps(result))
     else:

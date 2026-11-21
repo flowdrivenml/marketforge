@@ -14,6 +14,7 @@ from forge.historical.merge.config import DerivedRecipe, Selection, normalizatio
 from forge.shared.config.library import ConfigurationNameError, resolve_config_file, run_reference
 from forge.shared.config.toml import dumps
 from forge.shared.errors import MarketForgeError
+from forge.shared.ownership import WorkspaceOwnership
 from forge.shared.terminal.normalization import render_execution
 from forge.startup.context import ApplicationContext
 
@@ -43,7 +44,8 @@ def run(args: argparse.Namespace, context: ApplicationContext) -> int:
         raise MarketForgeError("--tui is incompatible with global --json.")
     result: dict[str, Any]
     if action == "register":
-        result = asyncio.run(service.register(paths, supplied))
+        with WorkspaceOwnership(paths):
+            result = asyncio.run(service.register(paths, supplied))
     else:
         library = paths.config_dir / "historical/merge"
         explicit = supplied.is_absolute() or "/" in reference
@@ -100,7 +102,8 @@ def run(args: argparse.Namespace, context: ApplicationContext) -> int:
                     raise MarketForgeError(f"Unknown merge recipe: {reference}")
                 submitted = False
             if submitted:
-                result = service.execute(paths, source, tui=tui)
+                with WorkspaceOwnership(paths):
+                    result = service.execute(paths, source, tui=tui)
             else:
                 data = tomllib.loads(source.read_text())
                 request = (
@@ -115,9 +118,10 @@ def run(args: argparse.Namespace, context: ApplicationContext) -> int:
                         **request.model_dump(mode="json", exclude_none=True),
                     }
                 else:
-                    result = service.prepare(paths, request, reference)
-                    if action == "run" and result["status"] == "prepared":
-                        result = service.execute(paths, Path(result["job_path"]), tui=tui)
+                    with WorkspaceOwnership(paths):
+                        result = service.prepare(paths, request, reference)
+                        if action == "run" and result["status"] == "prepared":
+                            result = service.execute(paths, Path(result["job_path"]), tui=tui)
     if args.as_json:
         print(json.dumps(result))
     elif "execution_id" in result:

@@ -13,6 +13,7 @@ nav = [
   ] },
   { "Guides" = [
     { "Overview" = "workflows/index.md" },
+    { "Forge workspace" = "workflows/forge-tui.md" },
     { "Describe instruments" = ["workflows/catalogue/index.md", "workflows/catalogue/exchanges-and-instruments.md", "workflows/catalogue/specifications.md"] },
     { "Acquire and register" = ["workflows/acquisition/index.md", "workflows/acquisition/historical-data.md", "workflows/acquisition/external-data.md", "workflows/acquisition/managing-acquisitions.md", "workflows/acquisition/forge.md"] },
     { "Create profiles" = ["workflows/catalogue/profiles.md", "workflows/catalogue/profile-trades.md", "workflows/catalogue/profile-depth.md", "workflows/catalogue/profile-troubleshooting.md"] },
@@ -40,6 +41,7 @@ nav = [
     "development/first-contribution.md",
     "development/architecture.md",
     "development/operations.md",
+    "development/forge-tui.md",
     { "Extension guides" = [
       "development/extending.md",
       "development/sources.md",

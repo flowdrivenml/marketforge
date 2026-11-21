@@ -105,6 +105,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     commands = parser.add_subparsers(dest="command")
 
+    tui = commands.add_parser("tui", help="Open the interactive Forge workspace.")
+    tui.add_argument("--testing", action="store_true", required=True)
+
     configure_initialization(
         commands.add_parser(
             "init", help="Initialize testing storage, catalogue and standard rankings."
@@ -356,6 +359,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             project_root=arguments.project_root,
             config_file=arguments.config_file,
         )
+
+        if arguments.command == "tui":
+            if arguments.as_json or not all(
+                stream.isatty() for stream in (sys.stdin, sys.stdout, sys.stderr)
+            ):
+                raise MarketForgeError(
+                    "mf tui requires an interactive terminal and is incompatible with --json."
+                )
+            from forge.tui.app import ForgeApp
+
+            ForgeApp(context).run()
+            return 0
 
         if arguments.service_handler is not None:
             return arguments.service_handler(arguments, context)

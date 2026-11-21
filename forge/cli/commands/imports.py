@@ -7,11 +7,11 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 from forge.cli.commands.markets import emit
+from forge.historical.drafts import create_import
 from forge.historical.imports.formats import sample
 from forge.historical.imports.models import ImportError, freeze_inputs, load_import, plan
 from forge.historical.imports.service import run_import
 from forge.shared.config.library import resolve_config_file
-from forge.shared.config.toml import dumps
 from forge.shared.database.testing import testing_dsn
 from forge.shared.ownership import WorkspaceOwnership
 from forge.startup.context import ApplicationContext
@@ -73,27 +73,7 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
         source = o.from_path.expanduser().resolve()
         if not source.exists():
             raise ImportError("External input does not exist.")
-        document = {
-            "version": 1,
-            "source_key": o.import_name,
-            "source_kind": "recording",
-            "root": str(source if source.is_dir() else source.parent),
-            "files": [source.name] if source.is_file() else [],
-            "patterns": ["*"] if source.is_dir() else [],
-            "max_files": 1000,
-            "data_type": "trades",
-            "identity": {
-                "market_category": "spot",
-                "instrument_type": "spot",
-                "symbol": "UNSPECIFIED",
-            },
-        }
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("x", encoding="utf-8") as out:
-            out.write(
-                "# Supply explicit identity/specifications before validating. No venue or units were inferred.\n"
-                + dumps(document)
-            )
+        create_import(path, o.import_name, source)
         emit(
             context,
             {

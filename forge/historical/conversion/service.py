@@ -25,6 +25,7 @@ from forge.historical.conversion.discovery import discover
 from forge.historical.conversion.planning import output_available, references
 from forge.historical.conversion.recipes import load_recipe
 from forge.historical.engine.managed import checksum, resolve
+from forge.historical.engine.process import Lifecycle, check, joined_io
 from forge.historical.merge.service import runtime_path
 from forge.historical.normalization.service import write_job
 from forge.shared.config.models import SettingsModel
@@ -193,7 +194,14 @@ def validate_prepared_job(binary: Path, job: Path) -> str:
     return result.stdout
 
 
-async def prepare(paths: ProjectPaths, source: Path, *, dry_run: bool = False) -> dict[str, Any]:
+async def prepare(
+    paths: ProjectPaths,
+    source: Path,
+    *,
+    dry_run: bool = False,
+    embedded: bool = False,
+    lifecycle: Lifecycle = lambda _: None,
+) -> dict[str, Any]:
     directory = paths.runs_dir / f"convert-prepare-{uuid4().hex}"
     report: dict[str, Any] = {
         "status": "blocked",
@@ -204,7 +212,7 @@ async def prepare(paths: ProjectPaths, source: Path, *, dry_run: bool = False) -
     }
     documents: list[tuple[Path, bytes]] = []
     try:
-        recipe, upstream, recipe_data = load_recipe(paths, source)
+        recipe, upstream, recipe_data = await joined_io(load_recipe, paths, source)
         report.update(
             recipe=file_pin(source, recipe_data),
             upstream=recipe.source.model_dump(),
@@ -325,11 +333,26 @@ async def prepare(paths: ProjectPaths, source: Path, *, dry_run: bool = False) -
                 stream.write(data)
 
         if binary is not None and "executable" in artifact_pins:
+            lifecycle("validate")
             for entry in entries:
                 try:
-                    entry["validation_output"] = await asyncio.to_thread(
-                        validate_prepared_job, binary, Path(entry["path"])
-                    )
+                    prepared = Path(entry["path"])
+                    if embedded:
+                        result = await check(
+                            [str(binary), "--job", str(prepared), "--validate"],
+                            prepared.parent,
+                            directory,
+                            f"validation-{entry['job_id']}",
+                        )
+                        if result.returncode:
+                            raise MarketForgeError(
+                                f"Engine validation failed for {prepared}: {result.stdout}"
+                            )
+                        entry["validation_output"] = result.stdout
+                    else:
+                        entry["validation_output"] = await joined_io(
+                            validate_prepared_job, binary, prepared
+                        )
                     entry["engine_validation"] = "passed"
                 except (MarketForgeError, OSError, subprocess.TimeoutExpired) as error:
                     entry["engine_validation"] = "failed"
@@ -362,6 +385,10 @@ async def prepare(paths: ProjectPaths, source: Path, *, dry_run: bool = False) -
             jobs=entries,
             artifacts={**artifact_pins, "collection": file_pin(collection_path, collection_bytes)},
         )
+    except asyncio.CancelledError:
+        if not embedded:
+            raise
+        report.update(status="interrupted")
     except (MarketForgeError, OSError, ValueError, KeyError, TypeError) as error:
         report["blockers"].append(str(error))
         return finish_report(report, directory, dry_run)

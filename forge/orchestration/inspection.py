@@ -81,3 +81,32 @@ def read_logs(root: Path, run_id: str, limit: int = 100) -> dict[str, object]:
         "events": events,
         "truncated": len(data) > 1024 * 1024 or len(lines) > limit,
     }
+
+
+def read_managed_report(root: Path, run_id: str) -> dict[str, object]:
+    """Read a known child execution receipt by its safe directory identity."""
+    import re
+
+    if not re.fullmatch(
+        r"(?:normalize|merge|convert)-(?:execute|prepare|retry|register|recovery)-[0-9a-f-]{1,64}",
+        run_id,
+    ):
+        return read_report(root, run_id)
+    directory = root / run_id
+    if directory.is_symlink() or directory.resolve().parent != root.resolve():
+        raise MarketForgeError("Unsafe managed execution directory.")
+    for filename in (
+        "execution-result.json",
+        "registration-result.json",
+        "prepare-report.json",
+        "execution-intent.json",
+    ):
+        path = directory / filename
+        if path.is_file() and not path.is_symlink():
+            if path.stat().st_size > 4 * 1024 * 1024:
+                raise MarketForgeError("Managed report exceeds 4 MiB inspection limit.")
+            from forge.markets.models import obj
+
+            result = obj(json.loads(path.read_bytes()))
+            return {**result, "run_id": run_id, "resolved_report": str(path), "liveness": "unknown"}
+    return {"run_id": run_id, "status": "report_missing_or_interrupted"}

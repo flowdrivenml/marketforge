@@ -82,19 +82,23 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
     if getattr(arguments, "tui", False) and arguments.as_json:
         raise MarketForgeError("--tui is incompatible with global --json.")
     if action in {"run", "register"}:
-        result = (
-            execute(
-                context.paths, supplied, tui=arguments.tui, allow_partial=arguments.allow_partial
+        with WorkspaceOwnership(context.paths):
+            result = (
+                execute(
+                    context.paths,
+                    supplied,
+                    tui=arguments.tui,
+                    allow_partial=arguments.allow_partial,
+                )
+                if supplied is not None and action == "run"
+                else asyncio.run(
+                    (
+                        recover
+                        if Path(arguments.reference).name == "execution-intent.json"
+                        else register
+                    )(context.paths, Path(arguments.reference))
+                )
             )
-            if supplied is not None and action == "run"
-            else asyncio.run(
-                (
-                    recover
-                    if Path(arguments.reference).name == "execution-intent.json"
-                    else register
-                )(context.paths, Path(arguments.reference))
-            )
-        )
         if arguments.as_json:
             print(json.dumps(result))
         elif "execution_id" in result:
@@ -169,13 +173,14 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
                 "error": str(exc),
             }
     if action == "execute" and not arguments.dry_run and result.get("status") == "prepared":
-        result = execute(
-            context.paths,
-            Path(str(result["batch_path"])),
-            tui=arguments.tui,
-            allow_partial=arguments.allow_partial,
-            recipe=requested_name,
-        )
+        with WorkspaceOwnership(context.paths):
+            result = execute(
+                context.paths,
+                Path(str(result["batch_path"])),
+                tui=arguments.tui,
+                allow_partial=arguments.allow_partial,
+                recipe=requested_name,
+            )
     if (
         action == "execute"
         and not arguments.dry_run

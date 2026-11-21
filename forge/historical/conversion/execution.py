@@ -18,6 +18,7 @@ from forge.historical.conversion.contract import Conversion, Job
 from forge.historical.conversion.planning import output_available
 from forge.historical.conversion.service import file_pin, retained_collection, validate_prepared_job
 from forge.historical.engine.managed import checksum, inventory, resolve
+from forge.historical.engine.process import Lifecycle, check, joined_io, supervise
 from forge.historical.normalization.execution import run_process, sync_submission
 from forge.historical.normalization.service import write_job
 from forge.shared.errors import MarketForgeError
@@ -123,8 +124,15 @@ def verify_output(job: Job, pinned: dict[str, Any]) -> dict[str, Any]:
     return {"manifest": str(manifest_path), "fingerprints": fingerprints, "events": total_rows}
 
 
-async def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> dict[str, Any]:
-    collection, document, report = retained_collection(source)
+async def execute(
+    paths: ProjectPaths,
+    source: Path,
+    *,
+    tui: bool = False,
+    embedded: bool = False,
+    lifecycle: Lifecycle = lambda _: None,
+) -> dict[str, Any]:
+    collection, document, report = await joined_io(lambda: retained_collection(source))
     result = {
         "status": "blocked",
         "execution": "not_started",
@@ -209,12 +217,29 @@ async def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> di
             output_available(Path(job.output.dataset_path))
             if checksum(submission) != receipt["submission"]["sha256"]:
                 raise MarketForgeError("Local submitted job changed before execution.")
-            receipt["validation_output"] = await asyncio.to_thread(
-                validate_prepared_job, executable, submission
-            )
+            lifecycle("validate")
+            if embedded:
+                validation = await check(
+                    [str(executable), "--job", str(submission), "--validate"],
+                    paths.root,
+                    directory,
+                    "validation",
+                )
+                if validation.returncode:
+                    raise MarketForgeError(validation.stdout)
+                receipt["validation_output"] = validation.stdout
+            else:
+                receipt["validation_output"] = await joined_io(
+                    validate_prepared_job, executable, submission
+                )
             receipt["compatibility"] = "validated"
             receipt.update(status="failed", execution="running")
-            code, interrupted = run_process(argv, paths.root, directory, tui=tui)
+            lifecycle("execute")
+            code, interrupted = (
+                await supervise(argv, paths.root, directory)
+                if embedded
+                else run_process(argv, paths.root, directory, tui=tui)
+            )
             receipt.update(
                 exit_code=code,
                 execution="interrupted" if interrupted else "failed" if code else "complete",
@@ -222,12 +247,14 @@ async def execute(paths: ProjectPaths, source: Path, *, tui: bool = False) -> di
             if interrupted:
                 receipt.update(status="interrupted")
             elif not code:
-                receipt.update(status="complete", publication=verify_output(job, pinned))
+                lifecycle("verify")
+                publication = await joined_io(verify_output, job, pinned)
+                receipt.update(status="complete", publication=publication)
             else:
                 receipt["error"] = (
                     "Converter returned a nonzero exit code. Inspect retained engine logs."
                 )
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, asyncio.CancelledError):
             receipt.update(status="interrupted", execution="interrupted")
         except (
             MarketForgeError,

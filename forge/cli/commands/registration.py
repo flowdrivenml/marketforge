@@ -5,6 +5,7 @@ import asyncio
 import json
 from pathlib import Path
 
+from forge.historical.drafts import create_registration
 from forge.historical.registration.models import load, recipe_path
 from forge.historical.registration.service import apply, inspect, validate
 from forge.shared.ownership import WorkspaceOwnership
@@ -28,18 +29,7 @@ def run(args: argparse.Namespace, context: ApplicationContext) -> int:
     path = recipe_path(context.paths, args.name)
     action = args.registration_action
     if action == "new":
-        # Accept a manually authored recipe, or create an intentionally incomplete
-        # draft for a source directory/file. Never infer identity or profiles.
-        if args.source.suffix == ".toml":
-            data = args.source.read_bytes()
-        else:
-            root = args.source.resolve()
-            data = (
-                f"[registration]\nversion = 1\nname = {json.dumps(args.name)}\n\n[source]\nkey = {json.dumps(args.name)}\nroot = {json.dumps(str(root if root.is_dir() else root.parent))}\n# REQUIRED: provider, product, provenance, coverage, and inputs referencing registered catalogue metadata.\n"
-            ).encode()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("xb") as destination:
-            destination.write(data)
+        create_registration(path, args.name, args.source.resolve())
         result = {"status": "draft_created", "path": str(path)}
     elif action == "edit":
         if args.as_json:

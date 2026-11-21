@@ -42,8 +42,12 @@ async def maintain(
     reconcile: bool,
     limit: int = 100,
     archive_id: int | None = None,
+    status: str | None = None,
+    origin: str | None = None,
 ) -> dict[str, object]:
-    rows = await inventory(c, root=root, limit=limit, archive_id=archive_id)
+    rows = await inventory(
+        c, root=root, limit=limit, archive_id=archive_id, status=status, origin=origin
+    )
     outcomes: list[dict[str, object]] = []
     for row in rows:
         identity = int(str(row["id"]))

@@ -658,6 +658,7 @@ async def prepare_batch(
     executable: Path | None = None,
     lifecycle: Lifecycle = lambda _: None,
     on_candidate: PreparationObserver = ignore_preparation,
+    supervised_validation: bool = False,
 ) -> dict[str, object]:
     dsn = testing_dsn(paths.root)
     async with testing_connection(dsn) as c:
@@ -674,15 +675,14 @@ async def prepare_batch(
         report = cast(dict[str, object], json.loads(json.dumps(plan.report, default=str)))
         report["dry_run"] = dry_run
         if not dry_run:
-            if historical is None and executable is None:
+            if historical is None and executable is None and not supervised_validation:
                 publish_batch(paths, plan, report)
             else:
-                assert historical is not None and executable is not None
                 await publish_batch_async(
                     paths,
                     plan,
                     report,
-                    historical,
+                    historical or paths.config_dir / "historical",
                     executable,
                     lifecycle=lifecycle,
                     on_candidate=on_candidate,
@@ -813,7 +813,7 @@ async def publish_batch_async(
     plan: BatchPlan,
     report: dict[str, object],
     historical: Path,
-    executable: Path,
+    executable: Path | None,
     *,
     lifecycle: Lifecycle,
     on_candidate: PreparationObserver,
@@ -831,4 +831,4 @@ async def publish_batch_async(
     write_job(candidate, report)
     source = plan.run / "normalize-batch.json"
     on_candidate(source, candidate)
-    await validate_candidate(paths, source, report, historical, executable, lifecycle=lifecycle)
+    await validate_candidate(paths, source, report, historical, Path(argv[0]), lifecycle=lifecycle)

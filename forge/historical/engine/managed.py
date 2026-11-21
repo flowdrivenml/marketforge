@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -15,6 +16,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from forge.historical.engine.process import ProcessControl
 from forge.shared.errors import MarketForgeError
 from forge.shared.ownership import acquire_file_lock
 from forge.shared.paths import ProjectPaths
@@ -206,7 +208,12 @@ def resolve(paths: ProjectPaths, target: str = "normalize") -> Path:
 
 
 def build(
-    paths: ProjectPaths, target: Target, *, offline: bool = False, jobs: int | None = None
+    paths: ProjectPaths,
+    target: Target,
+    *,
+    offline: bool = False,
+    jobs: int | None = None,
+    control: ProcessControl | None = None,
 ) -> dict[str, Any]:
     from datetime import UTC, datetime
 
@@ -248,47 +255,52 @@ def build(
             proposed["command"],
             cwd=proposed["cwd"],
             stdout=subprocess.PIPE,
-            stderr=None,
+            stderr=None if control is None else subprocess.DEVNULL,
             text=True,
             start_new_session=True,
         )
-        try:
-            assert process.stdout is not None
-            while True:
-                line = process.stdout.readline(16 * 1024 * 1024)
-                if not line:
-                    break
-                if not line.endswith("\n") and len(line) >= 16 * 1024 * 1024:
-                    raise MarketForgeError("Cargo JSON message exceeds the bounded message limit.")
-                try:
-                    message = json.loads(line)
-                except ValueError:
-                    continue
-                if (
-                    message.get("reason") == "compiler-artifact"
-                    and message.get("target", {}).get("name") == target.binary
-                    and message.get("target", {}).get("kind") == ["bin"]
-                    and message.get("executable")
-                ):
-                    package = message.get("package_id", "")
-                    if f"{target.package}@" in package or package.startswith(target.package + " "):
-                        artifacts.add(Path(message["executable"]))
-                if message.get("reason") == "compiler-message":
-                    rendered = message.get("message", {}).get("rendered", "")
-                    errors.append(rendered[-4000:])
-                    errors = errors[-8:]
-            code = process.wait()
-        except BaseException:
-            os.killpg(process.pid, signal.SIGTERM)
+        with control.track(process) if control is not None else contextlib.nullcontext():
             try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
-            raise
-        finally:
-            if process.stdout:
-                process.stdout.close()
+                assert process.stdout is not None
+                while True:
+                    line = process.stdout.readline(16 * 1024 * 1024)
+                    if not line:
+                        break
+                    if not line.endswith("\n") and len(line) >= 16 * 1024 * 1024:
+                        raise MarketForgeError(
+                            "Cargo JSON message exceeds the bounded message limit."
+                        )
+                    try:
+                        message = json.loads(line)
+                    except ValueError:
+                        continue
+                    if (
+                        message.get("reason") == "compiler-artifact"
+                        and message.get("target", {}).get("name") == target.binary
+                        and message.get("target", {}).get("kind") == ["bin"]
+                        and message.get("executable")
+                    ):
+                        package = message.get("package_id", "")
+                        if f"{target.package}@" in package or package.startswith(
+                            target.package + " "
+                        ):
+                            artifacts.add(Path(message["executable"]))
+                    if message.get("reason") == "compiler-message":
+                        rendered = message.get("message", {}).get("rendered", "")
+                        errors.append(rendered[-4000:])
+                        errors = errors[-8:]
+                code = process.wait()
+            except BaseException:
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+                raise
+            finally:
+                if process.stdout:
+                    process.stdout.close()
         if code:
             raise MarketForgeError(
                 "Cargo build failed; previous installation retained.\n" + "".join(errors)

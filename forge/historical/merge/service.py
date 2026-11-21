@@ -380,8 +380,14 @@ async def validate_async(
 
 
 def source_selection(paths: ProjectPaths, recipe: DerivedRecipe) -> dict[str, Any]:
-    path, config, fingerprint = normalization_source(paths, recipe.selection.source)
-    result = asyncio.run(discover(paths, recipe, path, config))
+    return asyncio.run(source_selection_async(paths, recipe))
+
+
+async def source_selection_async(paths: ProjectPaths, recipe: DerivedRecipe) -> dict[str, Any]:
+    path, config, fingerprint = await joined_io(
+        normalization_source, paths, recipe.selection.source
+    )
+    result = await discover(paths, recipe, path, config)
     selected = set(result["selected_dataset_ids"])
     result["coverage"] = coverage(
         [
@@ -534,9 +540,39 @@ async def prepare_direct(
     lifecycle: Lifecycle = lambda _: None,
     on_candidate: PreparationObserver = ignore_preparation,
 ) -> dict[str, Any]:
-    selected = await select_inputs(paths, ids=recipe.dataset_ids)
+    return await prepare_async(
+        paths,
+        recipe,
+        name,
+        historical=historical,
+        executable=executable,
+        lifecycle=lifecycle,
+        on_candidate=on_candidate,
+    )
+
+
+async def prepare_async(
+    paths: ProjectPaths,
+    recipe: Recipe | DerivedRecipe,
+    name: str,
+    *,
+    historical: Path | None = None,
+    executable: Path | None = None,
+    lifecycle: Lifecycle = lambda _: None,
+    on_candidate: PreparationObserver = ignore_preparation,
+) -> dict[str, Any]:
     identity = uuid4().int & (2**63 - 1)
     directory = paths.runs_dir / f"merge-prepare-{identity}"
+    discovery: dict[str, Any] = {}
+    if isinstance(recipe, DerivedRecipe):
+        discovery = await source_selection_async(paths, recipe)
+        discovery.update(recipe=name, report_path=str(directory / "prepare-report.json"))
+        if discovery["blockers"]:
+            return await joined_io(blocked, directory, discovery)
+        ids = discovery["selected_dataset_ids"]
+    else:
+        ids = recipe.dataset_ids
+    selected = await select_inputs(paths, ids=ids)
     result = await joined_io(
         lambda: assemble_job(
             paths,
@@ -545,19 +581,21 @@ async def prepare_direct(
             identity,
             directory,
             selected,
-            {},
+            discovery,
             validate=False,
         )
     )
     source = Path(result["job_path"])
     config = directory / "general.toml"
-    result["candidate_executable_sha256"] = copy_runtime(
-        result, executable, historical / "general.toml", config
+    binary = executable or await joined_io(resolve, paths, "merge")
+    runtime = historical / "general.toml" if historical else runtime_path(paths)
+    result["candidate_executable_sha256"] = await joined_io(
+        copy_runtime, result, binary, runtime, config
     )
     candidate = directory / "prepare-candidate.json"
     write_job(candidate, result)
     on_candidate(source, candidate)
-    return await validate_candidate(paths, source, result, executable, lifecycle=lifecycle)
+    return await validate_candidate(paths, source, result, binary, lifecycle=lifecycle)
 
 
 async def validate_candidate(

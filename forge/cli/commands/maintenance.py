@@ -2,9 +2,6 @@
 
 import argparse
 import asyncio
-import os
-import shutil
-import sys
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
@@ -15,11 +12,11 @@ from forge.historical.archives.planning import plan
 from forge.orchestration.inspection import list_runs, read_logs, read_report
 from forge.shared.config.library import resolve_config_file
 from forge.shared.database.backup import backup, restore
-from forge.shared.database.migrations import load_migrations
 from forge.shared.database.testing import testing_connection, testing_dsn
 from forge.shared.errors import MarketForgeError
 from forge.shared.ownership import WorkspaceOwnership
 from forge.startup.context import ApplicationContext
+from forge.startup.diagnostics import doctor
 from forge.storage.service import inventory, maintain
 
 
@@ -109,6 +106,9 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
             value = read_report(context.paths.runs_dir, o.run_id)
         emit(context, value, o.as_json)
         return 0
+    if o.command == "doctor":
+        emit(context, doctor(context.paths), o.as_json)
+        return 0
     dsn = testing_dsn(context.paths.root)
     if o.command == "database":
         if o.backup_path is None:
@@ -125,39 +125,6 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
 
     async def execute() -> dict[str, object]:
         async with testing_connection(dsn) as c:
-            if o.command == "doctor":
-                cur = await c.execute(
-                    "SELECT version FROM forge_meta.schema_migrations WHERE stream='core' ORDER BY version"
-                )
-                applied = [r[0] for r in await cur.fetchall()]
-                from forge.shared.database.migrations import AppliedMigration, validate_history
-
-                history = await c.execute(
-                    "SELECT version,name,checksum FROM forge_meta.schema_migrations WHERE stream='core' ORDER BY version"
-                )
-                validate_history(
-                    load_migrations(),
-                    tuple(AppliedMigration(*row) for row in await history.fetchall()),
-                )
-                expected = [m.version for m in load_migrations()]
-                base = context.paths.data_root
-                while not base.exists():
-                    base = base.parent
-                return {
-                    "python": sys.version.split()[0],
-                    "python_ready": sys.version_info >= (3, 12),
-                    "testing_database": "verified marketforge_test / testing",
-                    "applied_migrations": applied,
-                    "pending_migrations": [v for v in expected if v not in applied],
-                    "storage_parent": str(base),
-                    "storage_writable": os.access(base, os.W_OK),
-                    "free_bytes": shutil.disk_usage(base).free,
-                    "postgres_tools": {
-                        "pg_dump": shutil.which("pg_dump") is not None,
-                        "pg_restore": shutil.which("pg_restore") is not None,
-                    },
-                    "engine_readiness": "pending: Rust contracts and standalone profile validation are being refactored; no engine execution attempted.",
-                }
             if o.maintenance_action == "plan":
                 if o.configuration_name is None:
                     raise MarketForgeError("Acquisition name is required.")
@@ -182,6 +149,8 @@ def run(arguments: argparse.Namespace, context: ApplicationContext) -> int:
                     reconcile=o.maintenance_action == "reconcile",
                     limit=o.limit,
                     archive_id=archive_id,
+                    status=o.status,
+                    origin=o.origin,
                 )
             return {
                 "archives": await inventory(

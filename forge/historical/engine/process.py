@@ -5,7 +5,8 @@ import contextlib
 import os
 import signal
 import subprocess
-from collections.abc import Callable
+import threading
+from collections.abc import Callable, Generator
 from pathlib import Path
 
 from forge.historical.archives.storage.files import disk as joined_io
@@ -120,3 +121,54 @@ async def check(
         )
         output += errors
     return subprocess.CompletedProcess(argv, code, output)
+
+
+class ProcessControl:
+    """Track a subprocess owned by an existing synchronous service."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._child: subprocess.Popen[str] | subprocess.Popen[bytes] | None = None
+        self._signal: int | None = None
+
+    @contextlib.contextmanager
+    def track(self, child: subprocess.Popen[str] | subprocess.Popen[bytes]) -> Generator[None]:
+        with self._lock:
+            self._child = child
+            if self._signal is not None:
+                self._signal_child(self._signal)
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._child = None
+
+    def signal(self, number: int) -> None:
+        with self._lock:
+            self._signal = number
+            self._signal_child(number)
+
+    def _signal_child(self, number: int) -> None:
+        if self._child is not None:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(self._child.pid, number)
+
+
+async def controlled_thread[T](operation: Callable[[ProcessControl], T]) -> T:
+    """Cancel a registered process group and join its synchronous owner."""
+    control = ProcessControl()
+    worker = asyncio.create_task(asyncio.to_thread(operation, control))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        control.signal(signal.SIGTERM)
+        try:
+            async with asyncio.timeout(5):
+                await asyncio.shield(worker)
+        except TimeoutError:
+            control.signal(signal.SIGKILL)
+            with contextlib.suppress(Exception):
+                await worker
+        except Exception:
+            pass
+        raise

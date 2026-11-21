@@ -7,12 +7,14 @@ import os
 import re
 import shutil
 import subprocess
+from functools import partial
 from pathlib import Path
 
 import psycopg
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.sql import SQL, Identifier
 
+from forge.historical.engine.process import ProcessControl
 from forge.shared.database.testing import testing_connection
 from forge.shared.errors import MarketForgeError
 from forge.shared.paths import ProjectPaths
@@ -47,29 +49,54 @@ def tool_environment(dsn: str, database: str) -> dict[str, str]:
     return environment
 
 
-def invoke(program: str, arguments: list[str], environment: dict[str, str]) -> None:
+def invoke(
+    program: str,
+    arguments: list[str],
+    environment: dict[str, str],
+    *,
+    control: ProcessControl | None = None,
+) -> None:
     executable = shutil.which(program)
     if executable is None:
         raise MarketForgeError(program + " is unavailable; install the PostgreSQL client tools.")
     try:
-        result = subprocess.run(
-            [executable, *arguments],
-            env=environment,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=300,
-            check=False,
-        )
+        if control is None:
+            code = subprocess.run(
+                [executable, *arguments],
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=300,
+                check=False,
+            ).returncode
+        else:
+            with (
+                subprocess.Popen(
+                    [executable, *arguments],
+                    env=environment,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                ) as child,
+                control.track(child),
+            ):
+                try:
+                    code = child.wait(timeout=300)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait()
+                    raise
     except subprocess.TimeoutExpired:
         raise MarketForgeError(
             program + " exceeded its 300-second limit; destination retained for inspection."
         ) from None
-    if result.returncode:
+    if code:
         raise MarketForgeError(
             program
             + " failed (exit "
-            + str(result.returncode)
+            + str(code)
             + "); check database permissions and client/server compatibility. Credentials and server diagnostics were suppressed."
         )
 
@@ -135,7 +162,10 @@ async def reference_audit(dsn: str, paths: ProjectPaths) -> dict[str, object]:
         }
 
 
-def backup(dsn: str, paths: ProjectPaths, destination: Path) -> dict[str, object]:
+def backup(
+    dsn: str, paths: ProjectPaths, destination: Path, *, control: ProcessControl | None = None
+) -> dict[str, object]:
+    run_tool = invoke if control is None else partial(invoke, control=control)
     audit = asyncio.run(reference_audit(dsn, paths))
     destination = destination.expanduser().resolve()
     if (
@@ -150,7 +180,7 @@ def backup(dsn: str, paths: ProjectPaths, destination: Path) -> dict[str, object
         raise MarketForgeError("Backup destination must not already exist.")
     destination.mkdir(parents=True, mode=0o700)
     archive = destination / "registry.dump"
-    invoke(
+    run_tool(
         "pg_dump",
         [
             "--format=custom",
@@ -199,7 +229,10 @@ def backup(dsn: str, paths: ProjectPaths, destination: Path) -> dict[str, object
     }
 
 
-def restore(dsn: str, backup_root: Path, destination: str) -> dict[str, object]:
+def restore(
+    dsn: str, backup_root: Path, destination: str, *, control: ProcessControl | None = None
+) -> dict[str, object]:
+    run_tool = invoke if control is None else partial(invoke, control=control)
     validate_destination(destination)
     manifest_path = backup_root / "manifest.json"
     archive = backup_root / "registry.dump"
@@ -241,7 +274,7 @@ def restore(dsn: str, backup_root: Path, destination: str) -> dict[str, object]:
             )
 
     asyncio.run(create())
-    invoke(
+    run_tool(
         "pg_restore",
         [
             "--exit-on-error",
