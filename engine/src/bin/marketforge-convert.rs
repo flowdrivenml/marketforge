@@ -211,6 +211,12 @@ fn execute_conversion_with_progress(
                 return Err("prepared conversion job or runtime differs from materialization; use the original job and worker count".to_owned());
             }
             publish_with_reporter(job, source_manifest, staging, runtime.workers, reporter)?;
+            if mode == ExecutionMode::Publish
+                && reporter.is_enabled()
+                && let Ok(receipt) = ConversionExecutionReceipt::load(&job.output.dataset_path)
+            {
+                reporter.emit(marketforge_engine::historical::convert::progress::ConversionProgressEvent::PublishedReceipt(receipt));
+            }
         }
         Ok(())
     })();
@@ -292,11 +298,50 @@ fn run_conversion_tui(
     let reporter = ConversionProgressReporter::new(sender);
     let progress_state = reporter.state();
     let context = ConversionDashboardContext {
-        title: format!(
-            "Job {} · {:?} · {:?}",
-            job.job_id, mode, source_manifest.mode
-        ),
+        operation: match mode {
+            ExecutionMode::Validate => "Validate",
+            ExecutionMode::Materialize => "Materialize",
+            ExecutionMode::Publish => "Publish",
+            ExecutionMode::Run => "Run",
+        },
+        mode: source_manifest.mode,
+        target_quote: job.conversion.target_quote.clone(),
+        instruments: job
+            .source
+            .streams
+            .iter()
+            .map(|stream| (&stream.instrument_namespace, stream.instrument_id))
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        streams: source_manifest.streams.len(),
+        reconstruction_rows: source_manifest.reconstruction_events,
+        trade_events: source_manifest.trade_events,
+        depth_events: source_manifest.depth_events,
+        requested_workers: runtime.workers,
         details: vec![
+            format!(
+                "Job {} · Source publication {}",
+                job.job_id, source_manifest.job_id
+            ),
+            format!("Staging {}", staging.display()),
+            format!(
+                "Parquet {} MiB row groups · {} MiB files · Zstd {}",
+                runtime.parquet.row_group_target_mb,
+                runtime.parquet.file_target_mb,
+                runtime.parquet.compression_level
+            ),
+            format!(
+                "{} hops · {} ns staleness · {:?} path policy",
+                job.conversion.max_hops,
+                job.conversion.max_staleness_ns,
+                job.conversion.path_policy
+            ),
+            format!(
+                "External reference {}",
+                job.external_reference
+                    .as_ref()
+                    .map_or("—".to_owned(), |source| source.merge_job_id.to_string())
+            ),
             format!("Input {}", job.input_merge.display()),
             format!("Output {}", job.output.dataset_path.display()),
             format!(
@@ -318,7 +363,7 @@ fn run_conversion_tui(
                     .join(", ")
             ),
             format!(
-                "{} effective workers · configured caps {} workers, {} MB, {} open files",
+                "{} requested workers · configured caps {} workers, {} MB, {} open files",
                 runtime.workers,
                 job.resources.workers,
                 job.resources.memory_limit_mb,
@@ -327,6 +372,7 @@ fn run_conversion_tui(
         ],
         expected_rows: source_manifest.events_written,
     };
+    let source_id = job.source.merge_job_id;
     let output = job.output.dataset_path.clone();
     let staged = staging.clone();
     let start = Instant::now();
@@ -346,16 +392,23 @@ fn run_conversion_tui(
         },
     );
     if result.is_ok() {
+        println!("Source publication {source_id}");
         match mode {
             ExecutionMode::Validate => {
                 println!("VALIDATED · {:.2}s", start.elapsed().as_secs_f64())
             }
-            ExecutionMode::Materialize => {
-                print_dashboard_summary(ConversionOutcome::Materialized, &staged, start)
-            }
-            ExecutionMode::Run | ExecutionMode::Publish => {
-                print_dashboard_summary(ConversionOutcome::Published, &output, start)
-            }
+            ExecutionMode::Materialize => print_dashboard_summary(
+                ConversionOutcome::Materialized,
+                &staged,
+                start,
+                &progress_state,
+            ),
+            ExecutionMode::Run | ExecutionMode::Publish => print_dashboard_summary(
+                ConversionOutcome::Published,
+                &output,
+                start,
+                &progress_state,
+            ),
         }
     } else if staged.is_dir() {
         eprintln!("Conversion staging {}", staged.display());
@@ -375,7 +428,12 @@ fn run_conversion_tui(
 }
 
 #[cfg(feature = "monitor-tui")]
-fn print_dashboard_summary(outcome: ConversionOutcome, directory: &Path, start: Instant) {
+fn print_dashboard_summary(
+    outcome: ConversionOutcome,
+    directory: &Path,
+    start: Instant,
+    progress: &marketforge_engine::historical::convert::progress::ConversionProgressState,
+) {
     println!(
         "{} · {:.2}s",
         outcome.label(),
@@ -389,13 +447,31 @@ fn print_dashboard_summary(outcome: ConversionOutcome, directory: &Path, start: 
     }
     if let Ok(receipt) = ConversionExecutionReceipt::load(directory) {
         println!(
-            "{} rows · {} identity · {} converted · {} unavailable · {} skipped · {} files",
+            "{} rows · {} identity · {} converted · {} unavailable · {} skipped · {} finalized files · {} row groups",
             receipt.events_written,
             receipt.identity_events,
             receipt.converted_events,
             receipt.unavailable_events,
             receipt.skipped_events,
-            receipt.files_written
+            receipt.files_written,
+            receipt.row_groups_written,
+        );
+    }
+    let snapshots = progress.snapshots();
+    if let Some(total) =
+        marketforge_engine::historical::convert::progress::ConversionProgress::checked_sum(
+            snapshots.values(),
+        )
+        && total.failures.iter().any(|&count| count > 0)
+    {
+        println!(
+            "Unavailable rows · missing {} · stale {} · future {} · identity mismatch {} · arithmetic {} · no path {}",
+            total.failures[0],
+            total.failures[1],
+            total.failures[2],
+            total.failures[3],
+            total.failures[4],
+            total.failures[5]
         );
     }
     println!("Receipt {}", directory.join("execution.json").display());
@@ -1078,6 +1154,16 @@ fn materialize_combined_with_reporter(
 mod conversion_fixture;
 
 #[cfg(test)]
+#[allow(dead_code)]
+#[path = "../../tests/historical/convert/support/depth_fixture.rs"]
+mod depth_fixture;
+
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../../tests/historical/convert/support/market.rs"]
+mod market;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1097,6 +1183,145 @@ mod tests {
                 .contains("exceed configured limit 2")
         );
         assert!(parse(&["--job", "job.json", "--catalog", "missing.json"]).is_err());
+    }
+
+    #[test]
+    fn cli_reports_materialization_once_for_each_mode_and_worker_count() {
+        use marketforge_engine::historical::convert::progress::ConversionProgressEvent as Event;
+        use std::sync::mpsc;
+
+        for mode in [
+            UnifiedMergeMode::Trades,
+            UnifiedMergeMode::Depth,
+            UnifiedMergeMode::Combined,
+        ] {
+            for workers in [1, 2] {
+                let temp = tempfile::tempdir().unwrap();
+                let root = temp.path();
+                let mut job = conversion_fixture::canonical_job();
+                job.input_merge = root.join("source");
+                job.output.dataset_path = root.join("output");
+                job.parquet = market::parquet();
+                let source = market::create(&job.input_merge, mode, true);
+                job.source = market::prepared_binding(&job.input_merge, &source);
+                if mode == UnifiedMergeMode::Depth {
+                    let path = root.join("reference");
+                    let external = market::create(&path, UnifiedMergeMode::Trades, false);
+                    job.external_reference = Some(market::prepared_binding(&path, &external));
+                    job.conversion.reference_merge = Some(path);
+                }
+                let staging = root.join("staging");
+                let runtime = ConversionRuntime {
+                    workers,
+                    parquet: market::parquet(),
+                };
+                let launch = |mode| {
+                    let (send, receive) = mpsc::channel();
+                    execute_conversion_with_progress(
+                        &job,
+                        &staging,
+                        &runtime,
+                        mode,
+                        &ConversionProgressReporter::new(send),
+                    )
+                    .unwrap();
+                    receive.try_iter().collect::<Vec<_>>()
+                };
+                let valid = launch(ExecutionMode::Validate);
+                assert!(matches!(
+                    valid.as_slice(),
+                    [
+                        Event::PhaseStarted {
+                            phase: ConversionPhase::SourceValidation
+                        },
+                        Event::PhaseCompleted {
+                            phase: ConversionPhase::SourceValidation
+                        },
+                        Event::Finished(ConversionOutcome::Validated),
+                    ]
+                ));
+                assert!(!staging.exists());
+                let mut events = launch(if workers == 1 {
+                    ExecutionMode::Materialize
+                } else {
+                    ExecutionMode::Run
+                });
+                if workers == 1 {
+                    assert!(matches!(
+                        events.pop(),
+                        Some(Event::Finished(ConversionOutcome::Materialized))
+                    ));
+                    assert!(staging.is_dir() && !job.output.dataset_path.exists());
+                }
+                let mut conversion = None;
+                let mut completed = None;
+                let mut totals = false;
+                let mut starts = 0;
+                let mut ends = 0;
+                let mut prepass_finished = false;
+                for (index, event) in events.iter().enumerate() {
+                    match event {
+                        Event::PhaseCompleted {
+                            phase:
+                                ConversionPhase::ReferencePrepass | ConversionPhase::TimestampScan,
+                        } => prepass_finished = true,
+                        Event::PhaseStarted {
+                            phase: ConversionPhase::PhysicalConversion,
+                        } => {
+                            assert!(prepass_finished && conversion.replace(index).is_none());
+                        }
+                        Event::PartitionStarted { .. } => {
+                            assert!(conversion.is_some() && completed.is_none());
+                            starts += 1;
+                        }
+                        Event::PartitionCompleted { .. } => {
+                            assert!(conversion.is_some() && completed.is_none());
+                            ends += 1;
+                        }
+                        Event::MaterializationTotals(metrics) => {
+                            assert!(!totals && ends > 0 && starts == ends);
+                            assert_eq!(metrics.events_written, source.events_written);
+                            totals = true;
+                        }
+                        Event::PhaseCompleted {
+                            phase: ConversionPhase::PhysicalConversion,
+                        } => {
+                            assert!(totals && completed.replace(index).is_none());
+                        }
+                        Event::PhaseStarted {
+                            phase: ConversionPhase::PhysicalValidation,
+                        } => {
+                            assert!(completed.is_some())
+                        }
+                        _ => {}
+                    }
+                }
+                assert!(completed > conversion && starts > 0);
+                if workers == 1 {
+                    let publish = launch(ExecutionMode::Publish);
+                    assert!(matches!(
+                        publish.last(),
+                        Some(Event::Finished(ConversionOutcome::Published))
+                    ));
+                    assert!(
+                        publish
+                            .iter()
+                            .any(|event| matches!(event, Event::PublishedReceipt(_)))
+                    );
+                    assert!(!publish.iter().any(|event| matches!(
+                        event,
+                        Event::PhaseStarted {
+                            phase: ConversionPhase::PhysicalConversion
+                        }
+                    )));
+                } else {
+                    assert!(matches!(
+                        events.last(),
+                        Some(Event::Finished(ConversionOutcome::Published))
+                    ));
+                }
+            }
+        }
     }
 
     #[cfg(feature = "monitor-tui")]

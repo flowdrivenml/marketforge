@@ -1,4 +1,6 @@
-use crate::historical::convert::progress::{ConversionPartitionKey, ConversionProgressReporter};
+use crate::historical::convert::progress::{
+    ConversionPartitionKey, ConversionPhase, ConversionProgressReporter,
+};
 use std::{
     collections::VecDeque,
     path::Path,
@@ -120,7 +122,19 @@ pub fn execute_parallel_depth_conversion_with_progress(
     }
 
     let workers_used = requested_workers.min(partitions.partitions.len());
-    reporter.partitions_planned(partitions.partitions.len());
+    reporter.check_interrupted()?;
+    reporter.phase_started(ConversionPhase::PhysicalConversion);
+    reporter.partitions_planned(
+        partitions.partitions.iter().map(|partition| {
+            (
+                ConversionPartitionKey {
+                    partition_id: partition.partition_id,
+                },
+                partition.rows,
+            )
+        }),
+        workers_used,
+    );
     // -------------------------------------------------------------------------
     // Shared work queue
     // -------------------------------------------------------------------------
@@ -362,6 +376,8 @@ pub fn execute_parallel_depth_conversion_with_progress(
         return invalid("parallel depth conversion produced no physical output");
     }
 
+    reporter.check_interrupted()?;
+    reporter.materialization_completed(metrics.progress());
     Ok(ParallelDepthConversionResult {
         partitions: results,
         metrics,

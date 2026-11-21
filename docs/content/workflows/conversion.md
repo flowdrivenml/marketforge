@@ -129,10 +129,29 @@ Reference age equal to the staleness limit is eligible.
 
 `--materialize` writes staged Parquet and execution evidence. `--publish` checks
 the job and effective settings against the staged specification, validates the
-output, and commits it. In the dashboard, `D` toggles details, arrow keys scroll,
-and `Ctrl+C` requests interruption. The Engine joins the worker and restores
+output, and commits it. The dashboard shows physical rows and throughput for
+the active phase. The conversion ETA covers the physical work only. The
+partition table retains completed and failed partitions, and unavailable
+valuations have their own counts and reasons.
+
+Use `D` for details, arrows or Page Up and Page Down to navigate, and `?` for
+help. `Ctrl+C` requests interruption. The Engine joins the worker and restores
 the terminal before returning. `MARKETFORGE_TUI_HOLD=1` keeps the final screen
-open for review.
+open for review. Press `Q` to close it.
+
+To preview the dashboard without accessing recorded inputs, generate a complete
+12-row job in a fresh temporary directory after building the release binary.
+
+```bash
+set -o pipefail
+preview=$(mktemp -d)
+MARKETFORGE_CONVERSION_PREVIEW_DIR="$preview" \
+  cargo test --manifest-path engine/Cargo.toml --features historical \
+  --test historical_convert portable::export_conversion_dashboard_preview \
+  -- --ignored --exact --nocapture 2>&1 | cpout &&
+  job=$(find "$preview" -name job.json -print -quit) &&
+  MARKETFORGE_TUI_HOLD=1 ./engine/target/release/marketforge-convert --job "$job" --run --tui
+```
 
 ## Verify conversion changes
 

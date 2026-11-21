@@ -420,9 +420,36 @@ pub(crate) fn initial_reference_state_for_prefix(
     reporter: &ConversionProgressReporter,
     max_events: Option<u64>,
 ) -> Result<crate::historical::convert::reference::ReferenceState> {
+    scan_timestamp_regression(directory, manifest, reporter, max_events, false)
+}
+
+pub(crate) fn initial_reference_state_with_scan_progress(
+    directory: &Path,
+    manifest: &PhysicalMergeManifest,
+    reporter: &ConversionProgressReporter,
+) -> Result<crate::historical::convert::reference::ReferenceState> {
+    scan_timestamp_regression(directory, manifest, reporter, None, reporter.is_enabled())
+}
+
+fn scan_timestamp_regression(
+    directory: &Path,
+    manifest: &PhysicalMergeManifest,
+    reporter: &ConversionProgressReporter,
+    max_events: Option<u64>,
+    report_scan: bool,
+) -> Result<crate::historical::convert::reference::ReferenceState> {
     use crate::historical::convert::reference::ReferenceState;
     if manifest.timeline_ordering != crate::historical::job::MergeTimelineOrdering::Causal {
         return Ok(ReferenceState::new());
+    }
+    use crate::historical::convert::progress::ConversionProgressEvent;
+    use std::time::{Duration, Instant};
+
+    let expected = manifest.events_written.min(max_events.unwrap_or(u64::MAX));
+    let mut scanned = 0;
+    let mut last_progress = report_scan.then(Instant::now);
+    if report_scan {
+        reporter.emit(ConversionProgressEvent::TimestampScanProgress { scanned, expected });
     }
     let mut peak = i64::MIN;
     let mut regression_ns = 0;
@@ -446,6 +473,9 @@ pub(crate) fn initial_reference_state_for_prefix(
         for batch in reader {
             reporter.check_interrupted()?;
             let batch = batch.map_err(|error| invalid_error(error.to_string()))?;
+            if report_scan {
+                scanned += remaining.min(batch.num_rows() as u64);
+            }
             let timestamps = column::<Int64Array>(&batch, "event_timestamp_ns")?;
             for timestamp in timestamps
                 .iter()
@@ -459,7 +489,14 @@ pub(crate) fn initial_reference_state_for_prefix(
                     break 'files;
                 }
             }
+            if last_progress.is_some_and(|last| last.elapsed() >= Duration::from_millis(500)) {
+                reporter.emit(ConversionProgressEvent::TimestampScanProgress { scanned, expected });
+                last_progress = Some(Instant::now());
+            }
         }
+    }
+    if report_scan {
+        reporter.emit(ConversionProgressEvent::TimestampScanProgress { scanned, expected });
     }
     Ok(ReferenceState::with_regression_window(regression_ns))
 }

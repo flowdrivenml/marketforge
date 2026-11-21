@@ -898,3 +898,31 @@ fn standalone_cli_uses_only_the_declared_external_trade_publication() {
         depth.events_written
     );
 }
+
+#[test]
+#[ignore = "explicitly exports a tiny prepared job for an interactive dashboard preview"]
+fn export_conversion_dashboard_preview() {
+    let parent = std::env::var_os("MARKETFORGE_CONVERSION_PREVIEW_DIR")
+        .map(std::path::PathBuf::from)
+        .expect("set MARKETFORGE_CONVERSION_PREVIEW_DIR to an empty temporary directory");
+    assert!(parent.is_absolute());
+    assert!(fs::read_dir(&parent).unwrap().next().is_none());
+    let root = tempfile::Builder::new()
+        .prefix("conversion-")
+        .tempdir_in(&parent)
+        .unwrap();
+    let mut job = canonical_job();
+    job.input_merge = root.path().join("source");
+    job.output.dataset_path = root.path().join("converted");
+    job.parquet = market::parquet();
+    job.resources.workers = 2;
+    job.conversion.max_staleness_ns = 30;
+    let source = market::create(&job.input_merge, UnifiedMergeMode::Combined, true);
+    job.source = market::prepared_binding(&job.input_merge, &source);
+    market::remove_preparation_inputs(&source);
+    prepare_conversion_execution(&job).unwrap();
+    let path = root.path().join("job.json");
+    fs::write(&path, serde_json::to_vec_pretty(&job).unwrap()).unwrap();
+    let _ = root.keep();
+    println!("Prepared dashboard preview: {}", path.display());
+}

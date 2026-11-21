@@ -52,7 +52,14 @@ def run(args, expected, *, on_screen=None, release=None):
         if on_screen is not None:
             pump(lambda: on_screen in output)
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 16, 65, 0, 0))
-            os.write(master, b"d\x1b[B\x03")
+            details_start = len(output)
+            os.write(master, b"d")
+            pump(lambda: b"Job details" in output[details_start:])
+            os.write(master, b"\x1b[B\x1b[6~")
+            help_start = len(output)
+            os.write(master, b"?")
+            pump(lambda: b"Keyboard help" in output[help_start:])
+            os.write(master, b"\x03")
             pump(lambda: b"INTERRUPT" in output)
             assert process.poll() is None, (
                 "conversion returned before the blocked worker was released"
@@ -101,7 +108,7 @@ os.mkfifo(inventory)
 gate = os.open(inventory, os.O_RDWR | os.O_NONBLOCK)
 
 
-def release_catalog():
+def release_inventory():
     global gate
     os.write(gate, evidence)
     os.close(gate)
@@ -113,7 +120,7 @@ try:
         args,
         130,
         on_screen=b"SOURCE VALIDATION",
-        release=release_catalog,
+        release=release_inventory,
     )
     assert b"Conversion interrupted" in screen
     assert not Path(job["output"]["dataset_path"]).with_suffix(".staging").exists()

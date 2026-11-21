@@ -17,6 +17,7 @@ pub enum ConversionPhase {
     SourceValidation,
     PartitionPlanning,
     ReferencePrepass,
+    TimestampScan,
     PhysicalConversion,
     ExecutionReceipt,
     PhysicalValidation,
@@ -33,6 +34,7 @@ impl ConversionPhase {
             Self::SourceValidation => "SOURCE VALIDATION",
             Self::PartitionPlanning => "PARTITION PLANNING",
             Self::ReferencePrepass => "REFERENCE PREPASS",
+            Self::TimestampScan => "TIMESTAMP SCAN",
             Self::PhysicalConversion => "PHYSICAL CONVERSION",
             Self::ExecutionReceipt => "EXECUTION RECEIPT",
             Self::PhysicalValidation => "PHYSICAL VALIDATION",
@@ -104,6 +106,61 @@ pub struct ConversionProgress {
 
     pub files_written: u64,
     pub row_groups_written: u64,
+}
+
+impl ConversionProgress {
+    pub fn checked_sum<'a>(snapshots: impl IntoIterator<Item = &'a Self>) -> Option<Self> {
+        let mut total = ConversionProgress::default();
+
+        for progress in snapshots {
+            total.events_read = total.events_read.checked_add(progress.events_read)?;
+            total.events_written = total.events_written.checked_add(progress.events_written)?;
+
+            total.identity_events = total
+                .identity_events
+                .checked_add(progress.identity_events)?;
+            total.converted_events = total
+                .converted_events
+                .checked_add(progress.converted_events)?;
+            total.unavailable_events = total
+                .unavailable_events
+                .checked_add(progress.unavailable_events)?;
+            for (total, value) in total.failures.iter_mut().zip(progress.failures) {
+                *total = total.checked_add(value)?;
+            }
+            total.skipped_events = total.skipped_events.checked_add(progress.skipped_events)?;
+
+            total.trade_events = total.trade_events.checked_add(progress.trade_events)?;
+            total.depth_events = total.depth_events.checked_add(progress.depth_events)?;
+
+            total.depth_levels_read = total
+                .depth_levels_read
+                .checked_add(progress.depth_levels_read)?;
+            total.depth_levels_converted = total
+                .depth_levels_converted
+                .checked_add(progress.depth_levels_converted)?;
+            total.depth_levels_unavailable = total
+                .depth_levels_unavailable
+                .checked_add(progress.depth_levels_unavailable)?;
+            total.depth_levels_skipped = total
+                .depth_levels_skipped
+                .checked_add(progress.depth_levels_skipped)?;
+
+            total.internal_reference_updates = total
+                .internal_reference_updates
+                .checked_add(progress.internal_reference_updates)?;
+            total.external_reference_updates = total
+                .external_reference_updates
+                .checked_add(progress.external_reference_updates)?;
+
+            total.files_written = total.files_written.checked_add(progress.files_written)?;
+            total.row_groups_written = total
+                .row_groups_written
+                .checked_add(progress.row_groups_written)?;
+        }
+
+        Some(total)
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -236,37 +293,10 @@ impl ConversionProgressState {
     pub fn total(&self) -> ConversionProgress {
         let snapshots = self.snapshots();
 
-        let mut total = ConversionProgress::default();
-
-        for progress in snapshots.values() {
-            total.events_read += progress.events_read;
-            total.events_written += progress.events_written;
-
-            total.identity_events += progress.identity_events;
-            total.converted_events += progress.converted_events;
-            total.unavailable_events += progress.unavailable_events;
-            for (total, value) in total.failures.iter_mut().zip(progress.failures) {
-                *total += value;
-            }
-            total.skipped_events += progress.skipped_events;
-
-            total.trade_events += progress.trade_events;
-            total.depth_events += progress.depth_events;
-
-            total.depth_levels_read += progress.depth_levels_read;
-            total.depth_levels_converted += progress.depth_levels_converted;
-            total.depth_levels_unavailable += progress.depth_levels_unavailable;
-            total.depth_levels_skipped += progress.depth_levels_skipped;
-
-            total.internal_reference_updates += progress.internal_reference_updates;
-            total.external_reference_updates += progress.external_reference_updates;
-
-            total.files_written += progress.files_written;
-            total.row_groups_written += progress.row_groups_written;
-        }
-
-        total
+        ConversionProgress::checked_sum(snapshots.values())
+            .expect("conversion partition counter overflow")
     }
+
     pub fn snapshots(&self) -> HashMap<ConversionPartitionKey, ConversionProgress> {
         let partitions = self.partitions.lock().unwrap();
 
@@ -292,8 +322,15 @@ pub enum ConversionProgressEvent {
     },
 
     PartitionsPlanned {
-        count: usize,
+        partitions: Vec<(ConversionPartitionKey, u64)>,
+        workers: usize,
     },
+    TimestampScanProgress {
+        scanned: u64,
+        expected: u64,
+    },
+    MaterializationTotals(ConversionProgress),
+    PublishedReceipt(crate::historical::convert::output::ConversionExecutionReceipt),
     ReferencePrepassProgress {
         events_scanned: u64,
         total_events: u64,
@@ -414,8 +451,22 @@ impl ConversionProgressReporter {
         self.emit(ConversionProgressEvent::PhaseCompleted { phase });
     }
 
-    pub fn partitions_planned(&self, count: usize) {
-        self.emit(ConversionProgressEvent::PartitionsPlanned { count });
+    pub fn partitions_planned(
+        &self,
+        partitions: impl IntoIterator<Item = (ConversionPartitionKey, u64)>,
+        workers: usize,
+    ) {
+        if self.is_enabled() {
+            self.emit(ConversionProgressEvent::PartitionsPlanned {
+                partitions: partitions.into_iter().collect(),
+                workers,
+            });
+        }
+    }
+
+    pub fn materialization_completed(&self, metrics: ConversionProgress) {
+        self.emit(ConversionProgressEvent::MaterializationTotals(metrics));
+        self.phase_completed(ConversionPhase::PhysicalConversion);
     }
     pub fn reference_prepass_progress(
         &self,

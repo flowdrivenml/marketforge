@@ -79,10 +79,7 @@ pub fn materialize_depth_conversion_with_progress(
     reporter: &ConversionProgressReporter,
 ) -> Result<PhysicalDepthConversionMetrics> {
     let key = ConversionPartitionKey { partition_id: 0 };
-    reporter.phase_started(ConversionPhase::PhysicalConversion);
-    reporter.partitions_planned(1);
-    reporter.partition_started(key);
-    let mut progress = ConversionWorkerProgress::new(reporter, key);
+    let mut partition_started = false;
     let result = (|| {
         job.validate()?;
         source_manifest.validate()?;
@@ -134,11 +131,33 @@ pub fn materialize_depth_conversion_with_progress(
 
         let kernel = DepthConversionKernel::new(job, plan)?;
 
-        let state = super::super::shared::reader::initial_reference_state(
+        let causal = source_manifest.timeline_ordering
+            == crate::historical::job::MergeTimelineOrdering::Causal;
+        if causal {
+            reporter.phase_started(ConversionPhase::TimestampScan);
+        }
+        let state = super::super::shared::reader::initial_reference_state_with_scan_progress(
             &job.input_merge,
             source_manifest,
             reporter,
         )?;
+        reporter.check_interrupted()?;
+        if causal {
+            reporter.phase_completed(ConversionPhase::TimestampScan);
+        }
+        reporter.phase_started(ConversionPhase::PhysicalConversion);
+        reporter.partitions_planned(
+            [(
+                key,
+                source_manifest
+                    .events_written
+                    .min(max_events.unwrap_or(u64::MAX)),
+            )],
+            1,
+        );
+        reporter.partition_started(key);
+        partition_started = true;
+        let mut progress = ConversionWorkerProgress::new(reporter, key);
         let mut alignment = DepthConversionAlignment::from_checkpoint(kernel, cursor, state);
 
         // -------------------------------------------------------------------------
@@ -255,14 +274,16 @@ pub fn materialize_depth_conversion_with_progress(
             return invalid("depth conversion physical event-kind mismatch");
         }
 
+        reporter.check_interrupted()?;
         Ok(metrics)
     })();
     match &result {
         Ok(metrics) => {
             reporter.partition_completed(key, metrics.progress());
-            reporter.phase_completed(ConversionPhase::PhysicalConversion);
+            reporter.materialization_completed(metrics.progress());
         }
-        Err(error) => reporter.partition_failed(key, error.to_string()),
+        Err(error) if partition_started => reporter.partition_failed(key, error.to_string()),
+        Err(_) => {}
     }
     result
 }
