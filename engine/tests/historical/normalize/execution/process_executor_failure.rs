@@ -1,8 +1,15 @@
 #![cfg(feature = "historical")]
 
-use std::fs;
+use std::{fs, io::Write};
 
-use crate::support::runtime::TestRun;
+use crate::support::{
+    normalization_fixture::{canonical_normalization_batch, select_normalization_sample},
+    runtime::TestRun,
+};
+use marketforge_engine::{
+    historical::job::{ContentType, InstrumentKind},
+    shared::domain::canonical::Exchange,
+};
 
 use marketforge_engine::historical::normalize::{
     ProcessingStatus, execute_processing_job,
@@ -14,41 +21,31 @@ fn failed_processing_persists_failure_report() {
     let mut run =
         TestRun::new("execution/executor_preflight_failure").expect("create isolated test run");
 
-    let config = run
-        .runtime_from_general()
-        .expect("load production normalization configuration");
-
-    // Select two real sources dynamically from normalize.json.
-    let jobs = super::process_session::selected_session_jobs(&mut run, &config);
-
-    assert_eq!(jobs.len(), 2);
-    assert_eq!(jobs[0].tasks.len(), 1);
-    assert_eq!(jobs[1].tasks.len(), 1);
-
-    // Select the same authoritative source tasks, then resolve
-    // them together to construct a complete stream registry.
-    let selected_ids: std::collections::BTreeSet<u64> = jobs
-        .iter()
-        .flat_map(|job| job.tasks.iter().map(|task| task.task_id.0))
-        .collect();
-
-    assert_eq!(selected_ids.len(), 2);
-
-    let mut batch =
-        crate::support::fixtures::workload().expect("load authoritative normalization batch");
-
-    batch.jobs.retain(|job| {
-        job.output.content_type == marketforge_engine::historical::job::ContentType::Trades
-    });
-
-    assert_eq!(batch.jobs.len(), 1);
-
+    let config = run.runtime(Default::default()).unwrap();
+    let workload = canonical_normalization_batch().unwrap();
+    let select = |symbol: &str| {
+        select_normalization_sample(&workload, symbol, ContentType::Trades, 1, |task| {
+            task.exchange == Exchange::Bybit
+                && task.instrument_type == InstrumentKind::Spot
+                && task.symbol.as_deref() == Some(symbol)
+        })
+        .unwrap()
+    };
+    let mut batch = select("BTCUSDT");
     batch.jobs[0]
         .tasks
-        .retain(|task| selected_ids.contains(&task.task_id.0));
-
-    assert_eq!(batch.jobs[0].tasks.len(), 2);
-
+        .extend(select("ETHBTC").jobs.remove(0).tasks);
+    for task in &mut batch.jobs[0].tasks {
+        let path = run.path.join(format!("{}.csv.gz", task.task_id.0));
+        let mut gzip = flate2::write::GzEncoder::new(
+            fs::File::create(&path).unwrap(),
+            flate2::Compression::default(),
+        );
+        gzip.write_all(b"id,timestamp,price,volume,side,rpi\n7,1250,200,3,buy,0\n")
+            .unwrap();
+        gzip.finish().unwrap();
+        task.input_path = path;
+    }
     let resolved = run
         .prepare(&batch, &config)
         .expect("resolve both source tasks into one job");
@@ -104,7 +101,22 @@ fn failed_processing_persists_failure_report() {
     );
 
     // Preflight rejection must happen before processing any records.
-    assert!(report.processing_metrics.tasks.is_empty());
+    let [task_report] = report.processing_metrics.tasks.as_slice() else {
+        panic!("expected one diagnostic for the missing source");
+    };
+    assert_eq!(task_report.task_id, job.tasks[1].task_id.0);
+    assert_eq!(task_report.stream_id, job.tasks[1].stream_id.0);
+    assert_eq!(task_report.counters, Default::default());
+    let failure = task_report
+        .failure
+        .as_ref()
+        .expect("missing source diagnostic");
+    assert_eq!(failure.typed_cause, "source_open");
+    assert_eq!(
+        failure.physical_source,
+        job.tasks[1].input_path.to_str().unwrap()
+    );
+    assert!(!failure.stopped_by_another_failure);
 
     let counters = &report.processing_metrics.counters;
 
@@ -129,4 +141,5 @@ fn failed_processing_persists_failure_report() {
     println!("Records read:   {}", counters.records_read);
     println!("Failure report: {}", failure_path.display());
     println!("PREFLIGHT FAILURE REPORTING: PASS");
+    run.finish(&Ok(())).unwrap();
 }

@@ -8,7 +8,7 @@ use marketforge_engine::shared::historical::limits::LimitScope;
 use marketforge_engine::{
     historical::{
         job::{ContentType, InstrumentKind, ProcessingJob},
-        normalize::{manifest::inspect_parquet_files, task::execute_trade_task},
+        normalize::task::execute_trade_task,
     },
     shared::{domain::canonical::Exchange, historical::ProcessingConfig},
 };
@@ -41,8 +41,11 @@ fn selected_trade_job(run: &mut TestRun, config: &ProcessingConfig) -> Processin
     job
 }
 
+#[cfg(feature = "historical-full-tests")]
 #[test]
 fn executes_trade_task_into_isolated_output() {
+    use marketforge_engine::historical::normalize::manifest::inspect_parquet_files;
+
     let mut run = TestRun::new("execution/real_trade_task").expect("create isolated test run");
 
     let config = run

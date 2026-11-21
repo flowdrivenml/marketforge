@@ -68,7 +68,6 @@ mod parquet_discovery;
 #[path = "execution/process_executor.rs"]
 mod process_executor;
 
-#[cfg(feature = "historical-full-tests")]
 #[path = "execution/process_executor_failure.rs"]
 mod process_executor_failure;
 
@@ -84,7 +83,6 @@ mod process_session;
 #[path = "execution/process_session_finalization.rs"]
 mod process_session_finalization;
 
-#[cfg(feature = "historical-full-tests")]
 #[path = "execution/process_task.rs"]
 mod process_task;
 
