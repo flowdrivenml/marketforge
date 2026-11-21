@@ -34,7 +34,27 @@ nav = [
     { "Python datasets" = "reference/python-datasets.md" },
   ] },
   { "Examples" = ["examples/index.md", "examples/catalogue/index.md", "examples/catalogue/merge.md", "examples/bring-your-own-data/index.md", "examples/bring-your-own-data/databento/index.md"] },
-  { "Development" = ["development/index.md", "development/architecture.md", "development/extending.md"] },
+  { "Development" = [
+    "development/index.md",
+    "development/setup.md",
+    "development/first-contribution.md",
+    "development/architecture.md",
+    "development/operations.md",
+    { "Extension guides" = [
+      "development/extending.md",
+      "development/sources.md",
+      "development/orchestration.md",
+    ] },
+    "development/testing.md",
+    "development/debugging.md",
+    "development/performance.md",
+    "development/compatibility.md",
+  ] },
+]
+
+[project.markdown_extensions]
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
 ]
 
 [project.theme]

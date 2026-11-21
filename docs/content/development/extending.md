@@ -1,17 +1,49 @@
-# Extend MarketForge
+# Extension decision guide
 
-## Add a historical adapter
+| Intended change | Start at | Check the adjacent boundary |
+| --- | --- | --- |
+| Map fields or units already handled by a reader | [Format profiles](sources.md#change-a-format-profile) | Profile compiler and runtime interpretation |
+| List or download a provider's historical archives | [Acquisition integration](sources.md#change-acquisition-discovery) | Scope identity, interval, managed registration |
+| Decode a new physical representation | [Readers and parsing](sources.md#change-a-reader-or-engine-semantics) | Format classification, member selection, resource accounting |
+| Change reconciliation, ordering, or depth semantics | [Reader and Engine guide](sources.md#change-a-reader-or-engine-semantics) | Canonical invariants and consumer behavior |
+| Change input selection, preparation, or CLI behavior | [Forge orchestration](orchestration.md#change-forge-orchestration) | Pinned evidence, exit statuses and Engine loader |
+| Change catalogue declarations or historical evidence | [Catalogue and registry](orchestration.md#change-catalogue-or-registry-behavior) | Historical resolution and migrations |
+| Change a physical schema, manifest, or dataset reader | [Publication and reader contracts](orchestration.md#change-publications-or-dataset-readers) | Producers, validators and downstream readers |
 
-Implement native scope validation and archive identity in `forge/historical/archives/sources/`. Derive UTC nominal bounds from the provider's calendar and distinguish feed variants that can share a filename. Test discovery with controlled HTTP responses and assertions for exact instrument and content type. Verify how local copies register before adding a normalization example.
+## Source changes
 
-## Extend profiles and decoders
+```mermaid
+---
+config:
+  flowchart:
+    nodeSpacing: 12
+    rankSpacing: 22
+    padding: 6
+---
+flowchart TB
+    A["Source change"] -->|"find files"| D["Acquisition"]
+    A -->|"decode bytes"| F["Reader"]
+    A -->|"map fields"| P["Profile"]
+```
 
-Start at the Rust catalogue compiler and the shared trade or depth decoder. Keep profile validation and runtime interpretation in agreement. Add an example raw record with independently stated expected canonical values. For depth, check complete reconstructed state, observation offsets and boundaries as well as row counts. Validate the profile through Forge and then process the sample.
+Start at the first boundary that cannot express the change. A Bybit column rename in a supported CSV format belongs in the profile. An unexpected archive path belongs in discovery. A new archive codec or record encoding belongs at the reader boundary. [Source integration guide](sources.md)
 
-## Change a handoff or publication
+## Operation and output changes
 
-Review both sides of the [architecture contract table](architecture.md). Update the actual protocol negotiation, parsers, fixtures and compatibility checks together. Exercise the producer, Engine parser, execution and Forge registration. For Parquet or manifest changes, check physical types, ownership ranges, auxiliary inventory, lineage and consumers such as merge. A successful parser test alone establishes structural compatibility.
+```mermaid
+---
+config:
+  flowchart:
+    nodeSpacing: 12
+    rankSpacing: 22
+    padding: 6
+---
+flowchart TB
+    O["Operation change"] -->|"input selection"| G["Forge"]
+    O -->|"event rules"| E["Engine"]
+    O -->|"stored format"| C["Contract"]
+```
 
-## Evolve the PostgreSQL schema
+When the source already decodes correctly, trace what changes next. A new input selector belongs in Forge. Changed snapshot or delta behavior belongs in Engine interpretation and must agree with the profile contract. A changed persisted format requires work on producers and consumers. [Orchestration and persistence](orchestration.md) · [Compatibility review](compatibility.md)
 
-Add a migration using the existing registry migration sequence. Applied scripts are checked by name and checksum. Test upgrading a previous registry and applying to a fresh guarded database. Exercise rollback on failure and test how old IDs, references and filesystem artifacts remain accessible. See [database maintenance](../reference/cli/maintenance.md#database).
+MarketForge's source integrations are internal code with explicit dispatch. Installed profiles are data interpreted by the existing compiler and decoders. A new implementation capability needs wiring, tests, and documentation even when its configuration is expressed as a profile.
