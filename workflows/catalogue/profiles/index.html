@@ -17,7 +17,7 @@
       
       
       
-        <link rel="prev" href="../../acquisition/external-data/">
+        <link rel="prev" href="../../normalize/">
       
       
         <link rel="next" href="../profile-trades/">
@@ -31,7 +31,7 @@
     
     
       
-        <title>Trades and L2 depth profiles - MarketForge</title>
+        <title>Normalization profiles - MarketForge</title>
       
     
     
@@ -115,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Trades and L2 depth profiles
+              Normalization profiles
             
           </span>
         </div>
@@ -552,8 +552,6 @@
       
         
           
-        
-      
         
       
         
@@ -1129,6 +1127,8 @@
       
         
       
+        
+      
     
     
     
@@ -1152,7 +1152,7 @@
   <span class="md-ellipsis">
     
   
-  Author format profiles
+  Process data
 
     
   </span>
@@ -1165,446 +1165,6 @@
         
           <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_7_label" aria-expanded="true">
             <label class="md-nav__title" for="__nav_1_3_7">
-              <span class="md-nav__icon md-icon"></span>
-              
-  
-  Author format profiles
-
-            </label>
-            <ul class="md-nav__list" data-md-scrollfix>
-              
-                
-                  
-  
-  
-    
-  
-  
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Trades and L2 depth profiles
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="././" class="md-nav__link md-nav__link--active">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Trades and L2 depth profiles
-
-    
-  </span>
-  
-  
-
-      </a>
-      
-        
-
-
-<nav class="md-nav md-nav--secondary" aria-label="On this page">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      On this page
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#choose-an-authoring-guide" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Choose an authoring guide
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#validate-and-install-a-candidate" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Validate and install a candidate
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Validate and install a candidate">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#validate-a-candidate-profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Validate a Candidate Profile
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#validate-an-installed-profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Validate an installed profile
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#important-supply-one-source" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Important: supply one source
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-happens-during-validation" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What happens during validation?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-validation-install-the-profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does validation install the profile?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-validation-process-source-records" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does validation process source records?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-validation-prove-the-source-semantics" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does validation prove the source semantics?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#install-a-profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Install a Profile
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-does-installation-do" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What does installation do?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-it-require-postgresql" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does it require PostgreSQL?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#is-testing-required" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Is <code>--testing</code> required?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-installation-replace-a-different-existing-profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does installation replace a different existing profile?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-is-the-operation-called-add" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why is the operation called <code>add</code>?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-structural-validation-is-not-enough" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why Structural Validation Is Not Enough
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#another-example-trade-side" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Another example: trade side
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-is-this-dangerous" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why is this dangerous?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#draft-an-installed-profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Draft an installed profile
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
-    </li>
-  
-
-                
-              
-                
-                  
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../profile-trades/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Create a trade profile
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-                
-              
-                
-                  
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../profile-depth/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Create a depth profile
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-                
-              
-                
-                  
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../profile-troubleshooting/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Validate, install and troubleshoot profiles
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-                
-              
-            </ul>
-          </nav>
-        
-      
-    </li>
-  
-
-                
-              
-                
-                  
-  
-  
-  
-  
-    
-    
-      
-        
-      
-        
-      
-        
-      
-        
-      
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
-        
-          
-          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Process data
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        
-          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
-            <label class="md-nav__title" for="__nav_1_3_8">
               <span class="md-nav__icon md-icon"></span>
               
   
@@ -1635,6 +1195,196 @@
   
 
       </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_7_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_7_2" id="__nav_1_3_7_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Author normalization profiles
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_1_3_7_2_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_1_3_7_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Author normalization profiles
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization profiles
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../profile-trades/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Trade profile sample checks
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../profile-depth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Depth profile sample checks
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../profile-troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Troubleshoot normalization profiles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
     </li>
   
 
@@ -1756,10 +1506,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_9" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
         
           
-          <label class="md-nav__link" for="__nav_1_3_9" id="__nav_1_3_9_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
             
   
   
@@ -1777,8 +1527,8 @@
           </label>
         
         
-          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_9_label" aria-expanded="false">
-            <label class="md-nav__title" for="__nav_1_3_9">
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_8">
               <span class="md-nav__icon md-icon"></span>
               
   
@@ -3080,7 +2830,7 @@
   <span class="md-ellipsis">
     
   
-  Historical normalization profile schema
+  Create a normalization profile
 
     
   </span>
@@ -4617,11 +4367,6 @@
                       
                     
                     
-                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-                      <div class="md-sidebar-button__wrapper">
-                        <label class="md-sidebar-button" for="__toc"></label>
-                      </div>
-                    
                   
                   <div class="md-sidebar__inner">
                     
@@ -4633,229 +4378,6 @@
   
     
   
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      On this page
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#choose-an-authoring-guide" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Choose an authoring guide
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#validate-and-install-a-candidate" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Validate and install a candidate
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Validate and install a candidate">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#validate-a-candidate-profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Validate a Candidate Profile
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#validate-an-installed-profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Validate an installed profile
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#important-supply-one-source" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Important: supply one source
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-happens-during-validation" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What happens during validation?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-validation-install-the-profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does validation install the profile?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-validation-process-source-records" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does validation process source records?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-validation-prove-the-source-semantics" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does validation prove the source semantics?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#install-a-profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Install a Profile
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-does-installation-do" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What does installation do?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-it-require-postgresql" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does it require PostgreSQL?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#is-testing-required" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Is <code>--testing</code> required?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-installation-replace-a-different-existing-profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does installation replace a different existing profile?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-is-the-operation-called-add" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why is the operation called <code>add</code>?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-structural-validation-is-not-enough" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why Structural Validation Is Not Enough
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#another-example-trade-side" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Another example: trade side
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-is-this-dangerous" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why is this dangerous?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#draft-an-installed-profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Draft an installed profile
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
   
 </nav>
                   </div>
@@ -4941,8 +4463,6 @@
       
         
       
-        
-      
     
     
     
@@ -4975,6 +4495,40 @@
       
         
       
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../../normalize/" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Process data
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -4984,7 +4538,7 @@
           
   
   <span class="md-ellipsis">
-    Author format profiles
+    Author normalization profiles
   </span>
 
         </a>
@@ -5006,136 +4560,34 @@
   
 
 
-<h1 id="trades-and-l2-depth-profiles">Trades and L2 depth profiles</h1>
-<p>Create a complete standalone schema-2 TOML file for each source interpretation. The canonical name is <code>exchange.instrument_type.market_category.trades</code> or <code>exchange.instrument_type.market_category.depth</code>. Use the exact ID as the filename. Format codes use the uppercase venue prefix with hyphens for underscores, followed by <code>-T1</code> or <code>-B1</code> for the first format.</p>
-<p>These Rust-validated examples describe only the supplied synthetic <a href="../../../examples/catalogue/synthetic-trades.csv">trade CSV</a> and <a href="../../../examples/catalogue/synthetic-depth.jsonl">depth JSONL</a>. The example files have explicit side values and independent depth snapshots.</p>
-<ul>
-<li><a href="../../../examples/catalogue/example_exchange.equity.equity.trades.toml">Complete trades profile</a></li>
-<li><a href="../../../examples/catalogue/example_exchange.equity.equity.depth.toml">Complete L2 depth profile</a></li>
-</ul>
-<div class="highlight"><pre><span></span><code><span class="nv">examples</span><span class="o">=</span>docs/content/examples/catalogue
-<span class="nv">trade</span><span class="o">=</span>example_exchange.equity.equity.trades
-<span class="nv">depth</span><span class="o">=</span>example_exchange.equity.equity.depth
-mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>validate<span class="w"> </span>--file<span class="w"> </span><span class="s2">"</span><span class="nv">$examples</span><span class="s2">/</span><span class="nv">$trade</span><span class="s2">.toml"</span>
-mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>validate<span class="w"> </span>--file<span class="w"> </span><span class="s2">"</span><span class="nv">$examples</span><span class="s2">/</span><span class="nv">$depth</span><span class="s2">.toml"</span>
-mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>add<span class="w"> </span><span class="s2">"</span><span class="nv">$trade</span><span class="s2">"</span><span class="w"> </span>--from<span class="w"> </span><span class="s2">"</span><span class="nv">$examples</span><span class="s2">/</span><span class="nv">$trade</span><span class="s2">.toml"</span><span class="w"> </span>--testing
-mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>add<span class="w"> </span><span class="s2">"</span><span class="nv">$depth</span><span class="s2">"</span><span class="w"> </span>--from<span class="w"> </span><span class="s2">"</span><span class="nv">$examples</span><span class="s2">/</span><span class="nv">$depth</span><span class="s2">.toml"</span><span class="w"> </span>--testing
-mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>list<span class="w"> </span>--exchange<span class="w"> </span>example_exchange
-mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>inspect<span class="w"> </span><span class="s2">"</span><span class="nv">$depth</span><span class="s2">"</span>
-</code></pre></div>
-<p>Validation stages the submitted definition beside installed profiles and asks Rust to compile the catalogue. Installation checks the venue in PostgreSQL, retains the Rust fingerprint, and rejects a changed interpretation under the same ID. A canonical ID currently selects one physical format. Gate.io depth has existing explicit feed variants. A second arbitrary source layout under the same logical ID requires an engine contract extension.</p>
-<p>Registered equity venues can run through the managed normalization workflow. The <a href="../../../examples/bring-your-own-data/databento/">Databento reference profiles</a> show nested JSONL timestamps, explicit unknown trade sides, and bounded depth observations.</p>
-<h2 id="choose-an-authoring-guide">Choose an authoring guide</h2>
-<ul>
-<li><a href="../profile-trades/">Map a trade CSV</a>.</li>
-<li><a href="../profile-depth/">Map a depth snapshot</a>.</li>
-<li><a href="../profile-troubleshooting/">Validate, install and troubleshoot</a>.</li>
-<li><a href="../../../reference/profiles/">Profile schema and transformations</a>.</li>
-</ul>
-<h2 id="validate-and-install-a-candidate">Validate and install a candidate</h2>
-<h3 id="validate-a-candidate-profile">Validate a Candidate Profile</h3>
-<p>Once you have written a profile, validate it using the production normalizer.</p>
-<p>For example:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>validate<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--file<span class="w"> </span>/absolute/path/to/binance.spot.spot.trades.toml
-</code></pre></div>
-<p>This selects a candidate file.</p>
-<h3 id="validate-an-installed-profile">Validate an installed profile</h3>
-<p>You can also validate a profile by ID:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>validate<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>bitget.perpetual.linear.depth
-</code></pre></div>
-<h3 id="important-supply-one-source">Important: supply one source</h3>
-<p>Use either:</p>
-<div class="highlight"><pre><span></span><code>PROFILE_ID
-</code></pre></div>
-<p>or:</p>
-<div class="highlight"><pre><span></span><code>--file PATH
-</code></pre></div>
-<p>Do not supply both in one validation command.</p>
-<h3 id="what-happens-during-validation">What happens during validation?</h3>
-<p>Forge invokes the installed normalizer's supported validation interface.</p>
-<p>Rust parses and semantically compiles the profile.</p>
-<p>The candidate is checked using a staged catalogue.</p>
-<h3 id="does-validation-install-the-profile">Does validation install the profile?</h3>
-<p>No.</p>
-<p>Validation does not publish the candidate into the managed profile catalogue.</p>
-<h3 id="does-validation-process-source-records">Does validation process source records?</h3>
-<p>No.</p>
-<p>It checks the declaration.</p>
-<p>It does not perform a complete historical normalization workload.</p>
-<h3 id="does-validation-prove-the-source-semantics">Does validation prove the source semantics?</h3>
-<p>No.</p>
-<p>A profile can compile successfully while containing a wrong timestamp unit or side mapping.</p>
-<p>Validation should be followed by testing against representative source records.</p>
-<hr />
-<h3 id="install-a-profile">Install a Profile</h3>
-<p>Once a candidate is valid and the relevant catalogue prerequisites are satisfied, it can be installed.</p>
-<p>For example:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>add<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>bitget.perpetual.linear.depth<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--from<span class="w"> </span>/absolute/path/to/bitget.perpetual.linear.depth.toml<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--testing
-</code></pre></div>
-<p>This example assumes the candidate matches the actual intended source format and does not conflict with an existing installed interpretation.</p>
-<h3 id="what-does-installation-do">What does installation do?</h3>
-<p>Forge checks the candidate and publishes or reuses the supported definition.</p>
-<p>The installed file belongs to the managed profile catalogue.</p>
-<h3 id="does-it-require-postgresql">Does it require PostgreSQL?</h3>
-<p>Profile publication checks the guarded testing catalogue.</p>
-<p>The relevant execution venue must be available.</p>
-<h3 id="is-testing-required">Is <code>--testing</code> required?</h3>
-<p>The parser accepts it as optional for profile installation.</p>
-<p>However, the publication operation still uses the guarded testing catalogue.</p>
-<p>Including <code>--testing</code> explicitly makes the intended environment clear.</p>
-<h3 id="does-installation-replace-a-different-existing-profile">Does installation replace a different existing profile?</h3>
-<p>No.</p>
-<p>A conflicting compiled interpretation under the same ID is rejected.</p>
-<h3 id="why-is-the-operation-called-add">Why is the operation called <code>add</code>?</h3>
-<p><code>add</code> is the canonical profile-publication command.</p>
-<p>The CLI also accepts:</p>
-<div class="highlight"><pre><span></span><code>profiles register
-</code></pre></div>
-<p>as an alias.</p>
-<p>For new workflows, prefer <code>add</code>.</p>
-<hr />
-<h3 id="why-structural-validation-is-not-enough">Why Structural Validation Is Not Enough</h3>
-<p>A profile can be valid according to the compiler and still misinterpret source data.</p>
-<p>Consider a timestamp:</p>
-<div class="highlight"><pre><span></span><code>1767225600000
-</code></pre></div>
-<p>Suppose the profile incorrectly declares:</p>
-<div class="highlight"><pre><span></span><code><span class="n">encoding</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"unix_microseconds"</span>
-</code></pre></div>
-<p>when the source actually uses milliseconds.</p>
-<p>The field declaration may still be structurally valid.</p>
-<p>However, the interpreted timestamp would be wrong.</p>
-<h3 id="another-example-trade-side">Another example: trade side</h3>
-<p>Suppose the actual source defines:</p>
-<div class="highlight"><pre><span></span><code>B = Buy
-</code></pre></div>
-<p>but the profile maps:</p>
-<div class="highlight"><pre><span></span><code>B = Sell
-</code></pre></div>
-<p>The profile may compile successfully.</p>
-<p>The resulting dataset would contain incorrect trade directions.</p>
-<h3 id="why-is-this-dangerous">Why is this dangerous?</h3>
-<p>The output can look plausible.</p>
-<p>For example, prices and quantities might still be valid decimals.</p>
-<p>This means source interpretation must be tested against known expected values.</p>
-<hr />
-<h2 id="draft-an-installed-profile">Draft an installed profile</h2>
-<p>Start with an installed definition for the same content and source format. Inspect opens the original read-only, while show summarizes only its configured settings and any displayed schema defaults.</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>list<span class="w"> </span>--exchange<span class="w"> </span>bybit
-mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>inspect<span class="w"> </span>bybit.perpetual.linear.depth
-mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>show<span class="w"> </span>bybit.perpetual.linear.depth
-mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>schema<span class="w"> </span>--field<span class="w"> </span><span class="s1">'normalization.rules[].target'</span>
-mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>edit<span class="w"> </span>bybit.perpetual.linear.depth
-</code></pre></div>
-<p>Quote field paths containing shell metacharacters in shells that expand them. The draft keeps the original filename and bytes when first copied. The edit command prints its path. Continue an existing draft with <code>nvim</code> at that path.</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>validate<span class="w"> </span>--file<span class="w"> </span>data/.config/engine/normalize/profile-drafts/bybit.perpetual.linear.depth.toml
-</code></pre></div>
-<p>The draft can pass Rust validation while still being ineligible to replace the installed profile. A changed interpretation under an installed ID is rejected by add and register. For a genuinely new supported identity, keep the file name and declared ID consistent and use the documented installation command with the verified venue. Read the <a href="../../../reference/cli/acquisition/#profile-commands">profile CLI reference</a> and choose the <a href="../profile-trades/">trade tutorial</a> or <a href="../profile-depth/">depth tutorial</a> for representative mappings and sample checks.</p>
+<h1 id="normalization-profiles">Normalization profiles</h1>
+<p>Follow <a href="../../../reference/profiles/">Create a normalization profile</a> for source inspection, complete trade and depth examples, validation, and installation. Use the <a href="../../../reference/profile-fields/">field index</a> to adapt the examples to another source layout.</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Start here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Check actual trade values</td>
+<td><a href="../profile-trades/">Trade sample checks</a></td>
+</tr>
+<tr>
+<td>Check book initialization and updates</td>
+<td><a href="../profile-depth/">Depth sample checks</a></td>
+</tr>
+<tr>
+<td>Diagnose a compiler or runtime error</td>
+<td><a href="../profile-troubleshooting/">Profile troubleshooting</a></td>
+</tr>
+<tr>
+<td>Find a CLI option</td>
+<td><a href="../../../reference/cli/normalize/#profile-commands">Profile commands</a></td>
+</tr>
+</tbody>
+</table>
 
 
 
@@ -5167,7 +4619,7 @@ mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../../acquisition/external-data/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Register external recordings">
+          <a href="../../normalize/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Normalize registered data">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
@@ -5177,20 +4629,20 @@ mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class
                 Previous
               </span>
               <div class="md-ellipsis">
-                Register external recordings
+                Normalize registered data
               </div>
             </div>
           </a>
         
         
           
-          <a href="../profile-trades/" class="md-footer__link md-footer__link--next" aria-label="Next: Create a trade profile">
+          <a href="../profile-trades/" class="md-footer__link md-footer__link--next" aria-label="Next: Trade profile sample checks">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Create a trade profile
+                Trade profile sample checks
               </div>
             </div>
             <div class="md-footer__button md-icon">

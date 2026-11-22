@@ -20,7 +20,7 @@
         <link rel="prev" href="../profile-depth/">
       
       
-        <link rel="next" href="../../normalize/">
+        <link rel="next" href="../../merge/">
       
       
         
@@ -31,7 +31,7 @@
     
     
       
-        <title>Validate, install and troubleshoot profiles - MarketForge</title>
+        <title>Troubleshoot normalization profiles - MarketForge</title>
       
     
     
@@ -115,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Validate, install and troubleshoot profiles
+              Troubleshoot normalization profiles
             
           </span>
         </div>
@@ -552,8 +552,6 @@
       
         
           
-        
-      
         
       
         
@@ -1129,6 +1127,8 @@
       
         
       
+        
+      
     
     
     
@@ -1152,7 +1152,7 @@
   <span class="md-ellipsis">
     
   
-  Author format profiles
+  Process data
 
     
   </span>
@@ -1168,7 +1168,97 @@
               <span class="md-nav__icon md-icon"></span>
               
   
-  Author format profiles
+  Process data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalize registered data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_7_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_7_2" id="__nav_1_3_7_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Author normalization profiles
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_1_3_7_2_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_1_3_7_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Author normalization profiles
 
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
@@ -1187,7 +1277,7 @@
   <span class="md-ellipsis">
     
   
-  Trades and L2 depth profiles
+  Normalization profiles
 
     
   </span>
@@ -1214,7 +1304,7 @@
   <span class="md-ellipsis">
     
   
-  Create a trade profile
+  Trade profile sample checks
 
     
   </span>
@@ -1241,7 +1331,7 @@
   <span class="md-ellipsis">
     
   
-  Create a depth profile
+  Depth profile sample checks
 
     
   </span>
@@ -1277,7 +1367,7 @@
   <span class="md-ellipsis">
     
   
-  Validate, install and troubleshoot profiles
+  Troubleshoot normalization profiles
 
     
   </span>
@@ -1294,7 +1384,7 @@
   <span class="md-ellipsis">
     
   
-  Validate, install and troubleshoot profiles
+  Troubleshoot normalization profiles
 
     
   </span>
@@ -1320,101 +1410,6 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#validating-and-installing-a-profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Validating and Installing a Profile
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Validating and Installing a Profile">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#inspect-the-existing-catalogue" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Inspect the existing catalogue
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#build-the-managed-normalizer" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Build the managed normalizer
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#validate-a-draft" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Validate a draft
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#install-a-validated-definition" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Install a validated definition
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#verify-against-actual-records" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Verify against actual records
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#common-authoring-problems" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Common Authoring Problems
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#mapping-and-input-diagnostics" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Mapping and input diagnostics
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Mapping and input diagnostics">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
   <a href="#common-profile-identity-problems" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1423,7 +1418,8 @@
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Common Profile Identity Problems">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#profile-id-has-too-many-components" class="md-nav__link">
@@ -1480,7 +1476,12 @@
   
 </li>
         
-          <li class="md-nav__item">
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#common-source-format-problems" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1489,7 +1490,8 @@
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Common Source Format Problems">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#unsupported-record-format" class="md-nav__link">
@@ -1546,7 +1548,12 @@
   
 </li>
         
-          <li class="md-nav__item">
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#timestamp-and-quantity-problems" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1555,7 +1562,8 @@
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Timestamp and Quantity Problems">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#timestamps-are-incorrect" class="md-nav__link">
@@ -1612,7 +1620,12 @@
   
 </li>
         
-          <li class="md-nav__item">
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#trade-mapping-problems" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1621,7 +1634,8 @@
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Trade Mapping Problems">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#side-mapping-is-reversed" class="md-nav__link">
@@ -1689,7 +1703,12 @@
   
 </li>
         
-          <li class="md-nav__item">
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#depth-mapping-problems" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1698,7 +1717,8 @@
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Depth Mapping Problems">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#a-record-matches-no-rule" class="md-nav__link">
@@ -1799,7 +1819,12 @@
   
 </li>
         
-          <li class="md-nav__item">
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#specialized-format-problems" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1808,7 +1833,8 @@
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Specialized Format Problems">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#xlsx-profile-fails" class="md-nav__link">
@@ -1859,17 +1885,6 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#complete-command-reference" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Complete Command Reference
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
     </ul>
   
 </nav>
@@ -1883,94 +1898,6 @@
           </nav>
         
       
-    </li>
-  
-
-                
-              
-                
-                  
-  
-  
-  
-  
-    
-    
-      
-        
-      
-        
-      
-        
-      
-        
-      
-    
-    
-    
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
-        
-          
-          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
-            
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Process data
-
-    
-  </span>
-  
-  
-
-            <span class="md-nav__icon md-icon"></span>
-          </label>
-        
-        
-          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
-            <label class="md-nav__title" for="__nav_1_3_8">
-              <span class="md-nav__icon md-icon"></span>
-              
-  
-  Process data
-
-            </label>
-            <ul class="md-nav__list" data-md-scrollfix>
-              
-                
-                  
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../normalize/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Normalize registered data
-
-    
-  </span>
-  
-  
-
-      </a>
     </li>
   
 
@@ -2092,10 +2019,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_9" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
         
           
-          <label class="md-nav__link" for="__nav_1_3_9" id="__nav_1_3_9_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
             
   
   
@@ -2113,8 +2040,8 @@
           </label>
         
         
-          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_9_label" aria-expanded="false">
-            <label class="md-nav__title" for="__nav_1_3_9">
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_8">
               <span class="md-nav__icon md-icon"></span>
               
   
@@ -3416,7 +3343,7 @@
   <span class="md-ellipsis">
     
   
-  Historical normalization profile schema
+  Create a normalization profile
 
     
   </span>
@@ -4977,101 +4904,6 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#validating-and-installing-a-profile" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Validating and Installing a Profile
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Validating and Installing a Profile">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#inspect-the-existing-catalogue" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Inspect the existing catalogue
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#build-the-managed-normalizer" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Build the managed normalizer
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#validate-a-draft" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Validate a draft
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#install-a-validated-definition" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Install a validated definition
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#verify-against-actual-records" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Verify against actual records
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#common-authoring-problems" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Common Authoring Problems
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#mapping-and-input-diagnostics" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Mapping and input diagnostics
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Mapping and input diagnostics">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
   <a href="#common-profile-identity-problems" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -5080,7 +4912,8 @@
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Common Profile Identity Problems">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#profile-id-has-too-many-components" class="md-nav__link">
@@ -5137,7 +4970,12 @@
   
 </li>
         
-          <li class="md-nav__item">
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#common-source-format-problems" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -5146,7 +4984,8 @@
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Common Source Format Problems">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#unsupported-record-format" class="md-nav__link">
@@ -5203,7 +5042,12 @@
   
 </li>
         
-          <li class="md-nav__item">
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#timestamp-and-quantity-problems" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -5212,7 +5056,8 @@
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Timestamp and Quantity Problems">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#timestamps-are-incorrect" class="md-nav__link">
@@ -5269,7 +5114,12 @@
   
 </li>
         
-          <li class="md-nav__item">
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#trade-mapping-problems" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -5278,7 +5128,8 @@
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Trade Mapping Problems">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#side-mapping-is-reversed" class="md-nav__link">
@@ -5346,7 +5197,12 @@
   
 </li>
         
-          <li class="md-nav__item">
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#depth-mapping-problems" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -5355,7 +5211,8 @@
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Depth Mapping Problems">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#a-record-matches-no-rule" class="md-nav__link">
@@ -5456,7 +5313,12 @@
   
 </li>
         
-          <li class="md-nav__item">
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#specialized-format-problems" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -5465,7 +5327,8 @@
     </span>
   </a>
   
-</li>
+    <nav class="md-nav" aria-label="Specialized Format Problems">
+      <ul class="md-nav__list">
         
           <li class="md-nav__item">
   <a href="#xlsx-profile-fails" class="md-nav__link">
@@ -5513,17 +5376,6 @@
         
       </ul>
     </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#complete-command-reference" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Complete Command Reference
-      </span>
-    </span>
-  </a>
   
 </li>
       
@@ -5613,8 +5465,6 @@
       
         
       
-        
-      
     
     
     
@@ -5647,6 +5497,40 @@
       
         
       
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../../normalize/" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Process data
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -5656,7 +5540,7 @@
           
   
   <span class="md-ellipsis">
-    Author format profiles
+    Author normalization profiles
   </span>
 
         </a>
@@ -5678,145 +5562,18 @@
   
 
 
-<h1 id="validate-install-and-troubleshoot-profiles">Validate, install and troubleshoot profiles</h1>
-<h2 id="validating-and-installing-a-profile">Validating and Installing a Profile</h2>
-<h3 id="inspect-the-existing-catalogue">Inspect the existing catalogue</h3>
-<p>Run commands from the project root:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>list
-
-mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>list<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--exchange<span class="w"> </span>binance<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--instrument-type<span class="w"> </span>spot<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--market-category<span class="w"> </span>spot<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--type<span class="w"> </span>trades
-
-mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>show<span class="w"> </span>binance.spot.spot.trades
+<h1 id="troubleshoot-normalization-profiles">Troubleshoot normalization profiles</h1>
+<p>Use the <a href="../../../reference/profiles/">authoring guide</a> for draft creation, Rust validation, installation, and the sample check. Start here when the compiler rejects a definition or a known raw value differs from the emitted record.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>status<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>normalize<span class="w"> </span>profiles<span class="w"> </span>list<span class="w"> </span>--exchange<span class="w"> </span>binance<span class="w"> </span>--type<span class="w"> </span>trades<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>normalize<span class="w"> </span>profiles<span class="w"> </span>validate<span class="w"> </span>binance.spot.spot.trades<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
 </code></pre></div>
-<p>Prefer starting from an existing profile with the same physical layout and event semantics.</p>
-<p><code>list</code> and <code>show</code> check TOML syntax and namespace consistency. To view the original source in read-only Neovim use <code>inspect</code>. Run <code>validate</code> for Rust semantic compilation. <a href="../../../reference/cli/acquisition/#profile-commands">Profile commands</a></p>
-<h3 id="build-the-managed-normalizer">Build the managed normalizer</h3>
-<p>Semantic validation uses the managed Rust normalizer. Build it when it is not already installed or needs updating:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>normalize
-mf<span class="w"> </span>engine<span class="w"> </span>status
-</code></pre></div>
-<p>The managed build installs the normalizer and its installation metadata. Merely copying an arbitrary executable into <code>.bin</code> does not satisfy the managed installation checks. <a href="../../../reference/cli/registration/">Profile CLI</a></p>
-<h3 id="validate-a-draft">Validate a draft</h3>
-<p>To validate a manually authored file:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>validate<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--file<span class="w"> </span>./profile-drafts/binance.spot.spot.trades.toml
-</code></pre></div>
-<p>For machine-readable output:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>validate<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--file<span class="w"> </span>./profile-drafts/binance.spot.spot.trades.toml
-</code></pre></div>
-<p>Validation stages a temporary catalogue containing the installed profiles and the candidate, then invokes production Rust semantic compilation.</p>
-<p>An installed profile can also be validated by ID:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>validate<span class="w"> </span>binance.spot.spot.trades
-</code></pre></div>
-<p>Supply either the installed ID or <code>--file</code>, not both.</p>
-<p>Leave <code>unsupported_reason</code> absent for an executable profile. Profiles with that setting are inventory-only and are rejected by the executable-profile validation workflow. <a href="../../../reference/cli/registration/">Profile CLI</a></p>
-<h3 id="install-a-validated-definition">Install a validated definition</h3>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>add<span class="w"> </span>binance.spot.spot.trades<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--from<span class="w"> </span>./profile-drafts/binance.spot.spot.trades.toml
-</code></pre></div>
-<p>Installation validates frozen candidate bytes and installs an independent copy.</p>
-<p>When the ID already exists:</p>
-<table>
-<thead>
-<tr>
-<th>Candidate interpretation</th>
-<th>Result</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Equivalent compiled interpretation</td>
-<td>Existing profile is reused.</td>
-</tr>
-<tr>
-<td>Different compiled interpretation</td>
-<td>Installation fails with a conflict.</td>
-</tr>
-</tbody>
-</table>
-<p>A changed same-ID candidate can pass <code>validate --file</code> and subsequently fail <code>add</code>. Validation substitutes it into a temporary catalogue; installation additionally compares it with the currently installed interpretation.</p>
-<p>The current CLI has no <code>profiles update</code> or <code>--force</code> option. Resolve a same-ID interpretation change deliberately in the catalogue and associated fixtures. <a href="../../../reference/cli/registration/">Profile CLI</a></p>
-<h3 id="verify-against-actual-records">Verify against actual records</h3>
-<p>Semantic validation establishes that the profile compiles. It does not establish that the profile correctly describes the source bytes.</p>
-<p>Use the normal orchestration workflow to process a small, registered sample with authoritative instrument metadata. Check representative output values and the integrity report.</p>
-<p>A useful verification sample should establish:</p>
-<ul>
-<li>Timestamps correspond to known source times after conversion to nanoseconds.</li>
-<li>Prices, quantity units, and contract conversions are correct.</li>
-<li>Trade sides match the intended aggressor-side convention.</li>
-<li>Native trade IDs have the declared scope.</li>
-<li>Snapshots initialize the book correctly.</li>
-<li>Updates set, add, subtract, or delete levels according to the source contract.</li>
-<li>Sequence behavior matches the actual feed.</li>
-<li>Parsing failures, rejected records, and integrity findings are understood.</li>
-</ul>
-<p>For a profile covering several archive periods or source layouts, include representative samples from those periods. Passing a single recent file does not establish that an older layout has the same interpretation.</p>
-<h2 id="common-authoring-problems">Common Authoring Problems</h2>
-<table>
-<thead>
-<tr>
-<th>Problem</th>
-<th>What to check</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Filename mismatch</td>
-<td>The filename must be exactly <code>&lt;id&gt;.toml</code>.</td>
-</tr>
-<tr>
-<td>Invalid namespace</td>
-<td>Check all four ID components and the corresponding metadata.</td>
-</tr>
-<tr>
-<td>Invalid format code</td>
-<td>Check the exchange prefix, <code>T</code>/<code>B</code> letter, and positive numeric suffix.</td>
-</tr>
-<tr>
-<td>Unknown field reference</td>
-<td>Every <code>field</code> mapping must reference a declared raw field exactly.</td>
-</tr>
-<tr>
-<td>Wrong headerless CSV values</td>
-<td>Declare all columns with explicit, contiguous, 1-based positions.</td>
-</tr>
-<tr>
-<td>Incorrect timestamps</td>
-<td>Verify the raw field’s <code>unix_*</code> encoding against source evidence.</td>
-</tr>
-<tr>
-<td>Incorrect derivative quantities</td>
-<td>Verify <code>quantity_encoding</code> and authoritative contract specifications.</td>
-</tr>
-<tr>
-<td>Conflicting normalization rule</td>
-<td>Move the mapping into either the common section or the individual rule; do not duplicate it.</td>
-</tr>
-<tr>
-<td>Depth record matches multiple rules</td>
-<td>Make the event filters disjoint. Reordering rules does not resolve ambiguity.</td>
-</tr>
-<tr>
-<td>Depth record matches no rule</td>
-<td>Check actual filter values, string types, and coverage of the intended record types.</td>
-</tr>
-<tr>
-<td>Validation succeeds but input processing fails</td>
-<td>Check the actual decoder path, packaging, header behavior, and source bytes.</td>
-</tr>
-<tr>
-<td>Installation rejects a validated candidate</td>
-<td>Check whether the installed same-ID profile has a different compiled interpretation.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="mapping-and-input-diagnostics">Mapping and input diagnostics</h2>
-<h3 id="common-profile-identity-problems">Common Profile Identity Problems</h3>
+<p>To inspect an installed file in read-only Neovim, run
+<code>mf normalize profiles inspect binance.spot.spot.trades</code>. To inspect only its text,
+use <code>mf normalize profiles show binance.spot.spot.trades | cpout</code>.
+Use the <a href="../../../reference/cli/normalize/#profile-commands">CLI reference</a> for the full syntax.</p>
+<p><a id="mapping-and-input-diagnostics"></a></p>
+<h2 id="common-profile-identity-problems">Common Profile Identity Problems</h2>
 <h3 id="profile-id-has-too-many-components">Profile ID has too many components</h3>
 <p><strong>Cause:</strong> The ID contains an unsupported variant or version component.</p>
 <p>For example:</p>
@@ -5842,7 +5599,7 @@ mf<span class="w"> </span>engine<span class="w"> </span>status
 <p>Inspect the installed definition and resolve the conflict explicitly.</p>
 <p>Do not invent another ID component or overwrite the installed file manually.</p>
 <hr />
-<h3 id="common-source-format-problems">Common Source Format Problems</h3>
+<h2 id="common-source-format-problems">Common Source Format Problems</h2>
 <h3 id="unsupported-record-format">Unsupported record format</h3>
 <p><strong>Cause:</strong> The selected format and record layout do not form a supported decoder combination.</p>
 <p>For example, arbitrary headered CSV depth input is not automatically available.</p>
@@ -5861,7 +5618,7 @@ mf<span class="w"> </span>engine<span class="w"> </span>status
 <p><strong>Cause:</strong> The profile declares timestamp-sortable ordering for a source whose runtime path cannot safely sort its stateful events.</p>
 <p>Use the actual supported source-ordering contract.</p>
 <hr />
-<h3 id="timestamp-and-quantity-problems">Timestamp and Quantity Problems</h3>
+<h2 id="timestamp-and-quantity-problems">Timestamp and Quantity Problems</h2>
 <h3 id="timestamps-are-incorrect">Timestamps are incorrect</h3>
 <p><strong>Possible cause:</strong> The profile uses the wrong timestamp encoding.</p>
 <p>Check whether the source uses:</p>
@@ -5887,7 +5644,7 @@ ISO 8601
 <p>Resolve the relevant instrument specifications through the catalogue.</p>
 <p>Do not hardcode an invented multiplier into the profile.</p>
 <hr />
-<h3 id="trade-mapping-problems">Trade Mapping Problems</h3>
+<h2 id="trade-mapping-problems">Trade Mapping Problems</h2>
 <h3 id="side-mapping-is-reversed">Side mapping is reversed</h3>
 <p><strong>Cause:</strong> The source-side convention was misunderstood.</p>
 <p>Consult the provider's actual trade-side semantics.</p>
@@ -5907,7 +5664,7 @@ ISO 8601
 <p><strong>Cause:</strong> The profile claims stronger uniqueness than the source guarantees.</p>
 <p>Use a scope supported by actual source evidence.</p>
 <hr />
-<h3 id="depth-mapping-problems">Depth Mapping Problems</h3>
+<h2 id="depth-mapping-problems">Depth Mapping Problems</h2>
 <h3 id="a-record-matches-no-rule">A record matches no rule</h3>
 <p><strong>Cause:</strong> The event filters do not cover the source's actual event type.</p>
 <p>Inspect the source values and supported rule mappings.</p>
@@ -5939,7 +5696,7 @@ ISO 8601
 <p><strong>Cause:</strong> The source's top-N limitation was ignored.</p>
 <p>Preserve the actual bounded depth semantics.</p>
 <hr />
-<h3 id="specialized-format-problems">Specialized Format Problems</h3>
+<h2 id="specialized-format-problems">Specialized Format Problems</h2>
 <h3 id="xlsx-profile-fails">XLSX profile fails</h3>
 <p><strong>Possible cause:</strong> The workbook does not match the fixed supported layout.</p>
 <p>Check:</p>
@@ -5960,8 +5717,6 @@ ISO 8601
 <p><strong>Cause:</strong> The corresponding concrete instrument is unavailable in the prepared job's catalogue.</p>
 <p><code>lookup = "catalog"</code> does not fetch missing exchange metadata.</p>
 <p>Resolve the historical instrument identity and specifications first.</p>
-<hr />
-<h2 id="complete-command-reference">Complete Command Reference</h2>
 
 
 
@@ -5993,7 +5748,7 @@ ISO 8601
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../profile-depth/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Create a depth profile">
+          <a href="../profile-depth/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Depth profile sample checks">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
@@ -6003,20 +5758,20 @@ ISO 8601
                 Previous
               </span>
               <div class="md-ellipsis">
-                Create a depth profile
+                Depth profile sample checks
               </div>
             </div>
           </a>
         
         
           
-          <a href="../../normalize/" class="md-footer__link md-footer__link--next" aria-label="Next: Normalize registered data">
+          <a href="../../merge/" class="md-footer__link md-footer__link--next" aria-label="Next: Merge registered normalized files">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Normalize registered data
+                Merge registered normalized files
               </div>
             </div>
             <div class="md-footer__button md-icon">

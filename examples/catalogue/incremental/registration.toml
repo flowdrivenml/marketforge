@@ -1,0 +1,27 @@
+[registration]
+version = 1
+name = "synthetic-equity"
+
+[source]
+key = "synthetic-equity"
+provider = "example_recorder"
+product = "synthetic_csv_and_jsonl"
+kind = "recording"
+root = "docs/content/examples/catalogue"
+provenance = "Synthetic trade and depth events with explicitly assigned semantics"
+
+[coverage]
+start = 2024-10-28T00:00:00Z
+end = 2024-10-29T00:00:00Z
+
+[[inputs]]
+instrument = "example_exchange.equity.equity.AAPL"
+profile = "example_exchange.equity.equity.trades"
+content = "trades"
+files = ["synthetic-trades.csv"]
+
+[[inputs]]
+instrument = "example_exchange.equity.equity.AAPL"
+profile = "example_exchange.equity.equity.depth"
+content = "depth"
+files = ["incremental/synthetic-depth.jsonl"]

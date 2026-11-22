@@ -1,0 +1,45 @@
+schema_version = 2
+kind = "profile"
+id = "example_exchange.equity.equity.depth"
+format_code = "EXAMPLE-EXCHANGE-B1"
+exchange = "example_exchange"
+instrument_type = "equity"
+market_category = "equity"
+
+[source]
+container = "plain"
+format = "jsonl"
+record_format = "events"
+ordering = "chronological"
+granularity = "daily"
+
+[fields.timestamp]
+type = "integer"
+encoding = "unix_nanoseconds"
+
+[fields.type]
+type = "string"
+
+[fields.bids]
+type = "array"
+level_format = ["price", "quantity"]
+
+[fields.asks]
+type = "array"
+level_format = ["price", "quantity"]
+
+[normalization]
+quantity_encoding = "base"
+event_timestamp = { field = "timestamp" }
+bids = { field = "bids" }
+asks = { field = "asks" }
+
+[[normalization.rules]]
+target = "l2_snapshot"
+event_filter = { field = "type", equals = "snapshot" }
+snapshot = { type = "single_event" }
+
+[[normalization.rules]]
+target = "l2_update"
+event_filter = { field = "type", equals = "delta" }
+update_semantics = { type = "absolute_level", zero_quantity = "delete", nonzero_quantity = "set" }
