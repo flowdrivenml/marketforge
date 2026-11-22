@@ -2460,6 +2460,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#engine-runtime-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Engine runtime configuration
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#preparation" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2782,6 +2793,8 @@
       
         
       
+        
+      
     
     
     
@@ -2958,6 +2971,33 @@
     
   
   Normalization recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/normalization-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization runtime configuration
 
     
   </span>
@@ -4780,6 +4820,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#engine-runtime-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Engine runtime configuration
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#preparation" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -5166,6 +5217,12 @@
 <td>Verify committed output and register its primary files.</td>
 </tr>
 <tr>
+<td><code>config</code></td>
+<td><code>show\|get\|schema\|validate\|set\|unset\|edit</code></td>
+<td>No</td>
+<td>Inspect, validate, or change the Engine runtime.</td>
+</tr>
+<tr>
 <td><code>profiles</code></td>
 <td>Subcommand and arguments</td>
 <td>Varies</td>
@@ -5195,6 +5252,13 @@ mf<span class="w"> </span>normalize<span class="w"> </span>validate<span class="
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>delete<span class="w"> </span>my_dataset<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
 </code></pre></div>
 <p>Preview inspects the managed file and checks live references from source-derived merge and conversion recipes. It lists recipes it could not inspect. Detected references block deletion by default. To remove the TOML after reviewing the preview, use <code>mf normalize delete my_dataset --apply</code>. To deliberately break the listed references, use <code>--apply --force</code>. The command accepts only a regular, single-link managed recipe file and rechecks its identity before unlinking. Raw archives, normalized and merged datasets, registered publications, historical runs, reports, and installed profiles are outside the deletion scope.</p>
+<h2 id="engine-runtime-configuration">Engine runtime configuration</h2>
+<p><code>mf normalize config</code> manages <code>data/.config/engine/normalize.toml</code>. Recipes select data and profiles specify how to decode it. The runtime controls Engine behavior.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span>show<span class="w"> </span>--section<span class="w"> </span>resources<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span>schema<span class="w"> </span>--field<span class="w"> </span>resources.workers<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>resources.workers<span class="w"> </span><span class="m">12</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+</code></pre></div>
+<p><code>set</code> and <code>unset</code> preview by default and require <code>--apply</code> to save. <code>edit</code> validates a draft before asking for confirmation. See <a href="../../../configuration/normalization-runtime/">Normalization runtime configuration</a> for field semantics, defaults, and integrity acknowledgement.</p>
 <h2 id="preparation">Preparation</h2>
 <p><a id="-dry-run"></a></p>
 <h3 id="mf-normalize-prepare"><code>mf normalize prepare</code></h3>

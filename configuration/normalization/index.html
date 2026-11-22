@@ -20,7 +20,7 @@
         <link rel="prev" href="../catalogue/">
       
       
-        <link rel="next" href="../merge/">
+        <link rel="next" href="../normalization-runtime/">
       
       
         
@@ -2535,6 +2535,8 @@
       
         
       
+        
+      
     
     
     
@@ -2876,6 +2878,33 @@
   
 </nav>
       
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../normalization-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization runtime configuration
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -4870,6 +4899,8 @@
       
         
       
+        
+      
     
     
     
@@ -4902,6 +4933,7 @@
 
 
 <h1 id="normalization-recipes">Normalization recipes</h1>
+<p>For Engine processing settings, see <a href="../normalization-runtime/">Normalization runtime configuration</a>. Source field interpretation belongs to <a href="../../reference/profiles/">normalization profiles</a>.</p>
 <p>A recipe selects registered raw inputs. Managed recipes live in <code>data/.config/workflows/data_engineering/normalization/</code> and take their names from their TOML filenames. Both recipe shapes use version <code>1</code>. The <a href="../../workflows/normalize/">normalization guide</a> demonstrates source selection. <a href="../../reference/prepared-normalization/">Prepared batches</a> have their own Engine contract.</p>
 <h2 id="editable-recipe">Editable recipe</h2>
 <p>Source selection is the usual recipe shape. Forge matches complete registered archives against each request and selects whole overlapping inputs from the configured raw root. Source selection lets Forge derive the job and Engine dataset IDs and output paths.</p>
@@ -5125,13 +5157,13 @@
         
         
           
-          <a href="../merge/" class="md-footer__link md-footer__link--next" aria-label="Next: Merge recipes">
+          <a href="../normalization-runtime/" class="md-footer__link md-footer__link--next" aria-label="Next: Normalization runtime configuration">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Merge recipes
+                Normalization runtime configuration
               </div>
             </div>
             <div class="md-footer__button md-icon">
