@@ -803,6 +803,8 @@
       
         
       
+        
+      
     
     
     
@@ -890,14 +892,41 @@
   
   
     <li class="md-nav__item">
-      <a href="../../workflows/acquisition/forge/" class="md-nav__link">
+      <a href="../../reference/acquisition-sources/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-  Register and normalize manually supplied data
+  Supported historical sources
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/managing-acquisitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managing acquisitions
 
     
   </span>
@@ -926,14 +955,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../workflows/acquisition/managing-acquisitions/" class="md-nav__link">
+      <a href="../../workflows/acquisition/forge/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-  Manage raw storage
+  Register and normalize manually supplied data
 
     
   </span>
@@ -2637,6 +2666,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#common-validation-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Common validation errors
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#application-httpstorage-settings" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2644,211 +2684,6 @@
       </span>
     </span>
   </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#supported-historical-archive-sources" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Supported Historical Archive Sources
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Supported Historical Archive Sources">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#important-limitations" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Important limitations
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-supported-mean-available" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does supported mean available?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-about-delisted-instruments" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What about delisted instruments?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#gateio-order-book-feed-options" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Gate.io Order-Book Feed Options
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Gate.io Order-Book Feed Options">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#incremental-feed" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Incremental feed
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#snapshot-feed" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Snapshot feed
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-does-this-matter" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why does this matter?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-the-feed-change-the-archive-identity" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does the feed change the archive identity?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#can-source_options-be-used-for-other-exchanges" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Can <code>source_options</code> be used for other exchanges?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-snapshot-mean-full-market-depth" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does snapshot mean full market depth?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#why-exchange-archive-calendars-matter" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why Exchange Archive Calendars Matter
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Why Exchange Archive Calendars Matter">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#example-utc-versus-utc8" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Example: UTC versus UTC+8
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-does-this-matter_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why does this matter?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#supported-archive-calendar-examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Supported archive-calendar examples
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-marketforge-change-my-requested-interval" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does MarketForge change my requested interval?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-this-guarantee-exact-event-coverage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does this guarantee exact event coverage?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -5085,6 +4920,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#common-validation-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Common validation errors
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#application-httpstorage-settings" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -5092,211 +4938,6 @@
       </span>
     </span>
   </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#supported-historical-archive-sources" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Supported Historical Archive Sources
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Supported Historical Archive Sources">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#important-limitations" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Important limitations
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-supported-mean-available" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does supported mean available?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#what-about-delisted-instruments" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        What about delisted instruments?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#gateio-order-book-feed-options" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Gate.io Order-Book Feed Options
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Gate.io Order-Book Feed Options">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#incremental-feed" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Incremental feed
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#snapshot-feed" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Snapshot feed
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-does-this-matter" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why does this matter?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-the-feed-change-the-archive-identity" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does the feed change the archive identity?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#can-source_options-be-used-for-other-exchanges" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Can <code>source_options</code> be used for other exchanges?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-snapshot-mean-full-market-depth" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does snapshot mean full market depth?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#why-exchange-archive-calendars-matter" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why Exchange Archive Calendars Matter
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Why Exchange Archive Calendars Matter">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#example-utc-versus-utc8" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Example: UTC versus UTC+8
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#why-does-this-matter_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Why does this matter?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#supported-archive-calendar-examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Supported archive-calendar examples
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-marketforge-change-my-requested-interval" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does MarketForge change my requested interval?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-this-guarantee-exact-event-coverage" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does this guarantee exact event coverage?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -5861,290 +5502,104 @@
 
 
 <h1 id="acquisition-and-raw-import-recipes">Acquisition and raw import recipes</h1>
-<p>Acquisition recipes select upstream archives. Import recipes select local recordings to copy into managed raw storage. For the declaration that also verifies a profile and historical binding, see <a href="../../reference/registration/">managed registration</a>.</p>
+<p>Save acquisition recipes in <code>data/.config/workflows/data_engineering/acquisition/</code>. Commands accept the managed name with an optional <code>.toml</code> suffix. Each <code>[[requests]]</code> entry selects one archive collection for the shared interval. Unknown fields are rejected.</p>
 <h2 id="scope-and-provider-options">Scope and provider options</h2>
-<p>Save an acquisition recipe under <code>data/.config/workflows/data_engineering/acquisition/</code>. Commands taking a managed name accept a name with an optional TOML suffix. Fields belong to one version-1 TOML table. Unknown keys are rejected.</p>
 <table>
 <thead>
 <tr>
-<th>Path</th>
-<th>Accepted type</th>
-<th>Requirement and behavior</th>
+<th>Field</th>
+<th>Accepted values and constraints</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>version</code></td>
-<td>Integer 1</td>
-<td>Optional, defaults to 1</td>
+<td>Integer <code>1</code>, the default.</td>
 </tr>
 <tr>
 <td><code>interval.start</code>, <code>interval.end</code></td>
-<td>TOML offset datetimes</td>
-<td>Both required. Start precedes end. Half-open requested interval applied to all requests</td>
+<td>Required timezone-aware datetimes. Start must precede end. The interval includes start and excludes end.</td>
 </tr>
 <tr>
 <td><code>requests</code></td>
-<td>Array of tables</td>
-<td>Required, at least one request</td>
+<td>Required array of tables with at least one entry.</td>
 </tr>
 <tr>
 <td><code>requests[].exchange</code></td>
-<td>String matching <code>^[a-z][a-z0-9_]*$</code></td>
-<td>Required adapter/venue code. Adapter validation narrows structural acceptance</td>
+<td>Required. Historical adapters use <code>binance</code>, <code>bybit</code>, <code>bitget</code>, <code>okx</code>, or <code>gateio</code>. Structural validation accepts any string matching <code>^[a-z][a-z0-9_]*$</code>.</td>
 </tr>
 <tr>
 <td><code>requests[].instrument_type</code></td>
-<td><code>spot</code>, <code>perpetual</code>, <code>future</code>, <code>option</code></td>
-<td>Required</td>
+<td>Required. <code>spot</code>, <code>perpetual</code>, <code>future</code>, or <code>option</code>.</td>
 </tr>
 <tr>
 <td><code>requests[].market_category</code></td>
-<td><code>spot</code>, <code>linear</code>, <code>inverse</code>, <code>option</code></td>
-<td>Required. Check the provider-supported combinations</td>
+<td>Required. <code>spot</code> for spot, <code>linear</code> or <code>inverse</code> for perpetuals and futures, <code>option</code> for options. Adapter support varies.</td>
 </tr>
 <tr>
 <td><code>requests[].data_type</code></td>
-<td><code>trades</code>, <code>order_book_l2</code></td>
-<td>Required archive family</td>
+<td>Required. <code>trades</code> or <code>order_book_l2</code>.</td>
 </tr>
 <tr>
 <td><code>requests[].scope.kind</code></td>
-<td><code>instrument</code>, <code>base_coin</code>, <code>family</code></td>
-<td>Required. Each provider interprets only supported kinds</td>
+<td>Required. <code>instrument</code>, <code>family</code>, or <code>base_coin</code>, as required by the adapter.</td>
 </tr>
 <tr>
 <td><code>requests[].scope.identifier</code></td>
-<td>Nonblank string</td>
-<td>Required, provider-native case and syntax</td>
+<td>Required nonblank provider-native identifier. Adapters accept letters, digits, underscore, dot, colon, slash and hyphen. Reserved identifiers <code>.</code>, <code>..</code>, and <code>ANY</code> are rejected.</td>
 </tr>
 <tr>
 <td><code>requests[].source_options.feed</code></td>
-<td><code>incremental</code> or <code>snapshot</code></td>
-<td>Gate.io L2 only. Defaults to <code>incremental</code> when the table or field is omitted</td>
+<td>Gate.io L2 only. <code>incremental</code> (default) or <code>snapshot</code>. Omit <code>source_options</code> for other requests.</td>
 </tr>
 </tbody>
 </table>
-<p>See <a href="../../concepts/time/">time, selection and coverage</a>. Discovery uses the provider’s archive calendar. The request selects overlapping whole archives. Format and record semantics are resolved during normalization.</p>
+<p>Choose supported combinations from <a href="../../reference/acquisition-sources/">historical sources</a>. Gate.io's feed changes archive selection and source identity. Choose the recording format required for later processing. Discovery applies each provider's archive calendar to select overlapping whole files. See <a href="../../concepts/time/">time, selection and coverage</a>.</p>
 <h2 id="complete-example">Complete example</h2>
-<p>Use the <a href="../../examples/bybit/acquisition.toml">Bybit BTCUSDT trades and L2 recipe</a> and follow the <a href="../../workflows/acquisition/historical-data/">archive acquisition guide</a>.</p>
+<p>This OKX request selects inverse dated-future trades for the <code>BTC-USD</code> family over one UTC+8 calendar day.</p>
+<div class="highlight"><pre><span></span><code><span class="n">version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
+
+<span class="k">[interval]</span>
+<span class="n">start</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ld">2026-09-01T00:00:00+08:00</span>
+<span class="n">end</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ld">2026-09-02T00:00:00+08:00</span>
+
+<span class="k">[[requests]]</span>
+<span class="n">exchange</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"okx"</span>
+<span class="n">instrument_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"future"</span>
+<span class="n">market_category</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"inverse"</span>
+<span class="n">data_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"trades"</span>
+<span class="n">scope</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">kind</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">"family"</span><span class="p">,</span><span class="w"> </span><span class="n">identifier</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">"BTC-USD"</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+<p>For an instrument-scoped Bybit recipe, see the <a href="../../workflows/acquisition/historical-data/">acquisition tutorial</a>. For Bybit options, set both <code>instrument_type</code> and <code>market_category</code> to <code>option</code> and use <code>scope = { kind = "base_coin", identifier = "BTC" }</code>.</p>
+<h2 id="common-validation-errors">Common validation errors</h2>
+<table>
+<thead>
+<tr>
+<th>Diagnostic</th>
+<th>Correction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Invalid TOML or unexpected field</td>
+<td>Fix the reported line or field. Use <code>[[requests]]</code> for each request and put its fields under that entry.</td>
+</tr>
+<tr>
+<td>Missing timezone or unordered interval</td>
+<td>Add <code>Z</code> or an explicit offset and set <code>end</code> later than <code>start</code>.</td>
+</tr>
+<tr>
+<td>Invalid source options</td>
+<td>Keep <code>source_options</code> only for a <code>gateio</code> request with <code>data_type = "order_book_l2"</code>.</td>
+</tr>
+<tr>
+<td>Unsupported combination during mapping</td>
+<td>Match the exchange, instrument type, market category, data type and scope against the historical source matrix. Structural validation leaves this check to the adapter.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="application-httpstorage-settings">Application HTTP/storage settings</h2>
-<p>HTTP concurrency, retry and rate settings apply per process and can be narrowed by provider budgets. Managed raw paths use the configured data root. <a href="../application/">Application settings</a> · <a href="../../reference/cli/acquisition/">Archive acquisition commands</a></p>
-<h2 id="supported-historical-archive-sources">Supported Historical Archive Sources</h2>
-<p>The following matrix summarizes the current implemented acquisition adapters.</p>
-<p>This table describes <strong>historical archive acquisition</strong>, not the separate current-market <code>mf markets sync</code> support matrix.</p>
-<table>
-<thead>
-<tr>
-<th>Exchange</th>
-<th>Instrument / market</th>
-<th>Data types</th>
-<th>Required scope</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Binance</td>
-<td>Spot / spot</td>
-<td>Trades</td>
-<td>Instrument</td>
-</tr>
-<tr>
-<td>Binance</td>
-<td>Perpetual or future / linear or inverse</td>
-<td>Trades</td>
-<td>Instrument</td>
-</tr>
-<tr>
-<td>Bybit</td>
-<td>Spot / spot</td>
-<td>Trades, L2 depth</td>
-<td>Instrument</td>
-</tr>
-<tr>
-<td>Bybit</td>
-<td>Perpetual or future / linear or inverse</td>
-<td>Trades, L2 depth</td>
-<td>Instrument</td>
-</tr>
-<tr>
-<td>Bybit</td>
-<td>Option / option</td>
-<td>Trades, L2 depth</td>
-<td>Base coin</td>
-</tr>
-<tr>
-<td>Bitget</td>
-<td>Spot / spot</td>
-<td>Trades, L2 depth</td>
-<td>Instrument</td>
-</tr>
-<tr>
-<td>Bitget</td>
-<td>Perpetual / linear or inverse</td>
-<td>Trades, L2 depth</td>
-<td>Instrument</td>
-</tr>
-<tr>
-<td>Bitget</td>
-<td>Future / inverse</td>
-<td>Trades, L2 depth</td>
-<td>Instrument</td>
-</tr>
-<tr>
-<td>OKX</td>
-<td>Spot / spot</td>
-<td>Trades, L2 depth</td>
-<td>Instrument</td>
-</tr>
-<tr>
-<td>OKX</td>
-<td>Perpetual or future / linear or inverse</td>
-<td>Trades, L2 depth</td>
-<td>Family</td>
-</tr>
-<tr>
-<td>OKX</td>
-<td>Option / option</td>
-<td>Trades, L2 depth</td>
-<td>Family or supported base-coin expansion</td>
-</tr>
-<tr>
-<td>Gate.io</td>
-<td>Spot / spot</td>
-<td>Trades, L2 depth</td>
-<td>Instrument</td>
-</tr>
-<tr>
-<td>Gate.io</td>
-<td>Perpetual or future / linear or inverse</td>
-<td>Trades, L2 depth</td>
-<td>Instrument</td>
-</tr>
-</tbody>
-</table>
-<h3 id="important-limitations">Important limitations</h3>
-<p>Binance L2 depth and options are not supported by the current historical archive adapters.</p>
-<p>Bitget options and linear dated futures are not supported.</p>
-<p>Gate.io dated-futures archive routes are implemented as candidates, but that does not establish that matching archives are actually available.</p>
-<p>OKX depth acquisition uses its supported historical 5000-level module.</p>
-<h3 id="does-supported-mean-available">Does supported mean available?</h3>
-<p>No.</p>
-<p>For example, an adapter may support:</p>
-<div class="highlight"><pre><span></span><code>Bybit BTCUSDT Perpetual Trades
-</code></pre></div>
-<p>but a particular historical date may still return no matching files.</p>
-<p>There are two separate questions:</p>
-<p><strong>Is the request supported by MarketForge?</strong></p>
-<p>The adapter support matrix answers this.</p>
-<p><strong>Does the exchange actually publish matching files?</strong></p>
-<p>Mapping answers this.</p>
-<h3 id="what-about-delisted-instruments">What about delisted instruments?</h3>
-<p>A historical archive request does not necessarily require the instrument to appear in today's current-market list.</p>
-<p>Use the correct explicit historical source identity.</p>
-<p>The provider's archive availability still determines whether files can be discovered.</p>
-<p>For complete source details, see <a href="../../workflows/acquisition/historical-data/#supported-sources">Historical Archive Sources</a>.</p>
-<hr />
-<h2 id="gateio-order-book-feed-options">Gate.io Order-Book Feed Options</h2>
-<p>Gate.io supports different L2 archive feeds.</p>
-<p>For example, it may provide incremental order-book information and snapshot-based recordings.</p>
-<p>These are not necessarily interchangeable.</p>
-<p>MarketForge allows the intended feed to be declared explicitly.</p>
-<h3 id="incremental-feed">Incremental feed</h3>
-<p>For Gate.io L2, the default feed is incremental when no different feed is selected.</p>
-<p>You can also declare it explicitly:</p>
-<div class="highlight"><pre><span></span><code><span class="k">[requests.source_options]</span>
-<span class="n">feed</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"incremental"</span>
-</code></pre></div>
-<h3 id="snapshot-feed">Snapshot feed</h3>
-<p>To select the snapshot archive feed:</p>
-<div class="highlight"><pre><span></span><code><span class="k">[requests.source_options]</span>
-<span class="n">feed</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"snapshot"</span>
-</code></pre></div>
-<h3 id="why-does-this-matter">Why does this matter?</h3>
-<p>Incremental updates and snapshots describe order-book state differently.</p>
-<p>For example:</p>
-<p><strong>Incremental update</strong></p>
-<div class="highlight"><pre><span></span><code>Change the quantity at price 80,000.
-</code></pre></div>
-<p><strong>Snapshot</strong></p>
-<div class="highlight"><pre><span></span><code>Here are the currently represented price levels.
-</code></pre></div>
-<p>The source format and normalization requirements can differ.</p>
-<h3 id="does-the-feed-change-the-archive-identity">Does the feed change the archive identity?</h3>
-<p>Yes.</p>
-<p>The supported Gate.io feed variants use separate archive selection paths and source identities.</p>
-<p>Choose the feed that corresponds to the data you actually intend to acquire.</p>
-<h3 id="can-source_options-be-used-for-other-exchanges">Can <code>source_options</code> be used for other exchanges?</h3>
-<p>Not currently.</p>
-<p>The acquisition schema supports <code>source_options</code> only for Gate.io <code>order_book_l2</code> requests.</p>
-<p>For example, adding it to a Bybit trade request is invalid.</p>
-<h3 id="does-snapshot-mean-full-market-depth">Does snapshot mean full market depth?</h3>
-<p>Not necessarily.</p>
-<p>The meaning and depth of a snapshot depend on the source archive.</p>
-<p>Do not assume every snapshot contains the entire exchange order book.</p>
-<hr />
-<h2 id="why-exchange-archive-calendars-matter">Why Exchange Archive Calendars Matter</h2>
-<p>Different exchanges organize historical files using different time boundaries.</p>
-<p>For example, one provider may publish daily files using UTC.</p>
-<p>Another may use a UTC+8 calendar.</p>
-<p>A third may publish monthly or hourly archives.</p>
-<p>This can affect which files overlap a requested historical interval.</p>
-<h3 id="example-utc-versus-utc8">Example: UTC versus UTC+8</h3>
-<p>Suppose your recipe requests:</p>
-<div class="highlight"><pre><span></span><code>2026-09-01T00:00:00Z
-</code></pre></div>
-<p>This is midnight in UTC.</p>
-<p>In UTC+8, the same instant is:</p>
-<div class="highlight"><pre><span></span><code>2026-09-01 08:00
-</code></pre></div>
-<p>If a provider organizes its archives around UTC+8 calendar days, those archive boundaries do not align with UTC midnight.</p>
-<h3 id="why-does-this-matter_1">Why does this matter?</h3>
-<p>A UTC interval can overlap more than one provider-local archive day.</p>
-<p>MarketForge must account for these differences when discovering files.</p>
-<h3 id="supported-archive-calendar-examples">Supported archive-calendar examples</h3>
-<table>
-<thead>
-<tr>
-<th>Provider / source</th>
-<th>Archive organization</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>OKX trades</td>
-<td>UTC+8 calendar days</td>
-</tr>
-<tr>
-<td>OKX order books</td>
-<td>UTC calendar days</td>
-</tr>
-<tr>
-<td>Bitget</td>
-<td>UTC+8 discovery windows</td>
-</tr>
-<tr>
-<td>Gate.io trades</td>
-<td>Monthly archives</td>
-</tr>
-<tr>
-<td>Gate.io order books</td>
-<td>Hourly archives</td>
-</tr>
-</tbody>
-</table>
-<p>These describe supported adapter conventions.</p>
-<p>Individual source availability can still differ.</p>
-<h3 id="does-marketforge-change-my-requested-interval">Does MarketForge change my requested interval?</h3>
-<p>The operational request is normalized to UTC.</p>
-<p>The adapter then interprets the interval according to the provider's archive calendar.</p>
-<p>This allows it to find archives whose source-native periods overlap your request.</p>
-<h3 id="does-this-guarantee-exact-event-coverage">Does this guarantee exact event coverage?</h3>
-<p>No.</p>
-<p>The adapter retains nominal archive bounds.</p>
-<p>It does not prove that the files contain every event within those periods.</p>
-<p>Similarly, selecting a whole archive does not trim its records to the exact requested UTC interval.</p>
-<hr />
+<p>Application settings govern the raw storage root, HTTP concurrency, retries and request pacing. Per-run <code>--requests-per-second</code> is capped by provider budgets. See <a href="../application/">application settings</a> and <a href="../../reference/cli/acquisition/">acquisition commands</a>.</p>
 <h2 id="external-import-configuration">External import configuration</h2>
 <table>
 <thead>

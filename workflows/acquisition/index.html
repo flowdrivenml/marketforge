@@ -31,7 +31,7 @@
     
     
       
-        <title>Historical data acquisition - MarketForge</title>
+        <title>Overview - MarketForge</title>
       
     
     
@@ -115,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Historical data acquisition
+              Overview
             
           </span>
         </div>
@@ -807,6 +807,8 @@
       
         
       
+        
+      
     
     
     
@@ -894,14 +896,41 @@
   
   
     <li class="md-nav__item">
-      <a href="./forge/" class="md-nav__link">
+      <a href="../../reference/acquisition-sources/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-  Register and normalize manually supplied data
+  Supported historical sources
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="./managing-acquisitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managing acquisitions
 
     
   </span>
@@ -930,14 +959,14 @@
   
   
     <li class="md-nav__item">
-      <a href="./managing-acquisitions/" class="md-nav__link">
+      <a href="./forge/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-  Manage raw storage
+  Register and normalize manually supplied data
 
     
   </span>
@@ -4518,6 +4547,8 @@
       
         
       
+        
+      
     
     
     
@@ -4551,12 +4582,12 @@
 
 <h1 id="historical-data-acquisition">Historical data acquisition</h1>
 <p>Acquisition discovers provider archives, records their identities, and downloads verified local copies. It does not normalize market events. Register external recordings and purchased files through the <a href="../../examples/bring-your-own-data/">BYOD workflow</a> to preserve their declared origin and bytes.</p>
-<p>Start with <a href="historical-data/">the historical-data workflow</a>, use the <a href="../../configuration/acquisition/">configuration reference</a> to select inputs, then <a href="managing-acquisitions/">inspect and manage acquisitions</a>. The <a href="../../reference/cli/acquisition/">CLI reference</a> lists exact arguments and effects.</p>
+<p>Start with <a href="historical-data/">the historical-data workflow</a>, use the <a href="../../reference/acquisition-sources/">supported historical sources</a> and <a href="../../configuration/acquisition/">configuration reference</a> to select inputs, then <a href="managing-acquisitions/">inspect and manage acquisitions</a>. The <a href="../../reference/cli/acquisition/">CLI reference</a> lists exact arguments and effects.</p>
 <h2 id="prerequisites">Prerequisites</h2>
 <p>Install Forge using the <a href="../../getting-started/installation/">installation guide</a> and run commands from the repository root. Registry-backed commands default to production. Pass <code>--testing</code> for the
 dedicated <code>marketforge_test</code> database with a verified testing identity.</p>
-<p>Forge reads <code>PRODUCTION_DATABASE_KEY</code> or <code>TEST_DATABASE_KEY</code> for the selected environment, first from the process environment and then from the workspace's literal <code>.secrets/postgres.env</code> file. Do not source shell expressions or put credentials into shared recipes. Ask the workspace administrator to provision the database, testing identity and current schema. <code>marketforge database status --testing</code> inspects migration status. <code>marketforge doctor --testing</code> checks the initialized environment using the guarded testing loader. These commands connect to PostgreSQL; neither downloads archives.</p>
-<p>If the provisioned testing database needs pending migrations, the explicit <code>marketforge database migrate --testing</code> command applies them and writes schema/identity state. Coordinate schema migration with other testing database users.</p>
+<p>Forge reads <code>PRODUCTION_DATABASE_KEY</code> or <code>TEST_DATABASE_KEY</code> for the selected environment, first from the process environment and then from the workspace's literal <code>.secrets/postgres.env</code> file. Do not source shell expressions or put credentials into shared recipes. Ask the workspace administrator to provision the database, testing identity and current schema. <code>mf database status --testing</code> inspects migration status. <code>mf doctor --testing</code> checks the initialized environment using the guarded testing loader. These commands connect to PostgreSQL; neither downloads archives.</p>
+<p>If the provisioned testing database needs pending migrations, the explicit <code>mf database migrate --testing</code> command applies them and writes schema/identity state. Coordinate schema migration with other testing database users.</p>
 <p>Application settings default to <code>data/.config/forge/marketforge.toml</code>. Raw copies live beneath the configured data root's <code>raw/</code>; recipes remain in the workspace's <code>data/.config/workflows/data_engineering/acquisition/</code>. A different storage root does not relocate the recipe library. Configuration, database access, writable storage and internet access are distinct prerequisites.</p>
 <h2 id="understand-command-effects">Understand command effects</h2>
 <table>
@@ -4569,7 +4600,11 @@ dedicated <code>marketforge_test</code> database with a verified testing identit
 <tbody>
 <tr>
 <td><code>acquisition list</code>, <code>validate</code></td>
-<td>Read local configuration; no discovery or database connection.</td>
+<td>Read local configuration with no provider or database access.</td>
+</tr>
+<tr>
+<td><code>acquisition sources</code></td>
+<td>Read historical capabilities from the installed adapters.</td>
 </tr>
 <tr>
 <td><code>acquisition new</code>, <code>edit</code></td>
@@ -4589,7 +4624,7 @@ dedicated <code>marketforge_test</code> database with a verified testing identit
 </tr>
 <tr>
 <td><code>storage list</code>, <code>show</code>, <code>coverage</code></td>
-<td>Read registry; do not reverify file contents. Require <code>--testing</code>.</td>
+<td>Read registry records without rehashing files. Use <code>--testing</code> to select the testing registry.</td>
 </tr>
 <tr>
 <td><code>storage verify</code>, <code>reconcile</code></td>

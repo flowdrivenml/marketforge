@@ -803,6 +803,8 @@
       
         
       
+        
+      
     
     
     
@@ -890,14 +892,41 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../workflows/acquisition/forge/" class="md-nav__link">
+      <a href="../../acquisition-sources/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-  Register and normalize manually supplied data
+  Supported historical sources
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/acquisition/managing-acquisitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managing acquisitions
 
     
   </span>
@@ -926,14 +955,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../workflows/acquisition/managing-acquisitions/" class="md-nav__link">
+      <a href="../../../workflows/acquisition/forge/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-  Manage raw storage
+  Register and normalize manually supplied data
 
     
   </span>
@@ -2151,6 +2180,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#mf-acquisition-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf acquisition sources</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#mf-acquisition-new" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2221,6 +2261,17 @@
   
     <nav class="md-nav" aria-label="Acquisition Command Reference">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#configuration-inventory-and-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration inventory and validation
+      </span>
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#mapping-and-download-options" class="md-nav__link">
@@ -2359,17 +2410,6 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Cleanup reference
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#profile-commands" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Profile commands
       </span>
     </span>
   </a>
@@ -4731,6 +4771,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#mf-acquisition-sources" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf acquisition sources</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#mf-acquisition-new" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4801,6 +4852,17 @@
   
     <nav class="md-nav" aria-label="Acquisition Command Reference">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#configuration-inventory-and-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration inventory and validation
+      </span>
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#mapping-and-download-options" class="md-nav__link">
@@ -4939,17 +5001,6 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Cleanup reference
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#profile-commands" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Profile commands
       </span>
     </span>
   </a>
@@ -5179,6 +5230,10 @@
 <h3 id="mf-acquisition-list"><code>mf acquisition list</code></h3>
 <div class="highlight"><pre><span></span><code>mf acquisition list [-h]
 </code></pre></div>
+<h3 id="mf-acquisition-sources"><code>mf acquisition sources</code></h3>
+<div class="highlight"><pre><span></span><code>mf acquisition sources [-h]
+</code></pre></div>
+<p>Lists adapter-supported instrument types, market categories, data types and scopes. The command reads adapter definitions locally. See <a href="../../acquisition-sources/">historical sources</a> for discovery constraints.</p>
 <h3 id="mf-acquisition-new"><code>mf acquisition new</code></h3>
 <div class="highlight"><pre><span></span><code>mf acquisition new [-h] configuration_name
 </code></pre></div>
@@ -5339,6 +5394,12 @@
 <td>No</td>
 </tr>
 <tr>
+<td><code>sources</code></td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
 <td><code>map</code></td>
 <td>When discovery is needed</td>
 <td>Yes</td>
@@ -5359,6 +5420,15 @@
 </tbody>
 </table>
 <p><code>new</code> and <code>edit</code> can create or modify local configuration files. The table's registry column refers specifically to PostgreSQL changes.</p>
+<h3 id="configuration-inventory-and-validation">Configuration inventory and validation</h3>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>list<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>acquisition<span class="w"> </span>validate<span class="w"> </span>getting_started<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+</code></pre></div>
+<p>The inventory reads the managed TOML files locally and shows request counts and
+requested periods in UTC. Malformed recipes remain visible as invalid entries.
+Validation checks the named file's structure and reports the failing field or
+TOML location when possible. These commands require no database or network
+access. Source support and archive availability are checked during discovery.</p>
 <h3 id="mapping-and-download-options">Mapping and download options</h3>
 <p>Both <code>map</code> and <code>download</code> accept these options:</p>
 <table>
@@ -5388,13 +5458,13 @@
 </tbody>
 </table>
 <p>Examples:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>map<span class="w"> </span>bybit-btc-20261027<span class="w"> </span>--testing<span class="w"> </span>--refresh
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>map<span class="w"> </span>getting_started<span class="w"> </span>--testing<span class="w"> </span>--refresh
 </code></pre></div>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>download<span class="w"> </span>bybit-btc-20261027<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>download<span class="w"> </span>getting_started<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--testing<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--requests-per-second<span class="w"> </span><span class="m">0</span>.5
 </code></pre></div>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>download<span class="w"> </span>bybit-btc-20261027<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>download<span class="w"> </span>getting_started<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--testing<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--silent
 </code></pre></div>
@@ -5403,7 +5473,7 @@
 <p>This helps avoid overwhelming providers or exceeding their permitted request rates.</p>
 <p>You can lower the requested rate using <code>--requests-per-second</code>.</p>
 <p>For example:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>map<span class="w"> </span>bybit-btc-20261027<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>map<span class="w"> </span>getting_started<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--testing<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--requests-per-second<span class="w"> </span><span class="m">0</span>.5
 </code></pre></div>
@@ -5446,11 +5516,18 @@
 <p>Planning is a read-only inspection tool, not a saved download job or a complete estimate of future transfer size.</p>
 <h3 id="json-output">JSON output</h3>
 <p>Use the global <code>--json</code> option when you need machine-readable results:</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>acquisition<span class="w"> </span>map<span class="w"> </span>bybit-btc-20261027<span class="w"> </span>--testing
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>acquisition<span class="w"> </span>map<span class="w"> </span>getting_started<span class="w"> </span>--testing
 </code></pre></div>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>acquisition<span class="w"> </span>download<span class="w"> </span>bybit-btc-20261027<span class="w"> </span>--testing
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>acquisition<span class="w"> </span>download<span class="w"> </span>getting_started<span class="w"> </span>--testing
 </code></pre></div>
-<p>JSON results can be useful for scripts, automation, and inspecting detailed run information.</p>
+<p>The human output summarizes request outcomes, coverage evidence, and the retained
+report location. JSON mode emits the full operation result for scripts. The list
+JSON continues to return configuration names. Validation JSON returns the
+structural result and parsed configuration.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>acquisition<span class="w"> </span>list<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>--json<span class="w"> </span>acquisition<span class="w"> </span>validate<span class="w"> </span>getting_started<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>--json<span class="w"> </span>runs<span class="w"> </span>report<span class="w"> </span>RUN_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+</code></pre></div>
 <p>The <code>--json</code> option belongs before the command name.</p>
 <p>Interactive editing does not provide a JSON result.</p>
 <hr />
@@ -5514,12 +5591,10 @@
 <p>Use <a href="../runs/">run evidence commands</a> to inspect retained fetch and processing runs.</p>
 <h2 id="cleanup-reference">Cleanup reference</h2>
 <p>Use the <a href="../storage/">cleanup options and effects</a> and the <a href="../../../workflows/acquisition/managing-acquisitions/">managed storage workflow</a>.</p>
-<h2 id="profile-commands">Profile commands</h2>
-<p>Acquisition references installed normalization profiles when registering raw inputs. See <a href="../normalize/#profile-commands">profile commands</a> to author and install a profile.</p>
 <h2 id="mapping-and-download-results">Mapping and download results</h2>
 <p>Mapping discovers remote archive identities. The final report shows each
 requested scope, including family and base-coin scopes, and identifies reused
-discovery scans as <strong>Cached</strong>. A cached discovery does not establish that the
+discovery scans as <strong>Cached</strong> and fresh scans as <strong>Refreshed</strong>. A cached discovery does not establish that the
 files are present locally. A successful empty scan remains an empty result.</p>
 <p>Download reports completed, reused, failed and cancelled file outcomes.
 The registered local archive count counts distinct retained local IDs. Bytes

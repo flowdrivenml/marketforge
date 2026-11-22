@@ -803,6 +803,8 @@
       
         
       
+        
+      
     
     
     
@@ -890,14 +892,41 @@
   
   
     <li class="md-nav__item">
-      <a href="../../workflows/acquisition/forge/" class="md-nav__link">
+      <a href="../acquisition-sources/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-  Register and normalize manually supplied data
+  Supported historical sources
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/managing-acquisitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managing acquisitions
 
     
   </span>
@@ -926,14 +955,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../workflows/acquisition/managing-acquisitions/" class="md-nav__link">
+      <a href="../../workflows/acquisition/forge/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-  Manage raw storage
+  Register and normalize manually supplied data
 
     
   </span>
@@ -4709,7 +4738,9 @@ A profile ID has four components, <code>exchange.instrument_type.market_category
 <p>Run from the project root. For example, inspect the bundle’s headerless trade CSV.</p>
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>profiles<span class="w"> </span>sample<span class="w"> </span>--file<span class="w"> </span>docs/content/examples/catalogue/synthetic-trades.csv<span class="w"> </span>--no-header<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
 </code></pre></div>
-<p>Use <code>--header</code> for named CSV columns or <code>--member</code> to select a specific ZIP member. The bounded sampler previews CSV or the first JSONL record. Open a tiny copy separately to inspect later JSONL records, a workbook’s sheets, or a member the sampler cannot read.</p>
+<p>Pass <code>--header</code> for named CSV columns or <code>--no-header</code> for positional columns. If neither is set, the preview shows the first record as data and marks header status unknown. Use <code>--member</code> to select a stored or deflated ZIP entry. The inspector also accepts plain and gzip-compressed CSV and JSONL. For TAR.GZ and workbook inputs, inspect a small extracted text example or use a workbook viewer.</p>
+<p>The <strong>Source structure</strong> table shows inferred representations, up to three distinct observed examples, and missing counts. JSONL also counts explicit nulls. Arrays stay grouped. Use <code>--fields</code> to skip the record preview or <code>--rows 10</code> to see more records. Human output defaults to five data records and accepts 1–20, within a 65,536-byte decoded prefix and a 64-field display limit. The sample covers the beginning of the input. It cannot establish total records or whole-file types.</p>
+<p>For CSV, use the displayed one-based position when the profile declares positional fields. Resolve duplicate or empty headers before relying on name-based mappings. For nested JSONL, a row labeled <code>data.ts</code> maps to <code>[fields."data.ts"]</code> in TOML. The quotes keep the dotted path as one TOML key, and the Engine follows the nested JSON components. A literal JSON key named <code>"data.ts"</code> is ambiguous for this lookup and is omitted. Suggested types reflect the observed values. Choose actual field types and encodings using the source specification, then use <code>mf normalize profiles new PROFILE_ID</code> and <code>mf normalize profiles validate --file PATH</code>.</p>
 <p>Write down the source facts before choosing mappings.</p>
 <table>
 <thead>
