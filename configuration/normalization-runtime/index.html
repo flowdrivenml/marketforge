@@ -1481,7 +1481,7 @@
   <span class="md-ellipsis">
     
   
-  Merge registered normalized files
+  Merge normalized data
 
     
   </span>
@@ -2537,6 +2537,8 @@
       
         
       
+        
+      
     
     
     
@@ -3202,6 +3204,33 @@
     
   
   Merge recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../merge-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge runtime configuration
 
     
   </span>
@@ -5455,6 +5484,8 @@
       
         
       
+        
+      
     
     
     
@@ -5679,7 +5710,7 @@ mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"
 </tr>
 </tbody>
 </table>
-<p>The managed value <code>reconciliation_bytes = 8589934592</code> is <strong>8 GiB</strong>. The existing “1 GiB” comment describes neither that value nor the current Rust default.</p>
+<p>The managed value <code>reconciliation_bytes = 8589934592</code> is <strong>8 GiB</strong>. The comment has been corrected to 8 GiB. The numeric value is unchanged.</p>
 <h2 id="4-parquet-output">4. Parquet output</h2>
 <p>Both <code>resources.parquet</code> fields are required positive <code>u64</code> byte targets. Rust enforces <code>row_group_target_bytes &lt;= file_target_bytes</code>; equality is allowed.</p>
 <table>
@@ -5727,7 +5758,7 @@ mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"
 <h2 id="6-integrity-policies">6. Integrity policies</h2>
 <p>The integrity system records an eligible check and whether it failed. Its evaluation can be clean, degraded or failed. A failed evaluation blocks that job's publication. A degraded result can still be committed if independent processing and resource checks succeed. Forge verification and <a href="../../reference/cli/normalize/#registration-and-recovery">primary-file registration</a> are subsequent operations.</p>
 <p><a id="integrity-policy-enabled"></a></p>
-<p><code>integrity_policy.enabled</code> is a Rust <code>bool</code>, optional and <code>true</code> by default. Setting it to <code>false</code> skips immediate rule enforcement and final threshold evaluation. Counting continues, and recorded violations still mark output degraded. Source checks, independent reconciliation/timestamp policy and resource guards continue. All seven rule tables and actions are required and validated even when evaluation is disabled. Legacy <code>profile</code> is an alias for <code>enabled</code>; legacy strings <code>standard</code> and <code>strict</code> both decode as <code>true</code> and are not distinct policy presets.</p>
+<p><code>integrity_policy.enabled</code> is a Rust <code>bool</code>, optional and <code>true</code> by default. Setting it to <code>false</code> skips immediate rule enforcement and final threshold evaluation. Counting continues, and recorded violations still mark output degraded. Source checks, independent reconciliation/timestamp policy and resource guards continue. All seven rule tables and actions are required and validated even when evaluation is disabled. Legacy <code>profile</code> is an alias for <code>enabled</code>. Both keys can read legacy strings <code>standard</code> and <code>strict</code> as <code>true</code>. Use a boolean with the CLI.</p>
 <h3 id="shared-rule-fields">Shared rule fields</h3>
 <p>Apply these fields under each <code>integrity_policy.&lt;rule&gt;</code>.</p>
 <table>
@@ -6014,7 +6045,7 @@ mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"
 <h3 id="edit-the-complete-configuration">Edit the complete configuration</h3>
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span>edit
 </code></pre></div>
-<p>The command opens a private draft in the configured editor, with Neovim as the default. It requires a terminal. Review the changes and type <code>apply</code> to save. Integrity-critical edits require typing <code>apply and acknowledge risk</code>. A validation failure or declined confirmation keeps the draft and displays its path. The managed file must be a regular, single-link file, and the management commands bound file and draft size to 1 MiB.</p>
+<p>The command opens a private draft in the configured editor, with Neovim as the default. It requires a terminal. Review the changes and type <code>apply</code> to save. Integrity-critical edits require typing <code>apply and acknowledge risk</code>. A validation failure or declined confirmation keeps the draft and displays its path. The managed file must be a regular, single-link file, and the management commands refuse symlink targets and directories.</p>
 <h2 id="12-configuration-examples">12. Configuration examples</h2>
 <h3 id="a-complete-strict-starting-point">A. Complete strict starting point</h3>
 <p>This document supplies all required fields and uses Rust defaults for omitted settings. Resource values are explicit starting values. Workload admission still depends on the selected work.</p>

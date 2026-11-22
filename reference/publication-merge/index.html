@@ -1481,7 +1481,7 @@
   <span class="md-ellipsis">
     
   
-  Merge registered normalized files
+  Merge normalized data
 
     
   </span>
@@ -2535,6 +2535,8 @@
       
         
       
+        
+      
     
     
     
@@ -2765,6 +2767,33 @@
     
   
   Merge recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/merge-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge runtime configuration
 
     
   </span>
@@ -3402,6 +3431,17 @@
       On this page
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#identities-and-counts" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Identities and counts
+      </span>
+    </span>
+  </a>
+  
+</li>
       
         <li class="md-nav__item">
   <a href="#manifest-and-inventory" class="md-nav__link">
@@ -4570,6 +4610,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#identities-and-counts" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Identities and counts
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#manifest-and-inventory" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4740,6 +4791,10 @@
 
 <h1 id="merged-publications">Merged publications</h1>
 <p>The physical merger commits <code>manifest.json</code>, <code>merge-job.json</code>, <code>merge-input-checksums.json</code>, <code>merge-partitions.json</code>, <code>merge-runtime.json</code>, <code>publication-checksums.json</code> and primary parts under <code>timeline/partition-*/part-*.parquet</code>. The manifest inventory determines membership. Retain referenced parts and sidecars together. Verify committed evidence before registering. <a href="../../workflows/merge/">Merge workflow</a> · <a href="../prepared-merge/">Merge job</a></p>
+<h2 id="identities-and-counts">Identities and counts</h2>
+<p>The Engine publication ID is derived from the merge job ID. Forge assigns a separate registry publication ID and a registry file ID per registered primary. Use file IDs with <a href="../../workflows/datasets/#verifying-datasets">dataset verification</a>, the logical Forge run ID with <a href="../cli/runs/">run inspection</a>, and the retained intent or publication path for <a href="../cli/merge/#registration-and-recovery">registration recovery</a>.</p>
+<p>Two physical quantities are distinct. A partition is an output range, and it can contain multiple Parquet files. A logical stream is membership carried by rows and can span partitions. The manifest's <code>events_written</code> equals the sum of primary physical rows and includes reconstruction-only events. Subtract <code>reconstruction_events</code> to obtain the count of in-range market observations. The CLI can currently label the gross count <strong>Market events</strong>. <code>canonical_rows</code> counts the represented normalized payload rows, which can differ from the physical timeline row count. Reconstruction-only events are a subset of depth events and remain necessary for causal replay.</p>
+<p><code>merge-runtime.json</code> records the effective <a href="../../configuration/merge-runtime/">merge runtime</a>. Forge checks the output, file inventories and lineage before registering the eligible primaries.</p>
 <h2 id="manifest-and-inventory">Manifest and inventory</h2>
 <table>
 <thead>

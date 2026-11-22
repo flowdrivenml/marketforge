@@ -1481,7 +1481,7 @@
   <span class="md-ellipsis">
     
   
-  Merge registered normalized files
+  Merge normalized data
 
     
   </span>
@@ -2537,6 +2537,8 @@
       
         
       
+        
+      
     
     
     
@@ -2702,62 +2704,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Merge and conversion runtime">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#parquet-compression" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Parquet compression
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Parquet compression">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#does-a-higher-number-always-improve-compression" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does a higher number always improve compression?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-compression-change-market-data-meaning" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does compression change market-data meaning?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#is-this-the-same-as-scratch-codec" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Is this the same as scratch codec?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -2903,6 +2849,33 @@
     
   
   Merge recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/merge-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge runtime configuration
 
     
   </span>
@@ -4656,62 +4629,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Merge and conversion runtime">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#parquet-compression" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Parquet compression
-      </span>
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Parquet compression">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#does-a-higher-number-always-improve-compression" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does a higher number always improve compression?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#does-compression-change-market-data-meaning" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Does compression change market-data meaning?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#is-this-the-same-as-scratch-codec" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Is this the same as scratch codec?
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -4835,6 +4752,8 @@
       
         
           
+        
+      
         
       
         
@@ -5126,106 +5045,50 @@
 <ul>
 <li><a href="../../configuration/normalization-runtime/#merge-fan-in">Normalization merge fan-in</a></li>
 </ul>
+<p><a id="parquet-compression"></a><a id="does-a-higher-number-always-improve-compression"></a>
+<a id="does-compression-change-market-data-meaning"></a><a id="is-this-the-same-as-scratch-codec"></a></p>
 <h2 id="merge-and-conversion-runtime">Merge and conversion runtime</h2>
-<p>Merge reads <code>data/.config/engine/merge.toml</code>. Conversion preparation reads
-<code>data/.config/engine/convert.toml</code>. Both use the shared Rust resource and Parquet
-types and reject unknown fields. The sample is a bounded starting point.
-Resource and Parquet fields without defaults are required. The merge-only
-partitioning table is optional and defaults to four partitions per worker.</p>
-<div class="highlight"><pre><span></span><code><span class="n">schema_version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
-
-<span class="k">[resources]</span>
-<span class="n">workers</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span>
-<span class="n">memory_limit_mb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">512</span>
-<span class="n">max_open_files</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">64</span>
-
-<span class="k">[parquet]</span>
-<span class="n">row_group_target_mb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">16</span>
-<span class="n">file_target_mb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">64</span>
-<span class="n">compression_level</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span>
-
-<span class="c1"># Omit this table for convert.toml.</span>
-<span class="k">[partitioning]</span>
-<span class="n">partitions_per_worker</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">4</span>
-</code></pre></div>
+<p>The <a href="../../configuration/merge-runtime/">merge runtime reference</a> documents <code>merge.toml</code>, including the CLI, loader defaults, partitioning, and runtime evidence.</p>
+<p>Conversion preparation reads <code>data/.config/engine/convert.toml</code>. Its schema-1 loader shares the I/O resource types and Parquet settings. The conversion document has no partitioning table.</p>
 <table>
 <thead>
 <tr>
-<th>Field</th>
-<th>Type, units, range</th>
-<th>Effect</th>
+<th>Conversion field</th>
+<th>Loader requirements</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>schema_version</code></td>
-<td>Integer, exactly 1</td>
-<td>Runtime document schema</td>
+<td>Required integer 1.</td>
 </tr>
 <tr>
 <td><code>resources.workers</code></td>
-<td>Positive integer</td>
-<td>Worker ceiling. Actual admission depends on available resources and the workload.</td>
+<td>Required positive integer.</td>
 </tr>
 <tr>
 <td><code>resources.memory_limit_mb</code></td>
-<td>Positive integer MiB, must fit in unsigned 64-bit bytes</td>
-<td>Budget for admitted work and writer buffers.</td>
+<td>Required positive binary MiB, convertible to unsigned 64-bit bytes.</td>
 </tr>
 <tr>
 <td><code>resources.max_open_files</code></td>
-<td>Positive integer, file handles, default 64</td>
-<td>File-handle ceiling. Conversion estimates participating source and reference handles before proceeding.</td>
+<td>Positive integer, default 64.</td>
 </tr>
 <tr>
 <td><code>parquet.row_group_target_mb</code></td>
-<td>Positive integer MiB, at most the file target</td>
-<td>Target size for buffered row groups. Conversion checks the target multiplied by workers against its memory limit.</td>
+<td>Required positive binary MiB, no larger than the file target.</td>
 </tr>
 <tr>
 <td><code>parquet.file_target_mb</code></td>
-<td>Integer MiB, at least the row-group target, must fit in unsigned 64-bit bytes</td>
-<td>File rotation size target.</td>
+<td>Required binary MiB, at least the row-group target and convertible to unsigned 64-bit bytes.</td>
 </tr>
 <tr>
 <td><code>parquet.compression_level</code></td>
-<td>Integer 1–22, default 3</td>
-<td>Zstandard level applied to Parquet output.</td>
-</tr>
-<tr>
-<td><code>partitioning.partitions_per_worker</code></td>
-<td>Positive integer, merge only, default 4</td>
-<td>Timeline partition target. Multiplication by workers must fit in the platform size type.</td>
+<td>Zstandard level 1–22, default 3.</td>
 </tr>
 </tbody>
 </table>
-<p>The direct Rust merge command accepts <code>--config PATH</code>, relative to its
-<code>--project-root</code>. Forge records the original path and checksums the retained
-runtime file, then uses that copy for prepared-job execution. The merge
-monitor and <code>merge-runtime.json</code> show effective settings.</p>
-<p>Conversion clamps each recipe resource request to the corresponding runtime
-ceiling. It transfers the clamped values and Parquet settings into prepared
-jobs, where the Rust converter reads them. The direct converter can lower the
-prepared worker count with <code>--workers</code>. Physical input, reference, file-handle
-and writer-memory prerequisites are checked separately from runtime TOML
-validation.</p>
-<h3 id="parquet-compression">Parquet compression</h3>
-<p><code>parquet.compression_level</code> controls the supported Zstandard compression level for merge output.</p>
-<h4 id="does-a-higher-number-always-improve-compression">Does a higher number always improve compression?</h4>
-<p>The exact outcome depends on the data and compression implementation.</p>
-<p>Higher levels can require more computational work.</p>
-<h4 id="does-compression-change-market-data-meaning">Does compression change market-data meaning?</h4>
-<p>No.</p>
-<p>Compression affects physical storage representation.</p>
-<p>It does not intentionally change the canonical event values.</p>
-<h4 id="is-this-the-same-as-scratch-codec">Is this the same as scratch codec?</h4>
-<p>No.</p>
-<p>Merge Parquet compression and internal scratch compression are separate settings.</p>
-<p>For example:</p>
-<div class="highlight"><pre><span></span><code><span class="n">scratch_codec</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"zlib"</span>
-</code></pre></div>
-<p>does not mean the final merged Parquet output uses zlib.</p>
-<hr />
+<p>Conversion clamps recipe resource requests to the runtime ceilings and transfers the resulting values and Parquet settings into the prepared job. The direct converter can lower the prepared worker count with <code>--workers</code>. See the <a href="../../workflows/conversion/">conversion workflow</a> for input and execution requirements.</p>
 <h2 id="pipeline-runtime">Pipeline runtime</h2>
 <p><code>data/.config/engine/pipeline.toml</code> has a required integer
 <code>schema_version = 1</code>. It accepts optional <code>[normalize]</code> and <code>[merge]</code> tables

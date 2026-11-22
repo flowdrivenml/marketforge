@@ -20,7 +20,7 @@
         <link rel="prev" href="../normalization-runtime/">
       
       
-        <link rel="next" href="../conversion/">
+        <link rel="next" href="../merge-runtime/">
       
       
         
@@ -1481,7 +1481,7 @@
   <span class="md-ellipsis">
     
   
-  Merge registered normalized files
+  Merge normalized data
 
     
   </span>
@@ -2537,6 +2537,8 @@
       
         
       
+        
+      
     
     
     
@@ -2768,6 +2770,23 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge recipes
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="././" class="md-nav__link md-nav__link--active">
         
   
@@ -2784,6 +2803,108 @@
 
       </a>
       
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#explicit-registered-file-ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Explicit registered file IDs
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#selection-derived-from-normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Selection derived from normalization
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#input-precedence-and-ranks" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Input precedence and ranks
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timeline-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Timeline ordering
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interval-reconstruction-and-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Interval, reconstruction, and coverage
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../merge-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge runtime configuration
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -4487,6 +4608,11 @@
                       
                     
                     
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
                   
                   <div class="md-sidebar__inner">
                     
@@ -4498,6 +4624,69 @@
   
     
   
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#explicit-registered-file-ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Explicit registered file IDs
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#selection-derived-from-normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Selection derived from normalization
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#input-precedence-and-ranks" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Input precedence and ranks
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timeline-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Timeline ordering
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#interval-reconstruction-and-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Interval, reconstruction, and coverage
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -4629,6 +4818,8 @@
       
         
       
+        
+      
     
     
     
@@ -4661,11 +4852,43 @@
 
 
 <h1 id="merge-recipes">Merge recipes</h1>
-<p>Forge reads managed merge names under <code>data/.config/workflows/data_engineering/merge/</code> or an explicit recipe path. Choose the direct or source-derived form. <a href="../../workflows/merge/">Merge workflow</a> · <a href="../../reference/prepared-merge/">Engine job</a></p>
 <table>
 <thead>
 <tr>
-<th>Path</th>
+<th>Artifact</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Merge recipe TOML</td>
+<td>Select normalized inputs, an interval, and timeline choices.</td>
+</tr>
+<tr>
+<td><a href="../merge-runtime/">Merge runtime TOML</a></td>
+<td>Control Engine resources, partition planning and Parquet output.</td>
+</tr>
+<tr>
+<td><a href="../../reference/prepared-merge/">Prepared merge JSON</a></td>
+<td>Exact Engine submission, with file paths, checksums and ranks.</td>
+</tr>
+<tr>
+<td>Execution intent and report</td>
+<td>Retain the submission, outcomes and evidence for <a href="../../reference/cli/merge/#registration-and-recovery">registration recovery</a>.</td>
+</tr>
+</tbody>
+</table>
+<p>The managed recipe library is <code>data/.config/workflows/data_engineering/merge/</code>. Use a managed name with optional <code>.toml</code> suffix, or a directory-qualified or absolute path where the <a href="../../reference/cli/merge/">CLI</a> accepts it. Relative explicit paths resolve from the command's working directory.</p>
+<h2 id="explicit-registered-file-ids">Explicit registered file IDs</h2>
+<p>Use this form when you know the normalized primary files, including outputs from a legacy archive-ID normalization request. Get real file IDs from normalization results or <code>mf datasets list --operation normalize --testing | cpout</code>. Replace the illustrative <code>1</code> and <code>2</code> with IDs from your selected registry, in precedence order.</p>
+<div class="highlight"><pre><span></span><code><span class="n">dataset_ids</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">]</span>
+<span class="n">start_ns</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1793059200000000000</span>
+<span class="n">end_ns</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1793145600000000000</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
 <th>Type and requirement</th>
 <th>Meaning</th>
 </tr>
@@ -4673,77 +4896,121 @@
 <tbody>
 <tr>
 <td><code>dataset_ids</code></td>
-<td>Required in the direct form. Nonempty unique list of positive signed-64-bit registry file IDs</td>
-<td>Ordered normalized primary-file selections</td>
+<td>Required nonempty array of unique positive signed 64-bit integers</td>
+<td>Registry primary-file IDs. Each must identify a complete eligible normalized Parquet file.</td>
 </tr>
 <tr>
 <td><code>start_ns</code>, <code>end_ns</code></td>
-<td>Required in the direct form. Signed 64-bit integers, <code>start_ns &lt; end_ns</code></td>
-<td>Requested half-open Engine interval, Unix nanoseconds</td>
-</tr>
-<tr>
-<td><code>version</code></td>
-<td>Required in the derived form. Integer 1</td>
-<td>Recipe discriminator</td>
-</tr>
-<tr>
-<td><code>interval.start</code>, <code>interval.end</code></td>
-<td>Required in the derived form. Timezone-aware TOML datetimes with start before end and both representable as signed-64-bit Unix ns</td>
-<td>Derived interval</td>
-</tr>
-<tr>
-<td><code>selection.source</code></td>
-<td>Required nonblank string in the derived form</td>
-<td>Modern normalization recipe name or explicit path</td>
-</tr>
-<tr>
-<td><code>selection.operation</code>, <code>selection.mode</code></td>
-<td>Default <code>normalize</code>, <code>all</code>, respectively. These are their only values</td>
-<td>Source kind and selection mode</td>
-</tr>
-<tr>
-<td><code>selection.data_types</code></td>
-<td>Optional nonempty list of <code>trades</code>, <code>order_book_l2</code></td>
-<td>Restrict matching requests</td>
-</tr>
-<tr>
-<td><code>selection.exchanges</code></td>
-<td>Optional nonempty list of lowercase exchange tokens matching <code>^[a-z][a-z0-9_]*$</code></td>
-<td>Restrict venues</td>
-</tr>
-<tr>
-<td><code>selection.instruments</code></td>
-<td>Optional nonempty list of canonical instrument references</td>
-<td>Restrict instruments</td>
-</tr>
-<tr>
-<td><code>selection.instrument_types</code></td>
-<td>Optional nonempty list of <code>spot</code>, <code>perpetual</code>, <code>future</code>, <code>option</code>, <code>equity</code></td>
-<td>Restrict instrument types</td>
-</tr>
-<tr>
-<td><code>selection.market_categories</code></td>
-<td>Optional nonempty list of <code>spot</code>, <code>linear</code>, <code>inverse</code>, <code>option</code>, <code>equity</code></td>
-<td>Restrict categories</td>
-</tr>
-<tr>
-<td><code>selection.publication_ids</code></td>
-<td>Optional nonempty unique list of positive signed-64-bit registry publication IDs</td>
-<td>Explicitly bind competing normalized selections</td>
-</tr>
-<tr>
-<td><code>stream_ranks</code></td>
-<td>Map from stream ID to uint32, default empty</td>
-<td>Optional overrides when preparing the job. The resolved assignments must distinguish distinct streams</td>
-</tr>
-<tr>
-<td><code>timeline_ordering</code></td>
-<td>Optional <code>causal</code> or <code>chronological</code></td>
-<td>Forge chooses causal when required by selected inputs and chronological otherwise</td>
+<td>Required signed 64-bit integers with <code>start_ns &lt; end_ns</code></td>
+<td>Half-open UTC interval in Unix nanoseconds. Use these fields for sub-microsecond endpoints.</td>
 </tr>
 </tbody>
 </table>
-<p>Forge verifies membership, one instrument namespace, and physical file fingerprints during preparation. A direct recipe uses registered <strong>file IDs</strong>, while the derived publication selector uses <strong>registry publication IDs</strong>. <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/merge/config.py">Recipe models</a></p>
+<p>Use the shared ordering fields below with either form. A top-level <code>version</code>, <code>interval</code>, or <code>selection</code> selects the derived schema. Unknown keys are rejected in each form.</p>
+<h2 id="selection-derived-from-normalization">Selection derived from normalization</h2>
+<p>Use this form to discover registered normalized files from a saved request-based normalization recipe. This example refers to the Bybit trades recipe from the <a href="../../workflows/normalize/">normalization guide</a>.</p>
+<div class="highlight"><pre><span></span><code><span class="n">version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
+
+<span class="k">[interval]</span>
+<span class="n">start</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ld">2026-10-27T00:00:00Z</span>
+<span class="n">end</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ld">2026-10-28T00:00:00Z</span>
+
+<span class="k">[selection]</span>
+<span class="n">source</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"my_dataset"</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type and requirement</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>version</code></td>
+<td>Required integer <code>1</code></td>
+<td>Derived recipe version.</td>
+</tr>
+<tr>
+<td><code>interval.start</code>, <code>interval.end</code></td>
+<td>Required timezone-aware datetimes, ordered and representable as signed 64-bit Unix ns</td>
+<td>End is exclusive. Datetime resolution is microseconds.</td>
+</tr>
+<tr>
+<td><code>selection.source</code></td>
+<td>Required nonblank string</td>
+<td>Managed normalization recipe name or explicit TOML path.</td>
+</tr>
+<tr>
+<td><code>selection.operation</code>, <code>selection.mode</code></td>
+<td>Strings, default and only values <code>normalize</code>, <code>all</code></td>
+<td>Consider files matching the normalization requests and filters.</td>
+</tr>
+<tr>
+<td><code>selection.data_types</code></td>
+<td>Optional nonempty string array of <code>trades</code>, <code>order_book_l2</code></td>
+<td>Select content requested by the source. Engine jobs call the latter <code>depth</code>.</td>
+</tr>
+<tr>
+<td><code>selection.exchanges</code></td>
+<td>Optional nonempty string array matching <code>^[a-z][a-z0-9_]*$</code></td>
+<td>Restrict execution venues.</td>
+</tr>
+<tr>
+<td><code>selection.instruments</code></td>
+<td>Optional nonempty string array</td>
+<td>Restrict to canonical <code>exchange.instrument_type.market_category.symbol</code> identities.</td>
+</tr>
+<tr>
+<td><code>selection.instrument_types</code></td>
+<td>Optional nonempty string array of <code>spot</code>, <code>perpetual</code>, <code>future</code>, <code>option</code>, <code>equity</code></td>
+<td>Restrict instrument types.</td>
+</tr>
+<tr>
+<td><code>selection.market_categories</code></td>
+<td>Optional nonempty string array of <code>spot</code>, <code>linear</code>, <code>inverse</code>, <code>option</code>, <code>equity</code></td>
+<td>Restrict market categories.</td>
+</tr>
+<tr>
+<td><code>selection.publication_ids</code></td>
+<td>Optional nonempty array of unique positive signed 64-bit integers</td>
+<td>Approve matching registry <strong>publication</strong> IDs. Read IDs from discovery or <code>mf --json datasets show FILE_ID --testing</code> under <code>publication.publication_id</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>Omitted filters impose no additional restriction. Filters intersect on matching stream membership. Forge uses resolved source tasks for family and base-coin membership, including registered source keys and matching Gate.io L2 feed. A file with an overlapping unapproved stream can block the selection.</p>
+<p>A bare source name resolves in the normalization recipe library. Use <code>./filename.toml</code>, a path with a directory, or an absolute path for explicit references. Relative paths resolve from the command's working directory, even when the merge TOML lives elsewhere. <code>new --from-normalize</code> saves an absolute path for an explicit source.</p>
+<p>Forge reads the current source recipe at discovery and records its SHA-256. The recipe keeps a live reference and its own independent interval. Automatic selection requires a single verified normalization submission whose retained source path, request definitions, interval, ranking policy, and submitted-batch fingerprint match the evidence. Multiple verified submissions or a candidate without a verified ownership link may require explicit publication approval. Approval still requires matching files and membership, and missing requests can block preparation.</p>
+<h2 id="input-precedence-and-ranks">Input precedence and ranks</h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type and default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>stream_ranks</code></td>
+<td>Table mapping exact stream IDs to unsigned 32-bit integers. Defaults to empty.</td>
+<td>Override selected stream ranks. Quote dotted IDs. Every override must refer to a selected stream, and distinct streams need distinct ranks.</td>
+</tr>
+<tr>
+<td><code>timeline_ordering</code></td>
+<td>Optional string, <code>chronological</code> or <code>causal</code></td>
+<td>If omitted, Forge chooses causal when a selected depth publication requires it and chronological otherwise.</td>
+</tr>
+</tbody>
+</table>
+<p>Explicit selection orders streams by the first selected file for each stream. Derived selection uses the first matching normalization request, then stream ID. Unspecified ranks use the lowest unused values in that order, starting at zero. Parts of the same stream share one rank. Use exact IDs from the preparation report. A lower rank wins cross-stream ties at equal timestamps.</p>
+<h2 id="timeline-ordering">Timeline ordering</h2>
+<p><strong>Chronological</strong> writes nondecreasing event timestamps, with stream rank for ties. <strong>Causal</strong> chooses the available stream head by timestamp and rank, then advances only that stream. Native dependencies can cause timestamp regressions in the output. Keep physical timeline sequence for replay.</p>
+<p>Trades, depth, and combined jobs use compatible registered normalized inputs from one instrument namespace. Timestamp-ordered trade streams need supported contiguous source spans. A segmented depth stream requires all its primary parts and causal ordering. A depth stream spanning multiple publications requires a continuity contract the current merger does not support. See <a href="../../reference/prepared-merge/#merge-compatibility">prepared-job compatibility</a>.</p>
+<h2 id="interval-reconstruction-and-coverage">Interval, reconstruction, and coverage</h2>
+<p><code>[start, end)</code> selects market observations. For causal depth replay the Engine can emit the required committed segment prefix before the start, marking those events <code>reconstruction_only</code>. Those rows are replay dependencies and count separately from market observations. Missing parts or invalid initialization can block the merge.</p>
+<p>Preparation reports observed timestamp envelopes, gaps between the envelopes within the request, and files extending beyond it. A file's observed maximum is inclusive. These bounds do not establish event-level continuity. See <a href="../../reference/publication-merge/#identities-and-counts">merged publication counts</a>.</p>
 
 
 
@@ -4792,13 +5059,13 @@
         
         
           
-          <a href="../conversion/" class="md-footer__link md-footer__link--next" aria-label="Next: Conversion recipes">
+          <a href="../merge-runtime/" class="md-footer__link md-footer__link--next" aria-label="Next: Merge runtime configuration">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Conversion recipes
+                Merge runtime configuration
               </div>
             </div>
             <div class="md-footer__button md-icon">
