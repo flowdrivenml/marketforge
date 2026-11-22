@@ -31,7 +31,7 @@
     
     
       
-        <title>Normalize registered data - MarketForge</title>
+        <title>Normalize historical data - MarketForge</title>
       
     
     
@@ -115,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Normalize registered data
+              Normalize historical data
             
           </span>
         </div>
@@ -552,6 +552,8 @@
       
         
           
+        
+      
         
       
         
@@ -1152,12 +1154,6 @@
       
         
       
-        
-      
-        
-      
-        
-      
     
     
     
@@ -1181,7 +1177,7 @@
   <span class="md-ellipsis">
     
   
-  Process data
+  Normalization
 
     
   </span>
@@ -1197,7 +1193,7 @@
               <span class="md-nav__icon md-icon"></span>
               
   
-  Process data
+  Normalization
 
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
@@ -1225,7 +1221,7 @@
   <span class="md-ellipsis">
     
   
-  Normalize registered data
+  Normalize historical data
 
     
   </span>
@@ -1242,7 +1238,7 @@
   <span class="md-ellipsis">
     
   
-  Normalize registered data
+  Normalize historical data
 
     
   </span>
@@ -1268,10 +1264,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#select-the-raw-inputs" class="md-nav__link">
+  <a href="#1-check-prerequisites" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Select the raw inputs
+        1. Check prerequisites
       </span>
     </span>
   </a>
@@ -1279,10 +1275,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#prepare-and-check-the-batch" class="md-nav__link">
+  <a href="#2-create-a-normalization-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Prepare and check the batch
+        2. Create a normalization recipe
       </span>
     </span>
   </a>
@@ -1290,10 +1286,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#run-and-verify" class="md-nav__link">
+  <a href="#3-validate-the-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Run and verify
+        3. Validate the recipe
       </span>
     </span>
   </a>
@@ -1301,10 +1297,65 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#recover-from-a-failure" class="md-nav__link">
+  <a href="#4-preview-preparation" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Recover from a failure
+        4. Preview preparation
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-execute-normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        5. Execute normalization
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-inspect-normalized-datasets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        6. Inspect normalized datasets
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optional-advanced-execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Optional advanced execution
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Troubleshooting
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Next steps
       </span>
     </span>
   </a>
@@ -1498,6 +1549,74 @@
 
                 
               
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Process data
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_8">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Process data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
                 
                   
   
@@ -1614,10 +1733,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_9" >
         
           
-          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_1_3_9" id="__nav_1_3_9_label" tabindex="0">
             
   
   
@@ -1635,8 +1754,8 @@
           </label>
         
         
-          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
-            <label class="md-nav__title" for="__nav_1_3_8">
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_9_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_9">
               <span class="md-nav__icon md-icon"></span>
               
   
@@ -4499,10 +4618,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#select-the-raw-inputs" class="md-nav__link">
+  <a href="#1-check-prerequisites" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Select the raw inputs
+        1. Check prerequisites
       </span>
     </span>
   </a>
@@ -4510,10 +4629,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#prepare-and-check-the-batch" class="md-nav__link">
+  <a href="#2-create-a-normalization-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Prepare and check the batch
+        2. Create a normalization recipe
       </span>
     </span>
   </a>
@@ -4521,10 +4640,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#run-and-verify" class="md-nav__link">
+  <a href="#3-validate-the-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Run and verify
+        3. Validate the recipe
       </span>
     </span>
   </a>
@@ -4532,10 +4651,65 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#recover-from-a-failure" class="md-nav__link">
+  <a href="#4-preview-preparation" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Recover from a failure
+        4. Preview preparation
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-execute-normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        5. Execute normalization
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-inspect-normalized-datasets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        6. Inspect normalized datasets
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optional-advanced-execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Optional advanced execution
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Troubleshooting
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Next steps
       </span>
     </span>
   </a>
@@ -4628,6 +4802,8 @@
       
         
       
+        
+      
     
     
     
@@ -4656,12 +4832,6 @@
       
         
       
-        
-      
-        
-      
-        
-      
     
     
     
@@ -4671,7 +4841,7 @@
           
   
   <span class="md-ellipsis">
-    Process data
+    Normalization
   </span>
 
         </a>
@@ -4693,51 +4863,118 @@
   
 
 
-<h1 id="normalize-registered-data">Normalize registered data</h1>
-<p>Turn verified managed raw copies into canonical trade or depth Parquet. Forge selects registered inputs and prepares an Engine batch. A managed run verifies the committed publication and registers its primary files for later inspection or merge.</p>
-<h2 id="select-the-raw-inputs">Select the raw inputs</h2>
-<p>Use an initialized registry, a verified normalizer and installed profiles for the intended source and content. Start from <a href="../acquisition/historical-data/">historical acquisition</a> or <a href="../acquisition/external-data/">register an external recording</a>. Confirm copies are complete with <a href="../acquisition/managing-acquisitions/">storage inspection</a>. A local file on disk is insufficient for registry-backed selection.</p>
-<p>Use a <a href="../../configuration/normalization/">normalization recipe</a> for independent selection or a compatible acquisition recipe, such as the <a href="../../examples/bybit/acquisition.toml">Bybit trades and depth recipe</a>. Choose the venue, instrument or family, content, and interval. For a family, Forge resolves concrete instruments and the applicable specification for each member. A selected archive supplies whole processing input, so the request interval is selection evidence rather than a row filter.</p>
-<h2 id="prepare-and-check-the-batch">Prepare and check the batch</h2>
-<p>Replace <code>RECIPE</code> with the saved recipe name or its TOML path. Use the same database environment for preparation, execution, and registration.</p>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>validate<span class="w"> </span>RECIPE
-mf<span class="w"> </span>--json<span class="w"> </span>normalize<span class="w"> </span>prepare<span class="w"> </span>RECIPE<span class="w"> </span>--testing<span class="w"> </span>--dry-run
-mf<span class="w"> </span>--json<span class="w"> </span>normalize<span class="w"> </span>prepare<span class="w"> </span>RECIPE<span class="w"> </span>--testing<span class="w"> </span>&gt;<span class="w"> </span>prepare.json
-</code></pre></div>
-<p>Validation checks the recipe contract. Dry-run planning resolves registry evidence and reports selection without publishing a batch or validating it with the Engine. Inspect selected archive paths and hashes, nominal coverage gaps, specification provenance, and per-job task and stream counts. Prepare without <code>--dry-run</code> to produce a batch. Continue only when the report is prepared and the Engine is ready.</p>
-<h2 id="run-and-verify">Run and verify</h2>
-<div class="highlight"><pre><span></span><code><span class="nv">batch</span><span class="o">=</span><span class="k">$(</span>python<span class="w"> </span>-c<span class="w"> </span><span class="s1">'import json; print(json.load(open("prepare.json"))["batch_path"])'</span><span class="k">)</span>
-mf<span class="w"> </span>--json<span class="w"> </span>normalize<span class="w"> </span>run<span class="w"> </span><span class="s2">"</span><span class="nv">$batch</span><span class="s2">"</span><span class="w"> </span>--testing<span class="w"> </span>&gt;<span class="w"> </span>normalize-result.json
-</code></pre></div>
-<p>Check for overall completion, verified output, and registered primary files. Use each returned <code>registrations[].catalogue_dataset_id</code> with <code>mf datasets show FILE_ID --testing</code> and <code>mf datasets verify FILE_ID --testing</code>. Read the manifest for source counts, canonical rows, and integrity results. Keep the report and execution intent together so a later investigation can identify the exact submitted batch.</p>
-<h2 id="recover-from-a-failure">Recover from a failure</h2>
+<p><a id="normalize-registered-data"></a></p>
+<h1 id="normalize-historical-data">Normalize historical data</h1>
+<p>Normalization converts acquired or registered historical archives into canonical trade and order-book datasets. MarketForge resolves the registered files, applies source-format profiles, runs the Rust Engine, and verifies and registers the resulting Parquet files.</p>
 <table>
 <thead>
 <tr>
-<th>Symptom</th>
-<th>Check</th>
+<th>Input or result</th>
+<th>Role</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>No selected inputs or unexpected gaps</td>
-<td>Compare recipe scope, interval, archive status, and feed with the storage records.</td>
+<td>Raw archive</td>
+<td>Preserves the original bytes selected through acquisition or external registration.</td>
 </tr>
 <tr>
-<td>Missing specification or profile</td>
-<td>Inspect applicability and source interpretation in the preparation report. Repair the declaration or profile, then prepare again.</td>
+<td>Normalization profile</td>
+<td>Describes the file format, timestamps, raw fields, and trade or order-book operations.</td>
 </tr>
 <tr>
-<td>Engine failed before commit</td>
-<td>Read the execution report and Engine diagnostics. Fix the cause before running another attempt.</td>
+<td>Normalization recipe</td>
+<td>Selects registered inputs and a time interval.</td>
 </tr>
 <tr>
-<td>Output committed but registration failed</td>
-<td>Use the report’s recovery command with the retained execution intent and original registry.</td>
+<td>Canonical dataset</td>
+<td>Contains normalized Parquet and the evidence needed to inspect it or use it in later processing.</td>
 </tr>
 </tbody>
 </table>
-<p>See the <a href="../../reference/cli/normalize/">CLI reference</a> for options and exit behavior, the <a href="../../reference/prepared-normalization/">prepared batch contract</a> for generated inputs, and the <a href="../../reference/publication-normalized/">publication reference</a> for physical output. Continue with <a href="../datasets/">dataset inspection</a> or <a href="../merge/">merge</a>.</p>
+<p><a id="select-the-raw-inputs"></a></p>
+<h2 id="1-check-prerequisites">1. Check prerequisites</h2>
+<ul>
+<li><a href="../acquisition/historical-data/">Acquire historical archives</a> or <a href="../acquisition/external-data/">register external data</a>, then check the <a href="../acquisition/managing-acquisitions/">managed copies</a>. A file on disk becomes eligible for managed selection through its registry record.</li>
+<li>Check your installed <a href="../../reference/profiles/">normalization profiles</a> and the <a href="../catalogue/specifications/">instrument and historical specifications</a> applicable over the full archive intervals. Preparation and Engine validation check the evidence and the selected source interpretation.</li>
+<li>Use a configured <a href="../../getting-started/installation/#verify-and-troubleshoot">normalization Engine</a> and the database that owns the raw records. The commands below use <code>--testing</code> throughout.</li>
+</ul>
+<p>For the example below, look for a complete Bybit BTCUSDT linear perpetual trades archive for 27 October 2026 in testing storage. If the source format has no applicable profile, use the <a href="../catalogue/profiles/">profile authoring guide</a> before preparing the recipe.</p>
+<h2 id="2-create-a-normalization-recipe">2. Create a normalization recipe</h2>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>new<span class="w"> </span>my_dataset
+</code></pre></div>
+<p>This creates a managed TOML draft, opens your editor, and checks the saved recipe when the editor exits successfully. Choose an unused recipe name. For an independent copy of an existing acquisition recipe, use the following command in place of plain <code>new</code>. The copy can be edited without affecting the acquisition recipe, and later changes to the original do not propagate.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>new<span class="w"> </span>my_dataset<span class="w"> </span>--from-acquisition<span class="w"> </span>getting_started
+</code></pre></div>
+<p>For this walkthrough, save one UTC day of Bybit BTCUSDT linear perpetual trades:</p>
+<div class="highlight"><pre><span></span><code><span class="n">version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
+
+<span class="k">[interval]</span>
+<span class="n">start</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ld">2026-10-27T00:00:00Z</span>
+<span class="n">end</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ld">2026-10-28T00:00:00Z</span>
+
+<span class="k">[[requests]]</span>
+<span class="n">exchange</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"bybit"</span>
+<span class="n">instrument_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"perpetual"</span>
+<span class="n">market_category</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"linear"</span>
+<span class="n">data_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"trades"</span>
+<span class="n">scope</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">kind</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">"instrument"</span><span class="p">,</span><span class="w"> </span><span class="n">identifier</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">"BTCUSDT"</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+<p>The interval includes its start and excludes its end. It selects whole overlapping archives, which can contain records outside the requested dates. See the <a href="../../configuration/normalization/">configuration reference</a> for source selection and the older explicit archive-ID recipe format.</p>
+<h2 id="3-validate-the-recipe">3. Validate the recipe</h2>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>validate<span class="w"> </span>my_dataset<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+</code></pre></div>
+<p>Validation checks TOML syntax, required fields, and local recipe constraints. Use preparation to resolve registered archives and instrument metadata, and persisted preparation to check the batch with Rust.</p>
+<p><a id="prepare-and-check-the-batch"></a></p>
+<h2 id="4-preview-preparation">4. Preview preparation</h2>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>prepare<span class="w"> </span>my_dataset<span class="w"> </span>--testing<span class="w"> </span>--dry-run<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+</code></pre></div>
+<p>Check the selected archives, job, task and stream counts, ranking resolution, and any input, specification, profile, or coverage diagnostics. A dry run showing <code>prepared</code> means Forge resolved the plan. The displayed artifact paths are prospective, and compiled batch validation happens during persisted preparation. Resolve blockers before continuing. If an archive appears among the matches but is missing from the selected inputs, look for its local archive ID in the blockers. Nominal archive intervals describe file boundaries and leave event-level completeness unknown.</p>
+<p><a id="run-and-verify"></a></p>
+<h2 id="5-execute-normalization">5. Execute normalization</h2>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>execute<span class="w"> </span>my_dataset<span class="w"> </span>--testing
+</code></pre></div>
+<p>This resolves inputs, writes and validates the prepared batch, runs the Rust Engine, verifies committed output, and registers eligible primary files. Check the final execution, verification, and registration statuses. A run can commit Parquet and still need registration recovery before those files appear in the dataset list. For the same workflow with an interactive progress monitor, run:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>execute<span class="w"> </span>my_dataset<span class="w"> </span>--testing<span class="w"> </span>--tui
+</code></pre></div>
+<h2 id="6-inspect-normalized-datasets">6. Inspect normalized datasets</h2>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>DATASET_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>datasets<span class="w"> </span>verify<span class="w"> </span>DATASET_ID<span class="w"> </span>--testing<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+</code></pre></div>
+<p>Use a registry primary-file ID from the list or the normalization result. Engine dataset IDs identify Engine output, publication IDs identify registered groups of files, and execution IDs identify retained attempts. See the <a href="../datasets/">dataset guide</a> for schema, row previews, and lineage.</p>
+<h2 id="optional-advanced-execution">Optional advanced execution</h2>
+<p>Use <a href="../../reference/prepared-normalization/#manual-batch-submission">manual batch submission</a> when preparation and execution need to happen separately. The <a href="../../reference/cli/normalize/">CLI reference</a> compares the execution modes.</p>
+<p><a id="recover-from-a-failure"></a></p>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<table>
+<thead>
+<tr>
+<th>Problem</th>
+<th>First check</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>No selected inputs</td>
+<td>Recipe scope, interval, and registered archive status.</td>
+</tr>
+<tr>
+<td>Missing specification or incompatible profile</td>
+<td>Applicability across the archive and the registered source interpretation.</td>
+</tr>
+<tr>
+<td>Rust validation or execution failed</td>
+<td>Preparation diagnostics or retained execution report.</td>
+</tr>
+<tr>
+<td>Output committed but registration failed</td>
+<td>Retained execution intent and <a href="../../reference/cli/normalize/#registration-and-recovery">registration recovery</a>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="next-steps">Next steps</h2>
+<p>Use registered primary files in <a href="../datasets/">dataset inspection</a> or <a href="../merge/">merge</a>. See the <a href="../../reference/publication-normalized/">publication reference</a> for manifests and integrity evidence.</p>
 
 
 

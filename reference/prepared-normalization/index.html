@@ -568,6 +568,8 @@
       
         
       
+        
+      
     
     
     
@@ -1148,12 +1150,6 @@
       
         
       
-        
-      
-        
-      
-        
-      
     
     
     
@@ -1177,7 +1173,7 @@
   <span class="md-ellipsis">
     
   
-  Process data
+  Normalization
 
     
   </span>
@@ -1193,7 +1189,7 @@
               <span class="md-nav__icon md-icon"></span>
               
   
-  Process data
+  Normalization
 
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
@@ -1212,7 +1208,7 @@
   <span class="md-ellipsis">
     
   
-  Normalize registered data
+  Normalize historical data
 
     
   </span>
@@ -1403,6 +1399,74 @@
 
                 
               
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Process data
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_8">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Process data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
                 
                   
   
@@ -1519,10 +1583,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_9" >
         
           
-          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_1_3_9" id="__nav_1_3_9_label" tabindex="0">
             
   
   
@@ -1540,8 +1604,8 @@
           </label>
         
         
-          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
-            <label class="md-nav__title" for="__nav_1_3_8">
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_9_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_9">
               <span class="md-nav__icon md-icon"></span>
               
   
@@ -3077,6 +3141,17 @@
       On this page
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#manual-batch-submission" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Manual batch submission
+      </span>
+    </span>
+  </a>
+  
+</li>
       
         <li class="md-nav__item">
   <a href="#prepared-normalization-batches" class="md-nav__link">
@@ -5875,6 +5950,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#manual-batch-submission" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Manual batch submission
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#prepared-normalization-batches" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -7445,6 +7531,22 @@
 
 <h1 id="prepared-normalization-batch">Prepared normalization batch</h1>
 <p>Forge writes the schema-4 normalization batch. The Rust normalizer validates and resolves it; a TOML recipe remains a separate input. <a href="../../workflows/normalize/">Workflow</a></p>
+<h2 id="manual-batch-submission">Manual batch submission</h2>
+<p>Use the recipe-first <a href="../../workflows/normalize/">normalization workflow</a> for ordinary runs. Use separate preparation and submission when you need to inspect and retain the exact job inputs before execution.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>normalize<span class="w"> </span>prepare<span class="w"> </span>my_dataset<span class="w"> </span>--testing<span class="w"> </span>&gt;<span class="w"> </span>prepare.json<span class="w"> </span><span class="o">&amp;&amp;</span>
+<span class="nv">batch</span><span class="o">=</span><span class="k">$(</span>python3<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;'PYTHON'</span>
+<span class="s">import json</span>
+<span class="s">from pathlib import Path</span>
+
+<span class="s">report = json.loads(Path("prepare.json").read_text())</span>
+<span class="s">if report["status"] != "prepared" or not report["engine_ready"]:</span>
+<span class="s">    raise SystemExit("Batch is not ready. Inspect prepare.json.")</span>
+<span class="s">print(report["batch_path"])</span>
+<span class="s">PYTHON</span>
+<span class="k">)</span><span class="w"> </span><span class="o">&amp;&amp;</span>
+mf<span class="w"> </span>normalize<span class="w"> </span>run<span class="w"> </span><span class="s2">"</span><span class="nv">$batch</span><span class="s2">"</span><span class="w"> </span>--testing
+</code></pre></div>
+<p>The guarded command chain submits only a persisted plan with <code>status = "prepared"</code> and <code>engine_ready = true</code>. Keep <code>normalize-batch.json</code>, <code>prepare-report.json</code>, and their sibling profile and runtime copies together. Execution checks the retained batch, runtime, executable and profile hashes, verifies the registry identity and raw inputs, and validates the batch again with Rust. Reprepare from the TOML recipe if pinned evidence has changed. See <a href="../cli/normalize/#execution">execution and registration</a>.</p>
 <h2 id="prepared-normalization-batches">Prepared Normalization Batches</h2>
 <h2 id="what-is-a-normalization-batch">What Is a Normalization Batch?</h2>
 <p>A normalization batch describes one or more concrete Rust normalization jobs.</p>
@@ -7625,7 +7727,7 @@ schema_version = 4
 <p>The preparation system can also report a partial selection.</p>
 <h3 id="prepared">Prepared</h3>
 <p>A prepared status indicates that Forge resolved the applicable complete selection and constructed the corresponding batch.</p>
-<p>Normal preparation also performs the applicable production Rust validation.</p>
+<p>A persisted prepared plan runs the production Rust batch validator and records <code>engine_ready = true</code> after validation passes. Dry-run <code>prepared</code> describes successful Forge planning. It has <code>engine_ready = false</code>, skips Rust batch validation and writes neither the batch nor its report. Resolving registered external inputs may still compile profiles to verify fingerprint compatibility.</p>
 <h3 id="partial">Partial</h3>
 <p>A partial status can indicate that some selected work was resolved while other requirements remain blocked.</p>
 <p>For example:</p>
@@ -7638,21 +7740,55 @@ Blocked archives:    5
 <p>No.</p>
 <p>A partial preparation does not establish that the complete requested selection is executable.</p>
 <h3 id="what-should-users-inspect">What should users inspect?</h3>
-<p>Review the preparation report.</p>
-<p>It can contain:</p>
-<ul>
-<li>Missing source coverage.</li>
-<li>Unresolved instrument identities.</li>
-<li>Missing historical specifications.</li>
-<li>Source-resolution errors.</li>
-<li>Job and task counts.</li>
-<li>Ranking resolution.</li>
-<li>Engine compatibility information.</li>
-</ul>
+<p>The preparation report distinguishes selection evidence from generated work.</p>
+<table>
+<thead>
+<tr>
+<th>Evidence</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>requests[]</code></td>
+<td>One entry per source request or legacy input selection. Each source request includes its matching scope and content.</td>
+</tr>
+<tr>
+<td><code>matched_archives</code></td>
+<td>Candidate registry records returned for a source request, including records that can subsequently fail resolution.</td>
+</tr>
+<tr>
+<td><code>selected_archives</code></td>
+<td>Candidates that resolved into usable input evidence for the request. The same archive can appear in multiple requests.</td>
+</tr>
+<tr>
+<td><code>blockers</code>, <code>coverage</code></td>
+<td>Input or metadata issues and nominal archive interval evidence. Gaps can block the plan. Missing evidence stays unknown.</td>
+</tr>
+<tr>
+<td><code>prepared_job_count</code>, <code>prepared_task_count</code>, <code>prepared_stream_count</code></td>
+<td>Generated jobs by content type, deduplicated source work within each job, and distinct planned streams summed across jobs. Family expansion can resolve additional concrete streams in the Engine.</td>
+</tr>
+<tr>
+<td><code>job_summaries</code></td>
+<td>Per-job Engine IDs, content type, planned destinations, and task and stream counts.</td>
+</tr>
+<tr>
+<td><code>ranking_resolution</code></td>
+<td>Policy, retained snapshot and ordering or fallback evidence.</td>
+</tr>
+<tr>
+<td><code>batch_path</code>, <code>report_path</code></td>
+<td>Batch and preparation report destinations. These paths are prospective in dry runs.</td>
+</tr>
+</tbody>
+</table>
+<p>The requested interval selects overlapping whole archives. Nominal archive bounds and gaps do not establish market-event completeness or final row bounds.</p>
 <h3 id="can-the-batch-exist-without-being-executable">Can the batch exist without being executable?</h3>
 <p>Yes.</p>
 <p>A generated artifact is not automatically equivalent to a successfully validated processing request.</p>
-<p>Use the reported preparation and Engine validation outcomes.</p>
+<p>For executable results, use the reported preparation and Engine validation outcomes together. A persisted <code>partial</code> batch can be retained for diagnosis; the Rust loader accepts only <code>prepared</code> batches.</p>
+<p>Runtime controls such as resource limits and Parquet writer settings come from the <a href="../runtime/">normalization runtime configuration</a>. Persisted preparation retains the effective runtime file and profile copies. They are not per-recipe overrides.</p>
 <hr />
 <h2 id="job-level-parameters">Job-Level Parameters</h2>
 <h2 id="what-is-a-normalization-job">What Is a Normalization Job?</h2>

@@ -683,6 +683,8 @@
       
         
       
+        
+      
     
     
     
@@ -1263,12 +1265,6 @@
       
         
       
-        
-      
-        
-      
-        
-      
     
     
     
@@ -1292,7 +1288,7 @@
   <span class="md-ellipsis">
     
   
-  Process data
+  Normalization
 
     
   </span>
@@ -1308,7 +1304,7 @@
               <span class="md-nav__icon md-icon"></span>
               
   
-  Process data
+  Normalization
 
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
@@ -1327,7 +1323,7 @@
   <span class="md-ellipsis">
     
   
-  Normalize registered data
+  Normalize historical data
 
     
   </span>
@@ -1518,6 +1514,74 @@
 
                 
               
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Process data
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_8">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Process data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
                 
                   
   
@@ -1634,10 +1698,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_9" >
         
           
-          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_1_3_9" id="__nav_1_3_9_label" tabindex="0">
             
   
   
@@ -1655,8 +1719,8 @@
           </label>
         
         
-          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
-            <label class="md-nav__title" for="__nav_1_3_8">
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_9_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_9">
               <span class="md-nav__icon md-icon"></span>
               
   
@@ -4749,20 +4813,10 @@ mf<span class="w"> </span>catalog<span class="w"> </span>specs<span class="w"> <
 <p>Initialization collects market metadata from providers, attempts historical metadata enrichment, and publishes standard rankings. Review the recorded stages even if ranking fails after catalogue collection. Use <a href="../../workflows/catalogue/specifications/">catalogue declarations</a> if you have verified historical terms to register. An inferred applicability decision is a reproducible policy decision. It does not establish that the exchange’s terms were historically verified. Read <a href="../../concepts/identity/">identity and historical applicability</a> for that distinction.</p>
 <p><a id="execute-and-inspect"></a></p>
 <h2 id="prepare-and-run-normalization">Prepare and run normalization</h2>
-<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>normalize<span class="w"> </span>prepare<span class="w"> </span><span class="s2">"</span><span class="nv">$recipe</span><span class="s2">"</span><span class="w"> </span>--testing<span class="w"> </span>&gt;<span class="w"> </span>bybit-prepare.json
-python<span class="w"> </span>-<span class="w"> </span><span class="s">&lt;&lt;'PY'</span>
-<span class="s">import json</span>
-<span class="s">from pathlib import Path</span>
-
-<span class="s">report = json.loads(Path("bybit-prepare.json").read_text())</span>
-<span class="s">print(report["status"], report["engine_ready"], report["batch_path"])</span>
-<span class="s">for job in report["job_summaries"]:</span>
-<span class="s">    print(job["content_type"], job["task_count"], job["stream_count"])</span>
-<span class="s">PY</span>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>prepare<span class="w"> </span><span class="s2">"</span><span class="nv">$recipe</span><span class="s2">"</span><span class="w"> </span>--testing<span class="w"> </span>--dry-run<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
 </code></pre></div>
-<p>Proceed when the report says <code>prepared</code> and <code>engine_ready</code> is true. The expected plan has separate trades and depth jobs. Review <code>requests[].selected_archives[].identity_resolution.specification_evidence</code> for the evidence used. A dry run can inspect selection, but it does not create an executable batch.</p>
-<div class="highlight"><pre><span></span><code><span class="nv">batch</span><span class="o">=</span><span class="k">$(</span>python<span class="w"> </span>-c<span class="w"> </span><span class="s1">'import json; print(json.load(open("bybit-prepare.json"))["batch_path"])'</span><span class="k">)</span>
-mf<span class="w"> </span>--json<span class="w"> </span>normalize<span class="w"> </span>run<span class="w"> </span><span class="s2">"</span><span class="nv">$batch</span><span class="s2">"</span><span class="w"> </span>--testing<span class="w"> </span>&gt;<span class="w"> </span>bybit-result.json
+<p>Look for a prepared plan with separate trades and depth jobs. Resolve any reported blockers before execution. The dry run previews the plan and prospective paths. The execution command prepares and validates its own batch.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>normalize<span class="w"> </span>execute<span class="w"> </span><span class="s2">"</span><span class="nv">$recipe</span><span class="s2">"</span><span class="w"> </span>--testing<span class="w"> </span>&gt;<span class="w"> </span>bybit-result.json
 </code></pre></div>
 <p>Forge retains the submitted batch and execution evidence. A complete result with <code>verification = "verified"</code> and <code>registration = "registered"</code> records the verified normalized publications and their registered file IDs. Use those IDs in the same database environment.</p>
 <p><a id="compare-with-the-checked-result"></a></p>
@@ -4799,7 +4853,7 @@ mf<span class="w"> </span>--json<span class="w"> </span>normalize<span class="w"
 <li>If preparation is blocked, follow the selected archive’s diagnostics for missing inputs, profiles, or applicable specifications.</li>
 <li>If the Engine committed output but registration failed, retain the execution intent and retry <a href="../../reference/cli/normalize/">registration only</a> against the original registry.</li>
 </ul>
-<p>Continue with <a href="../../workflows/normalize/">normalize registered data</a> to adapt this workflow or <a href="../../workflows/datasets/">inspect datasets</a> to work with the output.</p>
+<p>Continue with <a href="../../workflows/normalize/">normalize historical data</a> to adapt this workflow or <a href="../../workflows/datasets/">inspect datasets</a> to work with the output.</p>
 
 
 

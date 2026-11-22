@@ -568,6 +568,8 @@
       
         
       
+        
+      
     
     
     
@@ -1148,12 +1150,6 @@
       
         
       
-        
-      
-        
-      
-        
-      
     
     
     
@@ -1177,7 +1173,7 @@
   <span class="md-ellipsis">
     
   
-  Process data
+  Normalization
 
     
   </span>
@@ -1193,7 +1189,7 @@
               <span class="md-nav__icon md-icon"></span>
               
   
-  Process data
+  Normalization
 
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
@@ -1212,7 +1208,7 @@
   <span class="md-ellipsis">
     
   
-  Normalize registered data
+  Normalize historical data
 
     
   </span>
@@ -1403,6 +1399,74 @@
 
                 
               
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Process data
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_8">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Process data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
                 
                   
   
@@ -1519,10 +1583,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_9" >
         
           
-          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_1_3_9" id="__nav_1_3_9_label" tabindex="0">
             
   
   
@@ -1540,8 +1604,8 @@
           </label>
         
         
-          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
-            <label class="md-nav__title" for="__nav_1_3_8">
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_9_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_9">
               <span class="md-nav__icon md-icon"></span>
               
   
@@ -11249,6 +11313,8 @@
 
 <h1 id="normalized-publications">Normalized publications</h1>
 <p>Canonical Arrow rows, manifest and auxiliary evidence emitted by historical normalization. <a href="../../workflows/datasets/">Inspect published files</a> · <a href="../../getting-started/quickstart/#verify-both-outputs">Inspect a Bybit depth boundary</a></p>
+<p>A managed run records Engine execution, committed publication verification, and PostgreSQL registration as separate outcomes. A publication has an Engine <code>dataset_id</code> and a shared manifest. Registration assigns a publication ID and a separate catalogue ID to each eligible primary Parquet file. Use the primary-file ID with <a href="../../workflows/datasets/">dataset inspection</a>, including <code>mf datasets verify ID --testing</code>. Use the <a href="../cli/runs/">logical run ID</a> for execution history and the execution result for attempt-specific report and intent paths.</p>
+<p>Forge checks the committed job destination, manifest inventory, Parquet and auxiliary evidence, and applicable provenance hashes before registration. The registry links the publication and primary files to their source archives in the selected database. Keep the manifest, <code>processing-job.json</code>, <code>processing-runtime.json</code>, checksum companions, and auxiliary files with the publication. See <a href="../cli/normalize/#registration-and-recovery">registration and recovery</a> for the retained intent and original registry requirements.</p>
 <h2 id="physical-parquet-layout">Physical Parquet Layout</h2>
 <h2 id="how-normalized-data-is-organized">How Normalized Data Is Organized</h2>
 <p>The current normalization output is organized by logical stream.</p>
@@ -13376,9 +13442,7 @@ Discoverable Dataset Files
 <p>The committed publication may still be verifiable and eligible for registration recovery.</p>
 <hr />
 <h2 id="register-an-existing-publication">Register an Existing Publication</h2>
-<p>For normalization recovery, MarketForge supports:</p>
-<div class="highlight"><pre><span></span><code>mf normalize register
-</code></pre></div>
+<p>For recovery tied to a managed execution, use the retained <code>execution-intent.json</code> with its sibling submitted batch. For registration scoped to a publication or one primary file, use one of the references below.</p>
 <h3 id="register-by-publication-directory">Register by publication directory</h3>
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>register<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>/absolute/path/to/normalized-publication<span class="w"> </span><span class="se">\</span>
