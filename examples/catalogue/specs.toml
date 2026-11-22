@@ -1,0 +1,8 @@
+# Synthetic data assumptions, not verified AAPL market specifications.
+instrument = "example_exchange.equity.equity.AAPL"
+quantity_type = "base"
+tick_size = "0.01"
+qty_step = "1"
+valid_from = 2024-10-28T00:00:00Z
+valid_to = 2024-10-29T00:00:00Z
+provenance = "Synthetic example parameters for the example files only"

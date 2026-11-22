@@ -1,0 +1,7198 @@
+
+
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Historical market-data acquisition, normalization and dataset inspection">
+      
+      
+      
+        <link rel="canonical" href="https://flowdrivenml.github.io/marketforge/reference/cli/normalize/">
+      
+      
+      
+      
+        <link rel="prev" href="../registration/">
+      
+      
+        <link rel="next" href="../merge/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/branding/logo_small.png">
+      <meta name="generator" content="zensical-0.1.3">
+    
+    
+      
+        <title>Normalization commands - MarketForge</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
+    <div data-md-component="skip">
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="MarketForge" class="md-header__button md-logo" aria-label="MarketForge" data-md-component="logo">
+      
+  <img src="../../../assets/branding/logo_small.png" alt="MarketForge">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+      <span class="md-visually-hidden">Navigation</span>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MarketForge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Normalization commands
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+          <span class="md-visually-hidden">Search</span>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/flowdrivenml/marketforge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../.." class="md-tabs__link">
+          
+  
+  Using MarketForge
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../development/" class="md-tabs__link">
+          
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="MarketForge" class="md-nav__button md-logo" aria-label="MarketForge" data-md-component="logo">
+      
+  <img src="../../../assets/branding/logo_small.png" alt="MarketForge">
+
+    </a>
+    MarketForge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/flowdrivenml/marketforge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../.." class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Using MarketForge
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_1">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Using MarketForge
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Getting started
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_2" id="__nav_1_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Getting started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Installation and workspace setup
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  First dataset: Bybit trades and depth
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../workflows/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Guides
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3" id="__nav_1_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Guides
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../workflows/markets/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Explore markets
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_2" id="__nav_1_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Explore markets
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/markets/instrument-discovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Discover and inspect instruments
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/markets/market-statistics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Retrieve and interpret market statistics
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/markets/rankings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Build and inspect market rankings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../workflows/acquisition/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquire historical data
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_3" id="__nav_1_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Acquire historical data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/acquisition/historical-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquire historical archives
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/acquisition/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Register and normalize manually supplied data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/acquisition/managing-acquisitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Manage raw storage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../workflows/catalogue/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue and specifications
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_5" id="__nav_1_3_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_5_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Catalogue and specifications
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/catalogue/exchanges-and-instruments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Exchanges and instruments
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/catalogue/specifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Instrument specifications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/acquisition/external-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Register external recordings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_7" id="__nav_1_3_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Author format profiles
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_7_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_7">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Author format profiles
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/catalogue/profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Trades and L2 depth profiles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/catalogue/profile-trades/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Create a trade profile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/catalogue/profile-depth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Create a depth profile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/catalogue/profile-troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Validate, install and troubleshoot profiles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Process data
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_8">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Process data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalize registered data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge registered normalized files
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepare historical conversion
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical pipeline
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_9" id="__nav_1_3_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect datasets
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_9_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_9">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Inspect datasets
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect registered datasets
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/notebooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Explore datasets in Jupyter
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/forge-tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Interactive Forge workspace
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Concepts
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_4" id="__nav_1_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Concepts
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/identity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Identity and provenance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/time/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Time, selection, and coverage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/depth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Depth observations and reconstruction
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/ordering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Ordering and reconciliation
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/evidence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Execution, publication, and lineage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Reference
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5" id="__nav_1_5_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_5_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_1_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Reference
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  CLI
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5_2" id="__nav_1_5_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_2_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_1_5_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  CLI
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Interactive Forge workspace
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquisition commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Raw storage commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../runs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Execution history and retained evidence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../catalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and maintenance commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managed Engine commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Import, profile and registration commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization commands
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization commands
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#synopsis-and-arguments" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Synopsis and arguments
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Synopsis and arguments">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mf-normalize-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf normalize run</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mf-normalize-register" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf normalize register</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mf-normalize-new" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf normalize new</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mf-normalize-validate" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf normalize validate</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mf-normalize-prepare" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf normalize prepare</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mf-normalize-execute" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf normalize execute</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#use-the-terminal-processing-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Use the Terminal Processing Interface
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Use the Terminal Processing Interface">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#run-with-the-tui" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Run with the TUI
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-the-tui-show" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does the TUI show?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-does-progress-sometimes-appear-to-pause" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why does progress sometimes appear to pause?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-i-use-tui-and-json-together" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Can I use TUI and JSON together?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-should-i-use-json" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        When should I use JSON?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inspect-the-normalization-result" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Inspect the Normalization Result
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inspect the Normalization Result">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-should-you-look-for" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What should you look for?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#save-the-execution-result" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Save the execution result
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inspect-registered-datasets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Inspect registered datasets
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#show-one-registered-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Show one registered file
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inspect-the-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Inspect the schema
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preview-records" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preview records
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verify-a-registered-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Verify a registered file
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inspect-source-lineage" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Inspect source lineage
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#understand-processing-and-integrity-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Understand Processing and Integrity Results
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Understand Processing and Integrity Results">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#execution-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Execution status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verification-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Verification status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#registration-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registration status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#integrity-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Integrity status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-are-these-statuses-separate" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why are these statuses separate?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-happens-when-some-jobs-fail" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What Happens When Some Jobs Fail?
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What Happens When Some Jobs Fail?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#strict-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Strict mode
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#allow-partial-completion" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Allow partial completion
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-allow-partial-actually-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does <code>--allow-partial</code> actually change?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-it-not-allow" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does it not allow?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-should-you-use-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        When should you use it?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#find-execution-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Find Execution Reports
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Find Execution Reports">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-are-reports-stored" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Where are reports stored?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-the-execution-report-contain" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does the execution report contain?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-keep-execution-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why keep execution reports?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#should-i-inspect-the-report-before-retrying" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Should I inspect the report before retrying?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recover-a-completed-publication-without-rerunning" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recover a Completed Publication Without Rerunning
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recover a Completed Publication Without Rerunning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-is-registration-only-recovery-useful" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is registration-only recovery useful?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recover-using-an-execution-intent" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recover using an execution intent
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recover-using-a-publication-manifest" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recover using a publication manifest
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#register-a-specific-primary-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Register a specific primary file
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#register-an-entire-publication" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Register an entire publication
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-recovery-rerun-engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does recovery rerun Engine?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-if-the-publication-is-already-registered" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What if the publication is already registered?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-if-the-output-is-incomplete" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What if the output is incomplete?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#understanding-recipe-names-and-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Understanding Recipe Names and Paths
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Understanding Recipe Names and Paths">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-use-a-path-containing-a-directory" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why use a path containing a directory?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-about-older-recipes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What about older recipes?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ambiguous-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Ambiguous references
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-does-run-distinguish-json-from-toml" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How does <code>run</code> distinguish JSON from TOML?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#important-normalization-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Important Normalization Options
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Important Normalization Options">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>--testing</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#-dry-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>--dry-run</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#-from-acquisition-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>--from-acquisition SOURCE</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#-tui" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>--tui</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#-allow-partial" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>--allow-partial</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#global-json" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Global <code>--json</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Common Questions
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-normalization-problems" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Common Normalization Problems
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Common Normalization Problems">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-normalization-recipe-is-invalid" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The normalization recipe is invalid
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preparation-finds-no-matching-archives" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preparation finds no matching archives
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preparation-reports-missing-historical-specifications" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preparation reports missing historical specifications
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-required-profile-is-missing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The required profile is missing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-rust-normalizer-is-missing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The Rust normalizer is missing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preparation-reports-an-unsupported-batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preparation reports an unsupported batch
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-submitted-batch-differs-from-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The submitted batch differs from preparation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#normalization-reports-invalid-records" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Normalization reports invalid records
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trade-quantities-appear-incorrect" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Trade quantities appear incorrect
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trade-sides-are-reversed" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Trade sides are reversed
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#timestamps-are-incorrect" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Timestamps are incorrect
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#depth-reconstruction-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Depth reconstruction fails
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-processing-job-runs-out-of-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The processing job runs out of resources
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#engine-writes-files-but-the-run-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Engine writes files but the run fails
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#postgresql-registration-fails-after-engine-completes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        PostgreSQL registration fails after Engine completes
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-partial-run-contains-fewer-datasets-than-expected" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        A partial run contains fewer datasets than expected
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dataset-inspection-shows-unexpected-row-counts" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Dataset inspection shows unexpected row counts
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-output-interval-differs-from-the-requested-interval" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The output interval differs from the requested interval
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../convert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Dataset commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../markets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Market and ranking commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../configuration/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and recipes
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5_3" id="__nav_1_5_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Configuration and recipes
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/application/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Application settings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/acquisition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquisition and raw import recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/catalogue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue declarations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/markets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Ranking and historical metadata policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_4" id="__nav_1_5_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Format profiles
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Format profiles
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical normalization profile schema
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../profile-fields/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization profile field index
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managed raw registration declarations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_6" id="__nav_1_5_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared jobs and retained evidence
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Prepared jobs and retained evidence
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prepared/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared Engine contracts
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prepared-normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared normalization batch
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prepared-merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared merge job
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prepared-conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared conversion job
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prepared-forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge preparation and run evidence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_7" id="__nav_1_5_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Publication formats
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_7_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_7">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Publication formats
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../publications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Publication formats
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../publication-normalized/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalized publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../publication-merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merged publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../publication-converted/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Converted publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../python-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Python dataset API
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../examples/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Examples
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_6" id="__nav_1_6_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Examples
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/catalogue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Synthetic trade and depth recordings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/catalogue/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge a compatible trade file
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/bring-your-own-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Bring your own historical data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/bring-your-own-data/databento/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Databento AAPL Trades and MBP-10
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Troubleshooting
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../development/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Development
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Development
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Getting started
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Getting started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Local development
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/first-contribution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  First contribution
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Architecture
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Architecture
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  System overview
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/convert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical operation lifecycles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/forge-tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge workspace architecture and action inventory
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extending MarketForge
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Extending MarketForge
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/extending/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extension decision guide
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extend source integration and processing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extend orchestration and persistence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Testing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Debugging and performance
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Debugging and performance
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/debugging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Debugging historical workflows
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Performance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Contributing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#synopsis-and-arguments" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Synopsis and arguments
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Synopsis and arguments">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mf-normalize-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf normalize run</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mf-normalize-register" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf normalize register</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mf-normalize-new" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf normalize new</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mf-normalize-validate" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf normalize validate</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mf-normalize-prepare" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf normalize prepare</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mf-normalize-execute" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf normalize execute</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#use-the-terminal-processing-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Use the Terminal Processing Interface
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Use the Terminal Processing Interface">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#run-with-the-tui" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Run with the TUI
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-the-tui-show" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does the TUI show?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-does-progress-sometimes-appear-to-pause" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why does progress sometimes appear to pause?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-i-use-tui-and-json-together" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Can I use TUI and JSON together?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-should-i-use-json" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        When should I use JSON?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inspect-the-normalization-result" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Inspect the Normalization Result
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inspect the Normalization Result">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-should-you-look-for" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What should you look for?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#save-the-execution-result" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Save the execution result
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inspect-registered-datasets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Inspect registered datasets
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#show-one-registered-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Show one registered file
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inspect-the-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Inspect the schema
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preview-records" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preview records
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verify-a-registered-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Verify a registered file
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inspect-source-lineage" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Inspect source lineage
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#understand-processing-and-integrity-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Understand Processing and Integrity Results
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Understand Processing and Integrity Results">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#execution-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Execution status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verification-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Verification status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#registration-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registration status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#integrity-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Integrity status
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-are-these-statuses-separate" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why are these statuses separate?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-happens-when-some-jobs-fail" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What Happens When Some Jobs Fail?
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What Happens When Some Jobs Fail?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#strict-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Strict mode
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#allow-partial-completion" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Allow partial completion
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-allow-partial-actually-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does <code>--allow-partial</code> actually change?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-it-not-allow" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does it not allow?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-should-you-use-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        When should you use it?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#find-execution-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Find Execution Reports
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Find Execution Reports">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#where-are-reports-stored" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Where are reports stored?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-the-execution-report-contain" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does the execution report contain?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-keep-execution-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why keep execution reports?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#should-i-inspect-the-report-before-retrying" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Should I inspect the report before retrying?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recover-a-completed-publication-without-rerunning" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recover a Completed Publication Without Rerunning
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recover a Completed Publication Without Rerunning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-is-registration-only-recovery-useful" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is registration-only recovery useful?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recover-using-an-execution-intent" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recover using an execution intent
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recover-using-a-publication-manifest" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recover using a publication manifest
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#register-a-specific-primary-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Register a specific primary file
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#register-an-entire-publication" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Register an entire publication
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-recovery-rerun-engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does recovery rerun Engine?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-if-the-publication-is-already-registered" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What if the publication is already registered?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-if-the-output-is-incomplete" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What if the output is incomplete?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#understanding-recipe-names-and-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Understanding Recipe Names and Paths
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Understanding Recipe Names and Paths">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-use-a-path-containing-a-directory" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why use a path containing a directory?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-about-older-recipes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What about older recipes?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ambiguous-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Ambiguous references
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-does-run-distinguish-json-from-toml" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How does <code>run</code> distinguish JSON from TOML?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#important-normalization-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Important Normalization Options
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Important Normalization Options">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>--testing</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#-dry-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>--dry-run</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#-from-acquisition-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>--from-acquisition SOURCE</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#-tui" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>--tui</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#-allow-partial" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>--allow-partial</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#global-json" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Global <code>--json</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Common Questions
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-normalization-problems" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Common Normalization Problems
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Common Normalization Problems">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-normalization-recipe-is-invalid" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The normalization recipe is invalid
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preparation-finds-no-matching-archives" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preparation finds no matching archives
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preparation-reports-missing-historical-specifications" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preparation reports missing historical specifications
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-required-profile-is-missing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The required profile is missing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-rust-normalizer-is-missing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The Rust normalizer is missing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preparation-reports-an-unsupported-batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preparation reports an unsupported batch
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-submitted-batch-differs-from-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The submitted batch differs from preparation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#normalization-reports-invalid-records" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Normalization reports invalid records
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trade-quantities-appear-incorrect" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Trade quantities appear incorrect
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trade-sides-are-reversed" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Trade sides are reversed
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#timestamps-are-incorrect" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Timestamps are incorrect
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#depth-reconstruction-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Depth reconstruction fails
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-processing-job-runs-out-of-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The processing job runs out of resources
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#engine-writes-files-but-the-run-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Engine writes files but the run fails
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#postgresql-registration-fails-after-engine-completes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        PostgreSQL registration fails after Engine completes
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-partial-run-contains-fewer-datasets-than-expected" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        A partial run contains fewer datasets than expected
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dataset-inspection-shows-unexpected-row-counts" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Dataset inspection shows unexpected row counts
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-output-interval-differs-from-the-requested-interval" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The output interval differs from the requested interval
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+      
+        
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../../.." class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Using MarketForge
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../../" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Reference
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    CLI
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
+                
+                  
+
+  
+  
+
+
+<h1 id="normalization-commands">Normalization commands</h1>
+<p>Prepare and execute normalization batches and recover verified registrations. <a href="../../../workflows/normalize/">Workflow and prerequisites</a> · <a href="../">Shared CLI behavior</a></p>
+<h2 id="synopsis-and-arguments">Synopsis and arguments</h2>
+<h3 id="mf-normalize-run"><code>mf normalize run</code></h3>
+<div class="highlight"><pre><span></span><code>mf normalize run [-h] [--testing | --production] [--tui] [--allow-partial]
+                                 reference
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Argument or option</th>
+<th>Parser contract</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>reference</code></td>
+<td>Required.</td>
+</tr>
+<tr>
+<td><code>--testing</code>, <code>--production</code></td>
+<td>Mutually exclusive. Defaults to production.</td>
+</tr>
+<tr>
+<td><code>--tui</code></td>
+<td>Default <code>false</code>.</td>
+</tr>
+<tr>
+<td><code>--allow-partial</code></td>
+<td>Default <code>false</code>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="mf-normalize-register"><code>mf normalize register</code></h3>
+<div class="highlight"><pre><span></span><code>mf normalize register [-h] [--testing | --production] reference
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Argument or option</th>
+<th>Parser contract</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>reference</code></td>
+<td>Required.</td>
+</tr>
+<tr>
+<td><code>--testing</code>, <code>--production</code></td>
+<td>Mutually exclusive. Defaults to production.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="mf-normalize-new"><code>mf normalize new</code></h3>
+<div class="highlight"><pre><span></span><code>mf normalize new [-h] [--from-acquisition SOURCE]
+                                 configuration_name
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Argument or option</th>
+<th>Parser contract</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>configuration_name</code></td>
+<td>Required.</td>
+</tr>
+<tr>
+<td><code>--from-acquisition</code></td>
+<td>Optional. Create and edit a copy of an acquisition recipe before validation.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="mf-normalize-validate"><code>mf normalize validate</code></h3>
+<div class="highlight"><pre><span></span><code>mf normalize validate [-h] configuration_name
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Argument or option</th>
+<th>Parser contract</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>configuration_name</code></td>
+<td>Required.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="mf-normalize-prepare"><code>mf normalize prepare</code></h3>
+<div class="highlight"><pre><span></span><code>mf normalize prepare [-h] [--from-acquisition SOURCE]
+                                     [--testing | --production] [--dry-run]
+                                     configuration_name
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Argument or option</th>
+<th>Parser contract</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>configuration_name</code></td>
+<td>Required.</td>
+</tr>
+<tr>
+<td><code>--from-acquisition</code></td>
+<td>Optional. Create and edit a copy of an acquisition recipe before validation.</td>
+</tr>
+<tr>
+<td><code>--testing</code>, <code>--production</code></td>
+<td>Mutually exclusive. Defaults to production.</td>
+</tr>
+<tr>
+<td><code>--dry-run</code></td>
+<td>Default <code>false</code>. Resolve the same plan without writing a batch or report.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="mf-normalize-execute"><code>mf normalize execute</code></h3>
+<div class="highlight"><pre><span></span><code>mf normalize execute [-h] [--tui] [--allow-partial] [--testing | --production]
+                                     [--dry-run]
+                                     configuration_name
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Argument or option</th>
+<th>Parser contract</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>configuration_name</code></td>
+<td>Required.</td>
+</tr>
+<tr>
+<td><code>--tui</code></td>
+<td>Default <code>false</code>.</td>
+</tr>
+<tr>
+<td><code>--allow-partial</code></td>
+<td>Default <code>false</code>.</td>
+</tr>
+<tr>
+<td><code>--testing</code>, <code>--production</code></td>
+<td>Mutually exclusive. Defaults to production.</td>
+</tr>
+<tr>
+<td><code>--dry-run</code></td>
+<td>Default <code>false</code>. Resolve the same plan without writing a batch or report.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="use-the-terminal-processing-interface">Use the Terminal Processing Interface</h2>
+<p>Normalization can involve large workloads.</p>
+<p>During processing, you may want to monitor task progress and inspect the active operation.</p>
+<p>MarketForge provides a terminal interface for supported Engine execution.</p>
+<h3 id="run-with-the-tui">Run with the TUI</h3>
+<p>Use:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>run<span class="w"> </span>my-normalization<span class="w"> </span>--testing<span class="w"> </span>--tui
+</code></pre></div>
+<p>The <code>--tui</code> option starts the supported interactive terminal interface during processing.</p>
+<p>This is useful when working directly in a terminal.</p>
+<h3 id="what-does-the-tui-show">What does the TUI show?</h3>
+<p>Depending on the active workload and processing phase, the interface can display information about:</p>
+<ul>
+<li>Processing jobs.</li>
+<li>Source tasks.</li>
+<li>Current execution phases.</li>
+<li>Progress and throughput.</li>
+<li>Resource activity.</li>
+<li>Completed and failed work.</li>
+</ul>
+<p>For example, a normalization run may spend time reading raw archives, reconstructing depth, reconciling streams, or finalizing Parquet output.</p>
+<p>These phases do not necessarily advance at the same rate.</p>
+<h3 id="why-does-progress-sometimes-appear-to-pause">Why does progress sometimes appear to pause?</h3>
+<p>Historical normalization is not just a single file-reading loop.</p>
+<p>After reading source records, Engine may still need to reconcile streams, perform integrity checks, finalize Parquet files, or validate publication information.</p>
+<p>Therefore, a source-record counter may stop increasing while other processing work continues.</p>
+<p>Use the available task and phase information rather than assuming that unchanged input counts mean the process has stopped.</p>
+<h3 id="can-i-use-tui-and-json-together">Can I use TUI and JSON together?</h3>
+<p>No.</p>
+<p>The interactive terminal interface and global JSON output are incompatible.</p>
+<p>For example, do not use:</p>
+<div class="highlight"><pre><span></span><code>mf --json normalize run my-normalization --testing --tui
+</code></pre></div>
+<p>Choose either interactive monitoring or machine-readable output.</p>
+<h3 id="when-should-i-use-json">When should I use JSON?</h3>
+<p>Use JSON when you want to save the final result for scripts or later inspection.</p>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>normalize<span class="w"> </span>run<span class="w"> </span>my-normalization<span class="w"> </span>--testing<span class="w"> </span>&gt;<span class="w"> </span>normalize-result.json
+</code></pre></div>
+<p>This avoids combining an interactive terminal display with structured output.</p>
+<hr />
+<h2 id="inspect-the-normalization-result">Inspect the Normalization Result</h2>
+<p>After a successful run, inspect the execution result before beginning research.</p>
+<p>The result provides information about execution, verification, and registration.</p>
+<h3 id="what-should-you-look-for">What should you look for?</h3>
+<p>Confirm that:</p>
+<ul>
+<li>The requested jobs completed as expected.</li>
+<li>The relevant publications were committed.</li>
+<li>Output verification succeeded.</li>
+<li>The expected primary files were registered.</li>
+<li>The trade and depth content types are present.</li>
+<li>The integrity results are acceptable.</li>
+<li>The output paths and file IDs were reported.</li>
+</ul>
+<h3 id="save-the-execution-result">Save the execution result</h3>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>normalize<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>docs/content/examples/catalogue/normalization.toml<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--testing<span class="w"> </span>&gt;<span class="w"> </span>synthetic-result.json
+</code></pre></div>
+<p>This saves the structured result.</p>
+<p>You can inspect it using a JSON viewer or a script.</p>
+<h3 id="inspect-registered-datasets">Inspect registered datasets</h3>
+<p>For the synthetic AAPL example:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--testing<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--exchange<span class="w"> </span>example_exchange<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--instrument<span class="w"> </span>AAPL
+</code></pre></div>
+<p>This searches the registered dataset collection.</p>
+<p>The returned file IDs can be used with the dataset inspection commands.</p>
+<h3 id="show-one-registered-file">Show one registered file</h3>
+<p>Use:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
+</code></pre></div>
+<p>Replace <code>FILE_ID</code> with an actual ID returned by MarketForge.</p>
+<p>This displays information about the selected file and its publication.</p>
+<h3 id="inspect-the-schema">Inspect the schema</h3>
+<p>Run:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>schema<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
+</code></pre></div>
+<p>This shows the physical columns and types of the selected Parquet file.</p>
+<h3 id="preview-records">Preview records</h3>
+<p>Run:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>head<span class="w"> </span>FILE_ID<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">10</span><span class="w"> </span>--precise
+</code></pre></div>
+<p>This displays a small sample of records.</p>
+<p>The <code>--precise</code> option shows timestamps with their supported nanosecond precision.</p>
+<p>For the synthetic trade example, check that the resulting record represents:</p>
+<div class="highlight"><pre><span></span><code>Instrument: AAPL
+Side:       Buy
+Price:      233.62
+Quantity:   10 shares
+Event time: 2024-10-28 14:30:00 UTC
+</code></pre></div>
+<h3 id="verify-a-registered-file">Verify a registered file</h3>
+<p>You can also run:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>verify<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
+</code></pre></div>
+<p>This checks the selected primary file and shared manifest against their registered checksums.</p>
+<p>It does not independently reprocess every source record or verify the entire publication's historical completeness.</p>
+<h3 id="inspect-source-lineage">Inspect source lineage</h3>
+<p>Use:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>lineage<span class="w"> </span>FILE_ID<span class="w"> </span>--testing
+</code></pre></div>
+<p>This helps identify the source inputs associated with the registered file.</p>
+<p>See <a href="../datasets/">Dataset Inspection</a> for the complete inspection workflow.</p>
+<hr />
+<h2 id="understand-processing-and-integrity-results">Understand Processing and Integrity Results</h2>
+<p>A normalization result contains more than one kind of status.</p>
+<p>This is important because successfully executing a processing job does not mean every data-quality question has been resolved.</p>
+<h3 id="execution-status">Execution status</h3>
+<p>Execution status describes whether the requested processing jobs ran successfully.</p>
+<p>For example, a job may complete, fail, or be interrupted.</p>
+<h3 id="verification-status">Verification status</h3>
+<p>Verification describes whether the committed output satisfies the applicable publication and provenance checks.</p>
+<p>A processing job should not be treated as a verified publication merely because some Parquet files exist.</p>
+<h3 id="registration-status">Registration status</h3>
+<p>Registration describes whether the verified output was successfully recorded in PostgreSQL.</p>
+<p>For example, Engine may commit a valid publication while a later database problem prevents registration.</p>
+<p>The files may remain available for registration-only recovery.</p>
+<h3 id="integrity-status">Integrity status</h3>
+<p>Integrity describes the relevant data-quality and processing checks.</p>
+<p>For example, a source may contain a tolerated anomaly that causes the resulting integrity status to be degraded.</p>
+<p>This is different from the execution result.</p>
+<h3 id="why-are-these-statuses-separate">Why are these statuses separate?</h3>
+<p>Consider three examples.</p>
+<p><strong>Example A: Clean processing</strong></p>
+<div class="highlight"><pre><span></span><code>Execution:      Complete
+Verification:   Verified
+Registration:   Registered
+Integrity:      Clean
+</code></pre></div>
+<p>This is an illustrative successful combination.</p>
+<p><strong>Example B: Completed processing with degraded integrity</strong></p>
+<div class="highlight"><pre><span></span><code>Execution:      Complete
+Verification:   Verified
+Registration:   Registered
+Integrity:      Degraded
+</code></pre></div>
+<p>This illustrates why a completed run and a clean integrity result are not necessarily the same thing. Such an outcome depends on the active processing policies and whether the output remains publishable.</p>
+<p><strong>Example C: Publication completed, registration failed</strong></p>
+<div class="highlight"><pre><span></span><code>Engine output:  Committed
+Verification:   Available
+Registration:   Failed
+</code></pre></div>
+<p>In this situation, the committed output may be recoverable without rerunning the original processing.</p>
+<p>These examples illustrate the different responsibilities. Inspect the actual run report for the precise fields and outcomes of your operation.</p>
+<hr />
+<h2 id="what-happens-when-some-jobs-fail">What Happens When Some Jobs Fail?</h2>
+<p>A normalization recipe can contain multiple jobs.</p>
+<p>For example, you might request trades and depth together.</p>
+<p>It is possible for one job to complete while another fails.</p>
+<p>MarketForge provides an explicit option for handling certain partial outcomes.</p>
+<h3 id="strict-mode">Strict mode</h3>
+<p>By default, normalization uses strict execution behavior.</p>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>run<span class="w"> </span>my-normalization<span class="w"> </span>--testing
+</code></pre></div>
+<p>If a submitted job fails, the strict workflow returns a nonzero result.</p>
+<p>This prevents an incomplete multi-job operation from being presented as an ordinary complete success.</p>
+<h3 id="allow-partial-completion">Allow partial completion</h3>
+<p>For supported cases, you can use:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>run<span class="w"> </span>my-normalization<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--testing<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--allow-partial
+</code></pre></div>
+<p>The flag allows MarketForge to register independently verified outputs from a partially successful operation when the applicable conditions are satisfied.</p>
+<p>For example, imagine a run containing:</p>
+<div class="highlight"><pre><span></span><code>Trades Job     Complete
+Depth Job      Failed
+</code></pre></div>
+<p>If the trade publication was committed and independently verified, the partial workflow may register that verified output while reporting the failed depth job as omitted.</p>
+<h3 id="what-does-allow-partial-actually-change">What does <code>--allow-partial</code> actually change?</h3>
+<p>It changes the managed workflow's handling of certain multi-job execution outcomes.</p>
+<p>It does not change Rust's normalization logic.</p>
+<p>It also does not relax the Engine's data-integrity rules.</p>
+<h3 id="what-does-it-not-allow">What does it not allow?</h3>
+<p><code>--allow-partial</code> does not turn every failure into success.</p>
+<p>In particular, it does not authorize:</p>
+<ul>
+<li>Publishing an output that failed integrity requirements.</li>
+<li>Registering unverified files.</li>
+<li>Accepting an interrupted operation as complete.</li>
+<li>Reporting success when no verified outputs remain.</li>
+<li>Ignoring failed PostgreSQL registration.</li>
+<li>Changing source ordering or reconstruction semantics.</li>
+</ul>
+<p>Integrity failures, interruptions, zero verified outputs, and registration failures remain unsuccessful in both modes.</p>
+<h3 id="when-should-you-use-it">When should you use it?</h3>
+<p>Partial completion can be useful when independent jobs process different content types or selections.</p>
+<p>For example, you may want to retain a verified trade publication even though an unrelated depth job failed.</p>
+<p>However, always inspect the omissions before using the output.</p>
+<p>A partial run means the original request was not fully completed.</p>
+<p><strong>Do not treat a partially registered result as equivalent to the complete requested dataset.</strong></p>
+<hr />
+<h2 id="find-execution-reports">Find Execution Reports</h2>
+<p>MarketForge retains information about normalization executions.</p>
+<p>These reports are useful when a run fails or when you need to understand how a dataset was produced.</p>
+<h3 id="where-are-reports-stored">Where are reports stored?</h3>
+<p>Normalization execution artifacts are stored under the configured data root's run directory.</p>
+<p>For the default data root, an execution result may appear at:</p>
+<div class="highlight"><pre><span></span><code>data/runs/NORMALIZE_EXECUTION_ID/execution-result.json
+</code></pre></div>
+<p>Replace <code>NORMALIZE_EXECUTION_ID</code> with the actual execution identifier.</p>
+<p>Do not construct the directory name from an assumption about the run.</p>
+<p>Use the path reported by MarketForge.</p>
+<h3 id="what-does-the-execution-report-contain">What does the execution report contain?</h3>
+<p>The structured result describes relevant information about:</p>
+<ul>
+<li>Submitted jobs.</li>
+<li>Execution outcomes.</li>
+<li>Verification results.</li>
+<li>Registration results.</li>
+<li>Output paths.</li>
+<li>Registered file IDs.</li>
+<li>Failed or omitted work.</li>
+<li>Applicable processing diagnostics.</li>
+</ul>
+<h3 id="why-keep-execution-reports">Why keep execution reports?</h3>
+<p>Suppose normalization fails after processing several files.</p>
+<p>The report helps distinguish a failure during source decoding from a later publication or database-registration problem.</p>
+<p>Those problems require different recovery actions.</p>
+<p>For example:</p>
+<p><strong>Source-processing failure</strong></p>
+<p>You may need to inspect the input profile, data, or processing policies.</p>
+<p><strong>Registration failure</strong></p>
+<p>If Engine already committed a valid publication, you may be able to register it without rerunning normalization.</p>
+<h3 id="should-i-inspect-the-report-before-retrying">Should I inspect the report before retrying?</h3>
+<p>Yes.</p>
+<p>A failed command can leave useful evidence and, in some cases, valid committed files.</p>
+<p>Blindly rerunning the entire workload may be unnecessary.</p>
+<p>Inspect the execution result and identify the failed stage first.</p>
+<hr />
+<h2 id="recover-a-completed-publication-without-rerunning">Recover a Completed Publication Without Rerunning</h2>
+<p>Normalization involves two separate final stages.</p>
+<p>First, Engine commits the output files.</p>
+<p>Then Forge verifies and registers them in PostgreSQL.</p>
+<p>A problem can occur between these stages.</p>
+<p>For example, the database connection might fail after Engine has already committed a valid dataset.</p>
+<h3 id="why-is-registration-only-recovery-useful">Why is registration-only recovery useful?</h3>
+<p>Imagine processing a large order-book dataset.</p>
+<p>The normalization itself completes successfully, but PostgreSQL becomes unavailable during registration.</p>
+<p>The committed files may already exist and be valid.</p>
+<p>Rerunning the entire normalization could waste substantial time and resources.</p>
+<p>MarketForge therefore provides a way to verify and register an existing committed publication without executing the processing job again.</p>
+<h3 id="recover-using-an-execution-intent">Recover using an execution intent</h3>
+<p>The execution workflow retains an intent describing the frozen submitted work and output destinations.</p>
+<p>Use:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>register<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>data/runs/NORMALIZE_EXECUTION_ID/execution-intent.json<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--testing
+</code></pre></div>
+<p>Replace the execution ID with the actual value from your run.</p>
+<p>MarketForge uses the retained intent to locate and verify the relevant committed outputs.</p>
+<p>It then attempts to register the eligible files.</p>
+<h3 id="recover-using-a-publication-manifest">Recover using a publication manifest</h3>
+<p>You can also provide the path to an existing committed manifest:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>register<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>/absolute/path/to/committed-publication/manifest.json<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--testing
+</code></pre></div>
+<p>MarketForge verifies the publication before registration.</p>
+<h3 id="register-a-specific-primary-file">Register a specific primary file</h3>
+<p>If you only need to recover one registered file, you can provide its primary Parquet path.</p>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code>mf normalize register /absolute/path/to/part-000000.parquet --testing
+</code></pre></div>
+<p>This targets the selected primary file.</p>
+<h3 id="register-an-entire-publication">Register an entire publication</h3>
+<p>When you provide the publication directory or its manifest, the supported registration workflow considers the publication's primary files.</p>
+<p>This is useful when an entire committed publication needs registration.</p>
+<h3 id="does-recovery-rerun-engine">Does recovery rerun Engine?</h3>
+<p>No.</p>
+<p>Registration-only recovery does not repeat the normalization workload.</p>
+<p>It checks the existing committed output and its retained evidence.</p>
+<h3 id="what-if-the-publication-is-already-registered">What if the publication is already registered?</h3>
+<p>Registration can reuse an existing database ID when the relevant identity and evidence match.</p>
+<p>If the submitted output conflicts with existing registered identity, content, or lineage, registration fails rather than silently overwriting the record.</p>
+<h3 id="what-if-the-output-is-incomplete">What if the output is incomplete?</h3>
+<p>An incomplete staging directory is not automatically a valid publication.</p>
+<p>Registration-only recovery requires the applicable committed output and verification evidence.</p>
+<p>If Engine never completed publication, you may need to investigate or rerun the failed processing work.</p>
+<p><strong>Recovery is for verifiable committed outputs, not a way to bypass failed normalization or publication checks.</strong></p>
+<hr />
+<h2 id="understanding-recipe-names-and-paths">Understanding Recipe Names and Paths</h2>
+<p>Managed normalization recipes live under:</p>
+<div class="highlight"><pre><span></span><code>data/.config/workflows/data_engineering/normalization/
+</code></pre></div>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code>data/.config/workflows/data_engineering/normalization/my-normalization.toml
+</code></pre></div>
+<p>You can refer to a managed recipe by name:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>run<span class="w"> </span>my-normalization<span class="w"> </span>--testing
+</code></pre></div>
+<p>You can also use an explicit file path:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>run<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>docs/content/examples/catalogue/normalization.toml<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--testing
+</code></pre></div>
+<h3 id="why-use-a-path-containing-a-directory">Why use a path containing a directory?</h3>
+<p>MarketForge distinguishes named managed recipes from explicit paths.</p>
+<p>For an explicit recipe file, use a path with a directory component.</p>
+<p>This avoids confusing a relative filename with a managed recipe name.</p>
+<h3 id="what-about-older-recipes">What about older recipes?</h3>
+<p>MarketForge retains support for the documented legacy normalization request format under:</p>
+<div class="highlight"><pre><span></span><code>historical/normalization_jobs/
+</code></pre></div>
+<p>Existing legacy requests may remain readable through the supported compatibility path.</p>
+<p>For new workflows, prefer the current managed normalization recipes.</p>
+<h3 id="ambiguous-references">Ambiguous references</h3>
+<p>Be careful when a local file and managed recipe name could refer to different inputs.</p>
+<p>For <code>run</code>, an ambiguous reference can produce an error rather than silently selecting one.</p>
+<p>Use an explicit path when you intend to submit a specific local file.</p>
+<h3 id="how-does-run-distinguish-json-from-toml">How does <code>run</code> distinguish JSON from TOML?</h3>
+<p>The managed command distinguishes prepared JSON content from recipe TOML.</p>
+<p>A prepared JSON batch is submitted for execution.</p>
+<p>A TOML recipe is resolved through preparation before execution.</p>
+<p>Do not rename a file merely to force the command to interpret it as another contract type.</p>
+<hr />
+<h2 id="important-normalization-options">Important Normalization Options</h2>
+<h3 id="-testing"><code>--testing</code></h3>
+<p>Selects the guarded testing database.</p>
+<p>This is required for the applicable managed preparation, execution, and registration operations.</p>
+<p>It is not a dry-run option.</p>
+<h3 id="-dry-run"><code>--dry-run</code></h3>
+<p>Available for the supported preparation and execution-planning commands.</p>
+<p>It resolves and reports the plan without launching the workload or publishing the prepared batch and report.</p>
+<p>It does not prevent explicit recipe creation when combined with <code>--from-acquisition</code>.</p>
+<h3 id="-from-acquisition-source"><code>--from-acquisition SOURCE</code></h3>
+<p>Creates a normalization recipe using an existing acquisition selection.</p>
+<p>This helps reuse the same exchange, instrument, data type, and historical interval.</p>
+<p>The resulting normalization recipe remains a separate managed configuration.</p>
+<h3 id="-tui"><code>--tui</code></h3>
+<p>Enables the supported interactive terminal processing interface.</p>
+<p>It cannot be combined with global <code>--json</code>.</p>
+<h3 id="-allow-partial"><code>--allow-partial</code></h3>
+<p>Permits registration of independently verified outputs from certain partially successful multi-job executions.</p>
+<p>It does not change Engine integrity policies or make unverified files publishable.</p>
+<h3 id="global-json">Global <code>--json</code></h3>
+<p>Requests machine-readable results.</p>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>normalize<span class="w"> </span>prepare<span class="w"> </span>my-normalization<span class="w"> </span>--testing
+</code></pre></div>
+<p>Or:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>normalize<span class="w"> </span>run<span class="w"> </span>my-normalization<span class="w"> </span>--testing
+</code></pre></div>
+<p>Global <code>--json</code> belongs before <code>normalize</code>.</p>
+<p>Interactive recipe creation may still open an editor even when JSON output is requested for the final result.</p>
+<hr />
+<h2 id="common-questions">Common Questions</h2>
+<h2 id="common-normalization-problems">Common Normalization Problems</h2>
+<h3 id="the-normalization-recipe-is-invalid">The normalization recipe is invalid</h3>
+<p><strong>Possible cause:</strong> The TOML file is malformed or contains unsupported fields or values.</p>
+<p>Validate it:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>validate<span class="w"> </span>my-normalization
+</code></pre></div>
+<p>Correct the reported configuration problem before preparation.</p>
+<h3 id="preparation-finds-no-matching-archives">Preparation finds no matching archives</h3>
+<p><strong>Possible cause:</strong> The requested raw data is not registered or the selection does not match its recorded identity.</p>
+<p>Check the acquisition recipe, registered source key, instrument, data type, and historical interval.</p>
+<p>Inspect raw storage:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>storage<span class="w"> </span>list<span class="w"> </span>--testing
+</code></pre></div>
+<p>If the files are missing, acquire or register them first.</p>
+<h3 id="preparation-reports-missing-historical-specifications">Preparation reports missing historical specifications</h3>
+<p><strong>Possible cause:</strong> The registered instrument does not have applicable specification evidence for the selected input period.</p>
+<p>Inspect the catalogue:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>catalog<span class="w"> </span>specs<span class="w"> </span>show<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>example_exchange.equity.equity.AAPL<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--testing
+</code></pre></div>
+<p>Use the actual instrument reference for your request.</p>
+<p>Resolve the historical applicability problem before executing.</p>
+<p>Do not substitute an arbitrary current observation for verified historical rules.</p>
+<h3 id="the-required-profile-is-missing">The required profile is missing</h3>
+<p><strong>Possible cause:</strong> The source format profile was not installed.</p>
+<p>Inspect the installed profiles:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>acquisition<span class="w"> </span>profiles<span class="w"> </span>list
+</code></pre></div>
+<p>Validate and install the appropriate definition.</p>
+<h3 id="the-rust-normalizer-is-missing">The Rust normalizer is missing</h3>
+<p><strong>Possible cause:</strong> The managed Engine has not been built or its installation is invalid.</p>
+<p>Inspect:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>status
+</code></pre></div>
+<p>If necessary, rebuild:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>normalize
+</code></pre></div>
+<h3 id="preparation-reports-an-unsupported-batch">Preparation reports an unsupported batch</h3>
+<p><strong>Possible cause:</strong> The prepared contract contains unsupported fields, source semantics, or version combinations.</p>
+<p>Inspect the preparation result and Rust validation diagnostics.</p>
+<p>Check that Forge and Engine are compatible.</p>
+<p>Do not manually remove required prepared fields to bypass validation.</p>
+<h3 id="the-submitted-batch-differs-from-preparation">The submitted batch differs from preparation</h3>
+<p><strong>Possible cause:</strong> The submitted request or frozen execution information no longer matches the retained preparation evidence.</p>
+<p>Inspect the reported fingerprint mismatch.</p>
+<p>If the underlying files, profiles, or intended request have changed, prepare a new batch.</p>
+<h3 id="normalization-reports-invalid-records">Normalization reports invalid records</h3>
+<p><strong>Possible cause:</strong> Source records do not satisfy the declared format or processing requirements.</p>
+<p>For example:</p>
+<ul>
+<li>Malformed numeric fields.</li>
+<li>Incorrect timestamp encoding.</li>
+<li>Unsupported side values.</li>
+<li>Invalid quantities.</li>
+<li>Missing required fields.</li>
+</ul>
+<p>Inspect representative source records and the installed profile.</p>
+<p>Correct the interpretation or source problem rather than blindly relaxing validation.</p>
+<h3 id="trade-quantities-appear-incorrect">Trade quantities appear incorrect</h3>
+<p><strong>Possible cause:</strong> The source quantity denomination or contract specifications are wrong.</p>
+<p>Check the registered instrument specifications and profile quantity encoding.</p>
+<p>For derivatives, confirm the required contract value and asset denomination.</p>
+<p>Do not assume every exchange records quantities in base-asset units.</p>
+<h3 id="trade-sides-are-reversed">Trade sides are reversed</h3>
+<p><strong>Possible cause:</strong> The profile incorrectly interprets the source-side convention.</p>
+<p>For example, a field describing the resting order may not represent the aggressor side directly.</p>
+<p>Consult the provider's format documentation and inspect the profile mapping.</p>
+<h3 id="timestamps-are-incorrect">Timestamps are incorrect</h3>
+<p><strong>Possible cause:</strong> The source timestamp encoding does not match the profile.</p>
+<p>Check whether the source uses seconds, milliseconds, microseconds, nanoseconds, or formatted timestamps.</p>
+<p>Verify the resulting canonical event timestamps against known source values.</p>
+<h3 id="depth-reconstruction-fails">Depth reconstruction fails</h3>
+<p><strong>Possible cause:</strong> The source is missing required snapshots, contains invalid updates, or violates its declared ordering or sequence semantics.</p>
+<p>Inspect the depth profile and Engine diagnostics.</p>
+<p>Do not repair stateful depth data by arbitrarily sorting updates by timestamp.</p>
+<h3 id="the-processing-job-runs-out-of-resources">The processing job runs out of resources</h3>
+<p><strong>Possible cause:</strong> The workload exceeds its configured memory, scratch-storage, or other resource limits.</p>
+<p>Inspect the reported resource failure.</p>
+<p>Review the runtime configuration and selected workload.</p>
+<p>Resource limits should be changed deliberately, not merely increased without understanding the cause.</p>
+<h3 id="engine-writes-files-but-the-run-fails">Engine writes files but the run fails</h3>
+<p><strong>Possible cause:</strong> The operation failed during processing, final integrity evaluation, publication verification, or registration.</p>
+<p>Inspect the execution report.</p>
+<p>Do not assume that the existence of Parquet files means the publication is complete.</p>
+<h3 id="postgresql-registration-fails-after-engine-completes">PostgreSQL registration fails after Engine completes</h3>
+<p><strong>Possible cause:</strong> The output was committed, but the registry transaction did not complete.</p>
+<p>Inspect the execution result and committed publication evidence.</p>
+<p>If the output remains verifiable, use registration-only recovery.</p>
+<h3 id="a-partial-run-contains-fewer-datasets-than-expected">A partial run contains fewer datasets than expected</h3>
+<p><strong>Possible cause:</strong> One or more requested jobs failed and the workflow registered only the independently verified outputs.</p>
+<p>Inspect the reported omissions.</p>
+<p>Do not assume the partial result contains every requested instrument or data type.</p>
+<h3 id="dataset-inspection-shows-unexpected-row-counts">Dataset inspection shows unexpected row counts</h3>
+<p><strong>Possible cause:</strong> You are comparing different processing counters.</p>
+<p>For example, depth source observations and canonical level rows are not equivalent.</p>
+<p>Inspect the relevant processing metrics, event indexes, and publication information.</p>
+<p>For trade data, also investigate rejected or suppressed records where applicable.</p>
+<h3 id="the-output-interval-differs-from-the-requested-interval">The output interval differs from the requested interval</h3>
+<p><strong>Possible cause:</strong> The selected source archives extend beyond the requested recipe interval.</p>
+<p>Inspect the raw archive bounds, selected inputs, and observed output timestamps.</p>
+<p>Do not assume the request interval is an automatic row-level trimming operation.</p>
+<hr />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../registration/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Import, profile and registration commands">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Import, profile and registration commands
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../merge/" class="md-footer__link md-footer__link--next" aria-label="Next: Merge commands">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Merge commands
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.9e76c64c.min.js"></script>
+      
+      
+        <script src="../../../assets/javascripts/keyboard.js"></script>
+      
+    
+  </body>
+</html>

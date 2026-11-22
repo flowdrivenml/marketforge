@@ -1,0 +1,8 @@
+# Illustrative AAPL identity. Set the execution venue from source evidence.
+exchange = "example_exchange"
+symbol = "AAPL"
+instrument_type = "equity"
+market_category = "equity"
+base_asset = "AAPL"
+quote_asset = "USD"
+status = "active"

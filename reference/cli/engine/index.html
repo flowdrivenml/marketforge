@@ -1,0 +1,6659 @@
+
+
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Historical market-data acquisition, normalization and dataset inspection">
+      
+      
+      
+        <link rel="canonical" href="https://flowdrivenml.github.io/marketforge/reference/cli/engine/">
+      
+      
+      
+      
+        <link rel="prev" href="../maintenance/">
+      
+      
+        <link rel="next" href="../registration/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/branding/logo_small.png">
+      <meta name="generator" content="zensical-0.1.3">
+    
+    
+      
+        <title>Managed Engine commands - MarketForge</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
+    <div data-md-component="skip">
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="MarketForge" class="md-header__button md-logo" aria-label="MarketForge" data-md-component="logo">
+      
+  <img src="../../../assets/branding/logo_small.png" alt="MarketForge">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+      <span class="md-visually-hidden">Navigation</span>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MarketForge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Managed Engine commands
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+          <span class="md-visually-hidden">Search</span>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/flowdrivenml/marketforge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../.." class="md-tabs__link">
+          
+  
+  Using MarketForge
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../development/" class="md-tabs__link">
+          
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="MarketForge" class="md-nav__button md-logo" aria-label="MarketForge" data-md-component="logo">
+      
+  <img src="../../../assets/branding/logo_small.png" alt="MarketForge">
+
+    </a>
+    MarketForge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/flowdrivenml/marketforge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../.." class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Using MarketForge
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_1">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Using MarketForge
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Getting started
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_2" id="__nav_1_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Getting started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Installation and workspace setup
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  First dataset: Bybit trades and depth
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../workflows/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Guides
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3" id="__nav_1_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Guides
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../workflows/markets/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Explore markets
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_2" id="__nav_1_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Explore markets
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/markets/instrument-discovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Discover and inspect instruments
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/markets/market-statistics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Retrieve and interpret market statistics
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/markets/rankings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Build and inspect market rankings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../workflows/acquisition/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquire historical data
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_3" id="__nav_1_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Acquire historical data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/acquisition/historical-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquire historical archives
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/acquisition/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Register and normalize manually supplied data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/acquisition/managing-acquisitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Manage raw storage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../workflows/catalogue/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue and specifications
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_5" id="__nav_1_3_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_5_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Catalogue and specifications
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/catalogue/exchanges-and-instruments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Exchanges and instruments
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/catalogue/specifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Instrument specifications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/acquisition/external-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Register external recordings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_7" id="__nav_1_3_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Author format profiles
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_7_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_7">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Author format profiles
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/catalogue/profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Trades and L2 depth profiles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/catalogue/profile-trades/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Create a trade profile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/catalogue/profile-depth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Create a depth profile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/catalogue/profile-troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Validate, install and troubleshoot profiles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Process data
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_8">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Process data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalize registered data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge registered normalized files
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepare historical conversion
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical pipeline
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_9" id="__nav_1_3_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect datasets
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_9_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_9">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Inspect datasets
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect registered datasets
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/notebooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Explore datasets in Jupyter
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/forge-tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Interactive Forge workspace
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Concepts
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_4" id="__nav_1_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Concepts
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/identity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Identity and provenance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/time/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Time, selection, and coverage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/depth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Depth observations and reconstruction
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/ordering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Ordering and reconciliation
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/evidence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Execution, publication, and lineage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Reference
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5" id="__nav_1_5_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_5_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_1_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Reference
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  CLI
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5_2" id="__nav_1_5_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_2_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_1_5_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  CLI
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Interactive Forge workspace
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquisition commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Raw storage commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../runs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Execution history and retained evidence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../catalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and maintenance commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managed Engine commands
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managed Engine commands
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#approved-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Approved targets
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#synopsis-and-arguments" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Synopsis and arguments
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Synopsis and arguments">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mf-engine-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf engine status</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mf-engine-runtime" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf engine runtime</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mf-engine-build" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf engine build</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#understand-cargo-build-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Understand Cargo Build Options
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Understand Cargo Build Options">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-use-release-builds" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why use release builds?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-are-cargo-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What are Cargo features?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-disable-default-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why disable default features?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-use-locked" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why use <code>--locked</code>?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-marketforge-installs-compiled-engines" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How MarketForge Installs Compiled Engines
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How MarketForge Installs Compiled Engines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-executable-is-checked-before-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The executable is checked before installation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-check-the-executable" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why check the executable?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#existing-installations-are-protected" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Existing installations are protected
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#concurrent-builds-are-controlled" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Concurrent builds are controlled
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-not-copy-cargo-output-manually" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why not copy Cargo output manually?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-information-and-the-manifest" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Build Information and the Manifest
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Build Information and the Manifest">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-does-marketforge-need-a-manifest" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why does MarketForge need a manifest?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-an-executable-checksum" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What is an executable checksum?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-the-manifest-prove-which-source-code-produced-the-binary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does the manifest prove which source code produced the binary?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#should-you-edit-the-manifest-manually" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Should you edit the manifest manually?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#check-installed-engines" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Check Installed Engines
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Check Installed Engines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-check-engine-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why check engine status?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-status-inspect" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does status inspect?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-status-run-the-executable" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does status run the executable?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-status-require-postgresql" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does status require PostgreSQL?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#check-after-building" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Check after building
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-happens-when-a-build-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What Happens When a Build Changes?
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What Happens When a Build Changes?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#source-code-and-compiled-binaries-are-different" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Source code and compiled binaries are different
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rebuild-after-changing-engine-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Rebuild after changing Engine code
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-mf-engine-status-detect-every-source-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does <code>mf engine status</code> detect every source change?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-forge-rebuild-automatically-before-normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does Forge rebuild automatically before normalization?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#understanding-engine-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Understanding Engine Compatibility
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Understanding Engine Compatibility">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#build-validity-and-processing-compatibility-are-different" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Build validity and processing compatibility are different
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-should-you-rebuild" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        When should you rebuild?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-should-you-investigate-the-processing-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        When should you investigate the processing configuration?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repair-an-engine-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Repair an Engine Installation
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Repair an Engine Installation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-1-inspect-the-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 1: Inspect the installation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-identify-the-problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 2: Identify the problem
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-rebuild-the-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 3: Rebuild the target
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-4-verify-the-repaired-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 4: Verify the repaired installation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-not-manually-repair-the-manifest" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why not manually repair the manifest?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-if-installation-was-interrupted" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What if installation was interrupted?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting-engine-builds" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Troubleshooting Engine Builds
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting Engine Builds">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rust-compiler-not-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Rust compiler not found
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unsupported-rust-edition" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Unsupported Rust edition
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cargo-dependencies-cannot-be-downloaded" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Cargo dependencies cannot be downloaded
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#offline-build-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Offline build fails
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cargo-reports-a-lockfile-problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Cargo reports a lockfile problem
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#compilation-runs-out-of-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Compilation runs out of memory
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-custom-cargo-target-directory-is-configured" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        A custom Cargo target directory is configured
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cargo-is-configured-for-another-platform" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Cargo is configured for another platform
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-build-succeeds-but-installation-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The build succeeds but installation fails
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-executable-is-missing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The executable is missing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#engine-status-reports-a-checksum-mismatch" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Engine status reports a checksum mismatch
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#engine-status-reports-missing-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Engine status reports missing metadata
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-engine-is-verified-but-normalization-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The Engine is verified but normalization fails
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-merger-is-installed-but-rejects-a-dataset" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The merger is installed but rejects a dataset
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Import, profile and registration commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../convert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Dataset commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../markets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Market and ranking commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../configuration/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and recipes
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5_3" id="__nav_1_5_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Configuration and recipes
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/application/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Application settings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/acquisition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquisition and raw import recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/catalogue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue declarations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../configuration/markets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Ranking and historical metadata policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_4" id="__nav_1_5_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Format profiles
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Format profiles
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical normalization profile schema
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../profile-fields/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization profile field index
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managed raw registration declarations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_6" id="__nav_1_5_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared jobs and retained evidence
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Prepared jobs and retained evidence
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prepared/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared Engine contracts
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prepared-normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared normalization batch
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prepared-merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared merge job
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prepared-conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared conversion job
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prepared-forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge preparation and run evidence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_7" id="__nav_1_5_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Publication formats
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_7_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_7">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Publication formats
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../publications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Publication formats
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../publication-normalized/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalized publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../publication-merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merged publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../publication-converted/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Converted publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../python-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Python dataset API
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../examples/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Examples
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_6" id="__nav_1_6_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Examples
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/catalogue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Synthetic trade and depth recordings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/catalogue/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge a compatible trade file
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/bring-your-own-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Bring your own historical data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/bring-your-own-data/databento/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Databento AAPL Trades and MBP-10
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Troubleshooting
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../development/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Development
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Development
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Getting started
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Getting started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Local development
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/first-contribution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  First contribution
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Architecture
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Architecture
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  System overview
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/convert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical operation lifecycles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/forge-tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge workspace architecture and action inventory
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extending MarketForge
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Extending MarketForge
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/extending/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extension decision guide
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extend source integration and processing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extend orchestration and persistence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Testing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Debugging and performance
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Debugging and performance
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/debugging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Debugging historical workflows
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Performance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Contributing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#approved-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Approved targets
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#synopsis-and-arguments" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Synopsis and arguments
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Synopsis and arguments">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mf-engine-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf engine status</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mf-engine-runtime" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf engine runtime</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mf-engine-build" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>mf engine build</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#understand-cargo-build-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Understand Cargo Build Options
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Understand Cargo Build Options">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-use-release-builds" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why use release builds?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-are-cargo-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What are Cargo features?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-disable-default-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why disable default features?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-use-locked" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why use <code>--locked</code>?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-marketforge-installs-compiled-engines" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        How MarketForge Installs Compiled Engines
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How MarketForge Installs Compiled Engines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-executable-is-checked-before-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The executable is checked before installation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-check-the-executable" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why check the executable?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#existing-installations-are-protected" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Existing installations are protected
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#concurrent-builds-are-controlled" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Concurrent builds are controlled
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-not-copy-cargo-output-manually" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why not copy Cargo output manually?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-information-and-the-manifest" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Build Information and the Manifest
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Build Information and the Manifest">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-does-marketforge-need-a-manifest" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why does MarketForge need a manifest?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-an-executable-checksum" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What is an executable checksum?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-the-manifest-prove-which-source-code-produced-the-binary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does the manifest prove which source code produced the binary?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#should-you-edit-the-manifest-manually" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Should you edit the manifest manually?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#check-installed-engines" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Check Installed Engines
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Check Installed Engines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-check-engine-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why check engine status?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-status-inspect" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does status inspect?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-status-run-the-executable" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does status run the executable?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-status-require-postgresql" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does status require PostgreSQL?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#check-after-building" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Check after building
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-happens-when-a-build-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What Happens When a Build Changes?
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What Happens When a Build Changes?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#source-code-and-compiled-binaries-are-different" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Source code and compiled binaries are different
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rebuild-after-changing-engine-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Rebuild after changing Engine code
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-mf-engine-status-detect-every-source-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does <code>mf engine status</code> detect every source change?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-forge-rebuild-automatically-before-normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does Forge rebuild automatically before normalization?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#understanding-engine-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Understanding Engine Compatibility
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Understanding Engine Compatibility">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#build-validity-and-processing-compatibility-are-different" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Build validity and processing compatibility are different
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-should-you-rebuild" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        When should you rebuild?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-should-you-investigate-the-processing-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        When should you investigate the processing configuration?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repair-an-engine-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Repair an Engine Installation
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Repair an Engine Installation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-1-inspect-the-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 1: Inspect the installation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-identify-the-problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 2: Identify the problem
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-rebuild-the-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 3: Rebuild the target
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-4-verify-the-repaired-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Step 4: Verify the repaired installation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-not-manually-repair-the-manifest" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why not manually repair the manifest?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-if-installation-was-interrupted" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What if installation was interrupted?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting-engine-builds" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Troubleshooting Engine Builds
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting Engine Builds">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rust-compiler-not-found" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Rust compiler not found
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unsupported-rust-edition" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Unsupported Rust edition
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cargo-dependencies-cannot-be-downloaded" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Cargo dependencies cannot be downloaded
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#offline-build-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Offline build fails
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cargo-reports-a-lockfile-problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Cargo reports a lockfile problem
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#compilation-runs-out-of-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Compilation runs out of memory
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-custom-cargo-target-directory-is-configured" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        A custom Cargo target directory is configured
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cargo-is-configured-for-another-platform" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Cargo is configured for another platform
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-build-succeeds-but-installation-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The build succeeds but installation fails
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-executable-is-missing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The executable is missing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#engine-status-reports-a-checksum-mismatch" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Engine status reports a checksum mismatch
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#engine-status-reports-missing-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Engine status reports missing metadata
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-engine-is-verified-but-normalization-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The Engine is verified but normalization fails
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-merger-is-installed-but-rejects-a-dataset" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The merger is installed but rejects a dataset
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+      
+        
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../../.." class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Using MarketForge
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../../" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Reference
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    CLI
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
+                
+                  
+
+  
+  
+
+
+<h1 id="managed-engine-commands">Managed Engine commands</h1>
+<p>Plan, build and inspect Forge-managed executables. <a href="../../../development/setup/#build-the-executable-forge-will-use">Workflow and prerequisites</a> · <a href="../">Shared CLI behavior</a></p>
+<h2 id="approved-targets">Approved targets</h2>
+<table>
+<thead>
+<tr>
+<th>Target</th>
+<th>Binary installed in <code>.bin/</code></th>
+<th>Default build</th>
+<th>Features</th>
+<th>Smoke check</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>normalize</code></td>
+<td><code>marketforge-normalize</code></td>
+<td>Yes</td>
+<td><code>historical,monitor-tui</code></td>
+<td>Help advertises <code>--batch</code></td>
+</tr>
+<tr>
+<td><code>merge</code></td>
+<td><code>marketforge-merge</code></td>
+<td>Explicit target</td>
+<td><code>historical,monitor-tui</code></td>
+<td>Help advertises <code>--validate-job</code></td>
+</tr>
+<tr>
+<td><code>convert</code></td>
+<td><code>marketforge-convert</code></td>
+<td>Explicit target</td>
+<td><code>historical,monitor-tui</code></td>
+<td>Help advertises <code>--job</code></td>
+</tr>
+</tbody>
+</table>
+<p>A build uses the locked Cargo release profile on Linux or macOS and installs a separate checksum-pinned copy. A dry run reports the command, destination and missing prerequisites without invoking Cargo. <code>--offline</code> uses cached dependencies and <code>--jobs</code> requires a positive integer. See <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/engine/managed.py">the target registry</a>.</p>
+<h2 id="synopsis-and-arguments">Synopsis and arguments</h2>
+<h3 id="mf-engine-status"><code>mf engine status</code></h3>
+<div class="highlight"><pre><span></span><code>mf engine status [-h]
+</code></pre></div>
+<h3 id="mf-engine-runtime"><code>mf engine runtime</code></h3>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>runtime<span class="w"> </span>--help
+mf<span class="w"> </span>--json<span class="w"> </span>engine<span class="w"> </span>runtime<span class="w"> </span>pipeline
+</code></pre></div>
+<p>Choose one operation. Output includes the effective settings and the source
+path. Pipeline output includes the stage settings and source TOML hashes.
+This command uses the managed binaries and works without a database connection.
+<a href="../../runtime/">Runtime schema and inheritance</a></p>
+<h3 id="mf-engine-build"><code>mf engine build</code></h3>
+<div class="highlight"><pre><span></span><code>mf engine build [-h] [--dry-run] [--offline] [--jobs JOBS]
+                                [target]
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Argument or option</th>
+<th>Parser contract</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>target</code></td>
+<td>Optional.</td>
+</tr>
+<tr>
+<td><code>--dry-run</code></td>
+<td>Default <code>false</code>.</td>
+</tr>
+<tr>
+<td><code>--offline</code></td>
+<td>Default <code>false</code>.</td>
+</tr>
+<tr>
+<td><code>--jobs</code></td>
+<td>Optional.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="understand-cargo-build-options">Understand Cargo Build Options</h2>
+<p>The managed Engine builder uses Cargo internally.</p>
+<p>For the historical normalizer, the approved build configuration includes:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cargo package</td>
+<td><code>marketforge-engine</code></td>
+</tr>
+<tr>
+<td>Cargo binary</td>
+<td><code>marketforge-normalize</code></td>
+</tr>
+<tr>
+<td>Build profile</td>
+<td>Release</td>
+</tr>
+<tr>
+<td>Default Cargo features</td>
+<td>Disabled</td>
+</tr>
+<tr>
+<td>Approved features</td>
+<td><code>historical</code>, <code>monitor-tui</code></td>
+</tr>
+<tr>
+<td>Dependency lockfile</td>
+<td>Enforced with <code>--locked</code></td>
+</tr>
+</tbody>
+</table>
+<p>These settings are managed by Forge.</p>
+<p>You do not need to provide the corresponding Cargo arguments manually.</p>
+<h3 id="why-use-release-builds">Why use release builds?</h3>
+<p>Rust supports different compilation profiles.</p>
+<p>Debug builds prioritize development convenience, while release builds apply optimizations intended for execution performance.</p>
+<p>Historical normalization can involve large workloads, so the managed normalizer uses the release profile.</p>
+<h3 id="what-are-cargo-features">What are Cargo features?</h3>
+<p>Cargo features allow Rust projects to enable optional capabilities.</p>
+<p>For example, MarketForge's historical normalizer uses features associated with historical processing and terminal monitoring.</p>
+<p>Forge selects the approved features for the target.</p>
+<p>This helps ensure that the installed binary includes the capabilities expected by the relevant processing workflow.</p>
+<h3 id="why-disable-default-features">Why disable default features?</h3>
+<p>A Rust package may contain functionality that is not required by every executable.</p>
+<p>By disabling default features and explicitly enabling the required ones, the managed build can select a narrower configuration.</p>
+<p>This helps avoid unintentionally including unrelated optional functionality.</p>
+<h3 id="why-use-locked">Why use <code>--locked</code>?</h3>
+<p>Cargo uses a lockfile to record resolved dependency versions.</p>
+<p>The managed build uses:</p>
+<div class="highlight"><pre><span></span><code>--locked
+</code></pre></div>
+<p>This tells Cargo to use the existing dependency lockfile without updating it.</p>
+<p>If the lockfile needs changes that the build is not permitted to make, Cargo reports an error.</p>
+<p>This helps keep builds consistent with the repository's recorded dependencies.</p>
+<p>However, a lockfile does not guarantee identical compiled bytes across different operating systems, compilers, or build environments.</p>
+<hr />
+<h2 id="how-marketforge-installs-compiled-engines">How MarketForge Installs Compiled Engines</h2>
+<p>Once Cargo successfully compiles an approved target, Forge installs it into the managed <code>.bin/</code> directory.</p>
+<p>This installation process includes several safeguards.</p>
+<h3 id="the-executable-is-checked-before-installation">The executable is checked before installation</h3>
+<p>Forge performs a non-processing startup check using the compiled executable's help interface.</p>
+<p>The purpose is to verify that the selected executable can start and respond as expected.</p>
+<p>This is sometimes called a <strong>smoke test</strong>.</p>
+<p>For example, the managed normalizer is expected to respond to its supported non-processing help invocation.</p>
+<p>A failed smoke check prevents the build from being accepted as a successful managed installation.</p>
+<h3 id="why-check-the-executable">Why check the executable?</h3>
+<p>Successful compilation proves that Cargo produced an executable.</p>
+<p>However, it does not necessarily prove that the executable can start correctly in the current environment.</p>
+<p>A smoke check provides an additional verification step before installation.</p>
+<p>It is deliberately limited to non-processing behavior.</p>
+<p>It does not execute normalization, read historical archives, or publish datasets.</p>
+<h3 id="existing-installations-are-protected">Existing installations are protected</h3>
+<p>Forge prepares and checks the new executable before replacing an existing managed binary.</p>
+<p>The executable replacement is performed atomically.</p>
+<p>This reduces the risk of leaving a partially copied executable as the installed binary.</p>
+<p>If the build or pre-installation checks fail, an existing installation is preserved rather than deliberately replaced by the failed candidate.</p>
+<h3 id="concurrent-builds-are-controlled">Concurrent builds are controlled</h3>
+<p>Forge uses a file lock to prevent competing managed installers from modifying the same installation state at the same time.</p>
+<p>This helps protect the managed binary directory when multiple commands attempt to build or install engines concurrently.</p>
+<h3 id="why-not-copy-cargo-output-manually">Why not copy Cargo output manually?</h3>
+<p>Manually copying an executable into <code>.bin/</code> bypasses the managed installation process.</p>
+<p>The copied file may not match the recorded build information.</p>
+<p>This can cause <code>mf engine status</code> to report a checksum or metadata problem.</p>
+<p>Use:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>normalize
+</code></pre></div>
+<p>or:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>merge
+</code></pre></div>
+<p>to create supported managed installations.</p>
+<hr />
+<h2 id="build-information-and-the-manifest">Build Information and the Manifest</h2>
+<p>MarketForge keeps a record of its managed Engine installations.</p>
+<p>This information is stored in:</p>
+<div class="highlight"><pre><span></span><code>.bin/manifest.json
+</code></pre></div>
+<h3 id="why-does-marketforge-need-a-manifest">Why does MarketForge need a manifest?</h3>
+<p>Imagine compiling the normalizer today and then updating the Rust source code next week.</p>
+<p>You may want to know which executable is currently installed and how it was built.</p>
+<p>The manifest helps answer questions about the installed binary.</p>
+<p>For example, it can record:</p>
+<ul>
+<li>The selected build target.</li>
+<li>The Rust toolchain used.</li>
+<li>The enabled Cargo features.</li>
+<li>The target host.</li>
+<li>The installed executable.</li>
+<li>The executable's file size.</li>
+<li>The SHA-256 checksum.</li>
+<li>The result of the startup smoke check.</li>
+<li>Build-related timestamps.</li>
+<li>Repository revision and dirty-state information.</li>
+</ul>
+<p>These details help MarketForge verify the installed executable and provide useful information when investigating a build.</p>
+<h3 id="what-is-an-executable-checksum">What is an executable checksum?</h3>
+<p>A SHA-256 checksum is calculated from the executable's contents.</p>
+<p>If the installed file changes, its checksum will normally change as well.</p>
+<p>MarketForge records the checksum during installation.</p>
+<p>Later, it can compare the current executable against the recorded value.</p>
+<p>This helps detect unexpected file changes.</p>
+<h3 id="does-the-manifest-prove-which-source-code-produced-the-binary">Does the manifest prove which source code produced the binary?</h3>
+<p>Not completely.</p>
+<p>The manifest retains repository revision and dirty-state information.</p>
+<p>However, this does not represent an exact snapshot of every modified source file used during compilation.</p>
+<p>For example, a repository may contain uncommitted changes when the engine is built.</p>
+<p>The manifest can indicate that the working tree was dirty, but that information alone does not reconstruct the precise source contents.</p>
+<p>For reproducible engineering investigations, retain the relevant source revision and build environment separately.</p>
+<h3 id="should-you-edit-the-manifest-manually">Should you edit the manifest manually?</h3>
+<p>No.</p>
+<p>The manifest belongs to the managed build system.</p>
+<p>Manually changing it can make the recorded installation information inconsistent with the actual executable.</p>
+<p>If the manifest is missing, damaged, or inconsistent, use the supported build command to recreate a valid installation.</p>
+<hr />
+<h2 id="check-installed-engines">Check Installed Engines</h2>
+<p>After building an engine, you should verify that MarketForge recognizes the installation.</p>
+<p>Use:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>status
+</code></pre></div>
+<p>This command inspects the managed Engine installation state.</p>
+<h3 id="why-check-engine-status">Why check engine status?</h3>
+<p>An executable may exist on disk but still be unsuitable for managed execution.</p>
+<p>For example:</p>
+<ul>
+<li>Its manifest may be missing.</li>
+<li>The recorded checksum may not match.</li>
+<li>The executable may no longer have the correct permissions.</li>
+<li>The path may have been replaced by an unsafe symbolic link.</li>
+<li>The recorded installation information may be malformed.</li>
+</ul>
+<p>MarketForge therefore checks more than the presence of a filename.</p>
+<h3 id="what-does-status-inspect">What does status inspect?</h3>
+<p>The status command examines the installed targets and their retained build information.</p>
+<p>It can distinguish conditions such as:</p>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Missing installation</td>
+<td>The managed executable is not installed.</td>
+</tr>
+<tr>
+<td>Missing metadata</td>
+<td>The executable or its installation record is incomplete.</td>
+</tr>
+<tr>
+<td>Invalid metadata</td>
+<td>The manifest cannot be interpreted correctly.</td>
+</tr>
+<tr>
+<td>Non-executable file</td>
+<td>The installed file cannot be executed as required.</td>
+</tr>
+<tr>
+<td>Unsafe path</td>
+<td>The installed path does not satisfy the managed-file safety checks.</td>
+</tr>
+<tr>
+<td>Checksum mismatch</td>
+<td>The current executable differs from its recorded checksum.</td>
+</tr>
+<tr>
+<td>Verified installation</td>
+<td>The applicable file and metadata checks passed.</td>
+</tr>
+</tbody>
+</table>
+<p>The exact status fields should be read from the command's output.</p>
+<h3 id="does-status-run-the-executable">Does status run the executable?</h3>
+<p>No.</p>
+<p><strong><code>mf engine status</code> is a read-only inspection command.</strong></p>
+<p>It does not execute the installed Engine binary.</p>
+<p>Instead, it checks the recorded installation metadata and the relevant filesystem properties.</p>
+<p>This makes it useful when investigating an unknown or potentially damaged installation.</p>
+<h3 id="does-status-require-postgresql">Does status require PostgreSQL?</h3>
+<p>No.</p>
+<p>Engine status does not need database credentials or historical market-data files.</p>
+<p>It inspects the managed installation in the project workspace.</p>
+<h3 id="check-after-building">Check after building</h3>
+<p>A normal sequence is:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>normalize
+mf<span class="w"> </span>engine<span class="w"> </span>status
+</code></pre></div>
+<p>Confirm that the normalizer appears as a verified managed installation.</p>
+<p>After building the merger, run the same status command to inspect the managed targets.</p>
+<hr />
+<h2 id="what-happens-when-a-build-changes">What Happens When a Build Changes?</h2>
+<p>As MarketForge evolves, the Rust source code may change.</p>
+<p>For example, you might update:</p>
+<ul>
+<li>Historical normalization logic.</li>
+<li>Trade decoding.</li>
+<li>Order-book reconstruction.</li>
+<li>Merge behavior.</li>
+<li>Processing integrity checks.</li>
+<li>Engine command-line behavior.</li>
+</ul>
+<p>These source changes are not automatically applied to an executable that was compiled earlier.</p>
+<h3 id="source-code-and-compiled-binaries-are-different">Source code and compiled binaries are different</h3>
+<p>Consider the following:</p>
+<div class="highlight"><pre><span></span><code>Rust Source Code
+      |
+      v
+   Compile
+      |
+      v
+Installed Binary
+</code></pre></div>
+<p>Once compiled, the binary contains the code produced by that build.</p>
+<p>Editing the Rust source afterward does not modify the installed executable.</p>
+<h3 id="rebuild-after-changing-engine-code">Rebuild after changing Engine code</h3>
+<p>If you change Rust code used by the normalizer, rebuild it:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>normalize
+</code></pre></div>
+<p>If you change code used by the merger, rebuild that target:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>merge
+</code></pre></div>
+<p>The managed builder compiles and installs a new executable using the supported build configuration.</p>
+<h3 id="does-mf-engine-status-detect-every-source-change">Does <code>mf engine status</code> detect every source change?</h3>
+<p>No.</p>
+<p>Status verifies the installed binary against its recorded installation information.</p>
+<p>It does not perform a complete comparison between the current Rust source tree and the exact source contents used during compilation.</p>
+<p>For example, an installed binary may still pass its checksum verification after you edit the Rust source code.</p>
+<p>This means:</p>
+<p><strong>A verified installation is not necessarily a build of the latest working-tree changes.</strong></p>
+<p>Rebuild after making changes that should affect the Engine.</p>
+<h3 id="does-forge-rebuild-automatically-before-normalization">Does Forge rebuild automatically before normalization?</h3>
+<p>No.</p>
+<p>Managed normalization does not automatically compile the Engine.</p>
+<p>This is intentional.</p>
+<p>Compilation and historical processing are separate operations.</p>
+<p>It prevents a normalization request from unexpectedly starting a potentially expensive Rust build.</p>
+<p>Make sure the required executable is installed before running the corresponding workflow.</p>
+<hr />
+<h2 id="understanding-engine-compatibility">Understanding Engine Compatibility</h2>
+<p>A successful build is necessary, but it does not prove that every historical processing request will succeed.</p>
+<p>For example, Forge prepares normalization jobs using a defined contract.</p>
+<p>The Rust Engine must understand the prepared job format and support the requested source interpretation.</p>
+<h3 id="build-validity-and-processing-compatibility-are-different">Build validity and processing compatibility are different</h3>
+<p>Consider these checks:</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>What it establishes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cargo compilation</td>
+<td>The selected Rust target compiled successfully.</td>
+</tr>
+<tr>
+<td>Startup smoke check</td>
+<td>The executable responded to the expected non-processing invocation.</td>
+</tr>
+<tr>
+<td>Engine status</td>
+<td>The installed file matches its recorded installation information.</td>
+</tr>
+<tr>
+<td>Prepared-job validation</td>
+<td>The Engine understands the submitted processing contract.</td>
+</tr>
+<tr>
+<td>End-to-end execution</td>
+<td>The requested workload was actually processed.</td>
+</tr>
+<tr>
+<td>Output verification</td>
+<td>The produced artifacts satisfy the applicable output checks.</td>
+</tr>
+</tbody>
+</table>
+<p>These checks establish different things.</p>
+<p>For example, a normalizer can compile successfully while a particular profile or prepared batch is invalid.</p>
+<p>Similarly, a successfully processed source does not automatically establish complete historical market-data coverage.</p>
+<h3 id="when-should-you-rebuild">When should you rebuild?</h3>
+<p>Rebuild the relevant executable when:</p>
+<ul>
+<li>Updating Engine code.</li>
+<li>Switching to a repository revision with relevant Engine changes.</li>
+<li>Changing the approved build configuration.</li>
+<li>Repairing a damaged installation.</li>
+<li>Investigating a suspected binary mismatch.</li>
+</ul>
+<h3 id="when-should-you-investigate-the-processing-configuration">When should you investigate the processing configuration?</h3>
+<p>If the installed Engine is verified but normalization rejects a particular job, investigate the processing request.</p>
+<p>For example, the issue might involve:</p>
+<ul>
+<li>An unsupported profile.</li>
+<li>Missing historical instrument specifications.</li>
+<li>An invalid prepared batch.</li>
+<li>Incorrect source metadata.</li>
+<li>A source-data integrity failure.</li>
+<li>An unsupported output or merge layout.</li>
+</ul>
+<p>Rebuilding the Engine does not automatically correct these problems.</p>
+<p>Use the relevant normalization or merge diagnostics to identify the actual failure.</p>
+<hr />
+<h2 id="repair-an-engine-installation">Repair an Engine Installation</h2>
+<p>Sometimes an installation becomes inconsistent.</p>
+<p>For example, the executable might have been modified after installation or the manifest may no longer match the file.</p>
+<p>MarketForge is designed to detect these situations.</p>
+<h3 id="step-1-inspect-the-installation">Step 1: Inspect the installation</h3>
+<p>Run:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>status
+</code></pre></div>
+<p>Review the reported state of the affected target.</p>
+<h3 id="step-2-identify-the-problem">Step 2: Identify the problem</h3>
+<p>Common conditions include:</p>
+<table>
+<thead>
+<tr>
+<th>Problem</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Missing binary</td>
+<td>The executable was not installed or is no longer present.</td>
+</tr>
+<tr>
+<td>Missing manifest</td>
+<td>The recorded installation metadata is unavailable.</td>
+</tr>
+<tr>
+<td>Checksum mismatch</td>
+<td>The executable contents differ from the recorded version.</td>
+</tr>
+<tr>
+<td>Non-executable file</td>
+<td>The file does not satisfy executable-file requirements.</td>
+</tr>
+<tr>
+<td>Unsafe symbolic link</td>
+<td>The managed path fails the safety checks.</td>
+</tr>
+<tr>
+<td>Invalid manifest</td>
+<td>The installation metadata is malformed or inconsistent.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="step-3-rebuild-the-target">Step 3: Rebuild the target</h3>
+<p>For the normalizer:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>normalize
+</code></pre></div>
+<p>For the merger:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>merge
+</code></pre></div>
+<p>The managed builder creates a new executable and installation record.</p>
+<h3 id="step-4-verify-the-repaired-installation">Step 4: Verify the repaired installation</h3>
+<p>Run:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>status
+</code></pre></div>
+<p>Confirm that the affected target is now verified.</p>
+<h3 id="why-not-manually-repair-the-manifest">Why not manually repair the manifest?</h3>
+<p>The executable and manifest describe one managed installation.</p>
+<p>Changing only one can create another mismatch.</p>
+<p>Use the build command so that compilation, executable verification, installation, and metadata recording follow the supported process.</p>
+<h3 id="what-if-installation-was-interrupted">What if installation was interrupted?</h3>
+<p>Although the executable replacement itself is atomic, the binary and manifest are installed as separate filesystem updates.</p>
+<p>An interruption between those updates can leave an executable and manifest that do not match.</p>
+<p>MarketForge can detect this condition during status inspection.</p>
+<p>A new managed build is the supported repair path.</p>
+<hr />
+<h2 id="troubleshooting-engine-builds">Troubleshooting Engine Builds</h2>
+<p>Build problems can occur because of missing tools, unavailable dependencies, compiler errors, or installation inconsistencies.</p>
+<p>The appropriate solution depends on where the build fails.</p>
+<h3 id="rust-compiler-not-found">Rust compiler not found</h3>
+<p><strong>Possible cause:</strong> Rust is not installed or the compiler is unavailable in your terminal environment.</p>
+<p>Check:</p>
+<div class="highlight"><pre><span></span><code>rustc<span class="w"> </span>--version
+</code></pre></div>
+<p>And:</p>
+<div class="highlight"><pre><span></span><code>cargo<span class="w"> </span>--version
+</code></pre></div>
+<p>Install or configure a compatible Rust toolchain before retrying.</p>
+<h3 id="unsupported-rust-edition">Unsupported Rust edition</h3>
+<p><strong>Possible cause:</strong> The installed Rust compiler is too old to support edition 2024.</p>
+<p>MarketForge Engine uses Rust edition 2024.</p>
+<p>Inspect the installed version:</p>
+<div class="highlight"><pre><span></span><code>rustc<span class="w"> </span>--version
+</code></pre></div>
+<p>Update the toolchain to a compatible version.</p>
+<h3 id="cargo-dependencies-cannot-be-downloaded">Cargo dependencies cannot be downloaded</h3>
+<p><strong>Possible cause:</strong> Network access is unavailable, a dependency source cannot be reached, or required dependencies are missing from the local cache.</p>
+<p>Inspect the Cargo error.</p>
+<p>If you intentionally require an offline build, use:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>normalize<span class="w"> </span>--offline
+</code></pre></div>
+<p>However, this succeeds only when the required dependencies are already available locally.</p>
+<h3 id="offline-build-fails">Offline build fails</h3>
+<p><strong>Possible cause:</strong> Cargo cannot find a required dependency in its local sources.</p>
+<p>Offline mode does not download missing packages.</p>
+<p>You may need to prepare the dependency cache in an environment with network access before attempting the offline build again.</p>
+<h3 id="cargo-reports-a-lockfile-problem">Cargo reports a lockfile problem</h3>
+<p><strong>Possible cause:</strong> The current dependency declarations and lockfile are inconsistent.</p>
+<p>Managed builds use <code>--locked</code>.</p>
+<p>This prevents the build from silently updating the dependency lockfile.</p>
+<p>Inspect the reported dependency or lockfile problem.</p>
+<p>Do not remove <code>--locked</code> from the managed build simply to hide an unresolved repository inconsistency.</p>
+<h3 id="compilation-runs-out-of-memory">Compilation runs out of memory</h3>
+<p><strong>Possible cause:</strong> The selected compiler parallelism exceeds available system resources.</p>
+<p>Try a smaller job count:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>normalize<span class="w"> </span>--jobs<span class="w"> </span><span class="m">2</span>
+</code></pre></div>
+<p>Or:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>normalize<span class="w"> </span>--jobs<span class="w"> </span><span class="m">1</span>
+</code></pre></div>
+<p>Reducing parallel compiler jobs can lower memory pressure.</p>
+<p>It does not guarantee that every compilation will fit on a resource-constrained machine.</p>
+<h3 id="a-custom-cargo-target-directory-is-configured">A custom Cargo target directory is configured</h3>
+<p>MarketForge respects the applicable Cargo build artifact paths.</p>
+<p>The managed builder resolves the compiled executable rather than assuming it always appears in one fixed Cargo directory.</p>
+<p>The installed executable still goes into the project-local <code>.bin/</code> directory.</p>
+<p>If the build cannot locate the expected output, inspect the selected target and Cargo configuration.</p>
+<h3 id="cargo-is-configured-for-another-platform">Cargo is configured for another platform</h3>
+<p>The managed build checks the configured compilation target.</p>
+<p>A foreign target is rejected.</p>
+<p>This prevents an executable compiled for another platform from being installed as though it were a native MarketForge Engine.</p>
+<p>Use a supported native target for the current system.</p>
+<h3 id="the-build-succeeds-but-installation-fails">The build succeeds but installation fails</h3>
+<p><strong>Possible cause:</strong> The startup smoke check, executable installation, workspace permissions, or another managed installation safeguard failed.</p>
+<p>Inspect the reported error.</p>
+<p>The installer checks the candidate executable before accepting it.</p>
+<p>Do not assume that successful Cargo compilation alone means the managed installation succeeded.</p>
+<h3 id="the-executable-is-missing">The executable is missing</h3>
+<p>Inspect:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>status
+</code></pre></div>
+<p>If the normalizer is missing, build it:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>normalize
+</code></pre></div>
+<p>For the merger:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>merge
+</code></pre></div>
+<h3 id="engine-status-reports-a-checksum-mismatch">Engine status reports a checksum mismatch</h3>
+<p><strong>Possible cause:</strong> The installed executable changed after its installation record was written.</p>
+<p>Rebuild the affected target using the managed builder.</p>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>engine<span class="w"> </span>build<span class="w"> </span>normalize
+</code></pre></div>
+<p>Then check the installation again.</p>
+<h3 id="engine-status-reports-missing-metadata">Engine status reports missing metadata</h3>
+<p><strong>Possible cause:</strong> The installation manifest is missing or inconsistent.</p>
+<p>Use the supported build command to recreate the managed installation.</p>
+<p>Do not manually invent checksum values or metadata entries.</p>
+<h3 id="the-engine-is-verified-but-normalization-fails">The Engine is verified but normalization fails</h3>
+<p>A verified Engine installation does not guarantee that every processing request is valid.</p>
+<p>Inspect the normalization result and the relevant Engine diagnostics.</p>
+<p>Possible causes include invalid profiles, missing instrument specifications, unsupported source formats, or data-integrity failures.</p>
+<p>See <a href="../../../workflows/normalize/">Historical Normalization</a>.</p>
+<h3 id="the-merger-is-installed-but-rejects-a-dataset">The merger is installed but rejects a dataset</h3>
+<p>The merger only supports compatible input formats and layouts.</p>
+<p>Inspect the merge preparation result and supported compatibility rules.</p>
+<p>The presence of a verified merger executable does not make an unsupported input layout eligible.</p>
+<p>See <a href="../merge/">Historical Merge</a>.</p>
+<hr />
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../maintenance/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Configuration and maintenance commands">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Configuration and maintenance commands
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../registration/" class="md-footer__link md-footer__link--next" aria-label="Next: Import, profile and registration commands">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Import, profile and registration commands
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.9e76c64c.min.js"></script>
+      
+      
+        <script src="../../../assets/javascripts/keyboard.js"></script>
+      
+    
+  </body>
+</html>

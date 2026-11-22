@@ -1,0 +1,44 @@
+/* Restrained terminal palette; system fonts avoid remote font requests. */
+:root {
+  --md-text-font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --md-code-font: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #1a1b26;
+  --md-default-fg-color: #c0caf5;
+  --md-default-fg-color--light: #a9b6df;
+  --md-default-fg-color--lighter: #a9b6df;
+  --md-primary-fg-color: #1a1b26;
+  --md-primary-bg-color: #c0caf5;
+  --md-accent-fg-color: #7dcfff;
+  --md-typeset-a-color: #7aa2f7;
+  --md-code-bg-color: #202230;
+  --md-code-fg-color: #c0caf5;
+  --mf-border: #565f89;
+  --mf-notice: #e0af68;
+}
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #e9edf8;
+  --md-primary-bg-color: #20243a;
+  --md-accent-fg-color: #2455a6;
+  --md-typeset-a-color: #2455a6;
+  --mf-border: #b5bdd2;
+  --mf-notice: #8b600d;
+}
+.md-header { box-shadow: none; border-bottom: 1px solid var(--mf-border); }
+.md-tabs { background: var(--md-primary-fg-color); color: var(--md-primary-bg-color); }
+.md-typeset { line-height: 1.7; }
+.md-typeset h1, .md-typeset h2 { font-weight: 600; letter-spacing: -0.02em; }
+.md-typeset blockquote { border-inline-start: 3px solid var(--mf-notice); color: var(--md-default-fg-color); padding: 0.3rem 0.9rem; }
+.md-typeset table:not([class]) { border-color: var(--mf-border); }
+.md-typeset a:hover { text-decoration: underline; }
+
+.md-header :focus-visible,
+.md-tabs :focus-visible,
+.md-sidebar :focus-visible,
+.md-path :focus-visible,
+.md-content :focus-visible,
+.md-footer :focus-visible {
+  outline: 2px solid var(--md-accent-fg-color);
+  outline-offset: 2px;
+}

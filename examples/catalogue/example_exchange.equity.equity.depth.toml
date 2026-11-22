@@ -1,0 +1,53 @@
+# Synthetic independent snapshot records for the manual catalogue walkthrough.
+schema_version = 2
+kind = "profile"
+id = "example_exchange.equity.equity.depth"
+format_code = "EXAMPLE-EXCHANGE-B1"
+exchange = "example_exchange"
+instrument_type = "equity"
+market_category = "equity"
+
+[source]
+container = "plain"
+format = "jsonl"
+record_format = "snapshot_rows"
+ordering = "chronological"
+granularity = "daily"
+
+[fields.timestamp]
+type = "integer"
+encoding = "unix_nanoseconds"
+
+[fields.asks]
+type = "array"
+ordering = "price_ascending"
+level_format = ["price", "quantity"]
+
+[fields.bids]
+type = "array"
+ordering = "price_descending"
+level_format = ["price", "quantity"]
+
+[normalization]
+target = "l2_snapshot"
+quantity_encoding = "base"
+
+[normalization.event_timestamp]
+field = "timestamp"
+
+[normalization.snapshot]
+type = "single_row"
+
+[normalization.bids]
+field = "bids"
+
+[normalization.asks]
+field = "asks"
+
+[normalization.book]
+update_id = false
+sequence_id = false
+
+[normalization.book.snapshot_depth]
+asks = 1
+bids = 1

@@ -1,0 +1,6943 @@
+
+
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Historical market-data acquisition, normalization and dataset inspection">
+      
+      
+      
+        <link rel="canonical" href="https://flowdrivenml.github.io/marketforge/development/convert/">
+      
+      
+      
+      
+        <link rel="prev" href="../merge/">
+      
+      
+        <link rel="next" href="../operations/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/branding/logo_small.png">
+      <meta name="generator" content="zensical-0.1.3">
+    
+    
+      
+        <title>Conversion Engine architecture - MarketForge</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
+    <div data-md-component="skip">
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="MarketForge" class="md-header__button md-logo" aria-label="MarketForge" data-md-component="logo">
+      
+  <img src="../../assets/branding/logo_small.png" alt="MarketForge">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+      <span class="md-visually-hidden">Navigation</span>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MarketForge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Conversion Engine architecture
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+          <span class="md-visually-hidden">Search</span>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/flowdrivenml/marketforge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../.." class="md-tabs__link">
+          
+  
+  Using MarketForge
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="MarketForge" class="md-nav__button md-logo" aria-label="MarketForge" data-md-component="logo">
+      
+  <img src="../../assets/branding/logo_small.png" alt="MarketForge">
+
+    </a>
+    MarketForge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/flowdrivenml/marketforge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../.." class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Using MarketForge
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Using MarketForge
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Getting started
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_2" id="__nav_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Getting started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Installation and workspace setup
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  First dataset: Bybit trades and depth
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Guides
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3" id="__nav_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Guides
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/markets/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Explore markets
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_2" id="__nav_1_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Explore markets
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/markets/instrument-discovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Discover and inspect instruments
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/markets/market-statistics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Retrieve and interpret market statistics
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/markets/rankings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Build and inspect market rankings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/acquisition/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquire historical data
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_3" id="__nav_1_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Acquire historical data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/historical-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquire historical archives
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Register and normalize manually supplied data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/managing-acquisitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Manage raw storage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/catalogue/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue and specifications
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_5" id="__nav_1_3_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_5_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Catalogue and specifications
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/exchanges-and-instruments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Exchanges and instruments
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/specifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Instrument specifications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/external-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Register external recordings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_7" id="__nav_1_3_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Author format profiles
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_7_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_7">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Author format profiles
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Trades and L2 depth profiles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profile-trades/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Create a trade profile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profile-depth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Create a depth profile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profile-troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Validate, install and troubleshoot profiles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Process data
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_8">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Process data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalize registered data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge registered normalized files
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepare historical conversion
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical pipeline
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_9" id="__nav_1_3_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect datasets
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_9_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_9">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Inspect datasets
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect registered datasets
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/notebooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Explore datasets in Jupyter
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/forge-tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Interactive Forge workspace
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Concepts
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_4" id="__nav_1_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Concepts
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/identity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Identity and provenance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/time/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Time, selection, and coverage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/depth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Depth observations and reconstruction
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/ordering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Ordering and reconciliation
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/evidence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Execution, publication, and lineage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Reference
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5" id="__nav_1_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_5_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Reference
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/cli/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  CLI
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5_2" id="__nav_1_5_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  CLI
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Interactive Forge workspace
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/acquisition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquisition commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Raw storage commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/runs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Execution history and retained evidence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/catalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and maintenance commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managed Engine commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Import, profile and registration commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/convert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Dataset commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/markets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Market and ranking commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../configuration/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and recipes
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5_3" id="__nav_1_5_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Configuration and recipes
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/application/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Application settings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/acquisition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquisition and raw import recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/catalogue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue declarations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/markets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Ranking and historical metadata policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_4" id="__nav_1_5_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Format profiles
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Format profiles
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical normalization profile schema
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/profile-fields/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization profile field index
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managed raw registration declarations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_6" id="__nav_1_5_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared jobs and retained evidence
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Prepared jobs and retained evidence
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prepared/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared Engine contracts
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prepared-normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared normalization batch
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prepared-merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared merge job
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prepared-conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared conversion job
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prepared-forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge preparation and run evidence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_7" id="__nav_1_5_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Publication formats
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_7_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_7">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Publication formats
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/publications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Publication formats
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/publication-normalized/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalized publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/publication-merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merged publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/publication-converted/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Converted publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/python-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Python dataset API
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../examples/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Examples
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_6" id="__nav_1_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Examples
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/catalogue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Synthetic trade and depth recordings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/catalogue/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge a compatible trade file
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/bring-your-own-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Bring your own historical data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/bring-your-own-data/databento/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Databento AAPL Trades and MBP-10
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Troubleshooting
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Development
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Development
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Getting started
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Getting started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Local development
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first-contribution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  First contribution
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Architecture
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_2_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Architecture
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  System overview
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion Engine architecture
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-conversion-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What conversion changes
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What conversion changes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#conversion-preserves-the-event-population" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Conversion preserves the event population
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#module-boundaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Module boundaries
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#execution-entry-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Execution entry points
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Execution entry points">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-caller-composes-the-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The caller composes the lifecycle
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bind-prepared-inputs-to-physical-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Bind prepared inputs to physical evidence
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Bind prepared inputs to physical evidence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#metadata-binding-and-payload-hashing-are-separate" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Metadata binding and payload hashing are separate
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-alternate-catalogue-resolver" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The alternate catalogue resolver
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-modes-and-reference-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Source modes and reference selection
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#plan-currency-paths-before-evaluating-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Plan currency paths before evaluating events
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Plan currency paths before evaluating events">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#path-policy-affects-the-available-candidates" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Path policy affects the available candidates
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preserve-exact-arithmetic-through-the-shared-domain" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preserve exact arithmetic through the shared domain
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reference-timing-determines-eligibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Reference timing determines eligibility
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reference timing determines eligibility">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#evaluate-internal-trades-before-observing-them" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Evaluate internal trades before observing them
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#advance-external-references-strictly-before-the-source-timestamp" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Advance external references strictly before the source timestamp
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preserve-causal-input-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preserve causal input order
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Preserve causal input order">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#retain-enough-reference-history-for-timestamp-regressions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Retain enough reference history for timestamp regressions
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mode-specific-conversion-kernels" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Mode-specific conversion kernels
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Mode-specific conversion kernels">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#trades" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Trades
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#depth" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Depth
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#target-depth-prices-are-event-time-annotations" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Target depth prices are event-time annotations
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#combined-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Combined events
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#partition-by-physical-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Partition by physical order
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Partition by physical order">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-checkpoint-represents-the-preceding-source-prefix" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        A checkpoint represents the preceding source prefix
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-prepass-must-reproduce-execution-alignment" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The prepass must reproduce execution alignment
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workers-preserve-deterministic-output-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Workers preserve deterministic output order
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resource-behavior-and-interruption" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Resource behavior and interruption
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Resource behavior and interruption">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#interruption-is-cooperative" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Interruption is cooperative
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-schemas" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Output schemas
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Output schemas">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shared-conversion-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Shared conversion metadata
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#status-and-failure-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Status and failure codes
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validation-has-several-separate-responsibilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Validation has several separate responsibilities
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Validation has several separate responsibilities">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#validate-the-written-representation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Validate the written representation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#validate-target-arithmetic-where-implemented" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Validate target arithmetic where implemented
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preserve-original-columns-exactly" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preserve original columns exactly
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reconcile-the-execution-receipt" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Reconcile the execution receipt
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#publish-the-converted-dataset" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Publish the converted dataset
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Publish the converted dataset">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#publication-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Publication contents
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#format-versions-and-reconstruction-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Format versions and reconstruction evidence
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#current-publication-implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Current publication implementation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#progress-and-diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Progress and diagnostics
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Progress and diagnostics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#diagnose-the-stage-that-owns-the-failure" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Diagnose the stage that owns the failure
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extending-conversion" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extending conversion
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Extending conversion">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#add-a-reference-source-or-selection-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add a reference source or selection rule
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-route-selection-or-arithmetic" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Change route selection or arithmetic
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extend-converted-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extend converted fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extend-depth-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extend depth semantics
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-partitioning-or-resource-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Change partitioning or resource control
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#strengthen-publication-or-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Strengthen publication or validation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#testing-conversion-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Testing conversion changes
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-development-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Related development paths
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical operation lifecycles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../forge-tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge workspace architecture and action inventory
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extending MarketForge
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Extending MarketForge
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extending/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extension decision guide
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extend source integration and processing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extend orchestration and persistence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Testing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Debugging and performance
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Debugging and performance
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../debugging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Debugging historical workflows
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Performance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Contributing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-conversion-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What conversion changes
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What conversion changes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#conversion-preserves-the-event-population" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Conversion preserves the event population
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#module-boundaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Module boundaries
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#execution-entry-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Execution entry points
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Execution entry points">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-caller-composes-the-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The caller composes the lifecycle
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bind-prepared-inputs-to-physical-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Bind prepared inputs to physical evidence
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Bind prepared inputs to physical evidence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#metadata-binding-and-payload-hashing-are-separate" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Metadata binding and payload hashing are separate
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-alternate-catalogue-resolver" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The alternate catalogue resolver
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-modes-and-reference-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Source modes and reference selection
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#plan-currency-paths-before-evaluating-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Plan currency paths before evaluating events
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Plan currency paths before evaluating events">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#path-policy-affects-the-available-candidates" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Path policy affects the available candidates
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preserve-exact-arithmetic-through-the-shared-domain" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preserve exact arithmetic through the shared domain
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reference-timing-determines-eligibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Reference timing determines eligibility
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reference timing determines eligibility">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#evaluate-internal-trades-before-observing-them" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Evaluate internal trades before observing them
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#advance-external-references-strictly-before-the-source-timestamp" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Advance external references strictly before the source timestamp
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preserve-causal-input-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preserve causal input order
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Preserve causal input order">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#retain-enough-reference-history-for-timestamp-regressions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Retain enough reference history for timestamp regressions
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mode-specific-conversion-kernels" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Mode-specific conversion kernels
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Mode-specific conversion kernels">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#trades" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Trades
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#depth" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Depth
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#target-depth-prices-are-event-time-annotations" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Target depth prices are event-time annotations
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#combined-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Combined events
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#partition-by-physical-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Partition by physical order
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Partition by physical order">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-checkpoint-represents-the-preceding-source-prefix" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        A checkpoint represents the preceding source prefix
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-prepass-must-reproduce-execution-alignment" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The prepass must reproduce execution alignment
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workers-preserve-deterministic-output-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Workers preserve deterministic output order
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#resource-behavior-and-interruption" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Resource behavior and interruption
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Resource behavior and interruption">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#interruption-is-cooperative" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Interruption is cooperative
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-schemas" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Output schemas
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Output schemas">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shared-conversion-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Shared conversion metadata
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#status-and-failure-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Status and failure codes
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#validation-has-several-separate-responsibilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Validation has several separate responsibilities
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Validation has several separate responsibilities">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#validate-the-written-representation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Validate the written representation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#validate-target-arithmetic-where-implemented" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Validate target arithmetic where implemented
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preserve-original-columns-exactly" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preserve original columns exactly
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reconcile-the-execution-receipt" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Reconcile the execution receipt
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#publish-the-converted-dataset" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Publish the converted dataset
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Publish the converted dataset">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#publication-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Publication contents
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#format-versions-and-reconstruction-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Format versions and reconstruction evidence
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#current-publication-implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Current publication implementation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#progress-and-diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Progress and diagnostics
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Progress and diagnostics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#diagnose-the-stage-that-owns-the-failure" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Diagnose the stage that owns the failure
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extending-conversion" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extending conversion
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Extending conversion">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#add-a-reference-source-or-selection-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add a reference source or selection rule
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-route-selection-or-arithmetic" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Change route selection or arithmetic
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extend-converted-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extend converted fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extend-depth-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extend depth semantics
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-partitioning-or-resource-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Change partitioning or resource control
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#strengthen-publication-or-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Strengthen publication or validation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#testing-conversion-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Testing conversion changes
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-development-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Related development paths
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+      
+        
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Development
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../architecture/" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Architecture
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
+                
+                  
+
+  
+  
+
+
+<h1 id="conversion-engine-architecture">Conversion Engine architecture</h1>
+<pre class="mermaid"><code>flowchart TD
+    J["Prepared conversion job"] --&gt; B["Bind publications and stream identities"]
+    S["Source physical merge"] --&gt; B
+    R["Optional reference trade merge"] --&gt; B
+
+    B --&gt; P["Plan currency conversion paths"]
+    P --&gt; V["Verify input payload checksums"]
+    V --&gt; C["Initialize reference state or build checkpoints"]
+
+    C --&gt; K["Convert events in source order"]
+    S --&gt; K
+    R --&gt;|Eligible reference observations| K
+
+    K --&gt; O["Write converted Parquet"]
+    K --&gt; E["Retain execution receipt"]
+
+    O --&gt; G["Validate output and reconcile accounting"]
+    E --&gt; G
+    S --&gt;|Original columns| G
+
+    G --&gt; M["Write conversion manifest"]
+    M --&gt; F["Publish converted dataset"]</code></pre>
+<p>The conversion engine expresses selected market-data values in a target quote currency while preserving the original merged events.</p>
+<p>It reads a physical merge publication, evaluates conversion paths against eligible reference trades, and appends target values together with the evidence used to calculate them. The output retains the original prices, quantities, identities, event order, and depth changes.</p>
+<p>The implementation lives in <code>engine/src/historical/convert/</code>. Its historical execution code handles publication binding, Parquet input, temporal alignment, partition checkpoints, output construction, validation, and publication. Currency graphs, reference-state evaluation, and monetary arithmetic belong to the shared conversion domain.</p>
+<p>The diagram shows the composed execution lifecycle. The caller coordinates preparation, content verification, materialization, receipt persistence, and publication through separate APIs.<sup id="fnref:module"><a class="footnote-ref" href="#fn:module">1</a></sup><sup id="fnref:prepared"><a class="footnote-ref" href="#fn:prepared">3</a></sup><sup id="fnref:publication"><a class="footnote-ref" href="#fn:publication">27</a></sup></p>
+<h2 id="what-conversion-changes">What conversion changes</h2>
+<p>Conversion adds target values for two economic quantities:</p>
+<table>
+<thead>
+<tr>
+<th>Source value</th>
+<th>Added value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Event or level price</td>
+<td>Price expressed in the target quote currency.</td>
+</tr>
+<tr>
+<td>Quote quantity, when present</td>
+<td>Quote quantity expressed in the target quote currency.</td>
+</tr>
+</tbody>
+</table>
+<p>Base quantities and contract quantities remain part of the preserved source data. A missing quote quantity remains missing; conversion does not derive it from other fields.</p>
+<p>Other source fields, including mark prices, index prices, and implied volatility where present, are preserved. Their presence does not imply that conversion creates target versions of them.</p>
+<p>For an illustrative direct reference:</p>
+<div class="highlight"><pre><span></span><code>Native price:       100 USDT
+Reference price:   0.999 USD per USDT
+Target price:      99.9 USD
+</code></pre></div>
+<p>The original price remains available alongside the target price. Each successful non-identity conversion also records its currency path and the reference observations used.</p>
+<p>A depth level receives the same kind of event-time valuation. Conversion does not reconstruct and reprice the entire book whenever a reference changes.<sup id="fnref:schemas"><a class="footnote-ref" href="#fn:schemas">18</a></sup><sup id="fnref:trade-kernel"><a class="footnote-ref" href="#fn:trade-kernel">8</a></sup><sup id="fnref:depth-kernel"><a class="footnote-ref" href="#fn:depth-kernel">9</a></sup></p>
+<h3 id="conversion-preserves-the-event-population">Conversion preserves the event population</h3>
+<p>Every source event remains represented in the converted output.</p>
+<p>An event whose target value cannot be calculated receives an unavailable status and null target values. An event outside the selected conversion scope in combined mode receives a skipped status.</p>
+<p>Neither condition removes the original event.</p>
+<p>A successfully published dataset can therefore contain unavailable or skipped conversions. Publication success means the output passed its applicable validation and accounting checks; the status counters describe conversion availability.<sup id="fnref:statuses"><a class="footnote-ref" href="#fn:statuses">19</a></sup><sup id="fnref:receipt"><a class="footnote-ref" href="#fn:receipt">25</a></sup><sup id="fnref2:publication"><a class="footnote-ref" href="#fn:publication">27</a></sup></p>
+<h2 id="module-boundaries">Module boundaries</h2>
+<p>Paths in this table are relative to <code>engine/src/historical/convert/</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>planning/prepared.rs</code></td>
+<td>Bind a prepared job to physical publications and embedded stream metadata.</td>
+</tr>
+<tr>
+<td><code>planning/catalog.rs</code></td>
+<td>Resolve reference selection and provide the alternate catalogue-based resolution API.</td>
+</tr>
+<tr>
+<td><code>planning/planner.rs</code></td>
+<td>Adapt the historical job to the shared conversion planner.</td>
+</tr>
+<tr>
+<td><code>reference/reader.rs</code></td>
+<td>Read physical trade observations used as references.</td>
+</tr>
+<tr>
+<td><code>reference/external.rs</code></td>
+<td>Advance and restore an external reference cursor.</td>
+</tr>
+<tr>
+<td><code>execution/shared/</code></td>
+<td>Source readers, row-group partitions, common checkpoints, and trade reference prepasses.</td>
+</tr>
+<tr>
+<td><code>execution/trades/</code></td>
+<td>Trade conversion kernels, sequential materialization, and parallel workers.</td>
+</tr>
+<tr>
+<td><code>execution/depth/</code></td>
+<td>Depth valuation, external reference alignment, checkpoints, and workers.</td>
+</tr>
+<tr>
+<td><code>execution/combined/</code></td>
+<td>Mixed-event conversion, internal/external reference alignment, selection, and workers.</td>
+</tr>
+<tr>
+<td><code>output/schema/</code></td>
+<td>Appended Arrow fields, conversion rows, status codes, and batch construction.</td>
+</tr>
+<tr>
+<td><code>output/writers/</code></td>
+<td>Combined batch construction and the adapter to merge’s physical Parquet writer.</td>
+</tr>
+<tr>
+<td><code>output/validation/</code></td>
+<td>Physical validation, numeric checks, causal positions, and source preservation.</td>
+</tr>
+<tr>
+<td><code>output/publication/</code></td>
+<td>Execution receipts, manifests, reference provenance, and publication.</td>
+</tr>
+<tr>
+<td><code>progress/</code></td>
+<td>Phase reporting, partition counters, validation progress, and cooperative interruption.</td>
+</tr>
+</tbody>
+</table>
+<p>Several small modules are reexports rather than local implementations:</p>
+<table>
+<thead>
+<tr>
+<th>Historical module</th>
+<th>Implementation owner</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>planning/graph.rs</code></td>
+<td><code>shared::conversion::graph</code></td>
+</tr>
+<tr>
+<td><code>reference/state.rs</code></td>
+<td><code>shared::conversion::reference</code></td>
+</tr>
+<tr>
+<td><code>reference/evaluation.rs</code></td>
+<td><code>shared::conversion::evaluation</code></td>
+</tr>
+<tr>
+<td><code>shared/decimal.rs</code></td>
+<td><code>shared::conversion::decimal</code></td>
+</tr>
+<tr>
+<td><code>trades/trade.rs</code></td>
+<td><code>shared::conversion::trades</code></td>
+</tr>
+<tr>
+<td><code>depth/depth.rs</code></td>
+<td><code>shared::conversion::depth</code></td>
+</tr>
+</tbody>
+</table>
+<p>Changes to path enumeration, reference-history semantics, decimal arithmetic, or the underlying monetary calculations belong in those shared modules. Historical adapters should remain responsible for translating persisted data into that domain.<sup id="fnref2:module"><a class="footnote-ref" href="#fn:module">1</a></sup><sup id="fnref:shared"><a class="footnote-ref" href="#fn:shared">2</a></sup></p>
+<h2 id="execution-entry-points">Execution entry points</h2>
+<p>The public APIs expose several stages of the lifecycle.</p>
+<table>
+<thead>
+<tr>
+<th>API</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prepare_conversion_execution</code></td>
+<td>Validate and bind prepared publication evidence, resolve references, and construct the conversion plan.</td>
+</tr>
+<tr>
+<td><code>PreparedConversion::verify_content</code></td>
+<td>Hash source and external-reference payload files against their bound checksum inventories.</td>
+</tr>
+<tr>
+<td><code>materialize_trade_conversion</code></td>
+<td>Sequentially write converted trade output into staging.</td>
+</tr>
+<tr>
+<td><code>materialize_depth_conversion</code></td>
+<td>Sequentially write depth output using external trade references.</td>
+</tr>
+<tr>
+<td><code>materialize_combined_conversion</code></td>
+<td>Sequentially write combined output with internal and optional external references.</td>
+</tr>
+<tr>
+<td><code>execute_parallel_conversion</code></td>
+<td>Execute checkpointed trade partitions.</td>
+</tr>
+<tr>
+<td><code>execute_parallel_depth_conversion</code></td>
+<td>Execute checkpointed depth partitions.</td>
+</tr>
+<tr>
+<td><code>execute_parallel_combined_conversion</code></td>
+<td>Execute checkpointed combined partitions.</td>
+</tr>
+<tr>
+<td><code>publish_conversion</code> and the depth/combined variants</td>
+<td>Validate staging, reconcile the receipt, verify source preservation, write the manifest, and publish.</td>
+</tr>
+</tbody>
+</table>
+<p>Progress-enabled variants expose the same operations with reporting and interruption checks.</p>
+<p><code>execute_conversion_sequential</code> has a different role: it evaluates reference availability and returns statistics. It does not materialize converted Parquet or publish a dataset.<sup id="fnref:entrypoints"><a class="footnote-ref" href="#fn:entrypoints">6</a></sup></p>
+<h3 id="the-caller-composes-the-lifecycle">The caller composes the lifecycle</h3>
+<p>For a sequential trade conversion, the call sequence is:</p>
+<div class="highlight"><pre><span></span><code><span class="kd">let</span><span class="w"> </span><span class="n">prepared</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">prepare_conversion_execution</span><span class="p">(</span><span class="o">&amp;</span><span class="n">job</span><span class="p">)</span><span class="o">?</span><span class="p">;</span>
+
+<span class="n">prepared</span><span class="p">.</span><span class="n">verify_content</span><span class="p">(</span><span class="o">&amp;</span><span class="n">job</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">reporter</span><span class="p">)</span><span class="o">?</span><span class="p">;</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="n">metrics</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">materialize_trade_conversion_with_progress</span><span class="p">(</span>
+<span class="w">    </span><span class="o">&amp;</span><span class="n">job</span><span class="p">,</span>
+<span class="w">    </span><span class="o">&amp;</span><span class="n">prepared</span><span class="p">.</span><span class="n">source</span><span class="p">,</span>
+<span class="w">    </span><span class="o">&amp;</span><span class="n">prepared</span><span class="p">.</span><span class="n">plan</span><span class="p">,</span>
+<span class="w">    </span><span class="o">&amp;</span><span class="n">staging</span><span class="p">,</span>
+<span class="w">    </span><span class="o">&amp;</span><span class="n">parquet</span><span class="p">,</span>
+<span class="w">    </span><span class="o">&amp;</span><span class="n">reporter</span><span class="p">,</span>
+<span class="p">)</span><span class="o">?</span><span class="p">;</span>
+
+<span class="n">ConversionExecutionReceipt</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">job</span><span class="p">.</span><span class="n">job_id</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">metrics</span><span class="p">)</span><span class="o">?</span>
+<span class="w">    </span><span class="p">.</span><span class="n">write</span><span class="p">(</span><span class="o">&amp;</span><span class="n">staging</span><span class="p">)</span><span class="o">?</span><span class="p">;</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="n">publication</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">publish_conversion_with_progress</span><span class="p">(</span>
+<span class="w">    </span><span class="o">&amp;</span><span class="n">job</span><span class="p">,</span>
+<span class="w">    </span><span class="o">&amp;</span><span class="n">prepared</span><span class="p">.</span><span class="n">source</span><span class="p">,</span>
+<span class="w">    </span><span class="o">&amp;</span><span class="n">staging</span><span class="p">,</span>
+<span class="w">    </span><span class="o">&amp;</span><span class="n">reporter</span><span class="p">,</span>
+<span class="p">)</span><span class="o">?</span><span class="p">;</span>
+</code></pre></div>
+<p>This example assumes the caller has loaded the job, selected a fresh staging path, and supplied Parquet settings and a reporter.</p>
+<p>Materialization returns execution metrics. The caller creates the receipt from those metrics before requesting publication. Writing staged Parquet alone does not complete the publication workflow.<sup id="fnref:trade-materialization"><a class="footnote-ref" href="#fn:trade-materialization">7</a></sup><sup id="fnref2:receipt"><a class="footnote-ref" href="#fn:receipt">25</a></sup><sup id="fnref3:publication"><a class="footnote-ref" href="#fn:publication">27</a></sup></p>
+<h2 id="bind-prepared-inputs-to-physical-evidence">Bind prepared inputs to physical evidence</h2>
+<p><code>prepare_conversion_execution()</code> consumes a <code>ConvertJob</code> containing the source publication declaration and optional external-reference declaration.</p>
+<p>The prepared job supplies stream identities and currency metadata. Execution binds those declarations to the physical merge evidence rather than performing database discovery.</p>
+<p>For each publication, binding checks:</p>
+<ol>
+<li>The SHA-256 of <code>manifest.json</code>.</li>
+<li>The SHA-256 of <code>publication-checksums.json</code>.</li>
+<li>The merge job identity and manifest entry in the checksum inventory.</li>
+<li>Checksum entries for every declared primary file.</li>
+<li>Physical file sizes, schemas, row counts, and row-group totals.</li>
+<li>Normalized-parent declarations against retained merge input evidence.</li>
+<li>Stream kind, rank, stream ID, publication ID, instrument ID, exchange, symbol, and available currency metadata.</li>
+</ol>
+<p>The resulting <code>PreparedConversion</code> contains the source manifest, optional external manifest, conversion plan, and bound checksum inventories.</p>
+<p>Prepared execution does not require reopening every original normalization directory or loading an external instrument catalogue. Its currency declarations come from the prepared bindings and are checked against the available publication evidence.<sup id="fnref2:prepared"><a class="footnote-ref" href="#fn:prepared">3</a></sup></p>
+<h3 id="metadata-binding-and-payload-hashing-are-separate">Metadata binding and payload hashing are separate</h3>
+<p><code>validate_conversion_input()</code> inspects the manifest, file inventory, Arrow schema, and Parquet footers. It does not scan every market row.</p>
+<p><code>PreparedConversion::verify_content()</code> performs the separate full-file hashing pass. It checks every primary file in the source and optional external publication against the bound inventory.</p>
+<p>Calling <code>prepare_conversion_execution()</code> alone does not perform that full payload verification.</p>
+<p>Maintain this distinction when adding a new entry point: a valid schema and matching publication metadata establish different facts from verified payload bytes.<sup id="fnref3:prepared"><a class="footnote-ref" href="#fn:prepared">3</a></sup><sup id="fnref:readers"><a class="footnote-ref" href="#fn:readers">14</a></sup></p>
+<h3 id="the-alternate-catalogue-resolver">The alternate catalogue resolver</h3>
+<p><code>resolve_conversion_catalog()</code> and <code>resolve_conversion_catalog_with_normalization_root()</code> provide a separate library route.</p>
+<p>They resolve instruments through an <code>InstrumentCatalog</code> and normalized processing provenance, including compatibility handling for older processing-job layouts.</p>
+<p>That route is useful when constructing conversion inputs from catalogue information. Its catalogue and normalization-root requirements are not prerequisites of the prepared execution API.<sup id="fnref:catalogue"><a class="footnote-ref" href="#fn:catalogue">4</a></sup></p>
+<h2 id="source-modes-and-reference-selection">Source modes and reference selection</h2>
+<p>Reference prices come from explicitly selected trade streams.</p>
+<table>
+<thead>
+<tr>
+<th>Source mode</th>
+<th>Reference source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Trades</td>
+<td>Selected trades inside the source publication. An external reference publication is rejected.</td>
+</tr>
+<tr>
+<td>Depth</td>
+<td>A separate trade-only physical merge.</td>
+</tr>
+<tr>
+<td>Combined</td>
+<td>Matching internal trade streams first, with external trade streams used where no internal match is selected.</td>
+</tr>
+</tbody>
+</table>
+<p>External reference publications must be trade-only physical merges.</p>
+<p>Reference selection rejects missing requested instruments, duplicate selected reference stream IDs, and ambiguous external references that conflict with internal combined trade streams.</p>
+<p>The prepared execution path also applies these restrictions:</p>
+<ul>
+<li>Trade conversion rejects unresolved planned streams.</li>
+<li>Depth conversion requires an external reference publication and at least one nonempty conversion path using reference edges.</li>
+<li>Combined conversion validates the separation between internal and external reference sets.</li>
+</ul>
+<p>An entirely identity-only depth job therefore does not automatically bypass external-reference setup in the current prepared path.</p>
+<p>The conversion kernels also require unambiguous source stream ranks. Treat stream rank as a validated binding, not a value that can be reassigned while reading rows.<sup id="fnref2:catalogue"><a class="footnote-ref" href="#fn:catalogue">4</a></sup><sup id="fnref4:prepared"><a class="footnote-ref" href="#fn:prepared">3</a></sup><sup id="fnref:reference-selection"><a class="footnote-ref" href="#fn:reference-selection">11</a></sup></p>
+<h2 id="plan-currency-paths-before-evaluating-events">Plan currency paths before evaluating events</h2>
+<p><code>plan_conversion()</code> translates the historical configuration into inputs for the shared planner:</p>
+<ul>
+<li>Target quote currency.</li>
+<li>Resolved source instruments.</li>
+<li>Selected reference instruments.</li>
+<li>Instrument-kind selection.</li>
+<li>Maximum hop count.</li>
+</ul>
+<p>The resulting <code>ConversionPlan</code> records each source stream’s identity-conversion status, selection status, and candidate currency paths.</p>
+<p>A path describes how to express the source quote currency in the target quote currency. Each edge identifies a reference stream and its conversion direction.</p>
+<p>Planning establishes that a route exists. It does not establish that the necessary observations will be available and fresh at every source event.<sup id="fnref:planner"><a class="footnote-ref" href="#fn:planner">5</a></sup></p>
+<h3 id="path-policy-affects-the-available-candidates">Path policy affects the available candidates</h3>
+<p>For <code>ConversionPathPolicy::Primary</code>, the historical wrapper truncates each stream’s candidate list to its first path before execution.</p>
+<p>The event kernels then try the retained candidate paths in their supplied order. They stop after a path successfully evaluates and converts the required values.</p>
+<p>If an attempted path fails evaluation or arithmetic, another retained path may be tried. Primary policy has already removed those alternatives.</p>
+<p>This produces one conversion result per source event. It does not expand one event into a separate output row for every candidate path.<sup id="fnref2:planner"><a class="footnote-ref" href="#fn:planner">5</a></sup><sup id="fnref2:trade-kernel"><a class="footnote-ref" href="#fn:trade-kernel">8</a></sup><sup id="fnref2:depth-kernel"><a class="footnote-ref" href="#fn:depth-kernel">9</a></sup></p>
+<h3 id="preserve-exact-arithmetic-through-the-shared-domain">Preserve exact arithmetic through the shared domain</h3>
+<p>Target values use <code>Decimal256(76, 28)</code> in the output schema.</p>
+<p>The numeric validation path reconstructs a rational conversion factor from the serialized reference prices and directions:</p>
+<ul>
+<li>A direct edge contributes its reference price.</li>
+<li>An inverse edge contributes the reciprocal.</li>
+<li>Multiple edges contribute to one combined numerator and denominator.</li>
+</ul>
+<p>The stored <code>conversion_rate</code> is a decimal representation of that factor. Target values are calculated through the shared decimal operations using the path ratio.</p>
+<p>Do not replace this with multiplication by an already rounded stored rate. Doing so can introduce an additional rounding step and produce different target values.</p>
+<p>The shared decimal implementation owns the exact rounding and overflow policy.<sup id="fnref:numeric-validation"><a class="footnote-ref" href="#fn:numeric-validation">21</a></sup><sup id="fnref2:shared"><a class="footnote-ref" href="#fn:shared">2</a></sup></p>
+<h2 id="reference-timing-determines-eligibility">Reference timing determines eligibility</h2>
+<p>A conversion uses observations that are eligible for the source event.</p>
+<p>Reference evidence carries:</p>
+<ul>
+<li>Publication and stream identity.</li>
+<li>Event timestamp.</li>
+<li>Stream rank.</li>
+<li>Task ID.</li>
+<li>Event ordinal.</li>
+<li>Native reference price.</li>
+</ul>
+<p>The event kernel passes its <code>ReferenceKey</code> and <code>max_staleness_ns</code> to the shared evaluator. Missing observations, stale observations, future observations, identity mismatches, and arithmetic failures remain distinct outcomes.</p>
+<p>The original reference price is installed in state. Converted target values are not recursively fed back as reference observations.<sup id="fnref3:trade-kernel"><a class="footnote-ref" href="#fn:trade-kernel">8</a></sup><sup id="fnref:external-references"><a class="footnote-ref" href="#fn:external-references">12</a></sup></p>
+<h3 id="evaluate-internal-trades-before-observing-them">Evaluate internal trades before observing them</h3>
+<p>An internal trade reference becomes available after its own event has been evaluated.</p>
+<p>This ordering prevents a trade from supplying its own newly observed price during its conversion.</p>
+<h3 id="advance-external-references-strictly-before-the-source-timestamp">Advance external references strictly before the source timestamp</h3>
+<p><code>ExternalReferenceCursor::advance_before()</code> consumes external observations whose timestamps are strictly less than the current source timestamp.</p>
+<p>The first observation at or after that timestamp remains pending. Unselected external streams still advance the physical cursor position, but they do not update the selected reference state.</p>
+<p>An external observation at exactly the source timestamp is therefore not eligible through this cursor.</p>
+<p>Internal reference eligibility additionally follows the reference-key ordering enforced by evaluation and validation. A same-timestamp internal observation can precede a later event by its key; that differs from the external cursor’s strict timestamp rule.<sup id="fnref2:external-references"><a class="footnote-ref" href="#fn:external-references">12</a></sup><sup id="fnref:reference-validation"><a class="footnote-ref" href="#fn:reference-validation">22</a></sup></p>
+<pre class="mermaid"><code>sequenceDiagram
+    participant L as Source loop
+    participant A as Reference alignment
+    participant E as External trade cursor
+    participant K as Conversion kernel
+    participant S as Reference state
+
+    L-&gt;&gt;A: Source event
+    opt External references configured
+        A-&gt;&gt;E: Advance strictly before event timestamp
+        E-&gt;&gt;S: Install eligible observations
+    end
+
+    A-&gt;&gt;K: Evaluate source event
+    K-&gt;&gt;S: Resolve eligible path observations
+    S--&gt;&gt;K: Rate and evidence, or unavailable reason
+    K--&gt;&gt;A: Conversion result
+
+    opt Source event is an internal reference trade
+        A-&gt;&gt;S: Install original trade observation
+    end
+
+    A--&gt;&gt;L: Source event with appended conversion fields</code></pre>
+<p>The diagram describes the ordering rule shared by the alignment and kernel layers. Publication and writing occur after the result is constructed.<sup id="fnref:combined-kernel"><a class="footnote-ref" href="#fn:combined-kernel">10</a></sup><sup id="fnref:alignment"><a class="footnote-ref" href="#fn:alignment">13</a></sup></p>
+<h2 id="preserve-causal-input-order">Preserve causal input order</h2>
+<p>Conversion inherits the source publication’s ordering contract.</p>
+<p>For chronological input, <code>PhysicalConversionReader</code> checks nondecreasing reference keys.</p>
+<p>For causal input, it validates:</p>
+<ul>
+<li>Contiguous <code>timeline_sequence</code>.</li>
+<li>Required timestamp and reconstruction fields.</li>
+<li>Agreement between <code>reconstruction_only</code> and membership in the requested interval.</li>
+<li>Depth-only use of out-of-interval reconstruction observations.</li>
+</ul>
+<p>It does not sort causal events into timestamp order.<sup id="fnref2:readers"><a class="footnote-ref" href="#fn:readers">14</a></sup></p>
+<h3 id="retain-enough-reference-history-for-timestamp-regressions">Retain enough reference history for timestamp regressions</h3>
+<p>A causal source can move backward in event time while progressing forward in timeline order.</p>
+<p>Before processing such a source, the reader performs a timestamp-only scan. It measures the largest backward distance from the running timestamp high-water mark and initializes <code>ReferenceState</code> with that regression window.</p>
+<p>This pass reads timestamps, not future reference prices. Actual reference prices still enter state during the ordered traversal.</p>
+<p>When an external cursor encounters a permitted source timestamp regression, it does not rewind its files. Historical selection is handled by the retained shared reference state.</p>
+<p>Changes to this behavior must keep the timestamp scan, state retention, external advancement, and checkpoint restoration consistent.<sup id="fnref3:readers"><a class="footnote-ref" href="#fn:readers">14</a></sup><sup id="fnref3:external-references"><a class="footnote-ref" href="#fn:external-references">12</a></sup></p>
+<h2 id="mode-specific-conversion-kernels">Mode-specific conversion kernels</h2>
+<h3 id="trades">Trades</h3>
+<p><code>TradeConversionKernel</code> resolves the planned stream, validates its publication identity, constructs the event key, and evaluates conversion.</p>
+<p>Its output is one of:</p>
+<ul>
+<li>Identity values with rate one.</li>
+<li>Converted values with a selected path and reference evidence.</li>
+<li>Unavailable values with a failure reason.</li>
+</ul>
+<p>The optional quote quantity retains its nullability.</p>
+<p>If the trade belongs to a selected reference stream, its original observation enters state after evaluation.<sup id="fnref4:trade-kernel"><a class="footnote-ref" href="#fn:trade-kernel">8</a></sup></p>
+<h3 id="depth">Depth</h3>
+<p><code>DepthConversionKernel</code> evaluates one conversion path for the complete source observation and applies that path to the observation’s level changes.</p>
+<p>The target changes remain positionally aligned with the original list.</p>
+<p>Conversion is atomic at the observation level:</p>
+<ol>
+<li>Attempt the selected path for all levels.</li>
+<li>If a level fails arithmetic, discard that attempt.</li>
+<li>Try another retained path where available.</li>
+<li>If no path succeeds, emit null target values for every original level.</li>
+</ol>
+<p>The optimized depth path writes into contiguous buffers. It records the buffer position before an attempt and rolls back appended values and validity bits if the attempt fails.</p>
+<p>An observation with no level changes still receives conversion metadata and an empty target list.<sup id="fnref3:depth-kernel"><a class="footnote-ref" href="#fn:depth-kernel">9</a></sup><sup id="fnref2:alignment"><a class="footnote-ref" href="#fn:alignment">13</a></sup></p>
+<h3 id="target-depth-prices-are-event-time-annotations">Target depth prices are event-time annotations</h3>
+<p>The kernel processes the changes in the current event. It does not maintain a second, independently keyed target-currency book.</p>
+<p>A reference-rate change can therefore produce different target prices for later updates to the same native level. It does not generate synthetic updates for untouched levels.</p>
+<p>Replay the original depth changes using their native side and price keys. Use the aligned target values as valuations of those changes at their event time.</p>
+<p>A continuously repriced target-currency book would require a separate representation with explicit rules for revaluation and level identity.<sup id="fnref4:depth-kernel"><a class="footnote-ref" href="#fn:depth-kernel">9</a></sup><sup id="fnref2:schemas"><a class="footnote-ref" href="#fn:schemas">18</a></sup></p>
+<h3 id="combined-events">Combined events</h3>
+<p><code>CombinedConversionKernel</code> dispatches each row to the trade or depth kernel while maintaining one reference alignment state.</p>
+<p>It also implements conversion selection:</p>
+<ul>
+<li>Selected events receive identity, converted, or unavailable results.</li>
+<li>Unselected events receive <code>skipped</code>.</li>
+<li>An unselected trade can still update a selected internal reference after its own event is handled.</li>
+</ul>
+<p>This allows a combined source to retain reference trades while converting only selected instruments or event populations.</p>
+<p>The physical materializers and partition workers use the batch conversion path. Direct single-event helpers are separate code paths and should receive their own accounting coverage when extended, particularly for skipped depth events.<sup id="fnref2:combined-kernel"><a class="footnote-ref" href="#fn:combined-kernel">10</a></sup></p>
+<h2 id="partition-by-physical-order">Partition by physical order</h2>
+<p>Conversion partitions the existing physical timeline into contiguous row-group ranges.</p>
+<p><code>build_conversion_partition_plan_with_count()</code> reads Parquet metadata and records:</p>
+<ul>
+<li>File and row-group indexes.</li>
+<li>Global starting row.</li>
+<li>Row count.</li>
+<li>Compressed byte size.</li>
+</ul>
+<p>Partition balancing is based approximately on row counts while keeping row groups intact. Requested partition count is capped by the number of row groups.</p>
+<p>The partitioner does not create independent time windows. A causal timeline can regress in timestamp, and reference state depends on the complete preceding source sequence.<sup id="fnref:partitions"><a class="footnote-ref" href="#fn:partitions">15</a></sup></p>
+<h3 id="a-checkpoint-represents-the-preceding-source-prefix">A checkpoint represents the preceding source prefix</h3>
+<p>Each worker must begin with the reference state that a sequential traversal would have established immediately before its first event.</p>
+<p>The prepass captures that state at partition boundaries.</p>
+<table>
+<thead>
+<tr>
+<th>Source mode</th>
+<th>Checkpoint contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Trades</td>
+<td>Partition identity, number of preceding events, and reference-state snapshot.</td>
+</tr>
+<tr>
+<td>Depth</td>
+<td>Partition start row and timestamp, reference-state snapshot, and external observation position.</td>
+</tr>
+<tr>
+<td>Combined</td>
+<td>Partition start row and timestamp, reference-state snapshot, and optional external observation position.</td>
+</tr>
+</tbody>
+</table>
+<p>Checkpoints are captured before processing the boundary event.</p>
+<p>For external references, the checkpoint position describes consumed observations. A pending observation is not silently counted as consumed; the resumed cursor must encounter it again when it becomes eligible.</p>
+<p>These checkpoints initialize partition workers. They do not define a persisted recovery protocol for resuming an interrupted conversion run.<sup id="fnref:checkpoints"><a class="footnote-ref" href="#fn:checkpoints">16</a></sup></p>
+<h3 id="the-prepass-must-reproduce-execution-alignment">The prepass must reproduce execution alignment</h3>
+<p>The trade prepass updates selected internal references in source order.</p>
+<p>The depth prepass reads source timestamps and reproduces external-reference advancement.</p>
+<p>The combined prepass reproduces both external advancement and internal trade updates. Its normal path projects the columns needed for that work, avoiding the full depth payload. A full-reader comparison entry point is also available.</p>
+<p>A change to reference timing must update both the execution path and the matching prepass. Otherwise, partitions can start from a state that differs from sequential execution.<sup id="fnref2:checkpoints"><a class="footnote-ref" href="#fn:checkpoints">16</a></sup></p>
+<h3 id="workers-preserve-deterministic-output-order">Workers preserve deterministic output order</h3>
+<p>Each worker:</p>
+<ol>
+<li>Validates its partition/checkpoint alignment.</li>
+<li>Restores reference state and external cursor position.</li>
+<li>Reads its assigned row groups.</li>
+<li>Runs the same mode-specific kernel used by sequential materialization.</li>
+<li>Writes partition output.</li>
+<li>Returns metrics and row boundaries.</li>
+</ol>
+<p>The coordinator sorts results by partition ID and verifies expected boundaries and totals.</p>
+<p>Parallel and sequential executions should produce equivalent decoded events and conversion evidence. Their Parquet file boundaries and encoded bytes need not be identical.<sup id="fnref:parallel"><a class="footnote-ref" href="#fn:parallel">17</a></sup></p>
+<h2 id="resource-behavior-and-interruption">Resource behavior and interruption</h2>
+<p>The conversion executors use a bounded thread pool over a shared work queue.</p>
+<p>Worker count is limited by the requested count and available partitions. The current execution code does not use normalization’s memory-budget admission system and does not spill checkpoint state to scratch.</p>
+<p>Memory demand includes:</p>
+<ul>
+<li>Resident checkpoint snapshots.</li>
+<li>Per-worker reference state.</li>
+<li>Arrow input batches.</li>
+<li>Nested depth levels.</li>
+<li>Per-event conversion evidence.</li>
+<li>Output arrays and Parquet buffers.</li>
+</ul>
+<p>The standard reader batch contains up to 65,536 event rows. Event count alone is not a bound on decoded bytes: one depth event can contain many level changes.</p>
+<p>Treat worker count as a concurrency control, not a hard memory limit.<sup id="fnref2:parallel"><a class="footnote-ref" href="#fn:parallel">17</a></sup><sup id="fnref4:readers"><a class="footnote-ref" href="#fn:readers">14</a></sup></p>
+<h3 id="interruption-is-cooperative">Interruption is cooperative</h3>
+<p>The shared progress state carries an interruption flag. Readers, workers, validators, and publication code check it at work boundaries.</p>
+<p>On a worker failure, parallel execution clears queued work, joins the worker threads, and returns an error. Already running work is not terminated as an unsafe thread operation.</p>
+<p>Publication checks interruption immediately before the final rename.</p>
+<p>An interruption can leave staging artifacts. It does not turn the in-memory reference checkpoints into reusable on-disk resume state.<sup id="fnref3:parallel"><a class="footnote-ref" href="#fn:parallel">17</a></sup><sup id="fnref:progress"><a class="footnote-ref" href="#fn:progress">29</a></sup><sup id="fnref4:publication"><a class="footnote-ref" href="#fn:publication">27</a></sup></p>
+<h2 id="output-schemas">Output schemas</h2>
+<p>All output schemas begin with the complete source schema and append conversion fields.</p>
+<table>
+<thead>
+<tr>
+<th>Source mode</th>
+<th>Added target payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Trades</td>
+<td>Nullable <code>price_target</code> and <code>quantity_quote_target</code>.</td>
+</tr>
+<tr>
+<td>Depth</td>
+<td>Non-null <code>changes_target</code>, aligned with the original <code>changes</code> list.</td>
+</tr>
+<tr>
+<td>Combined</td>
+<td><code>trade_target</code> or <code>depth_target</code>, according to the event kind.</td>
+</tr>
+</tbody>
+</table>
+<p>Combined trade rows contain a trade target struct and a null depth target. Combined depth rows contain a depth target list and a null trade target.</p>
+<p>Unavailable values remain null inside the appropriate target payload. An unavailable depth event retains one target entry per original level; it does not shrink the list.<sup id="fnref3:schemas"><a class="footnote-ref" href="#fn:schemas">18</a></sup></p>
+<h3 id="shared-conversion-metadata">Shared conversion metadata</h3>
+<p>Every mode appends these fields:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>target_quote</code></td>
+<td>Requested target currency.</td>
+</tr>
+<tr>
+<td><code>conversion_status</code></td>
+<td>Identity, converted, unavailable, or supported skipped result.</td>
+</tr>
+<tr>
+<td><code>conversion_rate</code></td>
+<td>Decimal representation of the selected conversion factor.</td>
+</tr>
+<tr>
+<td><code>conversion_path</code></td>
+<td>Currency sequence for the chosen path.</td>
+</tr>
+<tr>
+<td><code>conversion_references</code></td>
+<td>Per-hop observations used by a successful conversion.</td>
+</tr>
+<tr>
+<td><code>conversion_failure</code></td>
+<td>Failure classification for an unavailable result.</td>
+</tr>
+</tbody>
+</table>
+<p>Reference entries retain the source dataset ID, stream ID, event timestamp, stream rank, task ID, event ordinal, conversion direction, and original reference price.</p>
+<p>Direction code <code>0</code> represents direct conversion; code <code>1</code> represents inverse conversion.</p>
+<p>Identity conversion uses rate one, an identity currency path, and no reference observations.<sup id="fnref4:schemas"><a class="footnote-ref" href="#fn:schemas">18</a></sup><sup id="fnref:provenance"><a class="footnote-ref" href="#fn:provenance">20</a></sup></p>
+<h3 id="status-and-failure-codes">Status and failure codes</h3>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code></td>
+<td>Identity</td>
+<td>The value already uses the target quote currency.</td>
+</tr>
+<tr>
+<td><code>1</code></td>
+<td>Converted</td>
+<td>A candidate path and its eligible observations produced target values.</td>
+</tr>
+<tr>
+<td><code>2</code></td>
+<td>Unavailable</td>
+<td>Target values could not be produced; a failure code explains why.</td>
+</tr>
+<tr>
+<td><code>3</code></td>
+<td>Skipped</td>
+<td>A combined event was retained outside the selected conversion scope.</td>
+</tr>
+</tbody>
+</table>
+<p>Standalone trade and depth publication validators accept the first three statuses. Skipped behavior belongs to the combined conversion path.</p>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Failure</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>1</code></td>
+<td>Missing reference.</td>
+</tr>
+<tr>
+<td><code>2</code></td>
+<td>Stale reference.</td>
+</tr>
+<tr>
+<td><code>3</code></td>
+<td>Future reference.</td>
+</tr>
+<tr>
+<td><code>4</code></td>
+<td>Reference identity mismatch.</td>
+</tr>
+<tr>
+<td><code>5</code></td>
+<td>Arithmetic failure.</td>
+</tr>
+<tr>
+<td><code>6</code></td>
+<td>No conversion path.</td>
+</tr>
+</tbody>
+</table>
+<p>If candidate attempts all fail, the event retains the failure classification from the final attempt. This field is not a complete trace of every rejected candidate.</p>
+<p>Some no-path conditions are rejected during preparation before any rows are written; others remain representable by the event kernels.<sup id="fnref2:statuses"><a class="footnote-ref" href="#fn:statuses">19</a></sup><sup id="fnref5:trade-kernel"><a class="footnote-ref" href="#fn:trade-kernel">8</a></sup><sup id="fnref5:depth-kernel"><a class="footnote-ref" href="#fn:depth-kernel">9</a></sup></p>
+<h2 id="validation-has-several-separate-responsibilities">Validation has several separate responsibilities</h2>
+<p>Publication combines physical inspection, execution accounting, and source preservation.</p>
+<p>Each check establishes a different part of the result.</p>
+<h3 id="validate-the-written-representation">Validate the written representation</h3>
+<p>Physical validators reopen converted Parquet and inspect the applicable schema, status representation, payload structure, ordering, reference evidence, and counts.</p>
+<p>For causal output, timeline positions must remain contiguous across the dataset and reconstruction markers must remain valid for the event kind.</p>
+<p>Depth and combined validation can run over files in parallel. Results are then checked in deterministic file order, including ordering or causal-position boundaries between files.<sup id="fnref:validation"><a class="footnote-ref" href="#fn:validation">23</a></sup></p>
+<h3 id="validate-target-arithmetic-where-implemented">Validate target arithmetic where implemented</h3>
+<p>Numeric verification currently differs by mode.</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Numeric validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Standalone trades</td>
+<td>Checks identity equality, target nullability, positive stored rates, and reference chronology, staleness, and positive prices.</td>
+</tr>
+<tr>
+<td>Depth</td>
+<td>Reconstructs the path ratio from serialized reference evidence and checks the stored rate and every successful target level value.</td>
+</tr>
+<tr>
+<td>Combined</td>
+<td>Reconstructs the ratio and checks successful trade values and depth levels, together with event-kind payload structure.</td>
+</tr>
+</tbody>
+</table>
+<p>The standalone trade validator currently does not independently recompute non-identity target values or the stored conversion rate.</p>
+<p>Depth and combined numeric validation check the calculation against the reference evidence written into the output. They do not reopen every reference dataset and independently locate each original reference observation.</p>
+<p>Keep those scopes explicit when describing validation or extending its guarantees.<sup id="fnref2:numeric-validation"><a class="footnote-ref" href="#fn:numeric-validation">21</a></sup><sup id="fnref2:reference-validation"><a class="footnote-ref" href="#fn:reference-validation">22</a></sup></p>
+<h3 id="preserve-original-columns-exactly">Preserve original columns exactly</h3>
+<p>Every publication path runs full source-preservation validation.</p>
+<p>The validator projects the original columns from converted output and compares them with the input physical merge. It includes nested trade and depth payloads and aligns rows across different file and batch boundaries.</p>
+<p>It checks:</p>
+<ul>
+<li>Original field definitions and ordering.</li>
+<li>Every original decoded value.</li>
+<li>The expected appended-column count.</li>
+<li>Source event order.</li>
+<li>Missing and extra rows.</li>
+</ul>
+<p>This establishes equality of decoded source data. It does not require identical Parquet encodings.</p>
+<p>A prefix-comparison API exists for limited inspection, but publication uses full comparison.<sup id="fnref:source-preservation"><a class="footnote-ref" href="#fn:source-preservation">24</a></sup></p>
+<h3 id="reconcile-the-execution-receipt">Reconcile the execution receipt</h3>
+<p><code>ConversionExecutionReceipt</code> is persisted as <code>execution.json</code>.</p>
+<p>It records event totals, conversion statuses, reference updates, files, row groups, and depth-level statistics where applicable.</p>
+<p>Its accounting includes:</p>
+<div class="highlight"><pre><span></span><code>events_read = events_written
+
+events_written
+    = identity_events
+    + converted_events
+    + unavailable_events
+    + skipped_events
+</code></pre></div>
+<p>For depth-bearing output:</p>
+<div class="highlight"><pre><span></span><code>levels_read
+    = levels_converted
+    + levels_unavailable
+    + levels_skipped
+</code></pre></div>
+<p>Successful identity-valued levels are included in successful level accounting.</p>
+<p>The publication functions compare receipt values with independently reread physical output and the source manifest. Parallel execution also compares worker reference-update totals with the prepass.</p>
+<p>Reference updates and references checked are different metrics: one counts state changes during execution; the other counts serialized reference evidence inspected during validation.<sup id="fnref3:receipt"><a class="footnote-ref" href="#fn:receipt">25</a></sup><sup id="fnref4:parallel"><a class="footnote-ref" href="#fn:parallel">17</a></sup></p>
+<h2 id="publish-the-converted-dataset">Publish the converted dataset</h2>
+<p>The publication functions require completed staging output and its execution receipt.</p>
+<p>Their sequence is:</p>
+<ol>
+<li>Validate the job, source manifest, and staging/final path conditions.</li>
+<li>Reopen and validate converted Parquet.</li>
+<li>Load and reconcile <code>execution.json</code>.</li>
+<li>Compare source and output event counts.</li>
+<li>Perform full source-column preservation checks.</li>
+<li>Build and validate the conversion manifest.</li>
+<li>Write <code>manifest.json</code> in staging.</li>
+<li>Check interruption.</li>
+<li>Rename staging to the final destination without replacement.</li>
+</ol>
+<p>The returned <code>ConversionPublication</code> identifies the final dataset and manifest and reports written event and file totals.<sup id="fnref5:publication"><a class="footnote-ref" href="#fn:publication">27</a></sup></p>
+<h3 id="publication-contents">Publication contents</h3>
+<table>
+<thead>
+<tr>
+<th>Artifact</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Converted Parquet parts</td>
+<td>Original source events plus target values and conversion evidence.</td>
+</tr>
+<tr>
+<td><code>execution.json</code></td>
+<td>Execution accounting reconciled against physical output.</td>
+</tr>
+<tr>
+<td><code>manifest.json</code></td>
+<td>Source identity, conversion configuration, validated statistics, file inventory, ordering, and integrity results.</td>
+</tr>
+</tbody>
+</table>
+<p>Sequential output writes parts directly under its output directory. Parallel output uses partition directories.</p>
+<p>The manifest records relative file paths, physical sizes, row counts, and row-group counts. Its file entries do not contain output SHA-256 values.</p>
+<p>Input checksum verification remains a separate guarantee from the metadata retained for newly written conversion files.<sup id="fnref:manifest"><a class="footnote-ref" href="#fn:manifest">26</a></sup><sup id="fnref5:prepared"><a class="footnote-ref" href="#fn:prepared">3</a></sup></p>
+<h3 id="format-versions-and-reconstruction-evidence">Format versions and reconstruction evidence</h3>
+<p>The conversion schema, conversion manifest, and execution receipt each currently use version <code>1</code>. They are separate contracts.</p>
+<p>Causal source columns and reconstruction-event counts are retained. Causal timestamp bounds come from the source manifest rather than assuming that the first and last physical rows provide timestamp minima and maxima.</p>
+<p>The conversion manifest refers to the input merge. It does not embed every upstream reconstruction artifact.</p>
+<p>Converting a chronological depth clip does not supply initialization history that was already absent from that clip. Consumers still need its original reconstruction contract.<sup id="fnref2:manifest"><a class="footnote-ref" href="#fn:manifest">26</a></sup></p>
+<h3 id="current-publication-implementation">Current publication implementation</h3>
+<p>Conversion uses its own <code>atomic_publish_directory()</code> helper.</p>
+<p>The implementation currently supports Linux through a no-replace directory rename. Other platforms receive an explicit unsupported error. Cross-filesystem rename failure is propagated.</p>
+<p>The helper provides atomic destination creation without overwriting an existing dataset. It does not currently perform the file and parent-directory synchronization sequence used by other historical publication paths.</p>
+<p>The conversion publication functions also do not generate a new publication-checksum inventory. These guarantees should be described from the conversion implementation itself rather than inherited from normalization or merge.</p>
+<p>Failures before rename can leave staging artifacts. Database registration and any higher-level run recovery remain responsibilities of the caller.<sup id="fnref:atomic"><a class="footnote-ref" href="#fn:atomic">28</a></sup><sup id="fnref6:publication"><a class="footnote-ref" href="#fn:publication">27</a></sup></p>
+<h2 id="progress-and-diagnostics">Progress and diagnostics</h2>
+<p><code>ConversionProgressReporter</code> separates lifecycle reporting from persisted execution evidence.</p>
+<p>It exposes phases for source validation, partition planning, timestamp scanning, reference prepasses, physical conversion, validation, receipt reconciliation, source preservation, manifest construction, and commit.</p>
+<p>Partition snapshots include event counts, conversion outcomes, reference activity, depth-level totals, and writer metrics.</p>
+<p>These snapshots are monitoring data assembled from atomics. They are not a substitute for the execution receipt or final manifest.</p>
+<p>Reported outcomes distinguish:</p>
+<ul>
+<li>Validated.</li>
+<li>Materialized but unpublished.</li>
+<li>Published.</li>
+<li>Failed.</li>
+<li>Interrupted.</li>
+</ul>
+<p>A completed materialization phase means staged payloads were written. Publication validation and commit are still separate steps.<sup id="fnref2:progress"><a class="footnote-ref" href="#fn:progress">29</a></sup></p>
+<h3 id="diagnose-the-stage-that-owns-the-failure">Diagnose the stage that owns the failure</h3>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Start with</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prepared publication pin mismatch</td>
+<td><code>planning/prepared.rs</code> and the declared source evidence.</td>
+</tr>
+<tr>
+<td>Requested reference not found</td>
+<td><code>planning/catalog.rs</code> and reference identity selection.</td>
+</tr>
+<tr>
+<td>Many unavailable rows</td>
+<td>Failure codes, chosen paths, reference timing, and staleness.</td>
+</tr>
+<tr>
+<td>Sequential/parallel disagreement</td>
+<td>Boundary checkpoints, external cursor positions, and prepass alignment.</td>
+</tr>
+<tr>
+<td>Incorrect depth target cardinality</td>
+<td>Depth buffers, list offsets, and batch builders.</td>
+</tr>
+<tr>
+<td>Original values changed</td>
+<td>Source-preservation validation and source-array handling.</td>
+</tr>
+<tr>
+<td>Receipt mismatch</td>
+<td>Worker aggregation, status totals, level totals, and writer metrics.</td>
+</tr>
+<tr>
+<td>Publication failure</td>
+<td>Staging/final paths and the platform-specific atomic helper.</td>
+</tr>
+</tbody>
+</table>
+<p>Use event-level reference provenance to explain a conversion result. Aggregate counts can identify a pattern, but they do not identify which observation or path produced a particular value.</p>
+<h2 id="extending-conversion">Extending conversion</h2>
+<h3 id="add-a-reference-source-or-selection-rule">Add a reference source or selection rule</h3>
+<p>Start with reference selection and publication binding.</p>
+<p>Establish how the new source is identified, how its observations are ordered, and how its prices become eligible for an event.</p>
+<p>Update sequential alignment and checkpoint prepasses together. Any source that can contribute observations at a partition boundary needs an explicit restore position and state contract.</p>
+<h3 id="change-route-selection-or-arithmetic">Change route selection or arithmetic</h3>
+<p>Change route enumeration and ordering in the shared conversion planner or graph.</p>
+<p>Change monetary arithmetic in the shared decimal and trade/depth conversion modules.</p>
+<p>Then verify the historical kernels, serialized path/reference evidence, and numeric validators against the new behavior. Preserve the difference between the exact evaluated ratio and its stored decimal representation.</p>
+<h3 id="extend-converted-fields">Extend converted fields</h3>
+<p>Update the schema, specialized builders, combined builder, validators, and consumers together.</p>
+<p>Source-preservation callers currently encode the number of appended columns: eight for trades and combined output, seven for depth. A schema extension must update those checks deliberately.</p>
+<p>Continue preserving original source columns so consumers can distinguish native values from derived values.</p>
+<h3 id="extend-depth-semantics">Extend depth semantics</h3>
+<p>Maintain positional alignment with native changes and event-level atomicity.</p>
+<p>If the feature requires a continuously valued target book, design its identity and revaluation rules explicitly. Appending a different target price to a later native update does not by itself provide that representation.</p>
+<p>Test failures after some levels have already converted, because buffer rollback is part of the correctness boundary.</p>
+<h3 id="change-partitioning-or-resource-control">Change partitioning or resource control</h3>
+<p>Preserve contiguous physical ownership and capture state before the first event in each partition.</p>
+<p>Review checkpoint memory, reference-history retention, nested depth payload size, and per-worker writer buffers. A new worker-count heuristic should not be documented as memory admission unless it actually accounts for and reserves those resources.</p>
+<h3 id="strengthen-publication-or-validation">Strengthen publication or validation</h3>
+<p>Keep physical validation, source preservation, receipt reconciliation, and manifest construction consistent.</p>
+<p>Adding output checksums, broader numeric verification, cross-platform publication, or stronger durability requires corresponding implementation and compatibility work. Those properties cannot be established by changing the manifest description alone.</p>
+<h2 id="testing-conversion-changes">Testing conversion changes</h2>
+<p>The most valuable tests compare complete event semantics across the boundaries described above.</p>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Required behavior to exercise</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prepared binding</td>
+<td>Changed manifest pins, checksum inventories, stream bindings, currencies, and payload bytes are detected at the appropriate stage.</td>
+</tr>
+<tr>
+<td>Path selection</td>
+<td>Primary-path truncation and fallback candidates produce the intended result without expanding the event population.</td>
+</tr>
+<tr>
+<td>Internal references</td>
+<td>A trade cannot use its own newly observed price.</td>
+</tr>
+<tr>
+<td>External references</td>
+<td>Equal-time observations remain pending; strictly earlier eligible observations become available.</td>
+</tr>
+<tr>
+<td>Staleness</td>
+<td>Boundary ages, missing observations, and future observations remain distinguishable.</td>
+</tr>
+<tr>
+<td>Causal input</td>
+<td>Timestamp regressions preserve timeline positions and use eligible retained history.</td>
+</tr>
+<tr>
+<td>Partition checkpoints</td>
+<td>A reference update at the first row of a partition is processed exactly once.</td>
+</tr>
+<tr>
+<td>Sequential equivalence</td>
+<td>Parallel output preserves decoded values, statuses, paths, and reference evidence.</td>
+</tr>
+<tr>
+<td>Projected prepasses</td>
+<td>The combined projected prepass agrees with its full-reader comparison path.</td>
+</tr>
+<tr>
+<td>Depth atomicity</td>
+<td>A later level failure removes partial results from the attempted path.</td>
+</tr>
+<tr>
+<td>Empty depth changes</td>
+<td>Zero-level observations retain metadata and event counts.</td>
+</tr>
+<tr>
+<td>Combined selection</td>
+<td>Skipped events remain present, and skipped internal trades can still supply references.</td>
+</tr>
+<tr>
+<td>Numeric validation</td>
+<td>Altered target values are detected wherever independent numeric verification is implemented.</td>
+</tr>
+<tr>
+<td>Source preservation</td>
+<td>Mutations to original scalar or nested fields fail publication.</td>
+</tr>
+<tr>
+<td>Receipt reconciliation</td>
+<td>Incorrect status, level, file, or event totals fail before commit.</td>
+</tr>
+<tr>
+<td>Interruption and publication</td>
+<td>Interruption leaves no successful publication claim, and existing destinations remain untouched.</td>
+</tr>
+</tbody>
+</table>
+<p>Use decoded Arrow values and serialized conversion evidence for sequential/parallel comparisons. File sizes, compression results, and row-group boundaries are implementation details that can vary without changing the dataset’s meaning.</p>
+<p>For a new feature, follow one event through prepared identity, reference eligibility, kernel evaluation, target payload construction, validation, receipt accounting, and publication. That trace reveals whether the feature is implemented consistently across the complete conversion path.</p>
+<h2 id="related-development-paths">Related development paths</h2>
+<ul>
+<li><a href="../architecture/">System architecture</a> and <a href="../operations/">operation lifecycles</a> place Conversion Engine in the historical workflow.</li>
+<li><a href="../../reference/prepared-conversion/">Prepared contract</a> and <a href="../../workflows/conversion/">user workflow</a> describe the public handoff.</li>
+<li><a href="../testing/">Test selection</a> and <a href="../debugging/">diagnostics</a> cover verification and inspection.</li>
+</ul>
+<div class="footnote">
+<hr />
+<ol>
+<li id="fn:module">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/mod.rs">Conversion module and public exports</a>.&#160;<a class="footnote-backref" href="#fnref:module" title="Jump back to footnote 1 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:module" title="Jump back to footnote 1 in the text">&#8617;</a></p>
+</li>
+<li id="fn:shared">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/planning/graph.rs">Graph adapter</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/reference/state.rs">reference-state adapter</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/reference/evaluation.rs">evaluation adapter</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/shared/decimal.rs">decimal adapter</a>.&#160;<a class="footnote-backref" href="#fnref:shared" title="Jump back to footnote 2 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:shared" title="Jump back to footnote 2 in the text">&#8617;</a></p>
+</li>
+<li id="fn:prepared">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/planning/prepared.rs">Prepared publication binding and content verification</a>.&#160;<a class="footnote-backref" href="#fnref:prepared" title="Jump back to footnote 3 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:prepared" title="Jump back to footnote 3 in the text">&#8617;</a><a class="footnote-backref" href="#fnref3:prepared" title="Jump back to footnote 3 in the text">&#8617;</a><a class="footnote-backref" href="#fnref4:prepared" title="Jump back to footnote 3 in the text">&#8617;</a><a class="footnote-backref" href="#fnref5:prepared" title="Jump back to footnote 3 in the text">&#8617;</a></p>
+</li>
+<li id="fn:catalogue">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/planning/catalog.rs">Catalogue resolution and prepared reference selection</a>.&#160;<a class="footnote-backref" href="#fnref:catalogue" title="Jump back to footnote 4 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:catalogue" title="Jump back to footnote 4 in the text">&#8617;</a></p>
+</li>
+<li id="fn:planner">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/planning/planner.rs">Historical conversion planner</a>.&#160;<a class="footnote-backref" href="#fnref:planner" title="Jump back to footnote 5 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:planner" title="Jump back to footnote 5 in the text">&#8617;</a></p>
+</li>
+<li id="fn:entrypoints">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/mod.rs">Execution exports</a> and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/executor.rs">statistics-only sequential execution</a>.&#160;<a class="footnote-backref" href="#fnref:entrypoints" title="Jump back to footnote 6 in the text">&#8617;</a></p>
+</li>
+<li id="fn:trade-materialization">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/trades/materialize.rs">Sequential trade materialization</a>.&#160;<a class="footnote-backref" href="#fnref:trade-materialization" title="Jump back to footnote 7 in the text">&#8617;</a></p>
+</li>
+<li id="fn:trade-kernel">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/trades/conversion.rs">Trade conversion kernel</a>.&#160;<a class="footnote-backref" href="#fnref:trade-kernel" title="Jump back to footnote 8 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:trade-kernel" title="Jump back to footnote 8 in the text">&#8617;</a><a class="footnote-backref" href="#fnref3:trade-kernel" title="Jump back to footnote 8 in the text">&#8617;</a><a class="footnote-backref" href="#fnref4:trade-kernel" title="Jump back to footnote 8 in the text">&#8617;</a><a class="footnote-backref" href="#fnref5:trade-kernel" title="Jump back to footnote 8 in the text">&#8617;</a></p>
+</li>
+<li id="fn:depth-kernel">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/depth/conversion.rs">Depth conversion kernel and buffer rollback</a>.&#160;<a class="footnote-backref" href="#fnref:depth-kernel" title="Jump back to footnote 9 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:depth-kernel" title="Jump back to footnote 9 in the text">&#8617;</a><a class="footnote-backref" href="#fnref3:depth-kernel" title="Jump back to footnote 9 in the text">&#8617;</a><a class="footnote-backref" href="#fnref4:depth-kernel" title="Jump back to footnote 9 in the text">&#8617;</a><a class="footnote-backref" href="#fnref5:depth-kernel" title="Jump back to footnote 9 in the text">&#8617;</a></p>
+</li>
+<li id="fn:combined-kernel">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/combined/conversion.rs">Combined conversion and selection</a>.&#160;<a class="footnote-backref" href="#fnref:combined-kernel" title="Jump back to footnote 10 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:combined-kernel" title="Jump back to footnote 10 in the text">&#8617;</a></p>
+</li>
+<li id="fn:reference-selection">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/combined/references.rs">Internal and external combined reference selection</a>.&#160;<a class="footnote-backref" href="#fnref:reference-selection" title="Jump back to footnote 11 in the text">&#8617;</a></p>
+</li>
+<li id="fn:external-references">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/reference/external.rs">External reference advancement and restoration</a> and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/reference/reader.rs">physical reference reading</a>.&#160;<a class="footnote-backref" href="#fnref:external-references" title="Jump back to footnote 12 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:external-references" title="Jump back to footnote 12 in the text">&#8617;</a><a class="footnote-backref" href="#fnref3:external-references" title="Jump back to footnote 12 in the text">&#8617;</a></p>
+</li>
+<li id="fn:alignment">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/depth/alignment.rs">Depth reference alignment</a> and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/combined/alignment.rs">combined reference alignment</a>.&#160;<a class="footnote-backref" href="#fnref:alignment" title="Jump back to footnote 13 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:alignment" title="Jump back to footnote 13 in the text">&#8617;</a></p>
+</li>
+<li id="fn:readers">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/shared/reader.rs">Physical input validation, causal reading, and reference-history setup</a>.&#160;<a class="footnote-backref" href="#fnref:readers" title="Jump back to footnote 14 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:readers" title="Jump back to footnote 14 in the text">&#8617;</a><a class="footnote-backref" href="#fnref3:readers" title="Jump back to footnote 14 in the text">&#8617;</a><a class="footnote-backref" href="#fnref4:readers" title="Jump back to footnote 14 in the text">&#8617;</a></p>
+</li>
+<li id="fn:partitions">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/shared/partition.rs">Physical row-group partition planning</a> and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/shared/partition_reader.rs">partition reading</a>.&#160;<a class="footnote-backref" href="#fnref:partitions" title="Jump back to footnote 15 in the text">&#8617;</a></p>
+</li>
+<li id="fn:checkpoints">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/shared/prepass.rs">Trade reference prepass</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/shared/checkpoints.rs">common reference checkpoints</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/depth/checkpoints.rs">depth checkpoints</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/combined/checkpoints.rs">combined checkpoints</a>.&#160;<a class="footnote-backref" href="#fnref:checkpoints" title="Jump back to footnote 16 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:checkpoints" title="Jump back to footnote 16 in the text">&#8617;</a></p>
+</li>
+<li id="fn:parallel">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/trades/parallel.rs">Parallel trade execution</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/depth/parallel.rs">parallel depth execution</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/execution/combined/parallel.rs">parallel combined execution</a>.&#160;<a class="footnote-backref" href="#fnref:parallel" title="Jump back to footnote 17 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:parallel" title="Jump back to footnote 17 in the text">&#8617;</a><a class="footnote-backref" href="#fnref3:parallel" title="Jump back to footnote 17 in the text">&#8617;</a><a class="footnote-backref" href="#fnref4:parallel" title="Jump back to footnote 17 in the text">&#8617;</a></p>
+</li>
+<li id="fn:schemas">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/schema/schema.rs">Conversion schemas</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/schema/trade.rs">trade batch construction</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/schema/depth.rs">depth batch construction</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/writers/combined_writer.rs">combined batch construction</a>.&#160;<a class="footnote-backref" href="#fnref:schemas" title="Jump back to footnote 18 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:schemas" title="Jump back to footnote 18 in the text">&#8617;</a><a class="footnote-backref" href="#fnref3:schemas" title="Jump back to footnote 18 in the text">&#8617;</a><a class="footnote-backref" href="#fnref4:schemas" title="Jump back to footnote 18 in the text">&#8617;</a></p>
+</li>
+<li id="fn:statuses">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/schema/schema.rs">Status and failure constants</a>.&#160;<a class="footnote-backref" href="#fnref:statuses" title="Jump back to footnote 19 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:statuses" title="Jump back to footnote 19 in the text">&#8617;</a></p>
+</li>
+<li id="fn:provenance">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/publication/provenance.rs">Currency-path and reference-observation serialization</a>.&#160;<a class="footnote-backref" href="#fnref:provenance" title="Jump back to footnote 20 in the text">&#8617;</a></p>
+</li>
+<li id="fn:numeric-validation">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/validation/depth_numeric.rs">Depth numeric validation</a> and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/validation/combined_numeric.rs">combined numeric validation</a>.&#160;<a class="footnote-backref" href="#fnref:numeric-validation" title="Jump back to footnote 21 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:numeric-validation" title="Jump back to footnote 21 in the text">&#8617;</a></p>
+</li>
+<li id="fn:reference-validation">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/validation/trades.rs">Standalone trade validation</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/validation/depth.rs">depth validation</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/validation/combined.rs">combined validation</a>.&#160;<a class="footnote-backref" href="#fnref:reference-validation" title="Jump back to footnote 22 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:reference-validation" title="Jump back to footnote 22 in the text">&#8617;</a></p>
+</li>
+<li id="fn:validation">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/validation/causal.rs">Causal-position validation</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/validation/depth_parallel.rs">parallel depth validation</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/validation/combined_parallel.rs">parallel combined validation</a>.&#160;<a class="footnote-backref" href="#fnref:validation" title="Jump back to footnote 23 in the text">&#8617;</a></p>
+</li>
+<li id="fn:source-preservation">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/validation/source.rs">Original-column preservation validation</a>.&#160;<a class="footnote-backref" href="#fnref:source-preservation" title="Jump back to footnote 24 in the text">&#8617;</a></p>
+</li>
+<li id="fn:receipt">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/publication/receipt.rs">Execution receipt and accounting reconciliation</a>.&#160;<a class="footnote-backref" href="#fnref:receipt" title="Jump back to footnote 25 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:receipt" title="Jump back to footnote 25 in the text">&#8617;</a><a class="footnote-backref" href="#fnref3:receipt" title="Jump back to footnote 25 in the text">&#8617;</a></p>
+</li>
+<li id="fn:manifest">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/publication/manifest.rs">Conversion manifest</a>.&#160;<a class="footnote-backref" href="#fnref:manifest" title="Jump back to footnote 26 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:manifest" title="Jump back to footnote 26 in the text">&#8617;</a></p>
+</li>
+<li id="fn:publication">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/publication/publication.rs">Conversion publication workflow</a>.&#160;<a class="footnote-backref" href="#fnref:publication" title="Jump back to footnote 27 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:publication" title="Jump back to footnote 27 in the text">&#8617;</a><a class="footnote-backref" href="#fnref3:publication" title="Jump back to footnote 27 in the text">&#8617;</a><a class="footnote-backref" href="#fnref4:publication" title="Jump back to footnote 27 in the text">&#8617;</a><a class="footnote-backref" href="#fnref5:publication" title="Jump back to footnote 27 in the text">&#8617;</a><a class="footnote-backref" href="#fnref6:publication" title="Jump back to footnote 27 in the text">&#8617;</a></p>
+</li>
+<li id="fn:atomic">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/publication/atomic.rs">Platform-specific no-replace publication</a>.&#160;<a class="footnote-backref" href="#fnref:atomic" title="Jump back to footnote 28 in the text">&#8617;</a></p>
+</li>
+<li id="fn:progress">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/progress/reporter.rs">Conversion progress and cooperative interruption</a>.&#160;<a class="footnote-backref" href="#fnref:progress" title="Jump back to footnote 29 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:progress" title="Jump back to footnote 29 in the text">&#8617;</a></p>
+</li>
+</ol>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../merge/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Merge Engine architecture">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Merge Engine architecture
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../operations/" class="md-footer__link md-footer__link--next" aria-label="Next: Historical operation lifecycles">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Historical operation lifecycles
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.9e76c64c.min.js"></script>
+      
+      
+        <script src="../../assets/javascripts/keyboard.js"></script>
+      
+    
+  </body>
+</html>

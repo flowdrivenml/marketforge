@@ -1,0 +1,55 @@
+# Synthetic test layout; NOT a claim about Binance historical exports.
+schema_version = 2
+kind = "profile"
+id = "binance.spot.spot.depth"
+format_code = "BINANCE-B1"
+exchange = "binance"
+instrument_type = "spot"
+market_category = "spot"
+
+[source]
+container = "zip"
+format = "jsonl"
+record_format = "snapshot_rows"
+ordering = "chronological"
+granularity = "daily"
+
+[fields.timestamp]
+type = "integer"
+encoding = "unix_seconds"
+
+[fields.asks]
+type = "string"
+ordering = "price_ascending"
+level_format = ["price", "quantity"]
+decode = "json"
+
+[fields.bids]
+type = "string"
+ordering = "price_descending"
+level_format = ["price", "quantity"]
+decode = "json"
+
+[normalization]
+target = "l2_snapshot"
+quantity_encoding = "base"
+
+[normalization.event_timestamp]
+field = "timestamp"
+
+[normalization.snapshot]
+type = "single_row"
+
+[normalization.bids]
+field = "bids"
+
+[normalization.asks]
+field = "asks"
+
+[normalization.book]
+update_id = false
+sequence_id = false
+
+[normalization.book.snapshot_depth]
+asks = 1
+bids = 1

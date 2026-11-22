@@ -1,0 +1,7354 @@
+
+
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Historical market-data acquisition, normalization and dataset inspection">
+      
+      
+      
+        <link rel="canonical" href="https://flowdrivenml.github.io/marketforge/development/normalize/">
+      
+      
+      
+      
+        <link rel="prev" href="../forge/">
+      
+      
+        <link rel="next" href="../merge/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/branding/logo_small.png">
+      <meta name="generator" content="zensical-0.1.3">
+    
+    
+      
+        <title>Normalization Engine architecture - MarketForge</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
+    <div data-md-component="skip">
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="MarketForge" class="md-header__button md-logo" aria-label="MarketForge" data-md-component="logo">
+      
+  <img src="../../assets/branding/logo_small.png" alt="MarketForge">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+      <span class="md-visually-hidden">Navigation</span>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MarketForge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Normalization Engine architecture
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+          <span class="md-visually-hidden">Search</span>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/flowdrivenml/marketforge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../.." class="md-tabs__link">
+          
+  
+  Using MarketForge
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="MarketForge" class="md-nav__button md-logo" aria-label="MarketForge" data-md-component="logo">
+      
+  <img src="../../assets/branding/logo_small.png" alt="MarketForge">
+
+    </a>
+    MarketForge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/flowdrivenml/marketforge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../.." class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Using MarketForge
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Using MarketForge
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Getting started
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_2" id="__nav_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Getting started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Installation and workspace setup
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  First dataset: Bybit trades and depth
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Guides
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3" id="__nav_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Guides
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/markets/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Explore markets
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_2" id="__nav_1_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Explore markets
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/markets/instrument-discovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Discover and inspect instruments
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/markets/market-statistics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Retrieve and interpret market statistics
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/markets/rankings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Build and inspect market rankings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/acquisition/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquire historical data
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_3" id="__nav_1_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Acquire historical data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/historical-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquire historical archives
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Register and normalize manually supplied data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/managing-acquisitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Manage raw storage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/catalogue/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue and specifications
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_5" id="__nav_1_3_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_5_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Catalogue and specifications
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/exchanges-and-instruments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Exchanges and instruments
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/specifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Instrument specifications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/external-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Register external recordings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_7" id="__nav_1_3_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Author format profiles
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_7_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_7">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Author format profiles
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Trades and L2 depth profiles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profile-trades/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Create a trade profile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profile-depth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Create a depth profile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profile-troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Validate, install and troubleshoot profiles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Process data
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_8">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Process data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalize registered data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge registered normalized files
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepare historical conversion
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical pipeline
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_9" id="__nav_1_3_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect datasets
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_9_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_9">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Inspect datasets
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect registered datasets
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/notebooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Explore datasets in Jupyter
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/forge-tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Interactive Forge workspace
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Concepts
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_4" id="__nav_1_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Concepts
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/identity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Identity and provenance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/time/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Time, selection, and coverage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/depth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Depth observations and reconstruction
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/ordering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Ordering and reconciliation
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/evidence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Execution, publication, and lineage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Reference
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5" id="__nav_1_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_5_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Reference
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/cli/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  CLI
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5_2" id="__nav_1_5_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  CLI
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Interactive Forge workspace
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/acquisition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquisition commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Raw storage commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/runs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Execution history and retained evidence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/catalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and maintenance commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managed Engine commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Import, profile and registration commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/convert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Dataset commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/markets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Market and ranking commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../configuration/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and recipes
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5_3" id="__nav_1_5_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Configuration and recipes
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/application/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Application settings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/acquisition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquisition and raw import recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/catalogue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue declarations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/markets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Ranking and historical metadata policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_4" id="__nav_1_5_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Format profiles
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Format profiles
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical normalization profile schema
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/profile-fields/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization profile field index
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managed raw registration declarations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_6" id="__nav_1_5_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared jobs and retained evidence
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Prepared jobs and retained evidence
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prepared/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared Engine contracts
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prepared-normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared normalization batch
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prepared-merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared merge job
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prepared-conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared conversion job
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prepared-forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge preparation and run evidence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_7" id="__nav_1_5_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Publication formats
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_7_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_7">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Publication formats
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/publications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Publication formats
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/publication-normalized/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalized publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/publication-merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merged publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/publication-converted/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Converted publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/python-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Python dataset API
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../examples/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Examples
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_6" id="__nav_1_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Examples
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/catalogue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Synthetic trade and depth recordings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/catalogue/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge a compatible trade file
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/bring-your-own-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Bring your own historical data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/bring-your-own-data/databento/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Databento AAPL Trades and MBP-10
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Troubleshooting
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Development
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Development
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Getting started
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Getting started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Local development
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first-contribution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  First contribution
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Architecture
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_2_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Architecture
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  System overview
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization Engine architecture
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#scope-and-relationship-to-forge" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Scope and relationship to Forge
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-execution-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The execution model
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#package-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Package map
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#public-execution-entry-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Public execution entry points
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Public execution entry points">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#result-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Result handling
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#supported-job-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Supported job output
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#job-validation-and-staging" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Job validation and staging
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Job validation and staging">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#retained-execution-provenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Retained execution provenance
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#session-preflight" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Session preflight
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#streams-are-the-scheduling-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Streams are the scheduling boundary
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Streams are the scheduling boundary">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-tasks-are-grouped" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why tasks are grouped
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#execution-path-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Execution-path selection
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#session-scheduling-and-resource-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Session scheduling and resource ownership
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Session scheduling and resource ownership">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-the-estimates-cover" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What the estimates cover
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#retained-reports-also-consume-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Retained reports also consume resources
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nested-compute-permits" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Nested compute permits
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#family-routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Family routing
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Family routing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#independent-instrument-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Independent instrument state
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#selection-fulfillment" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Selection fulfillment
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extension-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extension constraints
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-workers-and-sink-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Source workers and sink interfaces
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Source workers and sink interfaces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#trade-processing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Trade processing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#depth-processing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Depth processing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sinks" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sinks
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#internal-source-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Internal source preparation
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Internal source preparation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#eligibility-and-backpressure" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Eligibility and backpressure
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ordering-and-sequence-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Ordering and sequence semantics
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Ordering and sequence semantics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#depth-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Depth order
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sequence-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sequence policy
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#trade-reconciliation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Trade reconciliation
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Trade reconciliation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#execution-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Execution paths
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#duplicate-proof" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Duplicate proof
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#general-reconciliation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        General reconciliation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#depth-reconciliation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Depth reconciliation
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Depth reconciliation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reconstruct-each-source-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Reconstruct each source history
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#overlap-policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Overlap policies
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#timestamp-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Timestamp recovery
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fragmented-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Fragmented ownership
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#output-accounting-can-change-during-replay" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Output accounting can change during replay
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scratch-storage-and-external-processing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Scratch storage and external processing
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Scratch storage and external processing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#external-sorting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        External sorting
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#internal-codecs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Internal codecs
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quota-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Quota scope
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metrics-integrity-and-processing-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Metrics, integrity, and processing quality
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Metrics, integrity, and processing quality">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#counters-have-explicit-units" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Counters have explicit units
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#integrity-observations" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Integrity observations
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#immediate-and-final-evaluation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Immediate and final evaluation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#processing-quality-is-separate" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Processing quality is separate
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#retaining-detailed-observations" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Retaining detailed observations
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#canonical-output-and-depth-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Canonical output and depth evidence
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Canonical output and depth evidence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#depth-auxiliary-artifacts" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Depth auxiliary artifacts
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boundary-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Boundary evidence
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#finalization-and-publication" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Finalization and publication
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Finalization and publication">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#manifest-consistency" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Manifest consistency
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#publication-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Publication boundary
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#failure-attribution-and-result-reporting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Failure attribution and result reporting
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Failure attribution and result reporting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#independent-result-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Independent result contracts
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#progress-and-diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Progress and diagnostics
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Progress and diagnostics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#preparation-and-rendering" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preparation and rendering
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optional-diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Optional diagnostics
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#benchmark-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Benchmark architecture
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extending-normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extending normalization
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Extending normalization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#add-a-source-representation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add a source representation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#add-normalization-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add normalization semantics
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#add-or-change-reconciliation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add or change reconciliation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#add-a-fast-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add a fast path
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-scheduling-or-resource-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Change scheduling or resource limits
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-persistence-or-publication" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Change persistence or publication
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification-by-responsibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Verification by responsibility
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Implementation references
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-development-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Related development paths
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../convert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical operation lifecycles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../forge-tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge workspace architecture and action inventory
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extending MarketForge
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Extending MarketForge
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extending/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extension decision guide
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extend source integration and processing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extend orchestration and persistence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Testing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Debugging and performance
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Debugging and performance
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../debugging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Debugging historical workflows
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Performance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Contributing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#scope-and-relationship-to-forge" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Scope and relationship to Forge
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-execution-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The execution model
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#package-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Package map
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#public-execution-entry-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Public execution entry points
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Public execution entry points">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#result-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Result handling
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#supported-job-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Supported job output
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#job-validation-and-staging" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Job validation and staging
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Job validation and staging">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#retained-execution-provenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Retained execution provenance
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#session-preflight" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Session preflight
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#streams-are-the-scheduling-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Streams are the scheduling boundary
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Streams are the scheduling boundary">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-tasks-are-grouped" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why tasks are grouped
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#execution-path-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Execution-path selection
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#session-scheduling-and-resource-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Session scheduling and resource ownership
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Session scheduling and resource ownership">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-the-estimates-cover" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What the estimates cover
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#retained-reports-also-consume-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Retained reports also consume resources
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nested-compute-permits" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Nested compute permits
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#family-routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Family routing
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Family routing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#independent-instrument-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Independent instrument state
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#selection-fulfillment" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Selection fulfillment
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extension-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extension constraints
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-workers-and-sink-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Source workers and sink interfaces
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Source workers and sink interfaces">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#trade-processing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Trade processing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#depth-processing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Depth processing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sinks" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sinks
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#internal-source-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Internal source preparation
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Internal source preparation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#eligibility-and-backpressure" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Eligibility and backpressure
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ordering-and-sequence-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Ordering and sequence semantics
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Ordering and sequence semantics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#depth-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Depth order
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sequence-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sequence policy
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#trade-reconciliation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Trade reconciliation
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Trade reconciliation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#execution-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Execution paths
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#duplicate-proof" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Duplicate proof
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#general-reconciliation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        General reconciliation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#depth-reconciliation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Depth reconciliation
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Depth reconciliation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reconstruct-each-source-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Reconstruct each source history
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#overlap-policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Overlap policies
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#timestamp-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Timestamp recovery
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fragmented-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Fragmented ownership
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#output-accounting-can-change-during-replay" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Output accounting can change during replay
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scratch-storage-and-external-processing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Scratch storage and external processing
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Scratch storage and external processing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#external-sorting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        External sorting
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#internal-codecs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Internal codecs
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quota-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Quota scope
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metrics-integrity-and-processing-quality" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Metrics, integrity, and processing quality
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Metrics, integrity, and processing quality">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#counters-have-explicit-units" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Counters have explicit units
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#integrity-observations" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Integrity observations
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#immediate-and-final-evaluation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Immediate and final evaluation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#processing-quality-is-separate" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Processing quality is separate
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#retaining-detailed-observations" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Retaining detailed observations
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#canonical-output-and-depth-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Canonical output and depth evidence
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Canonical output and depth evidence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#depth-auxiliary-artifacts" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Depth auxiliary artifacts
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boundary-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Boundary evidence
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#finalization-and-publication" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Finalization and publication
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Finalization and publication">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#manifest-consistency" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Manifest consistency
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#publication-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Publication boundary
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#failure-attribution-and-result-reporting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Failure attribution and result reporting
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Failure attribution and result reporting">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#independent-result-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Independent result contracts
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#progress-and-diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Progress and diagnostics
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Progress and diagnostics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#preparation-and-rendering" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preparation and rendering
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optional-diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Optional diagnostics
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#benchmark-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Benchmark architecture
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extending-normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extending normalization
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Extending normalization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#add-a-source-representation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add a source representation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#add-normalization-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add normalization semantics
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#add-or-change-reconciliation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add or change reconciliation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#add-a-fast-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add a fast path
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-scheduling-or-resource-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Change scheduling or resource limits
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-persistence-or-publication" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Change persistence or publication
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification-by-responsibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Verification by responsibility
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Implementation references
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-development-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Related development paths
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+      
+        
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Development
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../architecture/" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Architecture
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
+                
+                  
+
+  
+  
+
+
+<h1 id="normalization-engine-architecture">Normalization Engine architecture</h1>
+<pre class="mermaid"><code>flowchart TD
+    Inputs["Resolved jobs and runtime settings"] --&gt; Preflight["Validate jobs, sources, and output paths"]
+    Preflight --&gt; Streams["Group compatible source tasks into streams"]
+    Streams --&gt; Admission["Admit work within shared resource budgets"]
+
+    Admission --&gt; Routing["Read sources and route family instruments"]
+    Routing --&gt; Workers["Normalize trades or depth observations"]
+
+    Workers --&gt;|"Trades and reconciled depth"| Reconciliation["Spool, order, and reconcile"]
+    Workers --&gt;|"Strict single-source depth"| Writers["Write canonical data and event evidence"]
+    Reconciliation --&gt; Writers
+
+    Workers --&gt; Metrics["Task metrics and source evidence"]
+    Reconciliation --&gt; Metrics
+
+    Writers --&gt; Finalization["Aggregate reports and validate staged output"]
+    Metrics --&gt; Finalization
+    Finalization --&gt; Valid{"Policies and manifest valid?"}
+
+    Valid --&gt;|"Yes"| Publication["Write checksums and publish directory"]
+    Valid --&gt;|"No"| Failure["Failed result and retained diagnostics"]
+    Publication --&gt; Result["Completed job result"]</code></pre>
+<p>The normalization Engine converts recorded market data into canonical trade or depth publications. It coordinates source interpretation, instrument routing, ordering, reconciliation, resource accounting, output validation, and publication.</p>
+<p>The implementation lives in <code>engine/src/historical/normalize/</code>, exposed as <code>crate::historical::normalize</code>.</p>
+<p>The diagram follows one job through publication. A processing session can schedule work from several jobs through shared resource budgets, then finalize each job separately.</p>
+<p>This page explains the responsibilities of the normalization components and the boundaries that must be preserved when extending them.</p>
+<h2 id="scope-and-relationship-to-forge">Scope and relationship to Forge</h2>
+<p>The normalization package receives resolved <code>ProcessingJob</code>, <code>WorkTask</code>, and <code>ProcessingConfig</code> values. Their preparation and configuration definitions also involve modules outside this package.</p>
+<p>Forge selects registered inputs, resolves catalogue evidence, prepares execution documents, invokes the managed executable, and registers verified publications. The normalization package processes the supplied jobs and produces filesystem artifacts and structured results.</p>
+<p>Within the Engine, several dependencies are shared:</p>
+<table>
+<thead>
+<tr>
+<th>Dependency</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>crate::historical::job</code></td>
+<td>Processing jobs, source tasks, identities, and structural validation</td>
+</tr>
+<tr>
+<td><code>crate::shared::historical</code></td>
+<td>Runtime configuration, policies, limits, and resource-accounting primitives</td>
+</tr>
+<tr>
+<td><code>crate::shared::io</code></td>
+<td>Source containers, readers, and physical record decoding</td>
+</tr>
+<tr>
+<td><code>crate::shared::formats</code></td>
+<td>Trade and depth interpretation</td>
+</tr>
+<tr>
+<td><code>crate::shared::normalization</code></td>
+<td>Normalization mappings and target schemas</td>
+</tr>
+<tr>
+<td><code>crate::shared::domain</code></td>
+<td>Canonical events, order-book state, and boundary models</td>
+</tr>
+<tr>
+<td><code>crate::shared::persistence::parquet</code></td>
+<td>Arrow schemas, batch builders, Parquet writers, and depth auxiliary formats</td>
+</tr>
+</tbody>
+</table>
+<p>The local <code>config.rs</code>, <code>resources/budget.rs</code>, and <code>parquet/mod.rs</code> files expose shared implementations through compatibility facades.</p>
+<p>The <code>merge</code> and <code>convert</code> exports in <code>normalize/mod.rs</code> refer to sibling operations. They do not make merging or conversion stages of normalization.<sup id="fnref:module-boundary"><a class="footnote-ref" href="#fn:module-boundary">1</a></sup></p>
+<h2 id="the-execution-model">The execution model</h2>
+<p>Understanding the distinction between sessions, jobs, tasks, streams, observations, and rows is essential before changing processing behavior.</p>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Processing session</td>
+<td>A collection of jobs sharing execution resources and scheduling</td>
+</tr>
+<tr>
+<td>Processing job</td>
+<td>Work producing one publication with one canonical content type</td>
+</tr>
+<tr>
+<td>Source task</td>
+<td>A resolved source input, identity, interpretation, and source-ordering contract</td>
+</tr>
+<tr>
+<td>Stream execution unit</td>
+<td>Compatible source tasks that must be processed together</td>
+</tr>
+<tr>
+<td>Source record</td>
+<td>A physical record examined by a decoder</td>
+</tr>
+<tr>
+<td>Logical observation</td>
+<td>An accepted event or assembled depth observation</td>
+</tr>
+<tr>
+<td>Canonical row</td>
+<td>A trade row or depth level-update row written to canonical output</td>
+</tr>
+<tr>
+<td>Source span</td>
+<td>The canonical row ranges attributed to a source task within a stream</td>
+</tr>
+</tbody>
+</table>
+<p>A job can contain many tasks. Several tasks can contribute to the same logical stream. A family input can contain several instruments and produce multiple concrete streams.</p>
+<p>A source record and a canonical row are not interchangeable units. A grouped depth snapshot can consume multiple source records, while one accepted depth observation can produce several canonical updates or no updates.</p>
+<p>These distinctions affect scheduling, metrics, reconciliation, and publication validation.<sup id="fnref:streams"><a class="footnote-ref" href="#fn:streams">2</a></sup><sup id="fnref:workers"><a class="footnote-ref" href="#fn:workers">9</a></sup></p>
+<h2 id="package-map">Package map</h2>
+<p>Paths in this table are relative to <code>engine/src/historical/normalize/</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>executor.rs</code></td>
+<td>Single-job execution, finalization, failure persistence, and directory publication</td>
+</tr>
+<tr>
+<td><code>session.rs</code></td>
+<td>Multi-job preflight, shared execution resources, result ownership, and per-job finalization</td>
+</tr>
+<tr>
+<td><code>scheduler.rs</code></td>
+<td>Bounded parallel execution and resource admission</td>
+</tr>
+<tr>
+<td><code>streams.rs</code></td>
+<td>Stream grouping, execution-path selection, source ownership, and output inventory</td>
+</tr>
+<tr>
+<td><code>streams_depth.rs</code></td>
+<td>Direct depth execution and persisted depth-evidence validation</td>
+</tr>
+<tr>
+<td><code>family.rs</code></td>
+<td>Shared decoding and routing of family inputs into concrete instrument streams</td>
+</tr>
+<tr>
+<td><code>preparation.rs</code></td>
+<td>Bounded parallel source normalization using spare compute capacity</td>
+</tr>
+<tr>
+<td><code>task.rs</code></td>
+<td>Isolated task execution helpers and worker policy preparation</td>
+</tr>
+<tr>
+<td><code>worker/</code></td>
+<td>Source processing loops, sinks, ordering checks, and decoded-input handling</td>
+</tr>
+<tr>
+<td><code>reconciled.rs</code></td>
+<td>Source preparation, canonical spooling, reconciliation dispatch, and staged output</td>
+</tr>
+<tr>
+<td><code>reconcile.rs</code></td>
+<td>Source observations, identity contracts, and reconciliation proof helpers</td>
+</tr>
+<tr>
+<td><code>reconcile/external.rs</code></td>
+<td>Disk-backed sorting, identity reconciliation, and validated trade execution paths</td>
+</tr>
+<tr>
+<td><code>reconciled_depth.rs</code></td>
+<td>Stateful depth selection and replay</td>
+</tr>
+<tr>
+<td><code>depth_partitions.rs</code></td>
+<td>Checkpointed depth replay for fragmented source ownership</td>
+</tr>
+<tr>
+<td><code>coverage.rs</code></td>
+<td>Interval ownership used during source selection</td>
+</tr>
+<tr>
+<td><code>reconcile/spool.rs</code></td>
+<td>Scratch files, framing, quotas, consumption, and cleanup</td>
+</tr>
+<tr>
+<td><code>reconcile/typed.rs</code>, <code>typed_depth.rs</code></td>
+<td>Internal typed scratch payloads</td>
+</tr>
+<tr>
+<td><code>resources/</code></td>
+<td>Estimates, admission inspection, compute permits, and scratch support</td>
+</tr>
+<tr>
+<td><code>metrics/</code></td>
+<td>Counters, scoped observations, retained reports, and integrity evaluation</td>
+</tr>
+<tr>
+<td><code>policies.rs</code></td>
+<td>Processing-quality evidence and job-wide policy evaluation</td>
+</tr>
+<tr>
+<td><code>sequence_policy.rs</code></td>
+<td>Resolve depth sequence semantics from normalization metadata</td>
+</tr>
+<tr>
+<td><code>boundary/</code></td>
+<td>Capture initial and final book-state evidence and continuity observations</td>
+</tr>
+<tr>
+<td><code>parquet/</code></td>
+<td>Adapt shared Parquet writers to normalization sinks</td>
+</tr>
+<tr>
+<td><code>manifest/</code></td>
+<td>Build, validate, inspect, and persist publication evidence</td>
+</tr>
+<tr>
+<td><code>progress/</code></td>
+<td>Progress events, diagnostics, and presentation-facing snapshots</td>
+</tr>
+<tr>
+<td><code>result.rs</code>, <code>response.rs</code></td>
+<td>Structured job results and the versioned normalization response</td>
+</tr>
+<tr>
+<td><code>benchmark/</code></td>
+<td>Trial planning, execution, provenance, verification, and performance comparison</td>
+</tr>
+</tbody>
+</table>
+<p>The package has several levels of execution API. A helper that can process one isolated task is not necessarily the entry point used by a complete production job.</p>
+<h2 id="public-execution-entry-points">Public execution entry points</h2>
+<p>The principal single-job functions are:</p>
+<ul>
+<li><code>execute_processing_job()</code></li>
+<li><code>execute_processing_job_with_progress()</code></li>
+</ul>
+<p>The <code>session</code> module exposes:</p>
+<ul>
+<li><code>execute_processing_session()</code></li>
+<li><code>execute_processing_session_with_progress()</code></li>
+<li><code>execute_processing_session_reporting()</code></li>
+</ul>
+<p>The reporting variant accepts a callback for definitive job outcomes. This allows a caller to retain completed results even if a later session operation encounters an error.</p>
+<p>Lower-level session and task functions support internal composition and focused execution.</p>
+<h3 id="result-handling">Result handling</h3>
+<p>Single-job execution returns <code>Result&lt;ProcessingResult&gt;</code>.</p>
+<p>An <code>Ok</code> value can contain a failed <code>ProcessingResult</code>. The outer Rust result and the reported processing status therefore have different meanings.</p>
+<p><code>ProcessingResult</code> records the job and dataset identities, complete or failed status, optional manifest and failure-report paths, row and file counts, timestamp boundaries, and structured failure information.</p>
+<p>Callers must inspect the processing status rather than treating every <code>Ok</code> value as successful publication.<sup id="fnref:execution-results"><a class="footnote-ref" href="#fn:execution-results">3</a></sup></p>
+<h3 id="supported-job-output">Supported job output</h3>
+<p>The processing executor accepts trade or depth output. It rejects combined output for this operation.</p>
+<p>Every task must have normalization mappings matching the job’s target type. Trade tasks require exactly one trade normalization configuration. Depth tasks can carry multiple depth rules.</p>
+<p>These checks establish the processing contract before source execution begins.<sup id="fnref:executor"><a class="footnote-ref" href="#fn:executor">4</a></sup></p>
+<h2 id="job-validation-and-staging">Job validation and staging</h2>
+<p>Execution validates the job structure and runtime configuration before processing sources.</p>
+<p>Session validation also checks relationships across jobs, including conflicting output paths. Task identities must be unique within their job, and task targets must agree with the job content type.</p>
+<p>Final and staging destinations must be fresh. The implementation does not reuse an existing publication directory as a working directory.</p>
+<h3 id="retained-execution-provenance">Retained execution provenance</h3>
+<p><code>prepare_staging()</code> creates the staging directory and writes:</p>
+<ul>
+<li><code>processing-job.json</code></li>
+<li><code>processing-job.sha256</code></li>
+<li><code>processing-runtime.json</code></li>
+<li><code>processing-runtime.sha256</code></li>
+</ul>
+<p>The retained processing job contains the resolved work. Its legacy resource and integrity fields are replaced with the authoritative runtime settings used for execution.</p>
+<p>Execution-only tuning and processing policies are retained in runtime provenance.</p>
+<p>This distinction matters when adding configuration. A new runtime setting must be represented where execution reads it and where publication evidence records it.<sup id="fnref2:executor"><a class="footnote-ref" href="#fn:executor">4</a></sup></p>
+<h3 id="session-preflight">Session preflight</h3>
+<p>The session performs source and resource preflight before scheduling eligible work.</p>
+<p>A job with a preflight failure can retain a failure outcome while other eligible jobs continue. Structural errors affecting the session itself can terminate the call before every requested job has a definitive result.</p>
+<p>The result protocol preserves that distinction. It does not invent outcomes for work that could not be reported.<sup id="fnref:session"><a class="footnote-ref" href="#fn:session">5</a></sup><sup id="fnref2:execution-results"><a class="footnote-ref" href="#fn:execution-results">3</a></sup></p>
+<h2 id="streams-are-the-scheduling-boundary">Streams are the scheduling boundary</h2>
+<p>The main execution path schedules <code>StreamUnit</code> groups.</p>
+<p><code>streams::plan()</code> groups ordinary tasks using a fingerprint of their concrete interpretation. The grouping includes stream and instrument identity, economics, normalization mappings, source ordering, instrument namespace, profile evidence, and source options.</p>
+<p>Physical source paths do not define the canonical stream. Multiple archives can contribute to one stream when their identity and interpretation agree.</p>
+<p>Family inputs initially use a family-routing key. After routing, processing establishes the concrete instrument streams.</p>
+<p>Within a stream unit, source priority and the original task position establish deterministic source order.<sup id="fnref2:streams"><a class="footnote-ref" href="#fn:streams">2</a></sup></p>
+<h3 id="why-tasks-are-grouped">Why tasks are grouped</h3>
+<p>Related sources can overlap or continue one another. Their duplicate identity, source precedence, timestamp policy, and depth state must be assessed together.</p>
+<p>Scheduling each archive independently and concatenating its output would bypass those relationships.</p>
+<p>The stream owns the relevant processing state and writers until its work is finalized.</p>
+<h3 id="execution-path-selection">Execution-path selection</h3>
+<p>The current dispatch in <code>streams::needs_reconciliation()</code> selects reconciled execution when:</p>
+<ul>
+<li>The unit contains multiple source tasks.</li>
+<li>The unit contains family inputs.</li>
+<li>The target is trades.</li>
+<li>Depth overlap or timestamp policy requires the reconciled path.</li>
+</ul>
+<p>Every trade stream therefore enters reconciled execution, including a single-source trade stream.</p>
+<p>The direct depth path applies to strict, single-source, non-family depth.</p>
+<p>Trade fast paths are selected later, after source normalization has established the evidence required to use them.</p>
+<h2 id="session-scheduling-and-resource-ownership">Session scheduling and resource ownership</h2>
+<p><code>session.rs</code> creates shared execution resources and schedules stream units through <code>scheduler::execute_parallel_budgeted_observed()</code>.</p>
+<p>The scheduler estimates each unit before launching workers. It acquires the required reservation before execution and holds that reservation while the unit runs.</p>
+<p>Results are restored to input order regardless of worker completion order.</p>
+<p>This separates scheduling order from semantic order. A worker finishing earlier does not gain precedence over another source.<sup id="fnref2:session"><a class="footnote-ref" href="#fn:session">5</a></sup><sup id="fnref:scheduler"><a class="footnote-ref" href="#fn:scheduler">6</a></sup></p>
+<h3 id="what-the-estimates-cover">What the estimates cover</h3>
+<p>Resource estimates include more than decoder buffers.</p>
+<p>Depending on the input and execution path, they account for:</p>
+<ul>
+<li>Decoding and transformation workspace.</li>
+<li>Record-size allowances.</li>
+<li>Book state, snapshots, diffs, and boundary evidence.</li>
+<li>Supported workbook materialization.</li>
+<li>Parquet writer memory.</li>
+<li>Reconciliation buffers.</li>
+<li>Integrity observations and diagnostic samples.</li>
+<li>Retained task results.</li>
+<li>Finalization workspace.</li>
+<li>Open-file requirements.</li>
+</ul>
+<p>Source file length is not a reliable estimate of decoded memory.</p>
+<p>Admission inspection reports planned reservations. Those figures are not measurements of process RSS and do not establish that every configured worker can run simultaneously.<sup id="fnref:resources"><a class="footnote-ref" href="#fn:resources">7</a></sup></p>
+<h3 id="retained-reports-also-consume-resources">Retained reports also consume resources</h3>
+<p>Task completion does not release every object associated with that task.</p>
+<p>Metrics and source evidence may remain alive until job finalization or failure-report persistence. The session accounts for retained report state separately and reserves finalization workspace before transferring ownership of the results.</p>
+<p>When adding a retained field, consider its full lifetime. A small per-task object can become substantial when accumulated across many tasks.</p>
+<h3 id="nested-compute-permits">Nested compute permits</h3>
+<p><code>resources/compute.rs</code> provides a session-wide compute budget.</p>
+<p>A parent processing unit holds a permit. Nested work can acquire an available spare permit, but it does not wait indefinitely for capacity held by its own parent.</p>
+<p>This permits useful overlap without allowing nested parallelism to exceed the intended compute capacity or introduce permit deadlocks.</p>
+<p>Resource reservations and compute permits solve different problems: one controls admitted resource footprints; the other controls active computation.</p>
+<h2 id="family-routing">Family routing</h2>
+<p>A family archive may interleave records for several instruments.</p>
+<p>The family-routing layer decodes the applicable source or archive member once and directs selected records into instrument-specific scratch streams.</p>
+<pre class="mermaid"><code>flowchart TD
+    Archive["Family archive or member"] --&gt; Decode["One forward decode"]
+    Decode --&gt; Identity["Resolve native identity and selection"]
+
+    Identity --&gt;|"Selected instrument A"| SpoolA["Decoded spool A"]
+    Identity --&gt;|"Selected instrument B"| SpoolB["Decoded spool B"]
+    Identity --&gt;|"Unselected record"| Filtered["Filtered-record evidence"]
+
+    SpoolA --&gt; WorkerA["Concrete worker A"]
+    SpoolB --&gt; WorkerB["Concrete worker B"]
+
+    WorkerA --&gt; StreamA["Stream A processing"]
+    WorkerB --&gt; StreamB["Stream B processing"]</code></pre>
+<p>Selection is applied before requiring metadata for deliberately unselected instruments. An encountered selected instrument must have the authoritative metadata and supported interpretation needed for processing.</p>
+<p>The production routing path uses disk-backed decoded records. The in-memory variants in <code>worker/decoded.rs</code> are test support.</p>
+<p>Concrete workers consume their routed input through a scoped, one-shot interface. They preserve physical record ordinals and do not reopen the original archive to scan for each instrument.<sup id="fnref:family"><a class="footnote-ref" href="#fn:family">8</a></sup></p>
+<h3 id="independent-instrument-state">Independent instrument state</h3>
+<p>Routing separates more than output files.</p>
+<p>Each concrete instrument needs its own timestamp domain, book state, sequence interpretation, source evidence, and processing metrics.</p>
+<p>Interleaved records for different instruments must not be checked against one shared “previous timestamp” or one shared order book.</p>
+<h3 id="selection-fulfillment">Selection fulfillment</h3>
+<p>Finalization checks explicit include selections across the applicable sources.</p>
+<p>An instrument can be absent from one archive and appear in another. A requested instrument never observed in any applicable selected source fails the selection check.</p>
+<p>Observed membership and successful processing are separate assertions. An invalid selected record can establish that the instrument was encountered while still causing a processing failure.</p>
+<h3 id="extension-constraints">Extension constraints</h3>
+<p>The current family-routing implementation supports the relevant CSV and JSONL paths. XLSX family routing is rejected.</p>
+<p>A routing extension must preserve:</p>
+<ul>
+<li>One-pass decoding where the existing path provides it.</li>
+<li>Original source ordinals.</li>
+<li>Selection before unnecessary metadata lookup.</li>
+<li>Explicit failures for selected identities that cannot be processed.</li>
+<li>Bounded spool and handle usage.</li>
+<li>Independent concrete stream state.</li>
+<li>Final selection-fulfillment checks.</li>
+</ul>
+<h2 id="source-workers-and-sink-interfaces">Source workers and sink interfaces</h2>
+<p>Workers connect physical records to shared trade and depth processors.</p>
+<p>They own the source-processing loop, instrument matching, error attribution, ordering observations, and submission to a sink.</p>
+<p>The semantic processors and physical decoders live in shared modules. A change to field interpretation can therefore require work outside the normalization package.</p>
+<h3 id="trade-processing">Trade processing</h3>
+<p><code>worker/trades.rs</code> reads CSV records or projects configured JSONL scalar values into the row representation used by the shared trade processor.</p>
+<p>The processing loop:</p>
+<ol>
+<li>Reads or consumes a decoded record.</li>
+<li>Classifies decoding errors.</li>
+<li>Checks instrument identity.</li>
+<li>Calls the shared <code>TradeProcessor</code>.</li>
+<li>Records integrity observations.</li>
+<li>Checks applicable source ordering.</li>
+<li>Submits the canonical trade with its source ordinal.</li>
+</ol>
+<p>Recoverable record rejection follows the configured integrity policy. Source I/O and decompression failures retain their source-failure meaning.</p>
+<p>An instrument identity error must not silently become an unrelated record that can be skipped.<sup id="fnref2:workers"><a class="footnote-ref" href="#fn:workers">9</a></sup></p>
+<h3 id="depth-processing">Depth processing</h3>
+<p><code>worker/depth.rs</code> uses the shared <code>DepthProcessor</code> and supported CSV, JSONL, or workbook adapters.</p>
+<p>The worker submits a complete <code>DepthProcessingOutcome</code>. That outcome contains source-event metadata, the source operation, the initialization or change boundary, and zero or more canonical level updates.</p>
+<p>The worker checks the outcome before accepting it, submits the whole outcome to the sink, and then updates accepted-event and boundary evidence.</p>
+<p>Preserving the complete outcome is essential. Splitting it into unrelated row writes can lose the relationship between one source observation and the state transition it caused.</p>
+<h3 id="sinks">Sinks</h3>
+<p><code>worker/sink.rs</code> defines two main interfaces:</p>
+<table>
+<thead>
+<tr>
+<th>Interface</th>
+<th>Submission unit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TradeSink</code></td>
+<td>A canonical trade, with source ordinal when required</td>
+</tr>
+<tr>
+<td><code>DepthSink</code></td>
+<td>A complete depth outcome, source-record evidence, and boundary evidence</td>
+</tr>
+</tbody>
+</table>
+<p>Workers can submit to canonical spools or shared Parquet writers through these interfaces.</p>
+<p>This allows decoding and normalization to remain reusable while reconciliation and publication choose how to consume the results.</p>
+<p>An additional sink must preserve the metadata and accounting required by its caller. Accepting the values while dropping source ordinals or depth boundaries is not an equivalent implementation.</p>
+<h2 id="internal-source-preparation">Internal source preparation</h2>
+<p><code>preparation.rs</code> overlaps source normalization within a stream when spare compute capacity and resource estimates permit it.</p>
+<p>This is an execution optimization inside the Rust Engine. It is separate from Forge’s recipe preparation and from profile compilation.</p>
+<p>The optimization starts ordinary source workers and transfers owned events through a bounded channel:</p>
+<ul>
+<li>A canonical trade and source ordinal.</li>
+<li>A depth outcome and optional source-record fingerprint.</li>
+<li>Completed depth boundary evidence.</li>
+</ul>
+<p>Mutable book state, scratch workspaces, and retained report handles remain with their owning execution context.</p>
+<p>The consumer joins the source worker after completion or error. Cancelling a preparation drops the receiving side and joins the producer, allowing blocked submission to terminate cleanly.<sup id="fnref:preparation"><a class="footnote-ref" href="#fn:preparation">10</a></sup></p>
+<h3 id="eligibility-and-backpressure">Eligibility and backpressure</h3>
+<p>The current implementation disables this optimization for family routing and for tasks sharing an input path.</p>
+<p>Preparation capacity is constrained by worker count, estimated memory, and available handles. The event channel itself is bounded.</p>
+<p>When extending source parallelism, preserve:</p>
+<ul>
+<li>Explicit resource admission.</li>
+<li>A bounded producer–consumer boundary.</li>
+<li>Deterministic consumption order.</li>
+<li>Ownership of mutable state.</li>
+<li>Joining on every completion and failure path.</li>
+</ul>
+<p>Increasing the number of spawned threads without accounting for their buffers and retained state changes the resource contract.</p>
+<h2 id="ordering-and-sequence-semantics">Ordering and sequence semantics</h2>
+<p>Ordering is checked at several stages because source validity and final publication order are different questions.</p>
+<p><code>worker/ordering.rs::TimestampOrder</code> records regressions relative to the previous accepted event and tracks a timestamp high-water mark for processing tolerance.</p>
+<p>Equal timestamps are not regressions.</p>
+<p>During reconciled trade execution, processing-policy decisions can be deferred until duplicate and identity handling has established the logical event sequence. Raw anomaly evidence is still retained, and immediate integrity checks still apply.<sup id="fnref:ordering"><a class="footnote-ref" href="#fn:ordering">11</a></sup></p>
+<h3 id="depth-order">Depth order</h3>
+<p>Incremental depth depends on earlier book state. Sorting level updates by timestamp alone cannot establish a valid reconstruction.</p>
+<p>The implementation rejects unsupported timestamp-sortable depth paths. Supported workbook handling is a specific source path with its own semantics.</p>
+<p>A snapshot establishing a new sequence segment can reset the relevant timestamp-ordering context. That transition must retain its recovery evidence.</p>
+<h3 id="sequence-policy">Sequence policy</h3>
+<p><code>sequence_policy.rs</code> resolves compatible sequence semantics from depth normalization metadata:</p>
+<ul>
+<li>Consecutive.</li>
+<li>Ranged.</li>
+<li>Unsequenced.</li>
+</ul>
+<p>Bounded observations do not become consecutive incremental feeds merely because they contain a sequence field.</p>
+<p>A sequence extension must define what the values prove. Presence, nondecreasing order, event identity, and continuity are separate claims.</p>
+<h2 id="trade-reconciliation">Trade reconciliation</h2>
+<p>Trade reconciliation decides how normalized source observations contribute to one canonical stream.</p>
+<p>The production reconciled path first completes source normalization and canonical spooling. It then selects a validated publication path.</p>
+<p>A fast path therefore bypasses some reconciliation work after evidence has been established; it does not bypass source validation.</p>
+<h3 id="execution-paths">Execution paths</h3>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Required evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>chronological_append</code></td>
+<td>Supported strict policies, explicit source-local identity, validated chronology, and strictly disjoint accepted intervals</td>
+</tr>
+<tr>
+<td><code>ordered_run_append</code></td>
+<td>A validated ordered-run identity domain with compatible native-ID/time ordering and nonoverlapping boundaries</td>
+</tr>
+<tr>
+<td><code>ordered_run_merge</code></td>
+<td>A validated ordered-run domain with overlapping sources and admitted merge cursors</td>
+</tr>
+<tr>
+<td><code>identity_reconciliation</code></td>
+<td>General identity and policy processing when a narrower path cannot be established</td>
+</tr>
+</tbody>
+</table>
+<p>Intervals sharing a timestamp boundary do not qualify as strictly disjoint append ranges.</p>
+<p>A numeric-looking trade ID does not by itself establish an ordered-run contract.<sup id="fnref:trade-reconciliation"><a class="footnote-ref" href="#fn:trade-reconciliation">12</a></sup></p>
+<h3 id="duplicate-proof">Duplicate proof</h3>
+<p>When comparing trades from separately supplied observations, <code>trade_equivalence()</code> checks a comparable reliable identity contract, matching canonical identity and native trade ID, and equality of the complete canonical trade.</p>
+<p>Matching timestamp, price, size, and side alone does not establish that two executions are the same event.</p>
+<p>The implementation also tracks equivalent source selections separately. Source equivalence and event equivalence have different evidence requirements.</p>
+<p>Preserve those proof boundaries when adding an optimization.</p>
+<h3 id="general-reconciliation">General reconciliation</h3>
+<p>The general path uses bounded external sorting and retained source observations to:</p>
+<ul>
+<li>Establish source ownership and precedence.</li>
+<li>Compare native identities.</li>
+<li>Suppress proven duplicates.</li>
+<li>Apply explicitly permitted exclusions.</li>
+<li>Validate identity-domain assumptions.</li>
+<li>Apply timestamp policy to the surviving logical observations.</li>
+<li>Produce the required output ordering.</li>
+</ul>
+<p>Source preference follows validated coverage and stable source identity. Worker completion order does not choose the winning source.</p>
+<p>Distinct reliable trade identities remain distinct events even when their timestamps and values match.</p>
+<p>Output ordering also depends on policy. A preserve policy can retain native order, so downstream code must read the publication’s ordering evidence rather than assume every trade publication is globally timestamp-sorted.</p>
+<h2 id="depth-reconciliation">Depth reconciliation</h2>
+<p>Depth reconciliation operates on independent source histories and reconstructed books.</p>
+<p>Its unit of reasoning is the logical observation and the state it establishes. Individual level rows do not carry enough context to reconcile histories safely.</p>
+<h3 id="reconstruct-each-source-history">Reconstruct each source history</h3>
+<p><code>reconciled_depth.rs</code> replays source observations against their own book state while maintaining the selected output state.</p>
+<p>Initialization and source-switch boundaries may require complete state comparison. Once equivalence has been established, identical controlled updates can preserve that proof while checking changed levels.</p>
+<p>The implementation does not use equality of a book hash as a substitute for exact state equivalence.<sup id="fnref:depth-reconciliation"><a class="footnote-ref" href="#fn:depth-reconciliation">13</a></sup></p>
+<h3 id="overlap-policies">Overlap policies</h3>
+<p>Strict overlap requires sufficient proof to combine the histories. Ambiguous overlap fails.</p>
+<p>Snapshot-recovery behavior can preserve independently reconstructable supplied histories while reporting that continuity between them is unproven.</p>
+<p>Source-preference behavior computes ownership intervals. Switching histories requires the applicable snapshot or state-and-sequence evidence.</p>
+<p>A repeated boundary event requires more than equal reconstructed books. The implementation checks the relevant source event, sequence, timestamps, initialization, and source-record evidence.</p>
+<h3 id="timestamp-recovery">Timestamp recovery</h3>
+<p>When a policy permits recovery after a timestamp problem, dependent observations may need to be withheld until an actual recovery snapshot appears.</p>
+<p>The operation must enforce the configured loss allowance and establish the recovery boundary. If the required snapshot never arrives, the history cannot be treated as recovered.</p>
+<h3 id="fragmented-ownership">Fragmented ownership</h3>
+<p>A selected history may leave one source, use another source for an interval, and later return to the first.</p>
+<p><code>depth_partitions.rs</code> supports this by retaining replay segments and exact checkpoints. A checkpoint includes the book and the sequence, timestamp, recovery, and ordinal state needed to continue correctly.</p>
+<p>Checkpoint identity and position are verified during restoration.</p>
+<p>This avoids repeatedly reopening archives or replaying a source prefix whenever ownership returns to that source.</p>
+<h3 id="output-accounting-can-change-during-replay">Output accounting can change during replay</h3>
+<p>A source transition may require a full initialization instead of the original source’s incremental diff.</p>
+<p>The replay layer adjusts canonical-row accounting to match the actual emitted representation.</p>
+<p>Consequently, the final row count is not necessarily the sum of the originally spooled level-update counts.</p>
+<h2 id="scratch-storage-and-external-processing">Scratch storage and external processing</h2>
+<p>Scratch storage is part of the execution and correctness model.</p>
+<p><code>reconcile/spool.rs::Workspace</code> owns scratch files, quota accounting, handles, and cleanup. Writes reserve capacity before consuming it.</p>
+<p>Frames carry length, checksum, and completion evidence. Readers reject truncated or corrupt frames. A writer that failed during I/O cannot seal incomplete output as a successfully completed spool.<sup id="fnref:scratch"><a class="footnote-ref" href="#fn:scratch">14</a></sup></p>
+<h3 id="external-sorting">External sorting</h3>
+<p><code>reconcile/external.rs</code> uses bounded resident chunks, sorted runs, and multi-pass merging.</p>
+<p>Merge fan-in is constrained by configuration, admitted memory, and available handles. The final merge can feed its consumer without materializing another complete in-memory collection.</p>
+<p>Spare compute permits can support selected sorting work while scratch ownership and resource leases remain controlled.</p>
+<p>Disk-backed processing still has finite memory, disk, record-size, and handle limits.</p>
+<h3 id="internal-codecs">Internal codecs</h3>
+<p><code>reconcile/typed.rs</code> and <code>typed_depth.rs</code> provide typed payload representations for scratch work.</p>
+<p>They preserve canonical value information, including decimal representation and optional fields. Framing and compression remain responsibilities of the spool layer.</p>
+<p>These codecs are internal execution formats. Public dataset compatibility is defined by the publication and canonical persistence contracts.</p>
+<p>A codec change should demonstrate equivalent records, ordering, error behavior, and completion checks across the affected execution paths.</p>
+<h3 id="quota-scope">Quota scope</h3>
+<p>The reconciliation scratch pool coordinates concurrent work within the process for a canonical scratch root.</p>
+<p>It is not a machine-wide quota shared automatically with unrelated processes.</p>
+<p>Likewise, accounted memory reservations do not impose an operating-system RSS ceiling. Diagnostics can report actual memory observations separately.</p>
+<h2 id="metrics-integrity-and-processing-quality">Metrics, integrity, and processing quality</h2>
+<p>The metrics subsystem separates mutable processing state from persisted evidence.</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TaskMetrics</code></td>
+<td>Live counters and observations for processing a task</td>
+</tr>
+<tr>
+<td><code>TaskMetricsReport</code></td>
+<td>Retained task evidence, including source observations and failure</td>
+</tr>
+<tr>
+<td><code>ProcessingMetricsReport</code></td>
+<td>Aggregated job evidence</td>
+</tr>
+</tbody>
+</table>
+<p>Aggregation checks task identity and arithmetic before committing changes to the aggregate report.<sup id="fnref:metrics"><a class="footnote-ref" href="#fn:metrics">15</a></sup></p>
+<h3 id="counters-have-explicit-units">Counters have explicit units</h3>
+<p>Physical records, logical observations, and canonical rows must remain distinct.</p>
+<p>The canonical-row accounting relationship is:</p>
+<div class="highlight"><pre><span></span><code>events_normalized
+    = events_written
+    + rows_suppressed
+    + rows_unpublished
+</code></pre></div>
+<p>The <code>events_*</code> names refer to canonical rows.</p>
+<p>For depth, an accepted observation may generate many rows or zero rows. Separate accepted-observation and event-index evidence preserves that distinction.</p>
+<p>In reconciled execution, successful submission to a spool is an intermediate state. Accounting is transferred as surviving rows reach the staged writer and suppressed or unpublished rows are identified.</p>
+<p>A staged row count is not evidence that the dataset has been committed.</p>
+<h3 id="integrity-observations">Integrity observations</h3>
+<p>Integrity accounting retains category totals and scoped observations while keeping diagnostic samples bounded.</p>
+<p>A full diagnostic sample does not stop counters increasing.</p>
+<p>Evidence can be attributed globally, to a source or file, and to hourly or daily windows. Missing trusted timestamps can prevent a requested event-time policy from being evaluated successfully.</p>
+<p>When adding an integrity category or observation, define its eligible population, violation count, attribution, and aggregation behavior.</p>
+<h3 id="immediate-and-final-evaluation">Immediate and final evaluation</h3>
+<p>Workers apply immediate failure semantics and record observations.</p>
+<p>For the normal aggregated path, <code>worker_integrity_policy()</code> removes aggregate count, rate, and window thresholds from worker-local policy copies. Final evaluation uses the complete job evidence.</p>
+<p>This prevents individual sources from independently deciding a job-wide allowance.</p>
+<h3 id="processing-quality-is-separate">Processing quality is separate</h3>
+<p><code>policies.rs</code> records processing effects such as:</p>
+<ul>
+<li>Verified duplicates.</li>
+<li>Known-unique or unverified exclusions.</li>
+<li>Timestamp anomalies.</li>
+<li>Recovery segments.</li>
+<li>Source switches.</li>
+<li>Output ordering decisions.</li>
+</ul>
+<p>Its loss budgets operate on logical observations with the relevant duplicate adjustment, rather than on expanded depth rows.</p>
+<p>Permission to degrade integrity, permission to exclude observations, reconstruction validity, and publication eligibility remain separate checks.</p>
+<p>Disabling an integrity rule does not make a structurally invalid book or incomplete submission publishable.</p>
+<h3 id="retaining-detailed-observations">Retaining detailed observations</h3>
+<p><code>metrics/retained.rs</code> can spill immutable detailed observations after their attribution is stable.</p>
+<p>Resident maps are cleared only after the retained spool has completed successfully. If persistence fails, the resident evidence remains authoritative.</p>
+<p>Mutable canonical-output accounting stays with the task until its ownership is settled.</p>
+<p>This distinction is important when adding metrics: decide whether a value is immutable evidence that can be spilled or live state that later processing must update.</p>
+<h2 id="canonical-output-and-depth-evidence">Canonical output and depth evidence</h2>
+<p>The normalization package adapts shared Parquet writers through <code>TradeSink</code> and <code>DepthSink</code>.</p>
+<p>The physical schemas, builders, and writers are implemented under <code>crate::shared::persistence::parquet</code>.</p>
+<p>Normal stream output is organized under stream directories, with canonical <code>part-*.parquet</code> files and the required auxiliary evidence.</p>
+<p>Isolated task helpers in <code>task.rs</code> can write task-oriented layouts. They are useful execution helpers, but the main job/session path uses stream execution.<sup id="fnref:persistence"><a class="footnote-ref" href="#fn:persistence">16</a></sup></p>
+<h3 id="depth-auxiliary-artifacts">Depth auxiliary artifacts</h3>
+<table>
+<thead>
+<tr>
+<th>Artifact</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>events.parquet</code></td>
+<td>Index logical observations and their canonical row spans</td>
+</tr>
+<tr>
+<td><code>segments.json</code></td>
+<td>Describe reconstruction segments</td>
+</tr>
+<tr>
+<td><code>boundary.json</code></td>
+<td>Retain source boundary and book-state evidence</td>
+</tr>
+</tbody>
+</table>
+<p>An event-index entry can refer to an empty canonical span. This preserves an accepted observation that changed no levels.</p>
+<p>Source-local ordinals and stream-level canonical offsets have different scopes. Both must remain consistent across part boundaries.</p>
+<p>Trade <code>sources.jsonl</code> evidence is conditional on the processing behavior that requires it; it is not a universal file present in every trade publication.</p>
+<h3 id="boundary-evidence">Boundary evidence</h3>
+<p><code>DepthBoundaryTracker</code> records accepted source messages, the first initialization, discontinuities, and the final reconstructed state.</p>
+<p>Continuity is classified from available sequence and boundary evidence.</p>
+<p>A bounded snapshot can establish the supplied book coverage without establishing complete market history. Likewise, a final book state does not prove that every intermediate observation was received.</p>
+<p>Contributors changing depth output should inspect both the writer and <code>streams_depth::validate()</code>, which checks persisted offsets, source attribution, initialization segments, and row/event totals.</p>
+<h2 id="finalization-and-publication">Finalization and publication</h2>
+<p>A completed writer is one prerequisite for publication.</p>
+<p><code>executor::finalize_processing_job_with_progress()</code> performs the job-level checks and constructs the publication evidence.</p>
+<p>The sequence is:</p>
+<ol>
+<li>Check the number and identities of task outcomes.</li>
+<li>Aggregate task reports and preserve failures.</li>
+<li>Reject failed or unattempted work.</li>
+<li>Reject unresolved records and unpublished canonical submissions.</li>
+<li>Validate family selection and counter relationships.</li>
+<li>Evaluate processing policies and final integrity.</li>
+<li>Build and validate the manifest against staged files.</li>
+<li>Write the manifest.</li>
+<li>Write publication checksums and synchronize the relevant artifacts.</li>
+<li>Rename staging to the fresh final destination.</li>
+<li>Synchronize the destination’s parent directory.</li>
+<li>Return a completed result.</li>
+</ol>
+<p>A failure before these checks finish cannot be treated as a completed publication merely because Parquet files exist.<sup id="fnref:publication"><a class="footnote-ref" href="#fn:publication">17</a></sup></p>
+<h3 id="manifest-consistency">Manifest consistency</h3>
+<p>The manifest builder checks the relationship between:</p>
+<ul>
+<li>Submitted tasks.</li>
+<li>Task reports.</li>
+<li>Stream ownership.</li>
+<li>Source contribution ranges.</li>
+<li>Primary-file row counts.</li>
+<li>Depth event and boundary evidence.</li>
+<li>Instrument namespaces.</li>
+<li>Resolved instrument metadata.</li>
+<li>Integrity and processing-quality results.</li>
+</ul>
+<p>Manifest versions are selected according to the evidence needed to describe the publication. The current code supports the base format and the later ownership and processing-policy extensions.</p>
+<p>Do not assume that every successful normalization run writes the same manifest version.</p>
+<h3 id="publication-boundary">Publication boundary</h3>
+<pre class="mermaid"><code>stateDiagram-v2
+    state "Fresh staging directory" as Staging
+    state "Validated publication artifacts" as Validated
+    state "Final directory visible" as Visible
+    state "Complete result" as Complete
+    state "Failed processing evidence" as Failed
+    state "Durability error after rename" as DurabilityError
+
+    [*] --&gt; Staging
+    Staging --&gt; Validated: Processing and final checks succeed
+    Staging --&gt; Failed: Processing or validation fails
+    Validated --&gt; Visible: No-replace rename
+    Visible --&gt; Complete: Parent synchronization succeeds
+    Visible --&gt; DurabilityError: Parent synchronization fails
+    Complete --&gt; [*]
+    Failed --&gt; [*]
+    DurabilityError --&gt; [*]</code></pre>
+<p><code>commit_dataset()</code> uses a same-filesystem rename with no replacement of an existing destination. There is no copy fallback.</p>
+<p>The parent-directory synchronization happens after the rename. An error at that point can occur after the final directory has become visible.</p>
+<p>Recovery and orchestration code must therefore inspect retained evidence and the actual publication state. An error result does not universally prove that the final directory is absent.</p>
+<p>This filesystem publication boundary does not include Forge’s later PostgreSQL registration.</p>
+<h2 id="failure-attribution-and-result-reporting">Failure attribution and result reporting</h2>
+<p><code>persist_processing_failure()</code> preserves the processing failure and attempts to write <code>failure.json</code> with available metrics and integrity evidence.</p>
+<p>Staged rows that were not committed are reflected in unpublished accounting.</p>
+<p>If writing the failure report also fails, the original processing failure remains the primary outcome. The failure-report path is optional.</p>
+<p>The implementation distinguishes a failed task from <code>NotAttempted</code> work. A task skipped because its stream could not continue should not be reported as another corrupt source.<sup id="fnref:failures"><a class="footnote-ref" href="#fn:failures">18</a></sup></p>
+<h3 id="independent-result-contracts">Independent result contracts</h3>
+<p><code>response.rs</code> defines the versioned normalization response containing:</p>
+<ul>
+<li>Requested job count.</li>
+<li>Definitive job results.</li>
+<li>Completed and failed job counts.</li>
+<li>Jobs without a reported outcome.</li>
+<li>An optional top-level error.</li>
+</ul>
+<p>Batch input, processing results, publication manifests, and the normalization response have separate version boundaries.</p>
+<p>Changes to one contract should not silently alter another.</p>
+<p>When adding failure handling, preserve structured identity and the primary cause wherever available. This allows Forge and other callers to distinguish invalid input, source failure, resource exhaustion, output failure, and unreported work.</p>
+<h2 id="progress-and-diagnostics">Progress and diagnostics</h2>
+<p>Progress reporting observes execution. Authoritative processing evidence remains in task reports, integrity evaluation, publication artifacts, and structured results.</p>
+<p><code>ProgressReporter</code> supports coalesced state updates so dashboards can observe phases and counters without receiving one event per source record.</p>
+<p>Different counters describe different work: routing records, canonical spool submissions, writer rows, and completed publications are not interchangeable progress units.<sup id="fnref:progress"><a class="footnote-ref" href="#fn:progress">19</a></sup></p>
+<h3 id="preparation-and-rendering">Preparation and rendering</h3>
+<p>Preparation I/O and decoding remain on execution workers. Rendering consumes progress snapshots.</p>
+<p>A dashboard should not trigger archive discovery or alter processing decisions while drawing a frame.</p>
+<h3 id="optional-diagnostics">Optional diagnostics</h3>
+<p><code>progress/diagnostics.rs</code> writes periodic snapshots and performance evidence on a separate diagnostic thread.</p>
+<p>Diagnostic output failures are reported without becoming normalization failures.</p>
+<p>Actual RSS observations, where supported, remain separate from accounted reservations. Inclusive phase timings can overlap, so adding them together does not produce a meaningful total CPU measurement.</p>
+<p>When extending telemetry, preserve bounded buffering and keep slow consumers from controlling the processing result.</p>
+<h2 id="benchmark-architecture">Benchmark architecture</h2>
+<p><code>benchmark/</code> is an implemented client of the production execution path.</p>
+<p>It separates:</p>
+<ul>
+<li>Trial planning.</li>
+<li>Input and environment provenance.</li>
+<li>Isolated subprocess execution.</li>
+<li>Resource and timing measurements.</li>
+<li>Output verification.</li>
+<li>Statistical summaries.</li>
+<li>Comparisons and reports.</li>
+</ul>
+<p>Trials invoke the production single-job or session execution functions.</p>
+<p>Output verification checks job identity and publication evidence. Semantic digests preserve types and record order while allowing comparison across physical batch boundaries. Depth verification includes event offsets and zero-row observations.<sup id="fnref:benchmark"><a class="footnote-ref" href="#fn:benchmark">20</a></sup></p>
+<p>A performance optimization should be assessed against both measurements and semantic equivalence.</p>
+<p>Useful comparisons keep the workload, relevant configuration, source evidence, and correctness checks explicit. Changing a scratch codec or merge strategy must not silently change duplicate handling, ordering, depth reconstruction, or failure classification.</p>
+<h2 id="extending-normalization">Extending normalization</h2>
+<h3 id="add-a-source-representation">Add a source representation</h3>
+<p>Locate the shared container reader or decoder and the trade or depth adapter using it.</p>
+<p>Then trace the representation through:</p>
+<ul>
+<li>Source error classification.</li>
+<li>Physical record ordinals.</li>
+<li>Instrument matching.</li>
+<li>Resource estimation.</li>
+<li>Family routing, where applicable.</li>
+<li>Canonical normalization.</li>
+<li>Sink submission.</li>
+<li>Relevant diagnostics and tests.</li>
+</ul>
+<p>A decoder extension is incomplete if it works only in an isolated worker but cannot satisfy the production routing or resource contract.</p>
+<h3 id="add-normalization-semantics">Add normalization semantics</h3>
+<p>Change the appropriate shared trade or depth processor and its validated mapping contract.</p>
+<p>Preserve canonical precision, identity, source metadata, and failure categories.</p>
+<p>For depth, keep one accepted observation represented as one complete outcome, including initialization and source-operation evidence.</p>
+<h3 id="add-or-change-reconciliation">Add or change reconciliation</h3>
+<p>Identify the proof that authorizes the behavior.</p>
+<p>For trades, this may involve an identity domain, complete canonical equality, validated native order, or accepted interval boundaries.</p>
+<p>For depth, it may involve initialization, exact reconstructed state, native sequence evidence, and a supported source transition.</p>
+<p>Update source observations, processing-quality accounting, ownership ranges, and manifest validation alongside the algorithm.</p>
+<h3 id="add-a-fast-path">Add a fast path</h3>
+<p>A fast path needs a precise admission condition and a verified fallback.</p>
+<p>Document what is checked before entering it, what remains checked during execution, and which failure prevents successful completion.</p>
+<p>Compare complete semantic output against the general path, including duplicate cases, boundary timestamps, empty sources, and failures discovered late in a source.</p>
+<h3 id="change-scheduling-or-resource-limits">Change scheduling or resource limits</h3>
+<p>Inspect <code>session.rs</code>, <code>scheduler.rs</code>, <code>resources/</code>, and the lifetimes of retained reports and writers.</p>
+<p>Account for nested work and finalization as well as active decoding.</p>
+<p>Preserve permit release, bounded queues, deterministic result attribution, and cleanup after failure.</p>
+<h3 id="change-persistence-or-publication">Change persistence or publication</h3>
+<p>Inspect the shared writer, local sink adapter, manifest builder, validators, checksum inventory, and external consumers.</p>
+<p>A new auxiliary artifact must have defined ownership and validation and must participate in publication evidence where required.</p>
+<p>Test both failures before publication and errors that can occur after the final directory becomes visible.</p>
+<h2 id="verification-by-responsibility">Verification by responsibility</h2>
+<p>The following test areas are present in the normalization package:</p>
+<table>
+<thead>
+<tr>
+<th>Changed behavior</th>
+<th>Relevant source and tests</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Stream grouping and interpretation identity</td>
+<td>Tests in <code>streams.rs</code></td>
+</tr>
+<tr>
+<td>Family selection and one-pass routing</td>
+<td><code>family_tests.rs</code>, tests in <code>worker/decoded.rs</code></td>
+</tr>
+<tr>
+<td>Parallel source preparation and permit cleanup</td>
+<td>Tests in <code>preparation.rs</code> and <code>resources/compute.rs</code></td>
+</tr>
+<tr>
+<td>Admission arithmetic and retained resources</td>
+<td><code>resources/safety_tests.rs</code></td>
+</tr>
+<tr>
+<td>Trade append admission and fallback equivalence</td>
+<td><code>reconcile/append_tests.rs</code></td>
+</tr>
+<tr>
+<td>Ordered-run identity and overlap handling</td>
+<td><code>reconcile/bitget_tests.rs</code></td>
+</tr>
+<tr>
+<td>Scratch limits, failures, and depth evidence</td>
+<td><code>reconcile/disk_tests.rs</code></td>
+</tr>
+<tr>
+<td>Timestamp policy and depth replay</td>
+<td><code>reconcile/policy_tests.rs</code></td>
+</tr>
+<tr>
+<td>External sorting and codec equivalence</td>
+<td>Tests in <code>reconcile/external.rs</code></td>
+</tr>
+<tr>
+<td>Scratch corruption and completion checks</td>
+<td>Tests in <code>reconcile/spool.rs</code></td>
+</tr>
+<tr>
+<td>Counter relationships</td>
+<td>Tests in <code>metrics/counters.rs</code></td>
+</tr>
+<tr>
+<td>Integrity thresholds and attribution</td>
+<td>Tests in <code>metrics/policy.rs</code>, <code>metrics/windows.rs</code></td>
+</tr>
+<tr>
+<td>Ownership ranges and manifest versions</td>
+<td>Tests in <code>manifest/validation.rs</code></td>
+</tr>
+<tr>
+<td>Coverage ownership</td>
+<td>Tests in <code>coverage.rs</code></td>
+</tr>
+<tr>
+<td>Optional diagnostic failures</td>
+<td>Tests in <code>progress/diagnostics.rs</code></td>
+</tr>
+<tr>
+<td>Publication failure evidence</td>
+<td>Tests in <code>executor.rs</code></td>
+</tr>
+<tr>
+<td>Structured preparation failures</td>
+<td>Tests in <code>response.rs</code></td>
+</tr>
+<tr>
+<td>Benchmark semantic verification</td>
+<td>Tests in <code>benchmark/verification.rs</code></td>
+</tr>
+</tbody>
+</table>
+<p>Choose assertions that establish the affected boundary.</p>
+<p>A source-format test should verify exact canonical values and source attribution. A reconciliation test should verify identity, ordering, exclusions, and complete reconstructed state where relevant. A resource test should exercise the admission or allocation boundary before uncontrolled growth. A publication test should verify both artifact consistency and the resulting outcome.</p>
+<p>The test-only reference reconciler provides an oracle for relevant comparisons. It is not the production strategy for loading complete trade streams into memory.</p>
+<h2 id="implementation-references">Implementation references</h2>
+<h2 id="related-development-paths">Related development paths</h2>
+<ul>
+<li><a href="../architecture/">System architecture</a> and <a href="../operations/">operation lifecycles</a> place Normalization Engine in the historical workflow.</li>
+<li><a href="../../reference/prepared-normalization/">Prepared contract</a> and <a href="../../workflows/normalize/">user workflow</a> describe the public handoff.</li>
+<li><a href="../testing/">Test selection</a> and <a href="../debugging/">diagnostics</a> cover verification and inspection.</li>
+</ul>
+<div class="footnote">
+<hr />
+<ol>
+<li id="fn:module-boundary">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/mod.rs">Normalization module exports</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/config.rs">runtime configuration facade</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/parquet/mod.rs">Parquet facade</a>.&#160;<a class="footnote-backref" href="#fnref:module-boundary" title="Jump back to footnote 1 in the text">&#8617;</a></p>
+</li>
+<li id="fn:streams">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/streams.rs">Stream planning and dispatch</a> and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/streams_depth.rs">direct depth execution</a>.&#160;<a class="footnote-backref" href="#fnref:streams" title="Jump back to footnote 2 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:streams" title="Jump back to footnote 2 in the text">&#8617;</a></p>
+</li>
+<li id="fn:execution-results">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/result.rs">Processing results</a> and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/response.rs">normalization response</a>.&#160;<a class="footnote-backref" href="#fnref:execution-results" title="Jump back to footnote 3 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:execution-results" title="Jump back to footnote 3 in the text">&#8617;</a></p>
+</li>
+<li id="fn:executor">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/executor.rs">Job execution and staging</a>.&#160;<a class="footnote-backref" href="#fnref:executor" title="Jump back to footnote 4 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:executor" title="Jump back to footnote 4 in the text">&#8617;</a></p>
+</li>
+<li id="fn:session">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/session.rs">Session execution and retained result ownership</a>.&#160;<a class="footnote-backref" href="#fnref:session" title="Jump back to footnote 5 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:session" title="Jump back to footnote 5 in the text">&#8617;</a></p>
+</li>
+<li id="fn:scheduler">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/scheduler.rs">Budgeted parallel scheduling</a>.&#160;<a class="footnote-backref" href="#fnref:scheduler" title="Jump back to footnote 6 in the text">&#8617;</a></p>
+</li>
+<li id="fn:resources">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/resources/estimate.rs">Resource estimation</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/resources/admission.rs">admission inspection</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/resources/compute.rs">compute permits</a>.&#160;<a class="footnote-backref" href="#fnref:resources" title="Jump back to footnote 7 in the text">&#8617;</a></p>
+</li>
+<li id="fn:family">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/family.rs">Family routing</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/worker/decoded.rs">one-shot decoded input</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/family_tests.rs">family tests</a>.&#160;<a class="footnote-backref" href="#fnref:family" title="Jump back to footnote 8 in the text">&#8617;</a></p>
+</li>
+<li id="fn:workers">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/worker/trades.rs">Trade worker</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/worker/depth.rs">depth worker</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/worker/sink.rs">sink interfaces</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/worker/mod.rs">worker accounting</a>.&#160;<a class="footnote-backref" href="#fnref:workers" title="Jump back to footnote 9 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:workers" title="Jump back to footnote 9 in the text">&#8617;</a></p>
+</li>
+<li id="fn:preparation">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/preparation.rs">Bounded source preparation</a> and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/streams.rs">preparation admission</a>.&#160;<a class="footnote-backref" href="#fnref:preparation" title="Jump back to footnote 10 in the text">&#8617;</a></p>
+</li>
+<li id="fn:ordering">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/worker/ordering.rs">Timestamp-order checks</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/sequence_policy.rs">sequence-policy resolution</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/worker/integrity.rs">worker integrity attribution</a>.&#160;<a class="footnote-backref" href="#fnref:ordering" title="Jump back to footnote 11 in the text">&#8617;</a></p>
+</li>
+<li id="fn:trade-reconciliation">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/reconciled.rs">Reconciled execution and trade path selection</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/reconcile.rs">identity proof helpers</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/reconcile/external.rs">external reconciliation</a>.&#160;<a class="footnote-backref" href="#fnref:trade-reconciliation" title="Jump back to footnote 12 in the text">&#8617;</a></p>
+</li>
+<li id="fn:depth-reconciliation">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/reconciled_depth.rs">Depth replay</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/depth_partitions.rs">checkpointed source partitions</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/coverage.rs">coverage ownership</a>.&#160;<a class="footnote-backref" href="#fnref:depth-reconciliation" title="Jump back to footnote 13 in the text">&#8617;</a></p>
+</li>
+<li id="fn:scratch">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/reconcile/spool.rs">Scratch workspaces and framed spools</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/reconcile/external.rs">external sorting</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/reconcile/typed.rs">typed trade payloads</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/reconcile/typed_depth.rs">typed depth payloads</a>.&#160;<a class="footnote-backref" href="#fnref:scratch" title="Jump back to footnote 14 in the text">&#8617;</a></p>
+</li>
+<li id="fn:metrics">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/metrics/counters.rs">Processing counters</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/metrics/report.rs">task and job reports</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/metrics/policy.rs">integrity evaluation</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/metrics/retained.rs">retained observations</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/policies.rs">processing-policy evaluation</a>.&#160;<a class="footnote-backref" href="#fnref:metrics" title="Jump back to footnote 15 in the text">&#8617;</a></p>
+</li>
+<li id="fn:persistence">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/parquet/sinks.rs">Writer adapters</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/boundary/tracker.rs">boundary tracking</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/streams_depth.rs">depth-evidence validation</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/manifest/discovery.rs">artifact discovery</a>.&#160;<a class="footnote-backref" href="#fnref:persistence" title="Jump back to footnote 16 in the text">&#8617;</a></p>
+</li>
+<li id="fn:publication">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/executor.rs">Finalization and publication</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/manifest/builder.rs">manifest construction</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/manifest/validation.rs">manifest validation</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/manifest/checksums.rs">publication checksums</a>.&#160;<a class="footnote-backref" href="#fnref:publication" title="Jump back to footnote 17 in the text">&#8617;</a></p>
+</li>
+<li id="fn:failures">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/executor.rs">Failure persistence</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/failure.rs">failure reports</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/response.rs">structured responses</a>.&#160;<a class="footnote-backref" href="#fnref:failures" title="Jump back to footnote 18 in the text">&#8617;</a></p>
+</li>
+<li id="fn:progress">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/progress/reporter.rs">Progress reporting</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/progress/preparation.rs">preparation progress</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/progress/diagnostics.rs">diagnostic collection</a>.&#160;<a class="footnote-backref" href="#fnref:progress" title="Jump back to footnote 19 in the text">&#8617;</a></p>
+</li>
+<li id="fn:benchmark">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/benchmark/runner.rs">Benchmark execution</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/benchmark/provenance.rs">provenance</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/benchmark/verification.rs">output verification</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/normalize/benchmark/comparison.rs">comparison</a>.&#160;<a class="footnote-backref" href="#fnref:benchmark" title="Jump back to footnote 20 in the text">&#8617;</a></p>
+</li>
+</ol>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../forge/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Forge architecture">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Forge architecture
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../merge/" class="md-footer__link md-footer__link--next" aria-label="Next: Merge Engine architecture">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Merge Engine architecture
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.9e76c64c.min.js"></script>
+      
+      
+        <script src="../../assets/javascripts/keyboard.js"></script>
+      
+    
+  </body>
+</html>

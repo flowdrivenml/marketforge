@@ -1,0 +1,70 @@
+schema_version = 2
+kind = "profile"
+id = "xnas.equity.equity.depth"
+format_code = "XNAS-B1"
+exchange = "xnas"
+instrument_type = "equity"
+market_category = "equity"
+
+[source]
+container = "plain"
+format = "jsonl"
+record_format = "events"
+ordering = "chronological"
+granularity = "daily"
+maximum_depth_per_side = 10
+
+[fields."hd.ts_event"]
+type = "string"
+encoding = "iso8601_nanoseconds"
+
+[fields.ts_recv]
+type = "string"
+encoding = "iso8601_nanoseconds"
+
+[fields.symbol]
+type = "string"
+
+[fields.levels]
+type = "array"
+
+[fields.sequence]
+type = "integer"
+
+[normalization]
+target = "l2_snapshot"
+quantity_encoding = "base"
+
+[normalization.instrument]
+lookup = "catalog"
+field = "symbol"
+
+[normalization.event_timestamp]
+field = "hd.ts_event"
+
+[normalization.system_timestamp]
+field = "ts_recv"
+
+[normalization.sequence_start]
+field = "sequence"
+
+[normalization.bids]
+field = "levels"
+
+[normalization.bids.level_fields]
+price = "bid_px"
+quantity = "bid_sz"
+order_count = "bid_ct"
+
+[normalization.asks]
+field = "levels"
+
+[normalization.asks.level_fields]
+price = "ask_px"
+quantity = "ask_sz"
+order_count = "ask_ct"
+
+[normalization.snapshot]
+type = "bounded_observation"
+levels_per_side = 10
+sequence_order = "nondecreasing"

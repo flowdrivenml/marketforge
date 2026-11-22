@@ -1,0 +1,43 @@
+[registration]
+version = 1
+name = "databento-aapl"
+
+[source]
+key = "databento-xnas-itch-aapl-20241028"
+provider = "Databento"
+product = "XNAS.ITCH"
+kind = "recording"
+root = ".recordings"
+provenance = "User-supplied Databento Trades and MBP-10 JSONL exports for 2024-10-28. Publisher ID 2 and native instrument ID 38 are scoped to these source files."
+
+[coverage]
+start = 2024-10-28T14:30:00Z
+end = 2024-10-28T14:40:00Z
+
+[[inputs]]
+instrument = "xnas.equity.equity.AAPL"
+profile = "xnas.equity.equity.trades"
+content = "trades"
+files = ["AAPL_trades.jsonl"]
+
+[inputs.native_identity]
+namespace = "databento:XNAS.ITCH:2024-10-28"
+publisher_field = "hd.publisher_id"
+publisher_id = 2
+instrument_field = "hd.instrument_id"
+instrument_id = 38
+provenance = "Header identity in the supplied XNAS.ITCH exports."
+
+[[inputs]]
+instrument = "xnas.equity.equity.AAPL"
+profile = "xnas.equity.equity.depth"
+content = "depth"
+files = ["AAPL_orderbook_L2.jsonl"]
+
+[inputs.native_identity]
+namespace = "databento:XNAS.ITCH:2024-10-28"
+publisher_field = "hd.publisher_id"
+publisher_id = 2
+instrument_field = "hd.instrument_id"
+instrument_id = 38
+provenance = "Header identity in the supplied XNAS.ITCH exports."

@@ -1,0 +1,24 @@
+version = 1
+ranking_policy = "turnover"
+
+[interval]
+start = 2026-01-01T00:00:00Z
+end = 2026-01-02T00:00:00Z
+
+[[requests]]
+exchange = "binance"
+instrument_type = "spot"
+market_category = "spot"
+data_type = "trades"
+[requests.scope]
+kind = "instrument"
+identifier = "BTCUSDT"
+
+[[requests]]
+exchange = "binance"
+instrument_type = "spot"
+market_category = "spot"
+data_type = "order_book_l2"
+[requests.scope]
+kind = "instrument"
+identifier = "BTCUSDT"

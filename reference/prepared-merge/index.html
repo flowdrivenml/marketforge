@@ -1,0 +1,7279 @@
+
+
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Historical market-data acquisition, normalization and dataset inspection">
+      
+      
+      
+        <link rel="canonical" href="https://flowdrivenml.github.io/marketforge/reference/prepared-merge/">
+      
+      
+      
+      
+        <link rel="prev" href="../prepared-normalization/">
+      
+      
+        <link rel="next" href="../prepared-conversion/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/branding/logo_small.png">
+      <meta name="generator" content="zensical-0.1.3">
+    
+    
+      
+        <title>Prepared merge job - MarketForge</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
+    <div data-md-component="skip">
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="MarketForge" class="md-header__button md-logo" aria-label="MarketForge" data-md-component="logo">
+      
+  <img src="../../assets/branding/logo_small.png" alt="MarketForge">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+      <span class="md-visually-hidden">Navigation</span>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MarketForge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Prepared merge job
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+          <span class="md-visually-hidden">Search</span>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/flowdrivenml/marketforge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../.." class="md-tabs__link">
+          
+  
+  Using MarketForge
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../development/" class="md-tabs__link">
+          
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="MarketForge" class="md-nav__button md-logo" aria-label="MarketForge" data-md-component="logo">
+      
+  <img src="../../assets/branding/logo_small.png" alt="MarketForge">
+
+    </a>
+    MarketForge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/flowdrivenml/marketforge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../.." class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Using MarketForge
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_1">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Using MarketForge
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Getting started
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_2" id="__nav_1_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Getting started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Installation and workspace setup
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  First dataset: Bybit trades and depth
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Guides
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3" id="__nav_1_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Guides
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/markets/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Explore markets
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_2" id="__nav_1_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Explore markets
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/markets/instrument-discovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Discover and inspect instruments
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/markets/market-statistics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Retrieve and interpret market statistics
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/markets/rankings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Build and inspect market rankings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/acquisition/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquire historical data
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_3" id="__nav_1_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Acquire historical data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/historical-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquire historical archives
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Register and normalize manually supplied data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/managing-acquisitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Manage raw storage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/catalogue/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue and specifications
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_5" id="__nav_1_3_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_5_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Catalogue and specifications
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/exchanges-and-instruments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Exchanges and instruments
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/specifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Instrument specifications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/external-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Register external recordings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_7" id="__nav_1_3_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Author format profiles
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_7_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_7">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Author format profiles
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Trades and L2 depth profiles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profile-trades/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Create a trade profile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profile-depth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Create a depth profile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profile-troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Validate, install and troubleshoot profiles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Process data
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_8">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Process data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalize registered data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge registered normalized files
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepare historical conversion
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical pipeline
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_9" id="__nav_1_3_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect datasets
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_9_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_9">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Inspect datasets
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect registered datasets
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/notebooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Explore datasets in Jupyter
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/forge-tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Interactive Forge workspace
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Concepts
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_4" id="__nav_1_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Concepts
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/identity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Identity and provenance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/time/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Time, selection, and coverage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/depth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Depth observations and reconstruction
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/ordering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Ordering and reconciliation
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/evidence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Execution, publication, and lineage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Reference
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5" id="__nav_1_5_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_5_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_1_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Reference
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../cli/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  CLI
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5_2" id="__nav_1_5_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  CLI
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Interactive Forge workspace
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/acquisition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquisition commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Raw storage commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/runs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Execution history and retained evidence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/catalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and maintenance commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managed Engine commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Import, profile and registration commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/convert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Dataset commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/markets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Market and ranking commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../configuration/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and recipes
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5_3" id="__nav_1_5_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Configuration and recipes
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/application/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Application settings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/acquisition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquisition and raw import recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/catalogue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue declarations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/markets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Ranking and historical metadata policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_4" id="__nav_1_5_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Format profiles
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Format profiles
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical normalization profile schema
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../profile-fields/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization profile field index
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managed raw registration declarations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_6" id="__nav_1_5_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared jobs and retained evidence
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_6_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_1_5_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Prepared jobs and retained evidence
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prepared/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared Engine contracts
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prepared-normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared normalization batch
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared merge job
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared merge job
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#prepared-merge-jobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Prepared Merge Jobs
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-does-merging-use-a-different-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why Does Merging Use a Different Contract?
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why Does Merging Use a Different Contract?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#normalization-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Normalization input
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#merge-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge input
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-pin-files-rather-than-only-instruments" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why pin files rather than only instruments?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-job-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge Job Structure
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Merge Job Structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Example structure
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-is-the-merge-interval-numeric" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is the merge interval numeric?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-input-pinning" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge Input Pinning
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-does-each-merge-input-identify" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What Does Each Merge Input Identify?
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What Does Each Merge Input Identify?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-is-dataset_id-important" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is <code>dataset_id</code> important?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-is-stream_id-important" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is <code>stream_id</code> important?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-is-content_type-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is <code>content_type</code> required?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-input-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge Input Example
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Merge Input Example">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-does-this-input-mean" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does this input mean?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-include-both-file-and-manifest-checksums" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why include both file and manifest checksums?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-checksum-pinning" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        File Checksum Pinning
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="File Checksum Pinning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-sha-256" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What is SHA-256?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-pin-the-checksum" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why pin the checksum?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-a-matching-checksum-prove-the-market-data-is-historically-complete" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does a matching checksum prove the market data is historically complete?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-happens-if-the-checksum-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What happens if the checksum changes?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#publication-pinning" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Publication Pinning
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Publication Pinning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-engine_dataset_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What is <code>engine_dataset_id</code>?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-is-it-a-string" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is it a string?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-manifest_path" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What is <code>manifest_path</code>?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-manifest_sha256" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What is <code>manifest_sha256</code>?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-is-the-manifest-necessary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is the manifest necessary?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-independent-json-must-be-verified" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why Independent JSON Must Be Verified
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why Independent JSON Must Be Verified">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-does-rust-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does Rust check?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-not-trust-the-supplied-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why not trust the supplied values?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recommended-practice" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recommended practice
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-stream-ranks" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge Stream Ranks
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-merge-inputs-need-stream-ranks" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why Merge Inputs Need Stream Ranks
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why Merge Inputs Need Stream Ranks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Example
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-rank-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge Rank Rules
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Merge Rank Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lower-ranks-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Lower ranks first
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#same-stream" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Same stream
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#different-streams" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Different streams
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-ranks-contain-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Can ranks contain gaps?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-not-require-dense-ranks" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why not require dense ranks?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#are-normalization-and-merge-rank-rules-identical" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Are normalization and merge rank rules identical?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-time-ranges" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge Time Ranges
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#half-open-merge-intervals" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Half-Open Merge Intervals
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Half-Open Merge Intervals">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-use-nanoseconds" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why use nanoseconds?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-this-interval-prove-the-source-contains-every-event" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does this interval prove the source contains every event?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-if-an-input-does-not-overlap-the-interval" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What if an input does not overlap the interval?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-the-merger-invent-missing-observations" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Can the merger invent missing observations?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timeline-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Timeline Ordering
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-timeline-ordering-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why Timeline Ordering Matters
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why Timeline Ordering Matters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-does-this-require-an-explicit-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why does this require an explicit contract?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chronological-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Chronological Ordering
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Chronological Ordering">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-does-this-mean" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does this mean?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-is-it-appropriate" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        When is it appropriate?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-it-mean-arbitrary-depth-sorting-is-permitted" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does it mean arbitrary depth sorting is permitted?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-if-timeline_ordering-is-omitted" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What if <code>timeline_ordering</code> is omitted?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#causal-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Causal Ordering
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Causal Ordering">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-is-causal-ordering-necessary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is causal ordering necessary?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-causal-mean-economic-causation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does causal mean economic causation?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-is-this-distinction-important" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is this distinction important?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#causal-timeline-physical-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Causal Timeline Physical Schema
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Causal Timeline Physical Schema">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-timeline_sequence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What is <code>timeline_sequence</code>?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-reconstruction_only" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What is <code>reconstruction_only</code>?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-retain-reconstruction-rows" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why retain reconstruction rows?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#should-they-be-removed-manually" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Should they be removed manually?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-i-sort-the-resulting-file-by-timestamp" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Can I sort the resulting file by timestamp?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chronological-vs-causal" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Chronological vs. Causal
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Chronological vs. Causal">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#which-should-i-choose" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Which should I choose?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-every-normalized-publication-support-both" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does every normalized publication support both?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge Compatibility
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-valid-parquet-files-can-still-be-incompatible" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why Valid Parquet Files Can Still Be Incompatible
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why Valid Parquet Files Can Still Be Incompatible">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-does-compatibility-depend-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does compatibility depend on?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-not-merge-every-valid-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why not merge every valid file?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#normalization-manifest-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Normalization Manifest Versions
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Normalization Manifest Versions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-are-manifests-versioned" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why are manifests versioned?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-a-newer-manifest-automatically-work-with-every-downstream-operation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does a newer manifest automatically work with every downstream operation?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-should-users-inspect" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What should users inspect?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-ownership-and-merge-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Source Ownership and Merge Compatibility
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Source Ownership and Merge Compatibility">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-is-source-ownership-important" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is source ownership important?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-contiguous-ownership-mean" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does contiguous ownership mean?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-the-merger-support-every-ownership-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does the merger support every ownership layout?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-about-native-order-depth" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What about native-order depth?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wire-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Wire identity
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prepared-conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared conversion job
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prepared-forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge preparation and run evidence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_7" id="__nav_1_5_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Publication formats
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_7_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_7">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Publication formats
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../publications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Publication formats
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../publication-normalized/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalized publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../publication-merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merged publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../publication-converted/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Converted publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Python dataset API
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../examples/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Examples
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_6" id="__nav_1_6_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Examples
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/catalogue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Synthetic trade and depth recordings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/catalogue/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge a compatible trade file
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/bring-your-own-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Bring your own historical data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/bring-your-own-data/databento/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Databento AAPL Trades and MBP-10
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Troubleshooting
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../development/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Development
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Development
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Getting started
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Getting started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Local development
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/first-contribution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  First contribution
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Architecture
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Architecture
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  System overview
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/convert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical operation lifecycles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/forge-tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge workspace architecture and action inventory
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extending MarketForge
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Extending MarketForge
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/extending/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extension decision guide
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extend source integration and processing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extend orchestration and persistence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Testing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Debugging and performance
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Debugging and performance
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/debugging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Debugging historical workflows
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Performance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Contributing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#prepared-merge-jobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Prepared Merge Jobs
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-does-merging-use-a-different-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why Does Merging Use a Different Contract?
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why Does Merging Use a Different Contract?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#normalization-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Normalization input
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#merge-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge input
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-pin-files-rather-than-only-instruments" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why pin files rather than only instruments?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-job-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge Job Structure
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Merge Job Structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Example structure
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-is-the-merge-interval-numeric" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is the merge interval numeric?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-input-pinning" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge Input Pinning
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-does-each-merge-input-identify" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What Does Each Merge Input Identify?
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What Does Each Merge Input Identify?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-is-dataset_id-important" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is <code>dataset_id</code> important?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-is-stream_id-important" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is <code>stream_id</code> important?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-is-content_type-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is <code>content_type</code> required?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-input-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge Input Example
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Merge Input Example">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-does-this-input-mean" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does this input mean?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-include-both-file-and-manifest-checksums" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why include both file and manifest checksums?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-checksum-pinning" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        File Checksum Pinning
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="File Checksum Pinning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-sha-256" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What is SHA-256?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-pin-the-checksum" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why pin the checksum?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-a-matching-checksum-prove-the-market-data-is-historically-complete" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does a matching checksum prove the market data is historically complete?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-happens-if-the-checksum-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What happens if the checksum changes?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#publication-pinning" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Publication Pinning
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Publication Pinning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-engine_dataset_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What is <code>engine_dataset_id</code>?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-is-it-a-string" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is it a string?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-manifest_path" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What is <code>manifest_path</code>?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-manifest_sha256" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What is <code>manifest_sha256</code>?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-is-the-manifest-necessary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is the manifest necessary?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-independent-json-must-be-verified" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why Independent JSON Must Be Verified
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why Independent JSON Must Be Verified">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-does-rust-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does Rust check?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-not-trust-the-supplied-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why not trust the supplied values?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#recommended-practice" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recommended practice
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-stream-ranks" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge Stream Ranks
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-merge-inputs-need-stream-ranks" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why Merge Inputs Need Stream Ranks
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why Merge Inputs Need Stream Ranks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Example
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-rank-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge Rank Rules
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Merge Rank Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lower-ranks-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Lower ranks first
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#same-stream" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Same stream
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#different-streams" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Different streams
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-ranks-contain-gaps" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Can ranks contain gaps?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-not-require-dense-ranks" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why not require dense ranks?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#are-normalization-and-merge-rank-rules-identical" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Are normalization and merge rank rules identical?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-time-ranges" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge Time Ranges
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#half-open-merge-intervals" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Half-Open Merge Intervals
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Half-Open Merge Intervals">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-use-nanoseconds" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why use nanoseconds?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-this-interval-prove-the-source-contains-every-event" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does this interval prove the source contains every event?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-if-an-input-does-not-overlap-the-interval" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What if an input does not overlap the interval?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-the-merger-invent-missing-observations" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Can the merger invent missing observations?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timeline-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Timeline Ordering
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-timeline-ordering-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why Timeline Ordering Matters
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why Timeline Ordering Matters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-does-this-require-an-explicit-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why does this require an explicit contract?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chronological-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Chronological Ordering
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Chronological Ordering">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-does-this-mean" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does this mean?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-is-it-appropriate" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        When is it appropriate?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-it-mean-arbitrary-depth-sorting-is-permitted" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does it mean arbitrary depth sorting is permitted?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-if-timeline_ordering-is-omitted" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What if <code>timeline_ordering</code> is omitted?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#causal-ordering" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Causal Ordering
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Causal Ordering">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-is-causal-ordering-necessary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is causal ordering necessary?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-causal-mean-economic-causation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does causal mean economic causation?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-is-this-distinction-important" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is this distinction important?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#causal-timeline-physical-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Causal Timeline Physical Schema
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Causal Timeline Physical Schema">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-is-timeline_sequence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What is <code>timeline_sequence</code>?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-reconstruction_only" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What is <code>reconstruction_only</code>?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-retain-reconstruction-rows" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why retain reconstruction rows?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#should-they-be-removed-manually" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Should they be removed manually?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#can-i-sort-the-resulting-file-by-timestamp" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Can I sort the resulting file by timestamp?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chronological-vs-causal" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Chronological vs. Causal
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Chronological vs. Causal">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#which-should-i-choose" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Which should I choose?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-every-normalized-publication-support-both" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does every normalized publication support both?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge Compatibility
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-valid-parquet-files-can-still-be-incompatible" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why Valid Parquet Files Can Still Be Incompatible
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why Valid Parquet Files Can Still Be Incompatible">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-does-compatibility-depend-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does compatibility depend on?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-not-merge-every-valid-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why not merge every valid file?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#normalization-manifest-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Normalization Manifest Versions
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Normalization Manifest Versions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-are-manifests-versioned" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why are manifests versioned?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-a-newer-manifest-automatically-work-with-every-downstream-operation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does a newer manifest automatically work with every downstream operation?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-should-users-inspect" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What should users inspect?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-ownership-and-merge-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Source Ownership and Merge Compatibility
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Source Ownership and Merge Compatibility">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-is-source-ownership-important" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Why is source ownership important?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-does-contiguous-ownership-mean" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What does contiguous ownership mean?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#does-the-merger-support-every-ownership-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Does the merger support every ownership layout?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-about-native-order-depth" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What about native-order depth?
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wire-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Wire identity
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+      
+        
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../.." class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Using MarketForge
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Reference
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../prepared/" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Prepared jobs and retained evidence
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
+                
+                  
+
+  
+  
+
+
+<h1 id="prepared-merge-job">Prepared merge job</h1>
+<p>Forge writes one pinned job consumed by <code>marketforge-merge</code>. Its identity, input file references and half-open event-time interval are independent of editable recipe selectors. <a href="../../workflows/merge/">Workflow</a></p>
+<h2 id="prepared-merge-jobs">Prepared Merge Jobs</h2>
+<h2 id="why-does-merging-use-a-different-contract">Why Does Merging Use a Different Contract?</h2>
+<p>Normalization reads registered raw archives.</p>
+<p>Merging reads registered normalized Parquet files.</p>
+<p>These operations require different input information.</p>
+<h3 id="normalization-input">Normalization input</h3>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code>Raw ZIP Archive
+    |
+    v
+Source Profile
+    |
+    v
+Canonical Trades
+</code></pre></div>
+<h3 id="merge-input">Merge input</h3>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code>Normalized Trades ──┐
+                    |
+                    v
+                  Merge
+                    ^
+                    |
+Normalized Depth ───┘
+</code></pre></div>
+<p>The merger does not need to decode the original exchange archive format again.</p>
+<p>Instead, it needs to know:</p>
+<ul>
+<li>Which exact normalized primary files were selected.</li>
+<li>Which publications own them.</li>
+<li>Which streams they represent.</li>
+<li>Their content types.</li>
+<li>Their retained checksums.</li>
+<li>The required timeline ordering.</li>
+<li>The requested interval.</li>
+</ul>
+<h3 id="why-pin-files-rather-than-only-instruments">Why pin files rather than only instruments?</h3>
+<p>An instrument may have several normalized publications.</p>
+<p>For example, the same BTCUSDT period may have been normalized more than once.</p>
+<p>A merge must use the exact selected files rather than silently switching between publication revisions.</p>
+<hr />
+<h2 id="merge-job-structure">Merge Job Structure</h2>
+<p>The prepared merge job contains:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>job_id</code></td>
+<td>Merge job identity.</td>
+</tr>
+<tr>
+<td><code>operation</code></td>
+<td>Processing operation.</td>
+</tr>
+<tr>
+<td><code>inputs</code></td>
+<td>Exact registered normalized primary files.</td>
+</tr>
+<tr>
+<td><code>time_range</code></td>
+<td>Requested historical interval.</td>
+</tr>
+<tr>
+<td><code>timeline_ordering</code></td>
+<td>Chronological or causal timeline behavior.</td>
+</tr>
+<tr>
+<td><code>output</code></td>
+<td>Merge publication destination.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-structure">Example structure</h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"job_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">123456</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"operation"</span><span class="p">:</span><span class="w"> </span><span class="s2">"merge"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"timeline_ordering"</span><span class="p">:</span><span class="w"> </span><span class="s2">"chronological"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"inputs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">  </span><span class="nt">"time_range"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"start_ns"</span><span class="p">:</span><span class="w"> </span><span class="mi">1793059200000000000</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"end_ns"</span><span class="p">:</span><span class="w"> </span><span class="mi">1793318400000000000</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"output"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"dataset_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/absolute/path/to/data/datasets/merged/123456"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>This is a structural illustration, not an executable job.</p>
+<p>A valid merge job requires eligible registered inputs.</p>
+<h3 id="why-is-the-merge-interval-numeric">Why is the merge interval numeric?</h3>
+<p>The merge contract uses integer Unix nanoseconds.</p>
+<p>This allows precise event-time boundaries.</p>
+<hr />
+<h2 id="merge-input-pinning">Merge Input Pinning</h2>
+<h2 id="what-does-each-merge-input-identify">What Does Each Merge Input Identify?</h2>
+<p>Each merge input represents one selected registered normalized primary file.</p>
+<p>Important fields include:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dataset_id</code></td>
+<td>PostgreSQL primary file dataset ID.</td>
+</tr>
+<tr>
+<td><code>stream_id</code></td>
+<td>Exact concrete logical stream identity.</td>
+</tr>
+<tr>
+<td><code>stream_rank</code></td>
+<td>Merge ordering priority.</td>
+</tr>
+<tr>
+<td><code>content_type</code></td>
+<td><code>trades</code> or <code>depth</code>.</td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td>Absolute primary Parquet file path.</td>
+</tr>
+<tr>
+<td><code>sha256</code></td>
+<td>SHA-256 of the selected primary file.</td>
+</tr>
+<tr>
+<td><code>publication</code></td>
+<td>Owning normalized publication identity and manifest evidence.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="why-is-dataset_id-important">Why is <code>dataset_id</code> important?</h3>
+<p>It identifies one registered physical primary file.</p>
+<p>It is not the same as the Engine publication ID.</p>
+<h3 id="why-is-stream_id-important">Why is <code>stream_id</code> important?</h3>
+<p>A merged file may combine multiple instruments and content types.</p>
+<p>The stream identity identifies the logical source of an event.</p>
+<h3 id="why-is-content_type-required">Why is <code>content_type</code> required?</h3>
+<p>Trades and depth have different event semantics.</p>
+<p>The merger must know which kind of normalized data the selected file represents.</p>
+<hr />
+<h2 id="merge-input-example">Merge Input Example</h2>
+<p>A merge input has the following structure:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"dataset_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">119</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"stream_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"binance.linear.future.BTCUSDT_261225.trades"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"stream_rank"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"content_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"trades"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/absolute/path/to/part-000000.parquet"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"sha256"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;primary-file-sha256&gt;"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"publication"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"engine_dataset_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"7868739277080297142"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"manifest_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/absolute/path/to/manifest.json"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"manifest_sha256"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;manifest-sha256&gt;"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>This is a structural illustration.</p>
+<p>Replace the paths and checksums with real Forge-generated values.</p>
+<p>Do not submit placeholder fingerprints.</p>
+<h3 id="what-does-this-input-mean">What does this input mean?</h3>
+<p>It identifies:</p>
+<div class="highlight"><pre><span></span><code>Registered primary file:
+119
+
+Logical stream:
+Binance BTCUSDT futures trades
+
+Primary file:
+Specific Parquet part
+
+Owning publication:
+Specific normalized Engine publication
+
+Verification:
+Pinned file and manifest checksums
+</code></pre></div>
+<h3 id="why-include-both-file-and-manifest-checksums">Why include both file and manifest checksums?</h3>
+<p>The file checksum identifies the selected Parquet bytes.</p>
+<p>The manifest checksum identifies the corresponding publication metadata.</p>
+<p>Together, they help establish that the input still matches the intended committed publication.</p>
+<hr />
+<h2 id="file-checksum-pinning">File Checksum Pinning</h2>
+<p>The merge input contains:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">"sha256"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;primary-file-sha256&gt;"</span>
+</code></pre></div>
+<h3 id="what-is-sha-256">What is SHA-256?</h3>
+<p>It is a cryptographic checksum used to identify file contents.</p>
+<p>For example, two files with different bytes should ordinarily produce different SHA-256 values.</p>
+<h3 id="why-pin-the-checksum">Why pin the checksum?</h3>
+<p>Suppose you prepare a merge today.</p>
+<p>Tomorrow, someone modifies one of the selected Parquet files.</p>
+<p>The prepared job should not silently process the changed content as though it were the original input.</p>
+<p>The checksum helps detect that mismatch.</p>
+<h3 id="does-a-matching-checksum-prove-the-market-data-is-historically-complete">Does a matching checksum prove the market data is historically complete?</h3>
+<p>No.</p>
+<p>It establishes consistency with the pinned file bytes.</p>
+<p>It does not prove that the original exchange supplied every event.</p>
+<h3 id="what-happens-if-the-checksum-changes">What happens if the checksum changes?</h3>
+<p>The applicable validation or execution check can reject the input.</p>
+<p>Prepare a new job only after investigating the reason for the change.</p>
+<p>Do not manually replace the fingerprint merely to bypass the mismatch.</p>
+<hr />
+<h2 id="publication-pinning">Publication Pinning</h2>
+<p>The merge input contains:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"publication"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"engine_dataset_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"7868739277080297142"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"manifest_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/absolute/path/to/manifest.json"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"manifest_sha256"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;manifest-sha256&gt;"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="what-is-engine_dataset_id">What is <code>engine_dataset_id</code>?</h3>
+<p>It identifies the owning Engine normalization publication.</p>
+<h3 id="why-is-it-a-string">Why is it a string?</h3>
+<p>Engine dataset identities may use unsigned 64-bit integer values.</p>
+<p>Representing them as canonical decimal strings avoids precision loss in tools that cannot exactly represent all such integers.</p>
+<h3 id="what-is-manifest_path">What is <code>manifest_path</code>?</h3>
+<p>It identifies the owning publication manifest.</p>
+<h3 id="what-is-manifest_sha256">What is <code>manifest_sha256</code>?</h3>
+<p>It pins the expected manifest bytes.</p>
+<h3 id="why-is-the-manifest-necessary">Why is the manifest necessary?</h3>
+<p>The manifest provides publication information required to interpret the selected normalized file.</p>
+<p>For example:</p>
+<ul>
+<li>Content type.</li>
+<li>Stream membership.</li>
+<li>Physical layout.</li>
+<li>Ordering information.</li>
+<li>Source ownership.</li>
+<li>Applicable auxiliary data.</li>
+</ul>
+<p>The merger cannot safely infer all these properties from the Parquet filename.</p>
+<hr />
+<h2 id="why-independent-json-must-be-verified">Why Independent JSON Must Be Verified</h2>
+<p>A user can construct a JSON document with plausible field names.</p>
+<p>However, that does not establish that its inputs are valid.</p>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"dataset_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">119</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"stream_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"some-stream"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"content_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"trades"</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>could refer to an incorrect stream.</p>
+<h3 id="what-does-rust-check">What does Rust check?</h3>
+<p>The merge contract validates the selected file against its owning publication information.</p>
+<p>This includes the applicable:</p>
+<ul>
+<li>Registered file identity.</li>
+<li>Stream ownership.</li>
+<li>Content type.</li>
+<li>Publication fingerprint.</li>
+<li>Physical input compatibility.</li>
+</ul>
+<h3 id="why-not-trust-the-supplied-values">Why not trust the supplied values?</h3>
+<p>Because a JSON document is a request, not independent evidence.</p>
+<p>A user could accidentally supply a depth file while labeling it as trades.</p>
+<p>The Engine must reject inconsistent input contracts.</p>
+<h3 id="recommended-practice">Recommended practice</h3>
+<p>Use Forge preparation.</p>
+<p>It resolves the registered file and publication evidence automatically.</p>
+<hr />
+<h2 id="merge-stream-ranks">Merge Stream Ranks</h2>
+<h2 id="why-merge-inputs-need-stream-ranks">Why Merge Inputs Need Stream Ranks</h2>
+<p>A merged timeline may contain several logical streams.</p>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code>BTCUSDT Trades
+BTCUSDT Depth
+ETHUSDT Trades
+ETHUSDT Depth
+</code></pre></div>
+<p>Events can have identical timestamps.</p>
+<p>The merger needs deterministic ordering information.</p>
+<h3 id="example">Example</h3>
+<div class="highlight"><pre><span></span><code>12:00:00.100 BTCUSDT Trade
+12:00:00.100 ETHUSDT Trade
+</code></pre></div>
+<p>Both events have the same event timestamp.</p>
+<p>Stream rank can provide the applicable tie-breaking order.</p>
+<hr />
+<h2 id="merge-rank-rules">Merge Rank Rules</h2>
+<p>The prepared merge contract uses unsigned 32-bit stream ranks.</p>
+<h3 id="lower-ranks-first">Lower ranks first</h3>
+<p>For applicable equal-time ordering:</p>
+<div class="highlight"><pre><span></span><code>Rank 0
+</code></pre></div>
+<p>comes before:</p>
+<div class="highlight"><pre><span></span><code>Rank 1
+</code></pre></div>
+<h3 id="same-stream">Same stream</h3>
+<p>Files representing the same concrete stream repeat its rank.</p>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code>BTCUSDT Trades
+    Part 1 → Rank 3
+    Part 2 → Rank 3
+    Part 3 → Rank 3
+</code></pre></div>
+<h3 id="different-streams">Different streams</h3>
+<p>Distinct concrete streams use distinct ranks across the selected content types.</p>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code>BTCUSDT Trades → Rank 3
+BTCUSDT Depth  → Rank 4
+ETHUSDT Trades → Rank 5
+</code></pre></div>
+<h3 id="can-ranks-contain-gaps">Can ranks contain gaps?</h3>
+<p>Yes.</p>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code>Rank 1
+Rank 5
+Rank 9
+</code></pre></div>
+<p>can remain valid in a filtered prepared job.</p>
+<h3 id="why-not-require-dense-ranks">Why not require dense ranks?</h3>
+<p>Filtering a job may remove selected streams without changing the retained ordering identities.</p>
+<p>The merge contract allows rank gaps.</p>
+<h3 id="are-normalization-and-merge-rank-rules-identical">Are normalization and merge rank rules identical?</h3>
+<p>Not necessarily.</p>
+<p>Normalization preparation can generate dense ranks from retained ranking positions.</p>
+<p>Merge preparation can preserve selected normalized stream ranks and applies its own distinct-stream consistency requirements.</p>
+<hr />
+<h2 id="merge-time-ranges">Merge Time Ranges</h2>
+<h2 id="half-open-merge-intervals">Half-Open Merge Intervals</h2>
+<p>A prepared merge job contains:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"time_range"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"start_ns"</span><span class="p">:</span><span class="w"> </span><span class="mi">1793059200000000000</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"end_ns"</span><span class="p">:</span><span class="w"> </span><span class="mi">1793318400000000000</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The start is included.</p>
+<p>The end is excluded.</p>
+<p>This is:</p>
+<div class="highlight"><pre><span></span><code>[start_ns, end_ns)
+</code></pre></div>
+<h3 id="why-use-nanoseconds">Why use nanoseconds?</h3>
+<p>High-frequency market events can occur within microseconds or nanoseconds of one another.</p>
+<p>Integer nanosecond boundaries preserve the requested time precision.</p>
+<h3 id="does-this-interval-prove-the-source-contains-every-event">Does this interval prove the source contains every event?</h3>
+<p>No.</p>
+<p>It describes the requested processing range.</p>
+<p>The actual input files must satisfy the applicable selection and overlap requirements.</p>
+<h3 id="what-if-an-input-does-not-overlap-the-interval">What if an input does not overlap the interval?</h3>
+<p>Preparation can reject the selection.</p>
+<h3 id="can-the-merger-invent-missing-observations">Can the merger invent missing observations?</h3>
+<p>No.</p>
+<p>It combines available supported normalized events.</p>
+<p>It does not recreate missing exchange history.</p>
+<hr />
+<h2 id="timeline-ordering">Timeline Ordering</h2>
+<h2 id="why-timeline-ordering-matters">Why Timeline Ordering Matters</h2>
+<p>Merging trades and order-book data is not simply concatenating files.</p>
+<p>Consider:</p>
+<div class="highlight"><pre><span></span><code>Trade:
+12:00:00.100
+
+Depth:
+12:00:00.050
+12:00:00.150
+</code></pre></div>
+<p>A chronological timeline might place them as:</p>
+<div class="highlight"><pre><span></span><code>12:00:00.050 Depth
+12:00:00.100 Trade
+12:00:00.150 Depth
+</code></pre></div>
+<p>However, depth events can depend on earlier book state.</p>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code>Snapshot
+    |
+    v
+Update
+    |
+    v
+Update
+</code></pre></div>
+<p>Arbitrarily rearranging these events can corrupt reconstruction.</p>
+<h3 id="why-does-this-require-an-explicit-contract">Why does this require an explicit contract?</h3>
+<p>Different normalized publications may use different physical ordering and reconstruction layouts.</p>
+<p>The merger must apply the supported ordering semantics for the selected inputs.</p>
+<hr />
+<h2 id="chronological-ordering">Chronological Ordering</h2>
+<p>The merge job can contain:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">"timeline_ordering"</span><span class="p">:</span><span class="w"> </span><span class="s2">"chronological"</span>
+</code></pre></div>
+<h3 id="what-does-this-mean">What does this mean?</h3>
+<p>The merger constructs the supported chronological timeline using event timestamps and the applicable tie-breaking rules.</p>
+<h3 id="when-is-it-appropriate">When is it appropriate?</h3>
+<p>For compatible inputs whose physical layout and event semantics support chronological merging.</p>
+<h3 id="does-it-mean-arbitrary-depth-sorting-is-permitted">Does it mean arbitrary depth sorting is permitted?</h3>
+<p>No.</p>
+<p>Depth dependencies remain subject to the supported input-layout and reconstruction requirements.</p>
+<h3 id="what-if-timeline_ordering-is-omitted">What if <code>timeline_ordering</code> is omitted?</h3>
+<p>The prepared merge job contract defaults to chronological ordering.</p>
+<p>However, Forge may explicitly resolve a different mode when the selected recipe and inputs require it.</p>
+<hr />
+<h2 id="causal-ordering">Causal Ordering</h2>
+<p>The merge job can also contain:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">"timeline_ordering"</span><span class="p">:</span><span class="w"> </span><span class="s2">"causal"</span>
+</code></pre></div>
+<h3 id="why-is-causal-ordering-necessary">Why is causal ordering necessary?</h3>
+<p>Some depth publications contain source-order or reconstruction dependencies that timestamp sorting alone cannot safely represent.</p>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code>Initialize book
+    |
+    v
+Apply update
+    |
+    v
+Apply next update
+</code></pre></div>
+<p>The causal timeline preserves the applicable processing dependencies.</p>
+<h3 id="does-causal-mean-economic-causation">Does causal mean economic causation?</h3>
+<p>No.</p>
+<p>It does not prove that one trade caused another event.</p>
+<p>Here, causal ordering describes the required event-processing dependencies.</p>
+<h3 id="why-is-this-distinction-important">Why is this distinction important?</h3>
+<p>A trade occurring before a depth update does not automatically prove that the trade caused the update.</p>
+<p>The merger preserves event order and source semantics.</p>
+<p>Market-impact analysis remains a separate research task.</p>
+<hr />
+<h2 id="causal-timeline-physical-schema">Causal Timeline Physical Schema</h2>
+<p>The documented committed causal timeline uses physical schema version 2.</p>
+<p>Important fields include:</p>
+<div class="highlight"><pre><span></span><code>timeline_sequence
+reconstruction_only
+</code></pre></div>
+<h3 id="what-is-timeline_sequence">What is <code>timeline_sequence</code>?</h3>
+<p>It records the physical ordering information required by the causal timeline representation.</p>
+<h3 id="what-is-reconstruction_only">What is <code>reconstruction_only</code>?</h3>
+<p>It identifies rows that are present for supported reconstruction purposes rather than ordinary event interpretation.</p>
+<h3 id="why-retain-reconstruction-rows">Why retain reconstruction rows?</h3>
+<p>Some order-book histories require initialization or dependent observations to establish valid state.</p>
+<p>Those rows may be necessary even when they are not ordinary user-visible market events.</p>
+<h3 id="should-they-be-removed-manually">Should they be removed manually?</h3>
+<p>No.</p>
+<p>Removing reconstruction dependencies can make a historical book impossible to replay correctly.</p>
+<h3 id="can-i-sort-the-resulting-file-by-timestamp">Can I sort the resulting file by timestamp?</h3>
+<p>Do not assume that independently sorting causal timeline rows preserves the required event semantics.</p>
+<p>Use the supported timeline sequence and reconstruction information.</p>
+<hr />
+<h2 id="chronological-vs-causal">Chronological vs. Causal</h2>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Chronological</th>
+<th>Causal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Main objective</td>
+<td>Supported timestamp ordering</td>
+<td>Preserve required event dependencies</td>
+</tr>
+<tr>
+<td>Typical consideration</td>
+<td>Compatible independent events</td>
+<td>Stateful segmented depth</td>
+</tr>
+<tr>
+<td>Ordering information</td>
+<td>Timestamp and stream-rank contract</td>
+<td>Physical causal sequence and reconstruction evidence</td>
+</tr>
+<tr>
+<td>Can arbitrarily sort depth levels?</td>
+<td>No</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Proves economic causation?</td>
+<td>No</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<h3 id="which-should-i-choose">Which should I choose?</h3>
+<p>Use the ordering mode appropriate to the selected publication layouts and processing requirements.</p>
+<p>For ordinary workflows, allow Forge preparation to resolve the supported behavior.</p>
+<h3 id="does-every-normalized-publication-support-both">Does every normalized publication support both?</h3>
+<p>No.</p>
+<p>The selected inputs must satisfy the merger's current compatibility rules.</p>
+<hr />
+<h2 id="merge-compatibility">Merge Compatibility</h2>
+<h2 id="why-valid-parquet-files-can-still-be-incompatible">Why Valid Parquet Files Can Still Be Incompatible</h2>
+<p>A Parquet file can be structurally valid while using a physical layout that the merger does not support.</p>
+<p>For example, a normalized depth publication may preserve native-order reconstruction segments.</p>
+<p>A particular merger path may require additional supporting files or a specific physical ordering.</p>
+<h3 id="what-does-compatibility-depend-on">What does compatibility depend on?</h3>
+<p>It can depend on:</p>
+<ul>
+<li>Manifest protocol version.</li>
+<li>Content type.</li>
+<li>Physical timestamp ordering.</li>
+<li>Stream ownership.</li>
+<li>Source spans.</li>
+<li>Reconstruction dependencies.</li>
+<li>Selected primary file set.</li>
+<li>Supporting publication evidence.</li>
+</ul>
+<h3 id="why-not-merge-every-valid-file">Why not merge every valid file?</h3>
+<p>Because combining files under unsupported assumptions could create an incorrect timeline.</p>
+<p>Rejecting an incompatible selection is safer than silently inventing ordering or reconstruction rules.</p>
+<hr />
+<h2 id="normalization-manifest-versions">Normalization Manifest Versions</h2>
+<p>Normalization publications use versioned manifest protocols.</p>
+<p>The documented range includes:</p>
+<div class="highlight"><pre><span></span><code>3–5
+</code></pre></div>
+<p>These protocols can describe different publication capabilities and evidence.</p>
+<h3 id="why-are-manifests-versioned">Why are manifests versioned?</h3>
+<p>As the Engine evolves, it can add information about:</p>
+<ul>
+<li>Source ownership.</li>
+<li>Reconstruction boundaries.</li>
+<li>Processing quality.</li>
+<li>Physical ordering.</li>
+<li>Publication integrity.</li>
+</ul>
+<h3 id="does-a-newer-manifest-automatically-work-with-every-downstream-operation">Does a newer manifest automatically work with every downstream operation?</h3>
+<p>No.</p>
+<p>For example, a newer normalization publication may contain a valid native-order depth layout that is not supported by a particular merge reader.</p>
+<h3 id="what-should-users-inspect">What should users inspect?</h3>
+<p>Check the actual publication manifest and the current merge compatibility report.</p>
+<p>Use:</p>
+<p><a href="../../workflows/merge/#supported-layouts">Supported Merge Layouts</a></p>
+<p>for the detailed compatibility matrix.</p>
+<hr />
+<h2 id="source-ownership-and-merge-compatibility">Source Ownership and Merge Compatibility</h2>
+<p>Some normalized trade publications retain information about which source records contributed to each output row.</p>
+<p>For example, a trade publication may contain:</p>
+<div class="highlight"><pre><span></span><code>sources.jsonl
+</code></pre></div>
+<p>This provides source-ownership evidence.</p>
+<h3 id="why-is-source-ownership-important">Why is source ownership important?</h3>
+<p>A publication can contain events from overlapping archives.</p>
+<p>The merger may need to know whether a selected physical part has contiguous source ownership.</p>
+<h3 id="what-does-contiguous-ownership-mean">What does contiguous ownership mean?</h3>
+<p>Conceptually, a compatible file might contain:</p>
+<div class="highlight"><pre><span></span><code>Source A rows
+Source B rows
+Source C rows
+</code></pre></div>
+<p>with each source represented in one contiguous span.</p>
+<p>An interleaved layout might contain:</p>
+<div class="highlight"><pre><span></span><code>Source A
+Source B
+Source A
+Source C
+Source B
+</code></pre></div>
+<p>The latter can require different processing support.</p>
+<h3 id="does-the-merger-support-every-ownership-layout">Does the merger support every ownership layout?</h3>
+<p>No.</p>
+<p>The documented timestamp-first merge contract supports certain v4/v5 trade layouts with contiguous source ownership and no repeated source spans.</p>
+<p>More complex layouts may be rejected.</p>
+<h3 id="what-about-native-order-depth">What about native-order depth?</h3>
+<p>The timestamp-first merger's supported input set is narrower than the complete set of valid depth publications.</p>
+<p>Inspect the current supported-layout rules rather than assuming every depth publication is eligible.</p>
+<hr />
+<h2 id="wire-identity">Wire identity</h2>
+<p>The public document has no <code>schema_version</code>. It contains <code>operation:"merge"</code>, positive uint64 <code>job_id</code>, nonempty <code>inputs</code>, <code>time_range</code>, <code>output</code>, and optional <code>timeline_ordering</code> defaulting in the Engine to <code>chronological</code>. <code>time_range.start_ns</code> and <code>end_ns</code> are signed int64 and ordered. <code>output.dataset_path</code> is absolute.</p>
+<p>Each input has positive uint64 registry <code>dataset_id</code>, nonempty <code>stream_id</code>, uint32 <code>stream_rank</code>, <code>content_type</code> of <code>trades</code> or <code>depth</code>, absolute <code>path</code>, lowercase SHA-256 <code>sha256</code>, and a <code>publication</code> object. The latter contains positive canonical decimal text <code>engine_dataset_id</code>, absolute <code>manifest_path</code> ending in <code>manifest.json</code>, and lowercase SHA-256 <code>manifest_sha256</code>. IDs and file paths cannot repeat in one submission. A repeated Engine publication ID must have identical manifest path and hash. Forge's editable database selectors are further constrained to signed 64-bit IDs. Unknown fields are rejected. <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/job/merge.rs">Engine wire definition</a></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../prepared-normalization/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Prepared normalization batch">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Prepared normalization batch
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../prepared-conversion/" class="md-footer__link md-footer__link--next" aria-label="Next: Prepared conversion job">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Prepared conversion job
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.9e76c64c.min.js"></script>
+      
+      
+        <script src="../../assets/javascripts/keyboard.js"></script>
+      
+    
+  </body>
+</html>

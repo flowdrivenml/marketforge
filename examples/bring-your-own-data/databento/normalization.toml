@@ -1,0 +1,21 @@
+version = 1
+
+[interval]
+start = 2024-10-28T14:30:00Z
+end = 2024-10-28T14:40:00Z
+
+[[requests]]
+exchange = "xnas"
+instrument_type = "equity"
+market_category = "equity"
+data_type = "trades"
+source_key = "databento-xnas-itch-aapl-20241028"
+scope = { kind = "instrument", identifier = "AAPL" }
+
+[[requests]]
+exchange = "xnas"
+instrument_type = "equity"
+market_category = "equity"
+data_type = "order_book_l2"
+source_key = "databento-xnas-itch-aapl-20241028"
+scope = { kind = "instrument", identifier = "AAPL" }

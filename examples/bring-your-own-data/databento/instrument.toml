@@ -1,0 +1,7 @@
+exchange = "xnas"
+symbol = "AAPL"
+instrument_type = "equity"
+market_category = "equity"
+base_asset = "AAPL"
+quote_asset = "USD"
+status = "active"

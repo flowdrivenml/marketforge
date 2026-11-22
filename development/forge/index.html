@@ -1,0 +1,7286 @@
+
+
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Historical market-data acquisition, normalization and dataset inspection">
+      
+      
+      
+        <link rel="canonical" href="https://flowdrivenml.github.io/marketforge/development/forge/">
+      
+      
+      
+      
+        <link rel="prev" href="../architecture/">
+      
+      
+        <link rel="next" href="../normalize/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/branding/logo_small.png">
+      <meta name="generator" content="zensical-0.1.3">
+    
+    
+      
+        <title>Forge architecture - MarketForge</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
+    <div data-md-component="skip">
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="MarketForge" class="md-header__button md-logo" aria-label="MarketForge" data-md-component="logo">
+      
+  <img src="../../assets/branding/logo_small.png" alt="MarketForge">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+      <span class="md-visually-hidden">Navigation</span>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MarketForge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Forge architecture
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+          <span class="md-visually-hidden">Search</span>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/flowdrivenml/marketforge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../.." class="md-tabs__link">
+          
+  
+  Using MarketForge
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="MarketForge" class="md-nav__button md-logo" aria-label="MarketForge" data-md-component="logo">
+      
+  <img src="../../assets/branding/logo_small.png" alt="MarketForge">
+
+    </a>
+    MarketForge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/flowdrivenml/marketforge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../.." class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Using MarketForge
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Using MarketForge
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Getting started
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_2" id="__nav_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Getting started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Installation and workspace setup
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  First dataset: Bybit trades and depth
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Guides
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3" id="__nav_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Guides
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/markets/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Explore markets
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_2" id="__nav_1_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Explore markets
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/markets/instrument-discovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Discover and inspect instruments
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/markets/market-statistics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Retrieve and interpret market statistics
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/markets/rankings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Build and inspect market rankings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/acquisition/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquire historical data
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_3" id="__nav_1_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Acquire historical data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/historical-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquire historical archives
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Register and normalize manually supplied data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/managing-acquisitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Manage raw storage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/catalogue/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue and specifications
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_5" id="__nav_1_3_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_5_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Catalogue and specifications
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/exchanges-and-instruments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Exchanges and instruments
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/specifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Instrument specifications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/acquisition/external-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Register external recordings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_7" id="__nav_1_3_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Author format profiles
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_7_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_7">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Author format profiles
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Trades and L2 depth profiles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profile-trades/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Create a trade profile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profile-depth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Create a depth profile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/catalogue/profile-troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Validate, install and troubleshoot profiles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_8" id="__nav_1_3_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Process data
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_8_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_8">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Process data
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalize registered data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge registered normalized files
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepare historical conversion
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical pipeline
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_9" id="__nav_1_3_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect datasets
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_9_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_9">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Inspect datasets
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect registered datasets
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/notebooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Explore datasets in Jupyter
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/forge-tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Interactive Forge workspace
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Concepts
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_4" id="__nav_1_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Concepts
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/identity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Identity and provenance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/time/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Time, selection, and coverage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/depth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Depth observations and reconstruction
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/ordering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Ordering and reconciliation
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/evidence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Execution, publication, and lineage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Reference
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5" id="__nav_1_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_5_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Reference
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/cli/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  CLI
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5_2" id="__nav_1_5_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  CLI
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Interactive Forge workspace
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/acquisition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquisition commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Raw storage commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/runs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Execution history and retained evidence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/catalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and maintenance commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managed Engine commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Import, profile and registration commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/convert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Dataset commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/markets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Market and ranking commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../configuration/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and recipes
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5_3" id="__nav_1_5_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Configuration and recipes
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/application/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Application settings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/acquisition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquisition and raw import recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/catalogue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue declarations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/markets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Ranking and historical metadata policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_4" id="__nav_1_5_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Format profiles
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Format profiles
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical normalization profile schema
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/profile-fields/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization profile field index
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managed raw registration declarations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_6" id="__nav_1_5_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared jobs and retained evidence
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Prepared jobs and retained evidence
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prepared/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared Engine contracts
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prepared-normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared normalization batch
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prepared-merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared merge job
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prepared-conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared conversion job
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/prepared-forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge preparation and run evidence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_7" id="__nav_1_5_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Publication formats
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_7_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_7">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Publication formats
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/publications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Publication formats
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/publication-normalized/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalized publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/publication-merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merged publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/publication-converted/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Converted publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/python-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Python dataset API
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../examples/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Examples
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_6" id="__nav_1_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Examples
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/catalogue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Synthetic trade and depth recordings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/catalogue/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge a compatible trade file
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/bring-your-own-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Bring your own historical data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/bring-your-own-data/databento/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Databento AAPL Trades and MBP-10
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Troubleshooting
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Development
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Development
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Getting started
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Getting started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Local development
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first-contribution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  First contribution
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Architecture
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_2_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Architecture
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  System overview
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge architecture
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-application-boundaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The application boundaries
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repository-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Repository map
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#startup-and-command-dispatch" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Startup and command dispatch
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Startup and command dispatch">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#application-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Application context
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-handlers" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        CLI handlers
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        CLI help
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#explicit-initialization" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Explicit initialization
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-and-workspace-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration and workspace paths
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration and workspace paths">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#path-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Path resolution
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#catalogue-observations-and-historical-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Catalogue, observations, and historical identity
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Catalogue, observations, and historical identity">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#manual-catalogue-declarations" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Manual catalogue declarations
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#historical-specifications-and-families" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Historical specifications and families
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#current-market-metadata-and-rankings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Current market metadata and rankings
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Current market metadata and rankings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#collection-completeness" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Collection completeness
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rankings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Rankings
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extending-market-collection" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extending market collection
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#historical-archive-acquisition" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Historical archive acquisition
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Historical archive acquisition">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-source-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The source interface
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#discovery-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Discovery evidence
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#managed-file-acquisition" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Managed file acquisition
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-an-archive-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Adding an archive source
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#manual-recordings-and-the-shared-raw-data-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Manual recordings and the shared raw-data model
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Manual recordings and the shared raw-data model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#importing-bytes-and-establishing-interpretation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Importing bytes and establishing interpretation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-recording-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Adding a recording layout
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#profiles-and-the-rust-interpretation-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Profiles and the Rust interpretation boundary
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#normalization-from-recipe-to-registered-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Normalization from recipe to registered files
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Normalization from recipe to registered files">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preparation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Execution
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verification-and-registration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Verification and registration
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extending-normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extending normalization
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-and-conversion-have-separate-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge and conversion have separate workflows
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Merge and conversion have separate workflows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#merge" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conversion" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Conversion
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-historical-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The historical pipeline
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The historical pipeline">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#exact-stage-handoffs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Exact stage handoffs
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#planning-and-retained-execution-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Planning and retained execution state
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resume" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Resume
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#current-extension-boundaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Current extension boundaries
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#managed-engine-executables" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Managed Engine executables
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Managed Engine executables">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#subprocess-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Subprocess ownership
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#storage-administration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Storage administration
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dataset-registration-and-python-consumption" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Dataset registration and Python consumption
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Dataset registration and Python consumption">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#registration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registration
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#registry-inspection" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registry inspection
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#filesystem-and-notebook-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Filesystem and notebook API
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lab-inspection" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Lab inspection
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shared-infrastructure" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Shared infrastructure
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Shared infrastructure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#database-access-and-transactions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Database access and transactions
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workspace-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Workspace ownership
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#http-and-bounded-work" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        HTTP and bounded work
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#presentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Presentation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extending-forge-by-following-one-complete-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extending Forge by following one complete behavior
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Extending Forge by following one complete behavior">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#add-a-cli-capability" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add a CLI capability
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#add-an-archive-or-metadata-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add an archive or metadata provider
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#add-a-profile-or-recording-interpretation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add a profile or recording interpretation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Change preparation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-output-or-registration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Change output or registration
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-pipeline-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Change pipeline behavior
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification-at-architectural-boundaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Verification at architectural boundaries
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Implementation references
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-development-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Related development paths
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#registry-context-for-an-extension" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registry context for an extension
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../convert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical operation lifecycles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../forge-tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge workspace architecture and action inventory
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extending MarketForge
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Extending MarketForge
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extending/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extension decision guide
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extend source integration and processing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extend orchestration and persistence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Testing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Debugging and performance
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Debugging and performance
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../debugging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Debugging historical workflows
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Performance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Contributing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-application-boundaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The application boundaries
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#repository-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Repository map
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#startup-and-command-dispatch" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Startup and command dispatch
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Startup and command dispatch">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#application-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Application context
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-handlers" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        CLI handlers
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        CLI help
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#explicit-initialization" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Explicit initialization
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-and-workspace-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration and workspace paths
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration and workspace paths">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#path-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Path resolution
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#catalogue-observations-and-historical-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Catalogue, observations, and historical identity
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Catalogue, observations, and historical identity">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#manual-catalogue-declarations" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Manual catalogue declarations
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#historical-specifications-and-families" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Historical specifications and families
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#current-market-metadata-and-rankings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Current market metadata and rankings
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Current market metadata and rankings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#collection-completeness" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Collection completeness
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rankings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Rankings
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extending-market-collection" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extending market collection
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#historical-archive-acquisition" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Historical archive acquisition
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Historical archive acquisition">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-source-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The source interface
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#discovery-evidence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Discovery evidence
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#managed-file-acquisition" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Managed file acquisition
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-an-archive-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Adding an archive source
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#manual-recordings-and-the-shared-raw-data-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Manual recordings and the shared raw-data model
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Manual recordings and the shared raw-data model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#importing-bytes-and-establishing-interpretation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Importing bytes and establishing interpretation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-recording-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Adding a recording layout
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#profiles-and-the-rust-interpretation-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Profiles and the Rust interpretation boundary
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#normalization-from-recipe-to-registered-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Normalization from recipe to registered files
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Normalization from recipe to registered files">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preparation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Execution
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verification-and-registration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Verification and registration
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extending-normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extending normalization
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#merge-and-conversion-have-separate-workflows" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge and conversion have separate workflows
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Merge and conversion have separate workflows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#merge" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Merge
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conversion" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Conversion
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-historical-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The historical pipeline
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The historical pipeline">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#exact-stage-handoffs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Exact stage handoffs
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#planning-and-retained-execution-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Planning and retained execution state
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resume" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Resume
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#current-extension-boundaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Current extension boundaries
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#managed-engine-executables" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Managed Engine executables
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Managed Engine executables">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#subprocess-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Subprocess ownership
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#storage-administration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Storage administration
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dataset-registration-and-python-consumption" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Dataset registration and Python consumption
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Dataset registration and Python consumption">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#registration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registration
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#registry-inspection" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registry inspection
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#filesystem-and-notebook-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Filesystem and notebook API
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lab-inspection" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Lab inspection
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shared-infrastructure" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Shared infrastructure
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Shared infrastructure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#database-access-and-transactions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Database access and transactions
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workspace-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Workspace ownership
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#http-and-bounded-work" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        HTTP and bounded work
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#presentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Presentation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extending-forge-by-following-one-complete-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Extending Forge by following one complete behavior
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Extending Forge by following one complete behavior">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#add-a-cli-capability" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add a CLI capability
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#add-an-archive-or-metadata-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add an archive or metadata provider
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#add-a-profile-or-recording-interpretation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Add a profile or recording interpretation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-preparation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Change preparation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-output-or-registration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Change output or registration
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#change-pipeline-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Change pipeline behavior
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification-at-architectural-boundaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Verification at architectural boundaries
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Implementation references
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-development-paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Related development paths
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#registry-context-for-an-extension" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Registry context for an extension
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+      
+        
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Development
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../architecture/" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Architecture
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
+                
+                  
+
+  
+  
+
+
+<h1 id="forge-architecture">Forge architecture</h1>
+<pre class="mermaid"><code>flowchart TD
+    Entry["CLI, Forge TUI or pipeline recipe"] --&gt; Forge["Forge operation services"]
+
+    Forge --&gt; Markets["Metadata and rankings"]
+    Forge --&gt; Acquisition["Archive acquisition"]
+    Forge --&gt; Registration["Recording registration"]
+
+    Markets --&gt; Registry[("PostgreSQL catalogue and registry")]
+    Acquisition --&gt; Raw["Managed raw files"]
+    Registration --&gt; Raw
+    Acquisition --&gt; Registry
+    Registration --&gt; Registry
+
+    Forge --&gt; Preparation["Preparation and evidence checks"]
+    Registry --&gt; Preparation
+    Raw --&gt; Preparation
+
+    Preparation --&gt; Engine["Managed Rust processes"]
+    Raw --&gt;|"Normalization inputs"| Engine
+    Engine --&gt; Publications["Publication files and manifests"]
+
+    Publications --&gt;|"Normalized or merged inputs"| Preparation
+    Publications --&gt; Verification["Forge output verification"]
+    Verification --&gt;|"Normalized and merged file registration"| Registry
+
+    Publications --&gt;|"Supported publication layouts"| Readers["Dataset and lab APIs"]
+    Forge --&gt; Runs["Run reports and retained inputs"]</code></pre>
+<p>Forge is MarketForge’s Python application layer. It connects user requests, market metadata, managed files, PostgreSQL records, and Rust processing jobs.</p>
+<p>The diagram shows the main relationships. Each operation follows the applicable path through the system. Acquisition produces managed raw inputs; normalization produces canonical publications; merge consumes registered normalized files; conversion consumes merged publications and their interpretation evidence. Forge prepares these operations, invokes the appropriate Engine executable, and records their outcomes.</p>
+<p>The implemented historical pipeline composes acquisition, normalization, and merge. Standalone commands also expose these operations individually. Conversion has its own preparation and execution workflow.</p>
+<p>This page explains where each responsibility lives, how the components cooperate, and which parts to inspect when extending Forge. Source paths are relative to the repository root.</p>
+<h2 id="the-application-boundaries">The application boundaries</h2>
+<p>Forge owns the surrounding application workflow: selecting work, resolving identities and historical evidence, retaining execution inputs, managing subprocesses, checking results, and maintaining registry state.</p>
+<p>The Rust Engine owns the processing behavior exposed through its execution contracts. For normalization, this includes interpreting source records and producing canonical data. Forge invokes Rust validation when it needs the authoritative interpretation of a profile, prepared batch, or completed publication.</p>
+<p>PostgreSQL stores identities, declarations, source inventory, observations, publication records, and lineage. The filesystem stores source bytes, configuration, prepared inputs, execution evidence, and publication artifacts.</p>
+<p>These boundaries determine where a change belongs:</p>
+<table>
+<thead>
+<tr>
+<th>Intended behavior</th>
+<th>Primary owner</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Interpret CLI arguments and select an operation</td>
+<td><code>forge/cli/</code></td>
+</tr>
+<tr>
+<td>Resolve a recipe into concrete registered inputs</td>
+<td>The relevant historical operation</td>
+</tr>
+<tr>
+<td>Discover exchange archives</td>
+<td><code>forge/historical/archives/</code></td>
+</tr>
+<tr>
+<td>Collect current instrument metadata or statistics</td>
+<td><code>forge/markets/</code></td>
+</tr>
+<tr>
+<td>Bind a recording to historical identity and interpretation</td>
+<td><code>forge/historical/registration/</code></td>
+</tr>
+<tr>
+<td>Decode a new source representation or change normalization semantics</td>
+<td>Rust Engine, with corresponding Forge contract changes where required</td>
+</tr>
+<tr>
+<td>Verify and register normalized or merged output</td>
+<td>Historical operation services and <code>forge/datasets/registration.py</code></td>
+</tr>
+<tr>
+<td>Read supported publications in Python</td>
+<td><code>forge/datasets/</code></td>
+</tr>
+<tr>
+<td>Coordinate acquisition, normalization, and merge</td>
+<td><code>forge/historical/pipelines/</code></td>
+</tr>
+</tbody>
+</table>
+<p>The boundaries are implemented through ordinary Python calls, typed models, database transactions, files, and subprocess contracts. Contributors should follow the concrete service calls when tracing behavior. There is no universal operation class that implements every workflow.</p>
+<h2 id="repository-map">Repository map</h2>
+<p>The Python project is configured by <code>forge/pyproject.toml</code>. Both <code>mf</code> and <code>marketforge</code> invoke <code>forge.cli.main:main</code>.<sup id="fnref:entry"><a class="footnote-ref" href="#fn:entry">1</a></sup></p>
+<table>
+<thead>
+<tr>
+<th>Package</th>
+<th>Responsibility</th>
+<th>Useful starting points</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>forge/cli/</code></td>
+<td>Command registration, argument handling, result presentation, and exit status</td>
+<td><code>main.py</code>, <code>commands/</code></td>
+</tr>
+<tr>
+<td><code>forge/startup/</code></td>
+<td>Application settings, workspace paths, and consoles</td>
+<td><code>context.py</code></td>
+</tr>
+<tr>
+<td><code>forge/catalog/</code></td>
+<td>Manual exchange, instrument, and specification declarations</td>
+<td><code>models.py</code>, <code>service.py</code></td>
+</tr>
+<tr>
+<td><code>forge/markets/</code></td>
+<td>Current metadata, observations, collection completeness, and rankings</td>
+<td><code>service.py</code>, <code>repository.py</code>, <code>providers/</code>, <code>ranking/</code></td>
+</tr>
+<tr>
+<td><code>forge/historical/archives/</code></td>
+<td>Remote archive discovery, acquisition, caching, and managed-copy registration</td>
+<td><code>operation.py</code>, <code>discovery.py</code>, <code>sources/</code>, <code>storage/</code></td>
+</tr>
+<tr>
+<td><code>forge/historical/imports/</code></td>
+<td>Local source inspection and copying into managed raw storage</td>
+<td><code>formats.py</code>, <code>service.py</code></td>
+</tr>
+<tr>
+<td><code>forge/historical/registration/</code></td>
+<td>Bind local recordings to catalogue, specification, and profile evidence</td>
+<td><code>models.py</code>, <code>service.py</code></td>
+</tr>
+<tr>
+<td><code>forge/historical/profiles/</code></td>
+<td>Discover, validate, and install Rust profiles</td>
+<td><code>service.py</code></td>
+</tr>
+<tr>
+<td><code>forge/historical/metadata/</code></td>
+<td>Historical specifications, canonical identities, family evidence, and inference</td>
+<td><code>service.py</code>, <code>policy.py</code>, <code>resolution.py</code>, <code>discovery.py</code></td>
+</tr>
+<tr>
+<td><code>forge/historical/normalization/</code></td>
+<td>Select raw inputs, prepare batches, execute Rust, and register verified output</td>
+<td><code>batch.py</code>, <code>mapping.py</code>, <code>execution.py</code>, <code>datasets.py</code></td>
+</tr>
+<tr>
+<td><code>forge/historical/merge/</code></td>
+<td>Select normalized files and prepare, execute, verify, and register merges</td>
+<td><code>config.py</code>, <code>discovery.py</code>, <code>service.py</code></td>
+</tr>
+<tr>
+<td><code>forge/historical/conversion/</code></td>
+<td>Discover merged inputs, establish conversion evidence, and execute standalone JSON jobs</td>
+<td><code>recipes.py</code>, <code>contract.py</code>, <code>service.py</code>, <code>execution.py</code></td>
+</tr>
+<tr>
+<td><code>forge/historical/pipelines/</code></td>
+<td>Coordinate the fixed acquisition, normalization, and merge workflow</td>
+<td><code>config.py</code>, <code>service.py</code>, <code>planning.py</code>, <code>dashboard.py</code></td>
+</tr>
+<tr>
+<td><code>forge/historical/engine/</code></td>
+<td>Build, identify, verify, and supervise managed Engine executables</td>
+<td><code>managed.py</code>, <code>process.py</code></td>
+</tr>
+<tr>
+<td><code>forge/storage/</code></td>
+<td>Browse, verify, reconcile, and clean up managed raw storage</td>
+<td><code>browsing.py</code>, <code>service.py</code>, <code>cleanup.py</code>, <code>dependencies.py</code></td>
+</tr>
+<tr>
+<td><code>forge/datasets/</code></td>
+<td>Publication registration, registry inspection, filesystem discovery, and Python row access</td>
+<td><code>registration.py</code>, <code>catalog.py</code>, <code>dataset.py</code>, <code>parquet.py</code></td>
+</tr>
+<tr>
+<td><code>forge/orchestration/</code></td>
+<td>Common run-artifact paths and retained-run inspection</td>
+<td><code>artifacts.py</code>, <code>inspection.py</code></td>
+</tr>
+<tr>
+<td><code>forge/shared/</code></td>
+<td>Configuration, database access, HTTP, concurrency, ownership, paths, and terminal rendering</td>
+<td>The corresponding subpackage</td>
+</tr>
+<tr>
+<td><code>forge/lab/inspection/</code></td>
+<td>Dataset inspection and bounded profiling</td>
+<td><code>profile.py</code></td>
+</tr>
+</tbody>
+</table>
+<p>Some package names reserve space without implementing a subsystem. In the current source tree, <code>forge/features/</code>, <code>forge/tui/</code>, <code>forge/shared/storage/</code>, and the evaluation, optimization, tracking, and training packages under <code>forge/lab/</code> are empty.</p>
+<p>Implemented presentation code lives in <code>forge/shared/terminal/</code> and operation-specific modules such as <code>forge/historical/pipelines/dashboard.py</code>.</p>
+<h2 id="startup-and-command-dispatch">Startup and command dispatch</h2>
+<h3 id="application-context">Application context</h3>
+<p><code>build_context()</code> constructs an immutable <code>ApplicationContext</code> containing:</p>
+<ul>
+<li>Validated application settings.</li>
+<li>Resolved project and data paths.</li>
+<li>The selected settings-file path.</li>
+<li>A normal-output console.</li>
+<li>An error/progress console.</li>
+</ul>
+<p>Startup resolves configuration and prepares presentation objects. Database connections, HTTP clients, workspace ownership, and Engine processes are opened by the operations that need them.<sup id="fnref:startup"><a class="footnote-ref" href="#fn:startup">2</a></sup></p>
+<p>This keeps configuration-only commands usable without first opening external resources.</p>
+<p>An explicit application configuration path is resolved relative to the caller’s working directory. Storage paths inside that configuration are resolved relative to the workspace. A missing default configuration uses application defaults; a missing explicitly selected configuration is an error.</p>
+<h3 id="cli-handlers">CLI handlers</h3>
+<p><code>forge/cli/main.py</code> builds the root <code>argparse</code> parser. Most command families expose a <code>configure(parser)</code> function that registers actions and assigns a <code>service_handler</code>.</p>
+<p>The handler receives the parsed arguments and <code>ApplicationContext</code>. It loads the operation’s input, invokes the appropriate service, presents the result, and returns an exit status.</p>
+<p>Some acquisition, configuration, and database actions retain explicit dispatch branches in <code>main()</code>. Follow the existing dispatch for the command being changed.</p>
+<p>A new command should normally keep these responsibilities separate:</p>
+<table>
+<thead>
+<tr>
+<th>Responsibility</th>
+<th>Placement</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Command name, flags, and argument relationships</td>
+<td>CLI configuration</td>
+</tr>
+<tr>
+<td>Recipe or declaration validation</td>
+<td>The relevant model and loader</td>
+</tr>
+<tr>
+<td>Input selection and application behavior</td>
+<td>Operation service</td>
+</tr>
+<tr>
+<td>Database queries and transactions</td>
+<td>Existing repository, registry, or service boundary</td>
+</tr>
+<tr>
+<td>Human-readable output</td>
+<td>Terminal renderer or operation display</td>
+</tr>
+<tr>
+<td>Structured result</td>
+<td>Service result and CLI JSON emission</td>
+</tr>
+</tbody>
+</table>
+<p>This separation lets another workflow call the service directly. The pipeline uses that ability to compose operations without launching nested <code>mf</code> commands.</p>
+<p>Runtime errors handled by <code>main()</code> can be emitted as JSON on stderr. Argument-parser errors follow the parser’s own path. Operation handlers also determine their own success, partial-result, and failure statuses, so contributors should inspect the relevant handler before changing exit behavior.<sup id="fnref2:entry"><a class="footnote-ref" href="#fn:entry">1</a></sup></p>
+<h3 id="cli-help">CLI help</h3>
+<ol>
+<li>Register the command with its family’s <code>configure(parser)</code> function or in
+   <code>forge/cli/main.py</code>. Provide a concise, user-facing <code>help=</code> description when
+   registering it. Use <code>description=</code> for behavior that needs more detail.</li>
+<li>Assign top-level commands to a group in <code>forge/cli/help_content.py</code>. Newly
+   registered commands without a group appear in <strong>Other Commands</strong>. Nested
+   commands appear under their registered parent.</li>
+<li>Add concise argument help to the parser action. The renderer reads operands,
+   choices, defaults, repeatability and mutual exclusion from argparse.</li>
+<li>Add a few examples to <code>EXAMPLES</code> where they help discovery. Use the complete
+   command path, put root options before it, and prefer read-only, plan or
+   dry-run forms for operations that can modify data.</li>
+<li>Review root, family and action help at 80 columns and through a pipe.
+   The <a href="../testing/">CLI help regression tests</a> traverse the parser and parse
+   the curated examples. The TUI action inventory also checks parser parity.</li>
+</ol>
+<p><code>forge/cli/help.py</code> renders help through the shared Rich console. Argparse
+continues to own argument parsing, validation and usage errors.</p>
+<h3 id="explicit-initialization">Explicit initialization</h3>
+<p>Building an application context and running initialization are different operations.</p>
+<p>The <code>init</code> command explicitly creates application directories, applies testing-database migrations, collects supported market metadata, attempts historical enrichment, and refreshes standard rankings. Its implementation calls the underlying services directly and retains stage outcomes.</p>
+<p>It is a useful example of application composition, but its API-backed catalogue population does not replace manual catalogue registration for other venues and recordings.<sup id="fnref:initialization"><a class="footnote-ref" href="#fn:initialization">3</a></sup></p>
+<h2 id="configuration-and-workspace-paths">Configuration and workspace paths</h2>
+<p>Forge has several configuration boundaries:</p>
+<table>
+<thead>
+<tr>
+<th>Configuration</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Application settings</td>
+<td>Storage root, presentation, and HTTP defaults</td>
+</tr>
+<tr>
+<td>Operation recipe</td>
+<td>The requested work, selection, interval, and operation-specific policy</td>
+</tr>
+<tr>
+<td>Engine runtime settings</td>
+<td>Processing resources and supported runtime policies</td>
+</tr>
+<tr>
+<td>Format profile</td>
+<td>The interpretation of recorded source fields</td>
+</tr>
+<tr>
+<td>Prepared JSON</td>
+<td>Concrete execution inputs and their resolved identity or publication evidence</td>
+</tr>
+</tbody>
+</table>
+<p><code>forge/shared/config/models.py</code> defines strict application settings. Unknown fields and unintended type conversions are rejected.</p>
+<p>Operation models extend the project’s settings conventions while defining their own contracts. Changing application settings does not automatically change a normalization recipe or Engine job schema.<sup id="fnref:configuration"><a class="footnote-ref" href="#fn:configuration">4</a></sup></p>
+<h3 id="path-resolution">Path resolution</h3>
+<p><code>ProjectPaths</code> resolves the project root from an explicit argument, <code>MARKETFORGE_PROJECT_ROOT</code>, or an enclosing workspace. A recognized workspace contains <code>forge/pyproject.toml</code> and an <code>engine/</code> directory.</p>
+<p>Constructing <code>ProjectPaths</code> does not create directories.</p>
+<table>
+<thead>
+<tr>
+<th>Location</th>
+<th>Resolution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Managed executables</td>
+<td><code>&lt;project-root&gt;/.bin/</code></td>
+</tr>
+<tr>
+<td>Application settings</td>
+<td><code>&lt;project-root&gt;/data/.config/forge/marketforge.toml</code></td>
+</tr>
+<tr>
+<td>Managed configuration libraries</td>
+<td><code>&lt;project-root&gt;/data/.config/</code></td>
+</tr>
+<tr>
+<td>Managed raw files</td>
+<td><code>&lt;data-root&gt;/raw/</code></td>
+</tr>
+<tr>
+<td>Dataset publications</td>
+<td><code>&lt;data-root&gt;/datasets/</code></td>
+</tr>
+<tr>
+<td>Run artifacts</td>
+<td><code>&lt;data-root&gt;/runs/</code></td>
+</tr>
+</tbody>
+</table>
+<p>Changing <code>storage.data_root</code> relocates data and run storage. Configuration libraries remain under the project root’s <code>data/.config/</code>.</p>
+<p>Use <code>ProjectPaths</code> and the existing configuration-library helpers when adding a command. Reconstructing these paths independently can make a feature behave differently when the data root changes.<sup id="fnref:paths"><a class="footnote-ref" href="#fn:paths">5</a></sup></p>
+<h2 id="catalogue-observations-and-historical-identity">Catalogue, observations, and historical identity</h2>
+<p>Three kinds of evidence participate in Forge’s identity handling:</p>
+<ol>
+<li>Catalogue declarations identify venues and instruments.</li>
+<li>Current observations describe information retrieved at a particular time.</li>
+<li>Historical evidence establishes the interpretation applicable to a processing interval.</li>
+</ol>
+<p>They have different responsibilities and lifetimes.</p>
+<h3 id="manual-catalogue-declarations">Manual catalogue declarations</h3>
+<p><code>forge/catalog/models.py</code> defines exchange, instrument, and specification declarations. <code>catalog/service.py</code> validates their relationships, persists them, reuses equivalent declarations, and rejects conflicts.</p>
+<p>Instrument insertion also establishes a persisted historical authority mapping through the database schema. Contributors must distinguish the catalogue instrument’s database identity from the canonical historical identity serialized into processing inputs.<sup id="fnref:catalogue"><a class="footnote-ref" href="#fn:catalogue">6</a></sup></p>
+<table>
+<thead>
+<tr>
+<th>Identity</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Provider-native publisher or instrument identifier</td>
+<td>An identifier interpreted within its source namespace and applicable context</td>
+</tr>
+<tr>
+<td>Catalogue instrument ID</td>
+<td>The PostgreSQL identity of a catalogue instrument record</td>
+</tr>
+<tr>
+<td>Historical canonical instrument ID</td>
+<td>The identity used under a declared processing namespace</td>
+</tr>
+<tr>
+<td>Stream identity</td>
+<td>The logical data stream represented by processing or publication evidence</td>
+</tr>
+<tr>
+<td>Engine publication ID</td>
+<td>The identifier written by an Engine operation</td>
+</tr>
+<tr>
+<td>Database publication ID</td>
+<td>The registry identity of a publication</td>
+</tr>
+<tr>
+<td>File dataset ID</td>
+<td>The registry identity of one primary output file</td>
+</tr>
+</tbody>
+</table>
+<p>Resolve these identities through the existing authority and registration code. A numerical match between two identity domains does not establish equivalence.</p>
+<h3 id="historical-specifications-and-families">Historical specifications and families</h3>
+<p><code>forge/historical/metadata/</code> connects retained catalogue information to historical processing.</p>
+<p>Its responsibilities include:</p>
+<ul>
+<li>Establishing or reusing canonical authority.</li>
+<li>Selecting applicable historical specification evidence.</li>
+<li>Recording inference assumptions and source evidence.</li>
+<li>Resolving supported family membership.</li>
+<li>Checking that retained identity evidence still matches the source bytes and installed interpretation.</li>
+</ul>
+<p>Historical specification resolution must cover the actual processing input. Normalization can select whole archives extending beyond the requested interval, so the required validity may be wider than the user’s selection.</p>
+<p>Current observations alone do not establish historical applicability.</p>
+<p>Family handling adds another boundary: observing instruments in an archive establishes an observed population. It does not prove that the archive contains every historical member of that family.</p>
+<p>For supported family discovery, Forge invokes the Engine’s nonprocessing resolution contract. This is a deliberate use of the authoritative source interpreter to establish identity evidence without running normalization.<sup id="fnref:historical-metadata"><a class="footnote-ref" href="#fn:historical-metadata">7</a></sup></p>
+<p>When adding metadata behavior, preserve the distinction between explicit declarations, verified evidence, and inference. Record assumptions through the existing policy and evidence structures.</p>
+<h2 id="current-market-metadata-and-rankings">Current market metadata and rankings</h2>
+<p><code>forge/markets/</code> collects current instrument metadata and market observations. This subsystem is separate from historical archive discovery.</p>
+<p><code>markets/providers/public.py</code> translates upstream responses into <code>Instrument</code> and <code>Observation</code> models. <code>markets/capabilities.py</code> identifies supported collection scopes. <code>markets/service.py</code> coordinates collection, while <code>markets/repository.py</code> persists the results.<sup id="fnref:markets"><a class="footnote-ref" href="#fn:markets">8</a></sup></p>
+<h3 id="collection-completeness">Collection completeness</h3>
+<p>Metadata collection establishes the instruments observed in a particular collection scope. Retained catalogue history remains available even when an instrument is absent from a later current selection.</p>
+<p>Statistics collection uses a successfully established metadata scope and checks instrument identity. Ambiguous, duplicate, or missing selected identities prevent that scope from being treated as complete.</p>
+<p>Observations are retained as evidence. The collector advances the latest-value view after the scope succeeds. This allows the implementation to preserve observations from unsuccessful attempts without presenting an incomplete scope as a completed refresh.</p>
+<p>A change to provider parsing therefore needs to consider pagination, units, instrument identity, and collection completeness together.</p>
+<h3 id="rankings">Rankings</h3>
+<p>Ranking calculation and statistics refresh have separate entry points.</p>
+<p><code>markets/ranking/service.py</code> builds rankings from retained metadata and observations. It stores the snapshot, entries, exclusions, and conversion evidence within its publication workflow.</p>
+<p><code>markets/ranking/workflow.py</code> coordinates a refresh followed by ranking publication.</p>
+<p>Turnover and grouped volume have different comparison semantics. A grouped volume result is not automatically a valid global ordering across unrelated assets.</p>
+<p>Normalization preparation reads stored ranking positions when available and uses deterministic identity ordering for unranked streams or absent ranking evidence. Current ranking information should retain its interpretation as current prioritization evidence.<sup id="fnref:rankings"><a class="footnote-ref" href="#fn:rankings">9</a></sup></p>
+<h3 id="extending-market-collection">Extending market collection</h3>
+<p>Adding current metadata support requires reviewing:</p>
+<ul>
+<li>Capability declarations.</li>
+<li>Endpoint selection and pagination.</li>
+<li>Instrument and observation translation.</li>
+<li>Unit interpretation.</li>
+<li>Exact contract identity.</li>
+<li>Scope completion and publication behavior.</li>
+<li>Relevant provider and collection tests.</li>
+</ul>
+<p>Adding an archive downloader does not automatically provide these capabilities. A venue may support one workflow before another.</p>
+<h2 id="historical-archive-acquisition">Historical archive acquisition</h2>
+<p><code>forge/historical/archives/</code> turns an archive request into discovered source objects and verified managed copies.</p>
+<p>Its main responsibilities are divided as follows:</p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>config.py</code></td>
+<td>Validate the acquisition request</td>
+</tr>
+<tr>
+<td><code>sources/base.py</code></td>
+<td>Define the source protocol and shared discovery helpers</td>
+</tr>
+<tr>
+<td><code>sources/exchanges.py</code></td>
+<td>Implement supported exchange discovery</td>
+</tr>
+<tr>
+<td><code>discovery.py</code></td>
+<td>Coordinate discovery and reusable scan evidence</td>
+</tr>
+<tr>
+<td><code>registry.py</code></td>
+<td>Persist source-object and scan information</td>
+</tr>
+<tr>
+<td><code>planning.py</code></td>
+<td>Inspect registry/cache evidence without acquisition</td>
+</tr>
+<tr>
+<td><code>operation.py</code></td>
+<td>Coordinate the complete acquisition operation</td>
+</tr>
+<tr>
+<td><code>storage/acquire.py</code></td>
+<td>Reserve, reuse, acquire, and recover managed copies</td>
+</tr>
+<tr>
+<td><code>storage/files.py</code></td>
+<td>Perform the physical file operations</td>
+</tr>
+</tbody>
+</table>
+<h3 id="the-source-interface">The source interface</h3>
+<p>The archive source boundary is defined by <code>ArchiveSource</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">ArchiveSource</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="n">version</span><span class="p">:</span> <span class="nb">str</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">ArchiveRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">discover</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">request</span><span class="p">:</span> <span class="n">ArchiveRequest</span><span class="p">,</span>
+        <span class="n">interval</span><span class="p">:</span> <span class="n">AcquisitionInterval</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AsyncIterator</span><span class="p">[</span><span class="n">DiscoveredArchive</span><span class="p">]:</span> <span class="o">...</span>
+</code></pre></div>
+<p>The production implementation uses explicit exchange dispatch in <code>ExchangeSource</code>. Discovery support is registered in code.</p>
+<p>A discovered object describes the actual archive scope and a stable source-object identity. Temporary signed URLs are locations from which bytes can be retrieved; they are not sufficient object identities.<sup id="fnref:acquisition"><a class="footnote-ref" href="#fn:acquisition">10</a></sup></p>
+<h3 id="discovery-evidence">Discovery evidence</h3>
+<p>A successful discovery scan establishes reusable scan membership. A completed refresh can supersede overlapping older scan evidence.</p>
+<p>A failed or cancelled refresh may retain observations, but it must not replace the previously completed coverage with an incomplete result.</p>
+<p>Acquisition planning reads available registry and cache evidence. Discovery and local-byte verification remain separate checks.</p>
+<h3 id="managed-file-acquisition">Managed file acquisition</h3>
+<p>The acquisition service first attempts to reuse a verified managed copy.</p>
+<p>A new transfer reserves its identity, streams to a temporary file, validates the container, computes and records size/hash evidence, publishes the file, and completes registry state.</p>
+<p>The implementation retains enough evidence to recover certain interrupted publication steps. An incomplete transfer without verified evidence is treated differently from a fully written, validated file whose final registration was interrupted.</p>
+<p>Container validation checks the physical archive and rejects common error responses. Market-data interpretation remains a later responsibility.</p>
+<h3 id="adding-an-archive-source">Adding an archive source</h3>
+<p>Start with <code>ArchiveSource</code> and a nearby implementation in <code>ExchangeSource</code>. Then inspect the orchestration code that selects adapters, budgets work, and allocates coordination resources.</p>
+<p>An extension may require changes to:</p>
+<ul>
+<li>Request validation.</li>
+<li>Exchange dispatch.</li>
+<li>Supported scope declarations.</li>
+<li>Discovery identity and interval handling.</li>
+<li>Shared HTTP budgets.</li>
+<li>Operation allowlists or coordination assumptions.</li>
+<li>Fixtures for pagination, malformed responses, and stable source identity.</li>
+</ul>
+<p>Return <code>DiscoveredArchive</code> values through the existing discovery flow so that scan membership, caching, managed-copy reuse, and recovery retain their established behavior.</p>
+<h2 id="manual-recordings-and-the-shared-raw-data-model">Manual recordings and the shared raw-data model</h2>
+<p>Manual recordings and downloaded archives converge on the same managed raw-storage model.</p>
+<p>The current schema separates:</p>
+<table>
+<thead>
+<tr>
+<th>Record</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>historical.raw_sources</code></td>
+<td>Source identity and provider provenance</td>
+</tr>
+<tr>
+<td><code>historical.raw_objects</code></td>
+<td>Stable source-object identity</td>
+</tr>
+<tr>
+<td><code>historical.local_archives</code></td>
+<td>A managed physical copy, its hash, size, and state</td>
+</tr>
+<tr>
+<td><code>historical.raw_interpretations</code></td>
+<td>Interpretation revisions for supplied objects</td>
+</tr>
+<tr>
+<td><code>historical.raw_bindings</code></td>
+<td>The association between a copy and an interpretation</td>
+</tr>
+</tbody>
+</table>
+<p>Compatibility views retain older names such as <code>remote_archives</code> and <code>external_archives</code>, and some Python symbols still use that vocabulary. These names should not be interpreted as separate physical storage systems.<sup id="fnref:raw-model"><a class="footnote-ref" href="#fn:raw-model">11</a></sup></p>
+<h3 id="importing-bytes-and-establishing-interpretation">Importing bytes and establishing interpretation</h3>
+<p><code>forge/historical/imports/</code> inspects and copies local files. Its copying implementation reuses physical-file and recovery primitives shared with acquisition.</p>
+<p><code>forge/historical/registration/</code> establishes the evidence needed to interpret those files.</p>
+<p>Registration preflight combines:</p>
+<ul>
+<li>A concrete canonical instrument.</li>
+<li>Applicable historical specifications.</li>
+<li>An installed and Rust-validated profile.</li>
+<li>Quantity-encoding compatibility.</li>
+<li>Source inventory and bounded sample checks.</li>
+<li>Optional publisher and native-instrument evidence.</li>
+</ul>
+<p>The resulting binding is retained with the managed source.</p>
+<p>The legacy raw-import route can preserve bytes without establishing a verified normalization binding. Normalization checks that the required binding exists and is ready.</p>
+<p>A file’s checksum identifies its bytes. Its interpretation also depends on identity, specifications, and profile evidence. Reusing verified bytes under a new interpretation therefore requires an explicit binding.<sup id="fnref:registration"><a class="footnote-ref" href="#fn:registration">12</a></sup></p>
+<h3 id="adding-a-recording-layout">Adding a recording layout</h3>
+<p>If an existing Rust reader and profile contract can express the source, the extension may consist of catalogue declarations, a profile, registration evidence, and meaningful verification.</p>
+<p>A new binary representation or unsupported record semantic also requires Engine work.</p>
+<p>Keep recording support independent of API collection unless the workflow actually needs an upstream service.</p>
+<h2 id="profiles-and-the-rust-interpretation-boundary">Profiles and the Rust interpretation boundary</h2>
+<p><code>forge/historical/profiles/service.py</code> manages profile discovery, validation, and installation.</p>
+<p>Python checks local file properties, TOML syntax, declared identity, and namespace consistency. Semantic validation stages the candidate alongside installed profiles and invokes the managed normalization executable.</p>
+<p>This lets Rust check both the candidate interpretation and its compatibility with the profile catalogue.</p>
+<p>Installation freezes the submitted bytes, verifies that the source did not change, and publishes them under the declared profile identity. An equivalent compiled interpretation can be reused. A conflicting interpretation under the same installed identity is rejected.<sup id="fnref:profiles"><a class="footnote-ref" href="#fn:profiles">13</a></sup></p>
+<p>This boundary matters when extending the schema:</p>
+<ul>
+<li>Python profile inspection must remain consistent with the supported naming and discovery rules.</li>
+<li>Rust remains authoritative for interpretation semantics.</li>
+<li>Preparation and execution must retain the relevant interpretation evidence.</li>
+<li>Tests must establish how a source example is interpreted.</li>
+</ul>
+<p>Avoid adding a second Python implementation of normalization semantics merely to make a profile validation command more convenient.</p>
+<h2 id="normalization-from-recipe-to-registered-files">Normalization from recipe to registered files</h2>
+<p>Normalization connects most of Forge’s historical components.</p>
+<pre class="mermaid"><code>sequenceDiagram
+    participant CLI as CLI handler
+    participant Forge as Normalization services
+    participant DB as Testing registry
+    participant Engine as Managed Rust Engine
+
+    CLI-&gt;&gt;Forge: Load recipe and prepare
+    Forge-&gt;&gt;DB: Read raw inventory and applicable evidence
+    DB--&gt;&gt;Forge: Identities, specifications, ranks, and inputs
+    Forge-&gt;&gt;Engine: Validate prepared batch
+    Engine--&gt;&gt;Forge: Validation result
+    Forge--&gt;&gt;CLI: Batch and preparation report
+
+    CLI-&gt;&gt;Forge: Execute prepared batch
+    Forge-&gt;&gt;Forge: Retain submission, settings, profiles, and executable
+    Forge-&gt;&gt;Engine: Execute retained batch
+    Note over Engine: Writes publications and structured outcome
+    Engine--&gt;&gt;Forge: Process outcome and result file
+    Forge-&gt;&gt;Engine: Validate committed publication
+    Engine--&gt;&gt;Forge: Publication validation
+
+    alt Required outputs verify
+        Forge-&gt;&gt;DB: Register primary files and lineage
+        DB--&gt;&gt;Forge: Publication and file identities
+        Forge--&gt;&gt;CLI: Execution and registration result
+    else Verification or registration cannot complete
+        Forge--&gt;&gt;CLI: Retained evidence and failure state
+    end</code></pre>
+<h3 id="preparation">Preparation</h3>
+<p><code>historical/normalization/batch.py</code> coordinates preparation. <code>mapping.py</code> resolves each selected archive, and <code>contract.py</code> serializes the Engine-facing job structure.</p>
+<p>Preparation checks managed input state, physical size and checksum, requested scope, canonical identity, applicable specifications, and profile bindings where required.</p>
+<p>It selects complete overlapping raw inputs. The requested interval does not turn preparation into a row-trimming operation.</p>
+<p>The preparation transaction reads a consistent database snapshot. It groups work by canonical content type, assigns identities and stream ranks, and constructs the batch.</p>
+<p>Normal preparation retains the batch and report and invokes Rust’s production batch validator. Dry-run preparation resolves the plan without publishing those artifacts or performing that final file-based validation step.<sup id="fnref:normalization"><a class="footnote-ref" href="#fn:normalization">14</a></sup></p>
+<h3 id="execution">Execution</h3>
+<p><code>historical/normalization/execution.py</code> creates an execution directory and retains:</p>
+<ul>
+<li>The exact submitted batch.</li>
+<li>Runtime settings.</li>
+<li>Profile files and fingerprints.</li>
+<li>A copied executable and its checksum.</li>
+<li>Raw-input checksum evidence.</li>
+<li>Execution intent.</li>
+<li>Structured Engine outcomes and logs.</li>
+</ul>
+<p>Where preparation evidence exists, execution checks that the submitted batch, runtime, profiles, and executable still agree with it.</p>
+<p>This prevents a prepared request from silently changing interpretation between preparation and execution.</p>
+<p>The synchronous <code>execute()</code> wrapper delegates to <code>execute_async()</code>. Pipeline callers use the asynchronous entry point and can provide a child execution directory, frozen historical configuration, a pinned executable, lifecycle reporting, and expected raw inputs.</p>
+<h3 id="verification-and-registration">Verification and registration</h3>
+<p>Execution success, publication verification, and registration are separate states.</p>
+<p>Forge checks the structured Engine result against the submitted jobs, validates committed publications, and compares publication identity, inventory totals, and retained processing evidence.</p>
+<p><code>historical/normalization/datasets.py</code> then coordinates registration. <code>datasets/registration.py</code> writes the publication and primary-file records together with supported raw-input or parent-file lineage.</p>
+<p>Registration can remain pending or fail after files have been committed. Retained execution and registration evidence allows the supported recovery path to revalidate completed output and attempt registration.<sup id="fnref:publication-registration"><a class="footnote-ref" href="#fn:publication-registration">15</a></sup></p>
+<h3 id="extending-normalization">Extending normalization</h3>
+<p>Choose the module according to the behavior being changed:</p>
+<table>
+<thead>
+<tr>
+<th>Change</th>
+<th>Starting point</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Recipe fields and validation</td>
+<td><code>normalization/config.py</code>, <code>recipes.py</code></td>
+</tr>
+<tr>
+<td>Registered-input selection</td>
+<td><code>normalization/batch.py</code></td>
+</tr>
+<tr>
+<td>Identity and historical evidence resolution</td>
+<td><code>normalization/mapping.py</code>, <code>historical/metadata/</code></td>
+</tr>
+<tr>
+<td>Serialized Engine job fields</td>
+<td><code>normalization/contract.py</code>, <code>batch.py</code>, corresponding Rust contract</td>
+</tr>
+<tr>
+<td>Process lifecycle or retained execution evidence</td>
+<td><code>normalization/execution.py</code></td>
+</tr>
+<tr>
+<td>Publication verification</td>
+<td><code>normalization/datasets.py</code></td>
+</tr>
+<tr>
+<td>Primary-file registration and lineage</td>
+<td><code>datasets/registration.py</code></td>
+</tr>
+<tr>
+<td>Source decoding or canonical record semantics</td>
+<td>Rust Engine and relevant profile contract</td>
+</tr>
+</tbody>
+</table>
+<p>A recipe extension may affect several of these boundaries. Trace its value from parsing to the Engine input and then to the evidence needed for verification.</p>
+<h2 id="merge-and-conversion-have-separate-workflows">Merge and conversion have separate workflows</h2>
+<h3 id="merge">Merge</h3>
+<p>Managed merge consumes registered normalized primary files.</p>
+<p>Its direct recipe identifies file dataset IDs. A derived recipe can select inputs through a retained normalization declaration and associated evidence.</p>
+<p><code>historical/merge/service.py</code> resolves those files, verifies publication fingerprints and ownership, establishes the stream identities, assigns ranks, and writes the Engine job.</p>
+<p>Execution retains the job, runtime, and executable. After Rust completes, Forge verifies the merged publication and registers its primary files with parent-dataset lineage.<sup id="fnref:merge"><a class="footnote-ref" href="#fn:merge">16</a></sup></p>
+<p>Contributors should preserve the distinction between a publication and the files selected from it. Several file dataset IDs may belong to one publication.</p>
+<p>The merge preparation and verification code is the place to change input selection or publication evidence. Timeline construction and record-processing semantics belong to the Engine contract and implementation.</p>
+<h3 id="conversion">Conversion</h3>
+<p>Conversion prepares quote-currency conversion work from registered merged publications and the required reference-stream evidence.</p>
+<p>The implementation separates:</p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>recipes.py</code></td>
+<td>User recipe and fingerprinted upstream declaration</td>
+</tr>
+<tr>
+<td><code>discovery.py</code></td>
+<td>Select compatible registered merged publications</td>
+</tr>
+<tr>
+<td><code>registry.py</code></td>
+<td>Read publication and lineage records</td>
+</tr>
+<tr>
+<td><code>evidence.py</code></td>
+<td>Verify committed source and interpretation evidence</td>
+</tr>
+<tr>
+<td><code>contract.py</code></td>
+<td>Define the standalone Engine JSON job</td>
+</tr>
+<tr>
+<td><code>service.py</code></td>
+<td>Assemble jobs and retained preparation evidence</td>
+</tr>
+<tr>
+<td><code>execution.py</code></td>
+<td>Execute and verify prepared conversion jobs</td>
+</tr>
+</tbody>
+</table>
+<p>An upstream recipe reference identifies the intended source workflow. It does not run missing acquisition, normalization, or merge operations.</p>
+<p>Preparation emits a collection document and one standalone JSON job per selected merge publication. The Engine job embeds publication bindings, stream identities, currencies, conversion policy, resources, input paths, and output destination.</p>
+<p>An external instrument-catalogue file is not required by that standalone job interface. If the optional preparation catalogue exists, Forge checks its consistency with historical evidence.</p>
+<p>Conversion operates on whole selected merge publications. Selection must satisfy the workflow’s scope rules; it does not introduce arbitrary row clipping.</p>
+<p>The current Forge execution flow runs the prepared jobs sequentially and stops after a failure. Converted-publication registration and conversion resume are not implemented in this workflow. Its receipts explicitly represent registration as unavailable.<sup id="fnref:conversion"><a class="footnote-ref" href="#fn:conversion">17</a></sup></p>
+<h2 id="the-historical-pipeline">The historical pipeline</h2>
+<p>The pipeline composes existing services through explicit handoffs.</p>
+<pre class="mermaid"><code>flowchart TD
+    Recipe["PipelineRecipe"] --&gt;|"Acquisition request"| Acquire["Acquisition service"]
+    Recipe --&gt;|"Normalization request"| Normalize["Normalization services"]
+    Recipe --&gt;|"Merge options"| Merge["Merge services"]
+
+    Acquire --&gt;|"Pinned ArchiveSelection"| Normalize
+    Normalize --&gt;|"Registered primary-file IDs"| Merge
+
+    Acquire --&gt; Evidence["Pipeline reports and stage evidence"]
+    Normalize --&gt; Evidence
+    Merge --&gt; Evidence</code></pre>
+<p><code>PipelineRecipe</code> translates one interval and request set into acquisition, normalization, and merge inputs.</p>
+<p><code>PipelineRun</code> owns the stage state, retained evidence, and recovery decisions. It calls the services directly.</p>
+<p>The current sequence is fixed:</p>
+<ul>
+<li>Acquire the requested archives.</li>
+<li>Prepare, execute, verify, and register normalization.</li>
+<li>Prepare, execute, verify, and register merge.</li>
+</ul>
+<h3 id="exact-stage-handoffs">Exact stage handoffs</h3>
+<p>Acquisition returns an <code>ArchiveSelection</code> containing the acquired identities and checksum evidence.</p>
+<p>Normalization preparation receives that selection explicitly. Execution checks the expected raw-file hashes.</p>
+<p>The next stage receives the registered normalized primary-file IDs. Merge therefore consumes the output of this pipeline run through concrete registry identities.</p>
+<p>These handoffs are the central pipeline contract. Extending the pipeline should preserve an explicit account of what each stage produced and what the next stage consumed.<sup id="fnref:pipeline"><a class="footnote-ref" href="#fn:pipeline">18</a></sup></p>
+<h3 id="planning-and-retained-execution-state">Planning and retained execution state</h3>
+<p>Pipeline planning reads available registry evidence and checks managed Engine availability. Exact acquired files, normalization jobs, and merge file identities are resolved at later stages.</p>
+<p>A planned result is therefore an assessment of available prerequisites, not a completely frozen execution plan.</p>
+<p>Execution retains the submitted recipe, resolved application settings, runtime configuration, profiles, executables, acquired selection, preparation evidence, and child execution receipts.</p>
+<p><code>orchestration/artifacts.py::RunArtifacts</code> supplies common paths such as:</p>
+<ul>
+<li><code>submitted.toml</code></li>
+<li><code>resolved-plan.json</code></li>
+<li><code>report.json</code></li>
+<li><code>events.jsonl</code></li>
+<li><code>steps/&lt;stage&gt;/&lt;attempt&gt;/</code></li>
+</ul>
+<p>The pipeline state machine lives in <code>historical/pipelines/service.py</code>. The <code>orchestration/</code> package provides supporting artifact and inspection utilities.</p>
+<h3 id="resume">Resume</h3>
+<p>Resume validates retained evidence and requires the original workspace, storage root, and testing-registry identity.</p>
+<p>It can reuse completed acquisition, reconcile committed outputs with registration, or create a fresh processing attempt from retained inputs.</p>
+<p>It does not continue a partially written Parquet file from an arbitrary row offset. A retry may require fresh job identities and output destinations.</p>
+<p>Changes to pipeline recovery must account for both publication state and registry state. An Engine process may have committed output before Forge finished recording the surrounding workflow.</p>
+<h3 id="current-extension-boundaries">Current extension boundaries</h3>
+<p>The pipeline contract uses archive acquisition requests. It does not currently expose external recording registration, equity <code>source_key</code> selection, conversion, arbitrary stage ordering, or a general task graph.</p>
+<p>Adding a stage requires explicit changes to:</p>
+<ul>
+<li>Recipe validation.</li>
+<li>Service invocation and input handoff.</li>
+<li>Persisted stage state.</li>
+<li>Artifact ownership.</li>
+<li>Failure and retry behavior.</li>
+<li>Status reporting.</li>
+<li>Integration coverage.</li>
+</ul>
+<p>Also inspect receipt discovery when connecting workflows. Some source-derived merge and conversion discovery paths recognize standalone execution-directory layouts. Pipeline receipts use nested stage-attempt directories, so those paths should not be assumed interchangeable.</p>
+<h2 id="managed-engine-executables">Managed Engine executables</h2>
+<p><code>forge/historical/engine/managed.py</code> defines approved targets for normalization, merge, and conversion.</p>
+<p>The managed build workflow constructs the appropriate Cargo invocation, builds and checks the executable, installs it under <code>.bin/</code>, and records installation evidence.</p>
+<p><code>resolve()</code> verifies the installed executable against that evidence before an operation uses it.</p>
+<p>Execution services often retain a private executable copy so that the bytes used by an operation remain identifiable throughout its lifetime.</p>
+<p>Build metadata records useful revision information, but it is not a complete source snapshot.<sup id="fnref:engine"><a class="footnote-ref" href="#fn:engine">19</a></sup></p>
+<h3 id="subprocess-ownership">Subprocess ownership</h3>
+<p><code>historical/engine/process.py</code> provides asynchronous supervision for noninteractive child processes.</p>
+<p>It owns the child process group, drains output streams into bounded logs, and terminates and reaps the process when cancellation requires it.</p>
+<p><code>joined_io()</code> ensures that blocking filesystem work has finished before the caller releases ownership.</p>
+<p>Execution paths are not completely uniform: standalone interactive processing and conversion also use the existing synchronous process runner. Inspect the caller before changing cancellation or terminal behavior.</p>
+<p>When adding a new Engine operation, establish its target, input contract, validation, execution outcome, artifact verification, and registration behavior explicitly.</p>
+<h2 id="storage-administration">Storage administration</h2>
+<p>Two storage-related package areas serve different purposes.</p>
+<p><code>historical/archives/storage/</code> implements managed-copy acquisition, physical publication, and recovery.</p>
+<p><code>forge/storage/</code> exposes application-level browsing and maintenance over those managed copies.</p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>browsing.py</code></td>
+<td>Read-only inventory browsing</td>
+</tr>
+<tr>
+<td><code>registry.py</code></td>
+<td>Selection and pagination queries</td>
+</tr>
+<tr>
+<td><code>coverage.py</code></td>
+<td>Nominal coverage aggregation</td>
+</tr>
+<tr>
+<td><code>service.py</code></td>
+<td>Inventory verification and reconciliation</td>
+</tr>
+<tr>
+<td><code>cleanup_plans.py</code></td>
+<td>Reviewed cleanup-plan contracts</td>
+</tr>
+<tr>
+<td><code>cleanup.py</code></td>
+<td>Preview and apply cleanup</td>
+</tr>
+<tr>
+<td><code>dependencies.py</code></td>
+<td>Concrete lineage and prepared-input dependencies</td>
+</tr>
+<tr>
+<td><code>managed_files.py</code></td>
+<td>Checked physical inspection and removal</td>
+</tr>
+</tbody>
+</table>
+<p>Verification can change registry state when a file is missing or corrupt. Reconciliation can recover a supported reservation state.</p>
+<p>Cleanup rechecks registry identity, dependencies, and physical file evidence before applying a reviewed action. It records per-target outcomes because filesystem removal and database changes do not form one globally rollbackable transaction.<sup id="fnref:storage"><a class="footnote-ref" href="#fn:storage">20</a></sup></p>
+<p>Dependency checks establish the managed dependencies the implementation can inspect. They do not prove that an unrelated external script has no reference to a file.</p>
+<p>A storage extension should use the common registry and managed-file mechanisms so that downloaded and manually supplied data retain consistent maintenance behavior.</p>
+<h2 id="dataset-registration-and-python-consumption">Dataset registration and Python consumption</h2>
+<p>The <code>datasets</code> package contains both write-side registration and read-side inspection. These have separate entry points.</p>
+<h3 id="registration">Registration</h3>
+<p><code>datasets/registration.py::register_files()</code> receives verified publication evidence and an existing database connection.</p>
+<p>It establishes a shared publication record, a dataset identity for each primary file, and supported contribution links to raw inputs or parent files.</p>
+<p>The caller owns the surrounding transaction boundary.</p>
+<h3 id="registry-inspection">Registry inspection</h3>
+<p><code>datasets/inspection.py</code> queries registered metadata and lineage for terminal inspection.</p>
+<p>This is a database-backed view of registered state.</p>
+<h3 id="filesystem-and-notebook-api">Filesystem and notebook API</h3>
+<p><code>datasets/catalog.py::MarketData</code> provides the filesystem-oriented entry point.</p>
+<pre class="mermaid"><code>flowchart TD
+    Files["Manifests and primary Parquet files"] --&gt; Discovery["Filesystem discovery"]
+    Supplied["Optional caller-supplied registry records"] --&gt; Discovery
+    Discovery --&gt; Catalog["DatasetCatalog"]
+    Catalog --&gt;|"Select physical files"| Dataset["Dataset"]
+    Dataset --&gt;|"Select logical membership"| Stream["Stream"]
+    Dataset --&gt; Rows["Arrow or Polars row access"]
+    Stream --&gt;|"Apply stream predicates"| Rows
+    Dataset --&gt; Inspection["Lab inspection"]
+    Stream --&gt; Inspection</code></pre>
+<p><code>DatasetCatalog</code> selects physical files using established metadata.</p>
+<p><code>Dataset</code> represents a physical file or a supported publication grouping.</p>
+<p><code>Stream</code> adds a selected logical membership and the corresponding row predicates.</p>
+<p>Selecting a file because it contains a matching instrument does not filter every row in that file. Use the stream-selection boundary when row-level membership matters.<sup id="fnref:datasets"><a class="footnote-ref" href="#fn:datasets">21</a></sup></p>
+<p>Filesystem discovery does not query PostgreSQL automatically. Optional registry records are supplied by the caller.</p>
+<p>Discovery uses publication and file evidence. It is not universally limited to Parquet footers: establishing causal-merge membership can read relevant columns in bounded batches.</p>
+<p><code>MarketData</code> resolves its own paths rather than loading the CLI’s application settings. Code using a custom data root should pass the intended root explicitly.</p>
+<h3 id="lab-inspection">Lab inspection</h3>
+<p><code>forge/lab/inspection/</code> builds on dataset handles and provides schema, column, row-group, timestamp, comparison, and bounded profiling facilities.</p>
+<p>Metadata inspection and explicit row reads have different costs. Preserve that distinction when extending notebook representations or inspection methods.</p>
+<p>A rich display should not unexpectedly perform an unbounded data scan.<sup id="fnref:lab"><a class="footnote-ref" href="#fn:lab">22</a></sup></p>
+<h2 id="shared-infrastructure">Shared infrastructure</h2>
+<h3 id="database-access-and-transactions">Database access and transactions</h3>
+<p>Database credentials are resolved through the shared loader. Testing and production credentials use distinct keys.</p>
+<p>The testing connection helper checks the configured database name, the connected database name, and the database-purpose marker before yielding a connection.</p>
+<p>Connections are opened with autocommit enabled; callers establish transactions for operations requiring a consistent or atomic database boundary.</p>
+<p>Migrations validate applied migration history and checksums and apply pending changes under database coordination.<sup id="fnref:database"><a class="footnote-ref" href="#fn:database">23</a></sup></p>
+<p>When extending a service, identify who owns the connection and transaction. Functions that accept a connection should preserve their caller’s transaction model.</p>
+<h3 id="workspace-ownership">Workspace ownership</h3>
+<p><code>WorkspaceOwnership</code> acquires nonblocking exclusive locks for the project and data roots.</p>
+<p>Ownership is explicit. Constructing <code>ApplicationContext</code> does not acquire it, and a helper does not automatically establish ownership for every caller.</p>
+<p>Operation entry points must establish the required ownership boundary before calling services that rely on it. Pipeline child services must also cooperate with the ownership already held by their parent.</p>
+<p>Lock files remain in place; releasing ownership closes the held handles.<sup id="fnref:ownership"><a class="footnote-ref" href="#fn:ownership">24</a></sup></p>
+<h3 id="http-and-bounded-work">HTTP and bounded work</h3>
+<p>Shared HTTP infrastructure provides request pacing, concurrency limits, retry behavior, cooldown handling, bounded buffered responses, and streaming downloads.</p>
+<p>Tasks communicating with the same upstream during an operation should reuse the configured client and budget.</p>
+<p>A failed streaming body is handled by the acquisition layer together with its partial file. It must not be treated as an automatically replayable buffered response.</p>
+<p><code>shared/async_work.py::bounded_map()</code> uses a fixed worker population and bounded queues. Results arrive as work completes. Callers that need deterministic order must establish it explicitly.</p>
+<p>These helpers make concurrency and resource behavior part of the service contract.<sup id="fnref:http"><a class="footnote-ref" href="#fn:http">25</a></sup></p>
+<h3 id="presentation">Presentation</h3>
+<p>Terminal renderers consume operation results and progress information.</p>
+<p>The shared console configuration provides consistent color and output behavior. Operation-specific displays interpret the relevant progress model.</p>
+<p>Pipeline presentation owns one dashboard while its child services execute. Business decisions and durable stage state remain in <code>PipelineRun</code>.</p>
+<p>When adding a progress field, update the service event or report model first and then the renderer. Terminal availability should not determine whether an operation produces useful structured evidence.</p>
+<h2 id="extending-forge-by-following-one-complete-behavior">Extending Forge by following one complete behavior</h2>
+<p>A useful extension starts with the observable result and follows it through the actual boundaries.</p>
+<h3 id="add-a-cli-capability">Add a CLI capability</h3>
+<p>Start with a neighboring command module and its <code>configure()</code> function.</p>
+<p>Define argument validation, load the relevant model, and call a service that can also be used outside the CLI. Keep result formatting and exit policy in the handler or renderer.</p>
+<p>Verify both structured output and the relevant error path. If the operation mutates state, establish ownership and transaction boundaries explicitly.</p>
+<h3 id="add-an-archive-or-metadata-provider">Add an archive or metadata provider</h3>
+<p>Decide which capability is being added.</p>
+<p>Archive discovery requires <code>ArchiveSource</code> behavior and its acquisition integration.</p>
+<p>Current metadata requires provider translation, capability declarations, instrument identity handling, unit interpretation, and collection-completeness behavior.</p>
+<p>If both capabilities are needed, implement and verify both paths. Their scope models and supported products can differ.</p>
+<h3 id="add-a-profile-or-recording-interpretation">Add a profile or recording interpretation</h3>
+<p>Determine whether the installed Rust contract can express the representation and semantics.</p>
+<p>If it can, contribute the profile, declarations, registration example, and verification.</p>
+<p>If it cannot, trace the necessary contract change through Rust validation, Forge inspection, preparation evidence, execution snapshots, and tests.</p>
+<h3 id="change-preparation">Change preparation</h3>
+<p>Follow the value through:</p>
+<ol>
+<li>Recipe validation.</li>
+<li>Registered-input selection.</li>
+<li>Identity and specification resolution.</li>
+<li>Serialized Engine input.</li>
+<li>Preparation evidence.</li>
+<li>Execution verification.</li>
+<li>Relevant downstream consumers.</li>
+</ol>
+<p>A new recipe field is complete only when its effect on the prepared work and retained evidence is defined.</p>
+<h3 id="change-output-or-registration">Change output or registration</h3>
+<p>Identify the producer, publication validator, registry mapping, lineage consumers, and Python readers.</p>
+<p>For a manifest or canonical-schema change, inspect the corresponding Engine contract as well as Forge’s evidence readers.</p>
+<p>A field can be valid in a newly written file while remaining unsupported by a discovery or inspection path. Verify the intended consumers directly.</p>
+<h3 id="change-pipeline-behavior">Change pipeline behavior</h3>
+<p>Start with <code>PipelineRecipe</code> and <code>PipelineRun</code>.</p>
+<p>Define the stage’s accepted input, produced evidence, completion condition, and recovery behavior before adding presentation.</p>
+<p>Use typed or otherwise explicit handoffs comparable to <code>ArchiveSelection</code> and <code>RegisteredFiles</code>. Avoid replacing a concrete handoff with a broad filesystem or registry search that can select unrelated work.</p>
+<h2 id="verification-at-architectural-boundaries">Verification at architectural boundaries</h2>
+<p>Choose tests according to the responsibility being changed.</p>
+<table>
+<thead>
+<tr>
+<th>Boundary</th>
+<th>Existing test locations</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Startup, configuration, and paths</td>
+<td><code>forge/tests/integration/startup/</code>, <code>forge/tests/unit/shared/</code></td>
+</tr>
+<tr>
+<td>Archive adapters and source identity</td>
+<td><code>forge/tests/unit/historical/archives/test_sources.py</code>, <code>test_source_regressions.py</code></td>
+</tr>
+<tr>
+<td>Discovery scans and managed-copy recovery</td>
+<td><code>forge/tests/integration/historical/archives/</code></td>
+</tr>
+<tr>
+<td>Manual declarations and registration</td>
+<td><code>forge/tests/integration/catalogue/test_registration.py</code></td>
+</tr>
+<tr>
+<td>Profile installation and Engine integration</td>
+<td><code>forge/tests/unit/historical/engine/</code></td>
+</tr>
+<tr>
+<td>Historical inference and family discovery</td>
+<td><code>forge/tests/unit/historical/metadata/</code></td>
+</tr>
+<tr>
+<td>Normalization preparation and execution</td>
+<td><code>forge/tests/unit/historical/normalization/</code></td>
+</tr>
+<tr>
+<td>Merge selection and execution evidence</td>
+<td><code>forge/tests/unit/historical/merge/</code></td>
+</tr>
+<tr>
+<td>Conversion contracts and preparation</td>
+<td><code>forge/tests/unit/historical/conversion/test_conversion.py</code></td>
+</tr>
+<tr>
+<td>Pipeline composition</td>
+<td><code>forge/tests/integration/cli/test_pipeline.py</code></td>
+</tr>
+<tr>
+<td>Market identity and collection behavior</td>
+<td><code>forge/tests/unit/markets/</code>, <code>forge/tests/integration/markets/</code></td>
+</tr>
+<tr>
+<td>Ranking publication</td>
+<td><code>forge/tests/integration/markets/ranking/</code></td>
+</tr>
+<tr>
+<td>Dataset registration and readers</td>
+<td><code>forge/tests/integration/datasets/</code>, <code>forge/tests/unit/datasets/</code></td>
+</tr>
+<tr>
+<td>Storage maintenance</td>
+<td><code>forge/tests/integration/storage/</code>, <code>forge/tests/unit/storage/</code></td>
+</tr>
+<tr>
+<td>Complete registered-data workflow</td>
+<td><code>forge/tests/integration/forge_workflow/test_workflow.py</code></td>
+</tr>
+</tbody>
+</table>
+<p>The Python development configuration includes pytest, pytest-asyncio, Ruff, and Pyright. Pytest declares markers for integration, database, network, Engine, and terminal-dependent checks.</p>
+<p>Fixtures have different requirements and isolation mechanisms. Some database tests roll back a transaction; other workflow tests create committed records or disposable schemas and perform targeted cleanup. Inspect the fixture used by the test being extended.<sup id="fnref:testing"><a class="footnote-ref" href="#fn:testing">26</a></sup></p>
+<p>Verification should establish the intended boundary:</p>
+<ul>
+<li>A model test establishes input acceptance and rejection.</li>
+<li>A preparation test establishes the selected inputs and serialized contract.</li>
+<li>An execution test establishes process and evidence handling.</li>
+<li>A registration test establishes identities and lineage.</li>
+<li>A data test establishes exact values or reconstructed state.</li>
+<li>A workflow test establishes that the relevant components cooperate.</li>
+</ul>
+<p>For market data, expected behavior often requires exact timestamps, decimal values, instrument identities, ordering evidence, or reconstructed book states. Explain why the fixture contains the values that make those assertions meaningful.</p>
+<h2 id="implementation-references">Implementation references</h2>
+<h2 id="related-development-paths">Related development paths</h2>
+<ul>
+<li><a href="../architecture/">System architecture</a> and <a href="../operations/">operation lifecycles</a> place Forge in the historical workflow.</li>
+<li><a href="../../reference/prepared-forge/">Prepared contract</a> and <a href="../../workflows/pipeline/">user workflow</a> describe the public handoff.</li>
+<li><a href="../testing/">Test selection</a> and <a href="../debugging/">diagnostics</a> cover verification and inspection.</li>
+</ul>
+<h2 id="registry-context-for-an-extension">Registry context for an extension</h2>
+<p>CLI dispatch and the TUI select an environment before a registry-backed service runs. The shared resolver selects one credential key and validates the actual database name, purpose, and UUID before yielding a connection. A workflow can pin that UUID across stages. Keep numeric file and publication IDs scoped to that identity when adding a selector or a recovery path.</p>
+<p>Use the <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/tests/unit/shared/test_database_environment.py">database selection tests in the repository</a> for purpose mismatches, and the <a href="../testing/">testing guide</a> to choose an integration fixture. Keep local artifact inspection independent of the registry where the operation already supports it.</p>
+<div class="footnote">
+<hr />
+<ol>
+<li id="fn:entry">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/pyproject.toml">Project configuration</a> and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/cli/main.py">CLI entry point</a>.&#160;<a class="footnote-backref" href="#fnref:entry" title="Jump back to footnote 1 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:entry" title="Jump back to footnote 1 in the text">&#8617;</a></p>
+</li>
+<li id="fn:startup">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/startup/context.py">Application context</a>.&#160;<a class="footnote-backref" href="#fnref:startup" title="Jump back to footnote 2 in the text">&#8617;</a></p>
+</li>
+<li id="fn:initialization">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/cli/commands/initialization.py">Explicit initialization workflow</a>.&#160;<a class="footnote-backref" href="#fnref:initialization" title="Jump back to footnote 3 in the text">&#8617;</a></p>
+</li>
+<li id="fn:configuration">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/shared/config/models.py">Application models</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/shared/config/loader.py">settings loader</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/shared/config/library.py">configuration-library resolution</a>.&#160;<a class="footnote-backref" href="#fnref:configuration" title="Jump back to footnote 4 in the text">&#8617;</a></p>
+</li>
+<li id="fn:paths">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/shared/paths.py">Project path resolution</a>.&#160;<a class="footnote-backref" href="#fnref:paths" title="Jump back to footnote 5 in the text">&#8617;</a></p>
+</li>
+<li id="fn:catalogue">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/catalog/models.py">Catalogue declarations</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/catalog/service.py">catalogue service</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/shared/database/sql/core/0013_unified_forge.sql">historical authority schema</a>.&#160;<a class="footnote-backref" href="#fnref:catalogue" title="Jump back to footnote 6 in the text">&#8617;</a></p>
+</li>
+<li id="fn:historical-metadata">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/metadata/service.py">Historical metadata service</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/metadata/resolution.py">resolution</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/metadata/policy.py">inference policy</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/metadata/discovery.py">Engine-assisted discovery</a>.&#160;<a class="footnote-backref" href="#fnref:historical-metadata" title="Jump back to footnote 7 in the text">&#8617;</a></p>
+</li>
+<li id="fn:markets">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/markets/service.py">Market collection</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/markets/repository.py">persistence</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/markets/providers/public.py">public providers</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/markets/capabilities.py">capabilities</a>.&#160;<a class="footnote-backref" href="#fnref:markets" title="Jump back to footnote 8 in the text">&#8617;</a></p>
+</li>
+<li id="fn:rankings">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/markets/ranking/service.py">Ranking service</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/markets/ranking/workflow.py">refresh workflow</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/normalization/batch.py">normalization batch planning</a>.&#160;<a class="footnote-backref" href="#fnref:rankings" title="Jump back to footnote 9 in the text">&#8617;</a></p>
+</li>
+<li id="fn:acquisition">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/archives/sources/base.py">Source protocol</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/archives/sources/exchanges.py">exchange dispatch</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/archives/discovery.py">discovery</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/archives/operation.py">operation coordination</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/archives/storage/acquire.py">managed acquisition</a>.&#160;<a class="footnote-backref" href="#fnref:acquisition" title="Jump back to footnote 10 in the text">&#8617;</a></p>
+</li>
+<li id="fn:raw-model">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/shared/database/sql/core/0013_unified_forge.sql">Unified raw-data schema</a>.&#160;<a class="footnote-backref" href="#fnref:raw-model" title="Jump back to footnote 11 in the text">&#8617;</a></p>
+</li>
+<li id="fn:registration">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/registration/service.py">Managed registration</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/imports/service.py">local copying</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/normalization/selection.py">registered normalization inputs</a>.&#160;<a class="footnote-backref" href="#fnref:registration" title="Jump back to footnote 12 in the text">&#8617;</a></p>
+</li>
+<li id="fn:profiles">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/profiles/service.py">Profile discovery, validation, and installation</a>.&#160;<a class="footnote-backref" href="#fnref:profiles" title="Jump back to footnote 13 in the text">&#8617;</a></p>
+</li>
+<li id="fn:normalization">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/normalization/batch.py">Batch preparation</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/normalization/mapping.py">archive mapping</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/normalization/contract.py">job serialization</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/normalization/execution.py">execution</a>.&#160;<a class="footnote-backref" href="#fnref:normalization" title="Jump back to footnote 14 in the text">&#8617;</a></p>
+</li>
+<li id="fn:publication-registration">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/normalization/datasets.py">Publication verification and registration coordination</a> and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/datasets/registration.py">primary-file registration</a>.&#160;<a class="footnote-backref" href="#fnref:publication-registration" title="Jump back to footnote 15 in the text">&#8617;</a></p>
+</li>
+<li id="fn:merge">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/merge/service.py">Merge service</a> and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/merge/discovery.py">derived selection</a>.&#160;<a class="footnote-backref" href="#fnref:merge" title="Jump back to footnote 16 in the text">&#8617;</a></p>
+</li>
+<li id="fn:conversion">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/conversion/recipes.py">Conversion recipe</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/conversion/contract.py">standalone job contract</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/conversion/service.py">preparation</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/conversion/discovery.py">discovery</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/conversion/execution.py">execution</a>.&#160;<a class="footnote-backref" href="#fnref:conversion" title="Jump back to footnote 17 in the text">&#8617;</a></p>
+</li>
+<li id="fn:pipeline">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/pipelines/config.py">Pipeline recipe</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/pipelines/planning.py">planning</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/pipelines/service.py">stage execution and recovery</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/orchestration/artifacts.py">run-artifact paths</a>.&#160;<a class="footnote-backref" href="#fnref:pipeline" title="Jump back to footnote 18 in the text">&#8617;</a></p>
+</li>
+<li id="fn:engine">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/engine/managed.py">Managed Engine targets and installation</a> and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/engine/process.py">asynchronous process supervision</a>.&#160;<a class="footnote-backref" href="#fnref:engine" title="Jump back to footnote 19 in the text">&#8617;</a></p>
+</li>
+<li id="fn:storage">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/storage/service.py">Storage maintenance</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/storage/cleanup.py">cleanup</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/storage/dependencies.py">dependency inspection</a>.&#160;<a class="footnote-backref" href="#fnref:storage" title="Jump back to footnote 20 in the text">&#8617;</a></p>
+</li>
+<li id="fn:datasets">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/datasets/catalog.py">Filesystem catalogue</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/datasets/discovery.py">discovery</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/datasets/dataset.py">dataset and stream handles</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/datasets/parquet.py">Parquet row access</a>.&#160;<a class="footnote-backref" href="#fnref:datasets" title="Jump back to footnote 21 in the text">&#8617;</a></p>
+</li>
+<li id="fn:lab">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/lab/inspection/profile.py">Dataset inspection and bounded profiling</a>.&#160;<a class="footnote-backref" href="#fnref:lab" title="Jump back to footnote 22 in the text">&#8617;</a></p>
+</li>
+<li id="fn:database">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/shared/database/credentials.py">Credential resolution</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/shared/database/testing.py">testing connection guards</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/shared/database/migrations.py">migrations</a>.&#160;<a class="footnote-backref" href="#fnref:database" title="Jump back to footnote 23 in the text">&#8617;</a></p>
+</li>
+<li id="fn:ownership">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/shared/ownership.py">Workspace ownership</a>.&#160;<a class="footnote-backref" href="#fnref:ownership" title="Jump back to footnote 24 in the text">&#8617;</a></p>
+</li>
+<li id="fn:http">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/shared/http/configured.py">Configured HTTP clients</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/shared/http/client.py">HTTP request and streaming behavior</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/shared/async_work.py">bounded asynchronous work</a>.&#160;<a class="footnote-backref" href="#fnref:http" title="Jump back to footnote 25 in the text">&#8617;</a></p>
+</li>
+<li id="fn:testing">
+<p><a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/pyproject.toml">Python tooling and test configuration</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/tests/integration/conftest.py">shared integration fixture</a>, <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/tests/integration/cli/test_pipeline.py">pipeline integration</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/tests/integration/forge_workflow/test_workflow.py">full workflow integration</a>.&#160;<a class="footnote-backref" href="#fnref:testing" title="Jump back to footnote 26 in the text">&#8617;</a></p>
+</li>
+</ol>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../architecture/" class="md-footer__link md-footer__link--prev" aria-label="Previous: System overview">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                System overview
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../normalize/" class="md-footer__link md-footer__link--next" aria-label="Next: Normalization Engine architecture">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Normalization Engine architecture
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.9e76c64c.min.js"></script>
+      
+      
+        <script src="../../assets/javascripts/keyboard.js"></script>
+      
+    
+  </body>
+</html>
