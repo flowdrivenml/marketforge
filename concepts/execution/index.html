@@ -2019,6 +2019,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#completed-pipeline-with-an-incomplete-history-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Completed Pipeline with an incomplete history index
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2692,6 +2703,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2779,6 +2794,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/configuration/explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/runtime/" class="md-nav__link">
         
   
@@ -2787,6 +2829,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -5083,6 +5152,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#completed-pipeline-with-an-incomplete-history-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Completed Pipeline with an incomplete history index
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -5320,6 +5400,14 @@ the work identity. See <a href="../../workflows/pipeline/#stage-windows">Pipelin
 </tbody>
 </table>
 <p>Pinned downstream references can need the original path, identity, or digest. A canonical selection can guide future work while historical evidence continues to record the original source. A testing registry does not establish exclusive ownership of physical storage. Logical retirement and reclaimed storage are separate outcomes. See <a href="../../workflows/inspection/runs/">run inspection</a>, <a href="../../workflows/inspection/datasets/">dataset inspection</a>, and <a href="../../reference/cli/datasets/">dataset maintenance</a>.</p>
+<h2 id="completed-pipeline-with-an-incomplete-history-index">Completed Pipeline with an incomplete history index</h2>
+<p>Pipeline stage verification and publication registration or conversion
+indexing precede finalization of the parent execution-history attempt.
+When the final index update fails, inspect the retained report and reconcile
+the exact attempt using <code>mf runs reconcile --run-id RUN_ID --testing</code>.
+Apply that same selector with <code>--apply</code> after reviewing the result. Forge
+checks the original registry and attempt IDs and the retained report
+fingerprint. Processing artifacts remain unchanged. <a href="../../workflows/pipeline/#processing-and-execution-history">Pipeline recovery</a></p>
 
 
 

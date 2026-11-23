@@ -2603,6 +2603,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2690,6 +2694,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../runtime/" class="md-nav__link">
         
   
@@ -2698,6 +2729,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -2992,6 +3050,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Complete runtime example
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-explorer-field-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Settings Explorer field targets
       </span>
     </span>
   </a>
@@ -5173,6 +5242,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#settings-explorer-field-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Settings Explorer field targets
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -5279,6 +5359,10 @@
       
         
           
+        
+      
+        
+      
         
       
         
@@ -5485,6 +5569,40 @@ mf<span class="w"> </span>merge<span class="w"> </span>config<span class="w"> </
 <span class="n">file_target_mb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">256</span>
 </code></pre></div>
 <p>For example, preview setting <code>parquet.file_target_mb</code> to <code>16MiB</code> against this configuration to see the cross-field error. Validate a candidate with the direct loader before applying edits to a workspace.</p>
+<h2 id="settings-explorer-field-targets">Settings Explorer field targets</h2>
+<p>These entries use the runtime schema’s wording and constraints. The sections above explain how settings interact in a processing run.</p>
+<p><a id="setting-schema_version"></a></p>
+<p><strong><code>schema_version</code></strong></p>
+<p>Versions the base runtime document.</p>
+<p>Type <code>integer</code> · required in the base runtime file · read-only schema identity. Must match the Engine runtime schema version. Risk <code>ordinary</code>.</p>
+<p><a id="setting-resources.workers"></a></p>
+<p><strong><code>resources.workers</code></strong></p>
+<p>Requested worker concurrency. Admission can reduce effective parallelism.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Positive; worker count times partitions per worker must fit usize. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.memory_limit_mb"></a></p>
+<p><strong><code>resources.memory_limit_mb</code></strong></p>
+<p>Memory budget in binary MiB for admitted merge work.</p>
+<p>Type <code>mib</code> · units MiB · required in the base runtime file. Positive and must fit u64 when converted to bytes. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.max_open_files"></a></p>
+<p><strong><code>resources.max_open_files</code></strong></p>
+<p>Budget for participating file handles.</p>
+<p>Type <code>integer</code> · default <code>64</code>. Positive. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-parquet.row_group_target_mb"></a></p>
+<p><strong><code>parquet.row_group_target_mb</code></strong></p>
+<p>Target row group size in binary MiB.</p>
+<p>Type <code>mib</code> · units MiB · required in the base runtime file. Positive and no greater than parquet.file_target_mb. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-parquet.file_target_mb"></a></p>
+<p><strong><code>parquet.file_target_mb</code></strong></p>
+<p>Part rotation target in binary MiB.</p>
+<p>Type <code>mib</code> · units MiB · required in the base runtime file. At least the row group target and must fit u64 when converted to bytes. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-parquet.compression_level"></a></p>
+<p><strong><code>parquet.compression_level</code></strong></p>
+<p>Parquet Zstandard compression level.</p>
+<p>Type <code>integer</code> · default <code>3</code>. 1 to 22 inclusive. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-partitioning.partitions_per_worker"></a></p>
+<p><strong><code>partitioning.partitions_per_worker</code></strong></p>
+<p>Requested partitions per worker. The runtime uses its default when the partitioning table is absent.</p>
+<p>Type <code>integer</code> · default <code>4</code>. Positive; product with resources.workers must fit usize. Risk <code>resource-sensitive</code>.</p>
 
 
 

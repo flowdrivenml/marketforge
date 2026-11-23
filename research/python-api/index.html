@@ -2582,6 +2582,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2669,6 +2673,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/configuration/explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/runtime/" class="md-nav__link">
         
   
@@ -2677,6 +2708,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -5137,10 +5195,11 @@
 <p>The public classes are exported from <code>forge.datasets</code>. Open a known filesystem artifact or discover a catalog of primary files. Select a logical member before reading a single stream from a combined file. See the <a href="../notebooks/">notebook guide</a> for installation, setup, and complete workflows.</p>
 <h2 id="marketdata">MarketData</h2>
 <div class="highlight"><pre><span></span><code><span class="n">MarketData</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">root</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">data_root</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span>
-<span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">allow_staging</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dataset</span>
+<span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">allow_staging</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+     <span class="n">metadata_only</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">strict</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dataset</span>
 <span class="n">discover</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">scope</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"committed"</span><span class="p">,</span> <span class="n">include_staging</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
          <span class="n">registry_records</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Mapping</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">(),</span>
-         <span class="n">registry_context</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DatasetCatalog</span>
+         <span class="n">registry_context</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">metadata_only</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DatasetCatalog</span>
 <span class="n">datasets</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">include_tests</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">include_staging</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span>
 </code></pre></div>
 <p><code>root</code> and <code>data_root</code> use Forge path resolution. A relative <code>open</code> path resolves against the project root. Opening a publication directory groups its manifest-backed files under one handle. Open a primary Parquet path, or select a catalog entry, for file-scoped inspection. A missing path raises <code>FileNotFoundError</code>. A non-primary or unreadable manifest member raises <code>ValueError</code> when Forge can classify the failure. Staging paths require explicit opt-in.</p>
@@ -5172,6 +5231,9 @@
     <span class="n">start</span><span class="p">:</span> <span class="n">Moment</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">end</span><span class="p">:</span> <span class="n">Moment</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">interval</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"overlap"</span><span class="p">,</span> <span class="s2">"envelope_contained"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"overlap"</span><span class="p">,</span>
     <span class="n">status</span><span class="p">:</span> <span class="n">Text</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">integrity</span><span class="p">:</span> <span class="n">Text</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">output_ref</span><span class="p">:</span> <span class="n">Text</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">target_quote</span><span class="p">:</span> <span class="n">Text</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">sort</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"time"</span><span class="p">,</span> <span class="s2">"path"</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">order</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">"asc"</span><span class="p">,</span> <span class="s2">"desc"</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DatasetCatalog</span>
 </code></pre></div>
 <p>Filters compose with AND. Alternatives within one filter compose with OR. Market selectors must match the same membership inside a candidate file. File-size and row-count filters apply to complete primary files. Time filters use observed metadata envelopes with a half-open query interval. Unknown endpoints cannot establish a match. Neither interval mode establishes continuous coverage. A file can match several logical streams. Finding a file does not change which rows a <code>Dataset</code> reads. Registry publication, Engine publication and file dataset IDs have separate namespaces.</p>

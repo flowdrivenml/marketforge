@@ -2582,6 +2582,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2669,6 +2673,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/configuration/explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/runtime/" class="md-nav__link">
         
   
@@ -2677,6 +2708,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -4616,6 +4674,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#configuration-explorer" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration Explorer
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -5033,6 +5102,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#configuration-explorer" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration Explorer
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -5234,13 +5314,13 @@ options. Workspace views supply their own presentation.</p>
 <td>Convert new, list, show, validate, prepare, run</td>
 <td>Workflows</td>
 <td>Conversion recipes, managed Engine validation, prepared collections and execution</td>
-<td>The TUI creation form offers the three recipe routes. Create an exact merged-publication binding through the CLI, then open it in Workflows</td>
+<td>Upstream recipe routes and exact merged-publication binding. Compatible reference streams and target currency are editable in the TUI</td>
 </tr>
 <tr>
 <td>Convert config show, get, schema, validate</td>
 <td>Workflows</td>
 <td>Managed converter runtime inspection</td>
-<td>Use the CLI for runtime updates</td>
+<td>System offers typed and validated draft updates</td>
 </tr>
 <tr>
 <td>Datasets list, find, show, streams, lineage, coverage, verify, schema, head, migrate-registration, refresh-summary</td>
@@ -5294,7 +5374,7 @@ options. Workspace views supply their own presentation.</p>
 <td>Init, doctor, config show</td>
 <td>System</td>
 <td>Initialization services, live prerequisite evidence, effective settings</td>
-<td>Init can collect and write. Doctor and configuration are inspections</td>
+<td>Init can collect and write. System also offers typed application updates</td>
 </tr>
 </tbody>
 </table>
@@ -5313,18 +5393,46 @@ basket. Switching registry environments reopens the Textual workspace with a
 fresh application context after terminating workers. The launch loop carries
 over only the selected area and view. Background queries retain the latest
 version and discard an older response if a newer query started.</p>
-<p>Archive-ID normalization translates selected archive identities into the
-existing preparation request schema after authoritative archive resolution.
-Merge uses the existing normalized publication selectors. Conversion uses the
-committed-publication source binding service. Pipeline window mode delegates
-workspace ownership descriptors to the existing Ghostty stage launcher.
-Publication and run maintenance apply their durable review plans through the
-same services used by the CLI.</p>
-<p>The run adapter consumes shared semantic report and log projections. The
-clipboard adapter sanitizes terminal controls and credential fields, then
-tries desktop and tmux providers in a worker. Textual sends the OSC 52
-fallback. Textual Pilot tests cover key input, mouse selection, page changes,
-recipe handoffs and exact-value copying.</p>
+<p>Exact archive selection stores registry-scoped evidence hashes and optional
+compiled profile pins. Preparation re-resolves each retained archive through
+Forge and checks the exact local-copy identities during execution. The batch
+planner groups inputs by content and submits schema v4 jobs to Rust.
+Family-scoped discovery retains its request-based route.</p>
+<p>Direct Merge recipes list registry primary-file IDs in precedence order and
+pin reviewed publication membership and registry identity. The derived route
+uses normalization recipe discovery. Both enter the same preparation,
+validation, execution and registration services.</p>
+<p>Conversion uses a catalogue currency picker and paged external publication
+search. Reference selection uses shared registry binding and stream
+projections. Preparation and execution share the standalone converter
+services. Indexed conversion references are work keys in the selected registry.</p>
+<p>Application settings derive constraints from the Pydantic model. Runtime
+fields use the Rust schema. Pipeline editing shares runtime composition and
+stage validators with preparation. Draft edits preserve supported TOML
+formatting, validate candidates and check live file identity at apply time.</p>
+<p>Pipeline window mode delegates ownership descriptors to the stage launcher.
+Workers send operation snapshots and retain stage results. Publication and
+run maintenance use the CLI services and their durable reviewed plans.</p>
+<p>The run adapter consumes shared report and log projections. Full log access
+uses bounded range reads or explicit byte-preserving export. The clipboard
+adapter sanitizes terminal controls and credential fields, enforces a size
+cap, and calls desktop and tmux providers in a worker. Textual sends the
+OSC 52 fallback.</p>
+<p>Textual Pilot covers navigation, settings, recipe forms and exact copying.
+The disposable PostgreSQL fixture drives archive, normalized and merged
+publication handoffs through the Engine services. See <a href="../testing/">Testing</a>
+for database and Engine setup.</p>
+<h2 id="configuration-explorer">Configuration Explorer</h2>
+<p>The explorer projects Rust runtime schemas and the Pydantic application
+settings model into fields. Textual retains one draft per file and delegates
+validation and replacement to the shared runtime and composition services.
+Runtime metadata is refreshed when the managed executable identity changes.
+A preview binds the candidate bytes and the inspected configuration identity.</p>
+<p>The field documentation contract is an explicit <code>setting-&lt;dotted-path&gt;</code> anchor
+on the component reference page. Pipeline locators also include the stage
+prefix, for example <code>setting-merge.resources.workers</code>. Update the reference
+when adding a field. The explorer coverage test checks the installed schemas
+against the reference entries.</p>
 
 
 

@@ -2582,6 +2582,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2669,6 +2673,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/configuration/explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/runtime/" class="md-nav__link">
         
   
@@ -2677,6 +2708,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -4044,6 +4102,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#measured-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Measured example
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -4997,6 +5066,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#measured-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Measured example
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -5055,6 +5135,58 @@
 </ul>
 <p>Predicate statistics can eliminate groups when the bounds prove no match. In a combined causal file, every group can contain both trades and depth. In that case event kind selects records inside each group. Reading only the selected kind's payload and stopping early can still reduce decoding and memory sharply. Explicit partition selection also reduces the file scope. MarketForge uses existing Parquet metadata for this path and creates no duplicate cache or secondary publication.</p>
 <p>See the <a href="../../concepts/ordering/">market-data ordering contract</a> and <a href="../../reference/data-formats/publications/">schema references</a>.</p>
+<h2 id="measured-example">Measured example</h2>
+<p>A read-only test on a registered Bybit BTCUSDT causal merge used one 614 MiB Parquet file with 1,937,808 physical rows, 1,074,411 trades, and 65 row groups. The benchmark ran each reader in a fresh process, alternated run order, and reports two-run medians on a mostly warm filesystem cache. Peak RSS covers the entire Python process. The full scan streamed and counted batches rather than retaining the entire result.</p>
+<table>
+<thead>
+<tr>
+<th>Query</th>
+<th style="text-align: right;">Earlier reader</th>
+<th style="text-align: right;">Selective reader</th>
+<th style="text-align: right;">Earlier RSS</th>
+<th style="text-align: right;">Selective RSS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>First 20 trades</td>
+<td style="text-align: right;">9.57 s</td>
+<td style="text-align: right;">83 ms</td>
+<td style="text-align: right;">1,391 MiB</td>
+<td style="text-align: right;">122 MiB</td>
+</tr>
+<tr>
+<td>First 20 depth records</td>
+<td style="text-align: right;">10.40 s</td>
+<td style="text-align: right;">85 ms</td>
+<td style="text-align: right;">1,419 MiB</td>
+<td style="text-align: right;">140 MiB</td>
+</tr>
+<tr>
+<td>Trade count from the discriminator alone</td>
+<td style="text-align: right;">49 ms</td>
+<td style="text-align: right;">49 ms</td>
+<td style="text-align: right;">105 MiB</td>
+<td style="text-align: right;">109 MiB</td>
+</tr>
+<tr>
+<td>Stream all trade results</td>
+<td style="text-align: right;">4.52 s</td>
+<td style="text-align: right;">276 ms</td>
+<td style="text-align: right;">1,465 MiB</td>
+<td style="text-align: right;">357 MiB</td>
+</tr>
+<tr>
+<td>Trades in a one-hour interval</td>
+<td style="text-align: right;">327 ms</td>
+<td style="text-align: right;">63 ms</td>
+<td style="text-align: right;">556 MiB</td>
+<td style="text-align: right;">182 MiB</td>
+</tr>
+</tbody>
+</table>
+<p>The earlier payload reader materialized all stored columns. The selective reader projected event time, instrument, stream, discriminator, and the selected kind's payload. Both returned the same row counts. The 1-hour query returned 74,940 trades from 5 footer-eligible groups. All 65 groups were eligible for a trade-kind predicate alone. The trade count already projected one column and remained essentially unchanged.</p>
+<p>The repository's <code>research/benchmarks/selective_parquet.py</code> runner takes an explicit combined publication directory and a trusted copy of the previous <code>parquet.py</code> supplied via <code>--baseline</code>. It prints runtimes, peak RSS, counts, and Linux storage-read counters where available. Most measured reads were served from cache, so these timings do not establish cold-storage throughput.</p>
 
 
 

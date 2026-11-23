@@ -17,7 +17,7 @@
         <link rel="prev" href="../">
       
       
-        <link rel="next" href="../../runtime/">
+        <link rel="next" href="../explorer/">
       
       
         
@@ -2603,6 +2603,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2759,6 +2763,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../runtime/" class="md-nav__link">
         
   
@@ -2767,6 +2798,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -5175,6 +5233,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -5220,47 +5282,47 @@
 </thead>
 <tbody>
 <tr>
-<td><code>version</code></td>
+<td><a id="setting-version"></a><code>version</code></td>
 <td>Integer, exactly 1</td>
 <td><code>1</code>, application schema</td>
 </tr>
 <tr>
-<td><code>storage.data_root</code></td>
+<td><a id="setting-storage.data_root"></a><code>storage.data_root</code></td>
 <td>Nonblank path string</td>
 <td><code>"data"</code>, root for managed raw bytes, publications and runs</td>
 </tr>
 <tr>
-<td><code>presentation.mode</code></td>
+<td><a id="setting-presentation.mode"></a><code>presentation.mode</code></td>
 <td><code>progress</code> or <code>silent</code></td>
 <td><code>progress</code>, terminal progress preference</td>
 </tr>
 <tr>
-<td><code>presentation.color</code></td>
+<td><a id="setting-presentation.color"></a><code>presentation.color</code></td>
 <td><code>auto</code>, <code>always</code>, or <code>never</code></td>
 <td><code>auto</code>, color policy</td>
 </tr>
 <tr>
-<td><code>presentation.editor</code></td>
+<td><a id="setting-presentation.editor"></a><code>presentation.editor</code></td>
 <td>Nonblank string</td>
 <td>Omitted, editor resolution uses the environment or available fallback</td>
 </tr>
 <tr>
-<td><code>http.requests_per_second</code></td>
+<td><a id="setting-http.requests_per_second"></a><code>http.requests_per_second</code></td>
 <td>Finite positive number</td>
 <td><code>2.0</code> requests per second</td>
 </tr>
 <tr>
-<td><code>http.max_concurrent</code></td>
+<td><a id="setting-http.max_concurrent"></a><code>http.max_concurrent</code></td>
 <td>Integer 1–64</td>
 <td><code>4</code> concurrent requests</td>
 </tr>
 <tr>
-<td><code>http.timeout_seconds</code></td>
+<td><a id="setting-http.timeout_seconds"></a><code>http.timeout_seconds</code></td>
 <td>Finite positive number in seconds</td>
 <td><code>30.0</code></td>
 </tr>
 <tr>
-<td><code>http.max_attempts</code></td>
+<td><a id="setting-http.max_attempts"></a><code>http.max_attempts</code></td>
 <td>Integer 1–10</td>
 <td><code>3</code> attempts</td>
 </tr>
@@ -5320,13 +5382,13 @@ mf<span class="w"> </span>--json<span class="w"> </span>config<span class="w"> <
         
         
           
-          <a href="../../runtime/" class="md-footer__link md-footer__link--next" aria-label="Next: Engine runtime settings and policies">
+          <a href="../explorer/" class="md-footer__link md-footer__link--next" aria-label="Next: Configuration Explorer">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Engine runtime settings and policies
+                Configuration Explorer
               </div>
             </div>
             <div class="md-footer__button md-icon">

@@ -2736,6 +2736,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2823,6 +2827,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/configuration/explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/runtime/" class="md-nav__link">
         
   
@@ -2831,6 +2862,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -5392,7 +5450,7 @@ the current page and applied criteria.</p>
 </tr>
 <tr>
 <td>Converted</td>
-<td>Manifest availability and recorded stream kinds</td>
+<td>Target quote and recorded stream kinds</td>
 </tr>
 <tr>
 <td>Catalog instruments</td>
@@ -5456,10 +5514,17 @@ and continues through publication and registration. Choose <strong>Stop after</s
 <code>normalize.prepare</code> to inspect validated jobs before execution. Open the run
 report and use Pipeline Resume to continue with its retained inputs, ranking,
 settings, and jobs. Pipeline Resume and Status select retained run IDs.</p>
+<p>Choose <strong>Stage execution → Window</strong> on Linux with a supported Ghostty display,
+or keep stages inline. The parent workspace remains available for navigation
+and Ctrl+O progress. The pipeline records stage outcomes and their diagnostics
+before treating a worker as complete. Open completed stages from the operation
+actions or retained report. If a window cannot start, the run reports the
+startup failure and retains its checkpoints.</p>
 <p>Standalone workflows accept the same saved recipes and applicable submitted
 paths as their CLI counterparts. Preparation, execution, verification,
 registration, and recovery have separate service outcomes. The converter
-reports physical publication, verification and durable indexing. Create an exact publication binding with the <a href="../../reference/cli/convert/#mf-convert-new">Conversion CLI</a>, then select the saved recipe here.</p>
+reports physical publication, verification and durable indexing. Create an
+exact binding from <strong>Data → Merged</strong> or use the <a href="../../reference/cli/convert/#mf-convert-new">Conversion CLI</a>.</p>
 <p>Editable source TOML can be opened with <strong>Edit TOML</strong>. Forge uses the configured
 editor or nvim, suspends terminal drawing for the editor, then restores the
 workspace and revalidates the saved source. Operation supervision continues
@@ -5542,44 +5607,68 @@ selection across searches and pages.</p>
   The saved recipe offers <strong>Validate</strong> and <strong>Plan</strong>. The archive plan describes
   retained discovery evidence. Use <strong>Map</strong> for remote discovery when the cache
   lacks coverage.</li>
-<li>In <strong>Data → Raw</strong>, filter to complete archives and select a single data kind.
-  <strong>Normalize selected archives</strong> checks each archive and resolves its
-  catalogue identity through the normalizer before showing the save review.
-  Exact archive-ID requests require a concrete instrument. Other source
-  scopes use the regular normalization recipe workflow.</li>
-<li>In <strong>Data → Normalized</strong>, select publication generations and choose
-  <strong>Create merge from selection</strong>. Choose the producing normalization recipe.
-  Configure the interval, timeline order, and optional stream ranks.
-  Source discovery reports whether each generation matches the recipe.</li>
-<li>In <strong>Data → Merged</strong>, choose <strong>Convert publication</strong> and enter the target
-  quote. Forge verifies the publication and saves the registry, committed
-  interval and source fingerprints with the recipe. <strong>Edit policy and reference
-  trades</strong> opens the conversion settings form. Preparation resolves reference
-  requirements and retains diagnostics.</li>
+<li>In <strong>Data → Raw</strong>, filter to complete archives and select the exact local
+  archive IDs. <strong>Normalize selected archives</strong> checks the registered revision,
+  checksum, interval, scope, feed and resolved instrument evidence. Trades and
+  depth can share one recipe and prepare separate Engine jobs. A family archive
+  uses its persisted concrete membership evidence. A family-scoped search
+  recipe discovers inputs by scope. Choose automatic resolution or pin the
+  compatible compiled profile for each archive. Missing, conflicting or stale
+  evidence blocks preparation.</li>
+<li>In <strong>Data → Normalized</strong>, choose exact publications and select <strong>Create
+  merge from selection</strong>. Forge resolves registered primary-file membership
+  and verifies source and file fingerprints. Review the interval, streams and
+  ordering, including optional ranks. Overlapping generations of the same
+  stream require a revised selection. Observed bounds cannot establish
+  continuous coverage. To discover sources from a producing normalization
+  recipe, start with <strong>Create merge recipe</strong> on that recipe.</li>
+<li>In <strong>Data → Merged</strong>, choose <strong>Convert publication</strong>. Select a quote from
+  the searchable catalogue control or type a supported currency code. The
+  recipe preserves the committed source and interval. Identity conversion can
+  run without reference trades. <strong>Edit policy and reference trades</strong> selects
+  internal trades and sets price source, maximum age in nanoseconds, hop limit
+  and path policy. For depth or combined sources, <strong>Browse external trade
+  references</strong> lists eligible trade-only publications. Search by ID, exchange
+  or instrument, then select observed trade streams. Reference prices can be
+  missing or stale at individual historical events.</li>
+<li>Use <strong>Validate</strong>, <strong>Prepare</strong> and <strong>Run</strong> from the saved recipe. Conversion
+  reports separate execution, verification and indexing outcomes. Open a
+  durable output reference in <strong>Data → Converted</strong>, verify files or open the
+  producing run. Converted outputs use indexed work references. Registered
+  merge and normalization publications use registry publication IDs.</li>
 <li><strong>Data → Timelines</strong> shows observed coverage and links to contributing
   publications or indexed conversion outputs. <strong>Files</strong> shows primary file
-  records. Open registered publications for streams, files, and lineage.</li>
+  records. Open a publication for streams, files, lineage and its execution.
+  From a primary file, choose <strong>Physical partitions</strong>. Open a partition for
+  schema, row groups and a bounded <strong>Query preview</strong>.</li>
 <li><strong>Runs → Indexed</strong> uses the selected registry. <strong>Retained</strong> includes local
   evidence. Use F2 on a run to open its report, logs, and attributable
-  registry outputs. Event and stream search preserves retained order.</li>
+  registry outputs. Event and stream search preserves retained order. <strong>Open
+  retained log</strong> offers line ranges, text search, exact severity for event
+  logs, the original path and full export to a new file. Export preserves the
+  bytes present when the export starts. A range larger than 64,000 bytes
+  requires a smaller selection or export.</li>
 </ul>
 <h2 id="copy-and-environment">Copy and environment</h2>
 <p>Press y on a workspace table to open the full row in a text dialog. Use F2
 for specific columns, identifiers and paths. The dialog's <strong>Copy value</strong>
 button or Ctrl+Y copies the selected text, or the complete dialog text when
-there is no selection. In Ghostty you can also hold Shift when selecting
-visible text to use terminal selection.</p>
+there is no selection. Clipboard transfers are capped at 74,000 bytes. In
+Ghostty you can use Shift with terminal mouse selection, subject to its mouse
+configuration. Ghostty also offers a mouse-reporting toggle.
+See the <a href="https://ghostty.org/docs/config/reference#mouse-shift-capture">Ghostty mouse settings</a>.</p>
 <p>Forge tries the desktop clipboard tools available to the session, followed
 by tmux clipboard forwarding and terminal OSC 52. If pasting fails in tmux,
 check the server's set-clipboard option and the client's Ms capability in
 tmux info. Ghostty must allow clipboard writes. Forge keeps the text dialog
 available when forwarding is blocked.</p>
-<p>Use <strong>System → Settings → F2 → Switch environment</strong> to reconnect with an
-empty selection basket. The header shows the current environment. Registry
-mutations from Forge TUI require testing. Under <strong>Inspect or edit Engine
-runtime</strong>, select an Engine, open a field, enter its value, and review the
-validated change before applying it.</p>
-<p>Publication deletion from the Data actions menu saves a testing-only review
+<p>Use <strong>System → F2 → Switch environment</strong> to reconnect with an empty selection
+basket. The header shows the selected registry environment.</p>
+<p>Open <strong>System → Settings</strong> for the <a href="../../reference/configuration/explorer/">Configuration Explorer</a>.
+Browse or search application settings, all fields from the installed Engine
+schemas, and pipeline overrides. Review and validate each file’s draft before
+applying it. Prepared runs retain the settings used at preparation.</p>
+<p>Publication or indexed conversion deletion from the Data actions menu saves a testing-only review
 plan. Forge offers apply only for plans whose targets pass the ownership and
 dependency checks. Run deletion under <strong>Runs → Indexed</strong> offers a
 history-only mode that preserves physical evidence.</p>

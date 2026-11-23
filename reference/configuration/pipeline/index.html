@@ -2603,6 +2603,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2690,6 +2694,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../runtime/" class="md-nav__link">
         
   
@@ -2698,6 +2729,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -3034,6 +3092,28 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Optional conversion
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#complete-field-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Complete field reference
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#four-stage-bybit-spot-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Four-stage Bybit spot recipe
       </span>
     </span>
   </a>
@@ -5041,6 +5121,28 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#complete-field-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Complete field reference
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#four-stage-bybit-spot-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Four-stage Bybit spot recipe
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -5175,6 +5277,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -5208,42 +5314,6 @@
 
 <h1 id="pipeline-recipes">Pipeline recipes</h1>
 <p>Save the version-1 TOML under <code>data/.config/workflows/data_engineering/pipeline/</code>. The name resolves in that library. The recipe compiles inline acquisition requests into acquisition and normalization inputs. Merge receives the registered file IDs from normalization. Stage resource overrides live in the separate <a href="../../runtime/#pipeline-runtime">pipeline runtime</a>. <a href="../../../workflows/pipeline/">Pipeline guide</a> · <a href="../../cli/pipeline/">CLI</a></p>
-<table>
-<thead>
-<tr>
-<th>Path</th>
-<th>Type and constraints</th>
-<th>Default and meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>version</code></td>
-<td>Required integer 1</td>
-<td>Pipeline recipe schema</td>
-</tr>
-<tr>
-<td><code>interval.start</code>, <code>interval.end</code></td>
-<td>Required timezone-aware TOML datetime values, ordered and representable as signed 64-bit Unix nanoseconds</td>
-<td>One half-open UTC interval shared across stages</td>
-</tr>
-<tr>
-<td><code>requests</code></td>
-<td>Required nonempty list of unique <a href="../acquisition/">acquisition requests</a>. Exchange adapter validates the scope. Requests must also form valid normalization requests</td>
-<td>Source scope and feed selection</td>
-</tr>
-<tr>
-<td><code>normalize.ranking_policy</code></td>
-<td>Nonempty token matching <code>^[a-zA-Z0-9_-]+$</code></td>
-<td><code>turnover</code></td>
-</tr>
-<tr>
-<td><code>merge.timeline_ordering</code></td>
-<td>Optional <code>causal</code> or <code>chronological</code></td>
-<td>Omission lets Forge select based on inputs</td>
-</tr>
-</tbody>
-</table>
 <p>The recipe derives source raw, file dataset, and merge publication IDs at runtime. An optional external conversion reference uses a registry publication ID. Forge binds the acquired revisions and normalized primary-file registrations to the stage outputs. See <a href="../../data-formats/prepared-forge/">Forge evidence</a> for artifacts used by resume. <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/pipelines/config.py">Pipeline model</a></p>
 <h2 id="minimal-recipe">Minimal recipe</h2>
 <p>This recipe selects one Bybit trade archive scope. Save it in the pipeline
@@ -5280,6 +5350,251 @@ same types and defaults as a Conversion recipe. Forge binds the exact registered
 merge from this pipeline and applies whole-publication scope.</p>
 <p>The optional stage uses the frozen base <a href="../conversion-runtime/">Conversion runtime</a>.
 The separate pipeline runtime overrides apply to Normalization and Merge.</p>
+<h2 id="complete-field-reference">Complete field reference</h2>
+<p>Tables for Normalize and Merge configure mandatory stages. Omit the
+Conversion table for three-stage processing. TOML keys are strict.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>version</code></td>
+<td>Integer, exactly <code>1</code></td>
+<td>Yes</td>
+<td>—</td>
+<td>Recipe schema</td>
+</tr>
+<tr>
+<td><code>interval.start</code></td>
+<td>Timezone-aware TOML datetime</td>
+<td>Yes</td>
+<td>—</td>
+<td>Inclusive beginning</td>
+</tr>
+<tr>
+<td><code>interval.end</code></td>
+<td>Timezone-aware TOML datetime</td>
+<td>Yes</td>
+<td>—</td>
+<td>Exclusive end, later than start</td>
+</tr>
+<tr>
+<td><code>requests</code></td>
+<td>Nonempty array of unique request tables</td>
+<td>Yes</td>
+<td>—</td>
+<td>Requests must pass both the acquisition adapter and normalization recipe contracts</td>
+</tr>
+<tr>
+<td><code>requests[].exchange</code></td>
+<td>Lowercase exchange code</td>
+<td>Yes</td>
+<td>—</td>
+<td>Configured historical acquisition adapter</td>
+</tr>
+<tr>
+<td><code>requests[].instrument_type</code></td>
+<td><code>spot</code>, <code>perpetual</code>, <code>future</code>, <code>option</code></td>
+<td>Yes</td>
+<td>—</td>
+<td>Instrument type supported by the adapter</td>
+</tr>
+<tr>
+<td><code>requests[].market_category</code></td>
+<td><code>spot</code>, <code>linear</code>, <code>inverse</code>, <code>option</code></td>
+<td>Yes</td>
+<td>—</td>
+<td>Market category supported by the adapter</td>
+</tr>
+<tr>
+<td><code>requests[].data_type</code></td>
+<td><code>trades</code> or <code>order_book_l2</code></td>
+<td>Yes</td>
+<td>—</td>
+<td>Requested event feed</td>
+</tr>
+<tr>
+<td><code>requests[].scope.kind</code></td>
+<td><code>instrument</code>, <code>base_coin</code>, <code>family</code></td>
+<td>Yes</td>
+<td>—</td>
+<td>Native scope supported for the selected source</td>
+</tr>
+<tr>
+<td><code>requests[].scope.identifier</code></td>
+<td>Nonblank string</td>
+<td>Yes</td>
+<td>—</td>
+<td>Source-native scope identifier</td>
+</tr>
+<tr>
+<td><code>requests[].source_options.feed</code></td>
+<td><code>incremental</code> or <code>snapshot</code></td>
+<td>No</td>
+<td><code>incremental</code></td>
+<td>Gate.io depth only</td>
+</tr>
+<tr>
+<td><code>normalize.ranking_policy</code></td>
+<td>Token made of letters, digits, underscores or hyphens</td>
+<td>No</td>
+<td><code>turnover</code></td>
+<td>Persisted ranking used in normalization preparation</td>
+</tr>
+<tr>
+<td><code>merge.timeline_ordering</code></td>
+<td><code>causal</code> or <code>chronological</code></td>
+<td>No</td>
+<td>Resolved from inputs</td>
+<td>Engine timeline policy</td>
+</tr>
+<tr>
+<td><code>convert.target_quote</code></td>
+<td>Uppercase ASCII letters or digits</td>
+<td>With Conversion</td>
+<td>—</td>
+<td>Target quote currency</td>
+</tr>
+<tr>
+<td><code>convert.price_source</code></td>
+<td><code>last_trade</code></td>
+<td>No</td>
+<td><code>last_trade</code></td>
+<td>Eligible reference price</td>
+</tr>
+<tr>
+<td><code>convert.max_staleness_ns</code></td>
+<td>Positive unsigned 64-bit integer</td>
+<td>With Conversion</td>
+<td>—</td>
+<td>Maximum reference observation age in nanoseconds</td>
+</tr>
+<tr>
+<td><code>convert.max_hops</code></td>
+<td>Integer from 1 through 4</td>
+<td>No</td>
+<td><code>3</code></td>
+<td>Maximum path length</td>
+</tr>
+<tr>
+<td><code>convert.path_policy</code></td>
+<td><code>all</code> or <code>primary</code></td>
+<td>No</td>
+<td><code>all</code></td>
+<td>Conversion path selection policy</td>
+</tr>
+<tr>
+<td><code>convert.instrument_kinds</code></td>
+<td>Nonempty unique list of <code>spot</code>, <code>perpetual</code>, <code>future</code>, <code>option</code>, <code>equity</code></td>
+<td>No</td>
+<td>All applicable kinds</td>
+<td>Limits which instruments receive valuations</td>
+</tr>
+<tr>
+<td><code>convert.reference_stream_ids</code></td>
+<td>List of unique nonblank strings</td>
+<td>With external publication</td>
+<td>Empty</td>
+<td>Exact observed trade-stream identities</td>
+</tr>
+<tr>
+<td><code>convert.reference_publication_id</code></td>
+<td>Positive signed 64-bit registry publication ID</td>
+<td>No</td>
+<td>—</td>
+<td>External merged reference publication in the same registry</td>
+</tr>
+<tr>
+<td><code>convert.resources.workers</code></td>
+<td>Positive unsigned 64-bit integer</td>
+<td>No</td>
+<td><code>1</code></td>
+<td>Worker request</td>
+</tr>
+<tr>
+<td><code>convert.resources.memory_limit_mb</code></td>
+<td>Positive unsigned 64-bit integer</td>
+<td>No</td>
+<td><code>1024</code></td>
+<td>Memory request in MiB</td>
+</tr>
+<tr>
+<td><code>convert.resources.max_open_files</code></td>
+<td>Positive unsigned 64-bit integer</td>
+<td>No</td>
+<td><code>64</code></td>
+<td>Open-file request</td>
+</tr>
+</tbody>
+</table>
+<p>Both interval bounds must fit signed 64-bit Unix nanoseconds. Resource
+defaults are explicit job requests. The converter runtime separately supplies
+admission limits and execution settings. When <code>convert.resources</code> is omitted,
+Forge submits the defaults in the table and validates them against the retained
+runtime. <a href="../../runtime/#pipeline-runtime">Runtime composition</a></p>
+<h2 id="four-stage-bybit-spot-recipe">Four-stage Bybit spot recipe</h2>
+<p>This example uses the canonical stream identities for the two Bybit spot
+trade requests. A stage report or <code>mf datasets streams --publication-id PUB_ID
+--testing</code> lets you check the exact IDs after registration. Structural
+validation checks the declarations. Preparation checks whether the selected
+streams are present and eligible in the committed merge.</p>
+<div class="highlight"><pre><span></span><code><span class="n">version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
+
+<span class="k">[interval]</span>
+<span class="n">start</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ld">2026-10-27T00:00:00Z</span>
+<span class="n">end</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ld">2026-10-28T00:00:00Z</span>
+
+<span class="k">[normalize]</span>
+<span class="n">ranking_policy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"turnover"</span>
+
+<span class="k">[merge]</span>
+<span class="n">timeline_ordering</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"causal"</span>
+
+<span class="k">[convert]</span>
+<span class="n">target_quote</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"USDT"</span>
+<span class="n">price_source</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"last_trade"</span>
+<span class="n">max_staleness_ns</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">60000000000</span>
+<span class="n">max_hops</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span>
+<span class="n">path_policy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"all"</span>
+<span class="n">reference_stream_ids</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="s2">"bybit.spot.spot.BTCUSDT.trades"</span><span class="p">,</span>
+<span class="w">  </span><span class="s2">"bybit.spot.spot.BTCUSDC.trades"</span><span class="p">,</span>
+<span class="p">]</span>
+
+<span class="k">[[requests]]</span>
+<span class="n">exchange</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"bybit"</span>
+<span class="n">instrument_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"spot"</span>
+<span class="n">market_category</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"spot"</span>
+<span class="n">data_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"trades"</span>
+<span class="n">scope</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">kind</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">"instrument"</span><span class="p">,</span><span class="w"> </span><span class="n">identifier</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">"BTCUSDT"</span><span class="w"> </span><span class="p">}</span>
+
+<span class="k">[[requests]]</span>
+<span class="n">exchange</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"bybit"</span>
+<span class="n">instrument_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"spot"</span>
+<span class="n">market_category</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"spot"</span>
+<span class="n">data_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"order_book_l2"</span>
+<span class="n">scope</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">kind</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">"instrument"</span><span class="p">,</span><span class="w"> </span><span class="n">identifier</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">"BTCUSDT"</span><span class="w"> </span><span class="p">}</span>
+
+<span class="k">[[requests]]</span>
+<span class="n">exchange</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"bybit"</span>
+<span class="n">instrument_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"spot"</span>
+<span class="n">market_category</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"spot"</span>
+<span class="n">data_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"trades"</span>
+<span class="n">scope</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">kind</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">"instrument"</span><span class="p">,</span><span class="w"> </span><span class="n">identifier</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s2">"BTCUSDC"</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+<p>BTCUSDT already has the requested quote, so its applicable valuations use
+the identity route. An eligible BTCUSDC trade can supply the inverse
+USDC → BTC edge. An eligible BTCUSDT trade can supply the direct BTC → USDT
+edge. The Engine checks causal ordering, price validity, reference freshness,
+and path length at each event. Some valuations can be unavailable even when
+both streams are present. See <a href="../../../concepts/conversion/">conversion concepts</a>.</p>
 
 
 

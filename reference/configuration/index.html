@@ -2603,6 +2603,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2690,6 +2694,33 @@
   
   
     <li class="md-nav__item">
+      <a href="./explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../runtime/" class="md-nav__link">
         
   
@@ -2698,6 +2729,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="./pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -5106,6 +5164,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -5288,9 +5350,9 @@ run retains its submitted request, evidence and settings.</p>
 generated catalogue and job bindings are execution artifacts. The installed
 Engine manifest lives at <code>.bin/manifest.json</code> and verifies the selected binaries.
 These files have separate contracts from the editable TOMLs.</p>
-<p>The Forge TUI System actions <strong>Config show</strong> and <strong>Engine runtime</strong> use the
-same reports as the CLI. Recipe actions use the same managed libraries and
-validators. Existing editor actions hand off the selected source file.</p>
+<p>The Forge TUI <a href="explorer/">Configuration Explorer</a> uses the same schemas
+and validation as the CLI. It reviews and applies one file’s draft at a time.
+See <a href="pipeline-runtime/">pipeline runtime overrides</a> for stage inheritance.</p>
 <p>Use the <a href="conversion-runtime/">conversion runtime reference</a> for base settings, resource limits and prepared snapshots.</p>
 
 

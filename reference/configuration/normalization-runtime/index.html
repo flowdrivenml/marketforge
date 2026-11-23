@@ -2603,6 +2603,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2690,6 +2694,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../runtime/" class="md-nav__link">
         
   
@@ -2698,6 +2729,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -3238,6 +3296,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         14. Complete parameter index
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-explorer-field-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Settings Explorer field targets
       </span>
     </span>
   </a>
@@ -5773,6 +5842,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#settings-explorer-field-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Settings Explorer field targets
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -5879,6 +5959,10 @@
       
         
           
+        
+      
+        
+      
         
       
         
@@ -6649,6 +6733,420 @@ mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"
 </table>
 <p>Compatibility for retained <code>general.toml</code> is separate. The Rust loader accepts legacy <code>merge.partitions_per_worker</code> (<code>usize</code>, default 4) and <code>merge.compression_level</code> (<code>i32</code>, default 3) only under that filename. Normalization discards these values. See <a href="../../runtime/#merge-and-conversion-runtime">merge runtime</a> for the operation that uses them.</p>
 <p>Rust remains the configuration authority. See the <a href="https://github.com/flowdrivenml/marketforge/tree/main/engine/src/shared/historical">runtime loader and schema</a>, <a href="https://github.com/flowdrivenml/marketforge/tree/main/engine/src/historical/normalize">normalization execution</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/engine/runtime.py">Forge runtime resolution</a>.</p>
+<h2 id="settings-explorer-field-targets">Settings Explorer field targets</h2>
+<p>These entries use the runtime schema’s wording and constraints. The sections above explain how settings interact in a processing run.</p>
+<p><a id="setting-schema_version"></a></p>
+<p><strong><code>schema_version</code></strong></p>
+<p>Normalization runtime schema identity.</p>
+<p>Type <code>integer</code> · required in the base runtime file · read-only schema identity. Must match the Engine runtime schema version. Risk <code>ordinary</code>.</p>
+<p><a id="setting-merge_fan_in"></a></p>
+<p><strong><code>merge_fan_in</code></strong></p>
+<p>Requested merge inputs per pass. Admission can reduce the fan-in to fit memory and file handles.</p>
+<p>Type <code>integer</code> · default <code>8</code>. 2 to 64 inclusive. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-scratch_format"></a></p>
+<p><strong><code>scratch_format</code></strong></p>
+<p>Internal scratch serialization. Typed variants use binary trades; typed_events also uses shared-envelope depth where supported by the path. Other records use JSON.</p>
+<p>Type <code>enum</code> · default <code>"json"</code> · choices <code>json</code>, <code>typed_trades</code>, <code>typed_events</code>. Choices supported by this Engine build. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-scratch_codec"></a></p>
+<p><strong><code>scratch_codec</code></strong></p>
+<p>Compression for temporary scratch records. Final Parquet encoding is independent.</p>
+<p>Type <code>enum</code> · default <code>"zlib"</code> · choices <code>zlib</code>, <code>uncompressed</code>. Choices supported by this Engine build. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-diagnostics.mode"></a></p>
+<p><strong><code>diagnostics.mode</code></strong></p>
+<p>Controls the detail of Engine progress diagnostics and retained performance evidence.</p>
+<p>Type <code>enum</code> · default <code>"disabled"</code> · choices <code>disabled</code>, <code>basic</code>, <code>detailed</code>. Risk <code>ordinary</code>.</p>
+<p><a id="setting-diagnostics.interval_ms"></a></p>
+<p><strong><code>diagnostics.interval_ms</code></strong></p>
+<p>Timer-driven diagnostic heartbeat interval.</p>
+<p>Type <code>milliseconds</code> · units milliseconds · default <code>1000</code>. 100 to 60000 inclusive. Risk <code>ordinary</code>. Active when <code>diagnostics.mode</code> = <code>basic</code> or <code>detailed</code>.</p>
+<p><a id="setting-resources.workers"></a></p>
+<p><strong><code>resources.workers</code></strong></p>
+<p>Requested worker concurrency. Increasing it may increase memory, scratch, and handle demand.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Greater than zero. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.memory_budget_bytes"></a></p>
+<p><strong><code>resources.memory_budget_bytes</code></strong></p>
+<p>Memory admission budget for Engine work.</p>
+<p>Type <code>bytes</code> · units bytes · required in the base runtime file. Greater than zero. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.scratch_budget_bytes"></a></p>
+<p><strong><code>resources.scratch_budget_bytes</code></strong></p>
+<p>Scratch-space admission budget for spools and other temporary files.</p>
+<p>Type <code>bytes</code> · units bytes · required in the base runtime file. Greater than zero. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.scratch_path"></a></p>
+<p><strong><code>resources.scratch_path</code></strong></p>
+<p>Temporary workspace path. Relative paths resolve from the project root.</p>
+<p>Type <code>string</code> · required in the base runtime file. Nonempty; if it exists it must be a directory. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.parquet.row_group_target_bytes"></a></p>
+<p><strong><code>resources.parquet.row_group_target_bytes</code></strong></p>
+<p>Target allocation for one Parquet row group.</p>
+<p>Type <code>bytes</code> · units bytes · required in the base runtime file. Positive and no greater than resources.parquet.file_target_bytes. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.parquet.file_target_bytes"></a></p>
+<p><strong><code>resources.parquet.file_target_bytes</code></strong></p>
+<p>Target used when splitting output Parquet files.</p>
+<p>Type <code>bytes</code> · units bytes · required in the base runtime file. Positive and at least resources.parquet.row_group_target_bytes. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.normalization_limits.workbook_bytes"></a></p>
+<p><strong><code>resources.normalization_limits.workbook_bytes</code></strong></p>
+<p>Selected XLSX source or archive member bytes.</p>
+<p>Type <code>bytes</code> · units bytes · default <code>8388608</code>. Positive and at most usize::MAX / 128 for this Engine build. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.normalization_limits.workbook_xml_bytes"></a></p>
+<p><strong><code>resources.normalization_limits.workbook_xml_bytes</code></strong></p>
+<p>Expanded XML member and worksheet cell text bound.</p>
+<p>Type <code>bytes</code> · units bytes · default <code>16777216</code>. Positive and at most usize::MAX / 128 for this Engine build. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.normalization_limits.workbook_rows"></a></p>
+<p><strong><code>resources.normalization_limits.workbook_rows</code></strong></p>
+<p>Materialized/decoded worksheet rows; also bounds shared strings at three times the row limit.</p>
+<p>Type <code>integer</code> · default <code>25000</code>. Positive and at most usize::MAX / 128 for this Engine build. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.normalization_limits.record_bytes"></a></p>
+<p><strong><code>resources.normalization_limits.record_bytes</code></strong></p>
+<p>Maximum CSV payload, JSONL line, or XLSX cell text bytes.</p>
+<p>Type <code>bytes</code> · units bytes · default <code>1048576</code>. Positive and at most usize::MAX / 128 for this Engine build. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.normalization_limits.depth_levels"></a></p>
+<p><strong><code>resources.normalization_limits.depth_levels</code></strong></p>
+<p>Bound on reconstructed book and pending snapshot levels.</p>
+<p>Type <code>integer</code> · default <code>25000</code>. Positive and at most usize::MAX / 128 for this Engine build. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.normalization_limits.metric_entries"></a></p>
+<p><strong><code>resources.normalization_limits.metric_entries</code></strong></p>
+<p>Bounds retained metrics and inventories, including time buckets, files, row groups, and segments.</p>
+<p>Type <code>integer</code> · default <code>4096</code>. Positive and at most usize::MAX / 128 for this Engine build. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.normalization_limits.open_files"></a></p>
+<p><strong><code>resources.normalization_limits.open_files</code></strong></p>
+<p>Participating normalization file handles, including session headroom.</p>
+<p>Type <code>integer</code> · default <code>64</code>. Positive and at most usize::MAX / 128 for this Engine build. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.normalization_limits.reconciliation_bytes"></a></p>
+<p><strong><code>resources.normalization_limits.reconciliation_bytes</code></strong></p>
+<p>Resident routing and reconciliation buffers per execution unit. Disk spools use the scratch budget.</p>
+<p>Type <code>bytes</code> · units bytes · default <code>67108864</code>. Positive and at most usize::MAX / 128 for this Engine build. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-integrity_policy.enabled"></a></p>
+<p><strong><code>integrity_policy.enabled</code></strong></p>
+<p>Enables integrity acceptance evaluation. Legacy v1 standard and strict strings both enable it. Use a boolean when editing.</p>
+<p>Type <code>boolean</code> · default <code>true</code>. Risk <code>integrity-critical</code>.</p>
+<p><a id="setting-integrity_policy.parse_failure.action"></a></p>
+<p><strong><code>integrity_policy.parse_failure.action</code></strong></p>
+<p>Fail rejects every occurrence. Degrade marks occurrences and rejects when any applicable threshold is exceeded.</p>
+<p>Type <code>enum</code> · required in the base runtime file · choices <code>degrade</code>, <code>fail</code>. Degrade requires a count, rate, hourly, or daily threshold. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>.</p>
+<p><a id="setting-integrity_policy.parse_failure.max_count"></a></p>
+<p><strong><code>integrity_policy.parse_failure.max_count</code></strong></p>
+<p>Overall occurrence-count limit. An omitted count supplies no count limit; zero rejects the first occurrence under degrade.</p>
+<p>Type <code>integer</code> · optional, with no default value reported. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.parse_failure.action</code> = <code>degrade</code>.</p>
+<p><a id="setting-integrity_policy.parse_failure.max_rate"></a></p>
+<p><strong><code>integrity_policy.parse_failure.max_rate</code></strong></p>
+<p>Rate limit over eligible samples, evaluated job-wide, per source file, and per stream.</p>
+<p>Type <code>rate</code> · optional, with no default value reported. Finite fraction between 0 and 1 inclusive. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.parse_failure.action</code> = <code>degrade</code>.</p>
+<p><a id="setting-integrity_policy.parse_failure.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.parse_failure.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the job, source file, and stream rate checks. Count checks are independent.</p>
+<p>Type <code>integer</code> · default <code>0</code>. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.parse_failure.action</code> = <code>degrade</code>, <code>integrity_policy.parse_failure.max_rate</code> must be configured.</p>
+<p><a id="setting-integrity_policy.parse_failure.windows.hourly.max_rate"></a></p>
+<p><strong><code>integrity_policy.parse_failure.windows.hourly.max_rate</code></strong></p>
+<p>Rate limit per configured UTC window under degrade. Window presence requires trustworthy timestamps even under fail.</p>
+<p>Type <code>rate</code> · required in the base runtime file. Finite fraction between 0 and 1 inclusive; required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.parse_failure.action</code> = <code>degrade</code>, <code>integrity_policy.parse_failure.windows.hourly</code> must be configured.</p>
+<p><a id="setting-integrity_policy.parse_failure.windows.hourly.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.parse_failure.windows.hourly.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the corresponding UTC rate window.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.parse_failure.action</code> = <code>degrade</code>, <code>integrity_policy.parse_failure.windows.hourly</code> must be configured.</p>
+<p><a id="setting-integrity_policy.parse_failure.windows.daily.max_rate"></a></p>
+<p><strong><code>integrity_policy.parse_failure.windows.daily.max_rate</code></strong></p>
+<p>Rate limit per configured UTC window under degrade. Window presence requires trustworthy timestamps even under fail.</p>
+<p>Type <code>rate</code> · required in the base runtime file. Finite fraction between 0 and 1 inclusive; required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.parse_failure.action</code> = <code>degrade</code>, <code>integrity_policy.parse_failure.windows.daily</code> must be configured.</p>
+<p><a id="setting-integrity_policy.parse_failure.windows.daily.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.parse_failure.windows.daily.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the corresponding UTC rate window.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.parse_failure.action</code> = <code>degrade</code>, <code>integrity_policy.parse_failure.windows.daily</code> must be configured.</p>
+<p><a id="setting-integrity_policy.invalid_record.action"></a></p>
+<p><strong><code>integrity_policy.invalid_record.action</code></strong></p>
+<p>Fail rejects every occurrence. Degrade marks occurrences and rejects when any applicable threshold is exceeded.</p>
+<p>Type <code>enum</code> · required in the base runtime file · choices <code>degrade</code>, <code>fail</code>. Degrade requires a count, rate, hourly, or daily threshold. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>.</p>
+<p><a id="setting-integrity_policy.invalid_record.max_count"></a></p>
+<p><strong><code>integrity_policy.invalid_record.max_count</code></strong></p>
+<p>Overall occurrence-count limit. An omitted count supplies no count limit; zero rejects the first occurrence under degrade.</p>
+<p>Type <code>integer</code> · optional, with no default value reported. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.invalid_record.action</code> = <code>degrade</code>.</p>
+<p><a id="setting-integrity_policy.invalid_record.max_rate"></a></p>
+<p><strong><code>integrity_policy.invalid_record.max_rate</code></strong></p>
+<p>Rate limit over eligible samples, evaluated job-wide, per source file, and per stream.</p>
+<p>Type <code>rate</code> · optional, with no default value reported. Finite fraction between 0 and 1 inclusive. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.invalid_record.action</code> = <code>degrade</code>.</p>
+<p><a id="setting-integrity_policy.invalid_record.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.invalid_record.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the job, source file, and stream rate checks. Count checks are independent.</p>
+<p>Type <code>integer</code> · default <code>0</code>. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.invalid_record.action</code> = <code>degrade</code>, <code>integrity_policy.invalid_record.max_rate</code> must be configured.</p>
+<p><a id="setting-integrity_policy.invalid_record.windows.hourly.max_rate"></a></p>
+<p><strong><code>integrity_policy.invalid_record.windows.hourly.max_rate</code></strong></p>
+<p>Rate limit per configured UTC window under degrade. Window presence requires trustworthy timestamps even under fail.</p>
+<p>Type <code>rate</code> · required in the base runtime file. Finite fraction between 0 and 1 inclusive; required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.invalid_record.action</code> = <code>degrade</code>, <code>integrity_policy.invalid_record.windows.hourly</code> must be configured.</p>
+<p><a id="setting-integrity_policy.invalid_record.windows.hourly.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.invalid_record.windows.hourly.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the corresponding UTC rate window.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.invalid_record.action</code> = <code>degrade</code>, <code>integrity_policy.invalid_record.windows.hourly</code> must be configured.</p>
+<p><a id="setting-integrity_policy.invalid_record.windows.daily.max_rate"></a></p>
+<p><strong><code>integrity_policy.invalid_record.windows.daily.max_rate</code></strong></p>
+<p>Rate limit per configured UTC window under degrade. Window presence requires trustworthy timestamps even under fail.</p>
+<p>Type <code>rate</code> · required in the base runtime file. Finite fraction between 0 and 1 inclusive; required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.invalid_record.action</code> = <code>degrade</code>, <code>integrity_policy.invalid_record.windows.daily</code> must be configured.</p>
+<p><a id="setting-integrity_policy.invalid_record.windows.daily.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.invalid_record.windows.daily.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the corresponding UTC rate window.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.invalid_record.action</code> = <code>degrade</code>, <code>integrity_policy.invalid_record.windows.daily</code> must be configured.</p>
+<p><a id="setting-integrity_policy.sequence_gap.action"></a></p>
+<p><strong><code>integrity_policy.sequence_gap.action</code></strong></p>
+<p>Fail rejects every occurrence. Degrade marks occurrences and rejects when any applicable threshold is exceeded.</p>
+<p>Type <code>enum</code> · required in the base runtime file · choices <code>degrade</code>, <code>fail</code>. Degrade requires a count, rate, hourly, or daily threshold. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>.</p>
+<p><a id="setting-integrity_policy.sequence_gap.max_count"></a></p>
+<p><strong><code>integrity_policy.sequence_gap.max_count</code></strong></p>
+<p>Overall occurrence-count limit. An omitted count supplies no count limit; zero rejects the first occurrence under degrade.</p>
+<p>Type <code>integer</code> · optional, with no default value reported. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.sequence_gap.action</code> = <code>degrade</code>.</p>
+<p><a id="setting-integrity_policy.sequence_gap.max_rate"></a></p>
+<p><strong><code>integrity_policy.sequence_gap.max_rate</code></strong></p>
+<p>Rate limit over eligible samples, evaluated job-wide, per source file, and per stream.</p>
+<p>Type <code>rate</code> · optional, with no default value reported. Finite fraction between 0 and 1 inclusive. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.sequence_gap.action</code> = <code>degrade</code>.</p>
+<p><a id="setting-integrity_policy.sequence_gap.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.sequence_gap.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the job, source file, and stream rate checks. Count checks are independent.</p>
+<p>Type <code>integer</code> · default <code>0</code>. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.sequence_gap.action</code> = <code>degrade</code>, <code>integrity_policy.sequence_gap.max_rate</code> must be configured.</p>
+<p><a id="setting-integrity_policy.sequence_gap.windows.hourly.max_rate"></a></p>
+<p><strong><code>integrity_policy.sequence_gap.windows.hourly.max_rate</code></strong></p>
+<p>Rate limit per configured UTC window under degrade. Window presence requires trustworthy timestamps even under fail.</p>
+<p>Type <code>rate</code> · required in the base runtime file. Finite fraction between 0 and 1 inclusive; required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.sequence_gap.action</code> = <code>degrade</code>, <code>integrity_policy.sequence_gap.windows.hourly</code> must be configured.</p>
+<p><a id="setting-integrity_policy.sequence_gap.windows.hourly.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.sequence_gap.windows.hourly.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the corresponding UTC rate window.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.sequence_gap.action</code> = <code>degrade</code>, <code>integrity_policy.sequence_gap.windows.hourly</code> must be configured.</p>
+<p><a id="setting-integrity_policy.sequence_gap.windows.daily.max_rate"></a></p>
+<p><strong><code>integrity_policy.sequence_gap.windows.daily.max_rate</code></strong></p>
+<p>Rate limit per configured UTC window under degrade. Window presence requires trustworthy timestamps even under fail.</p>
+<p>Type <code>rate</code> · required in the base runtime file. Finite fraction between 0 and 1 inclusive; required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.sequence_gap.action</code> = <code>degrade</code>, <code>integrity_policy.sequence_gap.windows.daily</code> must be configured.</p>
+<p><a id="setting-integrity_policy.sequence_gap.windows.daily.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.sequence_gap.windows.daily.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the corresponding UTC rate window.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.sequence_gap.action</code> = <code>degrade</code>, <code>integrity_policy.sequence_gap.windows.daily</code> must be configured.</p>
+<p><a id="setting-integrity_policy.timestamp_regression.action"></a></p>
+<p><strong><code>integrity_policy.timestamp_regression.action</code></strong></p>
+<p>Fail rejects every occurrence. Degrade marks occurrences and rejects when any applicable threshold is exceeded.</p>
+<p>Type <code>enum</code> · required in the base runtime file · choices <code>degrade</code>, <code>fail</code>. Degrade requires a count, rate, hourly, or daily threshold. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>.</p>
+<p><a id="setting-integrity_policy.timestamp_regression.max_count"></a></p>
+<p><strong><code>integrity_policy.timestamp_regression.max_count</code></strong></p>
+<p>Overall occurrence-count limit. An omitted count supplies no count limit; zero rejects the first occurrence under degrade.</p>
+<p>Type <code>integer</code> · optional, with no default value reported. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.timestamp_regression.action</code> = <code>degrade</code>.</p>
+<p><a id="setting-integrity_policy.timestamp_regression.max_rate"></a></p>
+<p><strong><code>integrity_policy.timestamp_regression.max_rate</code></strong></p>
+<p>Rate limit over eligible samples, evaluated job-wide, per source file, and per stream.</p>
+<p>Type <code>rate</code> · optional, with no default value reported. Finite fraction between 0 and 1 inclusive. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.timestamp_regression.action</code> = <code>degrade</code>.</p>
+<p><a id="setting-integrity_policy.timestamp_regression.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.timestamp_regression.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the job, source file, and stream rate checks. Count checks are independent.</p>
+<p>Type <code>integer</code> · default <code>0</code>. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.timestamp_regression.action</code> = <code>degrade</code>, <code>integrity_policy.timestamp_regression.max_rate</code> must be configured.</p>
+<p><a id="setting-integrity_policy.timestamp_regression.windows.hourly.max_rate"></a></p>
+<p><strong><code>integrity_policy.timestamp_regression.windows.hourly.max_rate</code></strong></p>
+<p>Rate limit per configured UTC window under degrade. Window presence requires trustworthy timestamps even under fail.</p>
+<p>Type <code>rate</code> · required in the base runtime file. Finite fraction between 0 and 1 inclusive; required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.timestamp_regression.action</code> = <code>degrade</code>, <code>integrity_policy.timestamp_regression.windows.hourly</code> must be configured.</p>
+<p><a id="setting-integrity_policy.timestamp_regression.windows.hourly.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.timestamp_regression.windows.hourly.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the corresponding UTC rate window.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.timestamp_regression.action</code> = <code>degrade</code>, <code>integrity_policy.timestamp_regression.windows.hourly</code> must be configured.</p>
+<p><a id="setting-integrity_policy.timestamp_regression.windows.daily.max_rate"></a></p>
+<p><strong><code>integrity_policy.timestamp_regression.windows.daily.max_rate</code></strong></p>
+<p>Rate limit per configured UTC window under degrade. Window presence requires trustworthy timestamps even under fail.</p>
+<p>Type <code>rate</code> · required in the base runtime file. Finite fraction between 0 and 1 inclusive; required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.timestamp_regression.action</code> = <code>degrade</code>, <code>integrity_policy.timestamp_regression.windows.daily</code> must be configured.</p>
+<p><a id="setting-integrity_policy.timestamp_regression.windows.daily.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.timestamp_regression.windows.daily.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the corresponding UTC rate window.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.timestamp_regression.action</code> = <code>degrade</code>, <code>integrity_policy.timestamp_regression.windows.daily</code> must be configured.</p>
+<p><a id="setting-integrity_policy.missing_snapshot.action"></a></p>
+<p><strong><code>integrity_policy.missing_snapshot.action</code></strong></p>
+<p>Fail rejects every occurrence. Degrade marks occurrences and rejects when any applicable threshold is exceeded.</p>
+<p>Type <code>enum</code> · required in the base runtime file · choices <code>degrade</code>, <code>fail</code>. Degrade requires a count, rate, hourly, or daily threshold. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>.</p>
+<p><a id="setting-integrity_policy.missing_snapshot.max_count"></a></p>
+<p><strong><code>integrity_policy.missing_snapshot.max_count</code></strong></p>
+<p>Overall occurrence-count limit. An omitted count supplies no count limit; zero rejects the first occurrence under degrade.</p>
+<p>Type <code>integer</code> · optional, with no default value reported. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.missing_snapshot.action</code> = <code>degrade</code>.</p>
+<p><a id="setting-integrity_policy.missing_snapshot.max_rate"></a></p>
+<p><strong><code>integrity_policy.missing_snapshot.max_rate</code></strong></p>
+<p>Rate limit over eligible samples, evaluated job-wide, per source file, and per stream.</p>
+<p>Type <code>rate</code> · optional, with no default value reported. Finite fraction between 0 and 1 inclusive. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.missing_snapshot.action</code> = <code>degrade</code>.</p>
+<p><a id="setting-integrity_policy.missing_snapshot.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.missing_snapshot.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the job, source file, and stream rate checks. Count checks are independent.</p>
+<p>Type <code>integer</code> · default <code>0</code>. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.missing_snapshot.action</code> = <code>degrade</code>, <code>integrity_policy.missing_snapshot.max_rate</code> must be configured.</p>
+<p><a id="setting-integrity_policy.missing_snapshot.windows.hourly.max_rate"></a></p>
+<p><strong><code>integrity_policy.missing_snapshot.windows.hourly.max_rate</code></strong></p>
+<p>Rate limit per configured UTC window under degrade. Window presence requires trustworthy timestamps even under fail.</p>
+<p>Type <code>rate</code> · required in the base runtime file. Finite fraction between 0 and 1 inclusive; required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.missing_snapshot.action</code> = <code>degrade</code>, <code>integrity_policy.missing_snapshot.windows.hourly</code> must be configured.</p>
+<p><a id="setting-integrity_policy.missing_snapshot.windows.hourly.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.missing_snapshot.windows.hourly.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the corresponding UTC rate window.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.missing_snapshot.action</code> = <code>degrade</code>, <code>integrity_policy.missing_snapshot.windows.hourly</code> must be configured.</p>
+<p><a id="setting-integrity_policy.missing_snapshot.windows.daily.max_rate"></a></p>
+<p><strong><code>integrity_policy.missing_snapshot.windows.daily.max_rate</code></strong></p>
+<p>Rate limit per configured UTC window under degrade. Window presence requires trustworthy timestamps even under fail.</p>
+<p>Type <code>rate</code> · required in the base runtime file. Finite fraction between 0 and 1 inclusive; required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.missing_snapshot.action</code> = <code>degrade</code>, <code>integrity_policy.missing_snapshot.windows.daily</code> must be configured.</p>
+<p><a id="setting-integrity_policy.missing_snapshot.windows.daily.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.missing_snapshot.windows.daily.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the corresponding UTC rate window.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.missing_snapshot.action</code> = <code>degrade</code>, <code>integrity_policy.missing_snapshot.windows.daily</code> must be configured.</p>
+<p><a id="setting-integrity_policy.invalid_book.action"></a></p>
+<p><strong><code>integrity_policy.invalid_book.action</code></strong></p>
+<p>Fail rejects every occurrence. Degrade marks occurrences and rejects when any applicable threshold is exceeded.</p>
+<p>Type <code>enum</code> · required in the base runtime file · choices <code>degrade</code>, <code>fail</code>. Degrade requires a count, rate, hourly, or daily threshold. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>.</p>
+<p><a id="setting-integrity_policy.invalid_book.max_count"></a></p>
+<p><strong><code>integrity_policy.invalid_book.max_count</code></strong></p>
+<p>Overall occurrence-count limit. An omitted count supplies no count limit; zero rejects the first occurrence under degrade.</p>
+<p>Type <code>integer</code> · optional, with no default value reported. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.invalid_book.action</code> = <code>degrade</code>.</p>
+<p><a id="setting-integrity_policy.invalid_book.max_rate"></a></p>
+<p><strong><code>integrity_policy.invalid_book.max_rate</code></strong></p>
+<p>Rate limit over eligible samples, evaluated job-wide, per source file, and per stream.</p>
+<p>Type <code>rate</code> · optional, with no default value reported. Finite fraction between 0 and 1 inclusive. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.invalid_book.action</code> = <code>degrade</code>.</p>
+<p><a id="setting-integrity_policy.invalid_book.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.invalid_book.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the job, source file, and stream rate checks. Count checks are independent.</p>
+<p>Type <code>integer</code> · default <code>0</code>. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.invalid_book.action</code> = <code>degrade</code>, <code>integrity_policy.invalid_book.max_rate</code> must be configured.</p>
+<p><a id="setting-integrity_policy.invalid_book.windows.hourly.max_rate"></a></p>
+<p><strong><code>integrity_policy.invalid_book.windows.hourly.max_rate</code></strong></p>
+<p>Rate limit per configured UTC window under degrade. Window presence requires trustworthy timestamps even under fail.</p>
+<p>Type <code>rate</code> · required in the base runtime file. Finite fraction between 0 and 1 inclusive; required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.invalid_book.action</code> = <code>degrade</code>, <code>integrity_policy.invalid_book.windows.hourly</code> must be configured.</p>
+<p><a id="setting-integrity_policy.invalid_book.windows.hourly.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.invalid_book.windows.hourly.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the corresponding UTC rate window.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.invalid_book.action</code> = <code>degrade</code>, <code>integrity_policy.invalid_book.windows.hourly</code> must be configured.</p>
+<p><a id="setting-integrity_policy.invalid_book.windows.daily.max_rate"></a></p>
+<p><strong><code>integrity_policy.invalid_book.windows.daily.max_rate</code></strong></p>
+<p>Rate limit per configured UTC window under degrade. Window presence requires trustworthy timestamps even under fail.</p>
+<p>Type <code>rate</code> · required in the base runtime file. Finite fraction between 0 and 1 inclusive; required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.invalid_book.action</code> = <code>degrade</code>, <code>integrity_policy.invalid_book.windows.daily</code> must be configured.</p>
+<p><a id="setting-integrity_policy.invalid_book.windows.daily.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.invalid_book.windows.daily.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the corresponding UTC rate window.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.invalid_book.action</code> = <code>degrade</code>, <code>integrity_policy.invalid_book.windows.daily</code> must be configured.</p>
+<p><a id="setting-integrity_policy.transformation_failure.action"></a></p>
+<p><strong><code>integrity_policy.transformation_failure.action</code></strong></p>
+<p>Fail rejects every occurrence. Degrade marks occurrences and rejects when any applicable threshold is exceeded.</p>
+<p>Type <code>enum</code> · required in the base runtime file · choices <code>degrade</code>, <code>fail</code>. Degrade requires a count, rate, hourly, or daily threshold. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>.</p>
+<p><a id="setting-integrity_policy.transformation_failure.max_count"></a></p>
+<p><strong><code>integrity_policy.transformation_failure.max_count</code></strong></p>
+<p>Overall occurrence-count limit. An omitted count supplies no count limit; zero rejects the first occurrence under degrade.</p>
+<p>Type <code>integer</code> · optional, with no default value reported. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.transformation_failure.action</code> = <code>degrade</code>.</p>
+<p><a id="setting-integrity_policy.transformation_failure.max_rate"></a></p>
+<p><strong><code>integrity_policy.transformation_failure.max_rate</code></strong></p>
+<p>Rate limit over eligible samples, evaluated job-wide, per source file, and per stream.</p>
+<p>Type <code>rate</code> · optional, with no default value reported. Finite fraction between 0 and 1 inclusive. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.transformation_failure.action</code> = <code>degrade</code>.</p>
+<p><a id="setting-integrity_policy.transformation_failure.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.transformation_failure.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the job, source file, and stream rate checks. Count checks are independent.</p>
+<p>Type <code>integer</code> · default <code>0</code>. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.transformation_failure.action</code> = <code>degrade</code>, <code>integrity_policy.transformation_failure.max_rate</code> must be configured.</p>
+<p><a id="setting-integrity_policy.transformation_failure.windows.hourly.max_rate"></a></p>
+<p><strong><code>integrity_policy.transformation_failure.windows.hourly.max_rate</code></strong></p>
+<p>Rate limit per configured UTC window under degrade. Window presence requires trustworthy timestamps even under fail.</p>
+<p>Type <code>rate</code> · required in the base runtime file. Finite fraction between 0 and 1 inclusive; required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.transformation_failure.action</code> = <code>degrade</code>, <code>integrity_policy.transformation_failure.windows.hourly</code> must be configured.</p>
+<p><a id="setting-integrity_policy.transformation_failure.windows.hourly.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.transformation_failure.windows.hourly.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the corresponding UTC rate window.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.transformation_failure.action</code> = <code>degrade</code>, <code>integrity_policy.transformation_failure.windows.hourly</code> must be configured.</p>
+<p><a id="setting-integrity_policy.transformation_failure.windows.daily.max_rate"></a></p>
+<p><strong><code>integrity_policy.transformation_failure.windows.daily.max_rate</code></strong></p>
+<p>Rate limit per configured UTC window under degrade. Window presence requires trustworthy timestamps even under fail.</p>
+<p>Type <code>rate</code> · required in the base runtime file. Finite fraction between 0 and 1 inclusive; required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.transformation_failure.action</code> = <code>degrade</code>, <code>integrity_policy.transformation_failure.windows.daily</code> must be configured.</p>
+<p><a id="setting-integrity_policy.transformation_failure.windows.daily.minimum_samples"></a></p>
+<p><strong><code>integrity_policy.transformation_failure.windows.daily.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the corresponding UTC rate window.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Required when this window is present. Risk <code>integrity-critical</code>. Active when <code>integrity_policy.enabled</code> = <code>true</code>, <code>integrity_policy.transformation_failure.action</code> = <code>degrade</code>, <code>integrity_policy.transformation_failure.windows.daily</code> must be configured.</p>
+<p><a id="setting-reconciliation.trades.overlap_policy"></a></p>
+<p><strong><code>reconciliation.trades.overlap_policy</code></strong></p>
+<p>Controls overlap handling. Strict checks agreement; prefer_source selects precedence; depth snapshot_recovery uses verified recovery boundaries.</p>
+<p>Type <code>enum</code> · default <code>"strict"</code> · choices <code>strict</code>, <code>prefer_source</code>. Risk <code>integrity-critical</code>.</p>
+<p><a id="setting-reconciliation.trades.prefer_source.selection"></a></p>
+<p><strong><code>reconciliation.trades.prefer_source.selection</code></strong></p>
+<p>Selects the earlier or later source for overlap precedence.</p>
+<p>Type <code>enum</code> · default <code>"earlier"</code> · choices <code>earlier</code>, <code>later</code>. Risk <code>processing-semantic</code>. Active when <code>reconciliation.trades.overlap_policy</code> = <code>prefer_source</code>.</p>
+<p><a id="setting-reconciliation.trades.prefer_source.on_unique_data_loss"></a></p>
+<p><strong><code>reconciliation.trades.prefer_source.on_unique_data_loss</code></strong></p>
+<p>Reject unique loss or mark bounded loss degraded.</p>
+<p>Type <code>enum</code> · default <code>"fail"</code> · choices <code>fail</code>, <code>mark_degraded</code>. mark_degraded requires a positive max_excluded_events even when preferences are inactive. Risk <code>integrity-critical</code>. Active when <code>reconciliation.trades.overlap_policy</code> = <code>prefer_source</code>.</p>
+<p><a id="setting-reconciliation.trades.prefer_source.max_excluded_events"></a></p>
+<p><strong><code>reconciliation.trades.prefer_source.max_excluded_events</code></strong></p>
+<p>Finite cap on excluded unique events. Zero provides no allowance.</p>
+<p>Type <code>integer</code> · default <code>0</code>. Positive when on_unique_data_loss is mark_degraded. Risk <code>integrity-critical</code>. Active when <code>reconciliation.trades.overlap_policy</code> = <code>prefer_source</code>, <code>reconciliation.trades.prefer_source.on_unique_data_loss</code> = <code>mark_degraded</code>.</p>
+<p><a id="setting-reconciliation.trades.prefer_source.max_excluded_rate"></a></p>
+<p><strong><code>reconciliation.trades.prefer_source.max_excluded_rate</code></strong></p>
+<p>Optional additional rate cap on excluded unique events.</p>
+<p>Type <code>rate</code> · optional, with no default value reported. Finite fraction between 0 and 1 inclusive, representable as a Rust Decimal. Risk <code>integrity-critical</code>. Active when <code>reconciliation.trades.overlap_policy</code> = <code>prefer_source</code>, <code>reconciliation.trades.prefer_source.on_unique_data_loss</code> = <code>mark_degraded</code>.</p>
+<p><a id="setting-reconciliation.trades.prefer_source.minimum_samples"></a></p>
+<p><strong><code>reconciliation.trades.prefer_source.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the overlap exclusion rate. The event cap still applies.</p>
+<p>Type <code>integer</code> · default <code>0</code>. Risk <code>integrity-critical</code>. Active when <code>reconciliation.trades.overlap_policy</code> = <code>prefer_source</code>, <code>reconciliation.trades.prefer_source.on_unique_data_loss</code> = <code>mark_degraded</code>, <code>reconciliation.trades.prefer_source.max_excluded_rate</code> must be configured.</p>
+<p><a id="setting-reconciliation.trades.prefer_source.max_excluded_interval_ms"></a></p>
+<p><strong><code>reconciliation.trades.prefer_source.max_excluded_interval_ms</code></strong></p>
+<p>Optional maximum time span of exclusions.</p>
+<p>Type <code>milliseconds</code> · units milliseconds · optional, with no default value reported. Must fit in signed nanoseconds after multiplication by 1,000,000. Risk <code>integrity-critical</code>. Active when <code>reconciliation.trades.overlap_policy</code> = <code>prefer_source</code>, <code>reconciliation.trades.prefer_source.on_unique_data_loss</code> = <code>mark_degraded</code>.</p>
+<p><a id="setting-reconciliation.depth.overlap_policy"></a></p>
+<p><strong><code>reconciliation.depth.overlap_policy</code></strong></p>
+<p>Controls overlap handling. Strict checks agreement; prefer_source selects precedence; depth snapshot_recovery uses verified recovery boundaries.</p>
+<p>Type <code>enum</code> · default <code>"strict"</code> · choices <code>strict</code>, <code>snapshot_recovery</code>, <code>prefer_source</code>. Risk <code>integrity-critical</code>.</p>
+<p><a id="setting-reconciliation.depth.prefer_source.selection"></a></p>
+<p><strong><code>reconciliation.depth.prefer_source.selection</code></strong></p>
+<p>Selects the earlier or later source for overlap precedence.</p>
+<p>Type <code>enum</code> · default <code>"earlier"</code> · choices <code>earlier</code>, <code>later</code>. Risk <code>processing-semantic</code>. Active when <code>reconciliation.depth.overlap_policy</code> = <code>prefer_source</code>.</p>
+<p><a id="setting-reconciliation.depth.prefer_source.switch_boundary"></a></p>
+<p><strong><code>reconciliation.depth.prefer_source.switch_boundary</code></strong></p>
+<p>Chooses snapshot or verified source boundary for depth source switches.</p>
+<p>Type <code>enum</code> · default <code>"snapshot"</code> · choices <code>snapshot</code>, <code>source_boundary</code>. Risk <code>integrity-critical</code>. Active when <code>reconciliation.depth.overlap_policy</code> = <code>prefer_source</code>.</p>
+<p><a id="setting-reconciliation.depth.prefer_source.on_unique_data_loss"></a></p>
+<p><strong><code>reconciliation.depth.prefer_source.on_unique_data_loss</code></strong></p>
+<p>Reject unique loss or mark bounded loss degraded.</p>
+<p>Type <code>enum</code> · default <code>"fail"</code> · choices <code>fail</code>, <code>mark_degraded</code>. mark_degraded requires a positive max_excluded_events even when preferences are inactive. Risk <code>integrity-critical</code>. Active when <code>reconciliation.depth.overlap_policy</code> = <code>prefer_source</code>.</p>
+<p><a id="setting-reconciliation.depth.prefer_source.max_excluded_events"></a></p>
+<p><strong><code>reconciliation.depth.prefer_source.max_excluded_events</code></strong></p>
+<p>Finite cap on excluded unique events. Zero provides no allowance.</p>
+<p>Type <code>integer</code> · default <code>0</code>. Positive when on_unique_data_loss is mark_degraded. Risk <code>integrity-critical</code>. Active when <code>reconciliation.depth.overlap_policy</code> = <code>prefer_source</code>, <code>reconciliation.depth.prefer_source.on_unique_data_loss</code> = <code>mark_degraded</code>.</p>
+<p><a id="setting-reconciliation.depth.prefer_source.max_excluded_rate"></a></p>
+<p><strong><code>reconciliation.depth.prefer_source.max_excluded_rate</code></strong></p>
+<p>Optional additional rate cap on excluded unique events.</p>
+<p>Type <code>rate</code> · optional, with no default value reported. Finite fraction between 0 and 1 inclusive, representable as a Rust Decimal. Risk <code>integrity-critical</code>. Active when <code>reconciliation.depth.overlap_policy</code> = <code>prefer_source</code>, <code>reconciliation.depth.prefer_source.on_unique_data_loss</code> = <code>mark_degraded</code>.</p>
+<p><a id="setting-reconciliation.depth.prefer_source.minimum_samples"></a></p>
+<p><strong><code>reconciliation.depth.prefer_source.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the overlap exclusion rate. The event cap still applies.</p>
+<p>Type <code>integer</code> · default <code>0</code>. Risk <code>integrity-critical</code>. Active when <code>reconciliation.depth.overlap_policy</code> = <code>prefer_source</code>, <code>reconciliation.depth.prefer_source.on_unique_data_loss</code> = <code>mark_degraded</code>, <code>reconciliation.depth.prefer_source.max_excluded_rate</code> must be configured.</p>
+<p><a id="setting-reconciliation.depth.prefer_source.max_excluded_interval_ms"></a></p>
+<p><strong><code>reconciliation.depth.prefer_source.max_excluded_interval_ms</code></strong></p>
+<p>Optional maximum time span of exclusions.</p>
+<p>Type <code>milliseconds</code> · units milliseconds · optional, with no default value reported. Must fit in signed nanoseconds after multiplication by 1,000,000. Risk <code>integrity-critical</code>. Active when <code>reconciliation.depth.overlap_policy</code> = <code>prefer_source</code>, <code>reconciliation.depth.prefer_source.on_unique_data_loss</code> = <code>mark_degraded</code>.</p>
+<p><a id="setting-timestamp_regression.trades.policy"></a></p>
+<p><strong><code>timestamp_regression.trades.policy</code></strong></p>
+<p>Strict rejects regressions, preserve retains native order, reorder uses a bounded window, and discard drops bounded events.</p>
+<p>Type <code>enum</code> · default <code>"strict"</code> · choices <code>strict</code>, <code>preserve</code>, <code>reorder</code>, <code>discard</code>. Reorder and discard require explicit positive bounds. Risk <code>integrity-critical</code>.</p>
+<p><a id="setting-timestamp_regression.trades.max_regression_ms"></a></p>
+<p><strong><code>timestamp_regression.trades.max_regression_ms</code></strong></p>
+<p>Largest accepted trade regression under a non-strict policy.</p>
+<p>Type <code>milliseconds</code> · units milliseconds · default <code>0</code>. Must fit signed nanoseconds; positive for reorder or discard. Risk <code>integrity-critical</code>. Active when <code>timestamp_regression.trades.policy</code> = <code>preserve</code> or <code>reorder</code> or <code>discard</code>.</p>
+<p><a id="setting-timestamp_regression.trades.max_reorder_window_ms"></a></p>
+<p><strong><code>timestamp_regression.trades.max_reorder_window_ms</code></strong></p>
+<p>High-water window for trade reordering.</p>
+<p>Type <code>milliseconds</code> · units milliseconds · default <code>0</code>. Must fit signed nanoseconds; positive and at least max_regression_ms for reorder. Risk <code>integrity-critical</code>. Active when <code>timestamp_regression.trades.policy</code> = <code>reorder</code>.</p>
+<p><a id="setting-timestamp_regression.trades.max_discarded_events"></a></p>
+<p><strong><code>timestamp_regression.trades.max_discarded_events</code></strong></p>
+<p>Maximum discarded trade events.</p>
+<p>Type <code>integer</code> · default <code>0</code>. Positive for discard. Risk <code>integrity-critical</code>. Active when <code>timestamp_regression.trades.policy</code> = <code>discard</code>.</p>
+<p><a id="setting-timestamp_regression.trades.max_discarded_rate"></a></p>
+<p><strong><code>timestamp_regression.trades.max_discarded_rate</code></strong></p>
+<p>Additional rate cap on discarded trade events.</p>
+<p>Type <code>rate</code> · optional, with no default value reported. Finite fraction between 0 and 1 inclusive, representable as a Rust Decimal. Risk <code>integrity-critical</code>. Active when <code>timestamp_regression.trades.policy</code> = <code>discard</code>.</p>
+<p><a id="setting-timestamp_regression.trades.minimum_samples"></a></p>
+<p><strong><code>timestamp_regression.trades.minimum_samples</code></strong></p>
+<p>Eligible sample floor for the trade discard rate. The event cap still applies.</p>
+<p>Type <code>integer</code> · default <code>0</code>. Risk <code>integrity-critical</code>. Active when <code>timestamp_regression.trades.policy</code> = <code>discard</code>, <code>timestamp_regression.trades.max_discarded_rate</code> must be configured.</p>
+<p><a id="setting-timestamp_regression.depth.policy"></a></p>
+<p><strong><code>timestamp_regression.depth.policy</code></strong></p>
+<p>Strict rejects regressions, preserve retains verified native sequence, and snapshot_recovery resumes at a verified snapshot.</p>
+<p>Type <code>enum</code> · default <code>"strict"</code> · choices <code>strict</code>, <code>preserve</code>, <code>snapshot_recovery</code>. Risk <code>integrity-critical</code>.</p>
+<p><a id="setting-timestamp_regression.depth.max_regression_ms"></a></p>
+<p><strong><code>timestamp_regression.depth.max_regression_ms</code></strong></p>
+<p>High-water regression tolerance under depth preserve or timestamp snapshot recovery.</p>
+<p>Type <code>milliseconds</code> · units milliseconds · default <code>0</code>. Must fit in signed nanoseconds after multiplication by 1,000,000. Risk <code>integrity-critical</code>. Active when <code>timestamp_regression.depth.policy</code> = <code>preserve</code> or <code>snapshot_recovery</code>.</p>
+<p><a id="setting-timestamp_regression.depth.require_sequence_continuity"></a></p>
+<p><strong><code>timestamp_regression.depth.require_sequence_continuity</code></strong></p>
+<p>Keep applicable depth sequence validation enabled. Unsequenced feeds do not require a synthetic sequence.</p>
+<p>Type <code>boolean</code> · default <code>true</code>. Must be true. Risk <code>integrity-critical</code>.</p>
+<p><a id="setting-timestamp_regression.depth.require_recovery_snapshot"></a></p>
+<p><strong><code>timestamp_regression.depth.require_recovery_snapshot</code></strong></p>
+<p>Keep verified snapshot initialization enabled for depth recovery.</p>
+<p>Type <code>boolean</code> · default <code>true</code>. Must be true. Risk <code>integrity-critical</code>.</p>
+<p><a id="setting-timestamp_regression.depth.max_discarded_events"></a></p>
+<p><strong><code>timestamp_regression.depth.max_discarded_events</code></strong></p>
+<p>Finite allowance for observations excluded during depth timestamp snapshot recovery.</p>
+<p>Type <code>integer</code> · default <code>0</code>. Risk <code>integrity-critical</code>. Active when <code>timestamp_regression.depth.policy</code> = <code>snapshot_recovery</code>.</p>
 
 
 

@@ -202,6 +202,9 @@
         <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/conversion/</loc>
       </url>
       <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/explorer/</loc>
+      </url>
+      <url>
         <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/markets/</loc>
       </url>
       <url>
@@ -215,6 +218,9 @@
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/normalization/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/pipeline-runtime/</loc>
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/pipeline/</loc>

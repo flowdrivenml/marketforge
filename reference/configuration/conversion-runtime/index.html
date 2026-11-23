@@ -2603,6 +2603,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2690,6 +2694,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../runtime/" class="md-nav__link">
         
   
@@ -2698,6 +2729,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -2969,6 +3027,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Effective settings and snapshots
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-explorer-field-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Settings Explorer field targets
       </span>
     </span>
   </a>
@@ -5019,6 +5088,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#settings-explorer-field-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Settings Explorer field targets
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -5153,6 +5233,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -5254,6 +5338,36 @@
 <h2 id="effective-settings-and-snapshots">Effective settings and snapshots</h2>
 <p>Forge preparation reads and validates a snapshot with matching Python job field constraints. It takes the lower of each recipe resource request and the corresponding base limit. Parquet values come from the base runtime. The prepared job embeds these settings, and the Engine performs its own admission checks for row-group memory, workers and open files. The standalone Engine accepts a lower worker count via <code>--workers</code>; managed <code>mf convert run</code> uses the prepared settings.</p>
 <p>Editing the base configuration affects future preparation. A retained job supplies its own runtime values and pins the executable used to validate it. Re-prepare when you want new base settings or after changing the pinned managed binary. Committed output records the submitted job and effective settings in <code>conversion-runtime.json</code>. See the <a href="../../data-formats/prepared-conversion/">prepared job contract</a>.</p>
+<h2 id="settings-explorer-field-targets">Settings Explorer field targets</h2>
+<p>These entries use the runtime schema’s wording and constraints. The sections above explain how settings interact in a processing run.</p>
+<p><a id="setting-schema_version"></a></p>
+<p><strong><code>schema_version</code></strong></p>
+<p>Versions the base runtime document.</p>
+<p>Type <code>integer</code> · required in the base runtime file · read-only schema identity. Must match the Engine runtime schema version. Risk <code>ordinary</code>.</p>
+<p><a id="setting-resources.workers"></a></p>
+<p><strong><code>resources.workers</code></strong></p>
+<p>Requested worker concurrency. Admission can reduce effective parallelism.</p>
+<p>Type <code>integer</code> · required in the base runtime file. Positive. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.memory_limit_mb"></a></p>
+<p><strong><code>resources.memory_limit_mb</code></strong></p>
+<p>Memory budget in binary MiB for admitted work.</p>
+<p>Type <code>mib</code> · units MiB · required in the base runtime file. Positive and must fit u64 when converted to bytes. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-resources.max_open_files"></a></p>
+<p><strong><code>resources.max_open_files</code></strong></p>
+<p>Budget for participating file handles.</p>
+<p>Type <code>integer</code> · default <code>64</code>. Positive. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-parquet.row_group_target_mb"></a></p>
+<p><strong><code>parquet.row_group_target_mb</code></strong></p>
+<p>Target row group size in binary MiB.</p>
+<p>Type <code>mib</code> · units MiB · required in the base runtime file. Positive and no greater than parquet.file_target_mb. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-parquet.file_target_mb"></a></p>
+<p><strong><code>parquet.file_target_mb</code></strong></p>
+<p>Part rotation target in binary MiB.</p>
+<p>Type <code>mib</code> · units MiB · required in the base runtime file. At least the row group target and must fit u64 when converted to bytes. Risk <code>resource-sensitive</code>.</p>
+<p><a id="setting-parquet.compression_level"></a></p>
+<p><strong><code>parquet.compression_level</code></strong></p>
+<p>Parquet Zstandard compression level.</p>
+<p>Type <code>integer</code> · default <code>3</code>. 1 to 22 inclusive. Risk <code>resource-sensitive</code>.</p>
 
 
 

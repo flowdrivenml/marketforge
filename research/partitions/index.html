@@ -2582,6 +2582,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2669,6 +2673,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/configuration/explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/runtime/" class="md-nav__link">
         
   
@@ -2677,6 +2708,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -5077,7 +5135,7 @@
     <span class="nb">print</span><span class="p">(</span><span class="n">part</span><span class="o">.</span><span class="n">info</span><span class="p">(),</span> <span class="n">part</span><span class="o">.</span><span class="n">schema</span><span class="p">())</span>
     <span class="nb">print</span><span class="p">(</span><span class="n">part</span><span class="o">.</span><span class="n">row_group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s2">"event_timestamp_ns"</span><span class="p">]))</span>
 </code></pre></div>
-<p>Use <code>part.row_groups()</code> for per-file group rows and recorded compressed column-chunk size. Use <code>part.batches()</code> for exact sequential Arrow access, or <code>part.scan(columns=[...])</code> for lazy Polars over compatible fields. An explicitly selected row group supports <code>head</code> and <code>batches</code>.</p>
+<p>Use <code>part.row_groups()</code> for per-file group rows and recorded compressed column-chunk size. Use <code>part.batches()</code> for exact sequential Arrow access, or <code>part.scan(columns=[...])</code> for lazy Polars over compatible fields. An explicitly selected row group supports <code>head</code> and <code>batches</code>. Use <code>part.select_row_groups([0, 2], file=1)</code> to read several groups from one file. Pass a list of locators to <code>Dataset.query(partition=...)</code> to read several partitions in manifest order.</p>
 <h2 id="cli-and-forge-workspace">CLI and Forge workspace</h2>
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>partitions<span class="w"> </span>--publication-id<span class="w"> </span>PUBLICATION_ID<span class="w"> </span>--testing
 mf<span class="w"> </span>datasets<span class="w"> </span>partitions<span class="w"> </span>--publication-id<span class="w"> </span>PUBLICATION_ID<span class="w"> </span>--partition<span class="w"> </span>PARTITION<span class="w"> </span>--row-groups<span class="w"> </span>--testing

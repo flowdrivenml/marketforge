@@ -1484,6 +1484,39 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#data-flow-and-identities" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Data flow and identities
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#processing-and-execution-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Processing and execution history
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Troubleshooting
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2703,6 +2736,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2790,6 +2827,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/configuration/explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/runtime/" class="md-nav__link">
         
   
@@ -2798,6 +2862,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -5105,6 +5196,39 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#data-flow-and-identities" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Data flow and identities
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#processing-and-execution-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Processing and execution history
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Troubleshooting
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -5235,9 +5359,9 @@ merged output in a target quote and index the verified result.</p>
 the acquisition request schema and one half-open UTC interval <code>[start, end)</code>.
 Use the existing scopes and feed options for each exchange. Forge resolves
 archive, instrument, job, dataset, and registry identities.</p>
-<p>The example is checked in at <code>data/.config/workflows/data_engineering/pipeline/bybit_spot.toml</code>. To
-inspect or edit it, run <code>nvim data/.config/workflows/data_engineering/pipeline/bybit_spot.toml</code>.</p>
-<p>Use the <a href="https://github.com/flowdrivenml/marketforge/blob/main/data/.config/workflows/data_engineering/pipeline/bybit_spot.toml">maintained sample recipe</a> as the complete example. See the <a href="../../reference/configuration/pipeline/">recipe reference</a> for field definitions.</p>
+<p>Create a starter with <code>mf pipeline new bybit_spot</code> and replace its contents
+with the <a href="../../reference/configuration/pipeline/#four-stage-bybit-spot-recipe">four-stage example</a>.
+Use the <a href="../../reference/configuration/pipeline/">recipe reference</a> to customize it.</p>
 <p><code>[normalize]</code> and <code>[merge]</code> are optional. Normalization defaults to turnover
 ranking. Merge accepts <code>causal</code> and <code>chronological</code>. When omitted, the existing
 merge planner picks the ordering required by the selected inputs. It derives
@@ -5346,6 +5470,113 @@ evidence as indicated. Preserve existing outputs and staging when inspecting
 interrupted attempts. Use a fresh run when the recipe, data selection, or
 interpretation needs to change.</p>
 <p>To inspect an indexed conversion result, follow <a href="../conversion/#6-inspect-the-result">Conversion output inspection</a>.</p>
+<h2 id="data-flow-and-identities">Data flow and identities</h2>
+<pre class="mermaid"><code>flowchart TD
+    A[Acquisition] --&gt; B[Verified raw archive revisions]
+    B --&gt; C[Normalization]
+    C --&gt; D[Registered normalized primary files]
+    D --&gt; E[Merge]
+    E --&gt; F[Registered merged publication]
+    F --&gt; G[Optional Conversion]
+    G --&gt; H[Verified indexed conversion output]</code></pre>
+<p>Conversion binds the exact merge from this run using its registry and Engine
+publication IDs, registry UUID, committed interval, and retained fingerprints.
+The <a href="../../reference/configuration/pipeline/#four-stage-bybit-spot-recipe">four-stage Bybit example</a>
+requests BTCUSDT trades and depth plus BTCUSDC trades. It demonstrates identity
+valuation and a possible USDC → BTC → USDT path. Reference availability is
+evaluated against the causal timeline during conversion.</p>
+<h2 id="processing-and-execution-history">Processing and execution history</h2>
+<p>Run and status output show the retained processing result and the execution
+index separately. A stage can publish verified output before a failure updating
+run history. Forge retains the terminal outcome before finalizing its original
+PostgreSQL attempt. The outcome includes the attempt, run, registry, resource
+identities and a fingerprinted report snapshot. Acquisition has its own
+logical child run. Processing stages link their retained Engine executions and
+prepared artifacts, even when they have no separate logical child run.</p>
+<p>Inspect a run and its outputs using the IDs printed in its summary.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>runs<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--operation<span class="w"> </span>pipeline
+mf<span class="w"> </span>runs<span class="w"> </span>show<span class="w"> </span>RUN_ID<span class="w"> </span>--testing
+mf<span class="w"> </span>runs<span class="w"> </span>report<span class="w"> </span>RUN_ID<span class="w"> </span>--testing
+mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--operation<span class="w"> </span>merge<span class="w"> </span>--view<span class="w"> </span>publications
+mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--operation<span class="w"> </span>convert<span class="w"> </span>--view<span class="w"> </span>publications
+mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>--publication-id<span class="w"> </span>MERGED_PUBLICATION_ID<span class="w"> </span>--testing
+mf<span class="w"> </span>datasets<span class="w"> </span>show<span class="w"> </span>--output-ref<span class="w"> </span>CONVERTED_OUTPUT_REF<span class="w"> </span>--testing
+</code></pre></div>
+<p>If processing is complete and the run-history index needs reconciliation,
+preview the exact retained attempt, then apply that selection. Verify the
+same attempt in <code>runs show</code>. Repeated apply reports that the attempt is
+already reconciled. This operation never starts an Engine or rewrites outputs.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>runs<span class="w"> </span>reconcile<span class="w"> </span>--run-id<span class="w"> </span>RUN_ID<span class="w"> </span>--testing
+mf<span class="w"> </span>runs<span class="w"> </span>reconcile<span class="w"> </span>--run-id<span class="w"> </span>RUN_ID<span class="w"> </span>--testing<span class="w"> </span>--apply
+mf<span class="w"> </span>runs<span class="w"> </span>show<span class="w"> </span>RUN_ID<span class="w"> </span>--testing
+</code></pre></div>
+<p>The selected registry needs current Forge schema migrations to index
+four-stage resources. Installation or database administrators can check
+<code>mf database status --testing</code> before applying pending testing migrations.
+<a href="../../concepts/execution/">Execution and recovery concepts</a></p>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<table>
+<thead>
+<tr>
+<th>Observation</th>
+<th>What to inspect or do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TOML invalid or provider rejects a request</td>
+<td>Run <code>pipeline validate</code> and compare with <code>acquisition sources</code>. Fix the scope or feed declaration before starting</td>
+</tr>
+<tr>
+<td>No registered raw evidence</td>
+<td><code>pipeline plan</code> reports recorded local evidence. Discovery and physical readiness are checked in Acquisition</td>
+</tr>
+<tr>
+<td>Missing profile or historical specification</td>
+<td>Inspect normalization preparation diagnostics, the installed profile catalogue and the instrument’s applicable historical specification</td>
+</tr>
+<tr>
+<td>Missing or incompatible Engine</td>
+<td>Check <code>engine status</code> and <code>engine runtime pipeline</code>. Conversion also requires <code>engine runtime convert</code></td>
+</tr>
+<tr>
+<td>Merge selection blocked</td>
+<td>Inspect the exact upstream file IDs and their publication membership in the normalization receipt. Resolve missing evidence before changing the request</td>
+</tr>
+<tr>
+<td>Missing reference stream or stale price</td>
+<td>Inspect the merged streams and reference decisions in preparation. Confirm the trade stream ID, route, causal eligibility and maximum age</td>
+</tr>
+<tr>
+<td>Stopped at normalization preparation</td>
+<td>Resume the retained run to execute the pinned batch</td>
+</tr>
+<tr>
+<td>Normalization or Merge published, registration pending</td>
+<td>Resume so the stage can verify the preserved commit and retry registration</td>
+</tr>
+<tr>
+<td>Conversion committed, indexing pending</td>
+<td>Resume with the retained converter job and outputs. Forge uses its verification and work-index recovery path. Inspect the report if recovery remains blocked</td>
+</tr>
+<tr>
+<td>Interrupted or stage window lost</td>
+<td>Inspect the retained stage outcome. Resume the same run if the pins and registry identity still match</td>
+</tr>
+<tr>
+<td>Ghostty unavailable</td>
+<td><code>auto</code> can fall back before work starts. Use <code>inline</code> for unattended runs. <code>window</code> requires a supported graphical terminal</td>
+</tr>
+<tr>
+<td>Stdout is piped or redirected</td>
+<td>The human summary uses the shared theme with plain output under automatic color detection. The CLI regression suite covers the former missing-style failure</td>
+</tr>
+<tr>
+<td>Processing complete, index incomplete</td>
+<td>Inspect the retained result and reconcile the exact run. Preserve the output and attempt evidence</td>
+</tr>
+</tbody>
+</table>
 
 
 

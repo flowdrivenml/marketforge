@@ -2582,6 +2582,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2669,6 +2673,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../reference/configuration/explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../reference/runtime/" class="md-nav__link">
         
   
@@ -2677,6 +2708,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/configuration/pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -5061,7 +5119,8 @@
 <h2 id="read-only-registry-discovery">Read-only registry discovery</h2>
 <p>In a notebook, choose the environment explicitly and open a returned reference.</p>
 <div class="highlight"><pre><span></span><code><span class="n">page</span> <span class="o">=</span> <span class="k">await</span> <span class="n">data</span><span class="o">.</span><span class="n">find_registered</span><span class="p">(</span>
-    <span class="n">testing</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">operation</span><span class="o">=</span><span class="s2">"merge"</span><span class="p">,</span> <span class="n">exchange</span><span class="o">=</span><span class="s2">"bybit"</span><span class="p">,</span> <span class="n">instrument</span><span class="o">=</span><span class="s2">"BTCUSDT"</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">10</span>
+    <span class="n">testing</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">operation</span><span class="o">=</span><span class="s2">"merge"</span><span class="p">,</span> <span class="n">data_type</span><span class="o">=</span><span class="s2">"combined"</span><span class="p">,</span>
+    <span class="n">exchange</span><span class="o">=</span><span class="s2">"bybit"</span><span class="p">,</span> <span class="n">instrument</span><span class="o">=</span><span class="s2">"BTCUSDT"</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">10</span>
 <span class="p">)</span>
 <span class="n">publications</span> <span class="o">=</span> <span class="n">page</span><span class="p">[</span><span class="s2">"publications"</span><span class="p">]</span>
 <span class="k">if</span> <span class="n">publications</span><span class="p">:</span>

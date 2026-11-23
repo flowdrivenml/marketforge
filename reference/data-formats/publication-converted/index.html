@@ -2601,6 +2601,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2688,6 +2692,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../configuration/explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../runtime/" class="md-nav__link">
         
   
@@ -2696,6 +2727,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -5323,7 +5381,7 @@
 </tr>
 </tbody>
 </table>
-<p>Python manifest discovery currently recognizes normalized and merged publications. Inspect converted Parquet with Arrow or through independent file reads when working outside the published manifest discovery API. <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/schema/schema.rs">Converted schema</a> · <a href="../../../research/python-api/">Python dataset API</a></p>
+<p>Python discovery recognizes converted manifests. Use the registry-backed Python opener to resolve a durable output reference or open the publication directory directly. <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/schema/schema.rs">Converted schema</a> · <a href="../../../research/python-api/">Python dataset API</a></p>
 <h2 id="execution-receipt">Execution receipt</h2>
 <p><code>execution.json</code> records version 1, uint64 <code>job_id</code>, and uint64 counters <code>events_read</code>, <code>events_written</code>, <code>identity_events</code>, <code>converted_events</code>, <code>unavailable_events</code>, <code>reference_updates</code>, <code>files_written</code>, and <code>row_groups_written</code>. <code>skipped_events</code> defaults to zero and is omitted at zero. Optional <code>depth</code> uses the same level accounting as the manifest. The combined fixture writes primary files under <code>partition-NNNNNN/part-NNNNNN.parquet</code>. The manifest inventory determines the complete set. <a href="https://github.com/flowdrivenml/marketforge/blob/main/engine/src/historical/convert/output/publication/receipt.rs">Receipt definition</a></p>
 <h2 id="read-the-counts">Read the counts</h2>

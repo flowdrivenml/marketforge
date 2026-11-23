@@ -2633,6 +2633,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#recipe-inventory-and-creation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recipe inventory and creation
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2716,6 +2727,10 @@
       
         
           
+        
+      
+        
+      
         
       
         
@@ -2831,6 +2846,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../configuration/explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../runtime/" class="md-nav__link">
         
   
@@ -2839,6 +2881,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -5185,6 +5254,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#recipe-inventory-and-creation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Recipe inventory and creation
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -5512,6 +5592,58 @@
 <li><code>--tui</code> and global <code>--json</code> are mutually exclusive. The dashboard needs interactive input and stderr. Redirected terminal output uses a plain summary. Global JSON returns the report object.</li>
 </ul>
 <p>For the persisted run, stage, phase and receipt relationships, see <a href="../../data-formats/prepared-forge/">Forge preparation and run evidence</a>.</p>
+<h2 id="recipe-inventory-and-creation">Recipe inventory and creation</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Arguments and options</th>
+<th>Effect and result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mf pipeline list [--sort name] [--order asc\|desc]</code></td>
+<td>No positional arguments. Name sort and ascending order are the defaults</td>
+<td>Reads managed recipes locally. Human output shows stage count, request count, interval, conversion target and structural validity. JSON preserves <code>schema_version</code> and the ordered <code>recipes</code> name list. An empty library returns zero</td>
+</tr>
+<tr>
+<td><code>mf pipeline new NAME</code></td>
+<td>Required managed name, with optional <code>.toml</code> suffix</td>
+<td>Creates a starter recipe and refuses an existing destination. JSON returns <code>status: "draft_created"</code> and <code>path</code></td>
+</tr>
+</tbody>
+</table>
+<p>Use a name made of letters, digits, underscores or hyphens, starting with a
+letter or digit. Recipe commands accept a managed basename with or without
+<code>.toml</code>. Directory paths are rejected. <code>status</code> and <code>resume</code> take exact
+retained run IDs. Database flags belong to <code>plan</code>, <code>run</code> and <code>resume</code>.
+Human <code>status</code> reads the retained report and uses its recorded environment
+and registry UUID for an optional index lookup. JSON status returns the
+retained report without that extra lookup.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>pipeline<span class="w"> </span>new<span class="w"> </span>example
+mf<span class="w"> </span>pipeline<span class="w"> </span>list<span class="w"> </span>--order<span class="w"> </span>desc
+mf<span class="w"> </span>pipeline<span class="w"> </span>validate<span class="w"> </span>example.toml
+mf<span class="w"> </span>pipeline<span class="w"> </span>plan<span class="w"> </span>example<span class="w"> </span>--testing
+mf<span class="w"> </span>pipeline<span class="w"> </span>run<span class="w"> </span>example<span class="w"> </span>--testing<span class="w"> </span>--stage-terminal<span class="w"> </span>inline
+mf<span class="w"> </span>pipeline<span class="w"> </span>status<span class="w"> </span>RUN_ID
+mf<span class="w"> </span>pipeline<span class="w"> </span>resume<span class="w"> </span>RUN_ID<span class="w"> </span>--testing<span class="w"> </span>--stage-terminal<span class="w"> </span>inline
+</code></pre></div>
+<p>Local validation success returns zero and confirms the declared structure,
+including enabled stages and conversion options. Invalid TOML, unknown recipes,
+unreadable reports, and unsupported arguments return 2. A blocked plan also
+returns 2 and identifies missing runtime or registry evidence in its summary.
+The runtime checks are reported separately from deferred preparation.
+Machine plan output adds <code>runtime_availability</code> to the existing fields.</p>
+<p>A completed run needs no further stage work on resume. When the summary
+reports an incomplete run-history index, use exact metadata reconciliation.</p>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>runs<span class="w"> </span>reconcile<span class="w"> </span>--run-id<span class="w"> </span>RUN_ID<span class="w"> </span>--testing
+mf<span class="w"> </span>runs<span class="w"> </span>reconcile<span class="w"> </span>--run-id<span class="w"> </span>RUN_ID<span class="w"> </span>--testing<span class="w"> </span>--apply
+</code></pre></div>
+<p>The selector reviews the latest indexed attempt of that run in the selected
+workspace and registry. Apply revalidates retained identity and report
+evidence. Successful processing and run-history finalization are separate
+results. A run-history warning preserves the processing exit status.</p>
 
 
 

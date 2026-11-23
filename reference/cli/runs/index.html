@@ -2415,6 +2415,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="JSON results">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#exact-reconciliation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Exact reconciliation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -2744,6 +2761,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2831,6 +2852,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../configuration/explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration Explorer
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../runtime/" class="md-nav__link">
         
   
@@ -2839,6 +2887,33 @@
     
   
   Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/pipeline-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline runtime overrides
 
     
   </span>
@@ -5183,6 +5258,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="JSON results">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#exact-reconciliation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Exact reconciliation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -5574,6 +5666,13 @@ mf<span class="w"> </span>--json<span class="w"> </span>runs<span class="w"> </s
 <p>Deletion uses its own structured result. Preview includes the plan location, reviewed targets, estimates and blockers. Apply includes the receipt location, state and confirmed effects. A blocked or partial deletion exits nonzero. An unknown ID fails. A completed plan can be reapplied to inspect its recorded outcome.</p>
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>runs<span class="w"> </span>delete<span class="w"> </span>RUN_ID<span class="w"> </span>--testing
 </code></pre></div>
+<h3 id="exact-reconciliation">Exact reconciliation</h3>
+<p>Use <code>mf runs reconcile --run-id RUN_ID --testing</code> to preview the latest
+indexed attempt of one run in the current workspace and registry. Add
+<code>--apply</code> after review to finalize metadata from the retained outcome.
+A repeated, consistent apply reports <strong>Already reconciled</strong>. Conflicts,
+missing evidence, and a fully deleted run prevent repair. The selector
+does not accept a pagination offset. <a href="../../../workflows/pipeline/#processing-and-execution-history">Pipeline recovery</a></p>
 
 
 
