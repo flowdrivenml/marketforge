@@ -1,4 +1,6 @@
 
+
+
 <!doctype html>
 <html lang="en" class="no-js">
   <head>
@@ -14,6 +16,7 @@
       
       
       
+      
         <link rel="prev" href="../merge/">
       
       
@@ -24,7 +27,7 @@
       
       
       <link rel="icon" href="../../../assets/branding/logo_small.png">
-      <meta name="generator" content="zensical-0.1.1">
+      <meta name="generator" content="zensical-0.1.3">
     
     
       
@@ -35,12 +38,13 @@
       
         
       
-      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.ebb7f775.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.e2cf241e.min.css">
       
         
           
         
         <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
       
       
 
@@ -5202,17 +5206,17 @@
 </tr>
 <tr>
 <td><code>prepare</code></td>
-<td>A recipe and the guarded testing registry. Resolves complete registered sources and references, then generates job documents and validates them with the installed converter if available. Dry run performs selection and computes job specifications without invoking the Engine or writing files</td>
+<td>A recipe and the selected guarded registry. Resolves complete registered sources and references, then generates job documents and validates them with the installed converter if available. Dry run performs selection and computes job specifications without Rust job validation or writing preparation artifacts</td>
 <td><code>prepare-report.json</code> shape described below</td>
 </tr>
 <tr>
 <td><code>run</code></td>
-<td>Managed recipe, TOML path, retained collection or retained individual job path. A recipe is prepared first. A retained submission reuses its pinned inputs. This action can publish converted data. The documented registry remains unchanged by conversion</td>
+<td>Managed recipe, TOML path, retained collection or retained individual job path. A recipe is prepared first. A retained submission reuses its pinned inputs. This action can publish converted data. Forge indexes verified converted outputs without catalogue registration</td>
 <td>Run status and execution results with artifact and publication evidence</td>
 </tr>
 </tbody>
 </table>
-<p><code>--tui</code> is an execution option and is mutually exclusive with global <code>--json</code>. An action report with <code>status</code> of <code>blocked</code>, <code>failed</code>, or <code>interrupted</code> returns exit 1. A <code>generated</code> preparation can return exit 0 even when compatibility remains unvalidated. Parse and handled configuration errors use the <a href="../">shared CLI rules</a>.</p>
+<p><code>--tui</code> is an execution option and is mutually exclusive with global <code>--json</code>. An action report with <code>status</code> of <code>blocked</code>, <code>failed</code>, or <code>interrupted</code> returns exit 1. A retained <code>generated</code> preparation with unvalidated compatibility returns exit 1. A successful dry run can return exit 0 without Rust job validation. Parse and handled configuration errors use the <a href="../">shared CLI rules</a>.</p>
 <h2 id="preparation-result">Preparation result</h2>
 <p>Read <code>status</code> and <code>compatibility</code> together. <code>blocked</code> identifies failed selection, evidence or metadata and lists <code>blockers</code>. <code>generated</code> identifies a successfully constructed job specification. The CLI uses <code>status: "generated"</code> even when the production parser passes. In that case, <code>compatibility: "validated"</code> records an installed binary that validated every saved job with no remaining compatibility blockers. Otherwise <code>compatibility: "not_validated"</code> retains the exact reasons in <code>compatibility_blockers</code>.</p>
 <p>The report identifies requested and effective publication scope, the upstream TOML and digest, source and external reference publications, resolved streams and effective settings. <code>job_path</code> points to the Forge collection or is null on dry run. <code>report_path</code> identifies the saved report when written. In a persisted report <code>jobs[]</code> contains <code>path</code> and <code>sha256</code>, an integer <code>job_id</code>, destination <code>output</code>, selected <code>references</code>, source registry publication ID and string Engine publication ID, and <code>engine_validation</code> of <code>not_run</code>, <code>passed</code>, or <code>failed</code>. Successful validation can include <code>validation_output</code>. The dry-run job records <code>intended_job_path</code> in place of the saved path and digest. <code>artifacts</code> records file pins when persisted.</p>
@@ -5322,7 +5326,8 @@ mf<span class="w"> </span>convert<span class="w"> </span>run<span class="w"> </s
       <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":null,"search":"../../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../../assets/javascripts/bundle.3cb411a8.min.js"></script>
+      <script src="../../../assets/javascripts/bundle.9e76c64c.min.js"></script>
+      
       
         <script src="../../../assets/javascripts/keyboard.js"></script>
       
