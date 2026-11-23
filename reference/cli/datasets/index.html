@@ -1761,6 +1761,20 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -1824,6 +1838,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../concepts/data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  The historical data model
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../concepts/identity/" class="md-nav__link">
         
   
@@ -1832,6 +1873,33 @@
     
   
   Identity and provenance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and prepared work
 
     
   </span>
@@ -1885,7 +1953,7 @@
   <span class="md-ellipsis">
     
   
-  Depth observations and reconstruction
+  Trades, depth, and reconstruction
 
     
   </span>
@@ -1912,7 +1980,88 @@
   <span class="md-ellipsis">
     
   
-  Ordering and reconciliation
+  Ordering and causality
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  What normalization does
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  What a merge combines
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical quote conversion
 
     
   </span>
@@ -1939,7 +2088,61 @@
   <span class="md-ellipsis">
     
   
-  Execution, publication, and lineage
+  Evidence, integrity, and reproducibility
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/execution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Runs, publication, reuse, and recovery
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Glossary
 
     
   </span>
@@ -2091,6 +2294,8 @@
       
         
       
+        
+      
     
     
     
@@ -2142,6 +2347,33 @@
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
               
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sorting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Collection sorting
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
                 
               
                 
@@ -5028,6 +5260,8 @@
       
         
       
+        
+      
     
     
     
@@ -5144,7 +5378,7 @@ mf<span class="w"> </span>datasets<span class="w"> </span>coverage<span class="w
 </tr>
 </tbody>
 </table>
-<p>The four identity selectors <code>--publication-id</code>, <code>--engine-publication-id</code>, <code>--publication</code>, and <code>--output-ref</code> are mutually exclusive. <code>list</code> and <code>find</code> accept <code>--sort id</code>, <code>observed</code>, <code>size</code>, and <code>stage</code> for publication and file views. <code>id</code> is ascending, <code>observed</code> sorts by descending first observed timestamp, and <code>size</code> is descending. Timeline view supports <code>id</code> (default stage and identity order), <code>observed</code>, <code>stage</code>, <code>instrument</code>, <code>exchange</code>, <code>start</code> and <code>end</code>. Timeline start and end sorts are ascending. Coverage uses a fixed identity order.</p>
+<p>The four identity selectors <code>--publication-id</code>, <code>--engine-publication-id</code>, <code>--publication</code>, and <code>--output-ref</code> are mutually exclusive. Timelines, publications and files default to observed start descending. In all three views, <code>time</code> and <code>observed</code> alias <code>start</code>. Use <code>--sort end --order desc</code> for latest observed end, or <code>--sort start --order asc</code> for earliest observed start. Publication bounds describe all registered files even when a filter selects only part of the membership. <a href="../sorting/">Fields, defaults and aliases</a>.</p>
 <p>For <code>list</code> and <code>find</code>, <code>--wide</code> shows file paths in file view. In timeline view, <code>--wide</code> prints exact inspection commands. <code>--precise</code> retains nanosecond display precision. These flags change terminal presentation.</p>
 <h2 id="understanding-dataset-coverage">Understanding dataset coverage</h2>
 <p>A timeline is a navigation grouping. The identity includes stage, exchange, instrument namespace and canonical ID, market, data kind, stream, and retained representation. Merge uses a resolvable upstream namespace when available. Unresolved namespaces are isolated by publication. Conversion also separates target quote and work-key variant. A publication can contribute to several identities, so the number of segments and the distinct output count describe different units.</p>
@@ -5281,7 +5515,7 @@ mf<span class="w"> </span>datasets<span class="w"> </span>verify<span class="w">
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>--json<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--limit<span class="w"> </span><span class="m">10</span>
 mf<span class="w"> </span>--json<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--view<span class="w"> </span>timelines<span class="w"> </span>--limit<span class="w"> </span><span class="m">10</span>
 </code></pre></div>
-<p>JSON <code>list</code>, <code>find</code> and <code>coverage</code> without an explicit view retain the registered-file page with <code>datasets</code>, <code>limit</code>, <code>offset</code>, and <code>interval_semantics</code>. Specify a view for conversion, newer reference filters, text search and non-default sorting. Legacy pages keep the historical file filtering behavior.</p>
+<p>JSON <code>list</code>, <code>find</code> and <code>coverage</code> without an explicit view retain the registered-file page with <code>datasets</code>, <code>limit</code>, <code>offset</code>, and <code>interval_semantics</code>. Specify a view for conversion, newer reference filters, text search. Legacy pages keep the historical file filtering behavior and accept file sort fields.</p>
 <p>Explicit views return schema version 1 with <code>view</code>, <code>environment</code>, <code>total</code>, <code>limit</code>, <code>offset</code>, <code>has_more</code>, and the corresponding array <code>timelines</code>, <code>publications</code>, <code>datasets</code>, or <code>coverage</code>. Timelines include full contributor references plus <code>timeline_counts</code>, <code>matching_publications</code> and <code>stage_publications</code>. Other views expose stage counts in <code>stages</code>. <code>conversion_index</code> distinguishes an available, unavailable or out-of-filter index. Unreadable indexed manifests are reported separately. Timeline details return the selected <code>timeline</code> and environment. File inspection returns action-specific objects. Availability and supersession can change the response. <a href="../#global-options">Global JSON and errors</a></p>
 <table>
 <thead>

@@ -1761,6 +1761,20 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -1824,6 +1838,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../concepts/data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  The historical data model
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../concepts/identity/" class="md-nav__link">
         
   
@@ -1832,6 +1873,33 @@
     
   
   Identity and provenance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and prepared work
 
     
   </span>
@@ -1885,7 +1953,7 @@
   <span class="md-ellipsis">
     
   
-  Depth observations and reconstruction
+  Trades, depth, and reconstruction
 
     
   </span>
@@ -1912,7 +1980,88 @@
   <span class="md-ellipsis">
     
   
-  Ordering and reconciliation
+  Ordering and causality
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  What normalization does
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  What a merge combines
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical quote conversion
 
     
   </span>
@@ -1939,7 +2088,61 @@
   <span class="md-ellipsis">
     
   
-  Execution, publication, and lineage
+  Evidence, integrity, and reproducibility
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/execution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Runs, publication, reuse, and recovery
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Glossary
 
     
   </span>
@@ -2091,6 +2294,8 @@
       
         
       
+        
+      
     
     
     
@@ -2142,6 +2347,33 @@
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
               
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sorting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Collection sorting
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
                 
               
                 
@@ -4882,6 +5114,8 @@
       
         
       
+        
+      
     
     
     
@@ -5029,7 +5263,7 @@
 </tbody>
 </table>
 <p>Different filter categories intersect. With collection filters omitted, sync/refresh visit all 14 supported combinations. A supplied symbol filters matching metadata or statistics within each selected scope. See the <a href="../../../workflows/markets/instrument-discovery/#synchronize-the-catalogue">collector matrix</a>.</p>
-<p>Market <code>show</code> accepts <code>exchange.market.symbol</code> or <code>exchange.market.instrument_type.symbol</code>. Use the qualified form for collisions and copy native punctuation exactly. The separate <a href="../catalog/">manual catalogue</a> uses <code>exchange.instrument_type.market_category.symbol</code>. Market list sorts by exchange/category/symbol by default, by native denomination then descending turnover with <code>--sort turnover</code>, or descending stored <code>measured_at</code> with <code>--sort freshness</code>. The stale label uses a separate fetch-time test. Filters precede the limit. Market list and rank list default to 50 rows with bounds 1–10000 and return <code>truncated</code> in JSON. These commands expose no offset or cursor.</p>
+<p>Market <code>show</code> accepts <code>exchange.market.symbol</code> or <code>exchange.market.instrument_type.symbol</code>. Use the qualified form for collisions and copy native punctuation exactly. The separate <a href="../catalog/">manual catalogue</a> uses <code>exchange.instrument_type.market_category.symbol</code>. Market list defaults to ascending identity. <code>--sort time</code> uses the retained source observation timestamp. <code>--sort freshness</code> uses the stored metric window end. <code>--sort turnover</code> orders within native denominations. <code>--order asc|desc</code> changes the direction of the selected field. The stale label uses a separate fetch-time test. <a href="../sorting/">Sorting fields and ranking groups</a>. Filters precede the limit. Market list and rank list default to 50 rows with bounds 1–10000 and return <code>truncated</code> in JSON. These commands expose no offset or cursor.</p>
 <h2 id="ranking-inspection">Ranking inspection</h2>
 <p><code>rank show</code> retains the published score, position and group rank. Identity filters select a view of included and excluded entries. The snapshot header remains publication-wide, while displayed entry and exclusion summaries use matching rows. <code>--limit</code> caps human included/excluded tables separately. <code>--excluded</code> shows individual exclusions in addition to grouped reasons. <code>--all</code> removes human row caps. JSON returns all matching entries, including exclusions and evidence, regardless of these three options. The separate <code>conversions</code> array contains the snapshot-wide conversion records.</p>
 <p><code>--conversion ENTRY</code> accepts the stored full instrument reference or unique storage <code>position</code> in the matching view. A grouped-volume <code>group_rank</code> can repeat across assets and is unsuitable as a numeric selector. An excluded entry can be selected by reference. The option validates the selection even in JSON. It adds human evidence detail without slicing JSON to the chosen entry.</p>

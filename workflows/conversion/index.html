@@ -1583,10 +1583,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#recipe-based-selection" class="md-nav__link">
+  <a href="#start-from-a-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Recipe-based selection
+        Start from a recipe
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#review-reference-trades" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Review reference trades
       </span>
     </span>
   </a>
@@ -1901,6 +1912,20 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -1964,6 +1989,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../concepts/data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  The historical data model
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../concepts/identity/" class="md-nav__link">
         
   
@@ -1972,6 +2024,33 @@
     
   
   Identity and provenance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and prepared work
 
     
   </span>
@@ -2025,7 +2104,7 @@
   <span class="md-ellipsis">
     
   
-  Depth observations and reconstruction
+  Trades, depth, and reconstruction
 
     
   </span>
@@ -2052,7 +2131,88 @@
   <span class="md-ellipsis">
     
   
-  Ordering and reconciliation
+  Ordering and causality
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  What normalization does
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  What a merge combines
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical quote conversion
 
     
   </span>
@@ -2079,7 +2239,61 @@
   <span class="md-ellipsis">
     
   
-  Execution, publication, and lineage
+  Evidence, integrity, and reproducibility
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/execution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Runs, publication, reuse, and recovery
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Glossary
 
     
   </span>
@@ -2227,6 +2441,8 @@
       
         
       
+        
+      
     
     
     
@@ -2278,6 +2494,33 @@
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
               
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/sorting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Collection sorting
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
                 
               
                 
@@ -4743,10 +4986,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#recipe-based-selection" class="md-nav__link">
+  <a href="#start-from-a-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Recipe-based selection
+        Start from a recipe
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#review-reference-trades" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Review reference trades
       </span>
     </span>
   </a>
@@ -4960,13 +5214,6 @@
 <h1 id="prepare-historical-conversion">Prepare historical conversion</h1>
 <p>Forge converts the quote currency of a supported committed <a href="../../reference/publication-merge/#verification-and-handoff">merge publication</a>. The recipe describes source intent and references. The generated Rust job points to a complete publication directory, including its manifest and all primary files.</p>
 <h2 id="select-a-source">Select a source</h2>
-<p>Create a recipe from one source TOML. Forge uses a merge recipe's retained submission and registered normalized parents. For a normalization recipe, it matches the recorded requests and retained normalization submission before following the merge lineage. For an acquisition recipe, it checks the raw scope, archive interval and digest against the normalized file's registered raw contributions, then follows the merge lineage. These routes reuse existing outputs. Legacy normalization requests based on archive IDs are unsupported as source recipes.</p>
-<div class="highlight"><pre><span></span><code><span class="nb">set</span><span class="w"> </span>-o<span class="w"> </span>pipefail
-mf<span class="w"> </span>convert<span class="w"> </span>new<span class="w"> </span>example<span class="w"> </span>--from-merge<span class="w"> </span>upstream_merge<span class="w"> </span>--target-quote<span class="w"> </span>USDT<span class="w"> </span>--testing
-mf<span class="w"> </span>convert<span class="w"> </span>new<span class="w"> </span>from_normalization<span class="w"> </span>--from-normalize<span class="w"> </span>upstream_normalization<span class="w"> </span>--target-quote<span class="w"> </span>USDT<span class="w"> </span>--testing
-mf<span class="w"> </span>convert<span class="w"> </span>new<span class="w"> </span>from_acquisition<span class="w"> </span>--from-acquisition<span class="w"> </span>upstream_acquisition<span class="w"> </span>--target-quote<span class="w"> </span>USDT<span class="w"> </span>--testing
-nvim<span class="w"> </span>data/.config/workflows/data_engineering/conversion/example.toml
-</code></pre></div>
 <h3 id="start-from-a-registered-merge">Start from a registered merge</h3>
 <p>List merged publications in the registry you intend to use. Copy the registry publication ID and inspect it before creating the conversion recipe.</p>
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>datasets<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--view<span class="w"> </span>publications<span class="w"> </span>--operation<span class="w"> </span>merge
@@ -4978,9 +5225,17 @@ mf<span class="w"> </span>convert<span class="w"> </span>show<span class="w"> </
 <div class="highlight"><pre><span></span><code>nvim<span class="w"> </span>data/.config/workflows/data_engineering/conversion/merged_usdt.toml
 mf<span class="w"> </span>convert<span class="w"> </span>prepare<span class="w"> </span>merged_usdt<span class="w"> </span>--testing<span class="w"> </span>--dry-run
 </code></pre></div>
-<h3 id="recipe-based-selection">Recipe-based selection</h3>
+<h3 id="start-from-a-recipe">Start from a recipe</h3>
+<p>Create a recipe from one source TOML. Forge uses a merge recipe's retained submission and registered normalized parents. For a normalization recipe, it matches the recorded requests and retained normalization submission before following the merge lineage. For an acquisition recipe, it checks the raw scope, archive interval and digest against the normalized file's registered raw contributions, then follows the merge lineage. These routes reuse existing outputs. Legacy normalization requests based on archive IDs are unsupported as source recipes.</p>
+<div class="highlight"><pre><span></span><code><span class="nb">set</span><span class="w"> </span>-o<span class="w"> </span>pipefail
+mf<span class="w"> </span>convert<span class="w"> </span>new<span class="w"> </span>example<span class="w"> </span>--from-merge<span class="w"> </span>upstream_merge<span class="w"> </span>--target-quote<span class="w"> </span>USDT<span class="w"> </span>--testing
+mf<span class="w"> </span>convert<span class="w"> </span>new<span class="w"> </span>from_normalization<span class="w"> </span>--from-normalize<span class="w"> </span>upstream_normalization<span class="w"> </span>--target-quote<span class="w"> </span>USDT<span class="w"> </span>--testing
+mf<span class="w"> </span>convert<span class="w"> </span>new<span class="w"> </span>from_acquisition<span class="w"> </span>--from-acquisition<span class="w"> </span>upstream_acquisition<span class="w"> </span>--target-quote<span class="w"> </span>USDT<span class="w"> </span>--testing
+nvim<span class="w"> </span>data/.config/workflows/data_engineering/conversion/example.toml
+</code></pre></div>
 <p>A recipe-based source records <code>version = 1</code>, a <code>[source]</code> table with kind, reference, path and SHA-256, and a half-open <code>[interval]</code> with integer <code>start_ns</code> and <code>end_ns</code>. Edit the recipe to choose references and review settings. If the source TOML changes, review the changes and create a new conversion recipe.</p>
 <p>For recipe-based sources, use file IDs when you started from registered primary files and publication IDs when you already know the owning merge. Forge expands the selected files to their complete publications. If your requested interval is narrower than a source publication, approve whole-publication processing deliberately. Confirm the approved publication’s stream and row scope before submitting it.</p>
+<h3 id="review-reference-trades">Review reference trades</h3>
 <p>Choose reference trade streams that can support the target quote at the event times you need. A separate trade-only merge can supply references for combined and depth inputs. Check staleness limits and any currency route gaps before accepting the result. The <a href="../../configuration/conversion/">recipe reference</a> lists exact selector names, defaults, and constraints. The <a href="../../reference/prepared-conversion/">prepared job reference</a> describes the resolved bindings Forge hands to the Engine.</p>
 <p>If verified outputs overlap and compete for a stream scope, prepare reports the candidate publication IDs. Pin the intended revision explicitly. Distinct noncompeting publications get separate jobs in one Forge collection. Each job needs its configured reference trades to resolve in the source or the specified external publication. File, stream, and interval selections never trim the physical input. Causal reconstruction rows remain part of the effective publication.</p>
 <h2 id="recorded-case-bybit-combined-merge-to-usdt">Recorded case: Bybit combined merge to USDT</h2>

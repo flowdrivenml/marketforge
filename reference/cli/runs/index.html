@@ -1761,6 +1761,20 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -1824,6 +1838,33 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../concepts/data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  The historical data model
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../concepts/identity/" class="md-nav__link">
         
   
@@ -1832,6 +1873,33 @@
     
   
   Identity and provenance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and prepared work
 
     
   </span>
@@ -1885,7 +1953,7 @@
   <span class="md-ellipsis">
     
   
-  Depth observations and reconstruction
+  Trades, depth, and reconstruction
 
     
   </span>
@@ -1912,7 +1980,88 @@
   <span class="md-ellipsis">
     
   
-  Ordering and reconciliation
+  Ordering and causality
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  What normalization does
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  What a merge combines
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical quote conversion
 
     
   </span>
@@ -1939,7 +2088,61 @@
   <span class="md-ellipsis">
     
   
-  Execution, publication, and lineage
+  Evidence, integrity, and reproducibility
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/execution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Runs, publication, reuse, and recovery
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Glossary
 
     
   </span>
@@ -2091,6 +2294,8 @@
       
         
       
+        
+      
     
     
     
@@ -2142,6 +2347,33 @@
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
               
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sorting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Collection sorting
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
                 
               
                 
@@ -4960,6 +5192,8 @@
       
         
       
+        
+      
     
     
     
@@ -5040,7 +5274,7 @@
 </tr>
 </tbody>
 </table>
-<p>For <code>list</code>, filters are exact and run before paging. <code>--operation</code> accepts <code>acquisition</code>, <code>normalize</code>, <code>merge</code>, <code>convert</code>, and <code>pipeline</code>. <code>--action</code>, <code>--status</code>, and <code>--recipe</code> match the recorded fields. <code>--start</code> and <code>--end</code> accept timezone-qualified ISO 8601 timestamps and filter run start in <code>[start, end)</code>. Results are ordered by descending start time, then run ID. The default limit is 100, range 1–1,000. Offset defaults to zero, range 0–100,000. The count in terminal output describes the page.</p>
+<p>For <code>list</code>, filters are exact and run before paging. <code>--operation</code> accepts <code>acquisition</code>, <code>normalize</code>, <code>merge</code>, <code>convert</code>, and <code>pipeline</code>. <code>--action</code>, <code>--status</code>, and <code>--recipe</code> match the recorded fields. <code>--start</code> and <code>--end</code> accept timezone-qualified ISO 8601 timestamps and filter run start in <code>[start, end)</code>. Results default to descending run start, then ascending run ID. <code>--sort time</code> aliases <code>start</code>, and <code>--order asc</code> alone lists oldest starts first. <a href="../sorting/">Sorting fields and defaults</a>. The default limit is 100, range 1–1,000. Offset defaults to zero, range 0–100,000. The count in terminal output describes the page.</p>
 <div class="highlight"><pre><span></span><code>mf<span class="w"> </span>runs<span class="w"> </span>list<span class="w"> </span>--testing<span class="w"> </span>--operation<span class="w"> </span>normalize<span class="w"> </span>--action<span class="w"> </span>run<span class="w"> </span>--status<span class="w"> </span>completed<span class="w"> </span>--limit<span class="w"> </span><span class="m">10</span>
 mf<span class="w"> </span>runs<span class="w"> </span>show<span class="w"> </span>RUN_ID<span class="w"> </span>--testing
 </code></pre></div>

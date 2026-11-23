@@ -17,7 +17,7 @@
         <link rel="prev" href="../workflows/forge-tui/">
       
       
-        <link rel="next" href="./identity/">
+        <link rel="next" href="./data-model/">
       
       
         
@@ -1763,6 +1763,20 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -1826,6 +1840,33 @@
   
   
     <li class="md-nav__item">
+      <a href="./data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  The historical data model
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="./identity/" class="md-nav__link">
         
   
@@ -1834,6 +1875,33 @@
     
   
   Identity and provenance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="./configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and prepared work
 
     
   </span>
@@ -1887,7 +1955,7 @@
   <span class="md-ellipsis">
     
   
-  Depth observations and reconstruction
+  Trades, depth, and reconstruction
 
     
   </span>
@@ -1914,7 +1982,88 @@
   <span class="md-ellipsis">
     
   
-  Ordering and reconciliation
+  Ordering and causality
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="./normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  What normalization does
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="./merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  What a merge combines
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="./conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical quote conversion
 
     
   </span>
@@ -1941,7 +2090,61 @@
   <span class="md-ellipsis">
     
   
-  Execution, publication, and lineage
+  Evidence, integrity, and reproducibility
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="./execution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Runs, publication, reuse, and recovery
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="./glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Glossary
 
     
   </span>
@@ -2089,6 +2292,8 @@
       
         
       
+        
+      
     
     
     
@@ -2140,6 +2345,33 @@
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
               
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/cli/sorting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Collection sorting
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
                 
               
                 
@@ -4558,6 +4790,11 @@
                       
                     
                     
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
                   
                   <div class="md-sidebar__inner">
                     
@@ -4569,6 +4806,25 @@
   
     
   
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#follow-one-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Follow one example
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
   
 </nav>
                   </div>
@@ -4648,6 +4904,20 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -4680,14 +4950,68 @@
 
 
 <h1 id="marketforge-concepts">MarketForge concepts</h1>
-<p>Use these pages to interpret selections, rows, dataset identities, and handoffs across operations.</p>
-<ul>
-<li><a href="identity/">Identity and provenance</a></li>
-<li><a href="time/">Time, selection, and coverage</a></li>
-<li><a href="depth/">Depth observations and reconstruction</a></li>
-<li><a href="ordering/">Ordering and reconciliation</a></li>
-<li><a href="evidence/">Execution, publication, and lineage</a></li>
-</ul>
+<p>MarketForge turns source recordings into inspectable historical publications. Each stage carries evidence forward about the bytes it used, how it interpreted them, and what it committed. Start with the objects and their identities, then follow the example through the processing stages. Read the operation guides when you are ready to run commands.</p>
+<table>
+<thead>
+<tr>
+<th>Question</th>
+<th>Start here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>What is stored, processed, and published?</td>
+<td><a href="data-model/">Data model</a></td>
+</tr>
+<tr>
+<td>Which identifier do I need?</td>
+<td><a href="identity/">Identity</a></td>
+</tr>
+<tr>
+<td>What belongs in a recipe, profile, runtime file, or job?</td>
+<td><a href="configuration/">Configuration</a></td>
+</tr>
+<tr>
+<td>What does the requested interval actually select?</td>
+<td><a href="time/">Time and coverage</a></td>
+</tr>
+<tr>
+<td>How do trade and book observations become rows?</td>
+<td><a href="depth/">Trades and depth</a></td>
+</tr>
+<tr>
+<td>Which event order can a reader rely on?</td>
+<td><a href="ordering/">Ordering</a></td>
+</tr>
+<tr>
+<td>How do source records become canonical streams?</td>
+<td><a href="normalization/">Normalization</a></td>
+</tr>
+<tr>
+<td>How do compatible streams share a timeline?</td>
+<td><a href="merge/">Merge</a></td>
+</tr>
+<tr>
+<td>How are historical prices valued in another quote currency?</td>
+<td><a href="conversion/">Conversion</a></td>
+</tr>
+<tr>
+<td>What did validation verify, and what evidence survives?</td>
+<td><a href="evidence/">Evidence</a></td>
+</tr>
+<tr>
+<td>What happened to a run or its output?</td>
+<td><a href="execution/">Execution</a></td>
+</tr>
+<tr>
+<td>What does a recurring term mean?</td>
+<td><a href="glossary/">Glossary</a></td>
+</tr>
+</tbody>
+</table>
+<h2 id="follow-one-example">Follow one example</h2>
+<p>The running example selects Bybit BTCUSDT <strong>linear perpetual</strong> trades and depth for <code>[2026-10-27T00:00:00Z, 2026-10-28T00:00:00Z)</code>. It assumes suitable archives, applicable evidence, and supported profiles are available. The observations and prices used to illustrate behavior are hypothetical. The BTCUSDT example ends with identity valuation in USDT. A separate multi-instrument example demonstrates conversion through reference trades.</p>
+<p>For procedures, use <a href="../workflows/acquisition/">Acquisition</a>, <a href="../workflows/normalize/">Normalization</a>, <a href="../workflows/merge/">Merge</a>, and <a href="../workflows/conversion/">Conversion</a>. For exact schemas, see <a href="../reference/prepared/">prepared requests</a> and <a href="../reference/publications/">publication formats</a>.</p>
 
 
 
@@ -4736,13 +5060,13 @@
         
         
           
-          <a href="./identity/" class="md-footer__link md-footer__link--next" aria-label="Next: Identity and provenance">
+          <a href="./data-model/" class="md-footer__link md-footer__link--next" aria-label="Next: The historical data model">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Identity and provenance
+                The historical data model
               </div>
             </div>
             <div class="md-footer__button md-icon">

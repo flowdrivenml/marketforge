@@ -7,13 +7,34 @@
         <loc>https://flowdrivenml.github.io/marketforge/concepts/</loc>
       </url>
       <url>
+        <loc>https://flowdrivenml.github.io/marketforge/concepts/configuration/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/concepts/conversion/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/concepts/data-model/</loc>
+      </url>
+      <url>
         <loc>https://flowdrivenml.github.io/marketforge/concepts/depth/</loc>
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/concepts/evidence/</loc>
       </url>
       <url>
+        <loc>https://flowdrivenml.github.io/marketforge/concepts/execution/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/concepts/glossary/</loc>
+      </url>
+      <url>
         <loc>https://flowdrivenml.github.io/marketforge/concepts/identity/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/concepts/merge/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/concepts/normalization/</loc>
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/concepts/ordering/</loc>
@@ -176,6 +197,9 @@
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/reference/cli/runs/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/cli/sorting/</loc>
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/reference/cli/storage/</loc>
