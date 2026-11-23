@@ -43,39 +43,6 @@
         <loc>https://flowdrivenml.github.io/marketforge/concepts/time/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/configuration/</loc>
-      </url>
-      <url>
-        <loc>https://flowdrivenml.github.io/marketforge/configuration/acquisition/</loc>
-      </url>
-      <url>
-        <loc>https://flowdrivenml.github.io/marketforge/configuration/application/</loc>
-      </url>
-      <url>
-        <loc>https://flowdrivenml.github.io/marketforge/configuration/catalogue/</loc>
-      </url>
-      <url>
-        <loc>https://flowdrivenml.github.io/marketforge/configuration/conversion/</loc>
-      </url>
-      <url>
-        <loc>https://flowdrivenml.github.io/marketforge/configuration/markets/</loc>
-      </url>
-      <url>
-        <loc>https://flowdrivenml.github.io/marketforge/configuration/merge-runtime/</loc>
-      </url>
-      <url>
-        <loc>https://flowdrivenml.github.io/marketforge/configuration/merge/</loc>
-      </url>
-      <url>
-        <loc>https://flowdrivenml.github.io/marketforge/configuration/normalization-runtime/</loc>
-      </url>
-      <url>
-        <loc>https://flowdrivenml.github.io/marketforge/configuration/normalization/</loc>
-      </url>
-      <url>
-        <loc>https://flowdrivenml.github.io/marketforge/configuration/pipeline/</loc>
-      </url>
-      <url>
         <loc>https://flowdrivenml.github.io/marketforge/development/</loc>
       </url>
       <url>
@@ -151,6 +118,18 @@
         <loc>https://flowdrivenml.github.io/marketforge/getting-started/quickstart/</loc>
       </url>
       <url>
+        <loc>https://flowdrivenml.github.io/marketforge/maintenance/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/maintenance/conversion/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/maintenance/database/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/maintenance/publications/</loc>
+      </url>
+      <url>
         <loc>https://flowdrivenml.github.io/marketforge/reference/</loc>
       </url>
       <url>
@@ -205,40 +184,70 @@
         <loc>https://flowdrivenml.github.io/marketforge/reference/cli/storage/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/reference/history-maintenance/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/reference/prepared-conversion/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/acquisition/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/reference/prepared-forge/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/application/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/reference/prepared-merge/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/catalogue/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/reference/prepared-normalization/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/conversion-runtime/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/reference/prepared/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/conversion/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/reference/profile-fields/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/markets/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/reference/profiles/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/merge-runtime/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/reference/publication-converted/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/merge/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/reference/publication-merge/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/normalization-runtime/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/reference/publication-normalized/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/normalization/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/reference/publications/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/pipeline/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/configuration/profile-fields/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/data-formats/prepared-conversion/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/data-formats/prepared-forge/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/data-formats/prepared-merge/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/data-formats/prepared-normalization/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/data-formats/prepared/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/data-formats/publication-converted/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/data-formats/publication-merge/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/data-formats/publication-normalized/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/reference/data-formats/publications/</loc>
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/reference/python-datasets/</loc>
@@ -274,28 +283,22 @@
         <loc>https://flowdrivenml.github.io/marketforge/workflows/catalogue/exchanges-and-instruments/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/workflows/catalogue/profile-depth/</loc>
-      </url>
-      <url>
-        <loc>https://flowdrivenml.github.io/marketforge/workflows/catalogue/profile-trades/</loc>
-      </url>
-      <url>
-        <loc>https://flowdrivenml.github.io/marketforge/workflows/catalogue/profile-troubleshooting/</loc>
-      </url>
-      <url>
-        <loc>https://flowdrivenml.github.io/marketforge/workflows/catalogue/profiles/</loc>
-      </url>
-      <url>
         <loc>https://flowdrivenml.github.io/marketforge/workflows/catalogue/specifications/</loc>
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/workflows/conversion/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/workflows/datasets/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/workflows/forge-tui/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/workflows/forge-tui/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/workflows/inspection/datasets/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/workflows/inspection/notebooks/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/workflows/inspection/runs/</loc>
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/workflows/markets/</loc>
@@ -313,10 +316,13 @@
         <loc>https://flowdrivenml.github.io/marketforge/workflows/merge/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/workflows/normalize/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/workflows/normalization/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/workflows/notebooks/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/workflows/normalization/author-profile/</loc>
+      </url>
+      <url>
+        <loc>https://flowdrivenml.github.io/marketforge/workflows/normalization/profile-troubleshooting/</loc>
       </url>
       <url>
         <loc>https://flowdrivenml.github.io/marketforge/workflows/operations/</loc>
@@ -325,6 +331,6 @@
         <loc>https://flowdrivenml.github.io/marketforge/workflows/pipeline/</loc>
       </url>
       <url>
-        <loc>https://flowdrivenml.github.io/marketforge/workflows/runs/</loc>
+        <loc>https://flowdrivenml.github.io/marketforge/workflows/storage/</loc>
       </url>
 </urlset>

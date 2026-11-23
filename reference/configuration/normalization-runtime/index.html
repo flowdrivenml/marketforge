@@ -1,0 +1,6561 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Historical market-data acquisition, normalization and dataset inspection">
+      
+      
+      
+        <link rel="canonical" href="https://flowdrivenml.github.io/marketforge/reference/configuration/normalization-runtime/">
+      
+      
+      
+        <link rel="prev" href="../normalization/">
+      
+      
+        <link rel="next" href="../merge/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/branding/logo_small.png">
+      <meta name="generator" content="zensical-0.1.1">
+    
+    
+      
+        <title>Normalization runtime configuration - MarketForge</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.ebb7f775.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
+    <div data-md-component="skip">
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="MarketForge" class="md-header__button md-logo" aria-label="MarketForge" data-md-component="logo">
+      
+  <img src="../../../assets/branding/logo_small.png" alt="MarketForge">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+      <span class="md-visually-hidden">Navigation</span>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MarketForge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Normalization runtime configuration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+          <span class="md-visually-hidden">Search</span>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/flowdrivenml/marketforge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../.." class="md-tabs__link">
+          
+  
+  Using MarketForge
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../development/" class="md-tabs__link">
+          
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="MarketForge" class="md-nav__button md-logo" aria-label="MarketForge" data-md-component="logo">
+      
+  <img src="../../../assets/branding/logo_small.png" alt="MarketForge">
+
+    </a>
+    MarketForge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/flowdrivenml/marketforge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../.." class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Using MarketForge
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_1">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Using MarketForge
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../getting-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Getting started
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_2" id="__nav_1_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Getting started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Installation and workspace setup
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  First dataset: Bybit trades and depth
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../workflows/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Workflows
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3" id="__nav_1_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Workflows
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../workflows/acquisition/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquisition
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_2" id="__nav_1_3_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Acquisition
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/acquisition/historical-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquire historical archives
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/acquisition/external-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Bring external data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/acquisition/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Register and normalize manually supplied data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/acquisition/managing-acquisitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managing acquisitions
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Storage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../workflows/catalogue/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_4" id="__nav_1_3_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Catalogue
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/catalogue/exchanges-and-instruments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Exchanges and instruments
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/catalogue/specifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Instrument specifications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../workflows/markets/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Markets and rankings
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_5" id="__nav_1_3_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_5_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Markets and rankings
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/markets/instrument-discovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Discover and inspect instruments
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/markets/market-statistics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Retrieve and interpret market statistics
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/markets/rankings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Build and inspect market rankings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../workflows/normalization/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_3_6" id="__nav_1_3_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Normalization
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/normalization/author-profile/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Create a normalization profile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/normalization/profile-troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Troubleshoot normalization profiles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_3_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_3_10" id="__nav_1_3_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspection
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_3_10_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_3_10">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Inspection
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/inspection/datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Explore historical datasets
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/inspection/runs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Inspect execution history
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/inspection/notebooks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Explore datasets in Jupyter
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../workflows/forge-tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Interactive Forge workspace
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../concepts/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Concepts
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_4" id="__nav_1_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Concepts
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  The historical data model
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/identity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Identity and provenance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and prepared work
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/time/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Time, selection, and coverage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/depth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Trades, depth, and reconstruction
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/ordering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Ordering and causality
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  What normalization does
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  What a merge combines
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical quote conversion
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/evidence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Evidence, integrity, and reproducibility
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/execution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Runs, publication, reuse, and recovery
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../concepts/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Glossary
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Reference
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5" id="__nav_1_5_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_5_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_1_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Reference
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../cli/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  CLI
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5_2" id="__nav_1_5_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  CLI
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/sorting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Collection sorting
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Interactive Forge workspace
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/acquisition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquisition commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Raw storage commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/runs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Runs CLI reference
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/catalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/maintenance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and maintenance commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managed Engine commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Import, profile and registration commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/convert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Datasets CLI reference
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/markets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Markets and ranking commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_3" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Configuration and recipes
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_5_3" id="__nav_1_5_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_3_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_1_5_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Configuration and recipes
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../application/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Application settings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Engine runtime settings and policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Acquisition and raw import recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../catalogue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Catalogue declarations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization runtime configuration
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization runtime configuration
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Overview
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Quick start
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inspect-individual-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Inspect individual settings
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-file-and-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration file and resolution
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#runtime-configuration-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Runtime configuration overview
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-processing-and-performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        1. Processing and performance
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-resource-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        2. Resource management
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-normalization-safety-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        3. Normalization safety limits
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-parquet-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        4. Parquet output
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        5. Diagnostics
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-integrity-policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        6. Integrity policies
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Integrity policies">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shared-rule-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Shared rule fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rule-categories" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Rule categories
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-trade-reconciliation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        7. Trade reconciliation
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Trade reconciliation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#source-preference-and-loss-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Source preference and loss limits
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-order-book-reconciliation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        8. Order-book reconciliation
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-timestamp-regression" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        9. Timestamp regression
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Timestamp regression">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#trades" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Trades
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#depth" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Depth
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-cross-setting-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        10. Cross-setting dependencies
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-validation-and-safe-modification" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        11. Validation and safe modification
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="11. Validation and safe modification">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#preview-and-apply" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preview and apply
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#edit-the-complete-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Edit the complete configuration
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-configuration-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        12. Configuration examples
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="12. Configuration examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-complete-strict-starting-point" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        A. Complete strict starting point
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b-smaller-resource-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        B. Smaller resource targets
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#c-detailed-diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        C. Detailed diagnostics
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d-source-preference-with-bounded-trade-loss" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        D. Source preference with bounded trade loss
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#e-count-bounded-integrity-degradation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        E. Count-bounded integrity degradation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#f-preserve-bounded-depth-timestamp-regressions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        F. Preserve bounded depth timestamp regressions
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        13. Troubleshooting
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-complete-parameter-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        14. Complete parameter index
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../merge-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge runtime configuration
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../conversion-runtime/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion runtime
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../profile-fields/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization profile field index
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pipeline recipes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../markets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Ranking and historical metadata policies
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../acquisition-sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Supported historical sources
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../registration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Managed raw registration declarations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_6" id="__nav_1_5_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Data formats
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_1_5_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Data formats
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-formats/publications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Publication formats
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-formats/publication-normalized/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalized publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-formats/publication-merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merged publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-formats/publication-converted/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Converted publications
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_5_6_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_1_5_6_5" id="__nav_1_5_6_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared jobs and evidence
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_1_5_6_5_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_5_6_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Prepared jobs and evidence
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-formats/prepared/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared Engine contracts
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-formats/prepared-normalization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared normalization batch
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-formats/prepared-merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared merge job
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-formats/prepared-conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Prepared conversion job
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-formats/prepared-forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge preparation and run evidence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../python-datasets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Python dataset API
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../examples/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Examples
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_6" id="__nav_1_6_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Examples
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/catalogue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Synthetic trade and depth recordings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/catalogue/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge a compatible trade file
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/bring-your-own-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Bring your own historical data
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../examples/bring-your-own-data/databento/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Databento AAPL Trades and MBP-10
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../maintenance/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Maintenance
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1_7" id="__nav_1_7_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_1_7_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1_7">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Maintenance
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../maintenance/database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Manage database backups and restores
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../maintenance/publications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Run and dataset maintenance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../maintenance/conversion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Troubleshoot conversion
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../development/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Development
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Development
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Getting started
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Getting started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Local development
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/first-contribution/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  First contribution
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Architecture
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Architecture
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  System overview
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/forge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3_3" id="__nav_2_3_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical Engine
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_2_3_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_3_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Historical Engine
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/normalize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Normalization Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/merge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Merge Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/convert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Conversion Engine architecture
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Historical operation lifecycles
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/forge-tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Forge workspace architecture and action inventory
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_4" id="__nav_2_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extending MarketForge
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Extending MarketForge
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/extending/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extension decision guide
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extend source integration and processing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Extend orchestration and persistence
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Testing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_6" id="__nav_2_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Debugging and performance
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Debugging and performance
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/debugging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Debugging historical workflows
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Performance
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../development/compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Contributing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Overview
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Quick start
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inspect-individual-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Inspect individual settings
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-file-and-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration file and resolution
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#runtime-configuration-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Runtime configuration overview
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-processing-and-performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        1. Processing and performance
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-resource-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        2. Resource management
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-normalization-safety-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        3. Normalization safety limits
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-parquet-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        4. Parquet output
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        5. Diagnostics
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-integrity-policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        6. Integrity policies
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Integrity policies">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shared-rule-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Shared rule fields
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rule-categories" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Rule categories
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-trade-reconciliation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        7. Trade reconciliation
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Trade reconciliation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#source-preference-and-loss-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Source preference and loss limits
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-order-book-reconciliation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        8. Order-book reconciliation
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-timestamp-regression" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        9. Timestamp regression
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Timestamp regression">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#trades" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Trades
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#depth" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Depth
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-cross-setting-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        10. Cross-setting dependencies
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-validation-and-safe-modification" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        11. Validation and safe modification
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="11. Validation and safe modification">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#preview-and-apply" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Preview and apply
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#edit-the-complete-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Edit the complete configuration
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-configuration-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        12. Configuration examples
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="12. Configuration examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-complete-strict-starting-point" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        A. Complete strict starting point
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b-smaller-resource-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        B. Smaller resource targets
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#c-detailed-diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        C. Detailed diagnostics
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#d-source-preference-with-bounded-trade-loss" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        D. Source preference with bounded trade loss
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#e-count-bounded-integrity-degradation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        E. Count-bounded integrity degradation
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#f-preserve-bounded-depth-timestamp-regressions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        F. Preserve bounded depth timestamp regressions
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        13. Troubleshooting
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-complete-parameter-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        14. Complete parameter index
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+      
+        
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../../.." class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Using MarketForge
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../../" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Reference
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Configuration and recipes
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
+                
+                  
+
+  
+  
+
+
+<h1 id="normalization-runtime-configuration">Normalization runtime configuration</h1>
+<h2 id="overview">Overview</h2>
+<p>The Rust Engine reads this configuration to admit processing work, bound intermediate buffers, size Parquet output, collect diagnostics, and decide whether observed anomalies or excluded source events permit publication.</p>
+<table>
+<thead>
+<tr>
+<th>Configuration</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="../normalization/">Normalization recipe</a></td>
+<td>Selects registered inputs and an interval.</td>
+</tr>
+<tr>
+<td><a href="../../../workflows/normalization/author-profile/">Normalization profile</a></td>
+<td>Describes how to interpret the source format and its record operations.</td>
+</tr>
+<tr>
+<td>Normalization runtime</td>
+<td>Controls execution resources, diagnostics, and policies for processing and publication.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="quick-start">Quick start</h2>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span>show<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span>validate<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span>schema<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+</code></pre></div>
+<p>These commands use the locally installed managed normalization Engine. Schema-based operations need a build with the runtime schema capability. <code>validate</code> checks the complete TOML through the production Rust runtime loader. The schema explorer describes the current Engine build and shows whether settings are effective in the current configuration. See <a href="#11-validation-and-safe-modification">what validation checks</a>.</p>
+<h3 id="inspect-individual-settings">Inspect individual settings</h3>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span>get<span class="w"> </span>resources.workers<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span>show<span class="w"> </span>--section<span class="w"> </span>resources<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span>show<span class="w"> </span>--all<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span>schema<span class="w"> </span>--field<span class="w"> </span>reconciliation.depth.overlap_policy<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+</code></pre></div>
+<p>Use a dotted TOML leaf path with <code>get</code>, <code>set</code>, <code>unset</code>, or <code>schema --field</code>. Use a canonical table name with <code>show --section</code>, including nested sections such as <code>resources.parquet</code>, <code>integrity_policy</code>, and <code>reconciliation.depth</code>. The compact overview groups related settings for readability. Detailed views separate the configured value, the Engine-resolved value, and the default. An inactive value can still be present in the file and must still pass the loader's checks.</p>
+<p>For automation, use global <code>mf --json normalize config …</code>. Output contains native numbers and booleans and a versioned result object.</p>
+<p>For a read-only report on older managed builds that expose runtime settings but lack the schema interface, use <code>mf engine runtime normalize | cpout</code>. See <a href="../../cli/engine/">Engine runtime commands</a> and the <a href="../../cli/normalize/#engine-runtime-configuration">normalization CLI syntax</a>.</p>
+<h2 id="configuration-file-and-resolution">Configuration file and resolution</h2>
+<p>Forge resolves <code>data/.config/engine/normalize.toml</code> under the workspace root, independent of the configured data root. Direct Engine invocations default to that path and accept <code>--config PATH</code> and <code>--project-root ROOT</code>. Relative configuration and scratch paths resolve from the project root, including when the TOML lives elsewhere. The root must exist and resolve to a directory. A missing current file is an error. If the legacy workspace file <code>data/.config/historical/general.toml</code> exists instead, the current managed path reports that migration is required.</p>
+<table>
+<thead>
+<tr>
+<th>Evidence</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Configured settings</td>
+<td>The values explicitly written to TOML.</td>
+</tr>
+<tr>
+<td>Effective settings</td>
+<td>Rust resolves omitted fields and converts the scratch path to a project-root-based path. Pipeline runs recursively overlay <code>[normalize]</code> in <code>pipeline.toml</code> after validating the base and validate the combined result. The overlay cannot set the operation's schema version.</td>
+</tr>
+<tr>
+<td>Execution-pinned settings</td>
+<td>Persisted Forge preparation retains the runtime TOML and its SHA-256 beside the batch. Execution with matching preparation evidence loads the retained copy and checks its fingerprint. Direct batch submission without that evidence uses the current runtime. Managed execution retains its own runtime copy and fingerprint. Pipeline resume uses the pinned stage files.</td>
+</tr>
+<tr>
+<td>Publication evidence</td>
+<td>The normalized publication keeps the effective Rust processing configuration in <code>processing-runtime.json</code> with its SHA-256 companion.</td>
+</tr>
+</tbody>
+</table>
+<p>Editing the current file affects later resolutions. In-flight Engines use settings already loaded, and existing prepared and publication evidence keeps its original configuration. See <a href="../../runtime/#pipeline-runtime">pipeline inheritance</a>, the <a href="../../data-formats/prepared-normalization/">prepared batch reference</a>, and <a href="../../data-formats/publication-normalized/">normalized publications</a>.</p>
+<h2 id="runtime-configuration-overview">Runtime configuration overview</h2>
+<p>The field tables give <strong>Rust defaults on omission</strong>, rather than the workspace's explicitly configured values. <code>schema_version</code>, the four main resource fields, both Parquet targets, and each integrity rule's <code>action</code> are required. Optional tables can be omitted unless they contain required fields. A dash in a default column means there is no default or no optional threshold. The loader rejects unknown fields at every supported level. Rust integer types below are unsigned unless stated otherwise. Byte values use binary units.</p>
+<p>Performance settings change resource use and layout. Reconciliation, timestamp processing and integrity rules can change event selection or publication eligibility. Treat those choices independently.</p>
+<h2 id="1-processing-and-performance">1. Processing and performance</h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Rust type · default</th>
+<th>Behavior and constraints</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a id="schema-version"></a><code>schema_version</code></td>
+<td><code>u32</code> · required</td>
+<td>Exactly <code>1</code>. An unsupported value fails load. This field versions the runtime document independently of recipes, profiles and batches.</td>
+</tr>
+<tr>
+<td><a id="merge-fan-in"></a><code>merge_fan_in</code></td>
+<td><code>usize</code> · <code>8</code></td>
+<td>Inclusive range <code>2–64</code>. Requested maximum number of input runs merged at a time in normalization scratch sorting/reconciliation. Effective fan-in depends on memory, admitted handles and available runs. Higher values can reduce passes while increasing simultaneous buffers and handles.</td>
+</tr>
+<tr>
+<td><a id="scratch-format"></a><code>scratch_format</code></td>
+<td><code>ScratchFormat</code> · <code>json</code></td>
+<td><code>json</code>, <code>typed_trades</code>, or <code>typed_events</code>. Selects encoding on scratch paths that use the reconciler's spools. See the format details below.</td>
+</tr>
+<tr>
+<td><a id="scratch-codec"></a><code>scratch_codec</code></td>
+<td><code>ScratchCodec</code> · <code>zlib</code></td>
+<td><code>zlib</code> uses fast zlib compression on participating scratch records. <code>uncompressed</code> stores raw encoded payloads with the spool framing. Final Parquet encoding is independent.</td>
+</tr>
+</tbody>
+</table>
+<p><code>json</code> is the generic spool representation. <code>typed_trades</code> enables typed trade payloads. <code>typed_events</code> also enables typed depth payloads on the shared-envelope spool path. Generic records such as routing or metadata still use JSON. The setting does not select a family-discovery or decoding strategy and does not require all records in an execution to have the same payload encoding. Both typed modes are accepted by Rust where the corresponding writer path is used. Compare retained scratch and timing measurements for the workload before changing either setting.</p>
+<p>Forge-generated jobs declare <code>event_timestamp_ns</code> as the primary ordering key and <code>stream_rank</code> as the tie-break. That declaration belongs to the <a href="../../data-formats/prepared-normalization/#job-ordering">prepared job contract</a>. Runtime <code>[ordering]</code> is an unknown table.</p>
+<h2 id="2-resource-management">2. Resource management</h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Rust type · default</th>
+<th>Behavior and constraints</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a id="resources-workers"></a><code>resources.workers</code></td>
+<td><code>usize</code> · required</td>
+<td>Positive ceiling on worker concurrency. The scoped scheduler spawns at most that many worker threads, capped by the number of work units. Memory and handle admission can leave workers idle. Other process threads, such as diagnostics, are outside this count.</td>
+</tr>
+<tr>
+<td><a id="resources-memory-budget-bytes"></a><code>resources.memory_budget_bytes</code></td>
+<td><code>u64</code> · required</td>
+<td>Positive session-wide admission budget in bytes. Reservations include retained evidence, active units, buffers and finalization estimates. The budget is not an OS RSS cap.</td>
+</tr>
+<tr>
+<td><a id="resources-scratch-path"></a><code>resources.scratch_path</code></td>
+<td><code>PathBuf</code> · required</td>
+<td>Nonempty path string. An existing path must be a directory. The Engine creates scratch directories as needed during work, so the process needs write access and space on that filesystem.</td>
+</tr>
+<tr>
+<td><a id="resources-scratch-budget-bytes"></a><code>resources.scratch_budget_bytes</code></td>
+<td><code>u64</code> · required</td>
+<td>Positive byte budget shared through session resource accounting for participating scratch files. Spool writes charge storage as they grow and release it when removed. This is not a quota for the entire filesystem or the final publication.</td>
+</tr>
+</tbody>
+</table>
+<p>An execution unit can represent one source task, reconciled work for a stream, or routed family work. Increasing workers increases potential overlap of decoders, writers, evidence buffers and file handles. An individual unit plus required retained state must fit even when no other worker is active. A clean shutdown drops owned scratch workspaces. A hard kill or failed filesystem cleanup can leave files. Reserve filesystem capacity separately from the Engine budget.</p>
+<p>The workspace's configured <code>68719476736</code> memory bytes are <strong>64 GiB</strong>, and <code>137438953472</code> scratch bytes are <strong>128 GiB</strong>. These are examples of explicit settings, not defaults.</p>
+<h2 id="3-normalization-safety-limits">3. Normalization safety limits</h2>
+<p>All eight <code>resources.normalization_limits</code> leaves are optional <code>u64</code> values. Each must be greater than zero and at most <code>usize::MAX / 128</code> for the Engine's platform. Limits are checked at the identified subsystem boundary. Exceeding a limit produces a resource failure rather than permission to skip excess input through an integrity rule.</p>
+<table>
+<thead>
+<tr>
+<th>Field under <code>resources.normalization_limits</code></th>
+<th>Rust default</th>
+<th>Enforced accounting</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a id="resources-normalization-limits-workbook-bytes"></a><code>workbook_bytes</code></td>
+<td>8 MiB (8388608 bytes)</td>
+<td>Bounds the selected XLSX byte stream before workbook decoding. For an externally compressed source or selected member it limits the decoded member's XLSX container bytes, before expanding the workbook's own XML.</td>
+</tr>
+<tr>
+<td><a id="resources-normalization-limits-workbook-xml-bytes"></a><code>workbook_xml_bytes</code></td>
+<td>16 MiB (16777216 bytes)</td>
+<td>Bounds each expanded XML member the reader loads. Also bounds accumulated worksheet cell text in the applicable worksheet decode.</td>
+</tr>
+<tr>
+<td><a id="resources-normalization-limits-workbook-rows"></a><code>workbook_rows</code></td>
+<td>25000</td>
+<td>Bounds row materialization on its worksheet parsing and decoded-row paths. Shared strings have a separate count ceiling of three times this setting. This is not an archive-wide count of market events.</td>
+</tr>
+<tr>
+<td><a id="resources-normalization-limits-record-bytes"></a><code>record_bytes</code></td>
+<td>1 MiB (1048576 bytes)</td>
+<td>Bounds CSV encoded record payload, including quoting and embedded newlines but excluding the terminating record boundary. JSONL charges line bytes including the terminator before trimming. XLSX applies it to cell text. It also bounds selected metadata strings and sizes internal estimates.</td>
+</tr>
+<tr>
+<td><a id="resources-normalization-limits-depth-levels"></a><code>depth_levels</code></td>
+<td>25000</td>
+<td>Bounds reconstructed book and pending snapshot level counts, with bids and asks counted together at each applicable check. Also feeds depth workspace estimates.</td>
+</tr>
+<tr>
+<td><a id="resources-normalization-limits-metric-entries"></a><code>metric_entries</code></td>
+<td>4096</td>
+<td>Caps per-task file plus hourly and daily observation entries. Separate guards reuse the same numeric ceiling for inventories such as archive members, family or routing entries, output parts, row groups and depth segments. This can fail processing, independently of the diagnostics mode.</td>
+</tr>
+<tr>
+<td><a id="resources-normalization-limits-reconciliation-bytes"></a><code>reconciliation_bytes</code></td>
+<td>64 MiB (67108864 bytes)</td>
+<td>Resident reconciliation/routing quota per applicable execution unit. Covers accounted in-memory state such as merge records, ownership indexes, and buffered events. The unit's quota is included in the session memory estimate. Spool storage is accounted separately.</td>
+</tr>
+<tr>
+<td><a id="resources-normalization-limits-open-files"></a><code>open_files</code></td>
+<td>64</td>
+<td>Session ceiling for participating handles with eight reserved for logging, metadata, provenance and finalization. Admission and spool fan-in account for active handles. The OS file-descriptor limit still applies independently.</td>
+</tr>
+</tbody>
+</table>
+<p>The managed value <code>reconciliation_bytes = 8589934592</code> is <strong>8 GiB</strong>. The comment has been corrected to 8 GiB. The numeric value is unchanged.</p>
+<h2 id="4-parquet-output">4. Parquet output</h2>
+<p>Both <code>resources.parquet</code> fields are required positive <code>u64</code> byte targets. Rust enforces <code>row_group_target_bytes &lt;= file_target_bytes</code>; equality is allowed.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a id="resources-parquet-row-group-target-bytes"></a><code>resources.parquet.row_group_target_bytes</code></td>
+<td>Controls flushing buffered rows as their estimated footprint reaches the target. It contributes to each active writer's memory estimate. Depth also uses it with a 1 MiB floor in checks on certain metadata buffers.</td>
+</tr>
+<tr>
+<td><a id="resources-parquet-file-target-bytes"></a><code>resources.parquet.file_target_bytes</code></td>
+<td>Controls rotation after accumulated output reaches the target at writer boundaries. Compression, row-group granularity, metadata and footers affect actual file size.</td>
+</tr>
+</tbody>
+</table>
+<p>These targets are approximate sizing controls. Output size is distinct from decoded input, scratch size and in-memory row size. Writers currently select Parquet Zstandard level 3. Smaller row groups can reduce buffering and change scan granularity, while smaller parts can increase file and metadata counts. See <a href="../../data-formats/publication-normalized/#parquet-file-sizing">publication layout and sizing</a>.</p>
+<h2 id="5-diagnostics">5. Diagnostics</h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Rust type · default</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a id="diagnostics-mode"></a><code>diagnostics.mode</code></td>
+<td><code>DiagnosticsMode</code> · <code>disabled</code></td>
+<td><code>disabled</code> skips the optional performance collector. Essential results, integrity counters and publication evidence still exist. <code>basic</code> collects progress, phase, resource and process snapshots. <code>detailed</code> adds current RSS on Linux if readable.</td>
+</tr>
+<tr>
+<td><a id="diagnostics-interval-ms"></a><code>diagnostics.interval_ms</code></td>
+<td><code>u64</code> · <code>1000</code></td>
+<td>Inclusive range <code>100–60000</code> ms, validated in every mode. The collector wakes on a timer or on coalesced progress notifications. Heartbeats can appear during CPU or I/O waits. This controls reporting, not worker scheduling.</td>
+</tr>
+</tbody>
+</table>
+<p>When enabled and able to open its output, the collector emits diagnostic lines to stderr and writes <code>effective-config.json</code>, <code>live.jsonl</code> and a final <code>performance.json</code> under a <code>performance-…</code> directory beside the staging output. The TUI uses the progress snapshots directly. When snapshots are already enabled, the separate collector skips startup. One bounded wake channel coalesces progress; reporting still costs serialization and I/O. The modes do not change integrity thresholds or event processing policies.</p>
+<h2 id="6-integrity-policies">6. Integrity policies</h2>
+<p>The integrity system records an eligible check and whether it failed. Its evaluation can be clean, degraded or failed. A failed evaluation blocks that job's publication. A degraded result can still be committed if independent processing and resource checks succeed. Forge verification and <a href="../../cli/normalize/#registration-and-recovery">primary-file registration</a> are subsequent operations.</p>
+<p><a id="integrity-policy-enabled"></a></p>
+<p><code>integrity_policy.enabled</code> is a Rust <code>bool</code>, optional and <code>true</code> by default. Setting it to <code>false</code> skips immediate rule enforcement and final threshold evaluation. Counting continues, and recorded violations still mark output degraded. Source checks, independent reconciliation/timestamp policy and resource guards continue. All seven rule tables and actions are required and validated even when evaluation is disabled. Legacy <code>profile</code> is an alias for <code>enabled</code>. Both keys can read legacy strings <code>standard</code> and <code>strict</code> as <code>true</code>. Use a boolean with the CLI.</p>
+<h3 id="shared-rule-fields">Shared rule fields</h3>
+<p>Apply these fields under each <code>integrity_policy.&lt;rule&gt;</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Leaf</th>
+<th>Rust type · default</th>
+<th>Effect and validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a id="integrity-rule-action"></a><a id="integrity-policy-parse-failure-action"></a><a id="integrity-policy-invalid-record-action"></a><a id="integrity-policy-sequence-gap-action"></a><a id="integrity-policy-timestamp-regression-action"></a><a id="integrity-policy-missing-snapshot-action"></a><a id="integrity-policy-invalid-book-action"></a><a id="integrity-policy-transformation-failure-action"></a><code>action</code></td>
+<td><code>IntegrityAction</code> · required</td>
+<td><code>fail</code> rejects any occurrence, regardless of configured count/rate allowances. <code>degrade</code> marks an occurrence degraded and fails if any configured threshold is exceeded. Rust requires at least one count, rate or window threshold for <code>degrade</code>.</td>
+</tr>
+<tr>
+<td><a id="integrity-rule-max-count"></a><a id="integrity-policy-parse-failure-max-count"></a><a id="integrity-policy-invalid-record-max-count"></a><a id="integrity-policy-sequence-gap-max-count"></a><a id="integrity-policy-timestamp-regression-max-count"></a><a id="integrity-policy-missing-snapshot-max-count"></a><a id="integrity-policy-invalid-book-max-count"></a><a id="integrity-policy-transformation-failure-max-count"></a><code>max_count</code></td>
+<td><code>Option&lt;u64&gt;</code> · absent</td>
+<td>Absolute violation count across the job. Checked with strict <code>&gt;</code>; zero fails on the first occurrence. The immediate evaluator can check count where supplied. Scheduled workers defer aggregate thresholds to final evaluation.</td>
+</tr>
+<tr>
+<td><a id="integrity-rule-max-rate"></a><a id="integrity-policy-parse-failure-max-rate"></a><a id="integrity-policy-invalid-record-max-rate"></a><a id="integrity-policy-sequence-gap-max-rate"></a><a id="integrity-policy-timestamp-regression-max-rate"></a><a id="integrity-policy-missing-snapshot-max-rate"></a><a id="integrity-policy-invalid-book-max-rate"></a><a id="integrity-policy-transformation-failure-max-rate"></a><code>max_rate</code></td>
+<td><code>Option&lt;f64&gt;</code> · absent</td>
+<td>Finite fraction in <code>[0, 1]</code>. A <code>degrade</code> rule checks this separately globally, per source-file scope, and per stream. The denominator is eligible checks of that category within the scope. Rust uses decimal arithmetic at evaluation, so unsupported decimal precision fails evaluation.</td>
+</tr>
+<tr>
+<td><a id="integrity-rule-minimum-samples"></a><a id="integrity-policy-parse-failure-minimum-samples"></a><a id="integrity-policy-invalid-record-minimum-samples"></a><a id="integrity-policy-sequence-gap-minimum-samples"></a><a id="integrity-policy-timestamp-regression-minimum-samples"></a><a id="integrity-policy-missing-snapshot-minimum-samples"></a><a id="integrity-policy-invalid-book-minimum-samples"></a><a id="integrity-policy-transformation-failure-minimum-samples"></a><code>minimum_samples</code></td>
+<td><code>u64</code> · <code>0</code></td>
+<td>Checks a rate only once the scope has at least this many eligible observations and a nonzero denominator. It never delays a count or fail action.</td>
+</tr>
+<tr>
+<td><a id="integrity-rule-window-max-rate"></a><a id="integrity-policy-parse-failure-windows-hourly-max-rate"></a><a id="integrity-policy-parse-failure-windows-daily-max-rate"></a><a id="integrity-policy-invalid-record-windows-hourly-max-rate"></a><a id="integrity-policy-invalid-record-windows-daily-max-rate"></a><a id="integrity-policy-sequence-gap-windows-hourly-max-rate"></a><a id="integrity-policy-sequence-gap-windows-daily-max-rate"></a><a id="integrity-policy-timestamp-regression-windows-hourly-max-rate"></a><a id="integrity-policy-timestamp-regression-windows-daily-max-rate"></a><a id="integrity-policy-missing-snapshot-windows-hourly-max-rate"></a><a id="integrity-policy-missing-snapshot-windows-daily-max-rate"></a><a id="integrity-policy-invalid-book-windows-hourly-max-rate"></a><a id="integrity-policy-invalid-book-windows-daily-max-rate"></a><a id="integrity-policy-transformation-failure-windows-hourly-max-rate"></a><a id="integrity-policy-transformation-failure-windows-daily-max-rate"></a><code>windows.hourly.max_rate</code>, <code>windows.daily.max_rate</code></td>
+<td><code>f64</code> · required for a configured window</td>
+<td>Finite fraction in <code>[0, 1]</code>. Each configured window rate is evaluated independently against category observations within its source scope and time bucket.</td>
+</tr>
+<tr>
+<td><a id="integrity-rule-window-minimum-samples"></a><a id="integrity-policy-parse-failure-windows-hourly-minimum-samples"></a><a id="integrity-policy-parse-failure-windows-daily-minimum-samples"></a><a id="integrity-policy-invalid-record-windows-hourly-minimum-samples"></a><a id="integrity-policy-invalid-record-windows-daily-minimum-samples"></a><a id="integrity-policy-sequence-gap-windows-hourly-minimum-samples"></a><a id="integrity-policy-sequence-gap-windows-daily-minimum-samples"></a><a id="integrity-policy-timestamp-regression-windows-hourly-minimum-samples"></a><a id="integrity-policy-timestamp-regression-windows-daily-minimum-samples"></a><a id="integrity-policy-missing-snapshot-windows-hourly-minimum-samples"></a><a id="integrity-policy-missing-snapshot-windows-daily-minimum-samples"></a><a id="integrity-policy-invalid-book-windows-hourly-minimum-samples"></a><a id="integrity-policy-invalid-book-windows-daily-minimum-samples"></a><a id="integrity-policy-transformation-failure-windows-hourly-minimum-samples"></a><a id="integrity-policy-transformation-failure-windows-daily-minimum-samples"></a><code>windows.hourly.minimum_samples</code>, <code>windows.daily.minimum_samples</code></td>
+<td><code>u64</code> · required for a configured window</td>
+<td>Sample floor for that category, source scope and window. Zero is valid, and an empty bucket has no rate.</td>
+</tr>
+</tbody>
+</table>
+<p>The Engine compares violations using strict <code>&gt;</code> against eligible observations times the fraction. A rate of <code>0.01</code> is 1%. Hourly and daily buckets use fixed UTC epoch-aligned event-time intervals, including for timestamps before the epoch. Counts use observations present in each bucket, without estimating missing samples or requiring calendar completeness. Eligible observations without a trustworthy timestamp fail verification of any configured window for that category, even when the unattributed observations did not violate the rule. Window thresholds provide independent checks and never cancel a failure.</p>
+<h3 id="rule-categories">Rule categories</h3>
+<p>All seven use the shared action, count, rate and window contract above. Each eligible check counts once in its category for the applicable unit. A record may reach multiple checks. Source diagnostics carry contextual samples, and evaluation evidence identifies the category, threshold, observation counts and available scope.</p>
+<table>
+<thead>
+<tr>
+<th>Required rule table</th>
+<th>What counts</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a id="integrity-policy-parse-failure"></a><code>integrity_policy.parse_failure</code></td>
+<td>A physical decoder attempt, such as a CSV record, JSONL message or XLSX row. Both trades and depth can fail while reading or parsing a source record. Unparseable timestamps may prevent window attribution. Typed resource-limit errors remain resource errors.</td>
+</tr>
+<tr>
+<td><a id="integrity-policy-invalid-record"></a><code>integrity_policy.invalid_record</code></td>
+<td>An applicable record or event validation unit for trades or depth. Examples include invalid input field values, inconsistent sequence metadata or invalid price levels. A later failure in a different category does not erase an earlier successful check.</td>
+</tr>
+<tr>
+<td><a id="integrity-policy-sequence-gap"></a><code>integrity_policy.sequence_gap</code></td>
+<td>A sequenced incremental depth observation reaching continuity checks on an initialized book. Native sequence policy determines valid continuity and can require prior/end linkage. Unsequenced snapshots do not create synthetic sequence evidence.</td>
+</tr>
+<tr>
+<td><a id="integrity-policy-timestamp-regression"></a><code>integrity_policy.timestamp_regression</code></td>
+<td>An applicable comparison against the previous accepted timestamp in source order for trades or depth. A lower timestamp is an integrity observation. Separately, temporal processing uses its own high-water checks, which can still fail.</td>
+</tr>
+<tr>
+<td><a id="integrity-policy-missing-snapshot"></a><code>integrity_policy.missing_snapshot</code></td>
+<td>An incremental depth event reaching synchronization checks without initialization. The rule can govern whether the anomaly is tolerated, but it cannot initialize a book or satisfy a recovery boundary.</td>
+</tr>
+<tr>
+<td><a id="integrity-policy-invalid-book"></a><code>integrity_policy.invalid_book</code></td>
+<td>Reserved for explicit book-invariant observations. The current normalization paths attribute ordinary level validation to <code>invalid_record</code>; they do not emit a general <code>invalid_book</code> result for every bad or valid book.</td>
+</tr>
+<tr>
+<td><a id="integrity-policy-transformation-failure"></a><code>integrity_policy.transformation_failure</code></td>
+<td>One attempted quantity-transformation batch for a trade, depth message or assembled snapshot. For depth, it is not counted once per emitted level. Missing required conversion terms or failed quantity arithmetic can produce it.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="7-trade-reconciliation">7. Trade reconciliation</h2>
+<p><a id="reconciliation-trades-overlap-policy"></a></p>
+<p><code>reconciliation.trades.overlap_policy</code> is an optional <code>TradeOverlap</code> enum. Its default is <code>strict</code>.</p>
+<ul>
+<li><strong><code>strict</code></strong> keeps distinct comparable trades and suppresses duplicates only when native identity and canonical equivalence support that decision. Conflicting contents under a reliable native identity, or overlapping sources without established comparable identity/reset domains, can fail. Equal timestamps alone are insufficient evidence of duplication.</li>
+<li><strong><code>prefer_source</code></strong> enables source precedence for ambiguous overlap or supported conflicts. It can charge a non-equivalent or unverified observation as excluded. Distinct reliable identities can still be retained. An ordered native-ID run has additional proof requirements and cannot use this option to discard conflicting records or make missing IDs valid.</li>
+</ul>
+<p>Overlap ranges use each source's minimum and maximum accepted event timestamps. The selected source wins on supported conflicts, using accepted start time and stable identity tie-breaks. For example, if source A begins at 09:00 and source B at 09:30, <code>earlier</code> gives A precedence in their overlap and <code>later</code> gives B precedence. This is an illustration of resolution where preference applies, not a rule to crop all records from the other source.</p>
+<h3 id="source-preference-and-loss-limits">Source preference and loss limits</h3>
+<p>The table applies to both <code>reconciliation.trades.prefer_source</code> and <code>reconciliation.depth.prefer_source</code>. Both tables are optional. Their source-selection behavior activates only with <code>overlap_policy = "prefer_source"</code>. Rust validates both tables even when inactive.</p>
+<table>
+<thead>
+<tr>
+<th>Leaf</th>
+<th>Rust type · default</th>
+<th>Effect and constraint</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a id="reconciliation-trades-prefer-source-selection"></a><a id="reconciliation-depth-prefer-source-selection"></a><code>selection</code></td>
+<td><code>Selection</code> · <code>earlier</code></td>
+<td><code>earlier</code> or <code>later</code> by minimum accepted event timestamp. Stable source identity and source order break ties.</td>
+</tr>
+<tr>
+<td><a id="reconciliation-trades-prefer-source-on-unique-data-loss"></a><a id="reconciliation-depth-prefer-source-on-unique-data-loss"></a><code>on_unique_data_loss</code></td>
+<td><code>LossAction</code> · <code>fail</code></td>
+<td><code>fail</code> rejects the first known-unique or unverified exclusion. <code>mark_degraded</code> permits only bounded exclusions and requires a positive event cap.</td>
+</tr>
+<tr>
+<td><a id="reconciliation-trades-prefer-source-max-excluded-events"></a><a id="reconciliation-depth-prefer-source-max-excluded-events"></a><code>max_excluded_events</code></td>
+<td><code>u64</code> · <code>0</code></td>
+<td>Logical event cap applied to source and job exclusion totals. Strict <code>&gt;</code> fails. Verified duplicates do not consume this cap.</td>
+</tr>
+<tr>
+<td><a id="reconciliation-trades-prefer-source-max-excluded-rate"></a><a id="reconciliation-depth-prefer-source-max-excluded-rate"></a><code>max_excluded_rate</code></td>
+<td><code>Option&lt;f64&gt;</code> · absent</td>
+<td>Finite fraction in <code>[0,1]</code> representable by Rust Decimal. Applies job-wide to overlap exclusions divided by accepted logical source observations minus verified duplicates. A rate strictly above the threshold fails.</td>
+</tr>
+<tr>
+<td><a id="reconciliation-trades-prefer-source-minimum-samples"></a><a id="reconciliation-depth-prefer-source-minimum-samples"></a><code>minimum_samples</code></td>
+<td><code>u64</code> · <code>0</code></td>
+<td>The optional rate applies at or above this denominator, provided it is nonzero. The event cap still applies below the floor.</td>
+</tr>
+<tr>
+<td><a id="reconciliation-trades-prefer-source-max-excluded-interval-ms"></a><a id="reconciliation-depth-prefer-source-max-excluded-interval-ms"></a><code>max_excluded_interval_ms</code></td>
+<td><code>Option&lt;u64&gt;</code> · absent</td>
+<td>Maximum timestamp span from minimum to maximum event time within a contiguous run of excluded observations, tracked in native source order. A retained observation resets the run. Zero allows a zero-duration span only. The converted value must fit signed 64-bit nanoseconds.</td>
+</tr>
+</tbody>
+</table>
+<p>Rate limits measure logical observations, independently of the number of canonical rows they would emit. The Engine records overlap and timestamp exclusions, known-unique versus unverified exclusions, and excluded canonical rows separately. A run of exclusions may include both causes and is tracked accordingly. A degraded publication records a permitted loss or other processing-quality signal. This evidence does not establish continuous market history.</p>
+<h2 id="8-order-book-reconciliation">8. Order-book reconciliation</h2>
+<p><a id="reconciliation-depth"></a>
+<a id="reconciliation-depth-overlap-policy"></a></p>
+<p><code>reconciliation.depth.overlap_policy</code> is an optional <code>DepthOverlap</code> enum and defaults to <code>strict</code>. A book is stateful. A snapshot initializes it, and incremental events update that state under the source's sequence contract.</p>
+<ul>
+<li><strong><code>strict</code></strong> rejects overlapping independent histories unless a supported boundary equivalence is proven. For example, matching authoritative snapshots at a shared boundary can be suppressed as one proven duplicate.</li>
+<li><strong><code>snapshot_recovery</code></strong> uses authoritative initialization snapshots and retained boundary evidence to publish valid reconstruction segments. It does not authorize intentional overlap exclusions of unique supplied observations. The Engine marks continuity unproven when an independent initialization cannot be linked by matching state and applicable native sequence evidence.</li>
+<li><strong><code>prefer_source</code></strong> assigns overlap ownership using the accepted event ranges and <a href="#source-preference-and-loss-limits">shared preference settings</a>. An authorized exclusion is charged in logical observations even when it represents many levels or emits zero canonical rows. The resulting segments do not imply continuity across a source change.</li>
+</ul>
+<p><a id="reconciliation-depth-prefer-source-switch-boundary"></a></p>
+<p><code>reconciliation.depth.prefer_source.switch_boundary</code> is an optional <code>SwitchBoundary</code> enum, default <code>snapshot</code>. <code>snapshot</code> waits for a snapshot to switch after an existing source. Excluded observations during the wait remain subject to loss limits. <code>source_boundary</code> allows a switch only with matching reconstruction state and native sequence evidence, either at the incoming boundary or via a matching authoritative snapshot. A new history still needs authoritative initialization.</p>
+<p>Overlap recovery and timestamp recovery address different conditions. Source processing validates sequence, synchronization and book inputs. The <a href="#6-integrity-policies">integrity rules</a> can fail the job on those observations, and the recovery algorithms still enforce their own proof and budget requirements.</p>
+<h2 id="9-timestamp-regression">9. Timestamp regression</h2>
+<p>The Engine records raw timestamp anomalies in source order. Processing limits compare against a source-local accepted high-water mark, and independent integrity rules can fail on the raw anomaly first. Millisecond bounds are optional <code>u64</code> values which must fit signed 64-bit nanoseconds after multiplication by 1000000. These controls do not change source timestamps.</p>
+<h3 id="trades">Trades</h3>
+<p><a id="timestamp-regression-trades"></a></p>
+<table>
+<thead>
+<tr>
+<th>Field under <code>timestamp_regression.trades</code></th>
+<th>Rust type · default</th>
+<th>Effect and constraint</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a id="timestamp-regression-trades-policy"></a><code>policy</code></td>
+<td><code>TradeTimestamp</code> · <code>strict</code></td>
+<td><code>strict</code> rejects unresolved regressions. <code>preserve</code> retains native order for tolerated regressions. <code>reorder</code> allows bounded disorder and uses chronological output sorting. <code>discard</code> excludes regressing surviving observations within the configured bounds.</td>
+</tr>
+<tr>
+<td><a id="timestamp-regression-trades-max-regression-ms"></a><code>max_regression_ms</code></td>
+<td><code>u64</code> · <code>0</code></td>
+<td>High-water tolerance for non-strict processing. Must be positive for <code>reorder</code> or <code>discard</code>. A larger regression fails even when a discard cap remains.</td>
+</tr>
+<tr>
+<td><a id="timestamp-regression-trades-max-reorder-window-ms"></a><code>max_reorder_window_ms</code></td>
+<td><code>u64</code> · <code>0</code></td>
+<td>High-water window for <code>reorder</code>. Must be positive and at least <code>max_regression_ms</code> in that mode. A larger window cannot relax the regression cap.</td>
+</tr>
+<tr>
+<td><a id="timestamp-regression-trades-max-discarded-events"></a><code>max_discarded_events</code></td>
+<td><code>u64</code> · <code>0</code></td>
+<td>Cap on timestamp-discarded logical events. Must be positive for <code>discard</code>. Checked per source and job with strict <code>&gt;</code>.</td>
+</tr>
+<tr>
+<td><a id="timestamp-regression-trades-max-discarded-rate"></a><code>max_discarded_rate</code></td>
+<td><code>Option&lt;f64&gt;</code> · absent</td>
+<td>Optional additional job-wide cap for discard. Finite fraction in <code>[0,1]</code> representable by Rust Decimal. Uses accepted logical observations minus verified duplicates as the denominator.</td>
+</tr>
+<tr>
+<td><a id="timestamp-regression-trades-minimum-samples"></a><code>minimum_samples</code></td>
+<td><code>u64</code> · <code>0</code></td>
+<td>Sample floor for the optional discard rate. A nonzero denominator is required. The event count cap applies independently.</td>
+</tr>
+</tbody>
+</table>
+<p>On the general reconciliation path the Engine resolves identity, verified duplicates and overlap before applying timestamp processing to surviving records in concrete source order. Ordered-run identity checks still apply, and raw regressions remain in the evidence even if reconciliation removes the offending record.</p>
+<h3 id="depth">Depth</h3>
+<p><a id="timestamp-regression-depth"></a></p>
+<table>
+<thead>
+<tr>
+<th>Field under <code>timestamp_regression.depth</code></th>
+<th>Rust type · default</th>
+<th>Effect and constraint</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a id="timestamp-regression-depth-policy"></a><code>policy</code></td>
+<td><code>DepthTimestamp</code> · <code>strict</code></td>
+<td><code>strict</code> rejects unresolved regressions. <code>preserve</code> tolerates bounded regressions in native processing order. <code>snapshot_recovery</code> can suppress updates during a regression recovery and resume at an authoritative snapshot, emitting a new initialization.</td>
+</tr>
+<tr>
+<td><a id="timestamp-regression-depth-max-regression-ms"></a><code>max_regression_ms</code></td>
+<td><code>u64</code> · <code>0</code></td>
+<td>Bounds non-strict high-water regression checks, including <code>preserve</code> and recovery checks. A genuine snapshot sequence reset can reset the comparison state.</td>
+</tr>
+<tr>
+<td><a id="timestamp-regression-depth-require-sequence-continuity"></a><code>require_sequence_continuity</code></td>
+<td><code>bool</code> · <code>true</code></td>
+<td>Must be true. Applicable native continuity checks remain enabled. Unsequenced snapshot sources need no synthetic sequence.</td>
+</tr>
+<tr>
+<td><a id="timestamp-regression-depth-require-recovery-snapshot"></a><code>require_recovery_snapshot</code></td>
+<td><code>bool</code> · <code>true</code></td>
+<td>Must be true. Recovery needs verified initialization evidence.</td>
+</tr>
+<tr>
+<td><a id="timestamp-regression-depth-max-discarded-events"></a><code>max_discarded_events</code></td>
+<td><code>u64</code> · <code>0</code></td>
+<td>Timestamp-recovery cap on excluded logical events at source and job scope. The first exclusion exceeds zero. No depth discard-rate field exists.</td>
+</tr>
+</tbody>
+</table>
+<p>Stateful depth events are not reordered by event timestamp to repair continuity. The profile and decoder define whether sequencing is applicable, and an Engine-supported sortable workbook path can sort independent snapshots before stateful processing. A 2 ms tolerance alone establishes nothing about book reconstruction.</p>
+<h2 id="10-cross-setting-dependencies">10. Cross-setting dependencies</h2>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>Relationship</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Loader constraint</td>
+<td>Both Parquet targets are positive, with row group at most file target. All limits and configured rates are validated even when inactive.</td>
+</tr>
+<tr>
+<td>Admission</td>
+<td>Workers, writer targets, safety limits and per-unit reconciliation allowances compete for session memory. The handle limit reserves eight session handles. Fan-in is reduced on participating sort paths and can be constrained further by memory and handle budgets.</td>
+</tr>
+<tr>
+<td>Execution accounting</td>
+<td>Scratch encoding can change scratch bytes and codec work. Resident reconciliation state is charged to memory, while spool bytes charge scratch. Full disk and OS descriptor limits can still stop work.</td>
+</tr>
+<tr>
+<td>Integrity evaluation</td>
+<td>A fail action rejects any violation, while degrade needs a threshold and uses independent count, rate and window checks. Disabling evaluation leaves detection and resource checks in effect.</td>
+</tr>
+<tr>
+<td>Source reconciliation</td>
+<td>Preference settings apply to source ownership under <code>prefer_source</code>. Count bounds cannot be replaced by sample floors. Depth source changes need the selected initialization or proof boundary.</td>
+</tr>
+<tr>
+<td>Temporal processing</td>
+<td>Reordering requires positive bounds and a window at least as large as the trade regression limit. Discard also requires a positive event cap. Depth requires applicable sequence validation and verified initialization regardless of timestamp policy.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="11-validation-and-safe-modification">11. Validation and safe modification</h2>
+<p>Runtime validation checks UTF-8 TOML syntax, the schema version, recognized fields, types and enum spellings, rule and resource bounds, and cross-field constraints. It also resolves paths and rejects an existing scratch path that is not a directory. It does not run admission for a particular workload, test available RAM or free space, or guarantee that scratch is writable.</p>
+<p>The direct loader can validate a complete candidate in a separate file. Replace <code>PATH_TO_CANDIDATE.toml</code> with your draft's path.</p>
+<div class="highlight"><pre><span></span><code>.bin/marketforge-normalize<span class="w"> </span>--runtime-settings<span class="w"> </span>PATH_TO_CANDIDATE.toml<span class="w"> </span>--project-root<span class="w"> </span>.
+</code></pre></div>
+<p>If Forge reports that the managed Engine is absent, invalid or too old for runtime-schema inspection, use <a href="../../cli/engine/"><code>mf engine build normalize</code></a>. A successful config validation depends on the Rust loader actually running.</p>
+<h3 id="preview-and-apply">Preview and apply</h3>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>resources.workers<span class="w"> </span><span class="m">12</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>resources.workers<span class="w"> </span><span class="m">12</span><span class="w"> </span>--apply<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>resources.memory_budget_bytes<span class="w"> </span>48GiB<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span><span class="nb">unset</span><span class="w"> </span>integrity_policy.parse_failure.max_count<span class="w"> </span><span class="p">|</span><span class="w"> </span>cpout
+</code></pre></div>
+<p><code>set</code> and <code>unset</code> preview by default. <code>--apply</code> rechecks the source file and validates the complete candidate again with Rust before atomic replacement. Forge checks the original file identity, contents and parent directory before saving. The edit round-trips TOML so unrelated settings and comments are preserved. <code>unset</code> removes only optional leaf settings. An omitted setting uses its Rust default when it has one. Otherwise the setting is absent.</p>
+<p>Enter byte quantities as whole bytes or use case-sensitive binary units <code>KiB</code>, <code>MiB</code>, <code>GiB</code>, or <code>TiB</code>. A fractional unit is accepted only when it converts to a whole number of bytes. Enter booleans as <code>true</code> or <code>false</code> and enum values by their exact spelling.</p>
+<p>Integrity-critical changes require <code>--acknowledge-risk</code> with <code>--apply</code>. The Rust authoring schema classifies field risk. The preview lists the affected settings and required acknowledgement. Resource-sensitive and processing-semantic changes are flagged in the preview. Schema identity is immutable through these commands. Coordinated changes such as adding an integrity window with both required members belong in the editor.</p>
+<h3 id="edit-the-complete-configuration">Edit the complete configuration</h3>
+<div class="highlight"><pre><span></span><code>mf<span class="w"> </span>normalize<span class="w"> </span>config<span class="w"> </span>edit
+</code></pre></div>
+<p>The command opens a private draft in the configured editor, with Neovim as the default. It requires a terminal. Review the changes and type <code>apply</code> to save. Integrity-critical edits require typing <code>apply and acknowledge risk</code>. A validation failure or declined confirmation keeps the draft and displays its path. The managed file must be a regular, single-link file, and the management commands refuse symlink targets and directories.</p>
+<h2 id="12-configuration-examples">12. Configuration examples</h2>
+<h3 id="a-complete-strict-starting-point">A. Complete strict starting point</h3>
+<p>This document supplies all required fields and uses Rust defaults for omitted settings. Resource values are explicit starting values. Workload admission still depends on the selected work.</p>
+<div class="highlight"><pre><span></span><code><span class="n">schema_version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
+
+<span class="k">[resources]</span>
+<span class="n">workers</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span>
+<span class="n">memory_budget_bytes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8589934592</span>
+<span class="n">scratch_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"data/.work/normalize"</span>
+<span class="n">scratch_budget_bytes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">17179869184</span>
+
+<span class="k">[resources.parquet]</span>
+<span class="n">row_group_target_bytes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">67108864</span>
+<span class="n">file_target_bytes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">536870912</span>
+
+<span class="k">[integrity_policy.parse_failure]</span>
+<span class="n">action</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"fail"</span>
+
+<span class="k">[integrity_policy.invalid_record]</span>
+<span class="n">action</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"fail"</span>
+
+<span class="k">[integrity_policy.sequence_gap]</span>
+<span class="n">action</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"fail"</span>
+
+<span class="k">[integrity_policy.timestamp_regression]</span>
+<span class="n">action</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"fail"</span>
+
+<span class="k">[integrity_policy.missing_snapshot]</span>
+<span class="n">action</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"fail"</span>
+
+<span class="k">[integrity_policy.invalid_book]</span>
+<span class="n">action</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"fail"</span>
+
+<span class="k">[integrity_policy.transformation_failure]</span>
+<span class="n">action</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"fail"</span>
+</code></pre></div>
+<p>The examples below are replacements or additions to the relevant table in example A. Keep a single declaration of each TOML table.</p>
+<h3 id="b-smaller-resource-targets">B. Smaller resource targets</h3>
+<p>This sets 4 GiB of memory, 8 GiB of scratch, and 32 MiB/256 MiB Parquet targets. It reduces potential concurrency and writer buffering. A single large execution unit can still exceed admission.</p>
+<div class="highlight"><pre><span></span><code><span class="k">[resources]</span>
+<span class="n">workers</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
+<span class="n">memory_budget_bytes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">4294967296</span>
+<span class="n">scratch_path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"data/.work/normalize"</span>
+<span class="n">scratch_budget_bytes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8589934592</span>
+
+<span class="k">[resources.parquet]</span>
+<span class="n">row_group_target_bytes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">33554432</span>
+<span class="n">file_target_bytes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">268435456</span>
+</code></pre></div>
+<h3 id="c-detailed-diagnostics">C. Detailed diagnostics</h3>
+<p>Adds work for snapshot serialization, logging and available RSS sampling.</p>
+<div class="highlight"><pre><span></span><code><span class="k">[diagnostics]</span>
+<span class="n">mode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"detailed"</span>
+<span class="n">interval_ms</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2000</span>
+</code></pre></div>
+<h3 id="d-source-preference-with-bounded-trade-loss">D. Source preference with bounded trade loss</h3>
+<p>Earlier observed starts take precedence where the policy applies. Up to 10 charged exclusions can yield a degraded publication if other checks succeed. The eleventh exceeds the cap.</p>
+<div class="highlight"><pre><span></span><code><span class="k">[reconciliation.trades]</span>
+<span class="n">overlap_policy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"prefer_source"</span>
+
+<span class="k">[reconciliation.trades.prefer_source]</span>
+<span class="n">selection</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"earlier"</span>
+<span class="n">on_unique_data_loss</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"mark_degraded"</span>
+<span class="n">max_excluded_events</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10</span>
+</code></pre></div>
+<h3 id="e-count-bounded-integrity-degradation">E. Count-bounded integrity degradation</h3>
+<p>Replace the <code>invalid_record</code> rule. An occurrence degrades the job, and the third violation exceeds the count threshold. The rule does not turn invalid source records into valid output.</p>
+<div class="highlight"><pre><span></span><code><span class="k">[integrity_policy.invalid_record]</span>
+<span class="n">action</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"degrade"</span>
+<span class="n">max_count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span>
+</code></pre></div>
+<h3 id="f-preserve-bounded-depth-timestamp-regressions">F. Preserve bounded depth timestamp regressions</h3>
+<p>This changes both the processing policy and the independent timestamp integrity rule from example A. Replace the integrity rule table and add the depth timestamp table. Qualifying regressions can be retained in native order, subject to other sequence and reconstruction checks. Any fourth eligible integrity violation exceeds the count cap.</p>
+<div class="highlight"><pre><span></span><code><span class="k">[integrity_policy.timestamp_regression]</span>
+<span class="n">action</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"degrade"</span>
+<span class="n">max_count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span>
+
+<span class="k">[timestamp_regression.depth]</span>
+<span class="n">policy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"preserve"</span>
+<span class="n">max_regression_ms</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span>
+</code></pre></div>
+<h2 id="13-troubleshooting">13. Troubleshooting</h2>
+<table>
+<thead>
+<tr>
+<th>Problem</th>
+<th>What to check</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Unknown field or unsupported schema</td>
+<td>Check the exact TOML path and enum spelling. Use <code>schema_version = 1</code> with the current loader. Ordering belongs to the job contract.</td>
+</tr>
+<tr>
+<td>Budget rejected or memory admission fails</td>
+<td>Check positive values and look at retained admission estimates for the largest unit, writer memory, retained evidence, and handle headroom.</td>
+</tr>
+<tr>
+<td>Parquet targets invalid</td>
+<td>Use positive targets with row group no larger than file.</td>
+</tr>
+<tr>
+<td>Scratch path unavailable</td>
+<td>Resolve it from the project root and check directory permissions and free space.</td>
+</tr>
+<tr>
+<td>Degrade rule rejected</td>
+<td>Supply at least one count, rate or window threshold. A configured window needs both fields.</td>
+</tr>
+<tr>
+<td>Reconciliation appears inactive</td>
+<td>Check the chosen overlap policy, source identity proof and whether the paths contain applicable overlap.</td>
+</tr>
+<tr>
+<td>Timestamp policy rejected</td>
+<td>Check policy-specific positive bounds, the reorder-window relationship, and the required true depth flags.</td>
+</tr>
+<tr>
+<td>Rust Engine unavailable</td>
+<td>Install or rebuild with <code>mf engine build normalize</code>.</td>
+</tr>
+<tr>
+<td>Configuration changed concurrently</td>
+<td>Inspect the current file again and build a fresh candidate.</td>
+</tr>
+<tr>
+<td>Setting appears to have no effect</td>
+<td>Compare current effective settings with the preparation and execution copies and the publication's <code>processing-runtime.json</code>. Check activation and the evidence in <a href="../../../workflows/inspection/datasets/#verifying-datasets">dataset verification</a>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="14-complete-parameter-index">14. Complete parameter index</h2>
+<p>The linked tables are the authoritative field entries. Shared leaves are defined once and apply to each named parent.</p>
+<table>
+<thead>
+<tr>
+<th>Section</th>
+<th style="text-align: right;">Leaves</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#1-processing-and-performance">Schema, fan-in and scratch</a></td>
+<td style="text-align: right;">4</td>
+</tr>
+<tr>
+<td><a href="#2-resource-management">Resource budgets and path</a></td>
+<td style="text-align: right;">4</td>
+</tr>
+<tr>
+<td><a href="#3-normalization-safety-limits">Normalization safety limits</a></td>
+<td style="text-align: right;">8</td>
+</tr>
+<tr>
+<td><a href="#4-parquet-output">Parquet output</a></td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr>
+<td><a href="#5-diagnostics">Diagnostics</a></td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr>
+<td><a href="#integrity-policy-enabled">Integrity switch</a> and <a href="#rule-categories">seven rules</a>, each with <a href="#shared-rule-fields">eight leaves</a></td>
+<td style="text-align: right;">57</td>
+</tr>
+<tr>
+<td><a href="#7-trade-reconciliation">Trade</a> and <a href="#8-order-book-reconciliation">depth</a> reconciliation, including <a href="#source-preference-and-loss-limits">shared preference leaves</a></td>
+<td style="text-align: right;">15</td>
+</tr>
+<tr>
+<td><a href="#9-timestamp-regression">Trade and depth timestamp regression</a></td>
+<td style="text-align: right;">11</td>
+</tr>
+<tr>
+<td><strong>Total current authoring schema</strong></td>
+<td style="text-align: right;"><strong>103</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Compatibility for retained <code>general.toml</code> is separate. The Rust loader accepts legacy <code>merge.partitions_per_worker</code> (<code>usize</code>, default 4) and <code>merge.compression_level</code> (<code>i32</code>, default 3) only under that filename. Normalization discards these values. See <a href="../../runtime/#merge-and-conversion-runtime">merge runtime</a> for the operation that uses them.</p>
+<p>Rust remains the configuration authority. See the <a href="https://github.com/flowdrivenml/marketforge/tree/main/engine/src/shared/historical">runtime loader and schema</a>, <a href="https://github.com/flowdrivenml/marketforge/tree/main/engine/src/historical/normalize">normalization execution</a>, and <a href="https://github.com/flowdrivenml/marketforge/blob/main/forge/historical/engine/runtime.py">Forge runtime resolution</a>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../normalization/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Normalization recipes">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Normalization recipes
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../merge/" class="md-footer__link md-footer__link--next" aria-label="Next: Merge recipes">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Merge recipes
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+          
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.footer","toc.follow","content.code.copy"],"redirect":"../../../redirect.json","search":"../../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.3cb411a8.min.js"></script>
+      
+        <script src="../../../assets/javascripts/keyboard.js"></script>
+      
+    
+  </body>
+</html>
